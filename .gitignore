@@ -1,0 +1,8 @@
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.pyc
+.tmp/
+.remote_crm_fix/
+data.sqlite3
+dist/openclaw-crm-mcp-proxy-v2.0.0/.venv/

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>请在微信客户端打开</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7f2;
+      --panel: rgba(255,255,255,0.96);
+      --line: rgba(34,65,49,0.10);
+      --text: #183025;
+      --muted: #69796f;
+      --soft: #eef5ef;
+      --primary: #2f6d4c;
+      --shadow: 0 18px 42px rgba(24,49,38,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px 16px;
+      font-family: "PingFang SC", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(70,129,94,0.10), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(47,109,76,0.08), transparent 20%),
+        var(--bg);
+    }
+    .card {
+      width: min(100%, 420px);
+      padding: 36px 28px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    h1 {
+      margin: 18px 0 0;
+      font-size: 30px;
+      line-height: 1.2;
+    }
+    p {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="eyebrow">问卷访问限制</div>
+    <h1>请在微信客户端打开</h1>
+    <p>请回到微信中点击原链接后访问问卷</p>
+  </main>
+</body>
+</html>
