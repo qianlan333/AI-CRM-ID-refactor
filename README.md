@@ -478,6 +478,3 @@ curl http://127.0.0.1:5000/api/archive/health
 现在不需要 `WECOM_ARCHIVE_BASE_URL`。
 
 当前部署只需要这一个 Flask 服务。
-=======
-# AI-CRM
->>>>>>> 52e1a0a0e3cdbc1d7c0ce51f4485f4d6b5a8e79f
