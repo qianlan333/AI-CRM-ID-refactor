@@ -2,6 +2,26 @@
 
 一个极简的 “OpenClaw 企微能力服务”。
 
+## 给 GPT / LLM 的最快入口
+
+如果你希望 GPT 快速读懂这个项目，优先给它这 4 份文档：
+
+- [`docs/llm_handoff.md`](/Users/qianlan/Downloads/极简%20crm/docs/llm_handoff.md)
+- [`docs/project_map.md`](/Users/qianlan/Downloads/极简%20crm/docs/project_map.md)
+- [`docs/user_ops_v2.md`](/Users/qianlan/Downloads/极简%20crm/docs/user_ops_v2.md)
+- [`docs/deploy_runbook.md`](/Users/qianlan/Downloads/极简%20crm/docs/deploy_runbook.md)
+
+如果使用的是支持 GitHub 连接器的 GPT，并且你已经显式授权它访问私有仓库：
+
+- 仓库地址：`https://github.com/qianlan333/AI-CRM`
+
+如果不能直接授权私有仓库，最稳的做法是把上面 4 份文档连同需要分析的代码目录一起发给它：
+
+- `wecom_ability_service/`
+- `openclaw_service/`
+- `tests/`
+- `docs/`
+
 当前只做 3 件事：
 
 1. 通过企业微信官方会话存档 C SDK 拉取、解密、存储聊天记录
