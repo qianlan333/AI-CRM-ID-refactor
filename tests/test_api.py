@@ -46,6 +46,7 @@ def app(tmp_path):
         {
             "TESTING": True,
             "DATABASE_PATH": str(db_path),
+            "RELEASE_SHA": "release-test-sha",
             "WECOM_CORP_ID": "ww-test",
             "WECOM_CONTACT_SECRET": "contact-secret-test",
             "WECOM_SECRET": "secret-test",
@@ -359,6 +360,7 @@ def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
+    assert response.headers["X-Request-Id"]
 
 
 
@@ -414,6 +416,26 @@ def test_ops_status(client, app):
             """,
             (99,),
         )
+        db.execute(
+            """
+            INSERT INTO user_ops_deferred_jobs (
+                job_type, external_userid, owner_userid, run_after, status,
+                attempt_count, payload_json, result_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("auto_assign_class_term", "wm_ext_001", "sales_01", "2026-03-20 12:02:00", "pending", 0, "{}", "{}"),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_deferred_jobs (
+                job_type, external_userid, owner_userid, run_after, status,
+                attempt_count, payload_json, result_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("auto_assign_class_term", "wm_ext_002", "sales_01", "2026-03-20 12:03:00", "success", 1, "{}", "{}"),
+        )
         db.commit()
 
     response = client.get("/api/ops/status")
@@ -425,9 +447,84 @@ def test_ops_status(client, app):
     assert data["group_chats_count"] == 1
     assert data["database_backend"] == "sqlite"
     assert data["last_seq"] == 99
+    assert data["last_archive_sync_run_id"] == 1
     assert data["last_archive_sync_status"] == "success"
     assert data["callback_enabled"] is True
+    assert data["request_id"]
+    assert data["release_sha"] == "release-test-sha"
+    assert data["app_started_at"]
+    assert data["uptime_seconds"] >= 0
+    assert data["background_async_enabled"] is False
+    assert data["user_ops_deferred_jobs"]["total_count"] == 2
+    assert data["user_ops_deferred_jobs"]["pending_count"] == 1
+    assert data["user_ops_deferred_jobs"]["success_count"] == 1
     assert data["sqlite_path"]
+
+
+def test_ops_status_v2_returns_extended_diagnostics(client, app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO user_ops_deferred_jobs (
+                job_type, external_userid, owner_userid, run_after, status,
+                attempt_count, payload_json, result_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("auto_assign_class_term", "wm_ext_v2_001", "sales_01", "2026-03-20 12:04:00", "running", 1, "{}", "{}"),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_deferred_jobs (
+                job_type, external_userid, owner_userid, run_after, status,
+                attempt_count, payload_json, result_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("auto_assign_class_term", "wm_ext_v2_002", "sales_01", "2026-03-20 12:05:00", "failed", 1, "{}", "{}"),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_deferred_jobs (
+                job_type, external_userid, owner_userid, run_after, status,
+                attempt_count, payload_json, result_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("auto_assign_class_term", "wm_ext_v2_003", "sales_01", "2026-03-20 12:06:00", "conflict", 1, "{}", "{}"),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_deferred_jobs (
+                job_type, external_userid, owner_userid, run_after, status,
+                attempt_count, payload_json, result_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("auto_assign_class_term", "wm_ext_v2_004", "sales_01", "2026-03-20 12:07:00", "skipped", 1, "{}", "{}"),
+        )
+        db.commit()
+
+    response = client.get("/api/ops/status", headers={"X-Request-Id": "ops-v2-request-id"})
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["request_id"] == "ops-v2-request-id"
+    assert data["release_sha"] == "release-test-sha"
+    assert data["app_started_at"].endswith("Z")
+    assert isinstance(data["uptime_seconds"], int)
+    assert data["uptime_seconds"] >= 0
+    assert data["background_async_enabled"] is False
+    assert data["user_ops_deferred_jobs"] == {
+        "total_count": 4,
+        "pending_count": 0,
+        "running_count": 1,
+        "success_count": 0,
+        "conflict_count": 1,
+        "skipped_count": 1,
+        "failed_count": 1,
+    }
     assert data["env_file_path"].endswith(".env") or data["env_file_path"]
 
 

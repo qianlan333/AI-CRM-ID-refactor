@@ -32,6 +32,15 @@ from .customer_center.service import get_customer_detail, list_customers
 from .customer_center.routes import parse_customer_filters
 from .customer_timeline import get_customer_timeline, parse_timeline_filters
 from .archive_sdk import WeComArchiveError
+from .observability import (
+    bind_background_context,
+    generate_job_id,
+    get_job_id,
+    get_parent_request_id,
+    get_request_id,
+    get_task_name,
+    unbind_background_context,
+)
 from .wecom_callback import (
     WeComCallbackError,
     build_encrypted_reply,
@@ -139,6 +148,8 @@ callback_logger = logging.getLogger("callback")
 archive_logger = logging.getLogger("archive_sync")
 contacts_logger = logging.getLogger("contacts_sync")
 wecom_logger = logging.getLogger("wecom_api")
+APP_STARTED_AT = datetime.utcnow()
+APP_STARTED_AT_TEXT = APP_STARTED_AT.replace(microsecond=0).isoformat() + "Z"
 
 
 def _log_wecom_client_error(
@@ -725,22 +736,71 @@ def _sync_contact_detail_with_description_fix(
         return dict(plan["normalized_original"]), False
 
 
-def _run_app_task(app, task_name: str, task_fn, *args, **kwargs) -> None:
+def _run_app_task(
+    app,
+    task_name: str,
+    task_fn,
+    *args,
+    job_id: str = "",
+    parent_request_id: str = "",
+    **kwargs,
+) -> None:
     with app.app_context():
+        context_tokens = bind_background_context(
+            job_id=job_id,
+            parent_request_id=parent_request_id,
+            task_name=task_name,
+        )
         try:
-            callback_logger.info("background task started task=%s", task_name)
+            callback_logger.info(
+                "background task started job_id=%s task_name=%s parent_request_id=%s",
+                job_id,
+                task_name,
+                parent_request_id,
+            )
             task_fn(*args, **kwargs)
-            callback_logger.info("background task finished task=%s", task_name)
+            callback_logger.info(
+                "background task finished job_id=%s task_name=%s parent_request_id=%s",
+                job_id,
+                task_name,
+                parent_request_id,
+            )
         except Exception:
-            callback_logger.exception("background task failed task=%s", task_name)
+            callback_logger.exception(
+                "background task failed job_id=%s task_name=%s parent_request_id=%s",
+                job_id,
+                task_name,
+                parent_request_id,
+            )
+        finally:
+            unbind_background_context(context_tokens)
 
 
 def _dispatch_background_task(task_name: str, task_fn, *args, **kwargs) -> None:
     app = current_app._get_current_object()
+    job_id = generate_job_id()
+    parent_request_id = get_request_id()
     if current_app.config.get("CALLBACK_ASYNC_ENABLED", True):
-        background_executor.submit(_run_app_task, app, task_name, task_fn, *args, **kwargs)
+        background_executor.submit(
+            _run_app_task,
+            app,
+            task_name,
+            task_fn,
+            *args,
+            job_id=job_id,
+            parent_request_id=parent_request_id,
+            **kwargs,
+        )
     else:
-        _run_app_task(app, task_name, task_fn, *args, **kwargs)
+        _run_app_task(
+            app,
+            task_name,
+            task_fn,
+            *args,
+            job_id=job_id,
+            parent_request_id=parent_request_id,
+            **kwargs,
+        )
 
 
 def _run_user_ops_deferred_jobs_after_delay(wait_seconds: int = 10, limit: int = 20) -> None:
@@ -749,7 +809,11 @@ def _run_user_ops_deferred_jobs_after_delay(wait_seconds: int = 10, limit: int =
         time.sleep(delay)
     result = run_due_user_ops_deferred_jobs(limit=limit)
     callback_logger.info(
+        "background task summary job_id=%s task_name=%s parent_request_id=%s "
         "stage=user_ops_auto_assign scanned=%s success=%s conflict=%s skipped=%s failed=%s",
+        get_job_id(),
+        get_task_name(),
+        get_parent_request_id(),
         result.get("scanned_count", 0),
         result.get("success_count", 0),
         result.get("conflict_count", 0),
@@ -5966,6 +6030,31 @@ def full_sync_external_contact_identity():
         return _wecom_error_response(exc)
 
 
+def _get_user_ops_deferred_job_counts() -> dict[str, int]:
+    row = get_db().execute(
+        """
+        SELECT
+            COUNT(*) AS total_count,
+            COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+            COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) AS running_count,
+            COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0) AS success_count,
+            COALESCE(SUM(CASE WHEN status = 'conflict' THEN 1 ELSE 0 END), 0) AS conflict_count,
+            COALESCE(SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END), 0) AS skipped_count,
+            COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
+        FROM user_ops_deferred_jobs
+        """
+    ).fetchone()
+    return {
+        "total_count": int(row["total_count"] or 0),
+        "pending_count": int(row["pending_count"] or 0),
+        "running_count": int(row["running_count"] or 0),
+        "success_count": int(row["success_count"] or 0),
+        "conflict_count": int(row["conflict_count"] or 0),
+        "skipped_count": int(row["skipped_count"] or 0),
+        "failed_count": int(row["failed_count"] or 0),
+    }
+
+
 @bp.route("/api/ops/status", methods=["GET"])
 def ops_status():
     last_sync = get_last_sync_run() or {}
@@ -5975,15 +6064,22 @@ def ops_status():
     payload = {
         "ok": True,
         "service_ok": True,
+        "request_id": get_request_id(),
+        "release_sha": str(current_app.config.get("RELEASE_SHA", "") or "").strip(),
+        "app_started_at": APP_STARTED_AT_TEXT,
+        "uptime_seconds": max(int((datetime.utcnow() - APP_STARTED_AT).total_seconds()), 0),
+        "background_async_enabled": bool(current_app.config.get("CALLBACK_ASYNC_ENABLED", True)),
         "archived_messages_count": count_archived_messages(),
         "contacts_count": count_contacts(),
         "group_chats_count": count_group_chats(),
         "database_backend": get_db_backend(),
         "last_seq": get_archive_last_seq(),
+        "last_archive_sync_run_id": last_sync.get("id"),
         "last_archive_sync_status": last_sync.get("status", ""),
         "last_archive_sync_time": last_sync.get("finished_at") or last_sync.get("created_at") or "",
         "last_contacts_sync_time": get_last_contacts_sync_time(),
         "callback_enabled": callback_enabled,
+        "user_ops_deferred_jobs": _get_user_ops_deferred_job_counts(),
         "cron_script_path": current_app.config["CRON_SCRIPT_PATH"],
         "env_file_path": current_app.config["ENV_FILE_PATH"],
     }
