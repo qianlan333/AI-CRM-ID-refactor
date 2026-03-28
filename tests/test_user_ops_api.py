@@ -454,7 +454,11 @@ def test_user_ops_ui_route_exists(client):
     response = client.get("/admin/user-ops/ui")
 
     assert response.status_code == 200
-    assert "统一用户运营看板 v2" in response.get_data(as_text=True)
+    html = response.get_data(as_text=True)
+    assert "统一用户运营看板 v2" in html
+    assert "已激活 / 未激活" in html
+    assert 'id="open-class-term-import-modal-btn"' in html
+    assert 'id="open-activation-import-modal-btn"' in html
 
 
 def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
@@ -467,15 +471,15 @@ def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
     assert "班期回填" not in html
     assert "执行待处理自动归班任务" not in html
     assert "检查标签" not in html
-    assert "当前状态池" not in html
+    assert html.count('<section class="panel toolbar">') == 1
+    assert 'id="class-term-import-modal-backdrop" class="modal-backdrop hidden"' in html
+    assert 'id="activation-import-modal-backdrop" class="modal-backdrop hidden"' in html
     assert '<label for="filter-current-status">当前状态</label>' not in html
     assert '<label for="filter-owner">跟进人</label>' not in html
     assert "<th>当前状态</th>" not in html
     assert "<th>跟进人</th>" not in html
     assert "<th>高意向备注</th>" not in html
     assert "<th>更新时间</th>" not in html
-    assert "手机号运营池" in html
-    assert '<label for="filter-bound">是否已加微</label>' in html
 
 
 def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(client):
@@ -484,13 +488,31 @@ def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(clien
 
     assert response.status_code == 200
     phone_index = html.index("<th>手机号</th>")
-    bound_index = html.index("<th>是否已加微</th>")
+    bound_index = html.index("<th>是否加微</th>")
     class_term_index = html.index("<th>班期</th>")
     activation_index = html.index("<th>激活状态</th>")
     customer_name_index = html.index("<th>客户昵称</th>")
     external_index = html.index("<th>external_userid</th>")
 
     assert phone_index < bound_index < class_term_index < activation_index < customer_name_index < external_index
+
+
+def test_user_ops_ui_uses_modal_import_structure(client):
+    response = client.get("/admin/user-ops/ui")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'id="class-term-import-modal-backdrop" class="modal-backdrop hidden"' in html
+    assert 'id="activation-import-modal-backdrop" class="modal-backdrop hidden"' in html
+    assert 'id="class-term-import-modal-title">手机号 + 班期导入<' in html
+    assert 'id="activation-import-modal-title">手机号 + 激活状态导入<' in html
+    assert '<label for="class-term-import-text">粘贴导入</label>' in html
+    assert '<label for="class-term-import-file">Excel 导入</label>' in html
+    assert '<label for="activation-import-text">粘贴导入</label>' in html
+    assert '<label for="activation-import-file">Excel 导入</label>' in html
+    assert 'id="close-class-term-import-modal-btn"' in html
+    assert 'id="close-activation-import-modal-btn"' in html
+    assert "13800138040,已激活" in html
 
 
 def test_sync_user_ops_class_term_tag_definitions_updates_tag_identity_fields(app, user_ops_contact_client):
@@ -799,7 +821,7 @@ def test_import_mobile_class_terms_keeps_latest_row_for_same_mobile(client):
 def test_import_activation_status_from_pasted_text_updates_pool(client):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138020,激活"},
+        json={"pasted_text": "13800138020,已激活"},
     )
     payload = response.get_json()
 
@@ -809,6 +831,7 @@ def test_import_activation_status_from_pasted_text_updates_pool(client):
     list_payload = client.get("/api/admin/user-ops/list?query=13800138020").get_json()
     assert list_payload["total"] == 1
     assert list_payload["items"][0]["activation_status"] == "activated"
+    assert list_payload["items"][0]["activation_status_label"] == "已激活"
     assert list_payload["items"][0]["activation_remark"] == ""
 
 
@@ -817,7 +840,7 @@ def test_import_activation_status_from_excel_updates_pool(client):
         "/api/admin/user-ops/import-activation-status",
         data={
             "file": (
-                BytesIO(_build_test_xlsx([["手机号", "状态"], ["13800138021", "激活"]])),
+                BytesIO(_build_test_xlsx([["手机号", "状态"], ["13800138021", "已激活"]])),
                 "activation.xlsx",
             )
         },
@@ -831,6 +854,39 @@ def test_import_activation_status_from_excel_updates_pool(client):
     list_payload = client.get("/api/admin/user-ops/list?query=13800138021").get_json()
     assert list_payload["total"] == 1
     assert list_payload["items"][0]["activation_status"] == "activated"
+    assert list_payload["items"][0]["activation_status_label"] == "已激活"
+
+
+def test_import_activation_status_accepts_not_activated_label(client):
+    response = client.post(
+        "/api/admin/user-ops/import-activation-status",
+        json={"pasted_text": "13800138031,未激活"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+
+    list_payload = client.get("/api/admin/user-ops/list?query=13800138031").get_json()
+    assert list_payload["total"] == 1
+    assert list_payload["items"][0]["activation_status"] == "not_activated"
+    assert list_payload["items"][0]["activation_status_label"] == "未激活"
+
+
+def test_import_activation_status_accepts_legacy_activated_label(client):
+    response = client.post(
+        "/api/admin/user-ops/import-activation-status",
+        json={"pasted_text": "13800138032,激活"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+
+    list_payload = client.get("/api/admin/user-ops/list?query=13800138032").get_json()
+    assert list_payload["total"] == 1
+    assert list_payload["items"][0]["activation_status"] == "activated"
+    assert list_payload["items"][0]["activation_status_label"] == "已激活"
 
 
 def test_import_activation_status_rejects_invalid_value(client):
@@ -842,7 +898,7 @@ def test_import_activation_status_rejects_invalid_value(client):
 
     assert response.status_code == 400
     assert payload["ok"] is False
-    assert payload["error"] == "invalid activation rows: 13800138022,高意向 -> activation_status is invalid: 高意向 (allowed: 激活, 未激活)"
+    assert payload["error"] == "invalid activation rows: 13800138022,高意向 -> activation_status is invalid: 高意向 (allowed: 已激活, 未激活)"
 
 
 def test_import_activation_status_source_keeps_latest_row(client, app):
@@ -1008,14 +1064,14 @@ def test_history_contains_activation_import_upsert_records(client):
 def test_activation_import_list_shows_activated_and_not_activated(client):
     client.post(
         "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138029,激活\n13800138030,未激活"},
+        json={"pasted_text": "13800138029,已激活\n13800138030,未激活"},
     )
 
     list_payload = client.get("/api/admin/user-ops/list").get_json()
     by_mobile = {item["mobile"]: item for item in list_payload["items"]}
 
     assert by_mobile["13800138029"]["activation_status"] == "activated"
-    assert by_mobile["13800138029"]["activation_status_label"] == "激活"
+    assert by_mobile["13800138029"]["activation_status_label"] == "已激活"
     assert by_mobile["13800138030"]["activation_status"] == "not_activated"
     assert by_mobile["13800138030"]["activation_status_label"] == "未激活"
 
