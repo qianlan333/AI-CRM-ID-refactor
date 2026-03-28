@@ -71,11 +71,25 @@ USER_OPS_CURRENT_STATUS_LABELS = {
 USER_OPS_ACTIVATION_STATUS_DEFINITIONS = [
     {"value": "not_activated", "label": "未激活"},
     {"value": "activated", "label": "激活"},
-    {"value": "high_intent", "label": "高意向"},
 ]
 USER_OPS_ACTIVATION_STATUS_LABELS = {
     item["value"]: item["label"] for item in USER_OPS_ACTIVATION_STATUS_DEFINITIONS
 }
+# User Ops V2 now uses `mobile` as the only import key.
+# Source fields:
+# - user_ops_experience_leads.mobile acts as the current mobile anchor for
+#   experience imports and class-term imports.
+# - user_ops_activation_status_source.mobile / activation_status stores the
+#   activation import source.
+# Projection fields:
+# - user_ops_pool_current.class_term_no / class_term_label
+# - user_ops_pool_current.activation_status / activation_remark
+# - user_ops_pool_current.external_userid / is_wecom_bound
+# Import rules:
+# - class-term import: last row wins per mobile
+# - activation import: last row wins per mobile
+# - external_userid is never written by imports and is derived from
+#   people.mobile -> external_contact_bindings.person_id -> external_userid
 USER_OPS_CONFIRMED_CLASS_TERM_MAPPINGS = [
     {
         "group_id": "etbNXyCwAA94UNiV4_iDrvFap9f-1i3w",
@@ -1469,6 +1483,9 @@ def _list_user_ops_crm_source_rows() -> list[dict[str, Any]]:
 
 
 def _list_user_ops_experience_lead_rows() -> list[dict[str, Any]]:
+    # W06/W09 note: class-term import currently reuses user_ops_experience_leads
+    # as the phone anchor so phone-only rows can participate in pool reload.
+    # The actual class-term values still land on the pool projection.
     rows = get_db().execute(
         """
         SELECT
@@ -1631,6 +1648,8 @@ def _list_user_ops_activation_source_rows() -> list[dict[str, Any]]:
 
 
 def _apply_user_ops_activation_sources(next_map: dict[str, dict[str, Any]]) -> None:
+    # Activation import remains a separate phone-keyed source and never writes
+    # external_userid directly.
     for row in _list_user_ops_activation_source_rows():
         mobile = str(row.get("mobile") or "").strip()
         if not mobile:
@@ -1733,6 +1752,10 @@ def _load_existing_user_ops_pool_map() -> dict[str, dict[str, Any]]:
 
 
 def reload_user_ops_pool() -> dict[str, Any]:
+    # Rebuild the phone-centric projection from CRM-bound rows, mobile-anchor
+    # rows, and activation source rows. external_userid / is_wecom_bound always
+    # come from existing binding relations; class term and activation are
+    # overlaid back onto user_ops_pool_current as projection fields.
     _ensure_class_term_tag_mapping_seed()
     previous_map = _load_existing_user_ops_pool_map()
     candidates = _list_user_ops_crm_source_rows() + _list_user_ops_experience_lead_rows()
@@ -2803,7 +2826,7 @@ def get_user_ops_overview() -> dict[str, Any]:
         "wecom_bound_count": bound_total,
         "wecom_unbound_count": total - bound_total,
         "activated_count": activation_counts["activated"],
-        "high_intent_count": activation_counts["high_intent"],
+        "high_intent_count": activation_counts.get("high_intent", 0),
         "cards": [
             {"key": "total_users", "label": "总用户数", "value": total},
             {"key": "lead_trial_count", "label": "报名引流品", "value": current_status_counts["lead_trial"]},
@@ -3493,20 +3516,102 @@ def _parse_experience_leads_from_file(*, file_name: str, file_bytes: bytes) -> d
     return result
 
 
+def _is_class_term_header(value: str) -> bool:
+    normalized = str(value or "").strip().lower().replace(" ", "")
+    return normalized in {
+        "手机号,班期",
+        "mobile,classterm",
+        "mobile,class_term",
+        "phone,classterm",
+    }
+
+
+def _normalize_class_term_value(value: str) -> str:
+    class_term_label = str(value or "").strip()
+    if not class_term_label:
+        raise ValueError("class_term is required")
+    return class_term_label
+
+
+def _extract_class_term_no(class_term_label: str) -> int | None:
+    matched = re.fullmatch(r"(\d+)\s*期?", str(class_term_label or "").strip())
+    if not matched:
+        return None
+    return int(matched.group(1))
+
+
+def _parse_class_term_import_line(line: str) -> tuple[str, str, int | None]:
+    parts = [item.strip() for item in re.split(r"[,\t，]+", str(line or "").strip())]
+    parts = [item for item in parts if item]
+    if not parts:
+        raise ValueError("class term row is empty")
+    mobile = _normalize_mobile(parts[0])
+    if len(parts) < 2:
+        raise ValueError("class_term is required")
+    class_term_label = _normalize_class_term_value(parts[1])
+    return mobile, class_term_label, _extract_class_term_no(class_term_label)
+
+
+def _parse_class_term_source_from_text(pasted_text: str) -> dict[str, Any]:
+    lines = [line.strip() for line in str(pasted_text or "").splitlines() if line.strip()]
+    rows: list[dict[str, Any]] = []
+    invalid_rows: list[str] = []
+    total_rows = 0
+    for line in lines:
+        if _is_class_term_header(line):
+            continue
+        total_rows += 1
+        try:
+            mobile, class_term_label, class_term_no = _parse_class_term_import_line(line)
+        except ValueError:
+            invalid_rows.append(line)
+            continue
+        rows.append(
+            {
+                "mobile": mobile,
+                "class_term_label": class_term_label,
+                "class_term_no": class_term_no,
+            }
+        )
+    return {
+        "input_mode": "pasted_text",
+        "total_rows": total_rows,
+        "rows": rows,
+        "invalid_rows": invalid_rows,
+    }
+
+
+def _parse_class_term_source_from_file(*, file_name: str, file_bytes: bytes) -> dict[str, Any]:
+    normalized_name = str(file_name or "").strip().lower()
+    if normalized_name.endswith(".xlsx"):
+        raw_rows = _parse_xlsx_rows(file_bytes)
+        lines = []
+        for row in raw_rows:
+            normalized_row = [str(item or "").strip() for item in row[:2]]
+            if not any(normalized_row):
+                continue
+            lines.append(",".join(normalized_row))
+    else:
+        try:
+            decoded = file_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("only .xlsx or utf-8 text files are supported") from exc
+        lines = [line.strip() for line in decoded.splitlines() if line.strip()]
+    result = _parse_class_term_source_from_text("\n".join(lines))
+    result["input_mode"] = "file"
+    result["file_name"] = str(file_name or "").strip()
+    return result
+
+
 def _normalize_activation_status_value(value: str) -> str:
-    normalized = str(value or "").strip().lower()
-    normalized = normalized.replace(" ", "").replace("_", "").replace("-", "")
+    normalized = str(value or "").strip()
     mapping = {
-        "notactivated": "not_activated",
         "未激活": "not_activated",
-        "activated": "activated",
         "激活": "activated",
-        "highintent": "high_intent",
-        "高意向": "high_intent",
     }
     result = mapping.get(normalized)
     if not result:
-        raise ValueError("activation_status is invalid")
+        raise ValueError(f"activation_status is invalid: {normalized} (allowed: 激活, 未激活)")
     return result
 
 
@@ -3518,11 +3623,10 @@ def _parse_activation_status_line(line: str) -> tuple[str, str, str]:
     mobile = _normalize_mobile(parts[0])
     if len(parts) < 2:
         raise ValueError("activation_status is required")
+    if len(parts) > 2:
+        raise ValueError("activation_status rows must contain only mobile and activation_status")
     activation_status = _normalize_activation_status_value(parts[1])
-    activation_remark = ",".join(parts[2:]).strip() if len(parts) > 2 else ""
-    if activation_status != "high_intent":
-        activation_remark = ""
-    return mobile, activation_status, activation_remark
+    return mobile, activation_status, ""
 
 
 def _parse_activation_status_from_text(pasted_text: str) -> dict[str, Any]:
@@ -3536,8 +3640,8 @@ def _parse_activation_status_from_text(pasted_text: str) -> dict[str, Any]:
         total_rows += 1
         try:
             mobile, activation_status, activation_remark = _parse_activation_status_line(line)
-        except ValueError:
-            invalid_rows.append(line)
+        except ValueError as exc:
+            invalid_rows.append(f"{line} -> {exc}")
             continue
         rows.append(
             {
@@ -3560,7 +3664,7 @@ def _parse_activation_status_from_file(*, file_name: str, file_bytes: bytes) -> 
         raw_rows = _parse_xlsx_rows(file_bytes)
         lines = []
         for row in raw_rows:
-            normalized_row = [str(item or "").strip() for item in row[:3]]
+            normalized_row = [str(item or "").strip() for item in row[:2]]
             if not any(normalized_row):
                 continue
             lines.append(",".join(normalized_row))
@@ -3719,6 +3823,200 @@ def import_experience_leads(
     }
 
 
+def _dedupe_user_ops_import_rows_by_mobile(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    deduped_by_mobile: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        deduped_by_mobile[str(row["mobile"])] = row
+    unique_rows = list(deduped_by_mobile.values())
+    duplicate_count = max(0, len(rows) - len(unique_rows))
+    return unique_rows, duplicate_count
+
+
+def import_mobile_class_term_source(
+    *,
+    pasted_text: str = "",
+    file_name: str = "",
+    file_bytes: bytes | None = None,
+    created_by: str = "",
+) -> dict[str, Any]:
+    # Phone-centric rule: mobile is the only import key, the last row wins per
+    # mobile, and imports do not write external_userid.
+    operator = str(created_by or _current_user_ops_operator()).strip() or "admin_user_ops"
+    if file_bytes is not None:
+        parsed = _parse_class_term_source_from_file(file_name=file_name, file_bytes=file_bytes)
+    else:
+        parsed = _parse_class_term_source_from_text(pasted_text)
+
+    rows = list(parsed["rows"])
+    invalid_rows = list(parsed["invalid_rows"])
+    total_rows = int(parsed["total_rows"])
+    failed_rows = len(invalid_rows)
+
+    if not rows:
+        raise ValueError("no valid class term rows found")
+
+    unique_rows, duplicate_count = _dedupe_user_ops_import_rows_by_mobile(rows)
+
+    error_summary_parts: list[str] = []
+    if invalid_rows:
+        preview = " / ".join(invalid_rows[:5])
+        suffix = " ..." if len(invalid_rows) > 5 else ""
+        error_summary_parts.append(f"invalid: {preview}{suffix}")
+    if duplicate_count:
+        error_summary_parts.append(f"duplicates: {duplicate_count}")
+    error_summary = "; ".join(error_summary_parts)
+
+    db = get_db()
+    batch_id = _create_user_ops_import_batch(
+        import_type="class_term_source",
+        file_name=str(parsed.get("file_name") or file_name or parsed.get("input_mode") or "").strip(),
+        total_rows=total_rows,
+        success_rows=len(rows),
+        failed_rows=failed_rows,
+        error_summary=error_summary,
+        created_by=operator,
+    )
+
+    for row in unique_rows:
+        mobile = str(row["mobile"])
+        existing = db.execute(
+            """
+            SELECT id, mobile, source_type, import_batch_id, created_by, is_active
+            FROM user_ops_experience_leads
+            WHERE mobile = ?
+            LIMIT 1
+            """,
+            (mobile,),
+        ).fetchone()
+        db.execute(
+            """
+            INSERT INTO user_ops_experience_leads (
+                mobile, source_type, import_batch_id, created_by, is_active, created_at, updated_at
+            )
+            VALUES (?, 'class_term_import', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(mobile) DO UPDATE SET
+                source_type = excluded.source_type,
+                import_batch_id = excluded.import_batch_id,
+                created_by = excluded.created_by,
+                is_active = excluded.is_active,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (mobile, batch_id, operator, _db_bool(True)),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_history (
+                pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
+            )
+            VALUES (?, ?, '', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                None,
+                mobile,
+                "class_term_source_upsert",
+                json.dumps(dict(existing or {}), ensure_ascii=False),
+                json.dumps(
+                    {
+                        "mobile": mobile,
+                        "source_type": "class_term_import",
+                        "class_term_no": row["class_term_no"],
+                        "class_term_label": row["class_term_label"],
+                        "import_batch_id": batch_id,
+                        "created_by": operator,
+                        "is_active": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                operator,
+                "class_term_import",
+            ),
+        )
+    db.commit()
+
+    reload_payload = reload_user_ops_pool()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    applied_count = 0
+    bound_count = 0
+    for row in unique_rows:
+        mobile = str(row["mobile"] or "").strip()
+        current = db.execute(
+            """
+            SELECT id, mobile, external_userid, class_term_no, class_term_label, is_wecom_bound
+            FROM user_ops_pool_current
+            WHERE mobile = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (mobile,),
+        ).fetchone()
+        if not current:
+            continue
+        db.execute(
+            """
+            UPDATE user_ops_pool_current
+            SET class_term_no = ?, class_term_label = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                row["class_term_no"],
+                row["class_term_label"],
+                now,
+                int(current["id"]),
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_history (
+                pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(current["id"]),
+                mobile,
+                str(current.get("external_userid") or "").strip(),
+                "class_term_import_upsert",
+                json.dumps(
+                    {
+                        "class_term_no": int(current["class_term_no"]) if current.get("class_term_no") not in (None, "") else None,
+                        "class_term_label": str(current.get("class_term_label") or "").strip(),
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "class_term_no": row["class_term_no"],
+                        "class_term_label": row["class_term_label"],
+                    },
+                    ensure_ascii=False,
+                ),
+                operator,
+                "class_term_import",
+                now,
+            ),
+        )
+        applied_count += 1
+        if bool(current.get("is_wecom_bound")):
+            bound_count += 1
+    db.commit()
+
+    return {
+        "ok": True,
+        "import_type": "class_term_source",
+        "input_mode": str(parsed.get("input_mode") or "").strip(),
+        "batch_id": batch_id,
+        "total_rows": total_rows,
+        "success_rows": len(rows),
+        "failed_rows": failed_rows,
+        "duplicate_count": duplicate_count,
+        "unique_mobile_count": len(unique_rows),
+        "invalid_rows": invalid_rows,
+        "applied_count": applied_count,
+        "bound_count": bound_count,
+        "reload": reload_payload,
+    }
+
+
 def import_activation_status_source(
     *,
     pasted_text: str = "",
@@ -3726,6 +4024,8 @@ def import_activation_status_source(
     file_bytes: bytes | None = None,
     created_by: str = "",
 ) -> dict[str, Any]:
+    # Phone-centric rule: activation import stays independent from class-term
+    # import, keyed only by mobile, and the last row wins per mobile.
     operator = str(created_by or _current_user_ops_operator()).strip() or "admin_user_ops"
     if file_bytes is not None:
         parsed = _parse_activation_status_from_file(file_name=file_name, file_bytes=file_bytes)
@@ -3737,14 +4037,14 @@ def import_activation_status_source(
     total_rows = int(parsed["total_rows"])
     failed_rows = len(invalid_rows)
 
+    if invalid_rows:
+        preview = " / ".join(invalid_rows[:5])
+        suffix = " ..." if len(invalid_rows) > 5 else ""
+        raise ValueError(f"invalid activation rows: {preview}{suffix}")
     if not rows:
         raise ValueError("no valid activation rows found")
 
-    deduped_by_mobile: dict[str, dict[str, str]] = {}
-    for row in rows:
-        deduped_by_mobile[str(row["mobile"])] = row
-    unique_rows = list(deduped_by_mobile.values())
-    duplicate_count = max(0, len(rows) - len(unique_rows))
+    unique_rows, duplicate_count = _dedupe_user_ops_import_rows_by_mobile(rows)
     error_summary_parts: list[str] = []
     if invalid_rows:
         preview = " / ".join(invalid_rows[:5])

@@ -457,19 +457,37 @@ def test_user_ops_ui_route_exists(client):
     assert "统一用户运营看板 v2" in response.get_data(as_text=True)
 
 
-def test_user_ops_ui_contains_backfill_modal_usability_markup(client):
+def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
     response = client.get("/admin/user-ops/ui")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert 'id="close-backfill-modal-btn"' in html
-    assert 'id="backfill-actions"' in html
-    assert "BACKFILL_MODAL_STATES" in html
-    assert "data-backfill-action" in html
-    assert "closest('[data-backfill-action]')" in html
-    assert 'class="preview-table-wrap"' in html
-    assert "event.key === 'Escape'" in html
-    assert "buildBackfillActionButtons" in html
+    assert "导入手机号+班期" in html
+    assert "导入手机号+激活状态" in html
+    assert "班期回填" not in html
+    assert "执行待处理自动归班任务" not in html
+    assert "检查标签" not in html
+    assert '<label for="filter-current-status">当前状态</label>' not in html
+    assert '<label for="filter-owner">跟进人</label>' not in html
+    assert "<th>当前状态</th>" not in html
+    assert "<th>跟进人</th>" not in html
+    assert "<th>高意向备注</th>" not in html
+    assert "<th>更新时间</th>" not in html
+
+
+def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(client):
+    response = client.get("/admin/user-ops/ui")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    phone_index = html.index("<th>手机号</th>")
+    bound_index = html.index("<th>是否加微</th>")
+    class_term_index = html.index("<th>班期</th>")
+    activation_index = html.index("<th>激活状态</th>")
+    customer_name_index = html.index("<th>客户昵称</th>")
+    external_index = html.index("<th>external_userid</th>")
+
+    assert phone_index < bound_index < class_term_index < activation_index < customer_name_index < external_index
 
 
 def test_sync_user_ops_class_term_tag_definitions_updates_tag_identity_fields(app, user_ops_contact_client):
@@ -705,6 +723,76 @@ def test_imported_experience_leads_survive_explicit_reload(client):
     assert second_list["items"][0]["mobile"] == "13800138014"
 
 
+def test_import_mobile_class_terms_from_pasted_text_updates_pool(client):
+    response = client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138015,5期"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["unique_mobile_count"] == 1
+
+    list_payload = client.get("/api/admin/user-ops/list?query=13800138015").get_json()
+    assert list_payload["total"] == 1
+    item = list_payload["items"][0]
+    assert item["mobile"] == "13800138015"
+    assert item["class_term_no"] == 5
+    assert item["class_term_label"] == "5期"
+    assert item["external_userid"] == ""
+    assert item["is_wecom_bound"] is False
+
+
+def test_import_mobile_class_terms_matching_binding_marks_wecom_bound(client, app):
+    _seed_user_ops_sources(app)
+
+    response = client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138002,6期"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["bound_count"] == 1
+
+    list_payload = client.get("/api/admin/user-ops/list?query=13800138002").get_json()
+    assert list_payload["total"] == 1
+    item = list_payload["items"][0]
+    assert item["mobile"] == "13800138002"
+    assert item["external_userid"] == "wm_lead_bound"
+    assert item["is_wecom_bound"] is True
+    assert item["class_term_label"] == "6期"
+
+
+def test_import_mobile_class_terms_keeps_latest_row_for_same_mobile(client):
+    response = client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        data={
+            "file": (
+                BytesIO(_build_test_xlsx([["手机号", "班期"], ["13800138016", "5期"], ["13800138016", "6期"]])),
+                "class-term.xlsx",
+            )
+        },
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["duplicate_count"] == 1
+
+    before_reload = client.get("/api/admin/user-ops/list?query=13800138016").get_json()
+    assert before_reload["items"][0]["class_term_label"] == "6期"
+
+    client.post("/api/admin/user-ops/reload")
+
+    after_reload = client.get("/api/admin/user-ops/list?query=13800138016").get_json()
+    assert after_reload["items"][0]["class_term_no"] == 6
+    assert after_reload["items"][0]["class_term_label"] == "6期"
+
+
 def test_import_activation_status_from_pasted_text_updates_pool(client):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
@@ -726,7 +814,7 @@ def test_import_activation_status_from_excel_updates_pool(client):
         "/api/admin/user-ops/import-activation-status",
         data={
             "file": (
-                BytesIO(_build_test_xlsx([["手机号", "状态", "备注"], ["13800138021", "激活", ""] ])),
+                BytesIO(_build_test_xlsx([["手机号", "状态"], ["13800138021", "激活"]])),
                 "activation.xlsx",
             )
         },
@@ -742,25 +830,22 @@ def test_import_activation_status_from_excel_updates_pool(client):
     assert list_payload["items"][0]["activation_status"] == "activated"
 
 
-def test_import_activation_high_intent_keeps_remark(client):
+def test_import_activation_status_rejects_invalid_value(client):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138022,高意向,今晚 8 点可聊"},
+        json={"pasted_text": "13800138022,高意向"},
     )
     payload = response.get_json()
 
-    assert response.status_code == 200
-    assert payload["ok"] is True
-
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138022").get_json()
-    assert list_payload["items"][0]["activation_status"] == "high_intent"
-    assert list_payload["items"][0]["activation_remark"] == "今晚 8 点可聊"
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "invalid activation rows: 13800138022,高意向 -> activation_status is invalid: 高意向 (allowed: 激活, 未激活)"
 
 
 def test_import_activation_status_source_keeps_latest_row(client, app):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138023,未激活\n13800138023,高意向,最近活跃"},
+        json={"pasted_text": "13800138023,未激活\n13800138023,激活"},
     )
     payload = response.get_json()
 
@@ -781,8 +866,82 @@ def test_import_activation_status_source_keeps_latest_row(client, app):
             """,
             ("13800138023",),
         ).fetchone()
-        assert current["activation_status"] == "high_intent"
-        assert current["activation_remark"] == "最近活跃"
+        assert current["activation_status"] == "activated"
+        assert current["activation_remark"] == ""
+
+
+def test_phone_centric_imports_keep_external_userid_binding_derived(client, app):
+    _seed_user_ops_sources(app)
+
+    class_term_response = client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={
+            "pasted_text": "13800138002,6期",
+            "external_userid": "wm_should_not_be_written",
+        },
+    )
+    activation_response = client.post(
+        "/api/admin/user-ops/import-activation-status",
+        json={
+            "pasted_text": "13800138002,激活",
+            "external_userid": "wm_should_not_be_written",
+        },
+    )
+
+    assert class_term_response.status_code == 200
+    assert activation_response.status_code == 200
+
+    list_payload = client.get("/api/admin/user-ops/list?query=13800138002").get_json()
+    assert list_payload["total"] == 1
+    item = list_payload["items"][0]
+    assert item["mobile"] == "13800138002"
+    assert item["external_userid"] == "wm_lead_bound"
+    assert item["is_wecom_bound"] is True
+    assert item["class_term_label"] == "6期"
+    assert item["activation_status"] == "activated"
+
+
+def test_phone_centric_sources_and_projection_fields_stay_split(client, app):
+    client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138061,5期"},
+    )
+    client.post(
+        "/api/admin/user-ops/import-activation-status",
+        json={"pasted_text": "13800138061,未激活"},
+    )
+    client.post("/api/admin/user-ops/reload")
+
+    with app.app_context():
+        db = get_db()
+        lead_row = db.execute(
+            "SELECT mobile, source_type FROM user_ops_experience_leads WHERE mobile = ?",
+            ("13800138061",),
+        ).fetchone()
+        activation_row = db.execute(
+            "SELECT mobile, activation_status, activation_remark FROM user_ops_activation_status_source WHERE mobile = ?",
+            ("13800138061",),
+        ).fetchone()
+        current_row = db.execute(
+            """
+            SELECT mobile, external_userid, is_wecom_bound, class_term_no, class_term_label, activation_status
+            FROM user_ops_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138061",),
+        ).fetchone()
+
+    assert lead_row["mobile"] == "13800138061"
+    assert lead_row["source_type"] == "class_term_import"
+    assert activation_row["mobile"] == "13800138061"
+    assert activation_row["activation_status"] == "not_activated"
+    assert activation_row["activation_remark"] == ""
+    assert current_row["mobile"] == "13800138061"
+    assert current_row["external_userid"] == ""
+    assert bool(current_row["is_wecom_bound"]) is False
+    assert current_row["class_term_no"] == 5
+    assert current_row["class_term_label"] == "5期"
+    assert current_row["activation_status"] == "not_activated"
 
 
 def test_activation_status_survives_reload(client):
@@ -802,7 +961,7 @@ def test_activation_status_survives_reload(client):
 def test_activation_import_creates_mobile_only_unbound_pool_row(client):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138025,高意向,只留手机号"},
+        json={"pasted_text": "13800138025,未激活"},
     )
     payload = response.get_json()
 
@@ -815,32 +974,47 @@ def test_activation_import_creates_mobile_only_unbound_pool_row(client):
     assert item["mobile"] == "13800138025"
     assert item["external_userid"] == ""
     assert item["is_wecom_bound"] is False
-    assert item["activation_status"] == "high_intent"
+    assert item["activation_status"] == "not_activated"
 
 
 def test_activation_status_filter_works(client):
     client.post(
         "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138026,激活\n13800138027,高意向,可聊"},
+        json={"pasted_text": "13800138026,激活\n13800138027,未激活"},
     )
 
     activated_payload = client.get("/api/admin/user-ops/list?activation_status=activated").get_json()
-    high_intent_payload = client.get("/api/admin/user-ops/list?activation_status=high_intent").get_json()
+    not_activated_payload = client.get("/api/admin/user-ops/list?activation_status=not_activated").get_json()
 
     assert {item["mobile"] for item in activated_payload["items"]} == {"13800138026"}
-    assert {item["mobile"] for item in high_intent_payload["items"]} == {"13800138027"}
+    assert {item["mobile"] for item in not_activated_payload["items"]} == {"13800138027"}
 
 
 def test_history_contains_activation_import_upsert_records(client):
     client.post(
         "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138028,高意向,下周复聊"},
+        json={"pasted_text": "13800138028,激活"},
     )
 
     history_payload = client.get("/api/admin/user-ops/history").get_json()
     activation_rows = [item for item in history_payload["items"] if item["action_type"] == "activation_import_upsert"]
     assert activation_rows
     assert activation_rows[0]["mobile"] == "13800138028"
+
+
+def test_activation_import_list_shows_activated_and_not_activated(client):
+    client.post(
+        "/api/admin/user-ops/import-activation-status",
+        json={"pasted_text": "13800138029,激活\n13800138030,未激活"},
+    )
+
+    list_payload = client.get("/api/admin/user-ops/list").get_json()
+    by_mobile = {item["mobile"]: item for item in list_payload["items"]}
+
+    assert by_mobile["13800138029"]["activation_status"] == "activated"
+    assert by_mobile["13800138029"]["activation_status_label"] == "激活"
+    assert by_mobile["13800138030"]["activation_status"] == "not_activated"
+    assert by_mobile["13800138030"]["activation_status_label"] == "未激活"
 
 
 def test_external_contact_event_for_zhaoyanfang_creates_deferred_auto_assign_job(app, monkeypatch):
