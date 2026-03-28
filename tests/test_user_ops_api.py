@@ -467,12 +467,15 @@ def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
     assert "班期回填" not in html
     assert "执行待处理自动归班任务" not in html
     assert "检查标签" not in html
+    assert "当前状态池" not in html
     assert '<label for="filter-current-status">当前状态</label>' not in html
     assert '<label for="filter-owner">跟进人</label>' not in html
     assert "<th>当前状态</th>" not in html
     assert "<th>跟进人</th>" not in html
     assert "<th>高意向备注</th>" not in html
     assert "<th>更新时间</th>" not in html
+    assert "手机号运营池" in html
+    assert '<label for="filter-bound">是否已加微</label>' in html
 
 
 def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(client):
@@ -481,7 +484,7 @@ def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(clien
 
     assert response.status_code == 200
     phone_index = html.index("<th>手机号</th>")
-    bound_index = html.index("<th>是否加微</th>")
+    bound_index = html.index("<th>是否已加微</th>")
     class_term_index = html.index("<th>班期</th>")
     activation_index = html.index("<th>激活状态</th>")
     customer_name_index = html.index("<th>客户昵称</th>")
