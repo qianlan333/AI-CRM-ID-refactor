@@ -93,6 +93,7 @@ from .services import (
     get_messages_by_user,
     get_recent_messages_by_user,
     get_user_ops_overview,
+    import_mobile_class_term_source,
     import_activation_status_source,
     import_experience_leads,
     list_available_wecom_tags,
@@ -2141,6 +2142,8 @@ def admin_user_ops_overview():
 
 @bp.route("/api/admin/user-ops/list", methods=["GET"])
 def admin_user_ops_list():
+    # `current_status` / `owner_userid` filters are still kept for backend
+    # compatibility even though W08 removed them from the UI.
     payload = list_user_ops_pool(
         current_status=request.args.get("current_status", "").strip(),
         is_wecom_bound=request.args.get("is_wecom_bound", "").strip(),
@@ -2192,6 +2195,35 @@ def admin_user_ops_import_experience_leads():
         return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
     try:
         payload = import_experience_leads(pasted_text=pasted_text)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify(payload)
+
+
+@bp.route("/api/admin/user-ops/import-mobile-class-terms", methods=["POST"])
+def admin_user_ops_import_mobile_class_terms():
+    uploaded_file = request.files.get("file")
+    pasted_text = ""
+    if uploaded_file and uploaded_file.filename:
+        try:
+            payload = import_mobile_class_term_source(
+                file_name=uploaded_file.filename,
+                file_bytes=uploaded_file.read(),
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(payload)
+
+    if request.is_json:
+        pasted_text = str((request.get_json(silent=True) or {}).get("pasted_text") or "").strip()
+    elif request.mimetype == "text/plain":
+        pasted_text = request.get_data(as_text=True).strip()
+    else:
+        pasted_text = str(request.form.get("pasted_text") or "").strip()
+    if not pasted_text:
+        return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
+    try:
+        payload = import_mobile_class_term_source(pasted_text=pasted_text)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify(payload)
