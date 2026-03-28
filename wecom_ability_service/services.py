@@ -70,7 +70,7 @@ USER_OPS_CURRENT_STATUS_LABELS = {
 }
 USER_OPS_ACTIVATION_STATUS_DEFINITIONS = [
     {"value": "not_activated", "label": "未激活"},
-    {"value": "activated", "label": "激活"},
+    {"value": "activated", "label": "已激活"},
 ]
 USER_OPS_ACTIVATION_STATUS_LABELS = {
     item["value"]: item["label"] for item in USER_OPS_ACTIVATION_STATUS_DEFINITIONS
@@ -3607,11 +3607,12 @@ def _normalize_activation_status_value(value: str) -> str:
     normalized = str(value or "").strip()
     mapping = {
         "未激活": "not_activated",
+        "已激活": "activated",
         "激活": "activated",
     }
     result = mapping.get(normalized)
     if not result:
-        raise ValueError(f"activation_status is invalid: {normalized} (allowed: 激活, 未激活)")
+        raise ValueError(f"activation_status is invalid: {normalized} (allowed: 已激活, 未激活)")
     return result
 
 
