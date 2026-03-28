@@ -8,6 +8,7 @@ from flask import Flask
 
 from .db import close_db, init_app as init_db_app
 from .mcp_adapter import mcp_bp
+from .observability import attach_logging_filter, register_request_observability
 from .routes import bp
 
 DEFAULT_SECRET_KEY = "dev-secret-key-change-me"
@@ -19,11 +20,16 @@ def _has_configured_secret_key(app: Flask) -> bool:
 
 
 def _configure_logging(app: Flask) -> None:
-    formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s %(name)s %(levelname)s "
+        "request_id=%(request_id)s release_sha=%(release_sha)s method=%(method)s path=%(path)s %(message)s"
+    )
     if not app.logger.handlers:
         handler = logging.StreamHandler()
-        handler.setFormatter(formatter)
         app.logger.addHandler(handler)
+    for handler in app.logger.handlers:
+        handler.setFormatter(formatter)
+        attach_logging_filter(handler)
     app.logger.setLevel(logging.INFO)
 
     for logger_name in ["callback", "archive_sync", "contacts_sync", "wecom_api", "mcp", "questionnaire"]:
@@ -76,6 +82,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         APP_PORT=os.getenv("APP_PORT", "5000"),
         DATABASE_URL=os.getenv("DATABASE_URL", ""),
         DATABASE_PATH=os.getenv("DATABASE_PATH", str(default_db_path)),
+        RELEASE_SHA=os.getenv("RELEASE_SHA", ""),
         WECOM_CORP_ID=os.getenv("WECOM_CORP_ID", ""),
         WECOM_CONTACT_SECRET=os.getenv("WECOM_CONTACT_SECRET", ""),
         WECOM_SECRET=os.getenv("WECOM_SECRET", ""),
@@ -126,6 +133,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.teardown_appcontext(close_db)
     _configure_logging(app)
     _log_startup_config(app)
+    register_request_observability(app)
     app.register_blueprint(bp)
     app.register_blueprint(mcp_bp)
 

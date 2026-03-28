@@ -82,6 +82,7 @@ def app(tmp_path):
         {
             "TESTING": True,
             "DATABASE_PATH": str(db_path),
+            "RELEASE_SHA": "contract-release-sha",
             "WECOM_CORP_ID": "ww-test",
             "WECOM_CONTACT_SECRET": "contact-secret-test",
             "WECOM_SECRET": "secret-test",
@@ -171,10 +172,25 @@ def client(app):
 
 def test_contract_health_and_ops(client):
     assert client.get("/health").status_code == 200
-    ops_response = client.get("/api/ops/status")
+    ops_response = client.get("/api/ops/status", headers={"X-Request-Id": "contract-request-id"})
     data = ops_response.get_json()
     assert ops_response.status_code == 200
     assert {"ok", "service_ok", "archived_messages_count", "contacts_count", "group_chats_count", "last_seq"} <= set(data.keys())
+    assert {
+        "request_id",
+        "release_sha",
+        "app_started_at",
+        "uptime_seconds",
+        "background_async_enabled",
+        "last_archive_sync_run_id",
+        "user_ops_deferred_jobs",
+    } <= set(data.keys())
+    assert data["request_id"] == "contract-request-id"
+    assert data["release_sha"] == "contract-release-sha"
+    assert isinstance(data["uptime_seconds"], int)
+    assert {"total_count", "pending_count", "running_count", "success_count", "conflict_count", "skipped_count", "failed_count"} <= set(
+        data["user_ops_deferred_jobs"].keys()
+    )
 
 
 def test_contract_contacts_and_identity(client, monkeypatch):
