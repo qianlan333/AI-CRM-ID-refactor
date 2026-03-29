@@ -1363,7 +1363,13 @@ def sync_user_ops_class_term_tag_definitions() -> dict[str, Any]:
         for row in rows
         if str(row.get("tag_name") or "").strip()
     }
+    by_class_term_no = {
+        int(row["class_term_no"]): dict(row)
+        for row in rows
+        if row.get("class_term_no") not in (None, "")
+    }
     updated_count = 0
+    discovered_count = 0
     skipped_count = 0
     synced_items: list[dict[str, Any]] = []
     db = get_db()
@@ -1418,12 +1424,66 @@ def sync_user_ops_class_term_tag_definitions() -> dict[str, Any]:
                     "class_term_label": str(existing.get("class_term_label") or "").strip(),
                 }
             )
+            by_class_term_no[int(existing["class_term_no"])] = dict(existing)
+        for tag in group.get("tags") or []:
+            tag_id = str(tag.get("tag_id") or "").strip()
+            tag_name = str(tag.get("tag_name") or "").strip()
+            inferred_no = _infer_user_ops_class_term_no_from_tag_name(tag_name)
+            if not tag_id or inferred_no is None:
+                continue
+            if tag_id in by_tag_id or tag_name in by_tag_name or inferred_no in by_class_term_no:
+                continue
+            db.execute(
+                """
+                INSERT INTO class_term_tag_mapping (
+                    strategy_id, group_id, tag_id, tag_group_name, tag_name, class_term_no, class_term_label, is_active, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    strategy_id,
+                    group_id,
+                    tag_id,
+                    USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
+                    tag_name,
+                    inferred_no,
+                    f"{inferred_no}期",
+                    _db_bool(True),
+                ),
+            )
+            inserted = db.execute(
+                """
+                SELECT id, strategy_id, group_id, tag_id, tag_name, class_term_no, class_term_label
+                FROM class_term_tag_mapping
+                WHERE tag_id = ?
+                LIMIT 1
+                """,
+                (tag_id,),
+            ).fetchone()
+            inserted_payload = dict(inserted) if inserted else {}
+            by_tag_id[tag_id] = inserted_payload
+            by_tag_name[tag_name] = inserted_payload
+            by_class_term_no[inferred_no] = inserted_payload
+            discovered_count += 1
+            synced_items.append(
+                {
+                    "mapping_id": int((inserted_payload or {}).get("id") or 0),
+                    "strategy_id": strategy_id,
+                    "group_id": group_id,
+                    "tag_id": tag_id,
+                    "tag_name": tag_name,
+                    "class_term_no": inferred_no,
+                    "class_term_label": f"{inferred_no}期",
+                    "mapping_source": "live_discovered",
+                }
+            )
     db.commit()
     return {
         "ok": True,
         "group_count": len(target_groups),
         "synced_count": len(synced_items),
         "updated_count": updated_count,
+        "discovered_count": discovered_count,
         "skipped_count": skipped_count,
         "items": synced_items,
     }
@@ -1927,6 +1987,615 @@ def _get_active_class_term_mapping_by_no(class_term_no: int | None) -> dict[str,
         (item for item in _list_active_class_term_mappings() if int(item["class_term_no"]) == normalized_no),
         None,
     )
+
+
+def _confirmed_class_term_mappings_by_no() -> dict[int, dict[str, Any]]:
+    return {
+        int(item["class_term_no"]): {
+            "strategy_id": str(item.get("strategy_id") or "").strip(),
+            "group_id": str(item.get("group_id") or "").strip(),
+            "tag_id": str(item.get("tag_id") or "").strip(),
+            "tag_group_name": str(item.get("tag_group_name") or "").strip(),
+            "tag_name": str(item.get("tag_name") or "").strip(),
+            "class_term_no": int(item["class_term_no"]),
+            "class_term_label": str(item.get("class_term_label") or "").strip(),
+        }
+        for item in USER_OPS_CONFIRMED_CLASS_TERM_MAPPINGS
+    }
+
+
+def _infer_user_ops_class_term_no_from_tag_name(tag_name: str) -> int | None:
+    normalized_tag_name = str(tag_name or "").strip()
+    if not normalized_tag_name:
+        return None
+    if "首期" in normalized_tag_name:
+        return 1
+    matched = re.search(r"第\s*(\d+)\s*期", normalized_tag_name)
+    if matched:
+        return int(matched.group(1))
+    matched = re.fullmatch(r"(\d+)\s*期", normalized_tag_name)
+    if matched:
+        return int(matched.group(1))
+    return None
+
+
+def _list_live_user_ops_class_term_tags(tag_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    groups = _normalize_user_ops_strategy_tag_groups(tag_payload)
+    items: list[dict[str, Any]] = []
+    seen_tag_ids: set[str] = set()
+    for group in groups:
+        if str(group.get("group_name") or "").strip() != USER_OPS_CLASS_TERM_TAG_GROUP_NAME:
+            continue
+        for tag in group.get("tags") or []:
+            tag_id = str(tag.get("tag_id") or "").strip()
+            tag_name = str(tag.get("tag_name") or "").strip()
+            if not tag_id or tag_id in seen_tag_ids:
+                continue
+            seen_tag_ids.add(tag_id)
+            inferred_no = _infer_user_ops_class_term_no_from_tag_name(tag_name)
+            items.append(
+                {
+                    "strategy_id": str(group.get("strategy_id") or "").strip(),
+                    "group_id": str(group.get("group_id") or "").strip(),
+                    "tag_group_name": USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
+                    "tag_id": tag_id,
+                    "tag_name": tag_name,
+                    "class_term_no": inferred_no,
+                    "class_term_label": f"{inferred_no}期" if inferred_no is not None else "",
+                }
+            )
+    return items
+
+
+def _resolve_owner_backfill_class_term_mappings(
+    *,
+    class_term_min: int,
+    class_term_max: int,
+    tag_payload: dict[str, Any],
+) -> dict[str, Any]:
+    confirmed_by_no = _confirmed_class_term_mappings_by_no()
+    live_tags = _list_live_user_ops_class_term_tags(tag_payload)
+    live_by_tag_id = {
+        str(item.get("tag_id") or "").strip(): item
+        for item in live_tags
+        if str(item.get("tag_id") or "").strip()
+    }
+    live_by_tag_name = {
+        str(item.get("tag_name") or "").strip(): item
+        for item in live_tags
+        if str(item.get("tag_name") or "").strip()
+    }
+    live_by_term_no: dict[int, list[dict[str, Any]]] = {}
+    for item in live_tags:
+        class_term_no = item.get("class_term_no")
+        if class_term_no in (None, ""):
+            continue
+        live_by_term_no.setdefault(int(class_term_no), []).append(item)
+
+    effective_mappings: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for class_term_no in range(class_term_min, class_term_max + 1):
+        confirmed = confirmed_by_no.get(class_term_no)
+        resolved = None
+        mapping_source = ""
+        live_candidates = live_by_term_no.get(class_term_no, [])
+        if confirmed:
+            confirmed_tag_id = str(confirmed.get("tag_id") or "").strip()
+            confirmed_tag_name = str(confirmed.get("tag_name") or "").strip()
+            if confirmed_tag_id and confirmed_tag_id in live_by_tag_id:
+                resolved = dict(live_by_tag_id[confirmed_tag_id])
+                mapping_source = "confirmed_live_tag_id"
+            elif confirmed_tag_name and confirmed_tag_name in live_by_tag_name:
+                resolved = dict(live_by_tag_name[confirmed_tag_name])
+                mapping_source = "confirmed_live_tag_name"
+            elif len(live_candidates) == 1:
+                resolved = dict(live_candidates[0])
+                mapping_source = "confirmed_live_inferred"
+            else:
+                resolved = dict(confirmed)
+                mapping_source = "confirmed_seed"
+        elif len(live_candidates) == 1:
+            resolved = dict(live_candidates[0])
+            mapping_source = "live_discovered"
+        elif len(live_candidates) > 1:
+            warnings.append(f"{class_term_no}期 mapping ambiguous from real tags")
+        else:
+            warnings.append(f"{class_term_no}期 mapping missing")
+        if resolved is None:
+            continue
+        resolved["class_term_no"] = class_term_no
+        resolved["class_term_label"] = f"{class_term_no}期"
+        resolved["mapping_source"] = mapping_source
+        effective_mappings.append(resolved)
+
+    effective_by_tag_id = {
+        str(item.get("tag_id") or "").strip(): item
+        for item in effective_mappings
+        if str(item.get("tag_id") or "").strip()
+    }
+    effective_by_tag_name = {
+        str(item.get("tag_name") or "").strip(): item
+        for item in effective_mappings
+        if str(item.get("tag_name") or "").strip()
+    }
+    term_two_mapping = next((item for item in effective_mappings if int(item["class_term_no"]) == 2), None)
+    if term_two_mapping is None:
+        warnings.extend(
+            [
+                "2期 mapping missing",
+                "2期 skipped because no real tag mapping found",
+            ]
+        )
+
+    return {
+        "effective_mappings": effective_mappings,
+        "effective_by_tag_id": effective_by_tag_id,
+        "effective_by_tag_name": effective_by_tag_name,
+        "live_tags": live_tags,
+        "warnings": warnings,
+        "term_2_mapping": {
+            "exists": term_two_mapping is not None,
+            "source": str((term_two_mapping or {}).get("mapping_source") or "missing"),
+            "tag_id": str((term_two_mapping or {}).get("tag_id") or "").strip(),
+            "tag_name": str((term_two_mapping or {}).get("tag_name") or "").strip(),
+            "class_term_no": 2,
+            "class_term_label": "2期" if term_two_mapping is not None else "",
+        },
+    }
+
+
+def _list_owner_backfill_candidate_external_userids(owner_userid: str) -> list[dict[str, Any]]:
+    normalized_owner_userid = str(owner_userid or "").strip()
+    if not normalized_owner_userid:
+        raise ValueError("owner_userid is required")
+    rows = get_db().execute(
+        """
+        WITH candidates AS (
+            SELECT external_userid, 1 AS from_follow_relation, 0 AS from_contact_owner
+            FROM wecom_external_contact_follow_users
+            WHERE user_id = ?
+              AND relation_status = 'active'
+              AND COALESCE(external_userid, '') <> ''
+            UNION ALL
+            SELECT external_userid, 0 AS from_follow_relation, 1 AS from_contact_owner
+            FROM contacts
+            WHERE owner_userid = ?
+              AND COALESCE(external_userid, '') <> ''
+        )
+        SELECT
+            external_userid,
+            MAX(from_follow_relation) AS from_follow_relation,
+            MAX(from_contact_owner) AS from_contact_owner
+        FROM candidates
+        GROUP BY external_userid
+        ORDER BY external_userid ASC
+        """,
+        (normalized_owner_userid, normalized_owner_userid),
+    ).fetchall()
+    return [
+        {
+            "external_userid": str(row.get("external_userid") or "").strip(),
+            "from_follow_relation": bool(row.get("from_follow_relation")),
+            "from_contact_owner": bool(row.get("from_contact_owner")),
+        }
+        for row in rows
+        if str(row.get("external_userid") or "").strip()
+    ]
+
+
+def _get_owner_scoped_live_contact_tags(
+    *,
+    external_userid: str,
+    owner_userid: str,
+) -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    if not normalized_external_userid:
+        return {
+            "detail": {},
+            "owner_userid": normalized_owner_userid,
+            "owner_found": False,
+            "tags": [],
+            "tag_ids": [],
+            "tag_names": [],
+            "external_contact_name": "",
+        }
+    detail = _user_ops_contact_client().get_contact(normalized_external_userid)
+    follow_users = detail.get("follow_user") or []
+    owner_tags: list[dict[str, str]] = []
+    owner_found = False
+    for follow_user in follow_users:
+        follow_user_userid = str((follow_user or {}).get("userid") or "").strip()
+        if normalized_owner_userid and follow_user_userid != normalized_owner_userid:
+            continue
+        owner_found = True
+        for tag in ((follow_user or {}).get("tags") or []):
+            tag_id = str((tag or {}).get("tag_id") or (tag or {}).get("id") or "").strip()
+            tag_name = str((tag or {}).get("tag_name") or (tag or {}).get("name") or "").strip()
+            if not tag_id:
+                continue
+            owner_tags.append({"tag_id": tag_id, "tag_name": tag_name})
+    deduped_tags: list[dict[str, str]] = []
+    seen_tag_ids: set[str] = set()
+    for tag in owner_tags:
+        tag_id = str(tag.get("tag_id") or "").strip()
+        if tag_id in seen_tag_ids:
+            continue
+        seen_tag_ids.add(tag_id)
+        deduped_tags.append({"tag_id": tag_id, "tag_name": str(tag.get("tag_name") or "").strip()})
+    return {
+        "detail": detail,
+        "owner_userid": normalized_owner_userid,
+        "owner_found": owner_found,
+        "tags": deduped_tags,
+        "tag_ids": [str(item.get("tag_id") or "").strip() for item in deduped_tags],
+        "tag_names": [str(item.get("tag_name") or "").strip() for item in deduped_tags if str(item.get("tag_name") or "").strip()],
+        "external_contact_name": str(((detail.get("external_contact") or {}).get("name") or "")).strip(),
+    }
+
+
+def _persist_owner_scoped_live_contact_tags(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    tags: list[dict[str, str]],
+) -> None:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    if not normalized_external_userid or not normalized_owner_userid:
+        return
+    tag_ids = sorted({str(item.get("tag_id") or "").strip() for item in tags if str(item.get("tag_id") or "").strip()})
+    tag_name_map = {
+        str(item.get("tag_id") or "").strip(): str(item.get("tag_name") or "").strip()
+        for item in tags
+        if str(item.get("tag_id") or "").strip()
+    }
+    save_tag_snapshot(normalized_owner_userid, normalized_external_userid, tag_ids, tag_name_map)
+    existing_tag_ids = _list_contact_tag_ids_for_user(normalized_external_userid, normalized_owner_userid)
+    removable_tag_ids = [tag_id for tag_id in existing_tag_ids if tag_id not in tag_ids]
+    remove_tag_snapshot(normalized_owner_userid, normalized_external_userid, removable_tag_ids)
+
+
+def _plan_user_ops_lead_pool_member_upsert(
+    *,
+    mobile: str = "",
+    external_userid: str = "",
+    customer_name: str = "",
+    owner_userid: str = "",
+    is_wecom_added: bool | None = None,
+    is_mobile_bound: bool | None = None,
+    huangxiaocan_activation_state: str = "unknown",
+    class_term_no: int | None = None,
+    class_term_label: str = "",
+    entry_source: str = "",
+) -> dict[str, Any]:
+    normalized_mobile = _normalize_mobile(mobile) if str(mobile or "").strip() else ""
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_mobile and not normalized_external_userid:
+        raise ValueError("mobile or external_userid is required")
+
+    normalized_entry_source = str(entry_source or "").strip() or "manual"
+    normalized_customer_name = str(customer_name or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    normalized_class_term_label = str(class_term_label or "").strip()
+    normalized_activation_state = _normalize_user_ops_lead_pool_activation_state(
+        huangxiaocan_activation_state,
+        allow_unknown=True,
+    )
+    matches = _list_user_ops_lead_pool_matches(mobile=normalized_mobile, external_userid=normalized_external_userid)
+    target: dict[str, Any] | None = None
+    if normalized_mobile:
+        target = next((item for item in matches if item["mobile"] == normalized_mobile), None)
+    if target is None and normalized_external_userid:
+        target = next((item for item in matches if item["external_userid"] == normalized_external_userid), None)
+    duplicate_ids = [item["id"] for item in matches if target is not None and item["id"] != target["id"]]
+
+    merged = _serialize_user_ops_lead_pool_current_row(target or {})
+    for item in matches:
+        if not merged["mobile"] and item["mobile"]:
+            merged["mobile"] = item["mobile"]
+        if not merged["external_userid"] and item["external_userid"]:
+            merged["external_userid"] = item["external_userid"]
+        if not merged["customer_name"] and item["customer_name"]:
+            merged["customer_name"] = item["customer_name"]
+        if not merged["owner_userid"] and item["owner_userid"]:
+            merged["owner_userid"] = item["owner_userid"]
+        if not merged["first_entry_source"] and item["first_entry_source"]:
+            merged["first_entry_source"] = item["first_entry_source"]
+        if not merged["last_entry_source"] and item["last_entry_source"]:
+            merged["last_entry_source"] = item["last_entry_source"]
+        if merged["class_term_no"] is None and item["class_term_no"] is not None:
+            merged["class_term_no"] = item["class_term_no"]
+            merged["class_term_label"] = item["class_term_label"]
+        if merged["huangxiaocan_activation_state"] == "unknown" and item["huangxiaocan_activation_state"] != "unknown":
+            merged["huangxiaocan_activation_state"] = item["huangxiaocan_activation_state"]
+        merged["is_wecom_added"] = bool(merged["is_wecom_added"] or item["is_wecom_added"])
+        merged["is_mobile_bound"] = bool(merged["is_mobile_bound"] or item["is_mobile_bound"])
+
+    if normalized_mobile:
+        merged["mobile"] = normalized_mobile
+    if normalized_external_userid:
+        merged["external_userid"] = normalized_external_userid
+    if normalized_customer_name:
+        merged["customer_name"] = normalized_customer_name
+    if normalized_owner_userid:
+        merged["owner_userid"] = normalized_owner_userid
+    if is_wecom_added is not None:
+        merged["is_wecom_added"] = bool(is_wecom_added)
+    if is_mobile_bound is not None:
+        merged["is_mobile_bound"] = bool(is_mobile_bound)
+    elif merged["mobile"] and merged["external_userid"]:
+        merged["is_mobile_bound"] = True
+    if normalized_activation_state != "unknown" or not target:
+        merged["huangxiaocan_activation_state"] = normalized_activation_state
+    if class_term_no is not None or normalized_class_term_label:
+        merged["class_term_no"] = class_term_no
+        merged["class_term_label"] = normalized_class_term_label
+    if not merged["first_entry_source"]:
+        merged["first_entry_source"] = normalized_entry_source
+    merged["last_entry_source"] = normalized_entry_source
+
+    before_payload = _serialize_user_ops_lead_pool_current_row(target) if target else {}
+    action_type = "lead_pool_insert"
+    if target is not None:
+        action_type = "lead_pool_merge_upsert" if duplicate_ids else "lead_pool_update"
+        if not duplicate_ids and before_payload == merged:
+            action_type = "lead_pool_noop"
+    return {
+        "matches": matches,
+        "target": target,
+        "duplicate_ids": duplicate_ids,
+        "before_payload": before_payload,
+        "after_payload": merged,
+        "action_type": action_type,
+        "entry_source": normalized_entry_source,
+    }
+
+
+def _default_owner_class_term_backfill_entry_source(owner_userid: str) -> str:
+    normalized_owner_userid = str(owner_userid or "").strip()
+    if normalized_owner_userid == "ZhaoYanFang":
+        return "zhaoyanfang_owner_backfill_20260329"
+    slug = re.sub(r"[^a-z0-9]+", "_", normalized_owner_userid.lower()).strip("_") or "owner"
+    return f"{slug}_owner_backfill_20260329"
+
+
+def backfill_owner_class_terms_into_lead_pool(
+    *,
+    owner_userid: str,
+    class_term_min: int = 1,
+    class_term_max: int = 5,
+    dry_run: bool = True,
+    operator: str = "",
+    entry_source: str = "",
+    sample_limit: int = 20,
+) -> dict[str, Any]:
+    normalized_owner_userid = str(owner_userid or "").strip()
+    if not normalized_owner_userid:
+        raise ValueError("owner_userid is required")
+    normalized_class_term_min = int(class_term_min)
+    normalized_class_term_max = int(class_term_max)
+    if normalized_class_term_min <= 0 or normalized_class_term_max <= 0:
+        raise ValueError("class_term_min and class_term_max must be positive integers")
+    if normalized_class_term_min > normalized_class_term_max:
+        raise ValueError("class_term_min must be <= class_term_max")
+
+    actor = str(operator or _current_user_ops_operator()).strip() or "owner_class_term_backfill"
+    normalized_entry_source = str(entry_source or "").strip() or _default_owner_class_term_backfill_entry_source(
+        normalized_owner_userid
+    )
+    tag_payload = _user_ops_contact_client().list_external_contact_tags()
+    mapping_scope = _resolve_owner_backfill_class_term_mappings(
+        class_term_min=normalized_class_term_min,
+        class_term_max=normalized_class_term_max,
+        tag_payload=tag_payload,
+    )
+    effective_by_tag_id = dict(mapping_scope["effective_by_tag_id"])
+    effective_by_tag_name = dict(mapping_scope["effective_by_tag_name"])
+    candidates = _list_owner_backfill_candidate_external_userids(normalized_owner_userid)
+
+    items: list[dict[str, Any]] = []
+    class_term_distribution = {
+        str(class_term_no): 0 for class_term_no in range(normalized_class_term_min, normalized_class_term_max + 1)
+    }
+    estimated_insert_total = 0
+    estimated_update_total = 0
+    estimated_mobile_bound_total = 0
+    estimated_mobile_empty_total = 0
+    single_match_total = 0
+    conflict_total = 0
+    skip_total = 0
+    noop_total = 0
+    error_total = 0
+
+    if not dry_run:
+        sync_user_ops_class_term_tag_definitions()
+
+    for candidate in candidates:
+        external_userid = str(candidate.get("external_userid") or "").strip()
+        if not external_userid:
+            continue
+        try:
+            live_tag_payload = _get_owner_scoped_live_contact_tags(
+                external_userid=external_userid,
+                owner_userid=normalized_owner_userid,
+            )
+        except Exception as exc:
+            error_total += 1
+            items.append(
+                {
+                    "external_userid": external_userid,
+                    "customer_name": "",
+                    "owner_userid": normalized_owner_userid,
+                    "mobile": "",
+                    "is_mobile_bound": False,
+                    "matched_class_term_no": None,
+                    "matched_class_term_label": "",
+                    "decision": "skip",
+                    "decision_reason": f"tag_fetch_failed: {exc}",
+                }
+            )
+            continue
+
+        tags = list(live_tag_payload["tags"])
+        matched_by_term_no: dict[int, dict[str, Any]] = {}
+        for tag in tags:
+            tag_id = str(tag.get("tag_id") or "").strip()
+            tag_name = str(tag.get("tag_name") or "").strip()
+            mapping = effective_by_tag_id.get(tag_id) or effective_by_tag_name.get(tag_name)
+            if not mapping:
+                continue
+            matched_by_term_no[int(mapping["class_term_no"])] = {
+                "class_term_no": int(mapping["class_term_no"]),
+                "class_term_label": str(mapping.get("class_term_label") or "").strip(),
+                "tag_id": tag_id,
+                "tag_name": tag_name,
+            }
+        matched_terms = sorted(matched_by_term_no.values(), key=lambda item: int(item["class_term_no"]))
+        identity = resolve_person_identity(external_userid=external_userid)
+        customer_name = (
+            str(identity.get("customer_name") or "").strip()
+            or str(live_tag_payload.get("external_contact_name") or "").strip()
+        )
+        mobile = str(identity.get("mobile") or "").strip()
+        is_mobile_bound = bool(identity.get("is_bound"))
+        resolved_owner_userid = str(identity.get("owner_userid") or "").strip() or normalized_owner_userid
+
+        if not matched_terms:
+            skip_total += 1
+            items.append(
+                {
+                    "external_userid": external_userid,
+                    "customer_name": customer_name,
+                    "owner_userid": resolved_owner_userid,
+                    "mobile": mobile,
+                    "is_mobile_bound": is_mobile_bound,
+                    "matched_class_term_no": None,
+                    "matched_class_term_label": "",
+                    "decision": "skip",
+                    "decision_reason": "no_match",
+                    "tag_names": list(live_tag_payload["tag_names"]),
+                }
+            )
+            continue
+
+        if len(matched_terms) > 1:
+            conflict_total += 1
+            items.append(
+                {
+                    "external_userid": external_userid,
+                    "customer_name": customer_name,
+                    "owner_userid": resolved_owner_userid,
+                    "mobile": mobile,
+                    "is_mobile_bound": is_mobile_bound,
+                    "matched_class_term_no": None,
+                    "matched_class_term_label": "",
+                    "decision": "conflict",
+                    "decision_reason": "multiple_class_term_matches",
+                    "matched_terms": matched_terms,
+                    "tag_names": list(live_tag_payload["tag_names"]),
+                }
+            )
+            continue
+
+        single_match_total += 1
+        matched = matched_terms[0]
+        class_term_distribution[str(matched["class_term_no"])] += 1
+        plan = _plan_user_ops_lead_pool_member_upsert(
+            mobile=mobile,
+            external_userid=str(identity.get("external_userid") or external_userid).strip(),
+            customer_name=customer_name,
+            owner_userid=resolved_owner_userid,
+            is_wecom_added=True,
+            is_mobile_bound=is_mobile_bound,
+            class_term_no=int(matched["class_term_no"]),
+            class_term_label=str(matched.get("class_term_label") or "").strip(),
+            entry_source=normalized_entry_source,
+        )
+        decision = "insert"
+        decision_reason = str(plan["action_type"])
+        if plan["action_type"] == "lead_pool_insert":
+            estimated_insert_total += 1
+        elif plan["action_type"] == "lead_pool_noop":
+            decision = "skip"
+            decision_reason = "already_up_to_date"
+            noop_total += 1
+        else:
+            decision = "update"
+            estimated_update_total += 1
+        if decision in {"insert", "update"}:
+            if is_mobile_bound:
+                estimated_mobile_bound_total += 1
+            if not mobile:
+                estimated_mobile_empty_total += 1
+            if not dry_run:
+                _persist_owner_scoped_live_contact_tags(
+                    external_userid=external_userid,
+                    owner_userid=normalized_owner_userid,
+                    tags=tags,
+                )
+                upsert_user_ops_lead_pool_member(
+                    mobile=mobile,
+                    external_userid=str(identity.get("external_userid") or external_userid).strip(),
+                    customer_name=customer_name,
+                    owner_userid=resolved_owner_userid,
+                    is_wecom_added=True,
+                    is_mobile_bound=is_mobile_bound,
+                    class_term_no=int(matched["class_term_no"]),
+                    class_term_label=str(matched.get("class_term_label") or "").strip(),
+                    entry_source=normalized_entry_source,
+                    operator=actor,
+                    remark=f"owner class-term backfill external_userid={external_userid}",
+                )
+        items.append(
+            {
+                "external_userid": external_userid,
+                "customer_name": customer_name,
+                "owner_userid": resolved_owner_userid,
+                "mobile": mobile,
+                "is_mobile_bound": is_mobile_bound,
+                "matched_class_term_no": int(matched["class_term_no"]),
+                "matched_class_term_label": str(matched.get("class_term_label") or "").strip(),
+                "decision": decision,
+                "decision_reason": decision_reason,
+                "tag_names": list(live_tag_payload["tag_names"]),
+            }
+        )
+
+    decision_order = {"conflict": 0, "update": 1, "insert": 2, "skip": 3}
+    sample_items = sorted(
+        items,
+        key=lambda item: (
+            decision_order.get(str(item.get("decision") or "").strip(), 9),
+            str(item.get("matched_class_term_no") or ""),
+            str(item.get("external_userid") or ""),
+        ),
+    )[: max(int(sample_limit or 20), 20)]
+
+    return {
+        "ok": True,
+        "owner_userid": normalized_owner_userid,
+        "class_term_min": normalized_class_term_min,
+        "class_term_max": normalized_class_term_max,
+        "dry_run": bool(dry_run),
+        "entry_source": normalized_entry_source,
+        "candidate_total": len(candidates),
+        "matched_candidate_total": single_match_total + conflict_total,
+        "single_match_total": single_match_total,
+        "class_term_distribution": class_term_distribution,
+        "conflict_total": conflict_total,
+        "skip_total": skip_total,
+        "noop_total": noop_total,
+        "error_total": error_total,
+        "estimated_insert_total": estimated_insert_total,
+        "estimated_update_total": estimated_update_total,
+        "estimated_mobile_bound_total": estimated_mobile_bound_total,
+        "estimated_mobile_empty_total": estimated_mobile_empty_total,
+        "term_2_mapping": mapping_scope["term_2_mapping"],
+        "warnings": list(dict.fromkeys(mapping_scope["warnings"])),
+        "samples": sample_items,
+        "applied_total": 0 if dry_run else estimated_insert_total + estimated_update_total,
+    }
 
 
 def _list_user_ops_pool_external_userids_for_owner(owner_userid: str) -> list[str]:
