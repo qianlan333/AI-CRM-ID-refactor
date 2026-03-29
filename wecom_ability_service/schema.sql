@@ -268,6 +268,78 @@ CREATE TABLE IF NOT EXISTS user_ops_activation_status_source (
 CREATE INDEX IF NOT EXISTS idx_user_ops_activation_status_source_active
 ON user_ops_activation_status_source (is_active);
 
+CREATE TABLE IF NOT EXISTS user_ops_lead_pool_current (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mobile TEXT NOT NULL DEFAULT '',
+    external_userid TEXT NOT NULL DEFAULT '',
+    customer_name TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    is_wecom_added INTEGER NOT NULL DEFAULT 0,
+    is_mobile_bound INTEGER NOT NULL DEFAULT 0,
+    huangxiaocan_activation_state TEXT NOT NULL DEFAULT 'unknown'
+        CHECK (huangxiaocan_activation_state IN ('unknown', 'activated', 'not_activated')),
+    class_term_no INTEGER,
+    class_term_label TEXT NOT NULL DEFAULT '',
+    first_entry_source TEXT NOT NULL DEFAULT '',
+    last_entry_source TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_ops_lead_pool_current_mobile_non_empty
+ON user_ops_lead_pool_current (mobile)
+WHERE mobile <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_ops_lead_pool_current_external_non_empty
+ON user_ops_lead_pool_current (external_userid)
+WHERE external_userid <> '';
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_lead_pool_current_wecom_added
+ON user_ops_lead_pool_current (is_wecom_added);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_lead_pool_current_mobile_bound
+ON user_ops_lead_pool_current (is_mobile_bound);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_lead_pool_current_activation
+ON user_ops_lead_pool_current (huangxiaocan_activation_state);
+
+CREATE TABLE IF NOT EXISTS user_ops_lead_pool_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mobile TEXT NOT NULL DEFAULT '',
+    external_userid TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT '',
+    operator TEXT NOT NULL DEFAULT '',
+    before_json TEXT NOT NULL DEFAULT '{}',
+    after_json TEXT NOT NULL DEFAULT '{}',
+    remark TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_lead_pool_history_mobile
+ON user_ops_lead_pool_history (mobile);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_lead_pool_history_external
+ON user_ops_lead_pool_history (external_userid);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_lead_pool_history_created
+ON user_ops_lead_pool_history (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_ops_huangxiaocan_activation_source (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mobile TEXT NOT NULL UNIQUE,
+    activation_state TEXT NOT NULL
+        CHECK (activation_state IN ('activated', 'not_activated')),
+    import_batch_id TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_huangxiaocan_activation_source_active
+ON user_ops_huangxiaocan_activation_source (is_active);
+
 CREATE TABLE IF NOT EXISTS user_ops_deferred_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_type TEXT NOT NULL DEFAULT '',

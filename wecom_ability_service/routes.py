@@ -55,7 +55,6 @@ from .services import (
     QuestionnaireAlreadySubmittedError,
     bind_openid_to_external_contact,
     bind_mobile_to_external_contact,
-    backfill_class_term_for_owner,
     build_class_user_tag_view,
     apply_class_user_status_change,
     count_archived_messages,
@@ -90,12 +89,12 @@ from .services import (
     get_latest_questionnaire_submit_debug,
     has_questionnaire_submission,
     get_recent_external_contact_event_logs,
+    get_sidebar_lead_pool_status,
     get_messages_by_user,
     get_recent_messages_by_user,
     get_user_ops_overview,
     import_mobile_class_term_source,
     import_activation_status_source,
-    import_experience_leads,
     list_available_wecom_tags,
     list_archived_messages_by_window,
     list_class_user_management_records,
@@ -124,7 +123,6 @@ from .services import (
     save_tag_snapshot,
     search_messages,
     resolve_person_identity,
-    reload_user_ops_pool,
     schedule_user_ops_auto_assign_class_term_job,
     set_settings,
     submit_questionnaire,
@@ -134,6 +132,7 @@ from .services import (
     ThirdPartyUserSyncError,
     update_contact_description_snapshot,
     update_questionnaire,
+    upsert_sidebar_lead_pool_class_term,
     migrate_class_user_status_from_contact_tags,
     upsert_external_contact_identity,
     upsert_group_chats,
@@ -1635,11 +1634,11 @@ def sidebar_bind_mobile_page():
       </div>
     </section>
 
-    <section id="tag-quick-card" class="card tag-quick-card hidden">
-      <h2 class="section-title">AI 产品报名情况</h2>
-      <p class="section-note">点击即切换为当前唯一报名状态，并自动去掉这一组其他标签。</p>
-      <div id="tag-quick-grid" class="tag-quick-grid"></div>
-      <div id="tag-quick-status" class="status"></div>
+    <section id="lead-pool-class-term-card" class="card tag-quick-card hidden">
+      <h2 class="section-title">班期快捷设置</h2>
+      <p class="section-note">点击即设置当前客户的班期，并同步对应企微班期标签。</p>
+      <div id="lead-pool-class-term-grid" class="tag-quick-grid"></div>
+      <div id="lead-pool-class-term-status" class="status"></div>
     </section>
 
     <div id="debug-wrap" class="hidden"></div>
@@ -1665,13 +1664,13 @@ def sidebar_bind_mobile_page():
     const rebindMobileInput = document.getElementById('rebind-mobile-input');
     const confirmRebindButton = document.getElementById('confirm-rebind-button');
     const customerTitle = document.getElementById('customer-title');
-    const tagQuickCard = document.getElementById('tag-quick-card');
-    const tagQuickGrid = document.getElementById('tag-quick-grid');
-    const tagQuickStatus = document.getElementById('tag-quick-status');
+    const leadPoolClassTermCard = document.getElementById('lead-pool-class-term-card');
+    const leadPoolClassTermGrid = document.getElementById('lead-pool-class-term-grid');
+    const leadPoolClassTermStatus = document.getElementById('lead-pool-class-term-status');
     const debugWrap = document.getElementById('debug-wrap');
     const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1' || {{ debug_enabled|tojson }};
-    state.signup_status = '';
-    state.signupDefinitions = [];
+    state.currentClassTermNo = null;
+    state.classTermOptions = [];
     debugWrap.classList.toggle('hidden', !debugEnabled);
 
     function writeDebug(label, payload) {
@@ -1742,54 +1741,58 @@ def sidebar_bind_mobile_page():
       showCard('unbind');
     }
 
-    function renderSignupQuickButtons() {
-      tagQuickGrid.innerHTML = state.signupDefinitions.map((item) => {
-        const activeClass = item.signup_status === state.signup_status ? ' active' : '';
-        return '<button type="button" class="tag-quick-btn' + activeClass + '" data-signup-status="' + item.signup_status + '">' + item.label + '</button>';
+    function renderLeadPoolClassTermButtons() {
+      leadPoolClassTermGrid.innerHTML = state.classTermOptions.map((item) => {
+        const activeClass = Number(item.class_term_no) === Number(state.currentClassTermNo) ? ' active' : '';
+        return '<button type="button" class="tag-quick-btn' + activeClass + '" data-class-term-no="' + item.class_term_no + '">' + item.class_term_label + '</button>';
       }).join('');
-      Array.from(tagQuickGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
-        button.addEventListener('click', () => applySignupTag(button.getAttribute('data-signup-status') || ''));
+      Array.from(leadPoolClassTermGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
+        button.addEventListener('click', () => applyLeadPoolClassTerm(button.getAttribute('data-class-term-no') || ''));
       });
     }
 
-    async function loadSignupQuickStatus() {
+    async function loadLeadPoolClassTermStatus() {
       const params = new URLSearchParams({
         external_userid: state.external_userid,
       });
       if (state.owner_userid) {
         params.set('owner_userid', state.owner_userid);
       }
-      const result = await fetchJson('/api/sidebar/signup-tags/status?' + params.toString());
-      state.signup_status = String(result.current_signup_status || '').trim();
-      state.signupDefinitions = Array.isArray(result.definitions) ? result.definitions : [];
-      renderSignupQuickButtons();
-      tagQuickCard.classList.remove('hidden');
-      setStatus(tagQuickStatus, result.current_tag ? ('当前标签：' + result.current_tag) : '当前未命中班期标签', result.current_tag ? 'success' : '');
+      const result = await fetchJson('/api/sidebar/lead-pool/status?' + params.toString());
+      state.currentClassTermNo = result.current_class_term_no == null ? null : Number(result.current_class_term_no);
+      state.classTermOptions = Array.isArray(result.class_term_options) ? result.class_term_options : [];
+      renderLeadPoolClassTermButtons();
+      leadPoolClassTermCard.classList.remove('hidden');
+      setStatus(
+        leadPoolClassTermStatus,
+        result.current_class_term_label ? ('当前班期：' + result.current_class_term_label) : '当前未设置班期',
+        result.current_class_term_label ? 'success' : '',
+      );
     }
 
-    async function applySignupTag(signupStatus) {
-      if (!signupStatus) return;
-      Array.from(tagQuickGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
+    async function applyLeadPoolClassTerm(classTermNo) {
+      if (!classTermNo) return;
+      Array.from(leadPoolClassTermGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
         button.disabled = true;
       });
-      setStatus(tagQuickStatus, '正在更新标签...', '');
+      setStatus(leadPoolClassTermStatus, '正在设置班期...', '');
       try {
-        const result = await fetchJson('/api/sidebar/signup-tags/mark', {
+        const result = await fetchJson('/api/sidebar/lead-pool/upsert-class-term', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             external_userid: state.external_userid,
             owner_userid: state.owner_userid,
-            signup_status: signupStatus,
+            class_term_no: Number(classTermNo),
           }),
         });
-        state.signup_status = String(result.signup_status || '').trim();
-        renderSignupQuickButtons();
-        setStatus(tagQuickStatus, '当前标签：' + (result.current_tag || '-'), 'success');
+        state.currentClassTermNo = result.current_class_term_no == null ? null : Number(result.current_class_term_no);
+        renderLeadPoolClassTermButtons();
+        setStatus(leadPoolClassTermStatus, '当前班期：' + (result.current_class_term_label || '-'), 'success');
       } catch (error) {
-        setStatus(tagQuickStatus, userMessage(error, '快捷打标失败，请稍后重试。'), 'error');
+        setStatus(leadPoolClassTermStatus, userMessage(error, '班期设置失败，请稍后重试。'), 'error');
       } finally {
-        Array.from(tagQuickGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
+        Array.from(leadPoolClassTermGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
           button.disabled = false;
         });
       }
@@ -1898,7 +1901,7 @@ def sidebar_bind_mobile_page():
       }
       try {
         await loadStatus();
-        await loadSignupQuickStatus();
+        await loadLeadPoolClassTermStatus();
       } catch (error) {
         setStatus(loadingCard.querySelector('.status'), userMessage(error, '客户状态读取失败，请稍后重试。'), 'error');
       }
@@ -1919,6 +1922,7 @@ def sidebar_bind_mobile_page():
           }),
         });
         renderBound(result.binding || result);
+        await loadLeadPoolClassTermStatus();
       } catch (error) {
         setStatus(bindStatus, userMessage(error, '绑定失败，请检查手机号后重试。'), 'error');
       } finally {
@@ -1947,6 +1951,7 @@ def sidebar_bind_mobile_page():
           }),
         });
         renderBound(result.binding || result);
+        await loadLeadPoolClassTermStatus();
       } catch (error) {
         setStatus(boundStatus, userMessage(error, '更换手机号失败，请检查后重试。'), 'error');
       } finally {
@@ -2021,6 +2026,40 @@ def sidebar_bind_mobile():
     return jsonify({"ok": True, "binding": binding})
 
 
+@bp.route("/api/sidebar/lead-pool/status", methods=["GET"])
+def sidebar_lead_pool_status():
+    external_userid = request.args.get("external_userid", "").strip()
+    owner_userid = request.args.get("owner_userid", "").strip()
+    if not external_userid:
+        return jsonify({"ok": False, "error": "external_userid is required"}), 400
+    try:
+        payload = get_sidebar_lead_pool_status(external_userid=external_userid, owner_userid=owner_userid)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **payload})
+
+
+@bp.route("/api/sidebar/lead-pool/upsert-class-term", methods=["POST"])
+def sidebar_lead_pool_upsert_class_term():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = upsert_sidebar_lead_pool_class_term(
+            external_userid=str(payload.get("external_userid") or "").strip(),
+            owner_userid=str(payload.get("owner_userid") or "").strip(),
+            class_term_no=int(payload.get("class_term_no")),
+            operator=str(payload.get("operator") or "").strip(),
+        )
+        status_payload = get_sidebar_lead_pool_status(
+            external_userid=str(payload.get("external_userid") or "").strip(),
+            owner_userid=str(payload.get("owner_userid") or "").strip(),
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except WeComClientError as exc:
+        return _wecom_error_response(exc)
+    return jsonify({"ok": True, **status_payload, "upsert": result})
+
+
 @bp.route("/api/sidebar/signup-tags/status", methods=["GET"])
 def sidebar_signup_tag_status():
     external_userid = request.args.get("external_userid", "").strip()
@@ -2062,8 +2101,9 @@ def sidebar_signup_tag_mark():
 def api_identity_resolve():
     external_userid = request.args.get("external_userid", "").strip()
     mobile = request.args.get("mobile", "").strip()
+    unionid = request.args.get("unionid", "").strip()
     try:
-        payload = resolve_person_identity(external_userid=external_userid, mobile=mobile)
+        payload = resolve_person_identity(external_userid=external_userid, mobile=mobile, unionid=unionid)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, **payload})
@@ -2142,12 +2182,10 @@ def admin_user_ops_overview():
 
 @bp.route("/api/admin/user-ops/list", methods=["GET"])
 def admin_user_ops_list():
-    # `current_status` / `owner_userid` filters are still kept for backend
-    # compatibility even though W08 removed them from the UI.
     payload = list_user_ops_pool(
-        current_status=request.args.get("current_status", "").strip(),
-        is_wecom_bound=request.args.get("is_wecom_bound", "").strip(),
-        activation_status=request.args.get("activation_status", "").strip(),
+        is_wecom_added=request.args.get("is_wecom_added", "").strip(),
+        is_mobile_bound=request.args.get("is_mobile_bound", "").strip(),
+        huangxiaocan_activation_state=request.args.get("huangxiaocan_activation_state", "").strip(),
         class_term_no=request.args.get("class_term_no", "").strip(),
         owner_userid=request.args.get("owner_userid", "").strip(),
         query=request.args.get("query", "").strip(),
@@ -2167,37 +2205,30 @@ def admin_user_ops_history():
 
 @bp.route("/api/admin/user-ops/reload", methods=["POST"])
 def admin_user_ops_reload():
-    payload = reload_user_ops_pool()
-    return jsonify({"ok": True, **payload})
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": "deprecated_internal_only",
+                "message": "legacy user-ops reload is no longer part of admin V2; use internal maintenance helpers only",
+            }
+        ),
+        410,
+    )
 
 
 @bp.route("/api/admin/user-ops/import-experience-leads", methods=["POST"])
 def admin_user_ops_import_experience_leads():
-    uploaded_file = request.files.get("file")
-    pasted_text = ""
-    if uploaded_file and uploaded_file.filename:
-        try:
-            payload = import_experience_leads(
-                file_name=uploaded_file.filename,
-                file_bytes=uploaded_file.read(),
-            )
-        except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
-        return jsonify(payload)
-
-    if request.is_json:
-        pasted_text = str((request.get_json(silent=True) or {}).get("pasted_text") or "").strip()
-    elif request.mimetype == "text/plain":
-        pasted_text = request.get_data(as_text=True).strip()
-    else:
-        pasted_text = str(request.form.get("pasted_text") or "").strip()
-    if not pasted_text:
-        return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
-    try:
-        payload = import_experience_leads(pasted_text=pasted_text)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify(payload)
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": "deprecated_internal_only",
+                "message": "legacy experience-leads import is no longer exposed by admin V2",
+            }
+        ),
+        410,
+    )
 
 
 @bp.route("/api/admin/user-ops/import-mobile-class-terms", methods=["POST"])
@@ -2260,28 +2291,16 @@ def admin_user_ops_import_activation_status():
 
 @bp.route("/api/admin/user-ops/backfill-class-term", methods=["POST"])
 def admin_user_ops_backfill_class_term():
-    payload_json = request.get_json(silent=True) or {}
-    owner_userid = str(payload_json.get("owner_userid") or "").strip()
-    dry_run_value = payload_json.get("dry_run", True)
-    confirm_value = payload_json.get("confirm", False)
-    if isinstance(dry_run_value, bool):
-        dry_run = dry_run_value
-    else:
-        dry_run = str(dry_run_value or "").strip().lower() not in {"0", "false", "no"}
-    if isinstance(confirm_value, bool):
-        confirm = confirm_value
-    else:
-        confirm = str(confirm_value or "").strip().lower() in {"1", "true", "yes"}
-    if not dry_run and not confirm:
-        return jsonify({"ok": False, "error": "confirm_required"}), 400
-    try:
-        payload = backfill_class_term_for_owner(
-            owner_userid=owner_userid,
-            dry_run=dry_run,
-        )
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify(payload)
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": "deprecated_internal_only",
+                "message": "legacy class-term backfill is no longer exposed by admin V2",
+            }
+        ),
+        410,
+    )
 
 
 @bp.route("/api/admin/user-ops/run-deferred-jobs", methods=["POST"])
@@ -2299,9 +2318,9 @@ def admin_user_ops_run_deferred_jobs():
 @bp.route("/api/admin/user-ops/export", methods=["GET"])
 def admin_user_ops_export():
     export_payload = export_user_ops_pool(
-        current_status=request.args.get("current_status", "").strip(),
-        is_wecom_bound=request.args.get("is_wecom_bound", "").strip(),
-        activation_status=request.args.get("activation_status", "").strip(),
+        is_wecom_added=request.args.get("is_wecom_added", "").strip(),
+        is_mobile_bound=request.args.get("is_mobile_bound", "").strip(),
+        huangxiaocan_activation_state=request.args.get("huangxiaocan_activation_state", "").strip(),
         class_term_no=request.args.get("class_term_no", "").strip(),
         owner_userid=request.args.get("owner_userid", "").strip(),
         query=request.args.get("query", "").strip(),

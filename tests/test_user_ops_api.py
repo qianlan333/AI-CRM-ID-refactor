@@ -11,9 +11,11 @@ from wecom_ability_service.db import get_db, init_db
 from wecom_ability_service.routes import _process_external_contact_event
 from wecom_ability_service.services import (
     log_external_contact_event,
+    migrate_legacy_user_ops_pool_to_lead_pool,
     refresh_contact_tags_for_external_userid,
     schedule_user_ops_auto_assign_class_term_job,
     sync_user_ops_class_term_tag_definitions,
+    upsert_user_ops_lead_pool_member,
 )
 
 
@@ -203,6 +205,45 @@ def _seed_zhao_contact(
         db.commit()
 
 
+def _seed_sidebar_contact(
+    app,
+    *,
+    external_userid: str,
+    owner_userid: str = "sales_01",
+    customer_name: str = "侧边栏客户",
+) -> None:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with app.app_context():
+        db = get_db()
+        existing_owner = db.execute(
+            "SELECT 1 FROM owner_role_map WHERE userid = ? LIMIT 1",
+            (owner_userid,),
+        ).fetchone()
+        if not existing_owner:
+            db.execute(
+                """
+                INSERT INTO owner_role_map (userid, display_name, role, active)
+                VALUES (?, ?, ?, ?)
+                """,
+                (owner_userid, owner_userid, "sales", True),
+            )
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                external_userid,
+                customer_name,
+                owner_userid,
+                "",
+                external_userid,
+                now,
+            ),
+        )
+        db.commit()
+
+
 def _build_external_contact_detail(
     *,
     external_userid: str,
@@ -341,104 +382,210 @@ def _build_test_xlsx(rows: list[list[str] | str]) -> bytes:
     return buffer.getvalue()
 
 
-def test_reload_user_ops_pool_materializes_existing_crm_data(client, app):
-    _seed_user_ops_sources(app)
-
+def test_user_ops_reload_endpoint_is_deprecated_internal_only(client):
     response = client.post("/api/admin/user-ops/reload")
     payload = response.get_json()
 
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["total"] == 3
+    assert response.status_code == 410
+    assert payload["ok"] is False
+    assert payload["error"] == "deprecated_internal_only"
 
+
+def _seed_user_ops_lead_pool_read_model(app) -> None:
     with app.app_context():
-        rows = get_db().execute(
+        db = get_db()
+        db.execute(
             """
-            SELECT external_userid, mobile, current_status, is_wecom_bound, owner_userid
-            FROM user_ops_pool_current
-            ORDER BY external_userid ASC
+            INSERT INTO owner_role_map (userid, display_name, role, active)
+            VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+            ON CONFLICT(userid) DO UPDATE SET display_name = excluded.display_name, role = excluded.role, active = excluded.active
+            """,
+            ("sales_01", "ZhaoYanFang", "sales", True, "sales_02", "QianLan", "sales", True),
+        )
+        db.execute(
             """
-        ).fetchall()
-        assert len(rows) == 3
-        assert rows[0]["external_userid"] == "wm_lead_bound"
-        assert rows[0]["current_status"] == "lead_trial"
-        assert bool(rows[0]["is_wecom_bound"]) is True
-        assert rows[1]["external_userid"] == "wm_signed_3999"
-        assert rows[1]["mobile"] == "13800138001"
-        assert bool(rows[1]["is_wecom_bound"]) is False
-        assert rows[2]["external_userid"] == "wm_signed_999"
-        assert rows[2]["owner_userid"] == "sales_01"
+            INSERT INTO user_ops_lead_pool_current (
+                mobile, external_userid, customer_name, owner_userid,
+                is_wecom_added, is_mobile_bound, huangxiaocan_activation_state,
+                class_term_no, class_term_label, first_entry_source, last_entry_source,
+                created_at, updated_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138002",
+                "wm_lead_bound",
+                "已绑定引流用户",
+                "sales_01",
+                True,
+                True,
+                "activated",
+                6,
+                "6期",
+                "student_import",
+                "student_import",
+                "",
+                "wm_external_only_001",
+                "外部联系人",
+                "sales_02",
+                True,
+                False,
+                "unknown",
+                5,
+                "5期",
+                "sidebar_class_term",
+                "verify_class_term_tag_and_upsert_lead_pool",
+                "13800138061",
+                "",
+                "",
+                "",
+                False,
+                False,
+                "not_activated",
+                4,
+                "4期",
+                "student_import",
+                "huangxiaocan_activation_import",
+                "13800138062",
+                "",
+                "",
+                "",
+                False,
+                False,
+                "unknown",
+                None,
+                "",
+                "student_import",
+                "student_import",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_lead_pool_history (
+                mobile, external_userid, action_type, source_type, operator, before_json, after_json, remark, created_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138002",
+                "wm_lead_bound",
+                "lead_pool_insert",
+                "student_import",
+                "admin_user_ops",
+                "{}",
+                '{"mobile":"13800138002","class_term_label":"6期"}',
+                "initial insert",
+                "",
+                "wm_external_only_001",
+                "mobile_bind_merge",
+                "bind_mobile",
+                "sidebar_bind_mobile",
+                '{"external_userid":"wm_external_only_001"}',
+                '{"mobile":"13800138002","external_userid":"wm_lead_bound"}',
+                "merged external-only record",
+            ),
+        )
+        db.commit()
 
 
 def test_user_ops_overview_counts_are_correct(client, app):
-    _seed_user_ops_sources(app)
-    client.post("/api/admin/user-ops/reload")
+    _seed_user_ops_lead_pool_read_model(app)
 
     response = client.get("/api/admin/user-ops/overview")
     payload = response.get_json()
 
     assert response.status_code == 200
-    assert payload["total_users"] == 3
-    assert payload["lead_trial_count"] == 1
-    assert payload["signed_999_count"] == 1
-    assert payload["signed_3999_count"] == 1
-    assert payload["wecom_bound_count"] == 2
-    assert payload["wecom_unbound_count"] == 1
+    assert payload["lead_pool_total_count"] == 4
+    assert payload["wecom_added_count"] == 2
+    assert payload["wecom_not_added_count"] == 2
+    assert payload["mobile_bound_count"] == 1
+    assert payload["mobile_unbound_count"] == 3
+    assert payload["huangxiaocan_activated_count"] == 1
+    assert payload["huangxiaocan_not_activated_count"] == 1
+    assert payload["huangxiaocan_unknown_count"] == 2
+    assert "signed_999_count" not in payload
+    assert "signed_3999_count" not in payload
 
 
-def test_user_ops_list_filters_by_current_status(client, app):
-    _seed_user_ops_sources(app)
-    client.post("/api/admin/user-ops/reload")
+def test_user_ops_overview_counts_phone_centric_union_without_double_count(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
+
+    response = client.get("/api/admin/user-ops/overview")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    cards = {item["key"]: item["value"] for item in payload["cards"]}
+    assert cards["lead_pool_total_count"] == 4
+    assert cards["wecom_added_count"] == 2
+    assert cards["wecom_not_added_count"] == 2
+    assert cards["mobile_bound_count"] == 1
+    assert cards["mobile_unbound_count"] == 3
+    assert cards["huangxiaocan_activated_count"] == 1
+    assert cards["huangxiaocan_not_activated_count"] == 1
+    assert cards["huangxiaocan_unknown_count"] == 2
+    assert "signed_999_count" not in cards
+    assert "signed_3999_count" not in cards
+
+def test_user_ops_list_ignores_legacy_current_status_filter(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
 
     response = client.get("/api/admin/user-ops/list?current_status=signed_999")
     payload = response.get_json()
 
     assert response.status_code == 200
-    assert payload["total"] == 1
-    assert payload["items"][0]["external_userid"] == "wm_signed_999"
-    assert payload["items"][0]["current_status"] == "signed_999"
+    assert payload["total"] == 4
+    assert "current_status" not in payload["items"][0]
 
 
-def test_user_ops_list_filters_by_is_wecom_bound(client, app):
-    _seed_user_ops_sources(app)
-    client.post("/api/admin/user-ops/reload")
+def test_user_ops_list_filters_by_is_wecom_added(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
 
-    response = client.get("/api/admin/user-ops/list?is_wecom_bound=true")
+    response = client.get("/api/admin/user-ops/list?is_wecom_added=true")
     payload = response.get_json()
 
     assert response.status_code == 200
     assert payload["total"] == 2
-    assert {item["external_userid"] for item in payload["items"]} == {"wm_signed_999", "wm_lead_bound"}
+    assert {item["external_userid"] for item in payload["items"]} == {"wm_lead_bound", "wm_external_only_001"}
 
 
 def test_user_ops_list_filters_by_owner_userid(client, app):
-    _seed_user_ops_sources(app)
-    client.post("/api/admin/user-ops/reload")
+    _seed_user_ops_lead_pool_read_model(app)
 
-    response = client.get("/api/admin/user-ops/list?owner_userid=sales_01")
+    response = client.get("/api/admin/user-ops/list?is_mobile_bound=true&huangxiaocan_activation_state=activated&class_term_no=6")
     payload = response.get_json()
 
     assert response.status_code == 200
-    assert payload["total"] == 2
-    assert {item["external_userid"] for item in payload["items"]} == {"wm_signed_999", "wm_lead_bound"}
+    assert payload["total"] == 1
+    assert payload["items"][0]["mobile"] == "13800138002"
+    assert payload["items"][0]["is_wecom_added"] is True
+    assert payload["items"][0]["is_mobile_bound"] is True
+    assert payload["items"][0]["huangxiaocan_activation_state"] == "activated"
+    assert payload["items"][0]["class_term_no"] == 6
 
 
 def test_user_ops_export_returns_current_pool_rows(client, app):
-    _seed_user_ops_sources(app)
-    client.post("/api/admin/user-ops/reload")
+    _seed_user_ops_lead_pool_read_model(app)
 
-    response = client.get("/api/admin/user-ops/export?owner_userid=sales_01")
+    response = client.get("/api/admin/user-ops/export?is_wecom_added=true")
     content = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert response.mimetype == "application/vnd.ms-excel"
-    assert "已报999用户" in content or "999快照用户" in content
     assert "已绑定引流用户" in content
+    assert "黄小璨激活状态" in content
+    assert "是否已绑手机号" in content
+    assert "当前状态" not in content
+    assert "高意向备注" not in content
 
 
-def test_user_ops_history_returns_reload_records(client, app):
-    _seed_user_ops_sources(app)
-    client.post("/api/admin/user-ops/reload")
+def test_user_ops_history_returns_lead_pool_records(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
 
     response = client.get("/api/admin/user-ops/history")
     payload = response.get_json()
@@ -446,8 +593,10 @@ def test_user_ops_history_returns_reload_records(client, app):
     assert response.status_code == 200
     assert payload["ok"] is True
     assert isinstance(payload["items"], list)
-    assert payload["total"] >= 3
-    assert payload["items"][0]["action_type"] in {"pool_reload_upsert", "pool_reload_remove"}
+    assert payload["total"] == 2
+    assert payload["items"][0]["action_type"] in {"lead_pool_insert", "mobile_bind_merge"}
+    assert "before_json" in payload["items"][0]
+    assert "after_json" in payload["items"][0]
 
 
 def test_user_ops_ui_route_exists(client):
@@ -471,6 +620,7 @@ def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
     assert "导入黄小璨激活状态" in page_shell
     assert 'id="open-class-term-import-modal-btn"' in page_shell
     assert 'id="open-activation-import-modal-btn"' in page_shell
+    assert "Reload" not in page_shell
     assert 'id="class-term-import-text"' not in page_shell
     assert 'id="class-term-import-file"' not in page_shell
     assert 'id="activation-import-text"' not in page_shell
@@ -484,9 +634,11 @@ def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
     assert '<label for="filter-current-status">当前状态</label>' not in html
     assert '<label for="filter-owner">跟进人</label>' not in html
     assert "<th>当前状态</th>" not in html
-    assert "<th>跟进人</th>" not in html
     assert "<th>高意向备注</th>" not in html
-    assert "<th>更新时间</th>" not in html
+    assert "已报名999" not in html
+    assert "已报名3999" not in html
+    assert "signed_999" not in html
+    assert "signed_3999" not in html
 
 
 def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(client):
@@ -495,13 +647,14 @@ def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(clien
 
     assert response.status_code == 200
     phone_index = html.index("<th>手机号</th>")
-    bound_index = html.index("<th>是否加微</th>")
+    wecom_added_index = html.index("<th>是否已加微</th>")
+    mobile_bound_index = html.index("<th>是否已绑手机号</th>")
     class_term_index = html.index("<th>班期</th>")
-    activation_index = html.index("<th>激活状态</th>")
+    activation_index = html.index("<th>黄小璨激活状态</th>")
     customer_name_index = html.index("<th>客户昵称</th>")
     external_index = html.index("<th>external_userid</th>")
 
-    assert phone_index < bound_index < class_term_index < activation_index < customer_name_index < external_index
+    assert phone_index < wecom_added_index < mobile_bound_index < class_term_index < activation_index < customer_name_index < external_index
 
 
 def test_user_ops_ui_uses_modal_import_structure(client):
@@ -515,6 +668,7 @@ def test_user_ops_ui_uses_modal_import_structure(client):
     assert response.status_code == 200
     assert 'id="class-term-import-modal-backdrop" class="modal-backdrop hidden"' in html
     assert 'id="activation-import-modal-backdrop" class="modal-backdrop hidden"' in html
+    assert ">引流品成员池<" in html
     assert 'id="class-term-import-modal-title">导入学员（手机号 + 班期）<' in class_modal
     assert '<label for="class-term-import-text">粘贴导入</label>' in class_modal
     assert '<label for="class-term-import-file">Excel 导入</label>' in class_modal
@@ -528,6 +682,7 @@ def test_user_ops_ui_uses_modal_import_structure(client):
     assert 'id="close-activation-import-modal-btn"' in activation_modal
     assert '>导入黄小璨激活状态</button>' in activation_modal
     assert "13800138040,已激活" in html
+    assert "当前状态池" not in html
 
 
 def test_sync_user_ops_class_term_tag_definitions_updates_tag_identity_fields(app, user_ops_contact_client):
@@ -626,144 +781,206 @@ def test_refresh_contact_tags_for_external_userid_only_refreshes_scoped_tags(app
         assert rows[0]["tag_id"] == "tag-term-1"
 
 
-def test_import_experience_leads_from_pasted_text_survives_reload(client, app):
+def test_import_experience_leads_endpoint_is_deprecated_internal_only(client):
     response = client.post(
         "/api/admin/user-ops/import-experience-leads",
-        json={"pasted_text": "13800138009\n13800138010"},
+        json={"pasted_text": "13800138009"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 410
+    assert payload["ok"] is False
+    assert payload["error"] == "deprecated_internal_only"
+
+
+def test_sidebar_bind_mobile_page_uses_lead_pool_class_term_quick_set(client):
+    response = client.get("/sidebar/bind-mobile")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "班期快捷设置" in html
+    assert "AI 产品报名情况" not in html
+    assert "/api/sidebar/lead-pool/status" in html
+    assert "/api/sidebar/lead-pool/upsert-class-term" in html
+    assert "/api/sidebar/signup-tags/status" not in html
+    assert "/api/sidebar/signup-tags/mark" not in html
+
+
+def test_sidebar_lead_pool_upsert_class_term_creates_external_only_member(client, app):
+    _seed_sidebar_contact(app, external_userid="wm_sidebar_term_001", owner_userid="sales_01")
+    applied_tags: list[dict[str, object]] = []
+    app.config["SIDEBAR_LEAD_POOL_TAG_APPLIER"] = lambda **payload: applied_tags.append(payload)
+
+    response = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wm_sidebar_term_001",
+            "owner_userid": "sales_01",
+            "class_term_no": 4,
+        },
     )
     payload = response.get_json()
 
     assert response.status_code == 200
     assert payload["ok"] is True
-    assert payload["unique_mobile_count"] == 2
-    assert payload["reload"]["total"] == 2
-
-    list_payload = client.get("/api/admin/user-ops/list").get_json()
-    mobiles = {item["mobile"] for item in list_payload["items"]}
-    assert {"13800138009", "13800138010"} <= mobiles
-
-    client.post("/api/admin/user-ops/reload")
-    list_payload_after_reload = client.get("/api/admin/user-ops/list").get_json()
-    mobiles_after_reload = {item["mobile"] for item in list_payload_after_reload["items"]}
-    assert {"13800138009", "13800138010"} <= mobiles_after_reload
-
-
-def test_import_experience_leads_from_excel_visible_in_pool(client):
-    response = client.post(
-        "/api/admin/user-ops/import-experience-leads",
-        data={"file": (BytesIO(_build_test_xlsx([["手机号"], ["13800138011"]])), "experience.xlsx")},
-        content_type="multipart/form-data",
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["unique_mobile_count"] == 1
-
-    list_payload = client.get("/api/admin/user-ops/list").get_json()
-    assert list_payload["total"] == 1
-    assert list_payload["items"][0]["mobile"] == "13800138011"
-
-
-def test_import_experience_leads_deduplicates_mobile_source_rows(client, app):
-    response = client.post(
-        "/api/admin/user-ops/import-experience-leads",
-        json={"pasted_text": "13800138012\n13800138012\n13800138012"},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["duplicate_count"] == 2
-
+    assert payload["current_class_term_no"] == 4
+    assert payload["current_class_term_label"] == "4期"
     with app.app_context():
         row = get_db().execute(
-            "SELECT COUNT(*) AS total FROM user_ops_experience_leads WHERE mobile = ?",
-            ("13800138012",),
+            """
+            SELECT mobile, external_userid, class_term_no, class_term_label, is_wecom_added, is_mobile_bound
+            FROM user_ops_lead_pool_current
+            WHERE external_userid = ?
+            """,
+            ("wm_sidebar_term_001",),
         ).fetchone()
-        assert row["total"] == 1
-        pool_count = get_db().execute(
-            "SELECT COUNT(*) AS total FROM user_ops_pool_current WHERE mobile = ?",
-            ("13800138012",),
+        history = get_db().execute(
+            """
+            SELECT action_type, source_type
+            FROM user_ops_lead_pool_history
+            WHERE external_userid = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("wm_sidebar_term_001",),
         ).fetchone()
-        assert pool_count["total"] == 1
+        tag_row = get_db().execute(
+            """
+            SELECT tag_id, tag_name
+            FROM contact_tags
+            WHERE external_userid = ? AND userid = ?
+            ORDER BY tag_id ASC
+            LIMIT 1
+            """,
+            ("wm_sidebar_term_001", "sales_01"),
+        ).fetchone()
+        mapping = get_db().execute(
+            """
+            SELECT tag_id, tag_name
+            FROM class_term_tag_mapping
+            WHERE class_term_no = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (4,),
+        ).fetchone()
+
+    assert row["mobile"] == ""
+    assert row["external_userid"] == "wm_sidebar_term_001"
+    assert row["class_term_no"] == 4
+    assert row["class_term_label"] == "4期"
+    assert bool(row["is_wecom_added"]) is True
+    assert bool(row["is_mobile_bound"]) is False
+    assert history["source_type"] == "sidebar_class_term"
+    assert history["action_type"] == "lead_pool_insert"
+    assert tag_row["tag_id"] == mapping["tag_id"]
+    assert tag_row["tag_name"] == mapping["tag_name"]
+    assert applied_tags[0]["add_tags"] == [mapping["tag_id"]]
 
 
-def test_imported_mobile_only_user_stays_unbound_in_pool(client):
-    response = client.post(
-        "/api/admin/user-ops/import-experience-leads",
-        json={"pasted_text": "13800138013"},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["ok"] is True
-
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138013").get_json()
-    assert list_payload["total"] == 1
-    assert list_payload["items"][0]["mobile"] == "13800138013"
-    assert list_payload["items"][0]["external_userid"] == ""
-    assert list_payload["items"][0]["is_wecom_bound"] is False
-    assert list_payload["items"][0]["current_status"] == "lead_trial"
-
-
-def test_imported_mobile_matching_binding_auto_fills_crm_fields(client, app):
-    _seed_user_ops_sources(app)
-
-    response = client.post(
-        "/api/admin/user-ops/import-experience-leads",
-        json={"pasted_text": "13800138002"},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["ok"] is True
-
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138002").get_json()
-    assert list_payload["total"] == 1
-    item = list_payload["items"][0]
-    assert item["mobile"] == "13800138002"
-    assert item["external_userid"] == "wm_lead_bound"
-    assert item["owner_userid"] == "sales_01"
-    assert item["customer_name"] == "已绑定引流用户"
-    assert item["is_wecom_bound"] is True
-
-
-def test_import_experience_leads_does_not_downgrade_signed_status(client, app):
-    _seed_user_ops_sources(app)
-
-    response = client.post(
-        "/api/admin/user-ops/import-experience-leads",
-        json={"pasted_text": "13800138000\n13800138001"},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["ok"] is True
-
-    list_payload = client.get("/api/admin/user-ops/list").get_json()
-    by_mobile = {item["mobile"]: item for item in list_payload["items"]}
-    assert by_mobile["13800138000"]["current_status"] == "signed_999"
-    assert by_mobile["13800138001"]["current_status"] == "signed_3999"
-
-
-def test_imported_experience_leads_survive_explicit_reload(client):
+def test_sidebar_lead_pool_status_returns_current_member(client, app):
+    _seed_sidebar_contact(app, external_userid="wm_sidebar_term_002", owner_userid="sales_01")
+    app.config["SIDEBAR_LEAD_POOL_TAG_APPLIER"] = lambda **payload: None
     client.post(
-        "/api/admin/user-ops/import-experience-leads",
-        json={"pasted_text": "13800138014"},
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wm_sidebar_term_002",
+            "owner_userid": "sales_01",
+            "class_term_no": 3,
+        },
     )
 
-    first_list = client.get("/api/admin/user-ops/list?query=13800138014").get_json()
-    assert first_list["total"] == 1
+    response = client.get(
+        "/api/sidebar/lead-pool/status?external_userid=wm_sidebar_term_002&owner_userid=sales_01"
+    )
+    payload = response.get_json()
 
-    reload_response = client.post("/api/admin/user-ops/reload")
-    assert reload_response.status_code == 200
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["current_class_term_no"] == 3
+    assert payload["current_class_term_label"] == "3期"
+    assert payload["is_wecom_added"] is True
+    assert payload["is_mobile_bound"] is False
+    assert any(option["class_term_no"] == 3 for option in payload["class_term_options"])
 
-    second_list = client.get("/api/admin/user-ops/list?query=13800138014").get_json()
-    assert second_list["total"] == 1
-    assert second_list["items"][0]["mobile"] == "13800138014"
+
+def test_sidebar_bind_mobile_merges_external_only_and_mobile_only_members(client, app):
+    _seed_sidebar_contact(app, external_userid="wm_sidebar_bind_001", owner_userid="sales_01", customer_name="待绑定客户")
+    app.config["SIDEBAR_LEAD_POOL_TAG_APPLIER"] = lambda **payload: None
+    response = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wm_sidebar_bind_001",
+            "owner_userid": "sales_01",
+            "class_term_no": 4,
+        },
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        upsert_user_ops_lead_pool_member(
+            mobile="13800138111",
+            huangxiaocan_activation_state="activated",
+            entry_source="student_import",
+            operator="tester",
+            remark="seed mobile-only before sidebar bind merge",
+        )
+
+    bind_response = client.post(
+        "/api/sidebar/bind-mobile",
+        json={
+            "external_userid": "wm_sidebar_bind_001",
+            "owner_userid": "sales_01",
+            "bind_by_userid": "sales_01",
+            "mobile": "13800138111",
+        },
+    )
+    bind_payload = bind_response.get_json()
+
+    assert bind_response.status_code == 200
+    assert bind_payload["ok"] is True
+    assert bind_payload["binding"]["mobile"] == "13800138111"
+    assert bind_payload["binding"]["lead_pool_merge"]["merge_applied"] is True
+    with app.app_context():
+        rows = get_db().execute(
+            """
+            SELECT id, mobile, external_userid, customer_name, owner_userid, is_wecom_added, is_mobile_bound,
+                   huangxiaocan_activation_state, class_term_no, class_term_label
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ? OR external_userid = ?
+            ORDER BY id ASC
+            """,
+            ("13800138111", "wm_sidebar_bind_001"),
+        ).fetchall()
+        merge_history = get_db().execute(
+            """
+            SELECT action_type, source_type, before_json, after_json, remark
+            FROM user_ops_lead_pool_history
+            WHERE external_userid = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("wm_sidebar_bind_001",),
+        ).fetchone()
+
+    assert len(rows) == 1
+    merged = rows[0]
+    assert merged["mobile"] == "13800138111"
+    assert merged["external_userid"] == "wm_sidebar_bind_001"
+    assert merged["class_term_no"] == 4
+    assert merged["class_term_label"] == "4期"
+    assert merged["huangxiaocan_activation_state"] == "activated"
+    assert merged["customer_name"] == "待绑定客户"
+    assert merged["owner_userid"] == "sales_01"
+    assert bool(merged["is_wecom_added"]) is True
+    assert bool(merged["is_mobile_bound"]) is True
+    assert merge_history["action_type"] == "mobile_bind_merge"
+    assert merge_history["source_type"] == "mobile_bind"
+    assert '"external_userid": "wm_sidebar_bind_001"' in merge_history["before_json"]
+    assert '"mobile": "13800138111"' in merge_history["after_json"]
 
 
-def test_import_mobile_class_terms_from_pasted_text_updates_pool(client):
+def test_import_mobile_class_terms_from_pasted_text_updates_pool(client, app):
     response = client.post(
         "/api/admin/user-ops/import-mobile-class-terms",
         json={"pasted_text": "13800138015,5期"},
@@ -774,14 +991,34 @@ def test_import_mobile_class_terms_from_pasted_text_updates_pool(client):
     assert payload["ok"] is True
     assert payload["unique_mobile_count"] == 1
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138015").get_json()
-    assert list_payload["total"] == 1
-    item = list_payload["items"][0]
+    with app.app_context():
+        item = get_db().execute(
+            """
+            SELECT mobile, class_term_no, class_term_label, external_userid, is_wecom_added, is_mobile_bound
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138015",),
+        ).fetchone()
+        history = get_db().execute(
+            """
+            SELECT action_type, source_type
+            FROM user_ops_lead_pool_history
+            WHERE mobile = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("13800138015",),
+        ).fetchone()
+
     assert item["mobile"] == "13800138015"
     assert item["class_term_no"] == 5
     assert item["class_term_label"] == "5期"
     assert item["external_userid"] == ""
-    assert item["is_wecom_bound"] is False
+    assert bool(item["is_wecom_added"]) is False
+    assert bool(item["is_mobile_bound"]) is False
+    assert history["action_type"] == "lead_pool_insert"
+    assert history["source_type"] == "student_import"
 
 
 def test_import_mobile_class_terms_matching_binding_marks_wecom_bound(client, app):
@@ -797,16 +1034,24 @@ def test_import_mobile_class_terms_matching_binding_marks_wecom_bound(client, ap
     assert payload["ok"] is True
     assert payload["bound_count"] == 1
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138002").get_json()
-    assert list_payload["total"] == 1
-    item = list_payload["items"][0]
+    with app.app_context():
+        item = get_db().execute(
+            """
+            SELECT mobile, external_userid, is_wecom_added, is_mobile_bound, class_term_label
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138002",),
+        ).fetchone()
+
     assert item["mobile"] == "13800138002"
     assert item["external_userid"] == "wm_lead_bound"
-    assert item["is_wecom_bound"] is True
+    assert bool(item["is_wecom_added"]) is True
+    assert bool(item["is_mobile_bound"]) is True
     assert item["class_term_label"] == "6期"
 
 
-def test_import_mobile_class_terms_keeps_latest_row_for_same_mobile(client):
+def test_import_mobile_class_terms_keeps_latest_row_for_same_mobile(client, app):
     response = client.post(
         "/api/admin/user-ops/import-mobile-class-terms",
         data={
@@ -822,18 +1067,41 @@ def test_import_mobile_class_terms_keeps_latest_row_for_same_mobile(client):
     assert response.status_code == 200
     assert payload["ok"] is True
     assert payload["duplicate_count"] == 1
+    assert payload["reload"] == {"mode": "incremental", "triggered": False}
 
-    before_reload = client.get("/api/admin/user-ops/list?query=13800138016").get_json()
-    assert before_reload["items"][0]["class_term_label"] == "6期"
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT class_term_no, class_term_label
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138016",),
+        ).fetchone()
+    assert row["class_term_no"] == 6
+    assert row["class_term_label"] == "6期"
 
-    client.post("/api/admin/user-ops/reload")
 
-    after_reload = client.get("/api/admin/user-ops/list?query=13800138016").get_json()
-    assert after_reload["items"][0]["class_term_no"] == 6
-    assert after_reload["items"][0]["class_term_label"] == "6期"
+def test_import_mobile_class_terms_does_not_trigger_legacy_reload(client, monkeypatch):
+    monkeypatch.setattr(
+        "wecom_ability_service.services.reload_user_ops_pool",
+        lambda: (_ for _ in ()).throw(AssertionError("legacy reload should not run")),
+    )
+    response = client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138017,7期"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["reload"] == {"mode": "incremental", "triggered": False}
 
 
-def test_import_activation_status_from_pasted_text_updates_pool(client):
+def test_import_activation_status_from_pasted_text_updates_pool(client, app):
+    client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138020,5期"},
+    )
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138020,已激活"},
@@ -843,14 +1111,30 @@ def test_import_activation_status_from_pasted_text_updates_pool(client):
     assert response.status_code == 200
     assert payload["ok"] is True
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138020").get_json()
-    assert list_payload["total"] == 1
-    assert list_payload["items"][0]["activation_status"] == "activated"
-    assert list_payload["items"][0]["activation_status_label"] == "已激活"
-    assert list_payload["items"][0]["activation_remark"] == ""
+    with app.app_context():
+        source_row = get_db().execute(
+            """
+            SELECT mobile, activation_state
+            FROM user_ops_huangxiaocan_activation_source
+            WHERE mobile = ?
+            """,
+            ("13800138020",),
+        ).fetchone()
+        lead_row = get_db().execute(
+            """
+            SELECT mobile, huangxiaocan_activation_state
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138020",),
+        ).fetchone()
+
+    assert payload["matched_member_count"] == 1
+    assert source_row["activation_state"] == "activated"
+    assert lead_row["huangxiaocan_activation_state"] == "activated"
 
 
-def test_import_activation_status_from_excel_updates_pool(client):
+def test_import_activation_status_from_excel_updates_pool(client, app):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
         data={
@@ -866,13 +1150,28 @@ def test_import_activation_status_from_excel_updates_pool(client):
     assert response.status_code == 200
     assert payload["ok"] is True
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138021").get_json()
-    assert list_payload["total"] == 1
-    assert list_payload["items"][0]["activation_status"] == "activated"
-    assert list_payload["items"][0]["activation_status_label"] == "已激活"
+    with app.app_context():
+        source_row = get_db().execute(
+            """
+            SELECT mobile, activation_state
+            FROM user_ops_huangxiaocan_activation_source
+            WHERE mobile = ?
+            """,
+            ("13800138021",),
+        ).fetchone()
+        lead_row = get_db().execute(
+            """
+            SELECT mobile
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138021",),
+        ).fetchone()
+    assert source_row["activation_state"] == "activated"
+    assert lead_row is None
 
 
-def test_import_activation_status_accepts_not_activated_label(client):
+def test_import_activation_status_accepts_not_activated_label(client, app):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138031,未激活"},
@@ -882,13 +1181,19 @@ def test_import_activation_status_accepts_not_activated_label(client):
     assert response.status_code == 200
     assert payload["ok"] is True
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138031").get_json()
-    assert list_payload["total"] == 1
-    assert list_payload["items"][0]["activation_status"] == "not_activated"
-    assert list_payload["items"][0]["activation_status_label"] == "未激活"
+    with app.app_context():
+        source_row = get_db().execute(
+            """
+            SELECT activation_state
+            FROM user_ops_huangxiaocan_activation_source
+            WHERE mobile = ?
+            """,
+            ("13800138031",),
+        ).fetchone()
+    assert source_row["activation_state"] == "not_activated"
 
 
-def test_import_activation_status_accepts_legacy_activated_label(client):
+def test_import_activation_status_accepts_legacy_activated_label(client, app):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138032,激活"},
@@ -898,10 +1203,16 @@ def test_import_activation_status_accepts_legacy_activated_label(client):
     assert response.status_code == 200
     assert payload["ok"] is True
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138032").get_json()
-    assert list_payload["total"] == 1
-    assert list_payload["items"][0]["activation_status"] == "activated"
-    assert list_payload["items"][0]["activation_status_label"] == "已激活"
+    with app.app_context():
+        source_row = get_db().execute(
+            """
+            SELECT activation_state
+            FROM user_ops_huangxiaocan_activation_source
+            WHERE mobile = ?
+            """,
+            ("13800138032",),
+        ).fetchone()
+    assert source_row["activation_state"] == "activated"
 
 
 def test_import_activation_status_rejects_invalid_value(client):
@@ -928,20 +1239,19 @@ def test_import_activation_status_source_keeps_latest_row(client, app):
 
     with app.app_context():
         row = get_db().execute(
-            "SELECT COUNT(*) AS total FROM user_ops_activation_status_source WHERE mobile = ?",
+            "SELECT COUNT(*) AS total FROM user_ops_huangxiaocan_activation_source WHERE mobile = ?",
             ("13800138023",),
         ).fetchone()
         assert row["total"] == 1
         current = get_db().execute(
             """
-            SELECT activation_status, activation_remark
-            FROM user_ops_activation_status_source
+            SELECT activation_state
+            FROM user_ops_huangxiaocan_activation_source
             WHERE mobile = ?
             """,
             ("13800138023",),
         ).fetchone()
-        assert current["activation_status"] == "activated"
-        assert current["activation_remark"] == ""
+        assert current["activation_state"] == "activated"
 
 
 def test_phone_centric_imports_keep_external_userid_binding_derived(client, app):
@@ -965,14 +1275,21 @@ def test_phone_centric_imports_keep_external_userid_binding_derived(client, app)
     assert class_term_response.status_code == 200
     assert activation_response.status_code == 200
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138002").get_json()
-    assert list_payload["total"] == 1
-    item = list_payload["items"][0]
+    with app.app_context():
+        item = get_db().execute(
+            """
+            SELECT mobile, external_userid, is_wecom_added, is_mobile_bound, class_term_label, huangxiaocan_activation_state
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138002",),
+        ).fetchone()
     assert item["mobile"] == "13800138002"
     assert item["external_userid"] == "wm_lead_bound"
-    assert item["is_wecom_bound"] is True
+    assert bool(item["is_wecom_added"]) is True
+    assert bool(item["is_mobile_bound"]) is True
     assert item["class_term_label"] == "6期"
-    assert item["activation_status"] == "activated"
+    assert item["huangxiaocan_activation_state"] == "activated"
 
 
 def test_phone_centric_sources_and_projection_fields_stay_split(client, app):
@@ -984,55 +1301,65 @@ def test_phone_centric_sources_and_projection_fields_stay_split(client, app):
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138061,未激活"},
     )
-    client.post("/api/admin/user-ops/reload")
-
     with app.app_context():
         db = get_db()
-        lead_row = db.execute(
-            "SELECT mobile, source_type FROM user_ops_experience_leads WHERE mobile = ?",
-            ("13800138061",),
-        ).fetchone()
-        activation_row = db.execute(
-            "SELECT mobile, activation_status, activation_remark FROM user_ops_activation_status_source WHERE mobile = ?",
+        source_row = db.execute(
+            """
+            SELECT mobile, activation_state, import_batch_id
+            FROM user_ops_huangxiaocan_activation_source
+            WHERE mobile = ?
+            """,
             ("13800138061",),
         ).fetchone()
         current_row = db.execute(
             """
-            SELECT mobile, external_userid, is_wecom_bound, class_term_no, class_term_label, activation_status
-            FROM user_ops_pool_current
+            SELECT mobile, external_userid, is_wecom_added, is_mobile_bound, class_term_no, class_term_label, huangxiaocan_activation_state
+            FROM user_ops_lead_pool_current
             WHERE mobile = ?
             """,
             ("13800138061",),
         ).fetchone()
 
-    assert lead_row["mobile"] == "13800138061"
-    assert lead_row["source_type"] == "class_term_import"
-    assert activation_row["mobile"] == "13800138061"
-    assert activation_row["activation_status"] == "not_activated"
-    assert activation_row["activation_remark"] == ""
+    assert source_row["mobile"] == "13800138061"
+    assert source_row["activation_state"] == "not_activated"
     assert current_row["mobile"] == "13800138061"
     assert current_row["external_userid"] == ""
-    assert bool(current_row["is_wecom_bound"]) is False
+    assert bool(current_row["is_wecom_added"]) is False
+    assert bool(current_row["is_mobile_bound"]) is False
     assert current_row["class_term_no"] == 5
     assert current_row["class_term_label"] == "5期"
-    assert current_row["activation_status"] == "not_activated"
+    assert current_row["huangxiaocan_activation_state"] == "not_activated"
 
 
-def test_activation_status_survives_reload(client):
+def test_activation_status_survives_lead_pool_reads(client, app):
+    client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138024,5期"},
+    )
     client.post(
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138024,激活"},
     )
-    before_reload = client.get("/api/admin/user-ops/list?query=13800138024").get_json()
-    assert before_reload["items"][0]["activation_status"] == "activated"
 
-    client.post("/api/admin/user-ops/reload")
+    overview_payload = client.get("/api/admin/user-ops/overview").get_json()
+    list_payload = client.get("/api/admin/user-ops/list?query=13800138024").get_json()
 
-    after_reload = client.get("/api/admin/user-ops/list?query=13800138024").get_json()
-    assert after_reload["items"][0]["activation_status"] == "activated"
+    with app.app_context():
+        source_row = get_db().execute(
+            "SELECT activation_state FROM user_ops_huangxiaocan_activation_source WHERE mobile = ?",
+            ("13800138024",),
+        ).fetchone()
+        lead_row = get_db().execute(
+            "SELECT huangxiaocan_activation_state FROM user_ops_lead_pool_current WHERE mobile = ?",
+            ("13800138024",),
+        ).fetchone()
+    assert source_row["activation_state"] == "activated"
+    assert lead_row["huangxiaocan_activation_state"] == "activated"
+    assert overview_payload["huangxiaocan_activated_count"] >= 1
+    assert list_payload["items"][0]["huangxiaocan_activation_state"] == "activated"
 
 
-def test_activation_import_creates_mobile_only_unbound_pool_row(client):
+def test_activation_import_does_not_create_mobile_only_lead_member(client, app):
     response = client.post(
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138025,未激活"},
@@ -1042,59 +1369,157 @@ def test_activation_import_creates_mobile_only_unbound_pool_row(client):
     assert response.status_code == 200
     assert payload["ok"] is True
 
-    list_payload = client.get("/api/admin/user-ops/list?query=13800138025").get_json()
-    assert list_payload["total"] == 1
-    item = list_payload["items"][0]
-    assert item["mobile"] == "13800138025"
-    assert item["external_userid"] == ""
-    assert item["is_wecom_bound"] is False
-    assert item["activation_status"] == "not_activated"
+    with app.app_context():
+        source_row = get_db().execute(
+            "SELECT activation_state FROM user_ops_huangxiaocan_activation_source WHERE mobile = ?",
+            ("13800138025",),
+        ).fetchone()
+        lead_row = get_db().execute(
+            "SELECT mobile FROM user_ops_lead_pool_current WHERE mobile = ?",
+            ("13800138025",),
+        ).fetchone()
+    assert source_row["activation_state"] == "not_activated"
+    assert lead_row is None
 
 
-def test_activation_status_filter_works(client):
+def test_history_contains_activation_patch_records_for_existing_member(client, app):
     client.post(
-        "/api/admin/user-ops/import-activation-status",
-        json={"pasted_text": "13800138026,激活\n13800138027,未激活"},
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138028,5期"},
     )
-
-    activated_payload = client.get("/api/admin/user-ops/list?activation_status=activated").get_json()
-    not_activated_payload = client.get("/api/admin/user-ops/list?activation_status=not_activated").get_json()
-
-    assert {item["mobile"] for item in activated_payload["items"]} == {"13800138026"}
-    assert {item["mobile"] for item in not_activated_payload["items"]} == {"13800138027"}
-
-
-def test_history_contains_activation_import_upsert_records(client):
     client.post(
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138028,激活"},
     )
 
-    history_payload = client.get("/api/admin/user-ops/history").get_json()
-    activation_rows = [item for item in history_payload["items"] if item["action_type"] == "activation_import_upsert"]
-    assert activation_rows
-    assert activation_rows[0]["mobile"] == "13800138028"
+    with app.app_context():
+        history = get_db().execute(
+            """
+            SELECT action_type, source_type
+            FROM user_ops_lead_pool_history
+            WHERE mobile = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("13800138028",),
+        ).fetchone()
+    assert history["action_type"] == "lead_pool_activation_patch"
+    assert history["source_type"] == "huangxiaocan_activation_import"
 
 
-def test_activation_import_list_shows_activated_and_not_activated(client):
+def test_activation_import_updates_existing_member_and_not_create_missing_one(client, app):
+    client.post(
+        "/api/admin/user-ops/import-mobile-class-terms",
+        json={"pasted_text": "13800138029,5期"},
+    )
     client.post(
         "/api/admin/user-ops/import-activation-status",
         json={"pasted_text": "13800138029,已激活\n13800138030,未激活"},
     )
 
-    list_payload = client.get("/api/admin/user-ops/list").get_json()
-    by_mobile = {item["mobile"]: item for item in list_payload["items"]}
+    with app.app_context():
+        updated = get_db().execute(
+            """
+            SELECT huangxiaocan_activation_state
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138029",),
+        ).fetchone()
+        missing = get_db().execute(
+            """
+            SELECT mobile
+            FROM user_ops_lead_pool_current
+            WHERE mobile = ?
+            """,
+            ("13800138030",),
+        ).fetchone()
+        source = get_db().execute(
+            """
+            SELECT activation_state
+            FROM user_ops_huangxiaocan_activation_source
+            WHERE mobile = ?
+            """,
+            ("13800138030",),
+        ).fetchone()
+    assert updated["huangxiaocan_activation_state"] == "activated"
+    assert missing is None
+    assert source["activation_state"] == "not_activated"
 
-    assert by_mobile["13800138029"]["activation_status"] == "activated"
-    assert by_mobile["13800138029"]["activation_status_label"] == "已激活"
-    assert by_mobile["13800138030"]["activation_status"] == "not_activated"
-    assert by_mobile["13800138030"]["activation_status_label"] == "未激活"
+
+def test_migrate_legacy_user_ops_pool_to_lead_pool_ignores_signed_semantics(client, app):
+    _seed_user_ops_sources(app)
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_current (
+                mobile, external_userid, customer_name, owner_userid, current_status, is_wecom_bound,
+                activation_status, activation_remark, class_term_no, class_term_label, source_type, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138111",
+                "",
+                "",
+                "",
+                "signed_999",
+                0,
+                "high_intent",
+                "",
+                5,
+                "5期",
+                "manual",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_current (
+                mobile, external_userid, customer_name, owner_userid, current_status, is_wecom_bound,
+                activation_status, activation_remark, class_term_no, class_term_label, source_type, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138112",
+                "",
+                "",
+                "",
+                "signed_3999",
+                0,
+                "not_activated",
+                "",
+                None,
+                "",
+                "experience_import",
+            ),
+        )
+        migrated = migrate_legacy_user_ops_pool_to_lead_pool(operator="tester")
+        rows = db.execute(
+            """
+            SELECT mobile, huangxiaocan_activation_state, class_term_label, first_entry_source, last_entry_source
+            FROM user_ops_lead_pool_current
+            WHERE mobile IN (?, ?)
+            ORDER BY mobile ASC
+            """,
+            ("13800138111", "13800138112"),
+        ).fetchall()
+
+    assert migrated["migrated_count"] >= 2
+    assert len(rows) == 2
+    assert rows[0]["mobile"] == "13800138111"
+    assert rows[0]["class_term_label"] == "5期"
+    assert rows[0]["huangxiaocan_activation_state"] == "unknown"
+    assert rows[0]["first_entry_source"] == "legacy_pool_migration"
+    assert rows[1]["mobile"] == "13800138112"
+    assert rows[1]["huangxiaocan_activation_state"] == "not_activated"
 
 
-def test_external_contact_event_for_zhaoyanfang_creates_deferred_auto_assign_job(app, monkeypatch):
+def test_external_contact_event_add_external_contact_creates_deferred_verify_job_for_any_owner(app, monkeypatch):
     detail = _build_external_contact_detail(
         external_userid="wm_auto_assign_001",
-        owner_userid="ZhaoYanFang",
+        owner_userid="sales_01",
     )
     dispatched: list[tuple[str, tuple[object, ...]]] = []
     monkeypatch.setattr("wecom_ability_service.routes._contact_client", lambda: _FakeCallbackContactClient(detail))
@@ -1109,7 +1534,7 @@ def test_external_contact_event_for_zhaoyanfang_creates_deferred_auto_assign_job
             event_type="change_external_contact",
             change_type="add_external_contact",
             external_userid="wm_auto_assign_001",
-            user_id="ZhaoYanFang",
+            user_id="sales_01",
             event_time=1775000000,
             event_key="event-auto-assign-001",
             payload_xml="<xml></xml>",
@@ -1126,15 +1551,15 @@ def test_external_contact_event_for_zhaoyanfang_creates_deferred_auto_assign_job
             LIMIT 1
             """
         ).fetchone()
-        assert job["job_type"] == "auto_assign_class_term"
+        assert job["job_type"] == "verify_class_term_tag_and_upsert_lead_pool"
         assert job["external_userid"] == "wm_auto_assign_001"
-        assert job["owner_userid"] == "ZhaoYanFang"
+        assert job["owner_userid"] == "sales_01"
         assert job["status"] == "pending"
         assert str(job["run_after"] or "").strip() != ""
         assert dispatched[0][0] == "user_ops_auto_assign_class_term"
 
 
-def test_external_contact_event_for_other_owner_does_not_create_deferred_job(app, monkeypatch):
+def test_external_contact_event_for_other_owner_also_creates_deferred_job(app, monkeypatch):
     detail = _build_external_contact_detail(
         external_userid="wm_auto_assign_002",
         owner_userid="sales_01",
@@ -1158,9 +1583,10 @@ def test_external_contact_event_for_other_owner_does_not_create_deferred_job(app
 
         assert result["ok"] is True
         row = get_db().execute(
-            "SELECT COUNT(*) AS total FROM user_ops_deferred_jobs",
+            "SELECT job_type, owner_userid FROM user_ops_deferred_jobs ORDER BY id DESC LIMIT 1",
         ).fetchone()
-        assert row["total"] == 0
+        assert row["job_type"] == "verify_class_term_tag_and_upsert_lead_pool"
+        assert row["owner_userid"] == "sales_01"
 
 
 def test_deferred_job_does_not_run_before_run_after(client, app):
@@ -1215,21 +1641,28 @@ def test_due_deferred_job_writes_class_term_for_single_match(client, app, user_o
     assert payload["success_count"] == 1
     with app.app_context():
         pool_row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
+            """
+            SELECT mobile, external_userid, class_term_no, class_term_label, is_wecom_added, is_mobile_bound
+            FROM user_ops_lead_pool_current
+            WHERE external_userid = ?
+            """,
             ("wm_auto_due_002",),
         ).fetchone()
         assert pool_row["class_term_no"] == 1
         assert pool_row["class_term_label"] == "1期"
+        assert bool(pool_row["is_wecom_added"]) is True
+        assert bool(pool_row["is_mobile_bound"]) is False
         job = get_db().execute(
-            "SELECT status FROM user_ops_deferred_jobs WHERE external_userid = ?",
+            "SELECT status, job_type FROM user_ops_deferred_jobs WHERE external_userid = ?",
             ("wm_auto_due_002",),
         ).fetchone()
         assert job["status"] == "success"
+        assert job["job_type"] == "verify_class_term_tag_and_upsert_lead_pool"
         history = get_db().execute(
-            "SELECT action_type FROM user_ops_pool_history WHERE external_userid = ? ORDER BY id DESC LIMIT 1",
+            "SELECT source_type FROM user_ops_lead_pool_history WHERE external_userid = ? ORDER BY id DESC LIMIT 1",
             ("wm_auto_due_002",),
         ).fetchone()
-        assert history["action_type"] == "class_term_auto_assign"
+        assert history["source_type"] == "verify_class_term_tag_and_upsert_lead_pool"
         refreshed_tag = get_db().execute(
             "SELECT tag_id, tag_name FROM contact_tags WHERE external_userid = ? AND userid = ?",
             ("wm_auto_due_002", "ZhaoYanFang"),
@@ -1265,11 +1698,10 @@ def test_due_deferred_job_conflict_is_skipped(client, app, user_ops_contact_clie
     assert payload["conflict_count"] == 1
     with app.app_context():
         pool_row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
+            "SELECT class_term_no, class_term_label FROM user_ops_lead_pool_current WHERE external_userid = ?",
             ("wm_auto_due_003",),
         ).fetchone()
-        assert pool_row["class_term_no"] in (None, "")
-        assert pool_row["class_term_label"] == ""
+        assert pool_row is None
         job = get_db().execute(
             "SELECT status FROM user_ops_deferred_jobs WHERE external_userid = ?",
             ("wm_auto_due_003",),
@@ -1307,287 +1739,19 @@ def test_due_deferred_job_without_match_is_skipped(client, app, user_ops_contact
         ).fetchone()
         assert job["status"] == "skipped"
         history = get_db().execute(
-            "SELECT action_type FROM user_ops_pool_history WHERE external_userid = ? ORDER BY id DESC LIMIT 1",
+            "SELECT COUNT(*) AS total FROM user_ops_lead_pool_history WHERE external_userid = ?",
             ("wm_auto_due_004",),
         ).fetchone()
-        assert history["action_type"] == "class_term_auto_assign_skip"
+        assert history["total"] == 0
 
 
-def test_backfill_class_term_dry_run_returns_preview_without_writing(client, app, user_ops_contact_client):
-    _seed_user_ops_sources(app)
-    user_ops_contact_client.set_contact_detail(
-        "wm_signed_999",
-        _build_external_contact_detail(
-            external_userid="wm_signed_999",
-            owner_userid="sales_01",
-            follow_user_tags=[{"id": "tag-term-1", "name": "首期7天改变计划"}],
-        ),
-    )
-    client.post("/api/admin/user-ops/reload")
-
+def test_backfill_class_term_endpoint_is_deprecated_internal_only(client):
     response = client.post(
         "/api/admin/user-ops/backfill-class-term",
         json={"owner_userid": "sales_01", "dry_run": True},
     )
     payload = response.get_json()
 
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["dry_run"] is True
-    assert payload["update_count"] == 1
-
-    with app.app_context():
-        row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
-            ("wm_signed_999",),
-        ).fetchone()
-        assert row["class_term_no"] in (None, "")
-        assert row["class_term_label"] == ""
-        refreshed_tag = get_db().execute(
-            "SELECT tag_id FROM contact_tags WHERE external_userid = ? AND userid = ?",
-            ("wm_signed_999", "sales_01"),
-        ).fetchone()
-        assert refreshed_tag["tag_id"] == "tag-term-1"
-
-
-def test_backfill_class_term_apply_updates_pool(client, app, user_ops_contact_client):
-    _seed_user_ops_sources(app)
-    user_ops_contact_client.set_contact_detail(
-        "wm_signed_999",
-        _build_external_contact_detail(
-            external_userid="wm_signed_999",
-            owner_userid="sales_01",
-            follow_user_tags=[],
-        ),
-    )
-    user_ops_contact_client.set_contact_detail(
-        "wm_lead_bound",
-        _build_external_contact_detail(
-            external_userid="wm_lead_bound",
-            owner_userid="sales_01",
-            follow_user_tags=[{"id": "tag-term-3", "name": "别名也能命中"}],
-        ),
-    )
-    client.post("/api/admin/user-ops/reload")
-
-    response = client.post(
-        "/api/admin/user-ops/backfill-class-term",
-        json={"owner_userid": "sales_01", "dry_run": False, "confirm": True},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["dry_run"] is False
-    assert payload["applied_count"] == 1
-
-    with app.app_context():
-        row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
-            ("wm_lead_bound",),
-        ).fetchone()
-        assert row["class_term_no"] == 3
-        assert row["class_term_label"] == "3期"
-
-
-def test_backfill_class_term_conflict_is_reported_and_skipped(client, app, user_ops_contact_client):
-    _seed_user_ops_sources(app)
-    user_ops_contact_client.set_contact_detail(
-        "wm_signed_999",
-        _build_external_contact_detail(
-            external_userid="wm_signed_999",
-            owner_userid="sales_01",
-            follow_user_tags=[
-                {"id": "tag-term-1", "name": "首期7天改变计划"},
-                {"id": "tag-term-4", "name": "0330改变计划-第4期"},
-            ],
-        ),
-    )
-    user_ops_contact_client.set_contact_detail(
-        "wm_lead_bound",
-        _build_external_contact_detail(
-            external_userid="wm_lead_bound",
-            owner_userid="sales_01",
-            follow_user_tags=[],
-        ),
-    )
-    client.post("/api/admin/user-ops/reload")
-
-    dry_run_payload = client.post(
-        "/api/admin/user-ops/backfill-class-term",
-        json={"owner_userid": "sales_01", "dry_run": True},
-    ).get_json()
-    assert dry_run_payload["conflict_count"] == 1
-
-    apply_payload = client.post(
-        "/api/admin/user-ops/backfill-class-term",
-        json={"owner_userid": "sales_01", "dry_run": False, "confirm": True},
-    ).get_json()
-    assert apply_payload["conflict_count"] == 1
-    assert apply_payload["applied_count"] == 0
-
-    with app.app_context():
-        row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
-            ("wm_signed_999",),
-        ).fetchone()
-        assert row["class_term_no"] in (None, "")
-        assert row["class_term_label"] == ""
-
-
-def test_backfill_class_term_no_match_keeps_existing_value(client, app, user_ops_contact_client):
-    _seed_user_ops_sources(app)
-    user_ops_contact_client.set_contact_detail(
-        "wm_signed_999",
-        _build_external_contact_detail(
-            external_userid="wm_signed_999",
-            owner_userid="sales_01",
-            follow_user_tags=[],
-        ),
-    )
-    user_ops_contact_client.set_contact_detail(
-        "wm_lead_bound",
-        _build_external_contact_detail(
-            external_userid="wm_lead_bound",
-            owner_userid="sales_01",
-            follow_user_tags=[],
-        ),
-    )
-    client.post("/api/admin/user-ops/reload")
-    with app.app_context():
-        db = get_db()
-        db.execute(
-            """
-            UPDATE user_ops_pool_current
-            SET class_term_no = ?, class_term_label = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE external_userid = ?
-            """,
-            (4, "4期", "wm_signed_999"),
-        )
-        db.commit()
-
-    response = client.post(
-        "/api/admin/user-ops/backfill-class-term",
-        json={"owner_userid": "sales_01", "dry_run": False, "confirm": True},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["no_match_count"] >= 1
-
-    with app.app_context():
-        row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
-            ("wm_signed_999",),
-        ).fetchone()
-        assert row["class_term_no"] == 4
-        assert row["class_term_label"] == "4期"
-
-
-def test_backfill_class_term_history_records_apply_and_conflict(client, app, user_ops_contact_client):
-    _seed_user_ops_sources(app)
-    user_ops_contact_client.set_contact_detail(
-        "wm_lead_bound",
-        _build_external_contact_detail(
-            external_userid="wm_lead_bound",
-            owner_userid="sales_01",
-            follow_user_tags=[{"id": "tag-term-3", "name": "0322改变计划-第3期"}],
-        ),
-    )
-    user_ops_contact_client.set_contact_detail(
-        "wm_signed_999",
-        _build_external_contact_detail(
-            external_userid="wm_signed_999",
-            owner_userid="sales_01",
-            follow_user_tags=[
-                {"id": "tag-term-1", "name": "首期7天改变计划"},
-                {"id": "tag-term-4", "name": "0330改变计划-第4期"},
-            ],
-        ),
-    )
-    client.post("/api/admin/user-ops/reload")
-    client.post(
-        "/api/admin/user-ops/backfill-class-term",
-        json={"owner_userid": "sales_01", "dry_run": False, "confirm": True},
-    )
-
-    history_payload = client.get("/api/admin/user-ops/history").get_json()
-    action_types = {item["action_type"] for item in history_payload["items"]}
-    assert "class_term_backfill_apply" in action_types
-    assert "class_term_backfill_conflict" in action_types
-
-
-def test_backfill_class_term_requires_confirm_for_real_write(client, app, user_ops_contact_client):
-    _seed_user_ops_sources(app)
-    user_ops_contact_client.set_contact_detail(
-        "wm_signed_999",
-        _build_external_contact_detail(
-            external_userid="wm_signed_999",
-            owner_userid="sales_01",
-            follow_user_tags=[],
-        ),
-    )
-    user_ops_contact_client.set_contact_detail(
-        "wm_lead_bound",
-        _build_external_contact_detail(
-            external_userid="wm_lead_bound",
-            owner_userid="sales_01",
-            follow_user_tags=[{"id": "tag-term-3", "name": "0322改变计划-第3期"}],
-        ),
-    )
-    client.post("/api/admin/user-ops/reload")
-
-    response = client.post(
-        "/api/admin/user-ops/backfill-class-term",
-        json={"owner_userid": "sales_01", "dry_run": False},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 400
-    assert payload == {"ok": False, "error": "confirm_required"}
-
-    with app.app_context():
-        row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
-            ("wm_lead_bound",),
-        ).fetchone()
-        assert row["class_term_no"] in (None, "")
-        assert row["class_term_label"] == ""
-
-
-def test_backfill_class_term_rejects_confirm_false_for_real_write(client, app, user_ops_contact_client):
-    _seed_user_ops_sources(app)
-    user_ops_contact_client.set_contact_detail(
-        "wm_signed_999",
-        _build_external_contact_detail(
-            external_userid="wm_signed_999",
-            owner_userid="sales_01",
-            follow_user_tags=[],
-        ),
-    )
-    user_ops_contact_client.set_contact_detail(
-        "wm_lead_bound",
-        _build_external_contact_detail(
-            external_userid="wm_lead_bound",
-            owner_userid="sales_01",
-            follow_user_tags=[{"id": "tag-term-3", "name": "0322改变计划-第3期"}],
-        ),
-    )
-    client.post("/api/admin/user-ops/reload")
-
-    response = client.post(
-        "/api/admin/user-ops/backfill-class-term",
-        json={"owner_userid": "sales_01", "dry_run": False, "confirm": False},
-    )
-    payload = response.get_json()
-
-    assert response.status_code == 400
-    assert payload == {"ok": False, "error": "confirm_required"}
-
-    with app.app_context():
-        row = get_db().execute(
-            "SELECT class_term_no, class_term_label FROM user_ops_pool_current WHERE external_userid = ?",
-            ("wm_lead_bound",),
-        ).fetchone()
-        assert row["class_term_no"] in (None, "")
-        assert row["class_term_label"] == ""
+    assert response.status_code == 410
+    assert payload["ok"] is False
+    assert payload["error"] == "deprecated_internal_only"
