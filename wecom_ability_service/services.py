@@ -60,14 +60,6 @@ CLASS_USER_ALLOWED_STATUSES = {
     for item in SIGNUP_TAG_STATUS_DEFINITIONS
 }
 
-USER_OPS_CURRENT_STATUS_DEFINITIONS = [
-    {"value": "lead_trial", "label": "报名引流品"},
-    {"value": "signed_999", "label": "已报名999"},
-    {"value": "signed_3999", "label": "已报名3999"},
-]
-USER_OPS_CURRENT_STATUS_LABELS = {
-    item["value"]: item["label"] for item in USER_OPS_CURRENT_STATUS_DEFINITIONS
-}
 USER_OPS_ACTIVATION_STATUS_DEFINITIONS = [
     {"value": "not_activated", "label": "未激活"},
     {"value": "activated", "label": "已激活"},
@@ -75,21 +67,31 @@ USER_OPS_ACTIVATION_STATUS_DEFINITIONS = [
 USER_OPS_ACTIVATION_STATUS_LABELS = {
     item["value"]: item["label"] for item in USER_OPS_ACTIVATION_STATUS_DEFINITIONS
 }
-# User Ops V2 now uses `mobile` as the only import key.
-# Source fields:
-# - user_ops_experience_leads.mobile acts as the current mobile anchor for
-#   experience imports and class-term imports.
-# - user_ops_activation_status_source.mobile / activation_status stores the
-#   activation import source.
-# Projection fields:
-# - user_ops_pool_current.class_term_no / class_term_label
-# - user_ops_pool_current.activation_status / activation_remark
-# - user_ops_pool_current.external_userid / is_wecom_bound
-# Import rules:
-# - class-term import: last row wins per mobile
-# - activation import: last row wins per mobile
-# - external_userid is never written by imports and is derived from
-#   people.mobile -> external_contact_bindings.person_id -> external_userid
+USER_OPS_LEAD_POOL_ACTIVATION_STATE_DEFINITIONS = [
+    {"value": "unknown", "label": "待录入"},
+    {"value": "activated", "label": "已激活"},
+    {"value": "not_activated", "label": "未激活"},
+]
+USER_OPS_LEAD_POOL_ACTIVATION_STATE_LABELS = {
+    item["value"]: item["label"] for item in USER_OPS_LEAD_POOL_ACTIVATION_STATE_DEFINITIONS
+}
+USER_OPS_LEAD_POOL_ACTIVATION_STATES = {"unknown", "activated", "not_activated"}
+USER_OPS_HUANGXIAOCAN_ACTIVATION_SOURCE_STATES = {"activated", "not_activated"}
+# User Ops V2 lead-pool rules:
+# - `mobile` is the canonical import key whenever a mobile is known.
+# - Entry paths are limited to student import, sidebar class-term upsert, and
+#   verified class-term tag deferred jobs.
+# - `user_ops_lead_pool_current` is the current read model for admin V2.
+# - `user_ops_lead_pool_history` stores lead-pool mutation history.
+# - `user_ops_huangxiaocan_activation_source` stores activation imports and only
+#   patches existing lead members; it never creates them.
+# - `external_userid` is always derived from binding relations rather than
+#   direct import input.
+LEGACY_USER_OPS_POOL_STATUS_ORDER = {
+    "lead_trial": 1,
+    "signed_999": 2,
+    "signed_3999": 3,
+}
 USER_OPS_CONFIRMED_CLASS_TERM_MAPPINGS = [
     {
         "group_id": "etbNXyCwAA94UNiV4_iDrvFap9f-1i3w",
@@ -165,8 +167,7 @@ USER_OPS_CONFIRMED_CLASS_TERM_MAPPINGS = [
     },
 ]
 USER_OPS_CLASS_TERM_TAG_GROUP_NAME = "9.9元改变计划"
-USER_OPS_TARGET_AUTO_ASSIGN_OWNER = "ZhaoYanFang"
-USER_OPS_DEFERRED_JOB_TYPE_AUTO_ASSIGN_CLASS_TERM = "auto_assign_class_term"
+USER_OPS_DEFERRED_JOB_TYPE_VERIFY_CLASS_TERM_TAG_AND_UPSERT_LEAD_POOL = "verify_class_term_tag_and_upsert_lead_pool"
 
 
 class QuestionnaireAlreadySubmittedError(ValueError):
@@ -1193,7 +1194,7 @@ def _stringify_db_timestamp(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _normalize_user_ops_current_status(signup_status: str) -> str:
+def _normalize_legacy_user_ops_current_status(signup_status: str) -> str:
     normalized = str(signup_status or "").strip()
     if normalized == "signed_3999":
         return "signed_3999"
@@ -1202,12 +1203,8 @@ def _normalize_user_ops_current_status(signup_status: str) -> str:
     return "lead_trial"
 
 
-def _user_ops_status_rank(current_status: str) -> int:
-    if current_status == "signed_3999":
-        return 3
-    if current_status == "signed_999":
-        return 2
-    return 1
+def _legacy_user_ops_status_rank(current_status: str) -> int:
+    return LEGACY_USER_OPS_POOL_STATUS_ORDER.get(str(current_status or "").strip(), 1)
 
 
 def _user_ops_merge_key(row: dict[str, Any]) -> str:
@@ -1539,7 +1536,7 @@ def _materialize_user_ops_crm_candidate(row: dict[str, Any]) -> dict[str, Any] |
         str(row.get("status_owner_userid") or "").strip()
         or str(row.get("contact_owner_userid") or "").strip()
     )
-    current_status = _normalize_user_ops_current_status(str(row.get("signup_status") or "").strip())
+    current_status = _normalize_legacy_user_ops_current_status(str(row.get("signup_status") or "").strip())
     is_wecom_bound = bool(external_userid and bound_mobile and row.get("person_id") is not None)
     updated_candidates = [
         _stringify_db_timestamp(row.get("status_updated_at")),
@@ -1579,7 +1576,7 @@ def _materialize_user_ops_experience_candidate(row: dict[str, Any]) -> dict[str,
         str(row.get("status_owner_userid") or "").strip()
         or str(row.get("contact_owner_userid") or "").strip()
     )
-    current_status = _normalize_user_ops_current_status(str(row.get("signup_status") or "").strip())
+    current_status = _normalize_legacy_user_ops_current_status(str(row.get("signup_status") or "").strip())
     is_wecom_bound = bool(external_userid and bound_mobile and row.get("person_id") is not None and bound_mobile == mobile)
     updated_candidates = [
         _stringify_db_timestamp(row.get("lead_updated_at")),
@@ -1614,7 +1611,7 @@ def _materialize_user_ops_candidate(row: dict[str, Any]) -> dict[str, Any] | Non
 
 def _merge_user_ops_candidate(existing: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     merged = dict(existing)
-    if _user_ops_status_rank(candidate["current_status"]) >= _user_ops_status_rank(existing["current_status"]):
+    if _legacy_user_ops_status_rank(candidate["current_status"]) >= _legacy_user_ops_status_rank(existing["current_status"]):
         merged["current_status"] = candidate["current_status"]
     if candidate.get("is_wecom_bound"):
         merged["is_wecom_bound"] = True
@@ -1752,6 +1749,9 @@ def _load_existing_user_ops_pool_map() -> dict[str, dict[str, Any]]:
 
 
 def reload_user_ops_pool() -> dict[str, Any]:
+    # Legacy maintenance helper only. Admin V2 no longer reads or depends on
+    # `user_ops_pool_current`; keep this helper only as rollback/migration
+    # support while old tables remain in the schema.
     # Rebuild the phone-centric projection from CRM-bound rows, mobile-anchor
     # rows, and activation source rows. external_userid / is_wecom_bound always
     # come from existing binding relations; class term and activation are
@@ -1919,6 +1919,16 @@ def _list_active_class_term_mappings() -> list[dict[str, Any]]:
     ]
 
 
+def _get_active_class_term_mapping_by_no(class_term_no: int | None) -> dict[str, Any] | None:
+    if class_term_no in (None, ""):
+        return None
+    normalized_no = int(class_term_no)
+    return next(
+        (item for item in _list_active_class_term_mappings() if int(item["class_term_no"]) == normalized_no),
+        None,
+    )
+
+
 def _list_user_ops_pool_external_userids_for_owner(owner_userid: str) -> list[str]:
     rows = get_db().execute(
         """
@@ -2060,6 +2070,70 @@ def refresh_user_ops_contact_tags_for_owner(owner_userid: str) -> dict[str, Any]
         "external_user_count": len(external_userids),
         "refreshed_count": refreshed_count,
         "items": items,
+    }
+
+
+def _sync_sidebar_lead_pool_class_term_tag(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    class_term_no: int,
+) -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    if not normalized_external_userid:
+        raise ValueError("external_userid is required")
+    if not normalized_owner_userid:
+        raise ValueError("owner_userid is required")
+
+    mapping = _get_active_class_term_mapping_by_no(class_term_no)
+    if not mapping:
+        raise ValueError("class_term_no is invalid")
+
+    target_tag_id = str(mapping.get("tag_id") or "").strip()
+    target_tag_name = str(mapping.get("tag_name") or mapping.get("class_term_label") or "").strip()
+    if not target_tag_id:
+        raise ValueError("class term tag is not initialized")
+
+    remove_tag_ids = sorted(
+        {
+            str(item.get("tag_id") or "").strip()
+            for item in _list_active_class_term_mappings()
+            if str(item.get("tag_id") or "").strip() and int(item.get("class_term_no") or 0) != int(mapping["class_term_no"])
+        }
+    )
+
+    testing_applier = current_app.config.get("SIDEBAR_LEAD_POOL_TAG_APPLIER")
+    if callable(testing_applier):
+        testing_applier(
+            external_userid=normalized_external_userid,
+            owner_userid=normalized_owner_userid,
+            add_tags=[target_tag_id],
+            remove_tags=remove_tag_ids,
+        )
+    else:
+        client = WeComClient.from_app()
+        client.mark_external_contact_tags(
+            external_userid=normalized_external_userid,
+            follow_user_userid=normalized_owner_userid,
+            add_tags=[target_tag_id],
+            remove_tags=remove_tag_ids,
+        )
+
+    save_tag_snapshot(
+        normalized_owner_userid,
+        normalized_external_userid,
+        [target_tag_id],
+        {target_tag_id: target_tag_name},
+    )
+    if remove_tag_ids:
+        remove_tag_snapshot(normalized_owner_userid, normalized_external_userid, remove_tag_ids)
+    return {
+        "class_term_no": int(mapping["class_term_no"]),
+        "class_term_label": str(mapping.get("class_term_label") or "").strip(),
+        "tag_id": target_tag_id,
+        "tag_name": target_tag_name,
+        "removed_tag_ids": remove_tag_ids,
     }
 
 
@@ -2312,8 +2386,6 @@ def schedule_user_ops_auto_assign_class_term_job(
     normalized_owner_userid = str(owner_userid or "").strip()
     if not normalized_external_userid:
         return {"ok": True, "scheduled": False, "reason": "missing_external_userid"}
-    if normalized_owner_userid != USER_OPS_TARGET_AUTO_ASSIGN_OWNER:
-        return {"ok": True, "scheduled": False, "reason": "owner_not_supported"}
 
     now_dt = datetime.now()
     run_after_dt = now_dt + timedelta(seconds=max(int(delay_seconds or 0), 0))
@@ -2335,7 +2407,7 @@ def schedule_user_ops_auto_assign_class_term_job(
         RETURNING id, job_type, external_userid, owner_userid, run_after, status, attempt_count, created_at, updated_at
         """,
         (
-            USER_OPS_DEFERRED_JOB_TYPE_AUTO_ASSIGN_CLASS_TERM,
+            USER_OPS_DEFERRED_JOB_TYPE_VERIFY_CLASS_TERM_TAG_AND_UPSERT_LEAD_POOL,
             normalized_external_userid,
             normalized_owner_userid,
             run_after,
@@ -2374,7 +2446,7 @@ def _list_due_user_ops_deferred_jobs(limit: int, now_at: str) -> list[dict[str, 
         LIMIT ?
         """,
         (
-            USER_OPS_DEFERRED_JOB_TYPE_AUTO_ASSIGN_CLASS_TERM,
+            USER_OPS_DEFERRED_JOB_TYPE_VERIFY_CLASS_TERM_TAG_AND_UPSERT_LEAD_POOL,
             now_at,
             max(int(limit or 0), 1),
         ),
@@ -2476,138 +2548,141 @@ def _find_user_ops_backfill_preview_item(owner_userid: str, external_userid: str
     return None
 
 
-def _execute_auto_assign_class_term_job(job: dict[str, Any], *, operator: str) -> dict[str, Any]:
-    normalized_owner_userid = str(job.get("owner_userid") or "").strip()
-    normalized_external_userid = str(job.get("external_userid") or "").strip()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    actor = str(operator or "").strip() or "system_auto_assign"
+def _list_class_term_matches_for_external_contact(external_userid: str, owner_userid: str = "") -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    if not normalized_external_userid:
+        return {"matched_terms": [], "tag_ids": [], "tag_names": []}
+    rows = get_db().execute(
+        """
+        SELECT
+            COALESCE(tags.tag_id, '') AS tag_id,
+            COALESCE(tags.tag_name, '') AS tag_name,
+            mappings.class_term_no,
+            COALESCE(mappings.class_term_label, '') AS class_term_label
+        FROM contact_tags tags
+        LEFT JOIN class_term_tag_mapping mappings
+          ON mappings.tag_id = tags.tag_id
+         AND mappings.tag_group_name = ?
+         AND mappings.is_active = ?
+         AND COALESCE(mappings.tag_id, '') <> ''
+        WHERE tags.external_userid = ?
+          AND (? = '' OR tags.userid = ?)
+        ORDER BY mappings.class_term_no ASC, tags.tag_id ASC, tags.tag_name ASC
+        """,
+        (
+            USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
+            _db_bool(True),
+            normalized_external_userid,
+            normalized_owner_userid,
+            normalized_owner_userid,
+        ),
+    ).fetchall()
+    tag_ids: list[str] = []
+    tag_names: list[str] = []
+    matched_terms: list[dict[str, Any]] = []
+    seen_term_keys: set[str] = set()
+    for row in rows:
+        tag_id = str(row.get("tag_id") or "").strip()
+        tag_name = str(row.get("tag_name") or "").strip()
+        if tag_id and tag_id not in tag_ids:
+            tag_ids.append(tag_id)
+        if tag_name and tag_name not in tag_names:
+            tag_names.append(tag_name)
+        if row.get("class_term_no") in (None, ""):
+            continue
+        key = f"{int(row['class_term_no'])}:{str(row.get('class_term_label') or '').strip()}:{tag_id}"
+        if key in seen_term_keys:
+            continue
+        seen_term_keys.add(key)
+        matched_terms.append(
+            {
+                "class_term_no": int(row["class_term_no"]),
+                "class_term_label": str(row.get("class_term_label") or "").strip(),
+                "tag_id": tag_id,
+                "tag_name": tag_name,
+            }
+        )
+    return {"matched_terms": matched_terms, "tag_ids": tag_ids, "tag_names": tag_names}
 
-    if normalized_owner_userid != USER_OPS_TARGET_AUTO_ASSIGN_OWNER:
-        return {
-            "status": "skipped",
-            "reason": "owner_not_supported",
-            "external_userid": normalized_external_userid,
-            "owner_userid": normalized_owner_userid,
-        }
 
+def _upsert_lead_pool_from_verified_class_term_tag(
+    *,
+    external_userid: str,
+    owner_userid: str = "",
+    operator: str = "",
+    source_type: str = USER_OPS_DEFERRED_JOB_TYPE_VERIFY_CLASS_TERM_TAG_AND_UPSERT_LEAD_POOL,
+) -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    actor = str(operator or _current_user_ops_operator()).strip() or "system_auto_assign"
     tag_definition_sync = sync_user_ops_class_term_tag_definitions()
     tag_refresh = refresh_user_ops_contact_tags_for_external_userid(
         external_userid=normalized_external_userid,
         owner_userid=normalized_owner_userid,
     )
-    preview_item = _find_user_ops_backfill_preview_item(normalized_owner_userid, normalized_external_userid)
-    if preview_item is None:
-        return {
-            "status": "skipped",
-            "reason": "pool_item_not_found",
-            "external_userid": normalized_external_userid,
-            "owner_userid": normalized_owner_userid,
-            "tag_definition_sync": tag_definition_sync,
-            "tag_refresh": tag_refresh,
-        }
-
-    current_payload = {
-        "class_term_no": preview_item.get("current_class_term_no"),
-        "class_term_label": preview_item.get("current_class_term_label"),
-    }
-    decision = str(preview_item.get("decision") or "").strip()
-    if decision == "conflict":
-        _insert_user_ops_history_record(
-            pool_id=preview_item.get("pool_id"),
-            mobile=str(preview_item.get("mobile") or "").strip(),
-            external_userid=normalized_external_userid,
-            action_type="class_term_auto_assign_conflict",
-            old_payload=current_payload,
-            new_payload={
-                "matched_terms": preview_item.get("matched_terms") or [],
-                "tag_names": preview_item.get("tag_names") or [],
-            },
-            operator=actor,
-            source_type="class_term_auto_assign",
-            created_at=now,
-        )
-        get_db().commit()
+    match_payload = _list_class_term_matches_for_external_contact(
+        normalized_external_userid,
+        normalized_owner_userid,
+    )
+    matched_terms = list(match_payload["matched_terms"])
+    if len(matched_terms) > 1:
         return {
             "status": "conflict",
-            "pool_id": preview_item.get("pool_id"),
             "external_userid": normalized_external_userid,
             "owner_userid": normalized_owner_userid,
-            "matched_terms": preview_item.get("matched_terms") or [],
-            "decision": decision,
+            "matched_terms": matched_terms,
             "tag_definition_sync": tag_definition_sync,
             "tag_refresh": tag_refresh,
         }
-
-    if decision == "no_match":
-        _insert_user_ops_history_record(
-            pool_id=preview_item.get("pool_id"),
-            mobile=str(preview_item.get("mobile") or "").strip(),
-            external_userid=normalized_external_userid,
-            action_type="class_term_auto_assign_skip",
-            old_payload=current_payload,
-            new_payload={
-                "matched_terms": [],
-                "tag_names": preview_item.get("tag_names") or [],
-                "reason": "no_match",
-            },
-            operator=actor,
-            source_type="class_term_auto_assign",
-            created_at=now,
-        )
-        get_db().commit()
+    if not matched_terms:
         return {
             "status": "skipped",
-            "pool_id": preview_item.get("pool_id"),
+            "reason": "no_match",
             "external_userid": normalized_external_userid,
             "owner_userid": normalized_owner_userid,
-            "decision": decision,
+            "matched_terms": [],
             "tag_definition_sync": tag_definition_sync,
             "tag_refresh": tag_refresh,
         }
 
-    matched = (preview_item.get("matched_terms") or [{}])[0]
-    next_payload = {
-        "class_term_no": matched.get("class_term_no"),
-        "class_term_label": matched.get("class_term_label"),
-        "matched_terms": preview_item.get("matched_terms") or [],
-    }
-    if decision == "update":
-        get_db().execute(
-            """
-            UPDATE user_ops_pool_current
-            SET class_term_no = ?, class_term_label = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                matched.get("class_term_no"),
-                matched.get("class_term_label"),
-                now,
-                preview_item.get("pool_id"),
-            ),
-        )
-    _insert_user_ops_history_record(
-        pool_id=preview_item.get("pool_id"),
-        mobile=str(preview_item.get("mobile") or "").strip(),
-        external_userid=normalized_external_userid,
-        action_type="class_term_auto_assign",
-        old_payload=current_payload,
-        new_payload=next_payload,
+    identity = resolve_person_identity(external_userid=normalized_external_userid)
+    matched = matched_terms[0]
+    result = upsert_user_ops_lead_pool_member(
+        mobile=str(identity.get("mobile") or "").strip(),
+        external_userid=str(identity.get("external_userid") or normalized_external_userid).strip(),
+        customer_name=str(identity.get("customer_name") or "").strip(),
+        owner_userid=str(identity.get("owner_userid") or normalized_owner_userid).strip(),
+        is_wecom_added=bool(str(identity.get("external_userid") or normalized_external_userid).strip()),
+        is_mobile_bound=bool(identity.get("is_bound")),
+        class_term_no=matched.get("class_term_no"),
+        class_term_label=str(matched.get("class_term_label") or "").strip(),
+        entry_source=source_type,
         operator=actor,
-        source_type="class_term_auto_assign",
-        created_at=now,
+        remark=f"verified class term tag external_userid={normalized_external_userid}",
     )
-    get_db().commit()
     return {
         "status": "success",
-        "pool_id": preview_item.get("pool_id"),
         "external_userid": normalized_external_userid,
         "owner_userid": normalized_owner_userid,
-        "decision": decision,
-        "class_term_no": matched.get("class_term_no"),
-        "class_term_label": matched.get("class_term_label"),
+        "matched_terms": matched_terms,
         "tag_definition_sync": tag_definition_sync,
         "tag_refresh": tag_refresh,
+        "member": result.get("member"),
+        "action_type": result.get("action_type"),
     }
+
+
+def _execute_auto_assign_class_term_job(job: dict[str, Any], *, operator: str) -> dict[str, Any]:
+    normalized_owner_userid = str(job.get("owner_userid") or "").strip()
+    normalized_external_userid = str(job.get("external_userid") or "").strip()
+    actor = str(operator or "").strip() or "system_auto_assign"
+    return _upsert_lead_pool_from_verified_class_term_tag(
+        external_userid=normalized_external_userid,
+        owner_userid=normalized_owner_userid,
+        operator=actor,
+        source_type=USER_OPS_DEFERRED_JOB_TYPE_VERIFY_CLASS_TERM_TAG_AND_UPSERT_LEAD_POOL,
+    )
 
 
 def run_due_user_ops_deferred_jobs(limit: int = 20) -> dict[str, Any]:
@@ -2627,8 +2702,6 @@ def run_due_user_ops_deferred_jobs(limit: int = 20) -> dict[str, Any]:
     if not due_jobs:
         return summary
 
-    reload_payload = reload_user_ops_pool()
-    summary["reload"] = reload_payload
     actor = "system_auto_assign"
     for job in due_jobs:
         running_job = _mark_user_ops_deferred_job_running(int(job["id"]))
@@ -2671,7 +2744,7 @@ def _user_ops_owner_options() -> list[dict[str, str]]:
         SELECT DISTINCT
             current.owner_userid,
             COALESCE(owner_map.display_name, '') AS display_name
-        FROM user_ops_pool_current current
+        FROM user_ops_lead_pool_current current
         LEFT JOIN owner_role_map owner_map
           ON owner_map.userid = current.owner_userid
         WHERE current.owner_userid <> ''
@@ -2689,17 +2762,17 @@ def _user_ops_owner_options() -> list[dict[str, str]]:
 
 def list_user_ops_pool(
     *,
-    current_status: str = "",
-    is_wecom_bound: str = "",
-    activation_status: str = "",
+    is_wecom_added: str = "",
+    is_mobile_bound: str = "",
+    huangxiaocan_activation_state: str = "",
     class_term_no: str = "",
     owner_userid: str = "",
     query: str = "",
 ) -> dict[str, Any]:
     _ensure_class_term_tag_mapping_seed()
-    normalized_current_status = str(current_status or "").strip()
-    normalized_bound = str(is_wecom_bound or "").strip().lower()
-    normalized_activation_status = str(activation_status or "").strip()
+    normalized_is_wecom_added = str(is_wecom_added or "").strip().lower()
+    normalized_is_mobile_bound = str(is_mobile_bound or "").strip().lower()
+    normalized_activation_state = str(huangxiaocan_activation_state or "").strip()
     normalized_class_term_no = str(class_term_no or "").strip()
     normalized_owner_userid = str(owner_userid or "").strip()
     normalized_query = str(query or "").strip()
@@ -2711,34 +2784,37 @@ def list_user_ops_pool(
             current.external_userid,
             current.customer_name,
             current.owner_userid,
-            current.current_status,
-            current.is_wecom_bound,
-            current.activation_status,
-            current.activation_remark,
+            current.is_wecom_added,
+            current.is_mobile_bound,
+            current.huangxiaocan_activation_state,
             current.class_term_no,
             current.class_term_label,
-            current.source_type,
+            current.first_entry_source,
+            current.last_entry_source,
             current.created_at,
             current.updated_at,
             COALESCE(owner_map.display_name, '') AS owner_display_name
-        FROM user_ops_pool_current current
+        FROM user_ops_lead_pool_current current
         LEFT JOIN owner_role_map owner_map
           ON owner_map.userid = current.owner_userid
         WHERE 1 = 1
     """
     params: list[Any] = []
-    if normalized_current_status:
-        sql += " AND current.current_status = ?"
-        params.append(normalized_current_status)
-    if normalized_bound in {"1", "true", "yes"}:
-        sql += " AND current.is_wecom_bound = ?"
+    if normalized_is_wecom_added in {"1", "true", "yes"}:
+        sql += " AND current.is_wecom_added = ?"
         params.append(_db_bool(True))
-    elif normalized_bound in {"0", "false", "no"}:
-        sql += " AND current.is_wecom_bound = ?"
+    elif normalized_is_wecom_added in {"0", "false", "no"}:
+        sql += " AND current.is_wecom_added = ?"
         params.append(_db_bool(False))
-    if normalized_activation_status:
-        sql += " AND current.activation_status = ?"
-        params.append(normalized_activation_status)
+    if normalized_is_mobile_bound in {"1", "true", "yes"}:
+        sql += " AND current.is_mobile_bound = ?"
+        params.append(_db_bool(True))
+    elif normalized_is_mobile_bound in {"0", "false", "no"}:
+        sql += " AND current.is_mobile_bound = ?"
+        params.append(_db_bool(False))
+    if normalized_activation_state:
+        sql += " AND current.huangxiaocan_activation_state = ?"
+        params.append(normalized_activation_state)
     if normalized_class_term_no:
         sql += " AND CAST(COALESCE(current.class_term_no, 0) AS TEXT) = ?"
         params.append(normalized_class_term_no)
@@ -2760,15 +2836,17 @@ def list_user_ops_pool(
             "customer_name": str(row.get("customer_name") or "").strip(),
             "owner_userid": str(row.get("owner_userid") or "").strip(),
             "owner_display_name": str(row.get("owner_display_name") or "").strip() or str(row.get("owner_userid") or "").strip(),
-            "current_status": str(row.get("current_status") or "").strip(),
-            "current_status_label": USER_OPS_CURRENT_STATUS_LABELS.get(str(row.get("current_status") or "").strip(), str(row.get("current_status") or "").strip()),
-            "is_wecom_bound": bool(row.get("is_wecom_bound")),
-            "activation_status": str(row.get("activation_status") or "").strip(),
-            "activation_status_label": USER_OPS_ACTIVATION_STATUS_LABELS.get(str(row.get("activation_status") or "").strip(), str(row.get("activation_status") or "").strip()),
-            "activation_remark": str(row.get("activation_remark") or "").strip(),
+            "is_wecom_added": bool(row.get("is_wecom_added")),
+            "is_mobile_bound": bool(row.get("is_mobile_bound")),
+            "huangxiaocan_activation_state": str(row.get("huangxiaocan_activation_state") or "").strip() or "unknown",
+            "huangxiaocan_activation_state_label": USER_OPS_LEAD_POOL_ACTIVATION_STATE_LABELS.get(
+                str(row.get("huangxiaocan_activation_state") or "").strip() or "unknown",
+                str(row.get("huangxiaocan_activation_state") or "").strip() or "unknown",
+            ),
             "class_term_no": int(row["class_term_no"]) if row.get("class_term_no") not in (None, "") else None,
             "class_term_label": str(row.get("class_term_label") or "").strip(),
-            "source_type": str(row.get("source_type") or "").strip(),
+            "first_entry_source": str(row.get("first_entry_source") or "").strip(),
+            "last_entry_source": str(row.get("last_entry_source") or "").strip(),
             "created_at": _stringify_db_timestamp(row.get("created_at")),
             "updated_at": _stringify_db_timestamp(row.get("updated_at")),
         }
@@ -2778,16 +2856,15 @@ def list_user_ops_pool(
         "items": items,
         "total": len(items),
         "filters": {
-            "current_status": normalized_current_status,
-            "is_wecom_bound": normalized_bound,
-            "activation_status": normalized_activation_status,
+            "is_wecom_added": normalized_is_wecom_added,
+            "is_mobile_bound": normalized_is_mobile_bound,
+            "huangxiaocan_activation_state": normalized_activation_state,
             "class_term_no": normalized_class_term_no,
             "owner_userid": normalized_owner_userid,
             "query": normalized_query,
         },
         "filter_options": {
-            "current_statuses": list(USER_OPS_CURRENT_STATUS_DEFINITIONS),
-            "activation_statuses": list(USER_OPS_ACTIVATION_STATUS_DEFINITIONS),
+            "activation_states": list(USER_OPS_LEAD_POOL_ACTIVATION_STATE_DEFINITIONS),
             "class_terms": _user_ops_class_term_options(),
             "owners": _user_ops_owner_options(),
         },
@@ -2798,42 +2875,55 @@ def list_user_ops_pool(
 
 
 def get_user_ops_overview() -> dict[str, Any]:
-    _ensure_class_term_tag_mapping_seed()
     rows = get_db().execute(
         """
-        SELECT current_status, is_wecom_bound, activation_status
-        FROM user_ops_pool_current
+        SELECT
+            mobile,
+            external_userid,
+            is_wecom_added,
+            is_mobile_bound,
+            huangxiaocan_activation_state,
+            class_term_no,
+            class_term_label
+        FROM user_ops_lead_pool_current
         """
     ).fetchall()
     total = len(rows)
-    current_status_counts = {item["value"]: 0 for item in USER_OPS_CURRENT_STATUS_DEFINITIONS}
-    activation_counts = {item["value"]: 0 for item in USER_OPS_ACTIVATION_STATUS_DEFINITIONS}
-    bound_total = 0
+    wecom_added_count = 0
+    mobile_bound_count = 0
+    activated_count = 0
+    not_activated_count = 0
+    unknown_count = 0
     for row in rows:
-        status = str(row.get("current_status") or "").strip()
-        activation = str(row.get("activation_status") or "").strip()
-        if status in current_status_counts:
-            current_status_counts[status] += 1
-        if activation in activation_counts:
-            activation_counts[activation] += 1
-        if bool(row.get("is_wecom_bound")):
-            bound_total += 1
+        if bool(row.get("is_wecom_added")):
+            wecom_added_count += 1
+        if bool(row.get("is_mobile_bound")):
+            mobile_bound_count += 1
+        activation_state = str(row.get("huangxiaocan_activation_state") or "").strip() or "unknown"
+        if activation_state == "activated":
+            activated_count += 1
+        elif activation_state == "not_activated":
+            not_activated_count += 1
+        else:
+            unknown_count += 1
     return {
-        "total_users": total,
-        "lead_trial_count": current_status_counts["lead_trial"],
-        "signed_999_count": current_status_counts["signed_999"],
-        "signed_3999_count": current_status_counts["signed_3999"],
-        "wecom_bound_count": bound_total,
-        "wecom_unbound_count": total - bound_total,
-        "activated_count": activation_counts["activated"],
-        "high_intent_count": activation_counts.get("high_intent", 0),
+        "lead_pool_total_count": total,
+        "wecom_added_count": wecom_added_count,
+        "wecom_not_added_count": total - wecom_added_count,
+        "mobile_bound_count": mobile_bound_count,
+        "mobile_unbound_count": total - mobile_bound_count,
+        "huangxiaocan_activated_count": activated_count,
+        "huangxiaocan_not_activated_count": not_activated_count,
+        "huangxiaocan_unknown_count": unknown_count,
         "cards": [
-            {"key": "total_users", "label": "总用户数", "value": total},
-            {"key": "lead_trial_count", "label": "报名引流品", "value": current_status_counts["lead_trial"]},
-            {"key": "signed_999_count", "label": "已报名999", "value": current_status_counts["signed_999"]},
-            {"key": "signed_3999_count", "label": "已报名3999", "value": current_status_counts["signed_3999"]},
-            {"key": "wecom_bound_count", "label": "已加微人数", "value": bound_total},
-            {"key": "wecom_unbound_count", "label": "未加微人数", "value": total - bound_total},
+            {"key": "lead_pool_total_count", "label": "引流品总数", "value": total},
+            {"key": "wecom_added_count", "label": "已加微", "value": wecom_added_count},
+            {"key": "wecom_not_added_count", "label": "未加微", "value": total - wecom_added_count},
+            {"key": "mobile_bound_count", "label": "已绑手机号", "value": mobile_bound_count},
+            {"key": "mobile_unbound_count", "label": "未绑手机号", "value": total - mobile_bound_count},
+            {"key": "huangxiaocan_activated_count", "label": "黄小璨已激活", "value": activated_count},
+            {"key": "huangxiaocan_not_activated_count", "label": "黄小璨未激活", "value": not_activated_count},
+            {"key": "huangxiaocan_unknown_count", "label": "激活待录入", "value": unknown_count},
         ],
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -2845,34 +2935,34 @@ def list_user_ops_history(limit: int = 100) -> dict[str, Any]:
         """
         SELECT
             id,
-            pool_id,
             mobile,
             external_userid,
             action_type,
-            old_payload_json,
-            new_payload_json,
+            before_json,
+            after_json,
             operator,
             source_type,
+            remark,
             created_at
-        FROM user_ops_pool_history
+        FROM user_ops_lead_pool_history
         ORDER BY created_at DESC, id DESC
         LIMIT ?
         """,
         (normalized_limit,),
     ).fetchall()
-    total_row = get_db().execute("SELECT COUNT(*) AS total FROM user_ops_pool_history").fetchone()
+    total_row = get_db().execute("SELECT COUNT(*) AS total FROM user_ops_lead_pool_history").fetchone()
     return {
         "items": [
             {
                 "id": int(row["id"]),
-                "pool_id": int(row["pool_id"]) if row.get("pool_id") is not None else None,
                 "mobile": str(row.get("mobile") or "").strip(),
                 "external_userid": str(row.get("external_userid") or "").strip(),
                 "action_type": str(row.get("action_type") or "").strip(),
-                "old_payload_json": str(row.get("old_payload_json") or "").strip() or "{}",
-                "new_payload_json": str(row.get("new_payload_json") or "").strip() or "{}",
+                "before_json": str(row.get("before_json") or "").strip() or "{}",
+                "after_json": str(row.get("after_json") or "").strip() or "{}",
                 "operator": str(row.get("operator") or "").strip(),
                 "source_type": str(row.get("source_type") or "").strip(),
+                "remark": str(row.get("remark") or "").strip(),
                 "created_at": _stringify_db_timestamp(row.get("created_at")),
             }
             for row in rows
@@ -2884,33 +2974,34 @@ def list_user_ops_history(limit: int = 100) -> dict[str, Any]:
 
 def export_user_ops_pool(
     *,
-    current_status: str = "",
-    is_wecom_bound: str = "",
-    activation_status: str = "",
+    is_wecom_added: str = "",
+    is_mobile_bound: str = "",
+    huangxiaocan_activation_state: str = "",
     class_term_no: str = "",
     owner_userid: str = "",
     query: str = "",
 ) -> dict[str, Any]:
     result = list_user_ops_pool(
-        current_status=current_status,
-        is_wecom_bound=is_wecom_bound,
-        activation_status=activation_status,
+        is_wecom_added=is_wecom_added,
+        is_mobile_bound=is_mobile_bound,
+        huangxiaocan_activation_state=huangxiaocan_activation_state,
         class_term_no=class_term_no,
         owner_userid=owner_userid,
         query=query,
     )
-    headers = ["客户昵称", "手机号", "跟进人", "当前状态", "是否加微", "激活状态", "高意向备注", "班期", "external_userid", "更新时间"]
+    headers = ["手机号", "是否已加微", "是否已绑手机号", "班期", "黄小璨激活状态", "客户昵称", "external_userid", "跟进人", "首次入表来源", "最后入表来源", "更新时间"]
     rows = [
         [
-            item.get("customer_name", ""),
             item.get("mobile", ""),
-            item.get("owner_display_name", ""),
-            item.get("current_status_label", ""),
-            "已加微" if item.get("is_wecom_bound") else "未加微",
-            item.get("activation_status_label", ""),
-            item.get("activation_remark", ""),
+            "已加微" if item.get("is_wecom_added") else "未加微",
+            "已绑定" if item.get("is_mobile_bound") else "未绑定",
             item.get("class_term_label", "") or (f"{item['class_term_no']}期" if item.get("class_term_no") else ""),
+            item.get("huangxiaocan_activation_state_label", ""),
+            item.get("customer_name", ""),
             item.get("external_userid", ""),
+            item.get("owner_display_name", ""),
+            item.get("first_entry_source", ""),
+            item.get("last_entry_source", ""),
             item.get("updated_at", ""),
         ]
         for item in result["items"]
@@ -3399,6 +3490,455 @@ def _normalize_mobile(value: str) -> str:
     return digits
 
 
+def _normalize_user_ops_lead_pool_activation_state(value: str, *, allow_unknown: bool = True) -> str:
+    normalized = str(value or "").strip()
+    if not normalized and allow_unknown:
+        return "unknown"
+    if normalized not in USER_OPS_LEAD_POOL_ACTIVATION_STATES:
+        raise ValueError("huangxiaocan_activation_state must be unknown, activated, or not_activated")
+    if normalized == "unknown" and not allow_unknown:
+        raise ValueError("activation_state must be activated or not_activated")
+    return normalized
+
+
+def _serialize_user_ops_lead_pool_current_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "mobile": str(row.get("mobile") or "").strip(),
+        "external_userid": str(row.get("external_userid") or "").strip(),
+        "customer_name": str(row.get("customer_name") or "").strip(),
+        "owner_userid": str(row.get("owner_userid") or "").strip(),
+        "is_wecom_added": bool(row.get("is_wecom_added")),
+        "is_mobile_bound": bool(row.get("is_mobile_bound")),
+        "huangxiaocan_activation_state": _normalize_user_ops_lead_pool_activation_state(
+            str(row.get("huangxiaocan_activation_state") or "").strip(),
+            allow_unknown=True,
+        ),
+        "class_term_no": int(row["class_term_no"]) if row.get("class_term_no") not in (None, "") else None,
+        "class_term_label": str(row.get("class_term_label") or "").strip(),
+        "first_entry_source": str(row.get("first_entry_source") or "").strip(),
+        "last_entry_source": str(row.get("last_entry_source") or "").strip(),
+    }
+
+
+def _get_user_ops_lead_pool_current_row_by_id(row_id: int) -> dict[str, Any] | None:
+    row = get_db().execute(
+        """
+        SELECT
+            id,
+            mobile,
+            external_userid,
+            customer_name,
+            owner_userid,
+            is_wecom_added,
+            is_mobile_bound,
+            huangxiaocan_activation_state,
+            class_term_no,
+            class_term_label,
+            first_entry_source,
+            last_entry_source,
+            created_at,
+            updated_at
+        FROM user_ops_lead_pool_current
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (row_id,),
+    ).fetchone()
+    if not row:
+        return None
+    payload = _serialize_user_ops_lead_pool_current_row(dict(row))
+    payload["id"] = row["id"]
+    payload["created_at"] = _stringify_db_timestamp(row.get("created_at"))
+    payload["updated_at"] = _stringify_db_timestamp(row.get("updated_at"))
+    return payload
+
+
+def _list_user_ops_lead_pool_matches(*, mobile: str, external_userid: str) -> list[dict[str, Any]]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if mobile:
+        conditions.append("mobile = ?")
+        params.append(mobile)
+    if external_userid:
+        conditions.append("external_userid = ?")
+        params.append(external_userid)
+    if not conditions:
+        return []
+    rows = get_db().execute(
+        f"""
+        SELECT
+            id,
+            mobile,
+            external_userid,
+            customer_name,
+            owner_userid,
+            is_wecom_added,
+            is_mobile_bound,
+            huangxiaocan_activation_state,
+            class_term_no,
+            class_term_label,
+            first_entry_source,
+            last_entry_source,
+            created_at,
+            updated_at
+        FROM user_ops_lead_pool_current
+        WHERE {" OR ".join(conditions)}
+        ORDER BY id ASC
+        """,
+        tuple(params),
+    ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = _serialize_user_ops_lead_pool_current_row(dict(row))
+        item["id"] = row["id"]
+        item["created_at"] = _stringify_db_timestamp(row.get("created_at"))
+        item["updated_at"] = _stringify_db_timestamp(row.get("updated_at"))
+        items.append(item)
+    return items
+
+
+def write_user_ops_lead_pool_history(
+    *,
+    mobile: str = "",
+    external_userid: str = "",
+    action_type: str,
+    source_type: str,
+    operator: str = "",
+    before_payload: dict[str, Any] | None = None,
+    after_payload: dict[str, Any] | None = None,
+    remark: str = "",
+) -> None:
+    get_db().execute(
+        """
+        INSERT INTO user_ops_lead_pool_history (
+            mobile, external_userid, action_type, source_type, operator, before_json, after_json, remark, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (
+            str(mobile or "").strip(),
+            str(external_userid or "").strip(),
+            str(action_type or "").strip(),
+            str(source_type or "").strip(),
+            str(operator or _current_user_ops_operator()).strip() or "system",
+            json.dumps(before_payload or {}, ensure_ascii=False),
+            json.dumps(after_payload or {}, ensure_ascii=False),
+            str(remark or "").strip(),
+        ),
+    )
+
+
+def upsert_user_ops_lead_pool_member(
+    *,
+    mobile: str = "",
+    external_userid: str = "",
+    customer_name: str = "",
+    owner_userid: str = "",
+    is_wecom_added: bool | None = None,
+    is_mobile_bound: bool | None = None,
+    huangxiaocan_activation_state: str = "unknown",
+    class_term_no: int | None = None,
+    class_term_label: str = "",
+    entry_source: str = "",
+    operator: str = "",
+    remark: str = "",
+) -> dict[str, Any]:
+    normalized_mobile = _normalize_mobile(mobile) if str(mobile or "").strip() else ""
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_mobile and not normalized_external_userid:
+        raise ValueError("mobile or external_userid is required")
+
+    normalized_entry_source = str(entry_source or "").strip() or "manual"
+    normalized_customer_name = str(customer_name or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    normalized_class_term_label = str(class_term_label or "").strip()
+    normalized_activation_state = _normalize_user_ops_lead_pool_activation_state(
+        huangxiaocan_activation_state,
+        allow_unknown=True,
+    )
+    matches = _list_user_ops_lead_pool_matches(mobile=normalized_mobile, external_userid=normalized_external_userid)
+    target: dict[str, Any] | None = None
+    if normalized_mobile:
+        target = next((item for item in matches if item["mobile"] == normalized_mobile), None)
+    if target is None and normalized_external_userid:
+        target = next((item for item in matches if item["external_userid"] == normalized_external_userid), None)
+    duplicate_ids = [item["id"] for item in matches if target is not None and item["id"] != target["id"]]
+
+    merged = _serialize_user_ops_lead_pool_current_row(target or {})
+    for item in matches:
+        if not merged["mobile"] and item["mobile"]:
+            merged["mobile"] = item["mobile"]
+        if not merged["external_userid"] and item["external_userid"]:
+            merged["external_userid"] = item["external_userid"]
+        if not merged["customer_name"] and item["customer_name"]:
+            merged["customer_name"] = item["customer_name"]
+        if not merged["owner_userid"] and item["owner_userid"]:
+            merged["owner_userid"] = item["owner_userid"]
+        if not merged["first_entry_source"] and item["first_entry_source"]:
+            merged["first_entry_source"] = item["first_entry_source"]
+        if not merged["last_entry_source"] and item["last_entry_source"]:
+            merged["last_entry_source"] = item["last_entry_source"]
+        if merged["class_term_no"] is None and item["class_term_no"] is not None:
+            merged["class_term_no"] = item["class_term_no"]
+            merged["class_term_label"] = item["class_term_label"]
+        if merged["huangxiaocan_activation_state"] == "unknown" and item["huangxiaocan_activation_state"] != "unknown":
+            merged["huangxiaocan_activation_state"] = item["huangxiaocan_activation_state"]
+        merged["is_wecom_added"] = bool(merged["is_wecom_added"] or item["is_wecom_added"])
+        merged["is_mobile_bound"] = bool(merged["is_mobile_bound"] or item["is_mobile_bound"])
+
+    if normalized_mobile:
+        merged["mobile"] = normalized_mobile
+    if normalized_external_userid:
+        merged["external_userid"] = normalized_external_userid
+    if normalized_customer_name:
+        merged["customer_name"] = normalized_customer_name
+    if normalized_owner_userid:
+        merged["owner_userid"] = normalized_owner_userid
+    if is_wecom_added is not None:
+        merged["is_wecom_added"] = bool(is_wecom_added)
+    if is_mobile_bound is not None:
+        merged["is_mobile_bound"] = bool(is_mobile_bound)
+    elif merged["mobile"] and merged["external_userid"]:
+        merged["is_mobile_bound"] = True
+    if normalized_activation_state != "unknown" or not target:
+        merged["huangxiaocan_activation_state"] = normalized_activation_state
+    if class_term_no is not None or normalized_class_term_label:
+        merged["class_term_no"] = class_term_no
+        merged["class_term_label"] = normalized_class_term_label
+    if not merged["first_entry_source"]:
+        merged["first_entry_source"] = normalized_entry_source
+    merged["last_entry_source"] = normalized_entry_source
+
+    db = get_db()
+    before_payload = _serialize_user_ops_lead_pool_current_row(target) if target else {}
+    if target is None:
+        db.execute(
+            """
+            INSERT INTO user_ops_lead_pool_current (
+                mobile, external_userid, customer_name, owner_userid, is_wecom_added, is_mobile_bound,
+                huangxiaocan_activation_state, class_term_no, class_term_label, first_entry_source, last_entry_source,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                merged["mobile"],
+                merged["external_userid"],
+                merged["customer_name"],
+                merged["owner_userid"],
+                _db_bool(bool(merged["is_wecom_added"])),
+                _db_bool(bool(merged["is_mobile_bound"])),
+                merged["huangxiaocan_activation_state"],
+                merged["class_term_no"],
+                merged["class_term_label"],
+                merged["first_entry_source"],
+                merged["last_entry_source"],
+            ),
+        )
+        row_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]) if get_db_backend() != "postgres" else None
+        if get_db_backend() == "postgres":
+            row = db.execute(
+                """
+                SELECT id
+                FROM user_ops_lead_pool_current
+                WHERE mobile = ? OR external_userid = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (merged["mobile"], merged["external_userid"]),
+            ).fetchone()
+            row_id = int(row["id"])
+        action_type = "lead_pool_insert"
+    else:
+        row_id = int(target["id"])
+        db.execute(
+            """
+            UPDATE user_ops_lead_pool_current
+            SET
+                mobile = ?,
+                external_userid = ?,
+                customer_name = ?,
+                owner_userid = ?,
+                is_wecom_added = ?,
+                is_mobile_bound = ?,
+                huangxiaocan_activation_state = ?,
+                class_term_no = ?,
+                class_term_label = ?,
+                first_entry_source = ?,
+                last_entry_source = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                merged["mobile"],
+                merged["external_userid"],
+                merged["customer_name"],
+                merged["owner_userid"],
+                _db_bool(bool(merged["is_wecom_added"])),
+                _db_bool(bool(merged["is_mobile_bound"])),
+                merged["huangxiaocan_activation_state"],
+                merged["class_term_no"],
+                merged["class_term_label"],
+                merged["first_entry_source"],
+                merged["last_entry_source"],
+                row_id,
+            ),
+        )
+        action_type = "lead_pool_merge_upsert" if duplicate_ids else "lead_pool_update"
+
+    if duplicate_ids:
+        placeholders = ", ".join("?" for _ in duplicate_ids)
+        db.execute(
+            f"DELETE FROM user_ops_lead_pool_current WHERE id IN ({placeholders})",
+            tuple(duplicate_ids),
+        )
+
+    current = _get_user_ops_lead_pool_current_row_by_id(row_id)
+    write_user_ops_lead_pool_history(
+        mobile=(current or {}).get("mobile", merged["mobile"]),
+        external_userid=(current or {}).get("external_userid", merged["external_userid"]),
+        action_type=action_type,
+        source_type=normalized_entry_source,
+        operator=operator,
+        before_payload=before_payload,
+        after_payload=_serialize_user_ops_lead_pool_current_row(current or merged),
+        remark=(
+            str(remark or "").strip()
+            or (f"merged duplicate ids: {', '.join(str(item) for item in duplicate_ids)}" if duplicate_ids else "")
+        ),
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "action_type": action_type,
+        "member": current,
+        "merged_duplicate_ids": duplicate_ids,
+    }
+
+
+def apply_user_ops_huangxiaocan_activation_source_to_existing_member(
+    *,
+    mobile: str,
+    activation_state: str,
+    operator: str = "",
+    source_type: str = "huangxiaocan_activation_source",
+    remark: str = "",
+) -> dict[str, Any]:
+    normalized_mobile = _normalize_mobile(mobile)
+    normalized_state = _normalize_user_ops_lead_pool_activation_state(activation_state, allow_unknown=False)
+    current_row = get_db().execute(
+        """
+        SELECT id
+        FROM user_ops_lead_pool_current
+        WHERE mobile = ?
+        LIMIT 1
+        """,
+        (normalized_mobile,),
+    ).fetchone()
+    if not current_row:
+        get_db().commit()
+        return {"ok": True, "matched_member": False, "created_member": False, "member": None}
+
+    member = _get_user_ops_lead_pool_current_row_by_id(int(current_row["id"])) or {}
+    before_payload = _serialize_user_ops_lead_pool_current_row(member)
+    get_db().execute(
+        """
+        UPDATE user_ops_lead_pool_current
+        SET huangxiaocan_activation_state = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (normalized_state, int(current_row["id"])),
+    )
+    current = _get_user_ops_lead_pool_current_row_by_id(int(current_row["id"]))
+    write_user_ops_lead_pool_history(
+        mobile=normalized_mobile,
+        external_userid=(current or {}).get("external_userid", ""),
+        action_type="lead_pool_activation_patch",
+        source_type=source_type,
+        operator=operator,
+        before_payload=before_payload,
+        after_payload=_serialize_user_ops_lead_pool_current_row(current or {}),
+        remark=remark,
+    )
+    get_db().commit()
+    return {"ok": True, "matched_member": True, "created_member": False, "member": current}
+
+
+def upsert_user_ops_huangxiaocan_activation_source(
+    *,
+    mobile: str,
+    activation_state: str,
+    import_batch_id: str = "",
+    created_by: str = "",
+    is_active: bool = True,
+) -> dict[str, Any]:
+    normalized_mobile = _normalize_mobile(mobile)
+    normalized_state = _normalize_user_ops_lead_pool_activation_state(activation_state, allow_unknown=False)
+    operator = str(created_by or _current_user_ops_operator()).strip() or "admin_user_ops"
+    db = get_db()
+    existing = db.execute(
+        """
+        SELECT id, mobile, activation_state, import_batch_id, created_by, is_active
+        FROM user_ops_huangxiaocan_activation_source
+        WHERE mobile = ?
+        LIMIT 1
+        """,
+        (normalized_mobile,),
+    ).fetchone()
+    db.execute(
+        """
+        INSERT INTO user_ops_huangxiaocan_activation_source (
+            mobile, activation_state, import_batch_id, created_by, is_active, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(mobile) DO UPDATE SET
+            activation_state = excluded.activation_state,
+            import_batch_id = excluded.import_batch_id,
+            created_by = excluded.created_by,
+            is_active = excluded.is_active,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (
+            normalized_mobile,
+            normalized_state,
+            str(import_batch_id or "").strip(),
+            operator,
+            _db_bool(bool(is_active)),
+        ),
+    )
+    apply_payload = apply_user_ops_huangxiaocan_activation_source_to_existing_member(
+        mobile=normalized_mobile,
+        activation_state=normalized_state,
+        operator=operator,
+        source_type="huangxiaocan_activation_import",
+        remark="patched existing lead member from activation source",
+    )
+    source_row = db.execute(
+        """
+        SELECT mobile, activation_state, import_batch_id, created_by, is_active, created_at, updated_at
+        FROM user_ops_huangxiaocan_activation_source
+        WHERE mobile = ?
+        LIMIT 1
+        """,
+        (normalized_mobile,),
+    ).fetchone()
+    db.commit()
+    return {
+        "ok": True,
+        "action_type": "activation_source_insert" if existing is None else "activation_source_update",
+        "matched_member": bool(apply_payload.get("matched_member")),
+        "created_member": False,
+        "source": {
+            "mobile": normalized_mobile,
+            "activation_state": normalized_state,
+            "import_batch_id": str((source_row or {}).get("import_batch_id") or "").strip(),
+            "created_by": str((source_row or {}).get("created_by") or "").strip(),
+            "is_active": bool((source_row or {}).get("is_active")),
+        },
+        "member": apply_payload.get("member"),
+    }
+
+
 def _current_user_ops_operator() -> str:
     if has_request_context():
         for key in ("userid", "user_id", "username"):
@@ -3616,6 +4156,50 @@ def _normalize_activation_status_value(value: str) -> str:
     return result
 
 
+def _normalize_legacy_user_ops_activation_for_lead_pool(value: str) -> str:
+    normalized = str(value or "").strip()
+    if normalized == "activated":
+        return "activated"
+    if normalized == "not_activated":
+        return "not_activated"
+    return "unknown"
+
+
+def _resolve_lead_pool_binding_by_mobile(mobile: str) -> dict[str, Any]:
+    normalized_mobile = _normalize_mobile(mobile)
+    row = get_db().execute(
+        """
+        SELECT
+            p.mobile,
+            COALESCE(bindings.external_userid, '') AS external_userid,
+            COALESCE(c.customer_name, status.customer_name_snapshot, '') AS customer_name,
+            COALESCE(c.owner_userid, status.owner_userid_snapshot, '') AS owner_userid,
+            bindings.person_id
+        FROM people p
+        LEFT JOIN external_contact_bindings bindings
+          ON bindings.person_id = p.id
+        LEFT JOIN contacts c
+          ON c.external_userid = bindings.external_userid
+        LEFT JOIN class_user_status_current status
+          ON status.external_userid = bindings.external_userid
+        WHERE p.mobile = ?
+        ORDER BY COALESCE(bindings.updated_at, bindings.created_at) DESC, bindings.external_userid ASC
+        LIMIT 1
+        """,
+        (normalized_mobile,),
+    ).fetchone()
+    external_userid = str((row or {}).get("external_userid") or "").strip()
+    is_mobile_bound = bool(row and row.get("person_id") is not None and external_userid)
+    return {
+        "mobile": normalized_mobile,
+        "external_userid": external_userid,
+        "customer_name": str((row or {}).get("customer_name") or "").strip(),
+        "owner_userid": str((row or {}).get("owner_userid") or "").strip(),
+        "is_mobile_bound": is_mobile_bound,
+        "is_wecom_added": bool(external_userid),
+    }
+
+
 def _parse_activation_status_line(line: str) -> tuple[str, str, str]:
     parts = [item.strip() for item in re.split(r"[,\t，]+", str(line or "").strip())]
     parts = [item for item in parts if item]
@@ -3808,7 +4392,6 @@ def import_experience_leads(
         )
     db.commit()
 
-    reload_payload = reload_user_ops_pool()
     return {
         "ok": True,
         "import_type": "experience_leads",
@@ -3820,7 +4403,7 @@ def import_experience_leads(
         "duplicate_count": duplicate_count,
         "unique_mobile_count": len(unique_mobiles),
         "invalid_rows": invalid_rows,
-        "reload": reload_payload,
+        "reload": {"mode": "legacy_pool_disabled", "triggered": False},
     }
 
 
@@ -3841,7 +4424,8 @@ def import_mobile_class_term_source(
     created_by: str = "",
 ) -> dict[str, Any]:
     # Phone-centric rule: mobile is the only import key, the last row wins per
-    # mobile, and imports do not write external_userid.
+    # mobile, and imports incrementally upsert the new lead pool instead of
+    # rebuilding the legacy pool projection.
     operator = str(created_by or _current_user_ops_operator()).strip() or "admin_user_ops"
     if file_bytes is not None:
         parsed = _parse_class_term_source_from_file(file_name=file_name, file_bytes=file_bytes)
@@ -3878,128 +4462,29 @@ def import_mobile_class_term_source(
         created_by=operator,
     )
 
-    for row in unique_rows:
-        mobile = str(row["mobile"])
-        existing = db.execute(
-            """
-            SELECT id, mobile, source_type, import_batch_id, created_by, is_active
-            FROM user_ops_experience_leads
-            WHERE mobile = ?
-            LIMIT 1
-            """,
-            (mobile,),
-        ).fetchone()
-        db.execute(
-            """
-            INSERT INTO user_ops_experience_leads (
-                mobile, source_type, import_batch_id, created_by, is_active, created_at, updated_at
-            )
-            VALUES (?, 'class_term_import', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT(mobile) DO UPDATE SET
-                source_type = excluded.source_type,
-                import_batch_id = excluded.import_batch_id,
-                created_by = excluded.created_by,
-                is_active = excluded.is_active,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (mobile, batch_id, operator, _db_bool(True)),
-        )
-        db.execute(
-            """
-            INSERT INTO user_ops_pool_history (
-                pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
-            )
-            VALUES (?, ?, '', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                None,
-                mobile,
-                "class_term_source_upsert",
-                json.dumps(dict(existing or {}), ensure_ascii=False),
-                json.dumps(
-                    {
-                        "mobile": mobile,
-                        "source_type": "class_term_import",
-                        "class_term_no": row["class_term_no"],
-                        "class_term_label": row["class_term_label"],
-                        "import_batch_id": batch_id,
-                        "created_by": operator,
-                        "is_active": True,
-                    },
-                    ensure_ascii=False,
-                ),
-                operator,
-                "class_term_import",
-            ),
-        )
-    db.commit()
-
-    reload_payload = reload_user_ops_pool()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     applied_count = 0
     bound_count = 0
+    members: list[dict[str, Any]] = []
     for row in unique_rows:
         mobile = str(row["mobile"] or "").strip()
-        current = db.execute(
-            """
-            SELECT id, mobile, external_userid, class_term_no, class_term_label, is_wecom_bound
-            FROM user_ops_pool_current
-            WHERE mobile = ?
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            (mobile,),
-        ).fetchone()
-        if not current:
-            continue
-        db.execute(
-            """
-            UPDATE user_ops_pool_current
-            SET class_term_no = ?, class_term_label = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                row["class_term_no"],
-                row["class_term_label"],
-                now,
-                int(current["id"]),
-            ),
+        resolved = _resolve_lead_pool_binding_by_mobile(mobile)
+        result = upsert_user_ops_lead_pool_member(
+            mobile=mobile,
+            external_userid=resolved["external_userid"],
+            customer_name=resolved["customer_name"],
+            owner_userid=resolved["owner_userid"],
+            is_wecom_added=resolved["is_wecom_added"],
+            is_mobile_bound=resolved["is_mobile_bound"],
+            class_term_no=row["class_term_no"],
+            class_term_label=row["class_term_label"],
+            entry_source="student_import",
+            operator=operator,
+            remark=f"class term import batch={batch_id}",
         )
-        db.execute(
-            """
-            INSERT INTO user_ops_pool_history (
-                pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(current["id"]),
-                mobile,
-                str(current.get("external_userid") or "").strip(),
-                "class_term_import_upsert",
-                json.dumps(
-                    {
-                        "class_term_no": int(current["class_term_no"]) if current.get("class_term_no") not in (None, "") else None,
-                        "class_term_label": str(current.get("class_term_label") or "").strip(),
-                    },
-                    ensure_ascii=False,
-                ),
-                json.dumps(
-                    {
-                        "class_term_no": row["class_term_no"],
-                        "class_term_label": row["class_term_label"],
-                    },
-                    ensure_ascii=False,
-                ),
-                operator,
-                "class_term_import",
-                now,
-            ),
-        )
+        members.append(dict(result.get("member") or {}))
         applied_count += 1
-        if bool(current.get("is_wecom_bound")):
+        if bool((result.get("member") or {}).get("is_wecom_added")):
             bound_count += 1
-    db.commit()
 
     return {
         "ok": True,
@@ -4014,7 +4499,8 @@ def import_mobile_class_term_source(
         "invalid_rows": invalid_rows,
         "applied_count": applied_count,
         "bound_count": bound_count,
-        "reload": reload_payload,
+        "members": members,
+        "reload": {"mode": "incremental", "triggered": False},
     }
 
 
@@ -4026,7 +4512,8 @@ def import_activation_status_source(
     created_by: str = "",
 ) -> dict[str, Any]:
     # Phone-centric rule: activation import stays independent from class-term
-    # import, keyed only by mobile, and the last row wins per mobile.
+    # import, keyed only by mobile. It writes the activation source first and
+    # only patches already existing lead members.
     operator = str(created_by or _current_user_ops_operator()).strip() or "admin_user_ops"
     if file_bytes is not None:
         parsed = _parse_activation_status_from_file(file_name=file_name, file_bytes=file_bytes)
@@ -4066,70 +4553,20 @@ def import_activation_status_source(
         created_by=operator,
     )
 
+    matched_member_count = 0
+    members: list[dict[str, Any]] = []
     for row in unique_rows:
-        mobile = str(row["mobile"])
-        existing = db.execute(
-            """
-            SELECT id, mobile, activation_status, activation_remark, import_batch_id, created_by, is_active
-            FROM user_ops_activation_status_source
-            WHERE mobile = ?
-            LIMIT 1
-            """,
-            (mobile,),
-        ).fetchone()
-        db.execute(
-            """
-            INSERT INTO user_ops_activation_status_source (
-                mobile, activation_status, activation_remark, import_batch_id, created_by, is_active, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT(mobile) DO UPDATE SET
-                activation_status = excluded.activation_status,
-                activation_remark = excluded.activation_remark,
-                import_batch_id = excluded.import_batch_id,
-                created_by = excluded.created_by,
-                is_active = excluded.is_active,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (
-                mobile,
-                row["activation_status"],
-                row["activation_remark"],
-                batch_id,
-                operator,
-                _db_bool(True),
-            ),
+        result = upsert_user_ops_huangxiaocan_activation_source(
+            mobile=str(row["mobile"]),
+            activation_state=str(row["activation_status"]),
+            import_batch_id=str(batch_id),
+            created_by=operator,
+            is_active=True,
         )
-        db.execute(
-            """
-            INSERT INTO user_ops_pool_history (
-                pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
-            )
-            VALUES (?, ?, '', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                None,
-                mobile,
-                "activation_import_upsert",
-                json.dumps(dict(existing or {}), ensure_ascii=False),
-                json.dumps(
-                    {
-                        "mobile": mobile,
-                        "activation_status": row["activation_status"],
-                        "activation_remark": row["activation_remark"],
-                        "import_batch_id": batch_id,
-                        "created_by": operator,
-                        "is_active": True,
-                    },
-                    ensure_ascii=False,
-                ),
-                operator,
-                "activation_import",
-            ),
-        )
-    db.commit()
-
-    reload_payload = reload_user_ops_pool()
+        if result["matched_member"]:
+            matched_member_count += 1
+            if result.get("member"):
+                members.append(dict(result["member"]))
     return {
         "ok": True,
         "import_type": "activation_status",
@@ -4141,8 +4578,58 @@ def import_activation_status_source(
         "duplicate_count": duplicate_count,
         "unique_mobile_count": len(unique_rows),
         "invalid_rows": invalid_rows,
-        "reload": reload_payload,
+        "matched_member_count": matched_member_count,
+        "created_member_count": 0,
+        "members": members,
+        "reload": {"mode": "incremental", "triggered": False},
     }
+
+
+def migrate_legacy_user_ops_pool_to_lead_pool(*, operator: str = "") -> dict[str, Any]:
+    rows = get_db().execute(
+        """
+        SELECT
+            mobile,
+            external_userid,
+            customer_name,
+            owner_userid,
+            is_wecom_bound,
+            activation_status,
+            class_term_no,
+            class_term_label,
+            source_type
+        FROM user_ops_pool_current
+        WHERE class_term_no IS NOT NULL
+           OR (
+                COALESCE(mobile, '') <> ''
+                AND COALESCE(source_type, '') = 'experience_import'
+                AND COALESCE(is_wecom_bound, 0) = ?
+           )
+        ORDER BY id ASC
+        """,
+        (_db_bool(False),),
+    ).fetchall()
+    normalized_operator = str(operator or _current_user_ops_operator()).strip() or "admin_user_ops"
+    migrated_count = 0
+    for row in rows:
+        upsert_user_ops_lead_pool_member(
+            mobile=str(row.get("mobile") or "").strip(),
+            external_userid=str(row.get("external_userid") or "").strip(),
+            customer_name=str(row.get("customer_name") or "").strip(),
+            owner_userid=str(row.get("owner_userid") or "").strip(),
+            is_wecom_added=bool(str(row.get("external_userid") or "").strip()),
+            is_mobile_bound=bool(row.get("is_wecom_bound")),
+            huangxiaocan_activation_state=_normalize_legacy_user_ops_activation_for_lead_pool(
+                str(row.get("activation_status") or "").strip()
+            ),
+            class_term_no=int(row["class_term_no"]) if row.get("class_term_no") not in (None, "") else None,
+            class_term_label=str(row.get("class_term_label") or "").strip(),
+            entry_source="legacy_pool_migration",
+            operator=normalized_operator,
+            remark=f"migrated from legacy source_type={str(row.get('source_type') or '').strip()}",
+        )
+        migrated_count += 1
+    return {"ok": True, "migrated_count": migrated_count}
 
 
 def _extract_third_party_user_id(payload: Any) -> str:
@@ -4290,20 +4777,211 @@ def _resolve_binding_owner_userid(external_userid: str, owner_userid: str = "") 
     return str((row or {}).get("follow_user_userid") or "").strip()
 
 
-def resolve_person_identity(*, external_userid: str = "", mobile: str = "") -> dict[str, Any]:
+def _select_user_ops_lead_pool_member_for_sidebar(
+    *,
+    external_userid: str,
+    mobile: str = "",
+) -> dict[str, Any] | None:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_mobile = str(mobile or "").strip()
+    matches = _list_user_ops_lead_pool_matches(mobile=normalized_mobile, external_userid=normalized_external_userid)
+    if normalized_mobile:
+        target = next((item for item in matches if item["mobile"] == normalized_mobile), None)
+        if target is not None:
+            return target
+    if normalized_external_userid:
+        target = next((item for item in matches if item["external_userid"] == normalized_external_userid), None)
+        if target is not None:
+            return target
+    return matches[0] if matches else None
+
+
+def get_sidebar_lead_pool_status(*, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_external_userid:
+        raise ValueError("external_userid is required")
+    normalized_owner_userid = _resolve_binding_owner_userid(normalized_external_userid, owner_userid)
+    binding = get_contact_binding_status(normalized_external_userid, normalized_owner_userid)
+    member = _select_user_ops_lead_pool_member_for_sidebar(
+        external_userid=normalized_external_userid,
+        mobile=str(binding.get("mobile") or "").strip(),
+    ) or {}
+    match_payload = _list_class_term_matches_for_external_contact(
+        normalized_external_userid,
+        normalized_owner_userid,
+    )
+    matched_terms = list(match_payload["matched_terms"])
+    current_class_term_no = member.get("class_term_no")
+    current_class_term_label = str(member.get("class_term_label") or "").strip()
+    if current_class_term_no in (None, "") and len(matched_terms) == 1:
+        current_class_term_no = int(matched_terms[0]["class_term_no"])
+        current_class_term_label = str(matched_terms[0].get("class_term_label") or "").strip()
+
+    return {
+        "external_userid": normalized_external_userid,
+        "owner_userid": str(binding.get("owner_userid") or normalized_owner_userid).strip(),
+        "display_name": str(binding.get("display_name") or "").strip(),
+        "customer_name": str(binding.get("customer_name") or "").strip(),
+        "mobile": str(binding.get("mobile") or "").strip(),
+        "is_wecom_added": True,
+        "is_mobile_bound": bool(binding.get("is_bound")),
+        "class_term_options": _user_ops_class_term_options(),
+        "current_class_term_no": int(current_class_term_no) if current_class_term_no not in (None, "") else None,
+        "current_class_term_label": current_class_term_label,
+        "current_tag_names": list(match_payload["tag_names"]),
+        "member": member,
+    }
+
+
+def upsert_sidebar_lead_pool_class_term(
+    *,
+    external_userid: str,
+    owner_userid: str = "",
+    class_term_no: int,
+    operator: str = "",
+) -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_external_userid:
+        raise ValueError("external_userid is required")
+    normalized_owner_userid = _resolve_binding_owner_userid(normalized_external_userid, owner_userid)
+    actor = str(operator or _current_user_ops_operator()).strip() or "sidebar_class_term"
+    mapping = _get_active_class_term_mapping_by_no(class_term_no)
+    if not mapping:
+        raise ValueError("class_term_no is invalid")
+
+    binding = get_contact_binding_status(normalized_external_userid, normalized_owner_userid)
+    upsert_result = upsert_user_ops_lead_pool_member(
+        mobile=str(binding.get("mobile") or "").strip(),
+        external_userid=normalized_external_userid,
+        customer_name=str(binding.get("customer_name") or "").strip(),
+        owner_userid=str(binding.get("owner_userid") or normalized_owner_userid).strip(),
+        is_wecom_added=True,
+        is_mobile_bound=bool(binding.get("is_bound")),
+        class_term_no=int(mapping["class_term_no"]),
+        class_term_label=str(mapping.get("class_term_label") or "").strip(),
+        entry_source="sidebar_class_term",
+        operator=actor,
+        remark=f"sidebar class term set external_userid={normalized_external_userid}",
+    )
+    tag_result = _sync_sidebar_lead_pool_class_term_tag(
+        external_userid=normalized_external_userid,
+        owner_userid=str(binding.get("owner_userid") or normalized_owner_userid).strip(),
+        class_term_no=int(mapping["class_term_no"]),
+    )
+    return {
+        "ok": True,
+        "member": upsert_result.get("member"),
+        "action_type": upsert_result.get("action_type"),
+        "tag_sync": tag_result,
+    }
+
+
+def _merge_lead_pool_after_mobile_bind(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    mobile: str,
+    operator: str = "",
+) -> dict[str, Any]:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_owner_userid = str(owner_userid or "").strip()
+    normalized_mobile = _normalize_mobile(mobile)
+    actor = str(operator or _current_user_ops_operator()).strip() or "sidebar_bind_mobile"
+
+    matches = _list_user_ops_lead_pool_matches(mobile=normalized_mobile, external_userid=normalized_external_userid)
+    external_row = next((item for item in matches if item["external_userid"] == normalized_external_userid), None)
+    mobile_row = next((item for item in matches if item["mobile"] == normalized_mobile), None)
+    profile = _sidebar_contact_profile(normalized_external_userid, normalized_owner_userid)
+    merge_before_payload = _serialize_user_ops_lead_pool_current_row(external_row or {})
+    merged_class_term_no = (
+        mobile_row.get("class_term_no")
+        if mobile_row and mobile_row.get("class_term_no") not in (None, "")
+        else (external_row.get("class_term_no") if external_row else None)
+    )
+    merged_class_term_label = (
+        str(mobile_row.get("class_term_label") or "").strip()
+        if mobile_row and str(mobile_row.get("class_term_label") or "").strip()
+        else str((external_row or {}).get("class_term_label") or "").strip()
+    )
+    merged_activation_state = (
+        str(mobile_row.get("huangxiaocan_activation_state") or "").strip()
+        if mobile_row and str(mobile_row.get("huangxiaocan_activation_state") or "").strip() not in ("", "unknown")
+        else str((external_row or {}).get("huangxiaocan_activation_state") or "").strip()
+    )
+    merge_required = bool(
+        external_row
+        and (
+            not str(external_row.get("mobile") or "").strip()
+            or (mobile_row is not None and int(mobile_row["id"]) != int(external_row["id"]))
+        )
+    )
+
+    if (
+        external_row is not None
+        and mobile_row is not None
+        and int(external_row["id"]) != int(mobile_row["id"])
+    ):
+        get_db().execute(
+            "DELETE FROM user_ops_lead_pool_current WHERE id = ?",
+            (int(external_row["id"]),),
+        )
+        get_db().commit()
+
+    result = upsert_user_ops_lead_pool_member(
+        mobile=normalized_mobile,
+        external_userid=normalized_external_userid,
+        customer_name=str(profile.get("customer_name") or "").strip(),
+        owner_userid=normalized_owner_userid,
+        is_wecom_added=True,
+        is_mobile_bound=True,
+        huangxiaocan_activation_state=merged_activation_state or "unknown",
+        class_term_no=int(merged_class_term_no) if merged_class_term_no not in (None, "") else None,
+        class_term_label=merged_class_term_label,
+        entry_source="mobile_bind",
+        operator=actor,
+        remark=f"bind mobile external_userid={normalized_external_userid}",
+    )
+    member = dict(result.get("member") or {})
+    if merge_required:
+        write_user_ops_lead_pool_history(
+            mobile=str(member.get("mobile") or normalized_mobile).strip(),
+            external_userid=str(member.get("external_userid") or normalized_external_userid).strip(),
+            action_type="mobile_bind_merge",
+            source_type="mobile_bind",
+            operator=actor,
+            before_payload=merge_before_payload,
+            after_payload=_serialize_user_ops_lead_pool_current_row(member),
+            remark=(
+                f"canonical mobile={normalized_mobile}; "
+                f"absorbed_external_row_id={int(external_row['id']) if external_row else 0}; "
+                f"mobile_row_id={int(mobile_row['id']) if mobile_row else 0}"
+            ),
+        )
+        get_db().commit()
+    return {
+        "ok": True,
+        "merge_applied": merge_required,
+        "member": member,
+        "merged_duplicate_ids": list(result.get("merged_duplicate_ids") or []),
+        "action_type": result.get("action_type"),
+    }
+
+
+def resolve_person_identity(*, external_userid: str = "", mobile: str = "", unionid: str = "") -> dict[str, Any]:
     """
     people is the system's canonical person table:
     - people.id is the internal person_id
     - people.mobile is the canonical primary mobile
 
     Other tables only provide bindings, WeCom identity details, or CRM snapshots.
-    This resolver unifies those sources so callers can resolve one person by either
-    external_userid or mobile without redefining the underlying schema.
+    This resolver unifies those sources so callers can resolve one person by
+    external_userid, mobile, or unionid without redefining the underlying schema.
     """
     normalized_external_userid = str(external_userid or "").strip()
     normalized_mobile = str(mobile or "").strip()
-    if not normalized_external_userid and not normalized_mobile:
-        raise ValueError("external_userid or mobile is required")
+    normalized_unionid = str(unionid or "").strip()
+    if not normalized_external_userid and not normalized_mobile and not normalized_unionid:
+        raise ValueError("external_userid, mobile or unionid is required")
 
     db = get_db()
     row = None
@@ -4382,7 +5060,7 @@ def resolve_person_identity(*, external_userid: str = "", mobile: str = "") -> d
                 """,
                 (current_app.config.get("WECOM_CORP_ID", ""), normalized_external_userid),
             ).fetchone()
-    else:
+    elif normalized_mobile:
         row = db.execute(
             """
             SELECT
@@ -4409,16 +5087,42 @@ def resolve_person_identity(*, external_userid: str = "", mobile: str = "") -> d
             """,
             (current_app.config.get("WECOM_CORP_ID", ""), normalized_mobile),
         ).fetchone()
+    else:
+        row = db.execute(
+            """
+            SELECT
+                p.id AS person_id,
+                p.mobile,
+                m.external_userid,
+                COALESCE(b.first_bound_by_userid, '') AS first_bound_by_userid,
+                COALESCE(b.first_owner_userid, '') AS first_owner_userid,
+                COALESCE(b.last_owner_userid, '') AS last_owner_userid,
+                COALESCE(c.customer_name, m.name, '') AS customer_name,
+                COALESCE(c.owner_userid, '') AS owner_userid,
+                COALESCE(c.remark, '') AS remark,
+                COALESCE(m.unionid, '') AS unionid,
+                COALESCE(m.openid, '') AS openid,
+                COALESCE(m.follow_user_userid, '') AS follow_user_userid
+            FROM wecom_external_contact_identity_map m
+            LEFT JOIN external_contact_bindings b ON b.external_userid = m.external_userid
+            LEFT JOIN people p ON p.id = b.person_id
+            LEFT JOIN contacts c ON c.external_userid = m.external_userid
+            WHERE m.corp_id = ? AND m.unionid = ?
+            ORDER BY b.updated_at DESC NULLS LAST, m.updated_at DESC NULLS LAST, m.id DESC
+            LIMIT 1
+            """,
+            (current_app.config.get("WECOM_CORP_ID", ""), normalized_unionid),
+        ).fetchone()
 
     if not row:
         return {
             "person_id": None,
             "mobile": normalized_mobile,
             "external_userid": normalized_external_userid,
+            "unionid": normalized_unionid,
             "customer_name": "",
             "owner_userid": "",
             "remark": "",
-            "unionid": "",
             "openid": "",
             "follow_user_userid": "",
             "signup_status": "",
@@ -4615,12 +5319,20 @@ def bind_mobile_to_external_contact(
             db.rollback()
             third_party_sync_error = str(exc)
 
+    lead_pool_merge = _merge_lead_pool_after_mobile_bind(
+        external_userid=normalized_external_userid,
+        owner_userid=normalized_owner_userid,
+        mobile=normalized_mobile,
+        operator=normalized_bind_by_userid,
+    )
+
     result = get_contact_binding_status(normalized_external_userid, normalized_owner_userid)
     if third_party_sync_error:
         result["third_party_sync_status"] = "pending"
         result["third_party_sync_error"] = third_party_sync_error
     else:
         result["third_party_sync_status"] = "success" if result.get("third_party_user_id") else "empty"
+    result["lead_pool_merge"] = lead_pool_merge
     return result
 
 

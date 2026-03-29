@@ -421,7 +421,6 @@
         <div class="toolbar-actions">
           <button id="open-class-term-import-modal-btn" class="btn ghost" type="button">导入学员</button>
           <button id="open-activation-import-modal-btn" class="btn ghost" type="button">导入黄小璨激活状态</button>
-          <button id="reload-btn" class="btn primary" type="button">Reload</button>
           <button id="export-btn" class="btn ghost" type="button">Export</button>
         </div>
       </div>
@@ -431,22 +430,30 @@
     <section class="panel toolbar">
       <div class="toolbar-head">
         <div class="tabs">
-          <button class="tab-btn active" type="button" data-tab="current">当前状态池</button>
+          <button class="tab-btn active" type="button" data-tab="current">引流品成员池</button>
           <button class="tab-btn" type="button" data-tab="history">操作历史</button>
         </div>
       </div>
       <div class="filters">
         <div class="field">
-          <label for="filter-bound">是否加微</label>
-          <select id="filter-bound">
+          <label for="filter-is-wecom-added">是否已加微</label>
+          <select id="filter-is-wecom-added">
             <option value="">全部</option>
             <option value="true">已加微</option>
             <option value="false">未加微</option>
           </select>
         </div>
         <div class="field">
-          <label for="filter-activation">激活状态</label>
-          <select id="filter-activation"></select>
+          <label for="filter-is-mobile-bound">是否已绑手机号</label>
+          <select id="filter-is-mobile-bound">
+            <option value="">全部</option>
+            <option value="true">已绑手机号</option>
+            <option value="false">未绑手机号</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filter-activation-state">黄小璨激活状态</label>
+          <select id="filter-activation-state"></select>
         </div>
         <div class="field">
           <label for="filter-class-term">班期</label>
@@ -467,8 +474,8 @@
       <article id="current-panel" class="panel content-card">
         <div class="toolbar-head" style="margin-bottom:14px;">
           <div>
-            <h2>当前状态池</h2>
-            <p class="subtle">读取 `user_ops_pool_current` 投影表。当前主视图优先展示手机号、是否已加微、班期和激活状态。</p>
+            <h2>引流品成员池</h2>
+            <p class="subtle">读取 `user_ops_lead_pool_current`。当前主视图只围绕手机号主线、加微状态、绑手机号状态、班期和黄小璨激活状态展示。</p>
           </div>
         </div>
         <p id="current-status" class="status-line">加载中...</p>
@@ -477,9 +484,10 @@
             <thead>
               <tr>
                 <th>手机号</th>
-                <th>是否加微</th>
+                <th>是否已加微</th>
+                <th>是否已绑手机号</th>
                 <th>班期</th>
-                <th>激活状态</th>
+                <th>黄小璨激活状态</th>
                 <th>客户昵称</th>
                 <th>external_userid</th>
               </tr>
@@ -493,7 +501,7 @@
         <div class="toolbar-head" style="margin-bottom:14px;">
           <div>
             <h2>操作历史</h2>
-            <p class="subtle">第 1 轮先记录池子重载写入的变化，后续导入、回填、自动任务会继续写同一张历史表。</p>
+            <p class="subtle">读取 `user_ops_lead_pool_history`，展示 lead pool 的增量写入、合并和自动验证入表记录。</p>
           </div>
         </div>
         <p id="history-status" class="status-line">加载中...</p>
@@ -575,8 +583,9 @@
       list: null,
       history: null,
       filters: {
-        is_wecom_bound: '',
-        activation_status: '',
+        is_wecom_added: '',
+        is_mobile_bound: '',
+        huangxiaocan_activation_state: '',
         class_term_no: '',
         query: '',
       },
@@ -597,9 +606,10 @@
     const activationImportModalBackdropEl = document.getElementById('activation-import-modal-backdrop');
     const currentPanelEl = document.getElementById('current-panel');
     const historyPanelEl = document.getElementById('history-panel');
-    const activationFilterEl = document.getElementById('filter-activation');
+    const activationFilterEl = document.getElementById('filter-activation-state');
     const classTermFilterEl = document.getElementById('filter-class-term');
-    const boundFilterEl = document.getElementById('filter-bound');
+    const wecomAddedFilterEl = document.getElementById('filter-is-wecom-added');
+    const mobileBoundFilterEl = document.getElementById('filter-is-mobile-bound');
     const queryFilterEl = document.getElementById('filter-query');
 
     async function fetchJson(url, options) {
@@ -642,12 +652,13 @@
 
     function renderFilterOptions() {
       const filterOptions = ((state.list || {}).filter_options || {});
-      activationFilterEl.innerHTML = buildOptions(filterOptions.activation_statuses || [], 'value', 'label');
+      activationFilterEl.innerHTML = buildOptions(filterOptions.activation_states || [], 'value', 'label');
       classTermFilterEl.innerHTML = buildOptions(filterOptions.class_terms || [], 'class_term_no', 'class_term_label');
 
-      activationFilterEl.value = state.filters.activation_status;
+      activationFilterEl.value = state.filters.huangxiaocan_activation_state;
       classTermFilterEl.value = state.filters.class_term_no;
-      boundFilterEl.value = state.filters.is_wecom_bound;
+      wecomAddedFilterEl.value = state.filters.is_wecom_added;
+      mobileBoundFilterEl.value = state.filters.is_mobile_bound;
       queryFilterEl.value = state.filters.query;
     }
 
@@ -656,22 +667,26 @@
       if (!items.length) {
         currentStatusEl.textContent = '当前筛选下暂无数据';
         currentStatusEl.className = 'status-line';
-        currentBodyEl.innerHTML = '<tr><td colspan="6">当前筛选下暂无数据</td></tr>';
+        currentBodyEl.innerHTML = '<tr><td colspan="7">当前筛选下暂无数据</td></tr>';
         return;
       }
       currentStatusEl.textContent = '已加载 ' + items.length + ' 条';
       currentStatusEl.className = 'status-line success';
       currentBodyEl.innerHTML = items.map((item) => {
-        const boundTag = item.is_wecom_bound
+        const wecomAddedTag = item.is_wecom_added
           ? '<span class="tag ok">已加微</span>'
           : '<span class="tag warn">未加微</span>';
-        const activationTagClass = item.activation_status === 'activated' ? ' ok' : '';
+        const mobileBoundTag = item.is_mobile_bound
+          ? '<span class="tag ok">已绑手机号</span>'
+          : '<span class="tag warn">未绑手机号</span>';
+        const activationTagClass = item.huangxiaocan_activation_state === 'activated' ? ' ok' : '';
         return (
           '<tr>'
           + '<td>' + (item.mobile || '-') + '</td>'
-          + '<td>' + boundTag + '</td>'
+          + '<td>' + wecomAddedTag + '</td>'
+          + '<td>' + mobileBoundTag + '</td>'
           + '<td>' + (item.class_term_label || '-') + '</td>'
-          + '<td><span class="tag' + activationTagClass + '">' + (item.activation_status_label || '-') + '</span></td>'
+          + '<td><span class="tag' + activationTagClass + '">' + (item.huangxiaocan_activation_state_label || '-') + '</span></td>'
           + '<td>' + (item.customer_name || '-') + '</td>'
           + '<td><div class="mono">' + (item.external_userid || '-') + '</div></td>'
           + '</tr>'
@@ -736,13 +751,6 @@
       historyStatusEl.className = 'status-line';
       state.history = await fetchJson('/api/admin/user-ops/history?limit=100');
       renderHistory();
-    }
-
-    async function reloadPool() {
-      const result = await fetchJson('/api/admin/user-ops/reload', { method: 'POST' });
-      await Promise.all([loadOverview(), loadList(), loadHistory()]);
-      currentStatusEl.textContent = '重载完成：当前池 ' + (result.total || 0) + ' 条';
-      currentStatusEl.className = 'status-line success';
     }
 
     async function submitClassTermImport() {
@@ -823,12 +831,12 @@
     }
 
     function bindFilters() {
-      boundFilterEl.addEventListener('change', (event) => { state.filters.is_wecom_bound = event.target.value; });
-      activationFilterEl.addEventListener('change', (event) => { state.filters.activation_status = event.target.value; });
+      wecomAddedFilterEl.addEventListener('change', (event) => { state.filters.is_wecom_added = event.target.value; });
+      mobileBoundFilterEl.addEventListener('change', (event) => { state.filters.is_mobile_bound = event.target.value; });
+      activationFilterEl.addEventListener('change', (event) => { state.filters.huangxiaocan_activation_state = event.target.value; });
       classTermFilterEl.addEventListener('change', (event) => { state.filters.class_term_no = event.target.value; });
       queryFilterEl.addEventListener('input', (event) => { state.filters.query = event.target.value.trim(); });
       document.getElementById('search-btn').addEventListener('click', () => loadList().catch(handleError));
-      document.getElementById('reload-btn').addEventListener('click', () => reloadPool().catch(handleError));
       document.getElementById('export-btn').addEventListener('click', () => {
         window.location.href = '/api/admin/user-ops/export?' + currentParams().toString();
       });

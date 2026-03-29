@@ -3444,10 +3444,67 @@ def test_identity_resolve_supports_external_userid_and_mobile(client, app):
     assert mobile_payload["is_bound"] is True
 
 
-def test_identity_resolve_requires_external_userid_or_mobile(client):
+def test_identity_resolve_supports_unionid(client, app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO owner_role_map (userid, display_name, role, active)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("sales_01", "顾问一号", "sales", 1),
+        )
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            ("wm_ext_union_001", "家恺", "sales_01", "union 反查", "wm_ext_union_001"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "ww-test",
+                "wm_ext_union_001",
+                "union-lookup-001",
+                "openid-union-001",
+                "sales_follow_01",
+                "家恺",
+                "active",
+                json.dumps({"external_userid": "wm_ext_union_001"}, ensure_ascii=False),
+            ),
+        )
+        db.commit()
+
+    response = client.get(
+        "/api/identity/resolve",
+        query_string={"unionid": "union-lookup-001"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["person_id"] is None
+    assert payload["mobile"] == ""
+    assert payload["external_userid"] == "wm_ext_union_001"
+    assert payload["customer_name"] == "家恺"
+    assert payload["owner_userid"] == "sales_01"
+    assert payload["remark"] == "union 反查"
+    assert payload["unionid"] == "union-lookup-001"
+    assert payload["openid"] == "openid-union-001"
+    assert payload["follow_user_userid"] == "sales_follow_01"
+    assert payload["is_bound"] is False
+
+
+def test_identity_resolve_requires_external_userid_mobile_or_unionid(client):
     response = client.get("/api/identity/resolve")
     assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": "external_userid or mobile is required"}
+    assert response.get_json() == {"ok": False, "error": "external_userid, mobile or unionid is required"}
 
 
 def test_customer_center_list_supports_filters(client, app):
