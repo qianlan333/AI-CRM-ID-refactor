@@ -464,13 +464,20 @@ def test_user_ops_ui_route_exists(client):
 def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
     response = client.get("/admin/user-ops/ui")
     html = response.get_data(as_text=True)
+    page_shell = html.split('<div id="class-term-import-modal-backdrop"', 1)[0]
 
     assert response.status_code == 200
-    assert "导入手机号+班期" in html
-    assert "导入手机号+激活状态" in html
-    assert "班期回填" not in html
-    assert "执行待处理自动归班任务" not in html
-    assert "检查标签" not in html
+    assert "导入学员" in page_shell
+    assert "导入黄小璨激活状态" in page_shell
+    assert 'id="open-class-term-import-modal-btn"' in page_shell
+    assert 'id="open-activation-import-modal-btn"' in page_shell
+    assert 'id="class-term-import-text"' not in page_shell
+    assert 'id="class-term-import-file"' not in page_shell
+    assert 'id="activation-import-text"' not in page_shell
+    assert 'id="activation-import-file"' not in page_shell
+    assert "班期回填" not in page_shell
+    assert "执行待处理自动归班任务" not in page_shell
+    assert "检查标签" not in page_shell
     assert html.count('<section class="panel toolbar">') == 1
     assert 'id="class-term-import-modal-backdrop" class="modal-backdrop hidden"' in html
     assert 'id="activation-import-modal-backdrop" class="modal-backdrop hidden"' in html
@@ -500,18 +507,26 @@ def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(clien
 def test_user_ops_ui_uses_modal_import_structure(client):
     response = client.get("/admin/user-ops/ui")
     html = response.get_data(as_text=True)
+    class_modal = html.split('<div id="class-term-import-modal-backdrop"', 1)[1].split(
+        '<div id="activation-import-modal-backdrop"', 1
+    )[0]
+    activation_modal = html.split('<div id="activation-import-modal-backdrop"', 1)[1]
 
     assert response.status_code == 200
     assert 'id="class-term-import-modal-backdrop" class="modal-backdrop hidden"' in html
     assert 'id="activation-import-modal-backdrop" class="modal-backdrop hidden"' in html
-    assert 'id="class-term-import-modal-title">手机号 + 班期导入<' in html
-    assert 'id="activation-import-modal-title">手机号 + 激活状态导入<' in html
-    assert '<label for="class-term-import-text">粘贴导入</label>' in html
-    assert '<label for="class-term-import-file">Excel 导入</label>' in html
-    assert '<label for="activation-import-text">粘贴导入</label>' in html
-    assert '<label for="activation-import-file">Excel 导入</label>' in html
-    assert 'id="close-class-term-import-modal-btn"' in html
-    assert 'id="close-activation-import-modal-btn"' in html
+    assert 'id="class-term-import-modal-title">导入学员（手机号 + 班期）<' in class_modal
+    assert '<label for="class-term-import-text">粘贴导入</label>' in class_modal
+    assert '<label for="class-term-import-file">Excel 导入</label>' in class_modal
+    assert 'id="submit-class-term-import-btn"' in class_modal
+    assert 'id="close-class-term-import-modal-btn"' in class_modal
+    assert '>导入学员</button>' in class_modal
+    assert 'id="activation-import-modal-title">导入黄小璨激活状态<' in activation_modal
+    assert '<label for="activation-import-text">粘贴导入</label>' in activation_modal
+    assert '<label for="activation-import-file">Excel 导入</label>' in activation_modal
+    assert 'id="submit-activation-import-btn"' in activation_modal
+    assert 'id="close-activation-import-modal-btn"' in activation_modal
+    assert '>导入黄小璨激活状态</button>' in activation_modal
     assert "13800138040,已激活" in html
 
 

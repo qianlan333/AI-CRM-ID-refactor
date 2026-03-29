@@ -419,8 +419,8 @@
           <p>这版看板围绕手机号主线管理 CRM 用户投影池，聚焦手机号、是否已加微、班期和激活状态，统一查看并校准运营数据。</p>
         </div>
         <div class="toolbar-actions">
-          <button id="open-class-term-import-modal-btn" class="btn ghost" type="button">导入手机号+班期</button>
-          <button id="open-activation-import-modal-btn" class="btn ghost" type="button">导入手机号+激活状态</button>
+          <button id="open-class-term-import-modal-btn" class="btn ghost" type="button">导入学员</button>
+          <button id="open-activation-import-modal-btn" class="btn ghost" type="button">导入黄小璨激活状态</button>
           <button id="reload-btn" class="btn primary" type="button">Reload</button>
           <button id="export-btn" class="btn ghost" type="button">Export</button>
         </div>
@@ -520,7 +520,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="class-term-import-modal-title">
       <div class="modal-head">
         <div>
-          <h2 id="class-term-import-modal-title">手机号 + 班期导入</h2>
+          <h2 id="class-term-import-modal-title">导入学员（手机号 + 班期）</h2>
           <p class="subtle">支持直接粘贴或上传 Excel / utf-8 文本，格式固定为 `手机号 + 班期`。</p>
         </div>
         <button id="close-class-term-import-modal-btn" class="btn ghost" type="button">关闭</button>
@@ -536,7 +536,7 @@
         </div>
         <div class="modal-actions">
           <p id="class-term-import-status" class="status-line">准备导入。班期保留原始业务表达，是否已加微继续通过现有绑定关系推导。</p>
-          <button id="submit-class-term-import-btn" class="btn primary" type="button">导入手机号+班期</button>
+          <button id="submit-class-term-import-btn" class="btn primary" type="button">导入学员</button>
         </div>
       </div>
     </div>
@@ -546,7 +546,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="activation-import-modal-title">
       <div class="modal-head">
         <div>
-          <h2 id="activation-import-modal-title">手机号 + 激活状态导入</h2>
+          <h2 id="activation-import-modal-title">导入黄小璨激活状态</h2>
           <p class="subtle">支持直接粘贴或上传 Excel / utf-8 文本，激活状态优先使用 `已激活 / 未激活`。</p>
         </div>
         <button id="close-activation-import-modal-btn" class="btn ghost" type="button">关闭</button>
@@ -562,7 +562,7 @@
         </div>
         <div class="modal-actions">
           <p id="activation-import-status" class="status-line">准备导入。优先使用“已激活 / 未激活”，旧值“激活”仍兼容，非法值会直接报错。</p>
-          <button id="submit-activation-import-btn" class="btn primary" type="button">导入手机号+激活状态</button>
+          <button id="submit-activation-import-btn" class="btn primary" type="button">导入黄小璨激活状态</button>
         </div>
       </div>
     </div>
