@@ -2079,6 +2079,8 @@ def _sync_sidebar_lead_pool_class_term_tag(
     owner_userid: str,
     class_term_no: int,
 ) -> dict[str, Any]:
+    from .wecom_client import WeComClient
+
     normalized_external_userid = str(external_userid or "").strip()
     normalized_owner_userid = str(owner_userid or "").strip()
     if not normalized_external_userid:

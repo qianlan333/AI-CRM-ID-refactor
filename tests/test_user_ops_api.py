@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import pytest
 
 from wecom_ability_service import create_app
+from wecom_ability_service import wecom_client as wecom_client_module
 from wecom_ability_service.db import get_db, init_db
 from wecom_ability_service.routes import _process_external_contact_event
 from wecom_ability_service.services import (
@@ -902,6 +903,142 @@ def test_sidebar_lead_pool_status_returns_current_member(client, app):
     assert payload["is_wecom_added"] is True
     assert payload["is_mobile_bound"] is False
     assert any(option["class_term_no"] == 3 for option in payload["class_term_options"])
+
+
+def test_sidebar_lead_pool_upsert_class_term_replaces_old_tag_and_returns_success(client, app, monkeypatch):
+    _seed_sidebar_contact(app, external_userid="wm_sidebar_term_replace_001", owner_userid="sales_01")
+    wecom_calls: list[dict[str, object]] = []
+
+    class FakeWeComClient:
+        def mark_external_contact_tags(
+            self,
+            *,
+            external_userid: str,
+            follow_user_userid: str,
+            add_tags: list[str],
+            remove_tags: list[str] | None = None,
+        ) -> dict[str, object]:
+            wecom_calls.append(
+                {
+                    "external_userid": external_userid,
+                    "follow_user_userid": follow_user_userid,
+                    "add_tags": list(add_tags),
+                    "remove_tags": list(remove_tags or []),
+                }
+            )
+            return {"errcode": 0}
+
+    monkeypatch.setattr(
+        wecom_client_module.WeComClient,
+        "from_app",
+        classmethod(lambda cls: FakeWeComClient()),
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO class_term_tag_mapping (
+                class_term_no, class_term_label, tag_id, tag_group_name, tag_name, strategy_id, group_id, is_active
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                5,
+                "5期",
+                "tag_term_5",
+                "9.9元改变计划",
+                "第5期",
+                "strategy_sidebar_test",
+                "group_sidebar_test",
+                True,
+                6,
+                "6期",
+                "tag_term_6",
+                "9.9元改变计划",
+                "第6期",
+                "strategy_sidebar_test",
+                "group_sidebar_test",
+                True,
+            ),
+        )
+        db.commit()
+        mapping_5 = get_db().execute(
+            """
+            SELECT tag_id, tag_name
+            FROM class_term_tag_mapping
+            WHERE class_term_no = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (5,),
+        ).fetchone()
+        mapping_6 = get_db().execute(
+            """
+            SELECT tag_id, tag_name
+            FROM class_term_tag_mapping
+            WHERE class_term_no = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (6,),
+        ).fetchone()
+
+    response_5 = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wm_sidebar_term_replace_001",
+            "owner_userid": "sales_01",
+            "class_term_no": 5,
+        },
+    )
+    payload_5 = response_5.get_json()
+
+    response_6 = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wm_sidebar_term_replace_001",
+            "owner_userid": "sales_01",
+            "class_term_no": 6,
+        },
+    )
+    payload_6 = response_6.get_json()
+
+    assert response_5.status_code == 200
+    assert payload_5["ok"] is True
+    assert payload_5["current_class_term_no"] == 5
+    assert response_6.status_code == 200
+    assert payload_6["ok"] is True
+    assert payload_6["current_class_term_no"] == 6
+    assert payload_6["current_class_term_label"] == "6期"
+
+    with app.app_context():
+        current_row = get_db().execute(
+            """
+            SELECT class_term_no, class_term_label
+            FROM user_ops_lead_pool_current
+            WHERE external_userid = ?
+            """,
+            ("wm_sidebar_term_replace_001",),
+        ).fetchone()
+        tag_rows = get_db().execute(
+            """
+            SELECT tag_id, tag_name
+            FROM contact_tags
+            WHERE external_userid = ? AND userid = ?
+            ORDER BY tag_id ASC
+            """,
+            ("wm_sidebar_term_replace_001", "sales_01"),
+        ).fetchall()
+
+    assert current_row["class_term_no"] == 6
+    assert current_row["class_term_label"] == "6期"
+    assert len(tag_rows) == 1
+    assert tag_rows[0]["tag_id"] == mapping_6["tag_id"]
+    assert tag_rows[0]["tag_name"] == mapping_6["tag_name"]
+    assert wecom_calls[0]["add_tags"] == [mapping_5["tag_id"]]
+    assert mapping_6["tag_id"] in wecom_calls[1]["add_tags"]
+    assert mapping_5["tag_id"] in wecom_calls[1]["remove_tags"]
 
 
 def test_sidebar_bind_mobile_merges_external_only_and_mobile_only_members(client, app):
