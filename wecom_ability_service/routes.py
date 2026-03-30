@@ -54,6 +54,7 @@ from .services import (
     ContactBindingConflictError,
     QuestionnaireAlreadySubmittedError,
     bind_openid_to_external_contact,
+    backfill_owner_class_terms_into_lead_pool,
     bind_mobile_to_external_contact,
     build_class_user_tag_view,
     apply_class_user_status_change,
@@ -212,6 +213,19 @@ def _contact_sync_retry_limit() -> int:
 
 def _contact_client() -> WeComClient:
     return WeComClient.from_contact_app()
+
+
+def _coerce_request_bool(value: object, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
 
 
 def _questionnaire_public_path(slug: str) -> str:
@@ -2301,6 +2315,34 @@ def admin_user_ops_backfill_class_term():
         ),
         410,
     )
+
+
+@bp.route("/api/internal/user-ops/lead-pool/backfill-owner-class-terms", methods=["POST"])
+def internal_user_ops_backfill_owner_class_terms():
+    payload_json = request.get_json(silent=True) or {}
+    owner_userid = str(payload_json.get("owner_userid") or "ZhaoYanFang").strip()
+    class_term_min_value = payload_json.get("class_term_min", 1)
+    class_term_max_value = payload_json.get("class_term_max", 5)
+    dry_run = _coerce_request_bool(payload_json.get("dry_run", True), default=True)
+    try:
+        class_term_min = int(class_term_min_value)
+        class_term_max = int(class_term_max_value)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "class_term_min and class_term_max must be integers"}), 400
+    try:
+        payload = backfill_owner_class_terms_into_lead_pool(
+            owner_userid=owner_userid,
+            class_term_min=class_term_min,
+            class_term_max=class_term_max,
+            dry_run=dry_run,
+            operator=str(payload_json.get("operator") or "").strip(),
+            entry_source=str(payload_json.get("entry_source") or "").strip(),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except WeComClientError as exc:
+        return _wecom_error_response(exc)
+    return jsonify(payload)
 
 
 @bp.route("/api/admin/user-ops/run-deferred-jobs", methods=["POST"])
