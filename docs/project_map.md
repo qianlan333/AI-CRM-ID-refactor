@@ -52,6 +52,13 @@ AI-CRM/
   - 客户时间线聚合
 - [`wecom_ability_service/templates`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates)
   - 后台页面模板
+  - 当前已拆出的主要页面包括：
+    - [`wecom_ability_service/templates/admin_questionnaires.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_questionnaires.html)
+    - [`wecom_ability_service/templates/admin_class_user_management.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_class_user_management.html)
+    - [`wecom_ability_service/templates/admin_class_user_backoffice.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_class_user_backoffice.html)
+    - [`wecom_ability_service/templates/sidebar_bind_mobile.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/sidebar_bind_mobile.html)
+    - [`wecom_ability_service/templates/questionnaire_h5_page.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/questionnaire_h5_page.html)
+    - [`wecom_ability_service/templates/questionnaire_h5_submitted.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/questionnaire_h5_submitted.html)
   - 当前用户运营看板页面在：
     - [`wecom_ability_service/templates/admin_user_ops.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_user_ops.html)
 
