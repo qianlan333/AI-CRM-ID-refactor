@@ -101,6 +101,10 @@ AI-CRM/
 
 - [`deploy/openclaw-wecom-postgres.service`](/Users/qianlan/Downloads/极简%20crm/deploy/openclaw-wecom-postgres.service)
   - 生产 service 配置参考
+- [`deploy/deploy_production.sh`](/Users/qianlan/Downloads/极简%20crm/deploy/deploy_production.sh)
+  - GitHub 自动发布时在生产机执行的部署脚本
+- [`deploy/rsync-excludes.txt`](/Users/qianlan/Downloads/极简%20crm/deploy/rsync-excludes.txt)
+  - 自动发布同步时排除的文件列表
 
 ## `scripts/`
 
