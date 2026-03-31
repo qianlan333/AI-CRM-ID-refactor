@@ -103,11 +103,13 @@ jobs:
         run: |
           set -euo pipefail
           quote() { printf '%q' "$1"; }
-          remote_cmd="APP_DIR=$(quote "$APP_DIR") \
+          remote_cmd="cd $(quote "$APP_DIR") && \
+            test -f deploy/deploy_production.sh && \
+            APP_DIR=$(quote "$APP_DIR") \
             VENV_DIR=$(quote "$VENV_DIR") \
             SERVICE_NAME=$(quote "$SERVICE_NAME") \
             ENV_FILE=$(quote "$ENV_FILE") \
             HEALTHCHECK_URL=$(quote "$HEALTHCHECK_URL") \
             DEPLOY_SHA=$(quote "$DEPLOY_SHA") \
-            bash $(quote "$APP_DIR/deploy/deploy_production.sh")"
+            bash deploy/deploy_production.sh"
           ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" "$remote_cmd"
