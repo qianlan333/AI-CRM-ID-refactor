@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from io import BytesIO
 from datetime import datetime, timedelta
 from typing import Any
@@ -28,6 +29,7 @@ SENSITIVE_KEYS = {
 LEGACY_DESCRIPTION_PREFIX = "external_userid:"
 QUESTIONNAIRE_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
 questionnaire_logger = logging.getLogger("questionnaire")
+owner_backfill_logger = logging.getLogger("owner_backfill")
 
 SIGNUP_TAG_GROUP_NAME = "AI 产品报名情况"
 SIGNUP_TAG_STATUS_DEFINITIONS = [
@@ -2369,7 +2371,10 @@ def backfill_owner_class_terms_into_lead_pool(
     operator: str = "",
     entry_source: str = "",
     sample_limit: int = 20,
+    offset: int = 0,
+    max_candidates: int | None = None,
 ) -> dict[str, Any]:
+    started_at = time.perf_counter()
     normalized_owner_userid = str(owner_userid or "").strip()
     if not normalized_owner_userid:
         raise ValueError("owner_userid is required")
@@ -2384,6 +2389,8 @@ def backfill_owner_class_terms_into_lead_pool(
     normalized_entry_source = str(entry_source or "").strip() or _default_owner_class_term_backfill_entry_source(
         normalized_owner_userid
     )
+    normalized_offset = max(int(offset or 0), 0)
+    normalized_max_candidates = None if max_candidates in (None, "") else max(int(max_candidates), 0)
     tag_payload = _user_ops_contact_client().list_external_contact_tags()
     mapping_scope = _resolve_owner_backfill_class_term_mappings(
         class_term_min=normalized_class_term_min,
@@ -2392,11 +2399,19 @@ def backfill_owner_class_terms_into_lead_pool(
     )
     effective_by_tag_id = dict(mapping_scope["effective_by_tag_id"])
     effective_by_tag_name = dict(mapping_scope["effective_by_tag_name"])
-    candidates = _list_owner_backfill_candidate_external_userids(normalized_owner_userid)
+    all_candidates = _list_owner_backfill_candidate_external_userids(normalized_owner_userid)
+    candidates = list(all_candidates[normalized_offset:])
+    if normalized_max_candidates is not None:
+        candidates = candidates[:normalized_max_candidates]
 
     items: list[dict[str, Any]] = []
     class_term_distribution = {
         str(class_term_no): 0 for class_term_no in range(normalized_class_term_min, normalized_class_term_max + 1)
+    }
+    source_breakdown = {
+        "follow_relation_only": 0,
+        "contact_owner_only": 0,
+        "both_sources": 0,
     }
     estimated_insert_total = 0
     estimated_update_total = 0
@@ -2407,6 +2422,17 @@ def backfill_owner_class_terms_into_lead_pool(
     skip_total = 0
     noop_total = 0
     error_total = 0
+    processed_candidate_total = 0
+
+    for candidate in candidates:
+        from_follow_relation = bool(candidate.get("from_follow_relation"))
+        from_contact_owner = bool(candidate.get("from_contact_owner"))
+        if from_follow_relation and from_contact_owner:
+            source_breakdown["both_sources"] += 1
+        elif from_follow_relation:
+            source_breakdown["follow_relation_only"] += 1
+        elif from_contact_owner:
+            source_breakdown["contact_owner_only"] += 1
 
     if not dry_run:
         sync_user_ops_class_term_tag_definitions()
@@ -2415,6 +2441,7 @@ def backfill_owner_class_terms_into_lead_pool(
         external_userid = str(candidate.get("external_userid") or "").strip()
         if not external_userid:
             continue
+        processed_candidate_total += 1
         try:
             live_tag_payload = _get_owner_scoped_live_contact_tags(
                 external_userid=external_userid,
@@ -2557,10 +2584,24 @@ def backfill_owner_class_terms_into_lead_pool(
                 "matched_class_term_no": int(matched["class_term_no"]),
                 "matched_class_term_label": str(matched.get("class_term_label") or "").strip(),
                 "decision": decision,
-                "decision_reason": decision_reason,
-                "tag_names": list(live_tag_payload["tag_names"]),
-            }
-        )
+                    "decision_reason": decision_reason,
+                    "tag_names": list(live_tag_payload["tag_names"]),
+                }
+            )
+
+        if processed_candidate_total % 100 == 0 or processed_candidate_total == len(candidates):
+            owner_backfill_logger.info(
+                "owner backfill progress owner_userid=%s processed=%s/%s matched=%s conflicts=%s skips=%s noops=%s errors=%s elapsed_seconds=%.2f",
+                normalized_owner_userid,
+                processed_candidate_total,
+                len(candidates),
+                single_match_total + conflict_total,
+                conflict_total,
+                skip_total,
+                noop_total,
+                error_total,
+                time.perf_counter() - started_at,
+            )
 
     decision_order = {"conflict": 0, "update": 1, "insert": 2, "skip": 3}
     sample_items = sorted(
@@ -2579,7 +2620,10 @@ def backfill_owner_class_terms_into_lead_pool(
         "class_term_max": normalized_class_term_max,
         "dry_run": bool(dry_run),
         "entry_source": normalized_entry_source,
-        "candidate_total": len(candidates),
+        "candidate_total": len(all_candidates),
+        "processed_candidate_total": processed_candidate_total,
+        "offset": normalized_offset,
+        "max_candidates": normalized_max_candidates,
         "matched_candidate_total": single_match_total + conflict_total,
         "single_match_total": single_match_total,
         "class_term_distribution": class_term_distribution,
@@ -2593,6 +2637,8 @@ def backfill_owner_class_terms_into_lead_pool(
         "estimated_mobile_empty_total": estimated_mobile_empty_total,
         "term_2_mapping": mapping_scope["term_2_mapping"],
         "warnings": list(dict.fromkeys(mapping_scope["warnings"])),
+        "elapsed_seconds": round(time.perf_counter() - started_at, 3),
+        "source_breakdown": source_breakdown,
         "samples": sample_items,
         "applied_total": 0 if dry_run else estimated_insert_total + estimated_update_total,
     }
@@ -2742,12 +2788,43 @@ def refresh_user_ops_contact_tags_for_owner(owner_userid: str) -> dict[str, Any]
     }
 
 
+def _list_other_ownerids_with_scoped_tag_snapshots(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    scoped_tag_ids: list[str],
+) -> list[str]:
+    if not scoped_tag_ids:
+        return []
+    placeholders = ", ".join("?" for _ in scoped_tag_ids)
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT userid
+        FROM contact_tags
+        WHERE external_userid = ?
+          AND userid <> ?
+          AND tag_id IN ({placeholders})
+        ORDER BY userid ASC
+        """,
+        (external_userid, owner_userid, *scoped_tag_ids),
+    ).fetchall()
+    return [
+        str(row.get("userid") or "").strip()
+        for row in rows
+        if str(row.get("userid") or "").strip()
+    ]
+
+
 def _sync_sidebar_lead_pool_class_term_tag(
     *,
     external_userid: str,
     owner_userid: str,
     class_term_no: int,
 ) -> dict[str, Any]:
+    # Import lazily here to avoid widening the existing services <-> wecom_client
+    # dependency loop while still making the hot path explicit and testable.
+    from .wecom_client import WeComClient
+
     normalized_external_userid = str(external_userid or "").strip()
     normalized_owner_userid = str(owner_userid or "").strip()
     if not normalized_external_userid:
@@ -2771,6 +2848,13 @@ def _sync_sidebar_lead_pool_class_term_tag(
             if str(item.get("tag_id") or "").strip() and int(item.get("class_term_no") or 0) != int(mapping["class_term_no"])
         }
     )
+    scoped_class_term_tag_ids = sorted(
+        {
+            str(item.get("tag_id") or "").strip()
+            for item in _list_active_class_term_mappings()
+            if str(item.get("tag_id") or "").strip()
+        }
+    )
 
     testing_applier = current_app.config.get("SIDEBAR_LEAD_POOL_TAG_APPLIER")
     if callable(testing_applier):
@@ -2789,6 +2873,27 @@ def _sync_sidebar_lead_pool_class_term_tag(
             remove_tags=remove_tag_ids,
         )
 
+    other_follow_user_userids = _list_other_ownerids_with_scoped_tag_snapshots(
+        external_userid=normalized_external_userid,
+        owner_userid=normalized_owner_userid,
+        scoped_tag_ids=scoped_class_term_tag_ids,
+    )
+    for other_follow_user_userid in other_follow_user_userids:
+        if callable(testing_applier):
+            testing_applier(
+                external_userid=normalized_external_userid,
+                owner_userid=other_follow_user_userid,
+                add_tags=[],
+                remove_tags=scoped_class_term_tag_ids,
+            )
+        else:
+            client.mark_external_contact_tags(
+                external_userid=normalized_external_userid,
+                follow_user_userid=other_follow_user_userid,
+                add_tags=[],
+                remove_tags=scoped_class_term_tag_ids,
+            )
+
     save_tag_snapshot(
         normalized_owner_userid,
         normalized_external_userid,
@@ -2797,6 +2902,11 @@ def _sync_sidebar_lead_pool_class_term_tag(
     )
     if remove_tag_ids:
         remove_tag_snapshot(normalized_owner_userid, normalized_external_userid, remove_tag_ids)
+    remove_tag_snapshots_for_other_users(
+        normalized_external_userid,
+        [normalized_owner_userid],
+        scoped_class_term_tag_ids,
+    )
     return {
         "class_term_no": int(mapping["class_term_no"]),
         "class_term_label": str(mapping.get("class_term_label") or "").strip(),
@@ -2916,6 +3026,119 @@ def _build_user_ops_backfill_preview(owner_userid: str) -> list[dict[str, Any]]:
     return preview_items
 
 
+def _build_backfill_class_term_summary(
+    *,
+    owner_userid: str,
+    dry_run: bool,
+    tag_definition_sync: dict[str, Any],
+    tag_refresh: dict[str, Any],
+    preview_items: list[dict[str, Any]],
+    mappings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "owner_userid": owner_userid,
+        "dry_run": bool(dry_run),
+        "mapping_count": len(mappings),
+        "tag_definition_sync": tag_definition_sync,
+        "tag_refresh": tag_refresh,
+        "total_candidates": len(preview_items),
+        "update_count": sum(1 for item in preview_items if item["decision"] == "update"),
+        "unchanged_count": sum(1 for item in preview_items if item["decision"] == "unchanged"),
+        "no_match_count": sum(1 for item in preview_items if item["decision"] == "no_match"),
+        "conflict_count": sum(1 for item in preview_items if item["decision"] == "conflict"),
+        "items": preview_items,
+    }
+
+
+def _log_backfill_class_term_conflict(db, item: dict[str, Any], *, actor: str, now: str) -> None:
+    db.execute(
+        """
+        INSERT INTO user_ops_pool_history (
+            pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            item["pool_id"],
+            item["mobile"],
+            item["external_userid"],
+            "class_term_backfill_conflict",
+            json.dumps(
+                {
+                    "class_term_no": item["current_class_term_no"],
+                    "class_term_label": item["current_class_term_label"],
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "matched_terms": item["matched_terms"],
+                    "tag_names": item["tag_names"],
+                },
+                ensure_ascii=False,
+            ),
+            actor,
+            "class_term_backfill",
+            now,
+        ),
+    )
+
+
+def _apply_backfill_class_term_update(
+    db,
+    item: dict[str, Any],
+    *,
+    matched: dict[str, Any],
+    actor: str,
+    now: str,
+) -> None:
+    db.execute(
+        """
+        UPDATE user_ops_pool_current
+        SET class_term_no = ?, class_term_label = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            matched["class_term_no"],
+            matched["class_term_label"],
+            now,
+            item["pool_id"],
+        ),
+    )
+    db.execute(
+        """
+        INSERT INTO user_ops_pool_history (
+            pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            item["pool_id"],
+            item["mobile"],
+            item["external_userid"],
+            "class_term_backfill_apply",
+            json.dumps(
+                {
+                    "class_term_no": item["current_class_term_no"],
+                    "class_term_label": item["current_class_term_label"],
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "class_term_no": matched["class_term_no"],
+                    "class_term_label": matched["class_term_label"],
+                    "matched_terms": item["matched_terms"],
+                },
+                ensure_ascii=False,
+            ),
+            actor,
+            "class_term_backfill",
+            now,
+        ),
+    )
+
+
 def backfill_class_term_for_owner(
     *,
     owner_userid: str,
@@ -2929,19 +3152,14 @@ def backfill_class_term_for_owner(
     tag_refresh = refresh_user_ops_contact_tags_for_owner(normalized_owner_userid)
     preview_items = _build_user_ops_backfill_preview(normalized_owner_userid)
     mappings = _list_active_class_term_mappings()
-    summary = {
-        "owner_userid": normalized_owner_userid,
-        "dry_run": bool(dry_run),
-        "mapping_count": len(mappings),
-        "tag_definition_sync": tag_definition_sync,
-        "tag_refresh": tag_refresh,
-        "total_candidates": len(preview_items),
-        "update_count": sum(1 for item in preview_items if item["decision"] == "update"),
-        "unchanged_count": sum(1 for item in preview_items if item["decision"] == "unchanged"),
-        "no_match_count": sum(1 for item in preview_items if item["decision"] == "no_match"),
-        "conflict_count": sum(1 for item in preview_items if item["decision"] == "conflict"),
-        "items": preview_items,
-    }
+    summary = _build_backfill_class_term_summary(
+        owner_userid=normalized_owner_userid,
+        dry_run=bool(dry_run),
+        tag_definition_sync=tag_definition_sync,
+        tag_refresh=tag_refresh,
+        preview_items=preview_items,
+        mappings=mappings,
+    )
     if dry_run:
         return {"ok": True, **summary}
 
@@ -2952,87 +3170,13 @@ def backfill_class_term_for_owner(
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for item in preview_items:
         if item["decision"] == "conflict":
-            db.execute(
-                """
-                INSERT INTO user_ops_pool_history (
-                    pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    item["pool_id"],
-                    item["mobile"],
-                    item["external_userid"],
-                    "class_term_backfill_conflict",
-                    json.dumps(
-                        {
-                            "class_term_no": item["current_class_term_no"],
-                            "class_term_label": item["current_class_term_label"],
-                        },
-                        ensure_ascii=False,
-                    ),
-                    json.dumps(
-                        {
-                            "matched_terms": item["matched_terms"],
-                            "tag_names": item["tag_names"],
-                        },
-                        ensure_ascii=False,
-                    ),
-                    actor,
-                    "class_term_backfill",
-                    now,
-                ),
-            )
+            _log_backfill_class_term_conflict(db, item, actor=actor, now=now)
             conflict_logged += 1
             continue
         if item["decision"] != "update":
             continue
         matched = item["matched_terms"][0]
-        db.execute(
-            """
-            UPDATE user_ops_pool_current
-            SET class_term_no = ?, class_term_label = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                matched["class_term_no"],
-                matched["class_term_label"],
-                now,
-                item["pool_id"],
-            ),
-        )
-        db.execute(
-            """
-            INSERT INTO user_ops_pool_history (
-                pool_id, mobile, external_userid, action_type, old_payload_json, new_payload_json, operator, source_type, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                item["pool_id"],
-                item["mobile"],
-                item["external_userid"],
-                "class_term_backfill_apply",
-                json.dumps(
-                    {
-                        "class_term_no": item["current_class_term_no"],
-                        "class_term_label": item["current_class_term_label"],
-                    },
-                    ensure_ascii=False,
-                ),
-                json.dumps(
-                    {
-                        "class_term_no": matched["class_term_no"],
-                        "class_term_label": matched["class_term_label"],
-                        "matched_terms": item["matched_terms"],
-                    },
-                    ensure_ascii=False,
-                ),
-                actor,
-                "class_term_backfill",
-                now,
-            ),
-        )
+        _apply_backfill_class_term_update(db, item, matched=matched, actor=actor, now=now)
         applied_count += 1
     db.commit()
     return {
@@ -4297,6 +4441,100 @@ def write_user_ops_lead_pool_history(
     )
 
 
+def _insert_user_ops_lead_pool_member_row(db, payload: dict[str, Any]) -> int:
+    db.execute(
+        """
+        INSERT INTO user_ops_lead_pool_current (
+            mobile, external_userid, customer_name, owner_userid, is_wecom_added, is_mobile_bound,
+            huangxiaocan_activation_state, class_term_no, class_term_label, first_entry_source, last_entry_source,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        (
+            payload["mobile"],
+            payload["external_userid"],
+            payload["customer_name"],
+            payload["owner_userid"],
+            _db_bool(bool(payload["is_wecom_added"])),
+            _db_bool(bool(payload["is_mobile_bound"])),
+            payload["huangxiaocan_activation_state"],
+            payload["class_term_no"],
+            payload["class_term_label"],
+            payload["first_entry_source"],
+            payload["last_entry_source"],
+        ),
+    )
+    if get_db_backend() != "postgres":
+        return int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    row = db.execute(
+        """
+        SELECT id
+        FROM user_ops_lead_pool_current
+        WHERE mobile = ? OR external_userid = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (payload["mobile"], payload["external_userid"]),
+    ).fetchone()
+    return int(row["id"])
+
+
+def _update_user_ops_lead_pool_member_row(db, row_id: int, payload: dict[str, Any]) -> None:
+    db.execute(
+        """
+        UPDATE user_ops_lead_pool_current
+        SET
+            mobile = ?,
+            external_userid = ?,
+            customer_name = ?,
+            owner_userid = ?,
+            is_wecom_added = ?,
+            is_mobile_bound = ?,
+            huangxiaocan_activation_state = ?,
+            class_term_no = ?,
+            class_term_label = ?,
+            first_entry_source = ?,
+            last_entry_source = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            payload["mobile"],
+            payload["external_userid"],
+            payload["customer_name"],
+            payload["owner_userid"],
+            _db_bool(bool(payload["is_wecom_added"])),
+            _db_bool(bool(payload["is_mobile_bound"])),
+            payload["huangxiaocan_activation_state"],
+            payload["class_term_no"],
+            payload["class_term_label"],
+            payload["first_entry_source"],
+            payload["last_entry_source"],
+            row_id,
+        ),
+    )
+
+
+def _delete_user_ops_lead_pool_duplicate_rows(db, duplicate_ids: list[int]) -> None:
+    if not duplicate_ids:
+        return
+    placeholders = ", ".join("?" for _ in duplicate_ids)
+    db.execute(
+        f"DELETE FROM user_ops_lead_pool_current WHERE id IN ({placeholders})",
+        tuple(duplicate_ids),
+    )
+
+
+def _user_ops_lead_pool_history_remark(remark: str, duplicate_ids: list[int]) -> str:
+    normalized_remark = str(remark or "").strip()
+    if normalized_remark:
+        return normalized_remark
+    if duplicate_ids:
+        return f"merged duplicate ids: {', '.join(str(item) for item in duplicate_ids)}"
+    return ""
+
+
 def upsert_user_ops_lead_pool_member(
     *,
     mobile: str = "",
@@ -4312,176 +4550,53 @@ def upsert_user_ops_lead_pool_member(
     operator: str = "",
     remark: str = "",
 ) -> dict[str, Any]:
-    normalized_mobile = _normalize_mobile(mobile) if str(mobile or "").strip() else ""
-    normalized_external_userid = str(external_userid or "").strip()
-    if not normalized_mobile and not normalized_external_userid:
-        raise ValueError("mobile or external_userid is required")
-
-    normalized_entry_source = str(entry_source or "").strip() or "manual"
-    normalized_customer_name = str(customer_name or "").strip()
-    normalized_owner_userid = str(owner_userid or "").strip()
-    normalized_class_term_label = str(class_term_label or "").strip()
-    normalized_activation_state = _normalize_user_ops_lead_pool_activation_state(
-        huangxiaocan_activation_state,
-        allow_unknown=True,
+    plan = _plan_user_ops_lead_pool_member_upsert(
+        mobile=mobile,
+        external_userid=external_userid,
+        customer_name=customer_name,
+        owner_userid=owner_userid,
+        is_wecom_added=is_wecom_added,
+        is_mobile_bound=is_mobile_bound,
+        huangxiaocan_activation_state=huangxiaocan_activation_state,
+        class_term_no=class_term_no,
+        class_term_label=class_term_label,
+        entry_source=entry_source,
     )
-    matches = _list_user_ops_lead_pool_matches(mobile=normalized_mobile, external_userid=normalized_external_userid)
-    target: dict[str, Any] | None = None
-    if normalized_mobile:
-        target = next((item for item in matches if item["mobile"] == normalized_mobile), None)
-    if target is None and normalized_external_userid:
-        target = next((item for item in matches if item["external_userid"] == normalized_external_userid), None)
-    duplicate_ids = [item["id"] for item in matches if target is not None and item["id"] != target["id"]]
+    if plan["action_type"] == "lead_pool_noop":
+        return {
+            "ok": True,
+            "action_type": plan["action_type"],
+            "member": plan["target"],
+            "merged_duplicate_ids": plan["duplicate_ids"],
+        }
 
-    merged = _serialize_user_ops_lead_pool_current_row(target or {})
-    for item in matches:
-        if not merged["mobile"] and item["mobile"]:
-            merged["mobile"] = item["mobile"]
-        if not merged["external_userid"] and item["external_userid"]:
-            merged["external_userid"] = item["external_userid"]
-        if not merged["customer_name"] and item["customer_name"]:
-            merged["customer_name"] = item["customer_name"]
-        if not merged["owner_userid"] and item["owner_userid"]:
-            merged["owner_userid"] = item["owner_userid"]
-        if not merged["first_entry_source"] and item["first_entry_source"]:
-            merged["first_entry_source"] = item["first_entry_source"]
-        if not merged["last_entry_source"] and item["last_entry_source"]:
-            merged["last_entry_source"] = item["last_entry_source"]
-        if merged["class_term_no"] is None and item["class_term_no"] is not None:
-            merged["class_term_no"] = item["class_term_no"]
-            merged["class_term_label"] = item["class_term_label"]
-        if merged["huangxiaocan_activation_state"] == "unknown" and item["huangxiaocan_activation_state"] != "unknown":
-            merged["huangxiaocan_activation_state"] = item["huangxiaocan_activation_state"]
-        merged["is_wecom_added"] = bool(merged["is_wecom_added"] or item["is_wecom_added"])
-        merged["is_mobile_bound"] = bool(merged["is_mobile_bound"] or item["is_mobile_bound"])
-
-    if normalized_mobile:
-        merged["mobile"] = normalized_mobile
-    if normalized_external_userid:
-        merged["external_userid"] = normalized_external_userid
-    if normalized_customer_name:
-        merged["customer_name"] = normalized_customer_name
-    if normalized_owner_userid:
-        merged["owner_userid"] = normalized_owner_userid
-    if is_wecom_added is not None:
-        merged["is_wecom_added"] = bool(is_wecom_added)
-    if is_mobile_bound is not None:
-        merged["is_mobile_bound"] = bool(is_mobile_bound)
-    elif merged["mobile"] and merged["external_userid"]:
-        merged["is_mobile_bound"] = True
-    if normalized_activation_state != "unknown" or not target:
-        merged["huangxiaocan_activation_state"] = normalized_activation_state
-    if class_term_no is not None or normalized_class_term_label:
-        merged["class_term_no"] = class_term_no
-        merged["class_term_label"] = normalized_class_term_label
-    if not merged["first_entry_source"]:
-        merged["first_entry_source"] = normalized_entry_source
-    merged["last_entry_source"] = normalized_entry_source
-
+    merged = plan["after_payload"]
     db = get_db()
-    before_payload = _serialize_user_ops_lead_pool_current_row(target) if target else {}
+    target = plan["target"]
     if target is None:
-        db.execute(
-            """
-            INSERT INTO user_ops_lead_pool_current (
-                mobile, external_userid, customer_name, owner_userid, is_wecom_added, is_mobile_bound,
-                huangxiaocan_activation_state, class_term_no, class_term_label, first_entry_source, last_entry_source,
-                created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            (
-                merged["mobile"],
-                merged["external_userid"],
-                merged["customer_name"],
-                merged["owner_userid"],
-                _db_bool(bool(merged["is_wecom_added"])),
-                _db_bool(bool(merged["is_mobile_bound"])),
-                merged["huangxiaocan_activation_state"],
-                merged["class_term_no"],
-                merged["class_term_label"],
-                merged["first_entry_source"],
-                merged["last_entry_source"],
-            ),
-        )
-        row_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]) if get_db_backend() != "postgres" else None
-        if get_db_backend() == "postgres":
-            row = db.execute(
-                """
-                SELECT id
-                FROM user_ops_lead_pool_current
-                WHERE mobile = ? OR external_userid = ?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (merged["mobile"], merged["external_userid"]),
-            ).fetchone()
-            row_id = int(row["id"])
-        action_type = "lead_pool_insert"
+        row_id = _insert_user_ops_lead_pool_member_row(db, merged)
     else:
         row_id = int(target["id"])
-        db.execute(
-            """
-            UPDATE user_ops_lead_pool_current
-            SET
-                mobile = ?,
-                external_userid = ?,
-                customer_name = ?,
-                owner_userid = ?,
-                is_wecom_added = ?,
-                is_mobile_bound = ?,
-                huangxiaocan_activation_state = ?,
-                class_term_no = ?,
-                class_term_label = ?,
-                first_entry_source = ?,
-                last_entry_source = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (
-                merged["mobile"],
-                merged["external_userid"],
-                merged["customer_name"],
-                merged["owner_userid"],
-                _db_bool(bool(merged["is_wecom_added"])),
-                _db_bool(bool(merged["is_mobile_bound"])),
-                merged["huangxiaocan_activation_state"],
-                merged["class_term_no"],
-                merged["class_term_label"],
-                merged["first_entry_source"],
-                merged["last_entry_source"],
-                row_id,
-            ),
-        )
-        action_type = "lead_pool_merge_upsert" if duplicate_ids else "lead_pool_update"
-
-    if duplicate_ids:
-        placeholders = ", ".join("?" for _ in duplicate_ids)
-        db.execute(
-            f"DELETE FROM user_ops_lead_pool_current WHERE id IN ({placeholders})",
-            tuple(duplicate_ids),
-        )
+        _update_user_ops_lead_pool_member_row(db, row_id, merged)
+    _delete_user_ops_lead_pool_duplicate_rows(db, plan["duplicate_ids"])
 
     current = _get_user_ops_lead_pool_current_row_by_id(row_id)
     write_user_ops_lead_pool_history(
         mobile=(current or {}).get("mobile", merged["mobile"]),
         external_userid=(current or {}).get("external_userid", merged["external_userid"]),
-        action_type=action_type,
-        source_type=normalized_entry_source,
+        action_type=plan["action_type"],
+        source_type=plan["entry_source"],
         operator=operator,
-        before_payload=before_payload,
+        before_payload=plan["before_payload"],
         after_payload=_serialize_user_ops_lead_pool_current_row(current or merged),
-        remark=(
-            str(remark or "").strip()
-            or (f"merged duplicate ids: {', '.join(str(item) for item in duplicate_ids)}" if duplicate_ids else "")
-        ),
+        remark=_user_ops_lead_pool_history_remark(remark, plan["duplicate_ids"]),
     )
     db.commit()
     return {
         "ok": True,
-        "action_type": action_type,
+        "action_type": plan["action_type"],
         "member": current,
-        "merged_duplicate_ids": duplicate_ids,
+        "merged_duplicate_ids": plan["duplicate_ids"],
     }
 
 
@@ -5636,26 +5751,13 @@ def _merge_lead_pool_after_mobile_bind(
     }
 
 
-def resolve_person_identity(*, external_userid: str = "", mobile: str = "", unionid: str = "") -> dict[str, Any]:
-    """
-    people is the system's canonical person table:
-    - people.id is the internal person_id
-    - people.mobile is the canonical primary mobile
+def _person_identity_corp_id() -> str:
+    return str(current_app.config.get("WECOM_CORP_ID", "") or "").strip()
 
-    Other tables only provide bindings, WeCom identity details, or CRM snapshots.
-    This resolver unifies those sources so callers can resolve one person by
-    external_userid, mobile, or unionid without redefining the underlying schema.
-    """
-    normalized_external_userid = str(external_userid or "").strip()
-    normalized_mobile = str(mobile or "").strip()
-    normalized_unionid = str(unionid or "").strip()
-    if not normalized_external_userid and not normalized_mobile and not normalized_unionid:
-        raise ValueError("external_userid, mobile or unionid is required")
 
-    db = get_db()
-    row = None
-    if normalized_external_userid:
-        row = db.execute(
+def _resolve_person_identity_row_by_external_userid(db, corp_id: str, external_userid: str):
+    queries = [
+        (
             """
             SELECT
                 p.id AS person_id,
@@ -5679,125 +5781,141 @@ def resolve_person_identity(*, external_userid: str = "", mobile: str = "", unio
             ORDER BY m.updated_at DESC NULLS LAST, m.id DESC NULLS LAST
             LIMIT 1
             """,
-            (current_app.config.get("WECOM_CORP_ID", ""), normalized_external_userid),
-        ).fetchone()
-        if not row:
-            row = db.execute(
-                """
-                SELECT
-                    NULL AS person_id,
-                    '' AS mobile,
-                    c.external_userid,
-                    '' AS first_bound_by_userid,
-                    '' AS first_owner_userid,
-                    '' AS last_owner_userid,
-                    c.customer_name,
-                    c.owner_userid,
-                    c.remark,
-                    COALESCE(m.unionid, '') AS unionid,
-                    COALESCE(m.openid, '') AS openid,
-                    COALESCE(m.follow_user_userid, '') AS follow_user_userid
-                FROM contacts c
-                LEFT JOIN wecom_external_contact_identity_map m
-                  ON m.corp_id = ? AND m.external_userid = c.external_userid
-                WHERE c.external_userid = ?
-                ORDER BY m.updated_at DESC NULLS LAST, m.id DESC NULLS LAST
-                LIMIT 1
-                """,
-                (current_app.config.get("WECOM_CORP_ID", ""), normalized_external_userid),
-            ).fetchone()
-        if not row:
-            row = db.execute(
-                """
-                SELECT
-                    NULL AS person_id,
-                    '' AS mobile,
-                    external_userid,
-                    '' AS first_bound_by_userid,
-                    '' AS first_owner_userid,
-                    '' AS last_owner_userid,
-                    name AS customer_name,
-                    '' AS owner_userid,
-                    '' AS remark,
-                    COALESCE(unionid, '') AS unionid,
-                    COALESCE(openid, '') AS openid,
-                    COALESCE(follow_user_userid, '') AS follow_user_userid
-                FROM wecom_external_contact_identity_map
-                WHERE corp_id = ? AND external_userid = ?
-                ORDER BY updated_at DESC, id DESC
-                LIMIT 1
-                """,
-                (current_app.config.get("WECOM_CORP_ID", ""), normalized_external_userid),
-            ).fetchone()
-    elif normalized_mobile:
-        row = db.execute(
+            (corp_id, external_userid),
+        ),
+        (
             """
             SELECT
-                p.id AS person_id,
-                p.mobile,
-                COALESCE(b.external_userid, '') AS external_userid,
-                COALESCE(b.first_bound_by_userid, '') AS first_bound_by_userid,
-                COALESCE(b.first_owner_userid, '') AS first_owner_userid,
-                COALESCE(b.last_owner_userid, '') AS last_owner_userid,
-                COALESCE(c.customer_name, '') AS customer_name,
-                COALESCE(c.owner_userid, '') AS owner_userid,
-                COALESCE(c.remark, '') AS remark,
+                NULL AS person_id,
+                '' AS mobile,
+                c.external_userid,
+                '' AS first_bound_by_userid,
+                '' AS first_owner_userid,
+                '' AS last_owner_userid,
+                c.customer_name,
+                c.owner_userid,
+                c.remark,
                 COALESCE(m.unionid, '') AS unionid,
                 COALESCE(m.openid, '') AS openid,
                 COALESCE(m.follow_user_userid, '') AS follow_user_userid
-            FROM people p
-            LEFT JOIN external_contact_bindings b ON b.person_id = p.id
-            LEFT JOIN contacts c ON c.external_userid = b.external_userid
+            FROM contacts c
             LEFT JOIN wecom_external_contact_identity_map m
-              ON m.corp_id = ? AND m.external_userid = b.external_userid
-            WHERE p.mobile = ?
-            ORDER BY b.updated_at DESC NULLS LAST, m.updated_at DESC NULLS LAST, b.external_userid ASC
+              ON m.corp_id = ? AND m.external_userid = c.external_userid
+            WHERE c.external_userid = ?
+            ORDER BY m.updated_at DESC NULLS LAST, m.id DESC NULLS LAST
             LIMIT 1
             """,
-            (current_app.config.get("WECOM_CORP_ID", ""), normalized_mobile),
-        ).fetchone()
-    else:
-        row = db.execute(
+            (corp_id, external_userid),
+        ),
+        (
             """
             SELECT
-                p.id AS person_id,
-                p.mobile,
-                m.external_userid,
-                COALESCE(b.first_bound_by_userid, '') AS first_bound_by_userid,
-                COALESCE(b.first_owner_userid, '') AS first_owner_userid,
-                COALESCE(b.last_owner_userid, '') AS last_owner_userid,
-                COALESCE(c.customer_name, m.name, '') AS customer_name,
-                COALESCE(c.owner_userid, '') AS owner_userid,
-                COALESCE(c.remark, '') AS remark,
-                COALESCE(m.unionid, '') AS unionid,
-                COALESCE(m.openid, '') AS openid,
-                COALESCE(m.follow_user_userid, '') AS follow_user_userid
-            FROM wecom_external_contact_identity_map m
-            LEFT JOIN external_contact_bindings b ON b.external_userid = m.external_userid
-            LEFT JOIN people p ON p.id = b.person_id
-            LEFT JOIN contacts c ON c.external_userid = m.external_userid
-            WHERE m.corp_id = ? AND m.unionid = ?
-            ORDER BY b.updated_at DESC NULLS LAST, m.updated_at DESC NULLS LAST, m.id DESC
+                NULL AS person_id,
+                '' AS mobile,
+                external_userid,
+                '' AS first_bound_by_userid,
+                '' AS first_owner_userid,
+                '' AS last_owner_userid,
+                name AS customer_name,
+                '' AS owner_userid,
+                '' AS remark,
+                COALESCE(unionid, '') AS unionid,
+                COALESCE(openid, '') AS openid,
+                COALESCE(follow_user_userid, '') AS follow_user_userid
+            FROM wecom_external_contact_identity_map
+            WHERE corp_id = ? AND external_userid = ?
+            ORDER BY updated_at DESC, id DESC
             LIMIT 1
             """,
-            (current_app.config.get("WECOM_CORP_ID", ""), normalized_unionid),
-        ).fetchone()
+            (corp_id, external_userid),
+        ),
+    ]
+    for sql, params in queries:
+        row = db.execute(sql, params).fetchone()
+        if row:
+            return row
+    return None
 
-    if not row:
-        return {
-            "person_id": None,
-            "mobile": normalized_mobile,
-            "external_userid": normalized_external_userid,
-            "unionid": normalized_unionid,
-            "customer_name": "",
-            "owner_userid": "",
-            "remark": "",
-            "openid": "",
-            "follow_user_userid": "",
-            "signup_status": "",
-            "is_bound": False,
-        }
 
+def _resolve_person_identity_row_by_mobile(db, corp_id: str, mobile: str):
+    return db.execute(
+        """
+        SELECT
+            p.id AS person_id,
+            p.mobile,
+            COALESCE(b.external_userid, '') AS external_userid,
+            COALESCE(b.first_bound_by_userid, '') AS first_bound_by_userid,
+            COALESCE(b.first_owner_userid, '') AS first_owner_userid,
+            COALESCE(b.last_owner_userid, '') AS last_owner_userid,
+            COALESCE(c.customer_name, '') AS customer_name,
+            COALESCE(c.owner_userid, '') AS owner_userid,
+            COALESCE(c.remark, '') AS remark,
+            COALESCE(m.unionid, '') AS unionid,
+            COALESCE(m.openid, '') AS openid,
+            COALESCE(m.follow_user_userid, '') AS follow_user_userid
+        FROM people p
+        LEFT JOIN external_contact_bindings b ON b.person_id = p.id
+        LEFT JOIN contacts c ON c.external_userid = b.external_userid
+        LEFT JOIN wecom_external_contact_identity_map m
+          ON m.corp_id = ? AND m.external_userid = b.external_userid
+        WHERE p.mobile = ?
+        ORDER BY b.updated_at DESC NULLS LAST, m.updated_at DESC NULLS LAST, b.external_userid ASC
+        LIMIT 1
+        """,
+        (corp_id, mobile),
+    ).fetchone()
+
+
+def _resolve_person_identity_row_by_unionid(db, corp_id: str, unionid: str):
+    return db.execute(
+        """
+        SELECT
+            p.id AS person_id,
+            p.mobile,
+            m.external_userid,
+            COALESCE(b.first_bound_by_userid, '') AS first_bound_by_userid,
+            COALESCE(b.first_owner_userid, '') AS first_owner_userid,
+            COALESCE(b.last_owner_userid, '') AS last_owner_userid,
+            COALESCE(c.customer_name, m.name, '') AS customer_name,
+            COALESCE(c.owner_userid, '') AS owner_userid,
+            COALESCE(c.remark, '') AS remark,
+            COALESCE(m.unionid, '') AS unionid,
+            COALESCE(m.openid, '') AS openid,
+            COALESCE(m.follow_user_userid, '') AS follow_user_userid
+        FROM wecom_external_contact_identity_map m
+        LEFT JOIN external_contact_bindings b ON b.external_userid = m.external_userid
+        LEFT JOIN people p ON p.id = b.person_id
+        LEFT JOIN contacts c ON c.external_userid = m.external_userid
+        WHERE m.corp_id = ? AND m.unionid = ?
+        ORDER BY b.updated_at DESC NULLS LAST, m.updated_at DESC NULLS LAST, m.id DESC
+        LIMIT 1
+        """,
+        (corp_id, unionid),
+    ).fetchone()
+
+
+def _empty_resolved_person_identity(*, external_userid: str, mobile: str, unionid: str) -> dict[str, Any]:
+    return {
+        "person_id": None,
+        "mobile": mobile,
+        "external_userid": external_userid,
+        "unionid": unionid,
+        "customer_name": "",
+        "owner_userid": "",
+        "remark": "",
+        "openid": "",
+        "follow_user_userid": "",
+        "signup_status": "",
+        "is_bound": False,
+    }
+
+
+def _serialize_resolved_person_identity(
+    row,
+    *,
+    fallback_external_userid: str,
+    fallback_unionid: str,
+) -> dict[str, Any]:
     resolved_external_userid = str(row.get("external_userid") or "").strip()
     resolved_owner_userid = (
         str(row.get("owner_userid") or "").strip()
@@ -5813,20 +5931,57 @@ def resolve_person_identity(*, external_userid: str = "", mobile: str = "", unio
                 "owner_userid": resolved_owner_userid,
             }
         ).get("signup_status", "")
-
     return {
         "person_id": int(row["person_id"]) if row.get("person_id") is not None else None,
         "mobile": str(row.get("mobile") or "").strip(),
-        "external_userid": resolved_external_userid,
+        "external_userid": resolved_external_userid or fallback_external_userid,
         "customer_name": str(row.get("customer_name") or "").strip(),
         "owner_userid": resolved_owner_userid,
         "remark": str(row.get("remark") or "").strip(),
-        "unionid": str(row.get("unionid") or "").strip(),
+        "unionid": str(row.get("unionid") or fallback_unionid or "").strip(),
         "openid": str(row.get("openid") or "").strip(),
         "follow_user_userid": str(row.get("follow_user_userid") or "").strip(),
         "signup_status": signup_status,
         "is_bound": bool(row.get("person_id") is not None and resolved_external_userid),
     }
+
+
+def resolve_person_identity(*, external_userid: str = "", mobile: str = "", unionid: str = "") -> dict[str, Any]:
+    """
+    people is the system's canonical person table:
+    - people.id is the internal person_id
+    - people.mobile is the canonical primary mobile
+
+    Other tables only provide bindings, WeCom identity details, or CRM snapshots.
+    This resolver unifies those sources so callers can resolve one person by
+    external_userid, mobile, or unionid without redefining the underlying schema.
+    """
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_mobile = str(mobile or "").strip()
+    normalized_unionid = str(unionid or "").strip()
+    if not normalized_external_userid and not normalized_mobile and not normalized_unionid:
+        raise ValueError("external_userid, mobile or unionid is required")
+
+    db = get_db()
+    corp_id = _person_identity_corp_id()
+    if normalized_external_userid:
+        row = _resolve_person_identity_row_by_external_userid(db, corp_id, normalized_external_userid)
+    elif normalized_mobile:
+        row = _resolve_person_identity_row_by_mobile(db, corp_id, normalized_mobile)
+    else:
+        row = _resolve_person_identity_row_by_unionid(db, corp_id, normalized_unionid)
+
+    if not row:
+        return _empty_resolved_person_identity(
+            external_userid=normalized_external_userid,
+            mobile=normalized_mobile,
+            unionid=normalized_unionid,
+        )
+    return _serialize_resolved_person_identity(
+        row,
+        fallback_external_userid=normalized_external_userid,
+        fallback_unionid=normalized_unionid,
+    )
 
 
 def get_contact_binding_status(external_userid: str, owner_userid: str = "") -> dict[str, Any]:
@@ -5878,6 +6033,99 @@ def get_contact_binding_status(external_userid: str, owner_userid: str = "") -> 
     }
 
 
+def _get_or_create_person_for_mobile(db, mobile: str) -> tuple[int, str]:
+    person = db.execute(
+        """
+        SELECT id, third_party_user_id
+        FROM people
+        WHERE mobile = ?
+        ORDER BY id ASC
+        LIMIT 1
+        """,
+        (mobile,),
+    ).fetchone()
+    if person:
+        return int(person["id"]), str(person.get("third_party_user_id") or "").strip()
+    created = db.execute(
+        """
+        INSERT INTO people (mobile, third_party_user_id, created_at, updated_at)
+        VALUES (?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """,
+        (mobile,),
+    ).fetchone()
+    return int(created["id"]), ""
+
+
+def _upsert_external_contact_binding_record(
+    db,
+    *,
+    existing: dict[str, Any],
+    external_userid: str,
+    owner_userid: str,
+    bind_by_userid: str,
+    person_id: int,
+    force_rebind: bool,
+) -> None:
+    if existing.get("is_bound") and force_rebind:
+        db.execute(
+            """
+            UPDATE external_contact_bindings
+            SET person_id = ?,
+                last_owner_userid = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE external_userid = ?
+            """,
+            (
+                person_id,
+                owner_userid,
+                external_userid,
+            ),
+        )
+        return
+    db.execute(
+        """
+        INSERT INTO external_contact_bindings (
+            external_userid,
+            person_id,
+            first_bound_by_userid,
+            first_owner_userid,
+            last_owner_userid,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        (
+            external_userid,
+            person_id,
+            bind_by_userid,
+            owner_userid,
+            owner_userid,
+        ),
+    )
+
+
+def _sync_person_third_party_user_id(db, *, person_id: int, mobile: str, existing_third_party_user_id: str) -> str:
+    if existing_third_party_user_id:
+        return ""
+    try:
+        third_party_user_id = _resolve_third_party_user_id_by_mobile(mobile)
+        db.execute(
+            """
+            UPDATE people
+            SET third_party_user_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (third_party_user_id, person_id),
+        )
+        db.commit()
+        return ""
+    except ThirdPartyUserSyncError as exc:
+        db.rollback()
+        return str(exc)
+
+
 def bind_mobile_to_external_contact(
     *,
     external_userid: str,
@@ -5904,90 +6152,27 @@ def bind_mobile_to_external_contact(
             return existing
 
     try:
-        person = db.execute(
-            """
-            SELECT id, mobile, third_party_user_id
-            FROM people
-            WHERE mobile = ?
-            ORDER BY id ASC
-            LIMIT 1
-            """,
-            (normalized_mobile,),
-        ).fetchone()
-        if person:
-            person_id = int(person["id"])
-            existing_third_party_user_id = str(person.get("third_party_user_id") or "").strip()
-        else:
-            created = db.execute(
-                """
-                INSERT INTO people (mobile, third_party_user_id, created_at, updated_at)
-                VALUES (?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id
-                """,
-                (normalized_mobile,),
-            ).fetchone()
-            person_id = int(created["id"])
-            existing_third_party_user_id = ""
-
-        if existing.get("is_bound") and force_rebind:
-            db.execute(
-                """
-                UPDATE external_contact_bindings
-                SET person_id = ?,
-                    last_owner_userid = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE external_userid = ?
-                """,
-                (
-                    person_id,
-                    normalized_owner_userid,
-                    normalized_external_userid,
-                ),
-            )
-        else:
-            db.execute(
-                """
-                INSERT INTO external_contact_bindings (
-                    external_userid,
-                    person_id,
-                    first_bound_by_userid,
-                    first_owner_userid,
-                    last_owner_userid,
-                    created_at,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
-                (
-                    normalized_external_userid,
-                    person_id,
-                    normalized_bind_by_userid,
-                    normalized_owner_userid,
-                    normalized_owner_userid,
-                ),
-            )
+        person_id, existing_third_party_user_id = _get_or_create_person_for_mobile(db, normalized_mobile)
+        _upsert_external_contact_binding_record(
+            db,
+            existing=existing,
+            external_userid=normalized_external_userid,
+            owner_userid=normalized_owner_userid,
+            bind_by_userid=normalized_bind_by_userid,
+            person_id=person_id,
+            force_rebind=force_rebind,
+        )
         db.commit()
     except Exception:
         db.rollback()
         raise
 
-    third_party_sync_error = ""
-    if not existing_third_party_user_id:
-        try:
-            third_party_user_id = _resolve_third_party_user_id_by_mobile(normalized_mobile)
-            db.execute(
-                """
-                UPDATE people
-                SET third_party_user_id = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (third_party_user_id, person_id),
-            )
-            db.commit()
-        except ThirdPartyUserSyncError as exc:
-            db.rollback()
-            third_party_sync_error = str(exc)
-
+    third_party_sync_error = _sync_person_third_party_user_id(
+        db,
+        person_id=person_id,
+        mobile=normalized_mobile,
+        existing_third_party_user_id=existing_third_party_user_id,
+    )
     lead_pool_merge = _merge_lead_pool_after_mobile_bind(
         external_userid=normalized_external_userid,
         owner_userid=normalized_owner_userid,
@@ -7479,11 +7664,7 @@ def delete_questionnaire(questionnaire_id: int) -> bool:
     return cursor.rowcount > 0
 
 
-def export_questionnaire_submissions(questionnaire_id: int) -> dict[str, Any]:
-    questionnaire = get_questionnaire_detail(int(questionnaire_id))
-    if not questionnaire:
-        raise LookupError("questionnaire not found")
-
+def _list_questionnaire_export_records(questionnaire_id: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     db = get_db()
     submission_rows = db.execute(
         """
@@ -7507,32 +7688,44 @@ def export_questionnaire_submissions(questionnaire_id: int) -> dict[str, Any]:
         """,
         (int(questionnaire_id),),
     ).fetchall()
+    return submission_rows, answer_rows
 
-    current_sort_order = {int(question["id"]): int(question.get("sort_order") or 0) for question in questionnaire["questions"]}
-    question_columns: list[dict[str, Any]] = []
-    seen_question_ids: set[int] = set()
-    if answer_rows:
-        for row in answer_rows:
-            question_id = int(row["question_id"])
-            if question_id in seen_question_ids:
-                continue
-            seen_question_ids.add(question_id)
-            question_columns.append(
-                {
-                    "question_id": question_id,
-                    "title": row.get("question_title_snapshot", "") or f"Question {question_id}",
-                    "sort_order": current_sort_order.get(question_id, 10_000 + len(question_columns)),
-                }
-            )
-        question_columns.sort(key=lambda item: (item["sort_order"], item["question_id"]))
-    else:
-        question_columns = [
-            {"question_id": int(question["id"]), "title": question["title"], "sort_order": int(question.get("sort_order") or 0)}
+
+def _build_questionnaire_export_columns(
+    questionnaire: dict[str, Any],
+    answer_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    current_sort_order = {
+        int(question["id"]): int(question.get("sort_order") or 0) for question in questionnaire["questions"]
+    }
+    if not answer_rows:
+        return [
+            {
+                "question_id": int(question["id"]),
+                "title": question["title"],
+                "sort_order": int(question.get("sort_order") or 0),
+            }
             for question in questionnaire["questions"]
         ]
+    question_columns: list[dict[str, Any]] = []
+    seen_question_ids: set[int] = set()
+    for row in answer_rows:
+        question_id = int(row["question_id"])
+        if question_id in seen_question_ids:
+            continue
+        seen_question_ids.add(question_id)
+        question_columns.append(
+            {
+                "question_id": question_id,
+                "title": row.get("question_title_snapshot", "") or f"Question {question_id}",
+                "sort_order": current_sort_order.get(question_id, 10_000 + len(question_columns)),
+            }
+        )
+    question_columns.sort(key=lambda item: (item["sort_order"], item["question_id"]))
+    return question_columns
 
-    question_headers = [column["title"] for column in question_columns]
-    question_order = [column["question_id"] for column in question_columns]
+
+def _build_questionnaire_export_answer_values(answer_rows: list[dict[str, Any]]) -> dict[int, dict[int, str]]:
     answer_values_by_submission: dict[int, dict[int, str]] = {}
     for row in answer_rows:
         submission_id = int(row["submission_id"])
@@ -7543,6 +7736,44 @@ def export_questionnaire_submissions(questionnaire_id: int) -> dict[str, Any]:
         else:
             cell_value = "/".join(_dedupe_strings(_json_array(row.get("selected_option_texts_snapshot"))))
         answer_values_by_submission.setdefault(submission_id, {})[question_id] = cell_value
+    return answer_values_by_submission
+
+
+def _build_questionnaire_export_row(
+    questionnaire_name: str,
+    submission: dict[str, Any],
+    *,
+    answer_map: dict[int, str],
+    question_order: list[int],
+) -> list[str]:
+    return [
+        submission.get("submitted_at", "") or "",
+        questionnaire_name,
+        submission.get("respondent_key", "") or "",
+        submission.get("openid", "") or "",
+        submission.get("unionid", "") or "",
+        submission.get("external_userid", "") or "",
+        submission.get("follow_user_userid", "") or "",
+        submission.get("matched_by", "") or "",
+        submission.get("source_channel", "") or "",
+        submission.get("campaign_id", "") or "",
+        submission.get("staff_id", "") or "",
+        str(submission.get("total_score", "") or 0),
+        "/".join(_dedupe_strings(_json_array(submission.get("final_tags")))),
+        *[answer_map.get(question_id, "") for question_id in question_order],
+    ]
+
+
+def export_questionnaire_submissions(questionnaire_id: int) -> dict[str, Any]:
+    questionnaire = get_questionnaire_detail(int(questionnaire_id))
+    if not questionnaire:
+        raise LookupError("questionnaire not found")
+
+    submission_rows, answer_rows = _list_questionnaire_export_records(int(questionnaire_id))
+    question_columns = _build_questionnaire_export_columns(questionnaire, answer_rows)
+    question_headers = [column["title"] for column in question_columns]
+    question_order = [column["question_id"] for column in question_columns]
+    answer_values_by_submission = _build_questionnaire_export_answer_values(answer_rows)
 
     headers = [
         "提交时间",
@@ -7563,24 +7794,13 @@ def export_questionnaire_submissions(questionnaire_id: int) -> dict[str, Any]:
     rows: list[list[str]] = []
     for submission in submission_rows:
         submission_id = int(submission["id"])
-        answer_map = answer_values_by_submission.get(submission_id, {})
         rows.append(
-            [
-                submission.get("submitted_at", "") or "",
+            _build_questionnaire_export_row(
                 questionnaire["name"],
-                submission.get("respondent_key", "") or "",
-                submission.get("openid", "") or "",
-                submission.get("unionid", "") or "",
-                submission.get("external_userid", "") or "",
-                submission.get("follow_user_userid", "") or "",
-                submission.get("matched_by", "") or "",
-                submission.get("source_channel", "") or "",
-                submission.get("campaign_id", "") or "",
-                submission.get("staff_id", "") or "",
-                str(submission.get("total_score", "") or 0),
-                "/".join(_dedupe_strings(_json_array(submission.get("final_tags")))),
-                *[answer_map.get(question_id, "") for question_id in question_order],
-            ]
+                submission,
+                answer_map=answer_values_by_submission.get(submission_id, {}),
+                question_order=question_order,
+            )
         )
 
     return {

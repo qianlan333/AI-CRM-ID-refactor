@@ -34,6 +34,9 @@ from .services import (
     search_messages,
 )
 from .wecom_client import WeComClient
+from .mcp_chat_dump_service import build_owner_recent_chat_dump_payload
+from .mcp_followup_service import build_followup_candidates_payload
+from .mcp_tool_definitions import TOOL_DEFS
 
 mcp_bp = Blueprint("mcp", __name__)
 mcp_logger = logging.getLogger("mcp")
@@ -91,294 +94,6 @@ def _jsonrpc_error(request_id: Any, code: int, message: str) -> Response:
     return jsonify({"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}})
 
 
-TOOL_DEFS = [
-    {
-        "name": "resolve_customer",
-        "description": "Resolve customer_ref (mobile or external_userid) to a CRM customer.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "include_context": {"type": "boolean"},
-                "recent_message_limit": {"type": "integer", "minimum": 1, "maximum": 200},
-                "timeline_limit": {"type": "integer", "minimum": 1, "maximum": 200},
-            },
-        },
-    },
-    {
-        "name": "get_contact",
-        "description": "Read a single contact by customer_ref or external_userid.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "refresh_tags": {"type": "boolean"},
-            },
-        },
-    },
-    {
-        "name": "get_customer_context",
-        "description": "Read a customer's aggregated CRM context by customer_ref or external_userid.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "refresh_tags": {"type": "boolean"},
-                "recent_message_limit": {"type": "integer", "minimum": 1, "maximum": 200},
-                "timeline_limit": {"type": "integer", "minimum": 1, "maximum": 200},
-            },
-        },
-    },
-    {
-        "name": "get_messages",
-        "description": "Read full message history for a contact by customer_ref or external_userid.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "chat_type": {"type": "string", "enum": ["private", "group"]},
-            },
-        },
-    },
-    {
-        "name": "get_recent_messages",
-        "description": "Read recent messages for a contact by customer_ref or external_userid.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
-                "chat_type": {"type": "string", "enum": ["private", "group"]},
-            },
-        },
-    },
-    {
-        "name": "search_messages",
-        "description": "Search messages for a contact by keyword, using customer_ref or external_userid.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "keyword": {"type": "string"},
-            },
-            "required": ["keyword"],
-        },
-    },
-    {
-        "name": "get_group_chat",
-        "description": "Read a group chat by chat_id.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "chat_id": {"type": "string"},
-            },
-            "required": ["chat_id"],
-        },
-    },
-    {
-        "name": "mark_tags",
-        "description": "Add one or more tags to a contact.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "userid": {"type": "string"},
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "add_tag": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["userid", "add_tag"],
-        },
-    },
-    {
-        "name": "unmark_tags",
-        "description": "Remove one or more tags from a contact.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "userid": {"type": "string"},
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "remove_tag": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["userid", "remove_tag"],
-        },
-    },
-    {
-        "name": "update_customer_tags",
-        "description": "Update a customer's tags with customer_ref or external_userid.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "userid": {"type": "string"},
-                "add_tags": {"type": "array", "items": {"type": "string"}},
-                "remove_tags": {"type": "array", "items": {"type": "string"}},
-            },
-        },
-    },
-    {
-        "name": "create_private_message_task",
-        "description": "Create a private message task using a simple business input or raw WeCom payload.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "content": {"type": "string"},
-                "userid": {"type": "string"},
-                "dry_run": {"type": "boolean"},
-                "confirm": {"type": "boolean"},
-            },
-        },
-    },
-    {
-        "name": "create_moment_task",
-        "description": "Create a moment task using customer_ref/customer_refs or raw WeCom payload.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "customer_refs": {"type": "array", "items": {"type": "string"}},
-                "external_userid": {"type": "string"},
-                "external_userids": {"type": "array", "items": {"type": "string"}},
-                "content": {"type": "string"},
-                "userid": {"type": "string"},
-                "dry_run": {"type": "boolean"},
-                "confirm": {"type": "boolean"},
-            },
-        },
-    },
-    {
-        "name": "create_group_message_task",
-        "description": "Create a group message task using customer_ref/customer_refs or raw WeCom payload.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "customer_ref": {"type": "string"},
-                "customer_refs": {"type": "array", "items": {"type": "string"}},
-                "external_userid": {"type": "string"},
-                "external_userids": {"type": "array", "items": {"type": "string"}},
-                "content": {"type": "string"},
-                "userid": {"type": "string"},
-                "dry_run": {"type": "boolean"},
-                "confirm": {"type": "boolean"},
-            },
-        },
-    },
-    {
-        "name": "record_conversion_feedback",
-        "description": "Persist conversion feedback from OpenClaw without applying sales logic.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "feedback_type": {"type": "string"},
-                "customer_ref": {"type": "string"},
-                "external_userid": {"type": "string"},
-                "chat_id": {"type": "string"},
-                "actor": {"type": "string"},
-                "feedback_payload": {"type": "object"},
-            },
-            "required": ["feedback_type"],
-        },
-    },
-    {
-        "name": "get_owner_role_map",
-        "description": "Read the owner role mapping used for routing validation.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "active_only": {"type": "boolean"},
-            },
-        },
-    },
-    {
-        "name": "get_signup_tag_rules",
-        "description": "Read signup tag rules used for pre/post-signup routing validation.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "active_only": {"type": "boolean"},
-            },
-        },
-    },
-    {
-        "name": "get_routing_config",
-        "description": "Read both owner role map and signup tag rules in one call.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "get_pending_message_batches",
-        "description": "List pending 3-minute message batches for OpenClaw to judge.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
-                "cursor": {"type": "string"},
-            },
-        },
-    },
-    {
-        "name": "get_message_batch",
-        "description": "Fetch a batch with full message payloads.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "batch_id": {"type": "integer"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 500},
-                "cursor": {"type": "string"},
-            },
-            "required": ["batch_id"],
-        },
-    },
-    {
-        "name": "ack_message_batch",
-        "description": "Acknowledge a batch after OpenClaw has consumed it.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "batch_id": {"type": "integer"},
-                "ack_note": {"type": "string"},
-                "acked_by": {"type": "string"},
-            },
-            "required": ["batch_id"],
-        },
-    },
-    {
-        "name": "get_owner_recent_chat_dump",
-        "description": "Read recent private/group archived chat dumps for one owner without ranking or recommendations.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "owner_userid": {"type": "string"},
-                "lookback_minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
-                "include_private": {"type": "boolean"},
-                "include_group": {"type": "boolean"},
-            },
-            "required": ["owner_userid"],
-        },
-    },
-    {
-        "name": "get_hourly_followup_candidates",
-        "description": "List the best customers to follow up with right now using simple CRM rules.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                "lookback_hours": {"type": "integer", "minimum": 1, "maximum": 168},
-            },
-        },
-    },
-]
 
 
 def _normalize_customer_ref(value: Any) -> str:
@@ -562,139 +277,35 @@ def _resolve_sender_userids(customers: list[dict[str, Any]], explicit_userid: An
     raise ValueError("userid is required because no owner_userid could be resolved")
 
 
-def _list_owner_archived_messages(
-    owner_userid: str,
-    *,
-    window_start: str,
-    window_end: str,
-    include_private: bool,
-    include_group: bool,
-) -> list[dict[str, Any]]:
-    if not include_private and not include_group:
-        return []
-
-    sql = """
-        SELECT id, seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload
-        FROM archived_messages
-        WHERE owner_userid = ? AND send_time >= ? AND send_time <= ?
-    """
-    params: list[Any] = [owner_userid, window_start, window_end]
-    if include_private and not include_group:
-        sql += " AND chat_type = ?"
-        params.append("private")
-    elif include_group and not include_private:
-        sql += " AND chat_type = ?"
-        params.append("group")
-    sql += " ORDER BY send_time ASC, id ASC"
-    return get_db().execute(sql, tuple(params)).fetchall()
 
 
-def _sender_role_for_message(message: dict[str, Any], *, owner_userid: str) -> str:
-    sender = str(message.get("from") or message.get("sender") or "").strip()
-    external_userid = str(message.get("external_userid") or "").strip()
-    if sender and sender == owner_userid:
-        return "staff"
-    if sender and external_userid and sender == external_userid:
-        return "customer"
-    return "unknown"
+
+
+
 
 
 def _build_owner_recent_chat_dump(arguments: dict[str, Any]) -> dict[str, Any]:
-    owner_userid = _require_text(arguments.get("owner_userid"), field_name="owner_userid")
-    lookback_minutes = _normalize_lookback_minutes(arguments.get("lookback_minutes"))
-    include_private = _normalize_boolean(arguments.get("include_private"), field_name="include_private", default=True)
-    include_group = _normalize_boolean(arguments.get("include_group"), field_name="include_group", default=True)
-
-    window_end_dt = datetime.now()
-    window_start_dt = window_end_dt - timedelta(minutes=lookback_minutes)
-    window_start = window_start_dt.strftime("%Y-%m-%d %H:%M:%S")
-    window_end = window_end_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    rows = _list_owner_archived_messages(
-        owner_userid,
-        window_start=window_start,
-        window_end=window_end,
-        include_private=include_private,
-        include_group=include_group,
+    return build_owner_recent_chat_dump_payload(
+        arguments,
+        require_text=_require_text,
+        normalize_lookback_minutes=_normalize_lookback_minutes,
+        normalize_boolean=_normalize_boolean,
+        get_db=get_db,
+        get_group_chat_map=get_group_chat_map,
+        extract_roomid_from_raw_payload=extract_roomid_from_raw_payload,
+        format_message_row=format_message_row,
+        get_contact_by_external_userid=get_contact_by_external_userid,
     )
-    group_map = get_group_chat_map([extract_roomid_from_raw_payload(row.get("raw_payload")) for row in rows])
-    formatted_messages = [format_message_row(row, group_map=group_map) for row in rows]
 
-    private_conversations_by_userid: dict[str, dict[str, Any]] = {}
-    group_conversations_by_chat_id: dict[str, dict[str, Any]] = {}
-    contact_cache: dict[str, dict[str, Any]] = {}
 
-    for message in formatted_messages:
-        chat_type = str(message.get("chat_type") or "").strip().lower()
-        if chat_type == "private":
-            external_userid = str(message.get("external_userid") or "").strip()
-            if not external_userid:
-                continue
-            contact = contact_cache.get(external_userid)
-            if contact is None:
-                contact = get_contact_by_external_userid(external_userid) or {}
-                contact_cache[external_userid] = contact
-            conversation = private_conversations_by_userid.setdefault(
-                external_userid,
-                {
-                    "external_userid": external_userid,
-                    "customer_name": str(contact.get("customer_name") or "").strip(),
-                    "messages": [],
-                },
-            )
-            conversation["messages"].append(
-                {
-                    "send_time": str(message.get("send_time") or "").strip(),
-                    "sender_role": _sender_role_for_message(message, owner_userid=owner_userid),
-                    "msgtype": str(message.get("msgtype") or "").strip(),
-                    "content": str(message.get("content") or "").strip(),
-                    "owner_userid": owner_userid,
-                    "sender": str(message.get("sender") or "").strip(),
-                    "from": str(message.get("from") or "").strip(),
-                    "tolist": message.get("tolist") or [],
-                }
-            )
-            continue
-
-        if chat_type != "group":
-            continue
-
-        chat_id = str(message.get("roomid") or message.get("chat_id") or "").strip()
-        conversation = group_conversations_by_chat_id.setdefault(
-            chat_id,
-            {
-                "roomid": chat_id,
-                "chat_id": chat_id,
-                "group_name": str(message.get("group_name") or "").strip(),
-                "messages": [],
-            },
-        )
-        conversation["messages"].append(
-            {
-                "send_time": str(message.get("send_time") or "").strip(),
-                "sender_role": _sender_role_for_message(message, owner_userid=owner_userid),
-                "external_userid": str(message.get("external_userid") or "").strip(),
-                "msgtype": str(message.get("msgtype") or "").strip(),
-                "content": str(message.get("content") or "").strip(),
-                "owner_userid": owner_userid,
-                "sender": str(message.get("sender") or "").strip(),
-                "from": str(message.get("from") or "").strip(),
-                "tolist": message.get("tolist") or [],
-            }
-        )
-
-    return {
-        "ok": True,
-        "owner_userid": owner_userid,
-        "lookback_minutes": lookback_minutes,
-        "window_start": window_start,
-        "window_end": window_end,
-        "include_private": include_private,
-        "include_group": include_group,
-        "private_conversations": list(private_conversations_by_userid.values()),
-        "group_conversations": list(group_conversations_by_chat_id.values()),
-    }
-
+def _build_followup_candidates(arguments: dict[str, Any]) -> dict[str, Any]:
+    return build_followup_candidates_payload(
+        arguments,
+        normalize_limit=_normalize_limit,
+        get_db=get_db,
+        get_customer_detail=get_customer_detail,
+        get_recent_messages_by_user=get_recent_messages_by_user,
+    )
 
 def _build_customer_context_payload(arguments: dict[str, Any]) -> dict[str, Any]:
     resolved = _resolve_customers(arguments, allow_multiple=False)[0]
@@ -1058,147 +669,10 @@ def _call_business_task(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"unknown business task: {name}")
 
 
-def _parse_timestamp(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(text, pattern)
-        except ValueError:
-            continue
-    return None
 
 
-def _stringify_tags(customer: dict[str, Any]) -> list[str]:
-    tags = customer.get("tags") or []
-    result: list[str] = []
-    seen: set[str] = set()
-    for item in tags:
-        if isinstance(item, dict):
-            value = str(item.get("tag_name") or item.get("tag_id") or "").strip()
-        else:
-            value = str(item or "").strip()
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        result.append(value)
-    class_status = customer.get("class_user_status") or {}
-    signup_label_name = str(class_status.get("signup_label_name") or "").strip()
-    if signup_label_name and signup_label_name not in seen:
-        result.append(signup_label_name)
-    return result
 
 
-def _build_followup_candidates(arguments: dict[str, Any]) -> dict[str, Any]:
-    limit = _normalize_limit(arguments.get("limit"), default=20, minimum=1, maximum=100)
-    lookback_hours = _normalize_limit(arguments.get("lookback_hours"), default=24, minimum=1, maximum=168)
-    now = datetime.now()
-    since = (now - timedelta(hours=lookback_hours)).strftime("%Y-%m-%d %H:%M:%S")
-    rows = get_db().execute(
-        """
-        SELECT external_userid, MAX(send_time) AS last_message_at
-        FROM archived_messages
-        WHERE external_userid IS NOT NULL AND external_userid <> '' AND send_time >= ?
-        GROUP BY external_userid
-        ORDER BY last_message_at DESC, external_userid ASC
-        """,
-        (since,),
-    ).fetchall()
-
-    blocked_keywords = ("已成交", "成交", "勿扰", "关闭", "黑名单")
-    high_intent_keywords = ("高意向", "待跟进", "已报价")
-    candidates: list[dict[str, Any]] = []
-
-    for row in rows:
-        external_userid = str(row.get("external_userid") or "").strip()
-        if not external_userid:
-            continue
-        customer = get_customer_detail(external_userid)
-        if not customer:
-            continue
-
-        tags = _stringify_tags(customer)
-        class_status = customer.get("class_user_status") or {}
-        status_text = " ".join(
-            [
-                str(class_status.get("signup_status") or "").strip(),
-                str(class_status.get("signup_label_name") or "").strip(),
-                " ".join(tags),
-            ]
-        )
-        if any(keyword in status_text for keyword in blocked_keywords):
-            continue
-
-        recent_messages = get_recent_messages_by_user(external_userid, 20)
-        if not recent_messages:
-            continue
-
-        score = 0
-        reasons: list[str] = []
-        last_customer_message_at: datetime | None = None
-        latest_message_from_customer = False
-        for index, message in enumerate(recent_messages):
-            sender = str(message.get("from") or message.get("sender") or "").strip()
-            send_time = _parse_timestamp(message.get("send_time"))
-            if index == 0 and sender == external_userid:
-                latest_message_from_customer = True
-            if sender == external_userid and send_time is not None:
-                last_customer_message_at = send_time
-                break
-
-        if last_customer_message_at is not None:
-            age_hours = (now - last_customer_message_at).total_seconds() / 3600
-            if age_hours <= 1:
-                score += 5
-                reasons.append("最近1小时客户有消息")
-            elif age_hours <= 6:
-                score += 3
-                reasons.append("最近6小时客户有消息")
-
-        if latest_message_from_customer:
-            score += 4
-            reasons.append("客户最后一条消息后暂无顾问跟进")
-
-        if any(keyword in tag for tag in tags for keyword in high_intent_keywords):
-            score += 3
-            reasons.append("当前标签包含高意向信号")
-
-        score += 2
-        reasons.append("客户仍处于可继续跟进状态")
-
-        if score <= 0:
-            continue
-
-        candidates.append(
-            {
-                "external_userid": external_userid,
-                "customer_name": str(customer.get("customer_name") or "").strip(),
-                "owner_userid": str(customer.get("owner_userid") or "").strip(),
-                "score": score,
-                "reason": reasons[0],
-                "reasons": reasons,
-                "suggested_action": "contact_now" if score >= 6 else "review_context",
-                "last_message_at": str(customer.get("last_message_at") or row.get("last_message_at") or "").strip(),
-                "tags": tags,
-                "class_user_status": class_status,
-            }
-        )
-
-    candidates.sort(key=lambda item: (int(item["score"]), str(item["last_message_at"]), item["external_userid"]), reverse=True)
-    ranked = []
-    for index, item in enumerate(candidates[:limit], start=1):
-        payload = dict(item)
-        payload["rank"] = index
-        ranked.append(payload)
-
-    return {
-        "ok": True,
-        "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "lookback_hours": lookback_hours,
-        "limit": limit,
-        "candidates": ranked,
-    }
 
 
 def _call_wecom_task(fn_name: str, task_type: str, arguments: dict[str, Any]) -> dict[str, Any]:

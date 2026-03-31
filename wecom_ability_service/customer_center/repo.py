@@ -9,6 +9,10 @@ def _fetchall_dict(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any
     return [dict(row) for row in get_db().execute(sql, params).fetchall()]
 
 
+def _normalize_external_userids(external_userids: list[str]) -> list[str]:
+    return list(dict.fromkeys(str(external_userid or "").strip() for external_userid in external_userids if str(external_userid or "").strip()))
+
+
 def list_scope_external_userids() -> list[str]:
     rows = _fetchall_dict(
         """
@@ -36,6 +40,7 @@ def list_scope_external_userids() -> list[str]:
 
 
 def fetch_contact_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
+    external_userids = _normalize_external_userids(external_userids)
     if not external_userids:
         return {}
     placeholders = ",".join(["?"] * len(external_userids))
@@ -51,6 +56,7 @@ def fetch_contact_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def fetch_binding_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
+    external_userids = _normalize_external_userids(external_userids)
     if not external_userids:
         return {}
     placeholders = ",".join(["?"] * len(external_userids))
@@ -83,6 +89,7 @@ def fetch_binding_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def fetch_identity_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
+    external_userids = _normalize_external_userids(external_userids)
     if not external_userids:
         return {}
     placeholders = ",".join(["?"] * len(external_userids))
@@ -112,6 +119,7 @@ def fetch_identity_map(external_userids: list[str]) -> dict[str, dict[str, Any]]
 
 
 def fetch_follow_users_map(external_userids: list[str]) -> dict[str, list[dict[str, Any]]]:
+    external_userids = _normalize_external_userids(external_userids)
     if not external_userids:
         return {}
     placeholders = ",".join(["?"] * len(external_userids))
@@ -156,6 +164,7 @@ def fetch_follow_users_map(external_userids: list[str]) -> dict[str, list[dict[s
 
 
 def fetch_tag_map(external_userids: list[str]) -> dict[str, list[dict[str, Any]]]:
+    external_userids = _normalize_external_userids(external_userids)
     if not external_userids:
         return {}
     placeholders = ",".join(["?"] * len(external_userids))
@@ -177,6 +186,7 @@ def fetch_tag_map(external_userids: list[str]) -> dict[str, list[dict[str, Any]]
 
 
 def fetch_class_status_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
+    external_userids = _normalize_external_userids(external_userids)
     if not external_userids:
         return {}
     placeholders = ",".join(["?"] * len(external_userids))
@@ -205,6 +215,7 @@ def fetch_class_status_map(external_userids: list[str]) -> dict[str, dict[str, A
 
 
 def fetch_last_message_map(external_userids: list[str]) -> dict[str, str]:
+    external_userids = _normalize_external_userids(external_userids)
     if not external_userids:
         return {}
     placeholders = ",".join(["?"] * len(external_userids))
@@ -225,7 +236,7 @@ def fetch_last_message_map(external_userids: list[str]) -> dict[str, str]:
 
 
 def fetch_owner_role_map(userids: list[str]) -> dict[str, dict[str, Any]]:
-    normalized = [str(userid or "").strip() for userid in userids if str(userid or "").strip()]
+    normalized = list(dict.fromkeys(str(userid or "").strip() for userid in userids if str(userid or "").strip()))
     if not normalized:
         return {}
     placeholders = ",".join(["?"] * len(normalized))

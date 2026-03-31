@@ -24,6 +24,8 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", default=False)
     parser.add_argument("--operator", default="owner_class_term_backfill_script")
     parser.add_argument("--entry-source", default="")
+    parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--max-candidates", type=int, default=None)
     args = parser.parse_args()
 
     dry_run = False if args.apply else True
@@ -37,6 +39,8 @@ def main() -> int:
                 dry_run=dry_run,
                 operator=args.operator,
                 entry_source=args.entry_source,
+                offset=args.offset,
+                max_candidates=args.max_candidates,
             )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
