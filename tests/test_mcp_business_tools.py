@@ -174,6 +174,130 @@ def _mcp_call(client, name: str, arguments: dict):
     )
 
 
+def _build_questionnaire_payload() -> dict:
+    return {
+        "name": "用户运营表单",
+        "title": "用户运营表单",
+        "description": "用于用户运营看板 v2 的表单",
+        "questions": [
+            {
+                "type": "single_choice",
+                "title": "当前阶段",
+                "required": True,
+                "sort_order": 1,
+                "options": [
+                    {"option_text": "已报名", "score": 5, "tag_codes": ["tag_signed"], "sort_order": 1},
+                    {"option_text": "待跟进", "score": 2, "tag_codes": ["tag_followup"], "sort_order": 2},
+                ],
+            },
+            {
+                "type": "textarea",
+                "title": "补充说明",
+                "required": False,
+                "sort_order": 2,
+                "options": [],
+            },
+        ],
+        "score_rules": [
+            {"min_score": 5, "max_score": 10, "tag_codes": ["tag_high"], "sort_order": 1},
+        ],
+    }
+
+
+def _create_questionnaire(client) -> dict:
+    response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    assert response.status_code == 200
+    return response.get_json()["questionnaire"]
+
+
+def _insert_questionnaire_submission(
+    app,
+    *,
+    questionnaire: dict,
+    selected_option_text: str = "已报名",
+    text_value: str = "备注 A",
+    respondent_key: str = "resp-001",
+    external_userid: str = "wm_form_001",
+):
+    with app.app_context():
+        db = get_db()
+        question = questionnaire["questions"][0]
+        text_question = questionnaire["questions"][1]
+        option = next(item for item in question["options"] if item["option_text"] == selected_option_text)
+        submission_row = db.execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                questionnaire_id, respondent_key, openid, unionid, external_userid,
+                follow_user_userid, matched_by, source_channel, campaign_id, staff_id,
+                total_score, final_tags, redirect_url_snapshot, submitted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            RETURNING id
+            """,
+            (
+                int(questionnaire["id"]),
+                respondent_key,
+                f"openid-{respondent_key}",
+                f"union-{respondent_key}",
+                external_userid,
+                "sales_01",
+                "external_userid",
+                "wechat",
+                "cmp-form",
+                "staff-form",
+                float(option["score"]),
+                json.dumps(["tag_high"], ensure_ascii=False),
+                questionnaire.get("redirect_url", "") or "",
+            ),
+        ).fetchone()
+        submission_id = int(submission_row["id"])
+        db.execute(
+            """
+            INSERT INTO questionnaire_submission_answers (
+                submission_id, question_id, question_type, question_title_snapshot,
+                selected_option_ids, selected_option_texts_snapshot, selected_option_scores_snapshot,
+                selected_option_tags_snapshot, text_value, score_contribution, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                submission_id,
+                int(question["id"]),
+                question["type"],
+                question["title"],
+                json.dumps([int(option["id"])], ensure_ascii=False),
+                json.dumps([option["option_text"]], ensure_ascii=False),
+                json.dumps([float(option["score"])], ensure_ascii=False),
+                json.dumps(option["tag_codes"], ensure_ascii=False),
+                "",
+                float(option["score"]),
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaire_submission_answers (
+                submission_id, question_id, question_type, question_title_snapshot,
+                selected_option_ids, selected_option_texts_snapshot, selected_option_scores_snapshot,
+                selected_option_tags_snapshot, text_value, score_contribution, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                submission_id,
+                int(text_question["id"]),
+                text_question["type"],
+                text_question["title"],
+                json.dumps([], ensure_ascii=False),
+                json.dumps([], ensure_ascii=False),
+                json.dumps([], ensure_ascii=False),
+                json.dumps([], ensure_ascii=False),
+                text_value,
+                0.0,
+            ),
+        )
+        db.commit()
+
+
 class _FakeRefreshTagsClient:
     def __init__(self, details: dict[str, dict[str, object]]):
         self._details = details
@@ -652,3 +776,53 @@ def test_task_requires_confirm_when_dry_run_is_false(client, app, monkeypatch):
 
     payload = response.get_json()
     assert payload["error"]["message"] == "confirm=true is required when dry_run=false"
+
+
+def test_list_questionnaires_returns_user_ops_forms(client):
+    questionnaire = _create_questionnaire(client)
+
+    response = _mcp_call(client, "list_questionnaires", {})
+
+    payload = response.get_json()["result"]["structuredContent"]
+    assert payload["ok"] is True
+    assert payload["items"]
+    assert payload["items"][0]["id"] == questionnaire["id"]
+    assert payload["items"][0]["slug"] == questionnaire["slug"]
+    assert payload["items"][0]["submission_count"] == 0
+
+
+def test_get_questionnaire_supports_slug_lookup(client):
+    questionnaire = _create_questionnaire(client)
+
+    response = _mcp_call(client, "get_questionnaire", {"slug": questionnaire["slug"]})
+
+    payload = response.get_json()["result"]["structuredContent"]
+    assert payload["ok"] is True
+    assert payload["questionnaire"]["id"] == questionnaire["id"]
+    assert payload["questionnaire"]["questions"][0]["title"] == "当前阶段"
+    assert payload["questionnaire"]["score_rules"][0]["tag_codes"] == ["tag_high"]
+
+
+def test_get_questionnaire_submissions_returns_preview_rows(client, app):
+    questionnaire = _create_questionnaire(client)
+    detail_response = client.get(f"/api/admin/questionnaires/{questionnaire['id']}")
+    detail = detail_response.get_json()["questionnaire"]
+    _insert_questionnaire_submission(app, questionnaire=detail, respondent_key="resp-001", text_value="第一条备注")
+    _insert_questionnaire_submission(app, questionnaire=detail, respondent_key="resp-002", text_value="第二条备注")
+
+    response = _mcp_call(
+        client,
+        "get_questionnaire_submissions",
+        {"questionnaire_id": questionnaire["id"], "limit": 1},
+    )
+
+    payload = response.get_json()["result"]["structuredContent"]
+    assert payload["ok"] is True
+    assert payload["questionnaire"]["id"] == questionnaire["id"]
+    assert payload["headers"][:4] == ["提交时间", "问卷名称", "respondent_key", "openid"]
+    assert payload["total_rows"] == 2
+    assert payload["returned_rows"] == 1
+    assert payload["truncated"] is True
+    assert payload["rows"][0][1] == "用户运营表单"
+    assert "已报名" in payload["rows"][0]
+    assert payload["latest_submission"]["questionnaire_id"] == questionnaire["id"]

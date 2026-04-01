@@ -42,6 +42,37 @@ TOOL_DEFS = [
         },
     },
     {
+        "name": "list_questionnaires",
+        "description": "List user-ops questionnaires/forms with summary stats.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "get_questionnaire",
+        "description": "Read one questionnaire/form structure by questionnaire_id or slug.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "questionnaire_id": {"type": "integer", "minimum": 1},
+                "slug": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "get_questionnaire_submissions",
+        "description": "Read questionnaire/form submission results by questionnaire_id or slug.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "questionnaire_id": {"type": "integer", "minimum": 1},
+                "slug": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+        },
+    },
+    {
         "name": "get_messages",
         "description": "Read full message history for a contact by customer_ref or external_userid.",
         "inputSchema": {
