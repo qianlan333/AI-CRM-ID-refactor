@@ -7,6 +7,9 @@
   "tools": [
     "resolve_customer",
     "get_customer_context",
+    "list_questionnaires",
+    "get_questionnaire",
+    "get_questionnaire_submissions",
     "update_customer_tags",
     "create_private_message_task",
     "create_group_message_task",

@@ -11,6 +11,12 @@ from flask import Blueprint, Response, jsonify, request
 from .customer_center import get_customer_detail
 from .customer_timeline.service import get_customer_timeline
 from .db import get_db
+from .questionnaire_service import (
+    export_questionnaire_submissions,
+    get_latest_questionnaire_submit_debug,
+    get_questionnaire_detail,
+    list_questionnaires,
+)
 from .services import (
     ack_message_batch,
     extract_roomid_from_raw_payload,
@@ -211,6 +217,16 @@ def _normalize_lookback_minutes(value: Any) -> int:
     return max(1, min(lookback_minutes, 1440))
 
 
+def _normalize_positive_int(value: Any, *, field_name: str) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+    if normalized <= 0:
+        raise ValueError(f"{field_name} must be a positive integer")
+    return normalized
+
+
 def _require_text(value: Any, *, field_name: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -257,6 +273,47 @@ def _resolve_customers(arguments: dict[str, Any], *, allow_multiple: bool) -> li
             }
         )
     return resolved
+
+
+def _resolve_questionnaire(arguments: dict[str, Any]) -> dict[str, Any]:
+    questionnaire_id = arguments.get("questionnaire_id")
+    if questionnaire_id not in (None, ""):
+        detail = get_questionnaire_detail(_normalize_positive_int(questionnaire_id, field_name="questionnaire_id"))
+        if not detail:
+            raise ValueError("questionnaire not found")
+        return detail
+
+    slug = str(arguments.get("slug") or "").strip()
+    if not slug:
+        raise ValueError("questionnaire_id or slug is required")
+
+    for item in list_questionnaires():
+        if str(item.get("slug") or "").strip() != slug:
+            continue
+        detail = get_questionnaire_detail(int(item["id"]))
+        if not detail:
+            break
+        return detail
+    raise ValueError("questionnaire not found")
+
+
+def _build_questionnaire_submissions_payload(arguments: dict[str, Any]) -> dict[str, Any]:
+    questionnaire = _resolve_questionnaire(arguments)
+    export_payload = export_questionnaire_submissions(int(questionnaire["id"]))
+    rows = export_payload.get("rows") or []
+    limit = _normalize_limit(arguments.get("limit"), default=20, minimum=1, maximum=200)
+    preview_rows = rows[:limit]
+    return {
+        "ok": True,
+        "questionnaire": export_payload.get("questionnaire") or questionnaire,
+        "headers": export_payload.get("headers") or [],
+        "rows": preview_rows,
+        "total_rows": len(rows),
+        "returned_rows": len(preview_rows),
+        "truncated": len(preview_rows) < len(rows),
+        "filename": export_payload.get("filename") or "",
+        "latest_submission": get_latest_questionnaire_submit_debug(int(questionnaire["id"])),
+    }
 
 
 def _resolve_sender_userids(customers: list[dict[str, Any]], explicit_userid: Any = "") -> list[str]:
@@ -698,6 +755,9 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         payload["available_actions"] = [
             "get_customer_context",
             "get_contact",
+            "list_questionnaires",
+            "get_questionnaire",
+            "get_questionnaire_submissions",
             "get_messages",
             "get_recent_messages",
             "search_messages",
@@ -716,6 +776,12 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         )
     if name == "get_customer_context":
         return _tool_result(_build_customer_context_payload(arguments))
+    if name == "list_questionnaires":
+        return _tool_result({"ok": True, "items": list_questionnaires()})
+    if name == "get_questionnaire":
+        return _tool_result({"ok": True, "questionnaire": _resolve_questionnaire(arguments)})
+    if name == "get_questionnaire_submissions":
+        return _tool_result(_build_questionnaire_submissions_payload(arguments))
     if name == "get_messages":
         external_userid = _resolve_customer_locator(arguments)["external_userid"]
         return _tool_result_messages(
