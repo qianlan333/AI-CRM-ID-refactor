@@ -68,78 +68,21 @@ MCP：
    - 页面能打开
    - 关键 API 返回正常
 
-## GitHub 自动发布
+## 当前发布口径
 
-仓库现在支持“`main` 上 CI 成功后自动发布到生产机”的配置入口：
+当前不再使用 GitHub 自动发布。
 
-- 工作流：
-  - `.github/workflows/deploy-production.yml`
-- 远端执行脚本：
-  - `deploy/deploy_production.sh`
-- 文件同步排除清单：
-  - `deploy/rsync-excludes.txt`
+生产发布统一按手工方式执行：
 
-默认发布动作：
-
-1. GitHub Actions 拉取要发布的 `main` 提交
-2. 通过 `rsync` 同步到 `/home/ubuntu/极简 crm`
-3. 在服务器上执行：
+1. 本地确认要发布的提交已经合到 `main`
+2. 手工同步代码到 `/home/ubuntu/极简 crm`
+3. 在服务器执行：
    - `python3 -m pip install -r requirements.txt`
    - `python app.py init-db`
    - `sudo systemctl restart openclaw-wecom-postgres.service`
-4. 对 `http://127.0.0.1:5001/health` 做健康检查
-
-### GitHub Secrets
-
-必须配置：
-
-- `PROD_SSH_HOST`
-- `PROD_SSH_USER`
-- `PROD_SSH_PRIVATE_KEY`
-- `PROD_SSH_KNOWN_HOSTS`
-
-可选：
-
-- `PROD_SSH_PORT`
-
-`PROD_SSH_KNOWN_HOSTS` 建议用下面的命令生成后写入 GitHub：
-
-```bash
-ssh-keyscan -H your-server-hostname
-```
-
-### GitHub Variables
-
-如果生产路径和当前默认值不同，可以额外配置这些 repository variables：
-
-- `PROD_APP_DIR`
-- `PROD_VENV_DIR`
-- `PROD_SYSTEMD_SERVICE`
-- `PROD_ENV_FILE`
-- `PROD_HEALTHCHECK_URL`
-
-### 服务器一次性准备
-
-至少确认这些前提：
-
-1. 发布用户可写 `/home/ubuntu/极简 crm`
-2. 虚拟环境存在于 `/home/ubuntu/venvs/openclaw`
-3. 环境文件存在于 `/home/ubuntu/.openclaw-wecom-pg.env`
-4. 发布用户可以无密码执行 `systemctl restart/is-active/status`
-
-如果部署用户是 `ubuntu`，可参考 sudoers 规则：
-
-```bash
-ubuntu ALL=NOPASSWD:/usr/bin/systemctl restart openclaw-wecom-postgres.service,/usr/bin/systemctl is-active openclaw-wecom-postgres.service,/usr/bin/systemctl status openclaw-wecom-postgres.service
-```
-
-建议通过：
-
-```bash
-sudo visudo -f /etc/sudoers.d/openclaw-deploy
-```
-
-写入，而不是直接改 `/etc/sudoers`。
+4. 验证：
+   - `curl -sS http://127.0.0.1:5001/health`
+   - 关键页面和接口返回正常
 
 ## 数据库后端
 
