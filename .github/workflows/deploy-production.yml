@@ -91,11 +91,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          remote_app_dir="${APP_DIR// /\\ }"
           rsync -az --delete \
             --exclude-from=deploy/rsync-excludes.txt \
             -e "ssh -i ~/.ssh/id_ed25519 -p $SSH_PORT" \
             --rsync-path="mkdir -p \"$APP_DIR\" && rsync" \
-            ./ "${SSH_USER}@${SSH_HOST}:\"${APP_DIR}/\""
+            ./ "${SSH_USER}@${SSH_HOST}:${remote_app_dir}/"
 
       - name: Run remote deploy
         shell: bash
