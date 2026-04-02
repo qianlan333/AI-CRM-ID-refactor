@@ -116,23 +116,23 @@ def _build_context(external_userids: list[str]) -> dict[str, Any]:
     class_status_map = fetch_class_status_map(external_userids)
     last_message_map = fetch_last_message_map(external_userids)
 
-    owner_candidates: set[str] = set()
+    owner_candidates: list[str] = []
     for external_userid in external_userids:
         contact = contact_map.get(external_userid, {})
         binding = binding_map.get(external_userid, {})
         identity = identity_map.get(external_userid, {})
         class_status = class_status_map.get(external_userid, {})
         follow_users = follow_users_map.get(external_userid, [])
-        owner_candidates.update(
-            {
+        owner_candidates.extend(
+            [
                 str(class_status.get("owner_userid_snapshot") or "").strip(),
                 str(contact.get("owner_userid") or "").strip(),
                 str(binding.get("last_owner_userid") or "").strip(),
                 str(binding.get("first_owner_userid") or "").strip(),
                 str(identity.get("follow_user_userid") or "").strip(),
-            }
+            ]
         )
-        owner_candidates.update(str(item.get("userid") or "").strip() for item in follow_users)
+        owner_candidates.extend(str(item.get("userid") or "").strip() for item in follow_users)
 
     owner_role_map = fetch_owner_role_map(owner_candidates)
     return {
@@ -244,11 +244,10 @@ def list_customers(filters: dict[str, Any] | None = None) -> dict[str, Any]:
 
     items.sort(key=lambda item: (item.updated_at, item.external_userid), reverse=True)
     sliced = items[offset : offset + limit]
-    serialized_items = [item.to_dict() for item in sliced]
     return {
-        "customers": serialized_items,
+        "customers": [item.to_dict() for item in sliced],
         "count": len(items),
-        "items": serialized_items,
+        "items": [item.to_dict() for item in sliced],
         "total": len(items),
         "limit": limit,
         "offset": offset,

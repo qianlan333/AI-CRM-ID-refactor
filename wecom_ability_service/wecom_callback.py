@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from flask import current_app
 
-from .services import get_setting
+from .infra.settings import get_setting
 
 
 class WeComCallbackError(RuntimeError):

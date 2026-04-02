@@ -32,7 +32,7 @@ def _configure_logging(app: Flask) -> None:
         attach_logging_filter(handler)
     app.logger.setLevel(logging.INFO)
 
-    for logger_name in ["callback", "archive_sync", "contacts_sync", "wecom_api", "mcp", "questionnaire"]:
+    for logger_name in ["callback", "archive_sync", "contacts_sync", "wecom_api", "mcp", "questionnaire", "owner_backfill"]:
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.INFO)
         logger.propagate = True

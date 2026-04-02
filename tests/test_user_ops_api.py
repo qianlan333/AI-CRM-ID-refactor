@@ -9,12 +9,19 @@ import pytest
 from wecom_ability_service import create_app
 from wecom_ability_service import wecom_client as wecom_client_module
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.domains.routing_config import (
+    DEFAULT_DELIVERY_ROUTE_OWNER_USERID,
+    DEFAULT_SALES_ROUTE_OWNER_USERID,
+)
 from wecom_ability_service.routes import _process_external_contact_event
 from wecom_ability_service.services import (
+    _default_owner_class_term_backfill_entry_source,
     backfill_owner_class_terms_into_lead_pool,
+    get_routing_config,
     log_external_contact_event,
     migrate_legacy_user_ops_pool_to_lead_pool,
     refresh_contact_tags_for_external_userid,
+    resolve_contact_routing_context,
     schedule_user_ops_auto_assign_class_term_job,
     sync_user_ops_class_term_tag_definitions,
     upsert_user_ops_lead_pool_member,
@@ -966,6 +973,47 @@ def test_sidebar_lead_pool_status_returns_current_member(client, app):
     assert any(option["class_term_no"] == 3 for option in payload["class_term_options"])
 
 
+def test_sidebar_lead_pool_status_does_not_fallback_to_other_owner_member(client, app):
+    _seed_sidebar_contact(app, external_userid="wm_sidebar_status_owner_scope_001", owner_userid="sales_01")
+    app.config["SIDEBAR_LEAD_POOL_TAG_APPLIER"] = lambda **payload: None
+
+    with app.app_context():
+        upsert_user_ops_lead_pool_member(
+            mobile="13800138099",
+            external_userid="wm_sidebar_status_owner_scope_001",
+            customer_name="跨 owner 客户",
+            owner_userid="WangWei",
+            is_wecom_added=True,
+            is_mobile_bound=True,
+            class_term_no=10,
+            class_term_label="10期",
+            entry_source="sidebar_class_term",
+            operator="tester",
+            remark="seed cross-owner member for sidebar status scope test",
+        )
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO contact_tags (external_userid, userid, tag_id, tag_name)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("wm_sidebar_status_owner_scope_001", "sales_01", "tag_term_sales_01", "第5期"),
+        )
+        db.commit()
+
+    response = client.get(
+        "/api/sidebar/lead-pool/status?external_userid=wm_sidebar_status_owner_scope_001&owner_userid=sales_01"
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["owner_userid"] == "sales_01"
+    assert payload["current_class_term_no"] is None
+    assert payload["current_class_term_label"] == ""
+    assert payload["member"] == {}
+
+
 def test_sidebar_lead_pool_upsert_class_term_replaces_old_tag_and_returns_success(client, app, monkeypatch):
     _seed_sidebar_contact(app, external_userid="wm_sidebar_term_replace_001", owner_userid="sales_01")
     wecom_calls: list[dict[str, object]] = []
@@ -993,6 +1041,24 @@ def test_sidebar_lead_pool_upsert_class_term_replaces_old_tag_and_returns_succes
         wecom_client_module.WeComClient,
         "from_app",
         classmethod(lambda cls: FakeWeComClient()),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.services._user_ops_contact_client",
+        lambda: type(
+            "FakeContactClient",
+            (),
+            {
+                "get_contact": staticmethod(
+                    lambda external_userid: {
+                        "external_contact": {"external_userid": external_userid},
+                        "follow_user": [
+                            {"userid": "sales_01", "tags": [{"tag_id": "tag_term_4_cleanup", "tag_name": "第4期"}]},
+                            {"userid": "QianLan", "tags": [{"tag_id": "tag_term_3_cleanup", "tag_name": "第3期"}]},
+                        ],
+                    }
+                )
+            },
+        )(),
     )
 
     with app.app_context():
@@ -1100,6 +1166,240 @@ def test_sidebar_lead_pool_upsert_class_term_replaces_old_tag_and_returns_succes
     assert wecom_calls[0]["add_tags"] == [mapping_5["tag_id"]]
     assert mapping_6["tag_id"] in wecom_calls[1]["add_tags"]
     assert mapping_5["tag_id"] in wecom_calls[1]["remove_tags"]
+
+
+def test_sidebar_lead_pool_upsert_class_term_respects_explicit_owner_context(client, app, monkeypatch):
+    _seed_sidebar_contact(app, external_userid="wm_sidebar_owner_pin_001", owner_userid="sales_01")
+    wecom_calls: list[dict[str, object]] = []
+
+    class FakeWeComClient:
+        def mark_external_contact_tags(
+            self,
+            *,
+            external_userid: str,
+            follow_user_userid: str,
+            add_tags: list[str],
+            remove_tags: list[str] | None = None,
+        ) -> dict[str, object]:
+            wecom_calls.append(
+                {
+                    "external_userid": external_userid,
+                    "follow_user_userid": follow_user_userid,
+                    "add_tags": list(add_tags),
+                    "remove_tags": list(remove_tags or []),
+                }
+            )
+            return {"errcode": 0}
+
+    monkeypatch.setattr(
+        wecom_client_module.WeComClient,
+        "from_app",
+        classmethod(lambda cls: FakeWeComClient()),
+    )
+
+    with app.app_context():
+        db = get_db()
+        existing_owner = db.execute("SELECT 1 FROM owner_role_map WHERE userid = ?", ("WangWei",)).fetchone()
+        if not existing_owner:
+            db.execute(
+                """
+                INSERT INTO owner_role_map (userid, display_name, role, active)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("WangWei", "WangWei", "sales", True),
+            )
+        db.execute(
+            "UPDATE contacts SET owner_userid = ? WHERE external_userid = ?",
+            ("WangWei", "wm_sidebar_owner_pin_001"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "ww-test",
+                "wm_sidebar_owner_pin_001",
+                "union-wm_sidebar_owner_pin_001",
+                "openid-wm_sidebar_owner_pin_001",
+                "WangWei",
+                "侧边栏客户",
+                "active",
+                "{}",
+            ),
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wm_sidebar_owner_pin_001",
+            "owner_userid": "sales_01",
+            "class_term_no": 4,
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["owner_userid"] == "sales_01"
+    assert payload["current_class_term_no"] == 4
+
+    with app.app_context():
+        current_row = get_db().execute(
+            """
+            SELECT owner_userid, class_term_no
+            FROM user_ops_lead_pool_current
+            WHERE external_userid = ?
+            """,
+            ("wm_sidebar_owner_pin_001",),
+        ).fetchone()
+
+    assert current_row["owner_userid"] == "sales_01"
+    assert current_row["class_term_no"] == 4
+    assert wecom_calls[0]["follow_user_userid"] == "sales_01"
+
+
+def test_sidebar_lead_pool_upsert_class_term_cleans_cross_owner_stale_tag_snapshots(client, app, monkeypatch):
+    _seed_sidebar_contact(app, external_userid="wm_sidebar_cleanup_001", owner_userid="sales_01")
+    wecom_calls: list[dict[str, object]] = []
+    app.config["SIDEBAR_LEAD_POOL_TAG_APPLIER"] = lambda **payload: wecom_calls.append(
+        {
+            "external_userid": payload["external_userid"],
+            "follow_user_userid": payload["owner_userid"],
+            "add_tags": list(payload.get("add_tags") or []),
+            "remove_tags": list(payload.get("remove_tags") or []),
+        }
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.services._user_ops_contact_client",
+        lambda: type(
+            "FakeContactClient",
+            (),
+            {
+                "get_contact": staticmethod(
+                    lambda external_userid: {
+                        "external_contact": {"external_userid": external_userid},
+                        "follow_user": [
+                            {"userid": "sales_01", "tags": [{"tag_id": "tag_term_4_cleanup", "tag_name": "第4期"}]},
+                            {"userid": "QianLan", "tags": [{"tag_id": "tag_term_3_cleanup", "tag_name": "第3期"}]},
+                        ],
+                    }
+                )
+            },
+        )(),
+    )
+
+    with app.app_context():
+        db = get_db()
+        existing_owner = db.execute("SELECT 1 FROM owner_role_map WHERE userid = ?", ("QianLan",)).fetchone()
+        if not existing_owner:
+            db.execute(
+                """
+                INSERT INTO owner_role_map (userid, display_name, role, active)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("QianLan", "QianLan", "sales", True),
+            )
+        db.execute(
+            """
+            INSERT INTO class_term_tag_mapping (
+                class_term_no, class_term_label, tag_id, tag_group_name, tag_name, strategy_id, group_id, is_active
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                3,
+                "3期",
+                "tag_term_3_cleanup",
+                "9.9元改变计划",
+                "第3期",
+                "strategy_sidebar_cleanup_test",
+                "group_sidebar_cleanup_test",
+                True,
+                4,
+                "4期",
+                "tag_term_4_cleanup",
+                "9.9元改变计划",
+                "第4期",
+                "strategy_sidebar_cleanup_test",
+                "group_sidebar_cleanup_test",
+                True,
+            ),
+        )
+        mapping_4 = db.execute(
+            """
+            SELECT tag_id, tag_name
+            FROM class_term_tag_mapping
+            WHERE class_term_no = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (4,),
+        ).fetchone()
+        mapping_3 = db.execute(
+            """
+            SELECT tag_id, tag_name
+            FROM class_term_tag_mapping
+            WHERE class_term_no = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (3,),
+        ).fetchone()
+        db.execute(
+            """
+            INSERT INTO contact_tags (external_userid, userid, tag_id, tag_name)
+            VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+            """,
+            (
+                "wm_sidebar_cleanup_001",
+                "sales_01",
+                mapping_4["tag_id"],
+                mapping_4["tag_name"],
+                "wm_sidebar_cleanup_001",
+                "QianLan",
+                mapping_3["tag_id"],
+                mapping_3["tag_name"],
+            ),
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/sidebar/lead-pool/upsert-class-term",
+        json={
+            "external_userid": "wm_sidebar_cleanup_001",
+            "owner_userid": "sales_01",
+            "class_term_no": 4,
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+
+    with app.app_context():
+        tag_rows = get_db().execute(
+            """
+            SELECT userid, tag_id, tag_name
+            FROM contact_tags
+            WHERE external_userid = ?
+            ORDER BY userid ASC, tag_id ASC
+            """,
+            ("wm_sidebar_cleanup_001",),
+        ).fetchall()
+
+    assert [dict(row) for row in tag_rows] == [
+        {"userid": "sales_01", "tag_id": mapping_4["tag_id"], "tag_name": mapping_4["tag_name"]}
+    ]
+    assert wecom_calls[0]["follow_user_userid"] == "sales_01"
+    assert wecom_calls[1]["external_userid"] == "wm_sidebar_cleanup_001"
+    assert wecom_calls[1]["follow_user_userid"] == "QianLan"
+    assert wecom_calls[1]["add_tags"] == []
+    assert mapping_3["tag_id"] in wecom_calls[1]["remove_tags"]
+    assert mapping_4["tag_id"] in wecom_calls[1]["remove_tags"]
 
 
 def test_sidebar_bind_mobile_merges_external_only_and_mobile_only_members(client, app):
@@ -1956,12 +2256,12 @@ def test_backfill_class_term_endpoint_is_deprecated_internal_only(client):
 
 
 def test_internal_owner_backfill_route_defaults_to_dry_run(client, app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_backfill_route_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_backfill_route_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_backfill_route_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_backfill_route_001")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_backfill_route_001",
+        "wmb_owner_backfill_route_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_backfill_route_001",
+            external_userid="wmb_owner_backfill_route_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-1", "name": "首期7天改变计划"}],
         ),
@@ -1980,19 +2280,19 @@ def test_internal_owner_backfill_route_defaults_to_dry_run(client, app, user_ops
 
 
 def test_owner_backfill_candidate_enumeration_uses_active_follow_and_contact_fallback(app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_enum_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_enum_001", relation_status="active")
-    _seed_zhao_contact(app, external_userid="wm_owner_enum_002")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_enum_002", relation_status="inactive")
-    _seed_sidebar_contact(app, external_userid="wm_owner_enum_003", owner_userid="QianLan", customer_name="非赵顾问客户")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_enum_003", owner_userid="QianLan", relation_status="active")
-    _seed_zhao_contact(app, external_userid="wm_owner_enum_004")
+    _seed_zhao_contact(app, external_userid="wmb_owner_enum_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_enum_001", relation_status="active")
+    _seed_zhao_contact(app, external_userid="wmb_owner_enum_002")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_enum_002", relation_status="inactive")
+    _seed_sidebar_contact(app, external_userid="wmb_owner_enum_003", owner_userid="QianLan", customer_name="非赵顾问客户")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_enum_003", owner_userid="QianLan", relation_status="active")
+    _seed_zhao_contact(app, external_userid="wmb_owner_enum_004")
 
     for external_userid in [
-        "wm_owner_enum_001",
-        "wm_owner_enum_002",
-        "wm_owner_enum_003",
-        "wm_owner_enum_004",
+        "wmb_owner_enum_001",
+        "wmb_owner_enum_002",
+        "wmb_owner_enum_003",
+        "wmb_owner_enum_004",
     ]:
         user_ops_contact_client.set_contact_detail(
             external_userid,
@@ -2013,10 +2313,10 @@ def test_owner_backfill_candidate_enumeration_uses_active_follow_and_contact_fal
 
     assert payload["candidate_total"] == 3
     sample_ids = {item["external_userid"] for item in payload["samples"]}
-    assert "wm_owner_enum_001" in sample_ids
-    assert "wm_owner_enum_002" in sample_ids
-    assert "wm_owner_enum_004" in sample_ids
-    assert "wm_owner_enum_003" not in sample_ids
+    assert "wmb_owner_enum_001" in sample_ids
+    assert "wmb_owner_enum_002" in sample_ids
+    assert "wmb_owner_enum_004" in sample_ids
+    assert "wmb_owner_enum_003" not in sample_ids
 
 
 def test_owner_backfill_only_matches_class_terms_in_requested_range(app, user_ops_contact_client):
@@ -2026,22 +2326,22 @@ def test_owner_backfill_only_matches_class_terms_in_requested_range(app, user_op
             ("tag-term-6", "第6期"),
         ]
     )
-    _seed_zhao_contact(app, external_userid="wm_owner_range_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_range_001")
-    _seed_zhao_contact(app, external_userid="wm_owner_range_002")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_range_002")
+    _seed_zhao_contact(app, external_userid="wmb_owner_range_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_range_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_range_002")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_range_002")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_range_001",
+        "wmb_owner_range_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_range_001",
+            external_userid="wmb_owner_range_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-1", "name": "首期7天改变计划"}],
         ),
     )
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_range_002",
+        "wmb_owner_range_002",
         _build_external_contact_detail(
-            external_userid="wm_owner_range_002",
+            external_userid="wmb_owner_range_002",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-6", "name": "第6期"}],
         ),
@@ -2056,18 +2356,18 @@ def test_owner_backfill_only_matches_class_terms_in_requested_range(app, user_op
         )
 
     decisions = {item["external_userid"]: item["decision"] for item in payload["samples"]}
-    assert decisions["wm_owner_range_001"] == "insert"
-    assert decisions["wm_owner_range_002"] == "skip"
+    assert decisions["wmb_owner_range_001"] == "insert"
+    assert decisions["wmb_owner_range_002"] == "skip"
     assert payload["class_term_distribution"]["1"] == 1
 
 
 def test_owner_backfill_conflict_candidate_is_not_written(app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_conflict_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_conflict_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_conflict_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_conflict_001")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_conflict_001",
+        "wmb_owner_conflict_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_conflict_001",
+            external_userid="wmb_owner_conflict_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[
                 {"id": "tag-term-1", "name": "首期7天改变计划"},
@@ -2085,7 +2385,7 @@ def test_owner_backfill_conflict_candidate_is_not_written(app, user_ops_contact_
         )
         row = get_db().execute(
             "SELECT external_userid FROM user_ops_lead_pool_current WHERE external_userid = ?",
-            ("wm_owner_conflict_001",),
+            ("wmb_owner_conflict_001",),
         ).fetchone()
 
     assert payload["conflict_total"] == 1
@@ -2093,11 +2393,11 @@ def test_owner_backfill_conflict_candidate_is_not_written(app, user_ops_contact_
 
 
 def test_owner_backfill_apply_uses_mobile_bound_merge(app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_mobile_bound_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_mobile_bound_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_mobile_bound_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_mobile_bound_001")
     _seed_owner_backfill_binding(
         app,
-        external_userid="wm_owner_mobile_bound_001",
+        external_userid="wmb_owner_mobile_bound_001",
         mobile="13800138188",
         person_id=301,
     )
@@ -2109,9 +2409,9 @@ def test_owner_backfill_apply_uses_mobile_bound_merge(app, user_ops_contact_clie
             remark="seed phone-keyed member",
         )
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_mobile_bound_001",
+        "wmb_owner_mobile_bound_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_mobile_bound_001",
+            external_userid="wmb_owner_mobile_bound_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-4", "name": "0330改变计划-第4期"}],
         ),
@@ -2134,19 +2434,19 @@ def test_owner_backfill_apply_uses_mobile_bound_merge(app, user_ops_contact_clie
         ).fetchone()
 
     assert payload["estimated_update_total"] == 1
-    assert row["external_userid"] == "wm_owner_mobile_bound_001"
+    assert row["external_userid"] == "wmb_owner_mobile_bound_001"
     assert bool(row["is_mobile_bound"]) is True
     assert row["class_term_no"] == 4
     assert row["class_term_label"] == "4期"
 
 
 def test_owner_backfill_apply_allows_external_only_member(app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_external_only_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_external_only_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_external_only_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_external_only_001")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_external_only_001",
+        "wmb_owner_external_only_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_external_only_001",
+            external_userid="wmb_owner_external_only_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-5", "name": "第5期"}],
         ),
@@ -2165,7 +2465,7 @@ def test_owner_backfill_apply_allows_external_only_member(app, user_ops_contact_
             FROM user_ops_lead_pool_current
             WHERE external_userid = ?
             """,
-            ("wm_owner_external_only_001",),
+            ("wmb_owner_external_only_001",),
         ).fetchone()
 
     assert payload["estimated_insert_total"] == 1
@@ -2175,12 +2475,12 @@ def test_owner_backfill_apply_allows_external_only_member(app, user_ops_contact_
 
 
 def test_owner_backfill_reports_missing_term_two_mapping_when_real_tag_absent(app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_term2_missing_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_term2_missing_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_term2_missing_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_term2_missing_001")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_term2_missing_001",
+        "wmb_owner_term2_missing_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_term2_missing_001",
+            external_userid="wmb_owner_term2_missing_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[],
         ),
@@ -2207,12 +2507,12 @@ def test_owner_backfill_discovers_term_two_from_live_tags(app, user_ops_contact_
             ("tag-term-4", "0330改变计划-第4期"),
         ]
     )
-    _seed_zhao_contact(app, external_userid="wm_owner_term2_live_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_term2_live_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_term2_live_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_term2_live_001")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_term2_live_001",
+        "wmb_owner_term2_live_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_term2_live_001",
+            external_userid="wmb_owner_term2_live_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-2", "name": "0315改变计划-第2期"}],
         ),
@@ -2227,18 +2527,18 @@ def test_owner_backfill_discovers_term_two_from_live_tags(app, user_ops_contact_
         )
 
     assert payload["term_2_mapping"]["exists"] is True
-    sample = next(item for item in payload["samples"] if item["external_userid"] == "wm_owner_term2_live_001")
+    sample = next(item for item in payload["samples"] if item["external_userid"] == "wmb_owner_term2_live_001")
     assert sample["matched_class_term_no"] == 2
     assert sample["matched_class_term_label"] == "2期"
 
 
 def test_owner_backfill_dry_run_does_not_write_tables(app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_dry_run_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_dry_run_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_dry_run_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_dry_run_001")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_dry_run_001",
+        "wmb_owner_dry_run_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_dry_run_001",
+            external_userid="wmb_owner_dry_run_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-1", "name": "首期7天改变计划"}],
         ),
@@ -2261,12 +2561,12 @@ def test_owner_backfill_dry_run_does_not_write_tables(app, user_ops_contact_clie
 
 
 def test_owner_backfill_apply_writes_current_and_history(app, user_ops_contact_client):
-    _seed_zhao_contact(app, external_userid="wm_owner_apply_001")
-    _seed_owner_backfill_follow_relation(app, external_userid="wm_owner_apply_001")
+    _seed_zhao_contact(app, external_userid="wmb_owner_apply_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_apply_001")
     user_ops_contact_client.set_contact_detail(
-        "wm_owner_apply_001",
+        "wmb_owner_apply_001",
         _build_external_contact_detail(
-            external_userid="wm_owner_apply_001",
+            external_userid="wmb_owner_apply_001",
             owner_userid="ZhaoYanFang",
             follow_user_tags=[{"id": "tag-term-3", "name": "0322改变计划-第3期"}],
         ),
@@ -2285,7 +2585,7 @@ def test_owner_backfill_apply_writes_current_and_history(app, user_ops_contact_c
             FROM user_ops_lead_pool_current
             WHERE external_userid = ?
             """,
-            ("wm_owner_apply_001",),
+            ("wmb_owner_apply_001",),
         ).fetchone()
         history = get_db().execute(
             """
@@ -2295,7 +2595,7 @@ def test_owner_backfill_apply_writes_current_and_history(app, user_ops_contact_c
             ORDER BY id DESC
             LIMIT 1
             """,
-            ("wm_owner_apply_001",),
+            ("wmb_owner_apply_001",),
         ).fetchone()
 
     assert payload["applied_total"] == 1
@@ -2305,3 +2605,140 @@ def test_owner_backfill_apply_writes_current_and_history(app, user_ops_contact_c
     assert current["first_entry_source"] == "zhaoyanfang_owner_backfill_20260329"
     assert current["last_entry_source"] == "zhaoyanfang_owner_backfill_20260329"
     assert history["source_type"] == "zhaoyanfang_owner_backfill_20260329"
+
+
+def test_owner_backfill_invalid_test_candidate_is_skipped_without_error(app, user_ops_contact_client):
+    _seed_zhao_contact(app, external_userid="wm_auto_assign_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wm_auto_assign_001")
+
+    with app.app_context():
+        payload = backfill_owner_class_terms_into_lead_pool(
+            owner_userid="ZhaoYanFang",
+            class_term_min=1,
+            class_term_max=5,
+            dry_run=True,
+        )
+
+    sample = next(item for item in payload["samples"] if item["external_userid"] == "wm_auto_assign_001")
+    invalid_sample = next(
+        item for item in payload["invalid_test_candidate_samples"] if item["external_userid"] == "wm_auto_assign_001"
+    )
+    assert payload["error_total"] == 0
+    assert payload["invalid_test_candidate_total"] == 1
+    assert payload["matched_candidate_total"] == 0
+    assert sample["decision"] == "skip"
+    assert sample["decision_reason"] == "invalid_test_candidate"
+    assert sample["final_owner_userid"] == "ZhaoYanFang"
+    assert invalid_sample["decision_reason"] == "invalid_test_candidate"
+
+
+def test_owner_backfill_apply_pins_target_owner_and_audits_owner_mismatch(app, user_ops_contact_client):
+    _seed_zhao_contact(app, external_userid="wmb_owner_mismatch_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_mismatch_001")
+    user_ops_contact_client.set_contact_detail(
+        "wmb_owner_mismatch_001",
+        _build_external_contact_detail(
+            external_userid="wmb_owner_mismatch_001",
+            owner_userid="ZhaoYanFang",
+            follow_user_tags=[{"id": "tag-term-1", "name": "首期7天改变计划"}],
+        ),
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            "UPDATE contacts SET owner_userid = ?, customer_name = ? WHERE external_userid = ?",
+            ("ZhaoJingZi", "Owner Drift", "wmb_owner_mismatch_001"),
+        )
+        db.commit()
+        payload = backfill_owner_class_terms_into_lead_pool(
+            owner_userid="ZhaoYanFang",
+            class_term_min=1,
+            class_term_max=5,
+            dry_run=False,
+        )
+        current = get_db().execute(
+            """
+            SELECT external_userid, owner_userid, class_term_no
+            FROM user_ops_lead_pool_current
+            WHERE external_userid = ?
+            """,
+            ("wmb_owner_mismatch_001",),
+        ).fetchone()
+
+    sample = next(item for item in payload["samples"] if item["external_userid"] == "wmb_owner_mismatch_001")
+    mismatch_sample = next(
+        item for item in payload["owner_mismatch_samples"] if item["external_userid"] == "wmb_owner_mismatch_001"
+    )
+    assert payload["owner_mismatch_total"] == 1
+    assert sample["target_owner_userid"] == "ZhaoYanFang"
+    assert sample["resolved_owner_userid"] == "ZhaoJingZi"
+    assert sample["final_owner_userid"] == "ZhaoYanFang"
+    assert current["owner_userid"] == "ZhaoYanFang"
+    assert current["class_term_no"] == 1
+    assert mismatch_sample["resolved_owner_userid"] == "ZhaoJingZi"
+    assert mismatch_sample["final_owner_userid"] == "ZhaoYanFang"
+
+
+def test_routing_config_keeps_existing_owner_targets(app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO owner_role_map (userid, display_name, role, active)
+            VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+            """,
+            (
+                "sales_01",
+                "销售顾问",
+                "sales",
+                True,
+                "delivery_01",
+                "交付顾问",
+                "delivery",
+                True,
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            ("tag_3999", "已报名3999", "signed_3999", True),
+        )
+        db.commit()
+
+        payload = get_routing_config()
+
+    assert payload["routing_rules"]["pre_signup"]["route_owner_userid"] == DEFAULT_SALES_ROUTE_OWNER_USERID
+    assert payload["routing_rules"]["signed_999"]["route_owner_userid"] == DEFAULT_SALES_ROUTE_OWNER_USERID
+    assert payload["routing_rules"]["signed_3999"]["route_owner_userid"] == DEFAULT_DELIVERY_ROUTE_OWNER_USERID
+    assert payload["routing_rules"]["signed_3999"]["when_owner_role_sales"] == "delivery_redirect"
+    assert payload["routing_rules"]["signed_3999"]["when_owner_role_delivery"] == "delivery_handle"
+
+
+def test_resolve_contact_routing_context_keeps_existing_behavior():
+    assert resolve_contact_routing_context("sales_01", "", "lead") == {
+        "routing_target": "manual_review",
+        "route_owner_userid": "",
+        "reason": "owner_role_missing",
+    }
+    assert resolve_contact_routing_context("sales_01", "sales", "lead") == {
+        "routing_target": "sales_handle",
+        "route_owner_userid": DEFAULT_SALES_ROUTE_OWNER_USERID,
+    }
+    assert resolve_contact_routing_context("sales_01", "sales", "signed_3999") == {
+        "routing_target": "delivery_redirect",
+        "route_owner_userid": DEFAULT_DELIVERY_ROUTE_OWNER_USERID,
+    }
+    assert resolve_contact_routing_context("delivery_01", "delivery", "signed_3999") == {
+        "routing_target": "delivery_handle",
+        "route_owner_userid": DEFAULT_DELIVERY_ROUTE_OWNER_USERID,
+    }
+
+
+def test_owner_backfill_entry_source_override_moves_out_of_services():
+    assert _default_owner_class_term_backfill_entry_source(DEFAULT_SALES_ROUTE_OWNER_USERID) == (
+        "zhaoyanfang_owner_backfill_20260329"
+    )
+    assert _default_owner_class_term_backfill_entry_source("Owner A") == "owner_a_owner_backfill_20260329"

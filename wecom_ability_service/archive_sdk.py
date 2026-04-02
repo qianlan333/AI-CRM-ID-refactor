@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from flask import current_app
 
-from .services import get_setting
+from .infra.settings import get_setting
 
 
 class WeComArchiveError(RuntimeError):
