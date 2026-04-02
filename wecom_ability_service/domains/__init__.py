@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+DomainLayoutMode = Literal["simple", "complex"]
+
+
+@dataclass(frozen=True)
+class DomainLayoutSpec:
+    name: str
+    mode: DomainLayoutMode
+    service_module: str
+    persistence_modules: tuple[str, ...]
+    notes: str = ""
+
+
+# Service-layer layout contract:
+# - simple: service.py + repo.py
+# - complex: service.py + queries.py + writers.py, optional repo.py aggregator
+# Optional domain-local companion modules such as definitions.py or
+# preflight_service.py are allowed when they do not introduce a third pattern.
+DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
+    "archive": DomainLayoutSpec(
+        name="archive",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Archived messages, sync runs, and message batches.",
+    ),
+    "callbacks": DomainLayoutSpec(
+        name="callbacks",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="External contact callback business orchestration and event logs.",
+    ),
+    "class_user": DomainLayoutSpec(
+        name="class_user",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Signup status state machine and class-user history.",
+    ),
+    "contacts": DomainLayoutSpec(
+        name="contacts",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Contact snapshot, description sync, and WeCom contact reads.",
+    ),
+    "group_chats": DomainLayoutSpec(
+        name="group_chats",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Group chat snapshot and persistence.",
+    ),
+    "identity": DomainLayoutSpec(
+        name="identity",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="People, bindings, external contact identity map, resolve flow.",
+    ),
+    "questionnaire": DomainLayoutSpec(
+        name="questionnaire",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Questionnaire definition, submission, export; preflight stays domain-local.",
+    ),
+    "routing_config": DomainLayoutSpec(
+        name="routing_config",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Owner role map, routing config, domain-local definitions.py rules.",
+    ),
+    "tags": DomainLayoutSpec(
+        name="tags",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Tag snapshot, signup tag rules, live tag refresh helpers.",
+    ),
+    "tasks": DomainLayoutSpec(
+        name="tasks",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Outbound task dispatch and feedback persistence.",
+    ),
+    "user_ops": DomainLayoutSpec(
+        name="user_ops",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Lead pool, import, activation, deferred jobs, class-term mapping.",
+    ),
+}
+
+SIMPLE_DOMAIN_NAMES = tuple(sorted(name for name, spec in DOMAIN_LAYOUTS.items() if spec.mode == "simple"))
+COMPLEX_DOMAIN_NAMES = tuple(sorted(name for name, spec in DOMAIN_LAYOUTS.items() if spec.mode == "complex"))
+
+__all__ = [
+    "COMPLEX_DOMAIN_NAMES",
+    "DOMAIN_LAYOUTS",
+    "DomainLayoutMode",
+    "DomainLayoutSpec",
+    "SIMPLE_DOMAIN_NAMES",
+]

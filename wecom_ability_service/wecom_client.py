@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 import requests
 from flask import current_app
 
-from .services import get_setting, set_settings
+from .infra.settings import get_setting, set_settings
 
 wecom_logger = logging.getLogger("wecom_api")
 
