@@ -996,11 +996,11 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     assert "status_fields.operation_flags" in ui_text
 
 
-def test_admin_questionnaire_ui_redirects_to_shell(client):
+def test_admin_questionnaire_ui_redirects_to_legacy_ui(client):
     response = client.get("/admin/questionnaires/ui", follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/questionnaires")
+    assert response.headers["Location"].endswith("/admin/_legacy/questionnaires")
     assert response.headers["X-Admin-Deprecated"] == "true"
 
 
@@ -1019,10 +1019,14 @@ def test_admin_questionnaire_legacy_ui_contains_tag_picker_fallback(client):
     response = client.get("/admin/_legacy/questionnaires")
     text = response.get_data(as_text=True)
     assert response.status_code == 200
+    assert "创建新问卷" in text
+    assert "问卷创建时间" in text
+    assert "分享" in text
+    assert "下载数据" in text
     assert "手工填写 tag_id 兜底" in text
     assert "企微标签加载失败，可稍后重试或手工填写 tag_id" in text
-    assert "环境检查" in text
-    assert "最近提交调试" in text
+    assert "环境检查" not in text
+    assert "最近提交调试" not in text
 
 
 def test_admin_questionnaire_legacy_ui_script_has_valid_javascript(client):

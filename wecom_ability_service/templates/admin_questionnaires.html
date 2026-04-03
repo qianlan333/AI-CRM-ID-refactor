@@ -65,17 +65,33 @@
       backdrop-filter: blur(14px);
       box-shadow: var(--shadow-soft);
     }
-    .topbar-meta-wrap { min-width: 0; display: flex; align-items: center; }
+    .topbar-meta-wrap {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
     .topbar h1 {
       margin: 0;
       font-size: clamp(20px, 2.2vw, 28px);
       line-height: 1.12;
       letter-spacing: -0.03em;
     }
+    .draft-indicator {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(184, 125, 30, 0.12);
+      color: #8b6117;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
     .topbar-actions,
-    .mini-actions,
     .field-grid,
-    .header-actions {
+    .header-actions,
+    .row-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
@@ -107,6 +123,155 @@
     .btn.danger {
       color: #fff;
       background: linear-gradient(135deg, #b45a41 0%, #98432e 100%);
+    }
+    .btn.emphasis {
+      min-height: 46px;
+      padding: 12px 18px;
+      font-size: 15px;
+    }
+    .management-card {
+      max-width: 1600px;
+      margin: 0 auto 16px;
+      padding: 18px;
+    }
+    .management-toolbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .management-toolbar h2 {
+      margin: 8px 0 0;
+      font-size: 24px;
+      line-height: 1.12;
+      letter-spacing: -0.03em;
+    }
+    .management-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .management-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .management-filter {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .management-filter.search { flex: 1 1 360px; }
+    .management-filter.status { flex: 0 0 180px; }
+    .management-filter input,
+    .management-filter select {
+      width: 100%;
+      padding: 12px 13px;
+      border-radius: 14px;
+      border: 1px solid rgba(45, 107, 74, 0.14);
+      background: #ffffff;
+      color: var(--text);
+      outline: none;
+    }
+    .management-table-wrap {
+      overflow: auto;
+      border: 1px solid rgba(45, 107, 74, 0.10);
+      border-radius: 20px;
+      background: #ffffff;
+    }
+    .management-table {
+      width: 100%;
+      min-width: 860px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    .management-table th {
+      padding: 14px 16px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
+      background: #f7faf7;
+      border-bottom: 1px solid rgba(45, 107, 74, 0.10);
+      white-space: nowrap;
+    }
+    .management-table td {
+      padding: 16px;
+      border-bottom: 1px solid rgba(45, 107, 74, 0.08);
+      vertical-align: middle;
+    }
+    .management-table tbody tr:last-child td { border-bottom: 0; }
+    .management-row.active { background: rgba(47, 109, 76, 0.04); }
+    .management-row.disabled { background: rgba(108, 119, 112, 0.07); }
+    .management-row.disabled .name-main,
+    .management-row.disabled .name-sub,
+    .management-row.disabled .table-text,
+    .management-row.disabled .table-number {
+      color: #98a39b;
+    }
+    .name-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .name-main {
+      font-size: 15px;
+      line-height: 1.5;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .name-sub {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #e8f1e7;
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .status-badge.disabled {
+      background: #ecefed;
+      color: #78847b;
+    }
+    .table-text {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .table-number {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .row-actions {
+      justify-content: flex-end;
+      min-width: 320px;
+    }
+    .row-actions .mini-btn {
+      padding: 7px 10px;
+      border-radius: 10px;
+      background: #ffffff;
+      border: 1px solid rgba(45, 107, 74, 0.10);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
     }
     .workspace {
       max-width: 1600px;
@@ -207,68 +372,6 @@
       color: var(--muted);
       font-size: 12px;
       line-height: 1.5;
-    }
-    .questionnaire-list {
-      display: grid;
-      gap: 10px;
-      max-height: 540px;
-      overflow: auto;
-      padding-right: 4px;
-    }
-    .list-item {
-      padding: 12px;
-      border-radius: 16px;
-      border: 1px solid rgba(45, 107, 74, 0.10);
-      background: #f9fbf8;
-    }
-    .list-item.active {
-      border-color: rgba(45, 107, 74, 0.28);
-      box-shadow: 0 8px 18px rgba(34, 79, 56, 0.06);
-    }
-    .list-item h4 {
-      margin: 0 0 4px;
-      font-size: 14px;
-      line-height: 1.4;
-    }
-    .meta-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-bottom: 8px;
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: #e8f1e7;
-      color: var(--primary);
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .pill.disabled {
-      background: #f7e9e4;
-      color: #93452f;
-    }
-    .list-item .muted {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.6;
-      margin-bottom: 8px;
-    }
-    .mini-actions .mini-btn {
-      padding: 7px 9px;
-      border-radius: 10px;
-      background: #ffffff;
-      border: 1px solid rgba(45, 107, 74, 0.10);
-      color: var(--text);
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .mini-actions .mini-btn.danger {
-      color: #8c4130;
-      background: #fbefec;
-      border-color: rgba(165, 79, 56, 0.12);
     }
     .preview-column { min-width: 0; }
     .phone-stage {
@@ -401,6 +504,11 @@
       border: 1px solid rgba(45, 107, 74, 0.10);
       margin-bottom: 12px;
     }
+    .config-group.danger-zone {
+      background: #fff7f4;
+      border-color: rgba(165, 79, 56, 0.16);
+    }
+    .config-group.danger-zone h3 { color: #8c4130; }
     .config-group h3 {
       margin: 0;
       font-size: 16px;
@@ -721,6 +829,12 @@
         padding: 12px 14px;
         border-radius: 16px;
       }
+      .management-toolbar,
+      .management-filters { flex-direction: column; }
+      .management-actions { justify-content: stretch; }
+      .management-actions .btn { flex: 1 1 160px; }
+      .management-filter.search,
+      .management-filter.status { flex: 1 1 auto; }
       .workspace { grid-template-columns: 1fr; }
       .sidebar {
         position: static;
@@ -740,13 +854,39 @@
     <header class="topbar">
       <div class="topbar-meta-wrap">
         <h1 id="topbar-title">新建问卷</h1>
+        <span id="draft-indicator" class="draft-indicator hidden">未保存修改</span>
       </div>
       <div class="topbar-actions">
         <button id="reset-btn" type="button" class="btn ghost">重置当前</button>
-        <button id="copy-link-btn" type="button" class="btn secondary">复制链接</button>
         <button id="save-btn" type="button" class="btn primary">保存问卷</button>
       </div>
     </header>
+
+    <section class="card management-card">
+      <div class="management-toolbar">
+        <div>
+          <div class="eyebrow">问卷管理</div>
+          <h2>问卷管理页</h2>
+        </div>
+        <div class="management-actions">
+          <button id="create-btn" type="button" class="btn primary emphasis">创建新问卷</button>
+          <button id="reload-list-btn" type="button" class="btn ghost">刷新</button>
+        </div>
+      </div>
+      <div class="management-filters">
+        <label class="management-filter search">搜索问卷
+          <input id="list-search" type="text" placeholder="按问卷名称搜索">
+        </label>
+        <label class="management-filter status">状态筛选
+          <select id="status-filter">
+            <option value="all">全部</option>
+            <option value="enabled">启用中</option>
+            <option value="disabled">已停用</option>
+          </select>
+        </label>
+      </div>
+      <div id="questionnaire-list" class="management-table-wrap"></div>
+    </section>
 
     <div class="workspace">
       <aside class="sidebar">
@@ -756,10 +896,6 @@
               <h3>题型 / 组件区</h3>
               <p class="section-subtitle">向当前问卷添加题目和分数规则。</p>
             </div>
-          </div>
-          <div class="header-actions" style="margin-bottom:12px;">
-            <button id="new-btn" type="button" class="btn secondary">新建问卷</button>
-            <button id="preflight-btn" type="button" class="btn ghost">环境检查</button>
           </div>
           <div id="tag-catalog-message" class="inline-alert hidden" style="margin-bottom:12px;">企微标签加载失败，可稍后重试或手工填写 tag_id</div>
           <div class="tool-grid">
@@ -784,17 +920,6 @@
               <span><strong>添加分数规则</strong><span>按总分区间追加标签，用于 SCRM 写回。</span></span>
             </button>
           </div>
-        </section>
-
-        <section class="card section-card">
-          <div class="section-head">
-            <div>
-              <h3>问卷列表</h3>
-              <p class="section-subtitle">编辑、停用、删除、导出、复制链接、最近提交调试。</p>
-            </div>
-            <button id="reload-list-btn" type="button" class="btn ghost">刷新</button>
-          </div>
-          <div id="questionnaire-list" class="questionnaire-list"></div>
         </section>
       </aside>
 
@@ -870,6 +995,8 @@
   </div>
   <script>
     const listEl = document.getElementById('questionnaire-list');
+    const listSearchEl = document.getElementById('list-search');
+    const statusFilterEl = document.getElementById('status-filter');
     const previewHeadEl = document.getElementById('preview-head');
     const previewQuestionsEl = document.getElementById('preview-questions');
     const previewRulesWrapEl = document.getElementById('preview-rules-wrap');
@@ -877,6 +1004,7 @@
     const inspectorTitleEl = document.getElementById('inspector-title');
     const inspectorSubtitleEl = document.getElementById('inspector-subtitle');
     const topbarTitleEl = document.getElementById('topbar-title');
+    const draftIndicatorEl = document.getElementById('draft-indicator');
     const tagCatalogMessageEl = document.getElementById('tag-catalog-message');
     const drawerOverlayEl = document.getElementById('drawer-overlay');
     const drawerTitleEl = document.getElementById('drawer-title');
@@ -897,6 +1025,9 @@
       selection: { kind: 'questionnaire' },
       ruleMode: false,
       lastRuleKey: '',
+      initialSnapshot: '',
+      listSearch: '',
+      statusFilter: 'all',
       loadingList: false,
       tagModal: {
         open: false,
@@ -1275,6 +1406,7 @@
       state.ruleMode = false;
       state.lastRuleKey = state.questionnaire.score_rules[0]?.local_key || '';
       state.selection = { kind: 'questionnaire' };
+      rememberDraftSnapshot();
       renderWorkspace();
     }
 
@@ -1310,6 +1442,62 @@
           sort_order: Number(rule.sort_order || (index + 1)),
         })),
       };
+    }
+
+    function serializeDraftSnapshot() {
+      return JSON.stringify(serializePayload());
+    }
+
+    function isDraftDirty() {
+      return Boolean(state.questionnaire) && state.initialSnapshot !== serializeDraftSnapshot();
+    }
+
+    function updateDraftIndicator() {
+      draftIndicatorEl.classList.toggle('hidden', !isDraftDirty());
+    }
+
+    function rememberDraftSnapshot() {
+      state.initialSnapshot = state.questionnaire ? serializeDraftSnapshot() : '';
+      updateDraftIndicator();
+    }
+
+    function confirmDiscardChanges() {
+      if (!isDraftDirty()) return true;
+      return window.confirm('当前有未保存修改，确认放弃并继续吗？');
+    }
+
+    function normalizeDateValue(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return 0;
+      const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+      const timestamp = new Date(normalized).getTime();
+      return Number.isNaN(timestamp) ? 0 : timestamp;
+    }
+
+    function formatDateTime(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '-';
+      const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+      const date = new Date(normalized);
+      if (Number.isNaN(date.getTime())) return raw;
+      const pad = (number) => String(number).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function filteredQuestionnaires() {
+      const keyword = state.listSearch.trim().toLowerCase();
+      return [...state.list]
+        .filter((item) => {
+          if (state.statusFilter === 'enabled' && item.is_disabled) return false;
+          if (state.statusFilter === 'disabled' && !item.is_disabled) return false;
+          if (!keyword) return true;
+          return String(item.name || '').toLowerCase().includes(keyword);
+        })
+        .sort((left, right) => {
+          const statusDiff = Number(Boolean(left.is_disabled)) - Number(Boolean(right.is_disabled));
+          if (statusDiff !== 0) return statusDiff;
+          return normalizeDateValue(right.created_at) - normalizeDateValue(left.created_at);
+        });
     }
 
     async function fetchJson(url, options = {}) {
@@ -1357,10 +1545,16 @@
       }
     }
 
-    async function loadQuestionnaire(questionnaireId) {
+    async function loadQuestionnaire(questionnaireId, options = {}) {
+      if (!options.skipConfirm && !confirmDiscardChanges()) return;
       const data = await fetchJson(`/api/admin/questionnaires/${questionnaireId}`);
       resetDraft(data.questionnaire);
       renderList();
+    }
+
+    function startNewQuestionnaire(options = {}) {
+      if (!options.skipConfirm && !confirmDiscardChanges()) return;
+      resetDraft();
     }
 
     async function toggleQuestionnaire(item) {
@@ -1372,7 +1566,7 @@
       showToast(item.is_disabled ? '问卷已启用' : '问卷已停用');
       await loadList();
       if (state.currentId === item.id) {
-        await loadQuestionnaire(item.id);
+        await loadQuestionnaire(item.id, { skipConfirm: true });
       }
     }
 
@@ -1403,73 +1597,77 @@
       }
     }
 
-    async function showPreflight() {
-      try {
-        const result = await fetchJson('/api/admin/questionnaires/preflight');
-        openDrawer('环境检查', Object.entries(result).map(([key, value]) => ({
-          label: key,
-          value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-        })));
-      } catch (error) {
-        openDrawer('环境检查', [{ label: '提示', value: error.message || '环境检查失败，请稍后再试' }]);
+    function renderManagementTable() {
+      if (!state.list.length) {
+        listEl.innerHTML = '<div class="empty-state">还没有问卷，点击「创建新问卷」开始搭建。</div>';
+        return;
       }
-    }
-
-    async function showLatestDebug(questionnaireId) {
-      try {
-        const result = await fetchJson(`/api/admin/questionnaires/${questionnaireId}/latest-submit-debug`);
-        openDrawer('最近提交调试', [
-          { label: 'matched_by', value: result.matched_by || '-' },
-          { label: 'external_userid', value: result.external_userid || '-' },
-          { label: 'follow_user_userid', value: result.follow_user_userid || '-' },
-          { label: 'total_score', value: String(result.total_score ?? '-') },
-          { label: 'final_tags', value: (result.final_tags || []).join(', ') || '-' },
-          { label: 'scrm_apply_status', value: result.scrm_apply_status || '-' },
-        ]);
-      } catch (error) {
-        openDrawer('最近提交调试', [{ label: '提示', value: error.message || '最近提交调试获取失败，请稍后重试' }]);
+      const items = filteredQuestionnaires();
+      if (!items.length) {
+        listEl.innerHTML = '<div class="empty-state">没有符合当前筛选条件的问卷。</div>';
+        return;
       }
+      listEl.innerHTML = `
+        <table class="management-table">
+          <thead>
+            <tr>
+              <th>问卷名称</th>
+              <th>问卷创建时间</th>
+              <th>提交数</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item) => `
+              <tr class="management-row${state.currentId === item.id ? ' active' : ''}${item.is_disabled ? ' disabled' : ''}" data-id="${escapeHtml(String(item.id))}">
+                <td>
+                  <div class="name-line">
+                    <span class="name-main">${escapeHtml(item.name || '未命名问卷')}</span>
+                    <span class="status-badge${item.is_disabled ? ' disabled' : ''}">${item.is_disabled ? '已停用' : '启用中'}</span>
+                  </div>
+                  ${item.title ? `<div class="name-sub">${escapeHtml(item.title)}</div>` : ''}
+                </td>
+                <td><span class="table-text">${escapeHtml(formatDateTime(item.created_at))}</span></td>
+                <td><span class="table-number">${escapeHtml(String(item.submission_count || 0))}</span></td>
+                <td>
+                  <div class="row-actions">
+                    <button type="button" class="mini-btn edit" data-action="edit">编辑</button>
+                    <button type="button" class="mini-btn toggle" data-action="toggle">${item.is_disabled ? '启用' : '停用'}</button>
+                    <button type="button" class="mini-btn share" data-action="share">分享</button>
+                    <button type="button" class="mini-btn export" data-action="export">下载数据</button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+      listEl.querySelectorAll('.management-row').forEach((row) => {
+        const item = state.list.find((entry) => String(entry.id) === row.dataset.id);
+        if (!item) return;
+        row.querySelector('[data-action="edit"]').addEventListener('click', () => {
+          loadQuestionnaire(item.id).catch((error) => showToast(error.message || '问卷加载失败，请稍后重试', true));
+        });
+        row.querySelector('[data-action="toggle"]').addEventListener('click', () => {
+          toggleQuestionnaire(item).catch((error) => showToast(error.message || '问卷状态更新失败，请稍后重试', true));
+        });
+        row.querySelector('[data-action="share"]').addEventListener('click', () => {
+          copyText(item.public_url, '分享链接已复制');
+        });
+        row.querySelector('[data-action="export"]').addEventListener('click', () => {
+          window.open(`/api/admin/questionnaires/${item.id}/export`, '_blank');
+        });
+      });
     }
 
     function renderList() {
-      if (!state.list.length) {
-        listEl.innerHTML = '<div class="empty-state">还没有问卷，点击上方“新建问卷”开始搭建。</div>';
-        return;
-      }
-      listEl.innerHTML = '';
-      state.list.forEach((item) => {
-        const el = document.createElement('article');
-        el.className = `list-item${state.currentId === item.id ? ' active' : ''}`;
-        el.innerHTML = `
-          <div class="meta-row">
-            <span class="pill${item.is_disabled ? ' disabled' : ''}">${item.is_disabled ? '已停用' : '启用中'}</span>
-            <span class="pill">提交 ${item.submission_count || 0}</span>
-          </div>
-          <h4>${escapeHtml(item.name || '未命名问卷')}</h4>
-          <div class="muted">${escapeHtml(item.title || '未填写标题')}</div>
-          <div class="mini-actions">
-            <button type="button" class="mini-btn edit">编辑</button>
-            <button type="button" class="mini-btn toggle">${item.is_disabled ? '启用' : '停用'}</button>
-            <button type="button" class="mini-btn export">导出数据</button>
-            <button type="button" class="mini-btn copy">复制链接</button>
-            <button type="button" class="mini-btn latest-debug">最近提交调试</button>
-            <button type="button" class="mini-btn danger remove">删除</button>
-          </div>
-        `;
-        el.querySelector('.edit').addEventListener('click', () => loadQuestionnaire(item.id).catch((error) => showToast(error.message || '问卷加载失败，请稍后重试', true)));
-        el.querySelector('.toggle').addEventListener('click', () => toggleQuestionnaire(item).catch((error) => showToast(error.message || '问卷状态更新失败，请稍后重试', true)));
-        el.querySelector('.export').addEventListener('click', () => window.open(`/api/admin/questionnaires/${item.id}/export`, '_blank'));
-        el.querySelector('.copy').addEventListener('click', () => copyText(item.public_url, '链接已复制'));
-        el.querySelector('.latest-debug').addEventListener('click', () => showLatestDebug(item.id));
-        el.querySelector('.remove').addEventListener('click', () => deleteQuestionnaireItem(item).catch((error) => showToast(error.message || '删除失败，请稍后重试', true)));
-        listEl.appendChild(el);
-      });
+      renderManagementTable();
     }
 
     function renderTopbar() {
       const title = state.questionnaire.name || state.questionnaire.title || '新建问卷';
       topbarTitleEl.textContent = title;
-      document.getElementById('copy-link-btn').disabled = !buildPublicUrl();
+      updateDraftIndicator();
     }
 
     function renderPreview() {
@@ -1508,6 +1706,7 @@
 
       previewRulesWrapEl.classList.add('hidden');
       previewRulesWrapEl.innerHTML = '';
+      updateDraftIndicator();
     }
 
     function mountTagPicker(host, selectedTagIds, onChange, target) {
@@ -1529,19 +1728,29 @@
         const merged = normalizeTagIds([...normalizedSelected, ...parseManualTagInput(manualInput.value || '')]);
         host.querySelector('.tag-badges').innerHTML = buildTagBadges(merged);
         onChange(merged);
+        updateDraftIndicator();
       });
       openButton.addEventListener('click', () => openTagModal(target, onChange.currentValue ? onChange.currentValue() : normalizedSelected));
     }
 
     function renderQuestionnaireInspector() {
       inspectorTitleEl.textContent = '问卷设置';
-      inspectorSubtitleEl.textContent = '这里只编辑当前问卷的基础信息，不在顶部重复展示字段。';
+      inspectorSubtitleEl.textContent = '编辑当前问卷的基础信息。';
+      const deleteSection = state.currentId ? `
+        <section class="config-group danger-zone">
+          <div class="config-head">
+            <div>
+              <h3>危险操作</h3>
+            </div>
+          </div>
+          <button id="delete-questionnaire-btn" type="button" class="btn danger">删除问卷</button>
+        </section>
+      ` : '';
       inspectorBodyEl.innerHTML = `
         <section class="config-group">
           <div class="config-head">
             <div>
               <h3>基础信息</h3>
-              <p>问卷本身的字段都放在这里集中维护。</p>
             </div>
           </div>
           <label class="field">问卷名称
@@ -1567,7 +1776,7 @@
             </label>
           </div>
         </section>
-        <div class="helper-note">复制链接按钮保留在顶部；如果已有对外链接，点击即可直接复制。</div>
+        ${deleteSection}
       `;
       inspectorBodyEl.querySelector('#field-name').addEventListener('input', (event) => {
         state.questionnaire.name = event.target.value;
@@ -1584,6 +1793,7 @@
       });
       inspectorBodyEl.querySelector('#field-redirect-url').addEventListener('input', (event) => {
         state.questionnaire.redirect_url = event.target.value;
+        updateDraftIndicator();
       });
       inspectorBodyEl.querySelector('#field-slug').addEventListener('input', (event) => {
         state.questionnaire.slug = event.target.value;
@@ -1591,7 +1801,17 @@
       });
       inspectorBodyEl.querySelector('#field-is-disabled').addEventListener('change', (event) => {
         state.questionnaire.is_disabled = event.target.checked;
+        updateDraftIndicator();
       });
+      const deleteBtn = inspectorBodyEl.querySelector('#delete-questionnaire-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => {
+          deleteQuestionnaireItem({
+            id: state.currentId,
+            name: state.questionnaire.name || '未命名问卷',
+          }).catch((error) => showToast(error.message || '删除失败，请稍后重试', true));
+        });
+      }
     }
 
     function renderQuestionInspector(question) {
@@ -1908,18 +2128,25 @@
       showToast(wasEditing ? '问卷已更新' : '问卷已创建');
     }
 
-    document.getElementById('new-btn').addEventListener('click', () => resetDraft());
+    document.getElementById('create-btn').addEventListener('click', () => startNewQuestionnaire());
     document.getElementById('reset-btn').addEventListener('click', () => {
+      if (!confirmDiscardChanges()) return;
       if (state.currentId) {
-        loadQuestionnaire(state.currentId).catch((error) => showToast(error.message || '重置失败，请稍后重试', true));
+        loadQuestionnaire(state.currentId, { skipConfirm: true }).catch((error) => showToast(error.message || '重置失败，请稍后重试', true));
         return;
       }
       resetDraft();
     });
     document.getElementById('save-btn').addEventListener('click', () => saveQuestionnaire().catch((error) => showToast(error.message || '保存失败，请检查当前配置后重试', true)));
-    document.getElementById('copy-link-btn').addEventListener('click', () => copyText(buildPublicUrl(), '链接已复制'));
-    document.getElementById('preflight-btn').addEventListener('click', () => showPreflight());
     document.getElementById('reload-list-btn').addEventListener('click', () => loadList());
+    listSearchEl.addEventListener('input', (event) => {
+      state.listSearch = event.target.value || '';
+      renderList();
+    });
+    statusFilterEl.addEventListener('change', (event) => {
+      state.statusFilter = event.target.value || 'all';
+      renderList();
+    });
     document.getElementById('add-single').addEventListener('click', () => addQuestion('single_choice'));
     document.getElementById('add-multi').addEventListener('click', () => addQuestion('multi_choice'));
     document.getElementById('add-textarea').addEventListener('click', () => addQuestion('textarea'));
