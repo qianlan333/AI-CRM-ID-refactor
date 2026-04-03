@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Response, current_app, jsonify, render_template, request
+from flask import Response, current_app, jsonify, request
 
 from ..domains.questionnaire import build_questionnaire_preflight_payload
 from ..services import (
@@ -15,7 +15,7 @@ from ..services import (
     update_questionnaire,
 )
 from ..wecom_client import WeComClientError
-from .common import _build_excel_xml, _wecom_error_response
+from .common import _build_excel_xml, _deprecated_admin_redirect, _wecom_error_response
 from .questionnaire_support import _attach_questionnaire_links
 
 
@@ -47,7 +47,7 @@ def admin_questionnaires_preflight():
 
 
 def admin_questionnaires_ui():
-    return render_template("admin_questionnaires.html")
+    return _deprecated_admin_redirect("api.admin_console_questionnaires")
 
 
 def admin_create_questionnaire():

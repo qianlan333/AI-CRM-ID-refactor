@@ -3,6 +3,7 @@ from __future__ import annotations
 from .service import (
     backfill_class_term_for_owner,
     backfill_owner_class_terms_into_lead_pool,
+    ensure_class_term_tag_mapping_seed,
     export_user_ops_pool,
     get_sidebar_lead_pool_status,
     get_user_ops_overview,
@@ -22,6 +23,7 @@ from .service import (
 __all__ = [
     "backfill_class_term_for_owner",
     "backfill_owner_class_terms_into_lead_pool",
+    "ensure_class_term_tag_mapping_seed",
     "export_user_ops_pool",
     "get_sidebar_lead_pool_status",
     "get_user_ops_overview",

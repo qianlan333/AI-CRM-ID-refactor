@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, jsonify, request
 
 from ..services import (
     export_class_user_management_records,
@@ -10,7 +10,7 @@ from ..services import (
 )
 from ..wecom_client import WeComClientError
 from .admin_support import _configured_signup_tag_rules_payload, _signup_tag_bootstrap_payload
-from .common import _build_excel_xml, _wecom_error_response
+from .common import _build_excel_xml, _deprecated_admin_redirect, _wecom_error_response
 
 
 def admin_class_user_management_bootstrap():
@@ -64,11 +64,11 @@ def admin_class_user_management_history():
 
 
 def admin_class_user_management_ui():
-    return render_template("admin_class_user_management.html")
+    return _deprecated_admin_redirect("api.admin_console_class_users", replacement="/admin/class-users?tab=class-users")
 
 
 def admin_class_user_backoffice_ui():
-    return render_template("admin_class_user_backoffice.html")
+    return _deprecated_admin_redirect("api.admin_console_class_users", replacement="/admin/class-users?tab=class-users")
 
 
 

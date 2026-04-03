@@ -1,0 +1,56 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  {% if actions %}
+  <div class="admin-toolbar">
+    {% for action in actions %}
+    <a class="admin-button admin-button--{{ action.variant }}" href="{{ action.href }}">{{ action.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="admin-state admin-state--empty">
+    <strong>{{ state_title }}</strong>
+    <span>{{ state_body }}</span>
+    {% if state_items %}
+    <ul class="admin-state-list">
+      {% for item in state_items %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</section>
+
+{% if table_rows %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>原始入口</h2>
+      <p>当前系统里已经存在的可用接口或页面入口。</p>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          {% for header in table_headers %}
+          <th>{{ header }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in table_rows %}
+        <tr>
+          <td><code>{{ row[0] }}</code></td>
+          <td>{{ row[1] }}</td>
+          <td>{{ row[2] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "admin_console/config_base.html" %}
+
+{% block config_content %}
+<section class="admin-card-grid">
+  {% for card in summary_cards %}
+  <article class="admin-card admin-stat-card admin-stat-card--nested">
+    <div class="admin-card-label">{{ card.label }}</div>
+    <div class="admin-card-value">{{ card.value }}</div>
+    <p class="admin-card-copy">{{ card.description }}</p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="admin-card">
+  <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
+    <label>
+      <span>筛选</span>
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="key / label / description">
+    </label>
+    <label>
+      <span>scope</span>
+      <select name="scope">
+        <option value="" {% if not filters.scope %}selected{% endif %}>全部</option>
+        <option value="editable" {% if filters.scope == "editable" %}selected{% endif %}>editable</option>
+        <option value="masked" {% if filters.scope == "masked" %}selected{% endif %}>masked</option>
+      </select>
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
+      <a class="admin-button admin-button--ghost" href="/admin/config/app-settings">重置</a>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>Editable Settings</h2>
+      <p>这些项可以直接编辑。保存后会写入 app_settings override，并记录审计。</p>
+    </div>
+  </div>
+  <form class="admin-form-grid admin-form-grid--stacked" method="post" action="/admin/config/app-settings/save">
+    {% for row in editable_rows %}
+    <label>
+      <span>{{ row.label }} <code>{{ row.key }}</code></span>
+      <input type="{{ row.input_type }}" name="setting__{{ row.key }}" value="{{ row.value }}">
+      <small>{{ row.description }} · source={{ row.source }} · last={{ row.last_modified_by or "-" }} {{ row.last_modified_at or "" }}</small>
+    </label>
+    {% endfor %}
+
+    <div class="admin-card-head">
+      <div>
+        <h2>Masked Secrets</h2>
+        <p>secret 不显示明文。留空表示保持当前值不变。</p>
+      </div>
+    </div>
+
+    {% for row in masked_rows %}
+    <label>
+      <span>{{ row.label }} <code>{{ row.key }}</code></span>
+      <input type="password" name="setting__{{ row.key }}" placeholder="current: {{ row.display_value or 'not configured' }}">
+      <small>{{ row.description }} · configured={{ "yes" if row.configured else "no" }} · last={{ row.last_modified_by or "-" }} {{ row.last_modified_at or "" }}</small>
+    </label>
+    {% endfor %}
+
+    <label>
+      <span>operator</span>
+      <input type="text" name="operator" placeholder="who edits this config">
+    </label>
+    <label class="admin-check-line">
+      <input type="checkbox" name="confirm" value="1">
+      <span>确认保存 app settings 变更</span>
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">保存 App Settings</button>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>设置快照</h2>
+      <p>当前配置页展示的实际运行时来源。</p>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>key</th>
+          <th>label</th>
+          <th>mode</th>
+          <th>value</th>
+          <th>source</th>
+          <th>last_modified_by</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><code>{{ row.key }}</code></td>
+          <td>{{ row.label }}</td>
+          <td>{{ row.mode }}</td>
+          <td>{{ row.display_value or "-" }}</td>
+          <td>{{ row.source }}</td>
+          <td>{{ row.last_modified_by or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近审计</h2>
+      <p>app_settings 最近变更记录。</p>
+    </div>
+  </div>
+  <div class="admin-audit-list">
+    {% for item in audit_entries %}
+    <div class="admin-audit-item">
+      <strong>{{ item.target_id }}</strong>
+      <span>{{ item.action_type }} · {{ item.operator }} · {{ item.created_at }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from flask import Blueprint
 
+from .admin_jobs import register_routes as register_admin_jobs_console_routes
+from .admin_customers import register_routes as register_admin_customer_console_routes
+from .admin_audit import register_routes as register_admin_audit_console_routes
+from .admin_mcp import register_routes as register_admin_mcp_console_routes
+from .admin_operations import register_routes as register_admin_operations_console_routes
+from .admin_questionnaire_console import register_routes as register_admin_questionnaire_console_routes
+from .admin_config import register_routes as register_admin_config_routes
+from .admin_console import register_routes as register_admin_console_routes
+from .admin_dashboard import register_routes as register_admin_dashboard_routes
 from .admin_class_user import register_routes as register_admin_class_user_routes
 from .admin_questionnaires import register_routes as register_admin_questionnaires_routes
 from .admin_user_ops import register_routes as register_admin_user_ops_routes
@@ -39,6 +48,15 @@ HTTP_ROUTE_MODULES = {
     "callbacks": "wecom_ability_service.http.callbacks",
     "tasks": "wecom_ability_service.http.tasks",
     "tags": "wecom_ability_service.http.tags",
+    "admin_console": "wecom_ability_service.http.admin_console",
+    "admin_jobs": "wecom_ability_service.http.admin_jobs",
+    "admin_audit": "wecom_ability_service.http.admin_audit",
+    "admin_customers": "wecom_ability_service.http.admin_customers",
+    "admin_mcp": "wecom_ability_service.http.admin_mcp",
+    "admin_operations": "wecom_ability_service.http.admin_operations",
+    "admin_questionnaire_console": "wecom_ability_service.http.admin_questionnaire_console",
+    "admin_config": "wecom_ability_service.http.admin_config",
+    "admin_dashboard": "wecom_ability_service.http.admin_dashboard",
     "admin_user_ops": "wecom_ability_service.http.admin_user_ops",
     "admin_class_user": "wecom_ability_service.http.admin_class_user",
     "admin_questionnaires": "wecom_ability_service.http.admin_questionnaires",
@@ -52,6 +70,15 @@ HTTP_ROUTE_PLACEMENT = {
         "contacts.py and identity.py for contact binding / identity resolution",
     ),
     "admin": (
+        "admin_console.py for /admin home, shell helpers, and legacy shell embeds",
+        "admin_jobs.py for /admin/jobs and confirmed sync/task actions",
+        "admin_audit.py for /admin/audit governance page and /api/admin/audit/logs",
+        "admin_customers.py for /admin/customers* pages and customer detail actions",
+        "admin_mcp.py for /admin/mcp console, preflight, and safe sample-call actions",
+        "admin_operations.py for /admin/user-ops, /admin/class-users, and confirmed operations actions",
+        "admin_questionnaire_console.py for /admin/questionnaires* shell pages",
+        "admin_config.py for /admin/config* pages and /api/admin/config* controllers",
+        "admin_dashboard.py for /api/admin/dashboard/* shell status",
         "admin_user_ops.py for /api/admin/user-ops* and /admin/user-ops/ui",
         "admin_class_user.py for /api/admin/class-user-management* and /admin/class-user-backoffice/ui",
         "admin_questionnaires.py for /api/admin/questionnaires* and /admin/questionnaires/ui",
@@ -72,6 +99,15 @@ HTTP_ROUTE_REGISTRARS = (
     ("identity", register_identity_routes),
     ("ops", register_ops_routes),
     ("settings", register_settings_routes),
+    ("admin_console", register_admin_console_routes),
+    ("admin_jobs", register_admin_jobs_console_routes),
+    ("admin_audit", register_admin_audit_console_routes),
+    ("admin_customers", register_admin_customer_console_routes),
+    ("admin_mcp", register_admin_mcp_console_routes),
+    ("admin_operations", register_admin_operations_console_routes),
+    ("admin_questionnaire_console", register_admin_questionnaire_console_routes),
+    ("admin_config", register_admin_config_routes),
+    ("admin_dashboard", register_admin_dashboard_routes),
     ("admin_user_ops", register_admin_user_ops_routes),
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_questionnaires", register_admin_questionnaires_routes),

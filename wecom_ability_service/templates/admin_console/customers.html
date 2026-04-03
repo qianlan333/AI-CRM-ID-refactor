@@ -1,0 +1,140 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>筛选与概览</h2>
+      <p>客户列表直接复用现有 customer center 读模型，所有筛选都是无副作用查询。</p>
+    </div>
+  </div>
+  <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_customers') }}">
+    <label class="admin-field">
+      <span>关键词</span>
+      <input type="text" name="keyword" value="{{ customer_payload.filters.keyword }}">
+    </label>
+    <label class="admin-field">
+      <span>Owner</span>
+      <select name="owner_userid">
+        <option value="">全部</option>
+        {% for item in customer_payload.owner_options %}
+        <option value="{{ item.userid }}"{% if customer_payload.filters.owner_userid == item.userid %} selected{% endif %}>{{ item.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="admin-field">
+      <span>状态</span>
+      <input type="text" name="status" value="{{ customer_payload.filters.status }}" placeholder="signed_999 / lead">
+    </label>
+    <label class="admin-field">
+      <span>标签</span>
+      <input type="text" name="tag" value="{{ customer_payload.filters.tag }}" placeholder="tag_id 或 tag_name">
+    </label>
+    <label class="admin-field">
+      <span>绑定</span>
+      <select name="is_bound">
+        <option value="">全部</option>
+        <option value="true"{% if customer_payload.filters.is_bound == "true" %} selected{% endif %}>已绑定</option>
+        <option value="false"{% if customer_payload.filters.is_bound == "false" %} selected{% endif %}>未绑定</option>
+      </select>
+    </label>
+    <label class="admin-field">
+      <span>手机号</span>
+      <input type="text" name="mobile" value="{{ customer_payload.filters.mobile }}">
+    </label>
+    <label class="admin-field">
+      <span>每页数量</span>
+      <input type="number" name="limit" min="1" max="200" value="{{ customer_payload.limit }}">
+    </label>
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
+      <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_console_customers') }}">重置</a>
+    </div>
+  </form>
+  <section class="admin-stat-inline-grid">
+    <article class="admin-mini-stat">
+      <div class="admin-card-label">总客户数</div>
+      <div class="admin-mini-stat-value">{{ customer_payload.total }}</div>
+    </article>
+    <article class="admin-mini-stat">
+      <div class="admin-card-label">当前页</div>
+      <div class="admin-mini-stat-value">{{ customer_payload.customers|length }}</div>
+    </article>
+    <article class="admin-mini-stat">
+      <div class="admin-card-label">Offset</div>
+      <div class="admin-mini-stat-value">{{ customer_payload.offset }}</div>
+    </article>
+  </section>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>客户列表</h2>
+      <p>点击任意客户进入统一详情页，查看 timeline、recent messages、tags、tasks、问卷历史与 routing context。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="/api/customers">原始 API</a>
+    </div>
+  </div>
+  {% if customer_payload.customers %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>客户</th>
+          <th>Owner</th>
+          <th>手机号</th>
+          <th>状态</th>
+          <th>标签</th>
+          <th>最近消息</th>
+          <th>更新时间</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in customer_payload.customers %}
+        <tr>
+          <td>
+            <strong>{{ item.customer_name or "-" }}</strong>
+            <div class="admin-mono">{{ item.external_userid }}</div>
+            {% if item.remark %}
+            <div class="admin-muted">{{ item.remark }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {{ item.owner_display_name or item.owner_userid or "-" }}
+            <div class="admin-mono">{{ item.owner_userid or "-" }}</div>
+          </td>
+          <td>{{ item.mobile or "-" }}</td>
+          <td>
+            <span class="admin-inline-chip">{{ item.signup_label_name or item.class_user_status.signup_status or "-" }}</span>
+          </td>
+          <td>
+            <div class="admin-token-list">
+              {% for tag in item.tags[:3] %}
+              <span class="admin-token">{{ tag.tag_name or tag.tag_id }}</span>
+              {% endfor %}
+              {% if item.tags|length == 0 %}
+              <span class="admin-muted">-</span>
+              {% endif %}
+            </div>
+          </td>
+          <td>{{ item.last_message_at or "-" }}</td>
+          <td>{{ item.updated_at or "-" }}</td>
+          <td>
+            <a class="admin-inline-link" href="{{ url_for('api.admin_console_customer_detail', external_userid=item.external_userid) }}">进入详情</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-state">
+    <strong>暂无客户</strong>
+    <span>当前筛选条件下没有命中数据。</span>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
