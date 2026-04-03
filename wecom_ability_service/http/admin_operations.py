@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import request, url_for
+from flask import render_template, request, url_for
 
 from ..domains.admin_console import build_operations_payload, execute_operations_action
 from .admin_console import _breadcrumb_items, _render_admin_template
@@ -31,7 +31,7 @@ def _render_operations_page(
 
 
 def admin_console_user_ops():
-    return _render_operations_page()
+    return render_template("admin_user_ops.html")
 
 
 def admin_console_class_users():

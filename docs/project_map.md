@@ -121,6 +121,7 @@ AI-CRM/
   - 再看 [`wecom_ability_service/services.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/services.py)
 - 理解 user ops v2
   - 先看 [`docs/user_ops_v2.md`](/Users/qianlan/Downloads/极简%20crm/docs/user_ops_v2.md)
+  - 重点按“转化链路运营页”口径理解，不要再按旧后台工具页口径理解
   - 再看 [`tests/test_user_ops_api.py`](/Users/qianlan/Downloads/极简%20crm/tests/test_user_ops_api.py)
 - 理解 MCP / OpenClaw
   - 先看 [`docs/mcp_usage.md`](/Users/qianlan/Downloads/极简%20crm/docs/mcp_usage.md)

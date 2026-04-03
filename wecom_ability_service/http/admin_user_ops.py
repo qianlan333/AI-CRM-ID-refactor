@@ -1,36 +1,49 @@
 from __future__ import annotations
 
-from flask import Response, jsonify, request
+from flask import Response, jsonify, render_template, request
 
 from ..domains.routing_config import DEFAULT_SALES_ROUTE_OWNER_USERID
 from ..services import (
     backfill_owner_class_terms_into_lead_pool,
+    execute_user_ops_batch_send,
     export_user_ops_pool,
     get_user_ops_overview,
     import_activation_status_source,
     import_mobile_class_term_source,
     list_user_ops_history,
     list_user_ops_pool,
+    list_user_ops_send_records,
+    preview_user_ops_batch_send,
     run_due_user_ops_deferred_jobs,
+    set_user_ops_do_not_disturb,
 )
 from ..wecom_client import WeComClientError
-from .common import _build_excel_xml, _coerce_request_bool, _deprecated_admin_redirect, _wecom_error_response
+from .common import _build_excel_xml, _coerce_request_bool, _wecom_error_response
+
+
+def _page_filters_from_request_args() -> dict[str, str]:
+    return {
+        "wecom_status": request.args.get("wecom_status", "").strip(),
+        "mobile_binding_status": request.args.get("mobile_binding_status", "").strip(),
+        "activation_bucket": request.args.get("activation_bucket", "").strip(),
+        "class_term_no": request.args.get("class_term_no", "").strip(),
+        "keyword": request.args.get("keyword", "").strip(),
+        "mobile": request.args.get("mobile", "").strip(),
+        "owner_userid": request.args.get("owner_userid", "").strip(),
+        "is_wecom_added": request.args.get("is_wecom_added", "").strip(),
+        "is_mobile_bound": request.args.get("is_mobile_bound", "").strip(),
+        "huangxiaocan_activation_state": request.args.get("huangxiaocan_activation_state", "").strip(),
+        "query": request.args.get("query", "").strip(),
+    }
 
 
 def admin_user_ops_overview():
-    payload = get_user_ops_overview()
+    payload = get_user_ops_overview(**_page_filters_from_request_args())
     return jsonify({"ok": True, **payload})
 
 
 def admin_user_ops_list():
-    payload = list_user_ops_pool(
-        is_wecom_added=request.args.get("is_wecom_added", "").strip(),
-        is_mobile_bound=request.args.get("is_mobile_bound", "").strip(),
-        huangxiaocan_activation_state=request.args.get("huangxiaocan_activation_state", "").strip(),
-        class_term_no=request.args.get("class_term_no", "").strip(),
-        owner_userid=request.args.get("owner_userid", "").strip(),
-        query=request.args.get("query", "").strip(),
-    )
+    payload = list_user_ops_pool(**_page_filters_from_request_args())
     return jsonify({"ok": True, **payload})
 
 
@@ -177,14 +190,7 @@ def admin_user_ops_run_deferred_jobs():
 
 
 def admin_user_ops_export():
-    export_payload = export_user_ops_pool(
-        is_wecom_added=request.args.get("is_wecom_added", "").strip(),
-        is_mobile_bound=request.args.get("is_mobile_bound", "").strip(),
-        huangxiaocan_activation_state=request.args.get("huangxiaocan_activation_state", "").strip(),
-        class_term_no=request.args.get("class_term_no", "").strip(),
-        owner_userid=request.args.get("owner_userid", "").strip(),
-        query=request.args.get("query", "").strip(),
-    )
+    export_payload = export_user_ops_pool(**_page_filters_from_request_args())
     content = _build_excel_xml(export_payload["headers"], export_payload["rows"])
     return Response(
         content,
@@ -193,8 +199,49 @@ def admin_user_ops_export():
     )
 
 
+def admin_user_ops_do_not_disturb():
+    payload_json = request.get_json(silent=True) or {}
+    try:
+        payload = set_user_ops_do_not_disturb(payload_json)
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **payload})
+
+
+def admin_user_ops_batch_send_preview():
+    payload_json = request.get_json(silent=True) or {}
+    try:
+        payload = preview_user_ops_batch_send(payload_json)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **payload})
+
+
+def admin_user_ops_batch_send_execute():
+    payload_json = request.get_json(silent=True) or {}
+    try:
+        payload = execute_user_ops_batch_send(payload_json)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except WeComClientError as exc:
+        return _wecom_error_response(exc)
+    return jsonify({"ok": True, **payload})
+
+
+def admin_user_ops_send_records():
+    try:
+        limit = int(request.args.get("limit", "20").strip() or "20")
+        offset = int(request.args.get("offset", "0").strip() or "0")
+    except ValueError:
+        return jsonify({"ok": False, "error": "limit and offset must be integers"}), 400
+    payload = list_user_ops_send_records(limit=limit, offset=offset)
+    return jsonify({"ok": True, **payload})
+
+
 def admin_user_ops_ui():
-    return _deprecated_admin_redirect("api.admin_console_user_ops")
+    return render_template("admin_user_ops.html")
 
 
 
@@ -210,4 +257,8 @@ def register_routes(bp):
     bp.route('/api/internal/user-ops/lead-pool/backfill-owner-class-terms', methods=['POST'])(internal_user_ops_backfill_owner_class_terms)
     bp.route('/api/admin/user-ops/run-deferred-jobs', methods=['POST'])(admin_user_ops_run_deferred_jobs)
     bp.route('/api/admin/user-ops/export', methods=['GET'])(admin_user_ops_export)
+    bp.route('/api/admin/user-ops/do-not-disturb', methods=['POST'])(admin_user_ops_do_not_disturb)
+    bp.route('/api/admin/user-ops/batch-send/preview', methods=['POST'])(admin_user_ops_batch_send_preview)
+    bp.route('/api/admin/user-ops/batch-send/execute', methods=['POST'])(admin_user_ops_batch_send_execute)
+    bp.route('/api/admin/user-ops/send-records', methods=['GET'])(admin_user_ops_send_records)
     bp.route('/admin/user-ops/ui', methods=['GET'])(admin_user_ops_ui)

@@ -223,6 +223,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_user_ops_pool_current_external_non_empty
 ON user_ops_pool_current (external_userid)
 WHERE external_userid <> '';
 
+CREATE TABLE IF NOT EXISTS user_ops_do_not_disturb (
+    id BIGSERIAL PRIMARY KEY,
+    external_userid TEXT NOT NULL DEFAULT '',
+    mobile TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    reason_code TEXT NOT NULL DEFAULT '',
+    reason_text TEXT NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_do_not_disturb_external_active
+ON user_ops_do_not_disturb (external_userid, is_active, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_do_not_disturb_mobile_active
+ON user_ops_do_not_disturb (mobile, is_active, updated_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_ops_do_not_disturb_external_reason
+ON user_ops_do_not_disturb (external_userid, source_type, reason_code)
+WHERE external_userid <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_ops_do_not_disturb_mobile_reason
+ON user_ops_do_not_disturb (mobile, source_type, reason_code)
+WHERE external_userid = '' AND mobile <> '';
+
+CREATE TABLE IF NOT EXISTS user_ops_send_records (
+    id BIGSERIAL PRIMARY KEY,
+    task_type TEXT NOT NULL DEFAULT 'private_message',
+    outbound_task_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    selected_count INTEGER NOT NULL DEFAULT 0,
+    eligible_count INTEGER NOT NULL DEFAULT 0,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
+    skipped_reasons_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    include_do_not_disturb BOOLEAN NOT NULL DEFAULT FALSE,
+    content_preview TEXT NOT NULL DEFAULT '',
+    image_count INTEGER NOT NULL DEFAULT 0,
+    sender_userids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    filter_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    operator TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'created',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_send_records_created
+ON user_ops_send_records (created_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS user_ops_experience_leads (
     id BIGSERIAL PRIMARY KEY,
     mobile TEXT NOT NULL UNIQUE,

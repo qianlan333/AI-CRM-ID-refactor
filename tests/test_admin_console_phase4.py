@@ -337,9 +337,9 @@ def test_admin_operations_page_and_migrate_action_are_audited(app, client):
     page_response = client.get("/admin/user-ops")
     page_html = page_response.get_data(as_text=True)
     assert page_response.status_code == 200
-    assert "运营总览" in page_html
-    assert "运营名单" in page_html
-    assert "班级状态" in page_html
+    assert "运营管理" in page_html
+    assert "转化链路运营页" in page_html
+    assert "批量群发" in page_html
 
     action_response = client.post(
         "/admin/user-ops/actions",

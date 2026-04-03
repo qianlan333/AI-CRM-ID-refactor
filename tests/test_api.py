@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 import json
 from pathlib import Path
@@ -32,6 +33,11 @@ class FakeResponse:
     def raise_for_status(self):
         if self.status_code >= 400:
             raise RuntimeError(f"http error: {self.status_code}")
+
+
+def _test_image_data_url(label: str = "img") -> str:
+    encoded = base64.b64encode(f"fake-image-{label}".encode("utf-8")).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 @pytest.fixture()
@@ -219,7 +225,7 @@ def fake_wecom_get(url, params=None, timeout=None):
     raise AssertionError(f"unexpected GET url: {url}")
 
 
-def fake_wecom_post(url, params=None, json=None, timeout=None):
+def fake_wecom_post(url, params=None, json=None, timeout=None, files=None):
     if url.endswith("/cgi-bin/externalcontact/get_corp_tag_list"):
         return FakeResponse(
             {
@@ -280,6 +286,10 @@ def fake_wecom_post(url, params=None, json=None, timeout=None):
             },
         }
         return FakeResponse({"errcode": 0, "errmsg": "ok", **details[chat_id]})
+    if url.endswith("/cgi-bin/media/upload"):
+        uploaded = (files or {}).get("media")
+        file_name = uploaded[0] if isinstance(uploaded, tuple) and uploaded else "uploaded-image.png"
+        return FakeResponse({"errcode": 0, "errmsg": "ok", "type": "image", "media_id": f"media-{file_name}"})
     if url.endswith("/cgi-bin/externalcontact/add_msg_template"):
         return FakeResponse({"errcode": 0, "errmsg": "ok", "msgid": "task-msg-001"})
     if url.endswith("/cgi-bin/externalcontact/add_moment_task"):
@@ -712,6 +722,89 @@ def test_create_private_message_task(client, app, monkeypatch):
         assert row["total"] == 1
 
 
+def test_create_private_message_task_keeps_emoji_and_image_attachment(client, app, monkeypatch):
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/add_msg_template"):
+            captured_payloads.append(json or {})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "text": {"content": "今天统一跟进🙂"},
+            "images": [{"file_name": "emoji-proof.png", "data_url": _test_image_data_url("emoji")}],
+        },
+    )
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["wecom_result"]["msgid"] == "task-msg-001"
+    assert captured_payloads[0]["text"]["content"] == "今天统一跟进🙂"
+    assert captured_payloads[0]["attachments"] == [{"msgtype": "image", "image": {"media_id": "media-emoji-proof.png"}}]
+
+    with app.app_context():
+        row = get_db().execute("SELECT request_payload FROM outbound_tasks ORDER BY id DESC LIMIT 1").fetchone()
+        saved_payload = json.loads(row["request_payload"])
+        assert saved_payload["text"]["content"] == "今天统一跟进🙂"
+        assert saved_payload["attachments"] == [{"msgtype": "image", "image": {"media_id": "media-emoji-proof.png"}}]
+
+
+def test_create_private_message_task_supports_pure_image_and_limits_to_nine(client, monkeypatch):
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+    monkeypatch.setattr("requests.post", fake_wecom_post)
+
+    pure_image_response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "images": [{"file_name": "only-image.png", "data_url": _test_image_data_url("only")}],
+        },
+    )
+    pure_image_payload = pure_image_response.get_json()
+    assert pure_image_response.status_code == 200
+    assert pure_image_payload["wecom_result"]["msgid"] == "task-msg-001"
+
+    nine_images_response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "images": [
+                {"file_name": f"img-{index}.png", "data_url": _test_image_data_url(str(index))}
+                for index in range(1, 10)
+            ],
+        },
+    )
+    nine_images_payload = nine_images_response.get_json()
+    assert nine_images_response.status_code == 200
+    assert nine_images_payload["wecom_result"]["msgid"] == "task-msg-001"
+
+    ten_images_response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "images": [
+                {"file_name": f"img-{index}.png", "data_url": _test_image_data_url(str(index))}
+                for index in range(1, 11)
+            ],
+        },
+    )
+    ten_images_payload = ten_images_response.get_json()
+    assert ten_images_response.status_code == 400
+    assert ten_images_payload["ok"] is False
+    assert ten_images_payload["error"] == "at most 9 images are allowed"
+
+
 def test_create_moment_task(client, monkeypatch):
     monkeypatch.setattr("requests.get", fake_wecom_get)
     monkeypatch.setattr("requests.post", fake_wecom_post)
@@ -996,41 +1089,68 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     assert "status_fields.operation_flags" in ui_text
 
 
-def test_admin_questionnaire_ui_redirects_to_legacy_ui(client):
+def test_admin_questionnaire_ui_redirects_to_management_page(client):
     response = client.get("/admin/questionnaires/ui", follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/_legacy/questionnaires")
+    assert response.headers["Location"].endswith("/admin/questionnaires")
     assert response.headers["X-Admin-Deprecated"] == "true"
 
 
-def test_admin_questionnaire_shell_page_exists(client):
+def test_admin_questionnaire_legacy_ui_redirects_to_management_page(client):
+    response = client.get("/admin/_legacy/questionnaires", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/questionnaires")
+    assert response.headers["X-Admin-Deprecated"] == "true"
+
+
+def test_admin_questionnaire_management_page_exists(client):
     response = client.get("/admin/questionnaires")
     text = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert "CRM Console" in text
-    assert "问卷中心" in text
-    assert "环境检查" in text
-    assert "问卷列表" in text
+    assert "问卷管理" in text
+    assert "创建新问卷" in text
+    assert "问卷名称" in text
+    assert "创建时间" in text
+    assert "提交数" in text
+    assert '<div class="workspace">' not in text
 
 
-def test_admin_questionnaire_legacy_ui_contains_tag_picker_fallback(client):
-    response = client.get("/admin/_legacy/questionnaires")
+def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client):
+    response = client.get("/admin/questionnaires/new")
     text = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert "创建新问卷" in text
-    assert "问卷创建时间" in text
-    assert "分享" in text
-    assert "下载数据" in text
+    assert "返回问卷管理" in text
+    assert "新建问卷" in text
+    assert "保存问卷" in text
+    assert "重置当前" in text
+    assert "题型 / 组件区" in text
     assert "手工填写 tag_id 兜底" in text
     assert "企微标签加载失败，可稍后重试或手工填写 tag_id" in text
-    assert "环境检查" not in text
-    assert "最近提交调试" not in text
+    assert '<div id="questionnaire-list"' not in text
 
 
-def test_admin_questionnaire_legacy_ui_script_has_valid_javascript(client):
-    response = client.get("/admin/_legacy/questionnaires")
+def test_admin_questionnaire_editor_existing_page_contains_editor(client):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    questionnaire_id = create_response.get_json()["questionnaire"]["id"]
+
+    response = client.get(f"/admin/questionnaires/{questionnaire_id}")
+    text = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "返回问卷管理" in text
+    assert "编辑问卷" in text
+    assert "分享" in text
+    assert "下载数据" in text
+    assert "删除问卷" in text
+    assert '<div id="questionnaire-list"' not in text
+
+
+def test_admin_questionnaire_editor_page_script_has_valid_javascript(client):
+    response = client.get("/admin/questionnaires/new")
     text = response.get_data(as_text=True)
     match = re.search(r"<script>(.*?)</script>", text, re.S)
     assert match is not None
@@ -3647,6 +3767,35 @@ def test_customer_center_list_supports_filters(client, app):
     assert item["is_bound"] is True
     assert item["signup_status"] == "signed_999"
     assert item["signup_label_name"] == "已报名999"
+
+
+def test_customers_detail_regression_endpoint_still_works(client, app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO owner_role_map (userid, display_name, role, active)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("sales_regression", "回归顾问", "sales", 1),
+        )
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            ("wm_customers_regression_001", "回归客户", "sales_regression", "回归备注", "wm_customers_regression_001"),
+        )
+        db.commit()
+
+    response = client.get("/api/customers/wm_customers_regression_001")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["customer"]["external_userid"] == "wm_customers_regression_001"
+    assert payload["customer"]["customer_name"] == "回归客户"
+    assert payload["customer"]["owner_userid"] == "sales_regression"
 
 
 def test_customer_center_detail_aggregates_sidebar_related_data(client, app):

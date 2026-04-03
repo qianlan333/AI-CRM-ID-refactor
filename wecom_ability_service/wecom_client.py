@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import requests
 from flask import current_app
 
+from .domains.tasks.private_message import build_private_message_request_payload
 from .infra.settings import get_setting, set_settings
 
 wecom_logger = logging.getLogger("wecom_api")
@@ -222,6 +223,12 @@ class WeComClient:
         return self.mark_tag(payload)
 
     def create_private_message_task(self, payload: dict) -> dict:
+        normalized_payload, _ = build_private_message_request_payload(
+            payload,
+            upload_image=self._upload_private_message_image,
+        )
+        payload.clear()
+        payload.update(normalized_payload)
         return self.post("/cgi-bin/externalcontact/add_msg_template", payload)
 
     def create_group_message_task(self, payload: dict) -> dict:
@@ -259,6 +266,42 @@ class WeComClient:
 
     def get_group_chat(self, chat_id: str, need_name: int = 1) -> dict:
         return self.post("/cgi-bin/externalcontact/groupchat/get", {"chat_id": chat_id, "need_name": need_name})
+
+    def _upload_private_message_image(self, file_name: str, file_bytes: bytes, content_type: str) -> str:
+        access_token = self._get_access_token()
+        try:
+            response = requests.post(
+                f"{self.api_base}/cgi-bin/media/upload",
+                params={"access_token": access_token, "type": "image"},
+                files={"media": (file_name, file_bytes, content_type)},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
+        except requests.RequestException as exc:
+            wecom_logger.exception("wecom media upload failed file=%s", file_name)
+            raise WeComClientError(
+                f"WeCom image upload failed: {exc}",
+                stage="/cgi-bin/media/upload",
+                category="wecom_api",
+            ) from exc
+        if result.get("errcode") not in (0, None):
+            wecom_logger.error("wecom media upload nonzero payload=%s", result)
+            raise WeComClientError(
+                f"WeCom API failed: {result}",
+                stage="/cgi-bin/media/upload",
+                category=_classify_error(result.get("errcode"), result.get("errmsg", ""), "/cgi-bin/media/upload"),
+                payload=result,
+            )
+        media_id = str(result.get("media_id") or "").strip()
+        if not media_id:
+            raise WeComClientError(
+                f"WeCom image upload failed: {result}",
+                stage="/cgi-bin/media/upload",
+                category="wecom_api",
+                payload=result,
+            )
+        return media_id
 
     def _get_ticket(self, ticket_type: str) -> tuple[str, int]:
         access_token = self._get_access_token()

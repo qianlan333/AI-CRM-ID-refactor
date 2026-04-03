@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>统一用户运营看板 v2</title>
+  <title>运营管理</title>
   <style>
     :root {
-      --bg: #f5efe7;
-      --panel: rgba(255, 255, 255, 0.95);
-      --line: rgba(71, 50, 18, 0.12);
-      --text: #2b2015;
-      --muted: #7e6853;
-      --brand: #8c5c31;
-      --brand-strong: #6f431e;
-      --soft: #f4e8d8;
-      --ok: #2b7a57;
-      --warn: #d29a34;
-      --danger: #aa4e37;
-      --shadow: 0 20px 40px rgba(78, 56, 25, 0.08);
+      --bg: #f4efe7;
+      --panel: rgba(255, 252, 247, 0.96);
+      --line: rgba(58, 42, 23, 0.12);
+      --text: #2d2116;
+      --muted: #766552;
+      --brand: #9b4d1f;
+      --brand-strong: #7d3911;
+      --brand-soft: rgba(155, 77, 31, 0.10);
+      --ok: #1f7d59;
+      --warn: #9e6a17;
+      --danger: #b14a33;
+      --shadow: 0 22px 48px rgba(73, 49, 23, 0.10);
       --radius: 24px;
     }
     * { box-sizing: border-box; }
@@ -26,11 +26,15 @@
       color: var(--text);
       font-family: "PingFang SC", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
       background:
-        radial-gradient(circle at top right, rgba(193, 142, 81, 0.14), transparent 32%),
-        linear-gradient(180deg, #fbf8f3 0%, var(--bg) 100%);
+        radial-gradient(circle at top right, rgba(192, 129, 73, 0.18), transparent 32%),
+        linear-gradient(180deg, #fbf8f4 0%, var(--bg) 100%);
     }
     button, input, select, textarea { font: inherit; }
-    .shell { max-width: 1560px; margin: 0 auto; padding: 28px 16px 44px; }
+    .shell {
+      max-width: 1560px;
+      margin: 0 auto;
+      padding: 28px 18px 42px;
+    }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -38,123 +42,210 @@
       box-shadow: var(--shadow);
       backdrop-filter: blur(10px);
     }
-    .hero, .toolbar, .content-card { padding: 22px; margin-bottom: 18px; }
-    .hero-head, .toolbar-head, .toolbar-actions, .filters, .tabs {
+    .hero,
+    .filters-panel,
+    .table-panel {
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+    .hero-head,
+    .hero-actions,
+    .filters-head,
+    .filters-grid,
+    .toolbar-row,
+    .batch-row,
+    .drawer-head,
+    .modal-head,
+    .modal-actions {
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
     }
-    h1, h2 { margin: 0; }
+    .hero-copy {
+      max-width: 880px;
+    }
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
     h1 { font-size: 30px; }
-    .hero-copy { max-width: 820px; }
-    .hero-copy p, .subtle { color: var(--muted); line-height: 1.7; margin: 8px 0 0; }
-    .cards {
-      margin-top: 18px;
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 12px;
-    }
-    .stat {
-      border-radius: 18px;
-      border: 1px solid rgba(71, 50, 18, 0.08);
-      background: #fffdf9;
-      padding: 16px;
-    }
-    .stat .label {
+    h2 { font-size: 22px; }
+    h3 { font-size: 16px; }
+    .subtle {
       color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 8px;
+      line-height: 1.7;
+      margin-top: 8px;
     }
-    .stat .value {
-      font-size: 28px;
-      font-weight: 700;
+    .hero-actions {
+      justify-content: flex-end;
     }
-    .btn, .tab-btn {
-      border: 1px solid rgba(71, 50, 18, 0.12);
+    .btn {
+      border: 1px solid rgba(58, 42, 23, 0.12);
       border-radius: 999px;
-      padding: 10px 14px;
+      min-height: 42px;
+      padding: 0 16px;
       background: #fffdfa;
       color: var(--text);
-      cursor: pointer;
       font-weight: 700;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
     }
-    .btn.primary, .tab-btn.active {
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(73, 49, 23, 0.08);
+    }
+    .btn.primary {
       color: #fff;
       border-color: transparent;
       background: linear-gradient(135deg, var(--brand), var(--brand-strong));
     }
     .btn.ghost {
-      background: var(--soft);
+      background: var(--brand-soft);
       color: var(--brand-strong);
       border-color: transparent;
     }
-    .btn:disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
+    .btn.soft {
+      background: #fff7ee;
     }
-    .filters {
-      margin-top: 14px;
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+    .cards {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .card-btn {
+      border: 1px solid rgba(58, 42, 23, 0.08);
+      border-radius: 20px;
+      padding: 16px;
+      text-align: left;
+      background: #fffdf8;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+    .card-btn:hover {
+      transform: translateY(-1px);
+    }
+    .card-btn.selected {
+      border-color: rgba(155, 77, 31, 0.34);
+      background: linear-gradient(180deg, rgba(155, 77, 31, 0.14), rgba(255, 248, 240, 0.98));
+      box-shadow: inset 0 0 0 1px rgba(155, 77, 31, 0.10);
+    }
+    .card-btn .label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .card-btn .value {
+      font-size: 30px;
+      font-weight: 700;
+    }
+    .filters-head {
+      margin-bottom: 16px;
+    }
+    .filters-grid {
       justify-content: flex-start;
+      align-items: flex-end;
     }
     .field {
       display: flex;
       flex-direction: column;
       gap: 6px;
-      min-width: 150px;
+      min-width: 180px;
     }
-    .field.search {
+    .field.wide {
       min-width: 240px;
-      flex: 1 1 260px;
+      flex: 1 1 280px;
     }
     label {
-      color: var(--muted);
       font-size: 13px;
+      color: var(--muted);
     }
-    select, input[type="text"], textarea, input[type="file"] {
-      min-height: 42px;
+    select,
+    input[type="text"],
+    textarea {
+      width: 100%;
+      min-height: 44px;
       padding: 10px 12px;
       border-radius: 14px;
-      border: 1px solid rgba(71, 50, 18, 0.12);
+      border: 1px solid rgba(58, 42, 23, 0.12);
       background: #fffdfa;
       color: var(--text);
     }
     textarea {
-      min-height: 108px;
+      min-height: 140px;
       resize: vertical;
     }
-    .split {
-      display: grid;
-      grid-template-columns: 1.8fr 1fr;
-      gap: 18px;
+    .toolbar-row {
+      margin-bottom: 16px;
     }
     .status-line {
-      color: var(--muted);
-      margin: 0 0 14px;
       min-height: 22px;
+      color: var(--muted);
+      line-height: 1.6;
     }
-    .status-line.error { color: var(--danger); }
     .status-line.success { color: var(--ok); }
+    .status-line.error { color: var(--danger); }
+    .status-line.warn { color: var(--warn); }
+    .batch-bar {
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: #fff7ef;
+      border: 1px solid rgba(155, 77, 31, 0.12);
+    }
+    .batch-row {
+      justify-content: space-between;
+    }
+    .batch-copy {
+      display: grid;
+      gap: 4px;
+    }
     .table-wrap {
       overflow-x: auto;
     }
     table {
       width: 100%;
-      min-width: 1100px;
+      min-width: 1320px;
       border-collapse: collapse;
     }
-    th, td {
+    th,
+    td {
       padding: 13px 14px;
       text-align: left;
-      border-bottom: 1px solid rgba(71, 50, 18, 0.08);
-      font-size: 14px;
+      border-bottom: 1px solid rgba(58, 42, 23, 0.08);
       vertical-align: top;
+      font-size: 14px;
     }
     th {
       color: var(--muted);
+      background: rgba(245, 234, 220, 0.55);
       font-weight: 600;
-      background: rgba(244, 232, 216, 0.42);
+    }
+    .cell-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .table-empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 28px 12px;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
     }
     .tag {
       display: inline-flex;
@@ -163,249 +254,290 @@
       border-radius: 999px;
       font-size: 12px;
       font-weight: 700;
-      background: var(--soft);
+      background: #f3eadf;
       color: var(--brand-strong);
     }
-    .tag.ok { background: rgba(43, 122, 87, 0.12); color: var(--ok); }
-    .tag.warn { background: rgba(210, 154, 52, 0.14); color: #8a5a00; }
-    .tag.danger { background: rgba(170, 78, 55, 0.14); color: var(--danger); }
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-      color: var(--muted);
+    .tag.ok {
+      background: rgba(31, 125, 89, 0.12);
+      color: var(--ok);
     }
-    .muted { color: var(--muted); }
-    .hidden { display: none !important; }
-    .modal-backdrop {
+    .tag.warn {
+      background: rgba(158, 106, 23, 0.14);
+      color: var(--warn);
+    }
+    .tag.danger {
+      background: rgba(177, 74, 51, 0.14);
+      color: var(--danger);
+    }
+    .reason-list {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .hidden {
+      display: none !important;
+    }
+    .backdrop {
       position: fixed;
       inset: 0;
       z-index: 40;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      background: rgba(43, 32, 21, 0.36);
+      justify-content: flex-end;
+      background: rgba(45, 33, 22, 0.30);
       backdrop-filter: blur(6px);
-      overflow-y: auto;
     }
+    .backdrop.center {
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .drawer,
     .modal {
-      width: min(720px, 100%);
-      max-height: min(80vh, 900px);
-      padding: 22px;
-      border-radius: var(--radius);
+      background: #fffdf8;
       border: 1px solid var(--line);
-      background: #fffdf9;
       box-shadow: var(--shadow);
+    }
+    .drawer {
+      width: min(520px, 100vw);
+      height: 100vh;
+      padding: 22px;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 14px;
-      overflow: hidden;
-      position: relative;
+      gap: 16px;
     }
-    .modal-head, .modal-actions {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .drawer-section {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 18px;
+      background: #fff8f0;
+      border: 1px solid rgba(58, 42, 23, 0.08);
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 14px;
+    }
+    .detail-item {
+      display: grid;
+      gap: 4px;
+    }
+    .detail-item strong {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .timeline-list,
+    .record-list {
+      display: grid;
       gap: 12px;
     }
-    .modal-body {
+    .timeline-item,
+    .record-item {
+      padding: 14px;
+      border-radius: 16px;
+      background: #fffdfa;
+      border: 1px solid rgba(58, 42, 23, 0.08);
+    }
+    .timeline-item p,
+    .record-item p {
+      margin-top: 6px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .meta-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .modal {
+      width: min(1240px, 100%);
+      max-height: calc(100vh - 40px);
+      padding: 22px;
+      border-radius: var(--radius);
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 14px;
-      min-height: 0;
+      gap: 16px;
     }
-    textarea {
-      width: 100%;
-      min-height: 180px;
-      padding: 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(71, 50, 18, 0.12);
-      background: #fffdfa;
-      color: var(--text);
-      resize: vertical;
-      font: inherit;
+    .modal-body {
+      display: grid;
+      grid-template-columns: minmax(340px, 0.4fr) minmax(460px, 0.6fr);
+      gap: 16px;
+      align-items: start;
     }
-    input[type="file"] {
-      min-height: 42px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      border: 1px dashed rgba(71, 50, 18, 0.20);
-      background: #fffdfa;
-      color: var(--text);
+    .panel-soft {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(58, 42, 23, 0.08);
+      background: #fff8f0;
+      display: grid;
+      gap: 12px;
     }
-    .hint {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.7;
-      margin: 0;
+    .preview-panel {
+      min-height: 560px;
+      grid-template-rows: auto auto 1fr;
     }
     .checkbox-line {
       display: flex;
+      gap: 10px;
       align-items: center;
-      gap: 10px;
-      min-height: 42px;
       padding: 10px 12px;
       border-radius: 14px;
-      border: 1px solid rgba(71, 50, 18, 0.12);
       background: #fffdfa;
+      border: 1px solid rgba(58, 42, 23, 0.10);
     }
-    .checkbox-line input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-      margin: 0;
+    .inline-note {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
     }
-    .preview-box {
-      border: 1px solid rgba(71, 50, 18, 0.12);
+    .image-picker {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
       border-radius: 16px;
-      background: #fffdf9;
-      padding: 14px;
-      display: grid;
-      gap: 12px;
-      min-height: 0;
+      background: #fffdfa;
+      border: 1px solid rgba(58, 42, 23, 0.08);
     }
-    .preview-grid {
+    .image-picker-head {
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .image-input-hidden {
+      display: none;
+    }
+    .image-thumb-list {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
       gap: 10px;
     }
-    .preview-stat {
+    .image-thumb {
+      position: relative;
       border-radius: 14px;
-      background: rgba(244, 232, 216, 0.42);
-      padding: 10px 12px;
+      overflow: hidden;
+      background: #f7eee3;
+      border: 1px solid rgba(58, 42, 23, 0.10);
+      aspect-ratio: 1;
     }
-    .preview-stat strong {
+    .image-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
       display: block;
-      font-size: 20px;
-      margin-top: 6px;
+    }
+    .thumb-remove {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      border: none;
+      background: rgba(45, 33, 22, 0.82);
+      color: #fffdf8;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .preview-topline {
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .preview-copy {
+      display: grid;
+      gap: 6px;
+    }
+    .preview-copy strong {
+      font-size: 15px;
+    }
+    .tiny-metric {
+      min-width: 118px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: #fffdfa;
+      border: 1px solid rgba(58, 42, 23, 0.08);
+      text-align: right;
+    }
+    .tiny-metric span {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .tiny-metric strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 24px;
+      line-height: 1;
+    }
+    .preview-hint {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .preview-table-wrap {
+      overflow: auto;
+      max-height: 520px;
+      min-height: 420px;
+      border-radius: 16px;
+      border: 1px solid rgba(58, 42, 23, 0.08);
+      background: #fffdfa;
     }
     .preview-table {
       width: 100%;
-      min-width: 980px;
+      min-width: 760px;
       border-collapse: collapse;
-      table-layout: fixed;
     }
     .preview-table th,
     .preview-table td {
       padding: 10px 12px;
-      border-bottom: 1px solid rgba(71, 50, 18, 0.08);
-      text-align: left;
+      border-bottom: 1px solid rgba(58, 42, 23, 0.08);
       font-size: 13px;
+      text-align: left;
       vertical-align: top;
     }
-    .preview-table thead th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: #f8f0e3;
-    }
-    .modal.modal-wide {
-      width: min(1120px, 100%);
-    }
-    .modal-head.sticky-head {
-      position: sticky;
-      top: 0;
-      z-index: 3;
-      padding-bottom: 14px;
-      margin-bottom: -2px;
-      background: #fffdf9;
-      border-bottom: 1px solid rgba(71, 50, 18, 0.08);
-    }
-    #close-backfill-modal-btn {
-      position: relative;
-      z-index: 6;
-      pointer-events: auto;
-    }
-    .backfill-layout {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      min-height: 0;
-      flex: 1 1 auto;
-    }
-    .backfill-intro {
-      display: grid;
-      gap: 12px;
-      flex: 0 0 auto;
-    }
-    .preview-results {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      min-height: 0;
-      flex: 1 1 auto;
-    }
-    .preview-table-wrap {
-      border: 1px solid rgba(71, 50, 18, 0.10);
-      border-radius: 14px;
-      background: #fffdfa;
-      overflow: auto;
-      max-height: min(42vh, 420px);
-    }
-    .preview-cell {
-      white-space: normal;
-      word-break: break-word;
-      line-height: 1.6;
-    }
-    .preview-tags {
-      display: grid;
-      gap: 6px;
-    }
-    .preview-footer {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      flex: 0 0 auto;
-      position: sticky;
-      bottom: 0;
-      z-index: 2;
-      padding-top: 4px;
-      border-top: 1px solid rgba(71, 50, 18, 0.08);
-      background: #fffdf9;
-    }
-    .preview-footer-copy {
-      color: var(--muted);
-      line-height: 1.6;
-    }
-    .preview-footer-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .preview-footer-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .preview-table-empty {
-      text-align: center;
-      color: var(--muted);
-      padding: 28px 12px;
-    }
-    .btn.loading {
-      opacity: 0.8;
-      cursor: progress;
+    .preview-table th {
+      background: #f7eee3;
     }
     @media (max-width: 1180px) {
-      .cards, .split { grid-template-columns: 1fr; }
-      .preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 820px) {
-      .modal.modal-wide {
-        width: min(100%, calc(100vw - 20px));
-        max-height: calc(100vh - 20px);
-        padding: 18px;
-      }
-      .preview-grid {
+      .cards {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
-      .preview-table {
-        min-width: 860px;
+      .modal-body {
+        grid-template-columns: 1fr;
       }
-      .preview-table-wrap {
-        max-height: 44vh;
+    }
+    @media (max-width: 720px) {
+      .shell {
+        padding: 18px 12px 32px;
+      }
+      .hero,
+      .filters-panel,
+      .table-panel {
+        padding: 18px;
+      }
+      .cards,
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+      .drawer {
+        width: 100vw;
+      }
+      .modal {
+        width: min(100%, calc(100vw - 20px));
+        padding: 18px;
       }
     }
   </style>
@@ -415,202 +547,336 @@
     <section class="panel hero">
       <div class="hero-head">
         <div class="hero-copy">
-          <h1>统一用户运营看板 v2</h1>
-          <p>这版看板围绕手机号主线管理 CRM 用户投影池，聚焦手机号、是否已加微、班期和激活状态，统一查看并校准运营数据。</p>
+          <h1>运营管理</h1>
+          <p class="subtle">转化链路运营页。当前页面只围绕 `user_ops_pool_current` 投影池做总览、筛人、客户详情复用、批量群发、免打扰和发送记录，不再承载后台维护入口。</p>
         </div>
-        <div class="toolbar-actions">
-          <button id="open-class-term-import-modal-btn" class="btn ghost" type="button">导入学员</button>
-          <button id="open-activation-import-modal-btn" class="btn ghost" type="button">导入黄小璨激活状态</button>
-          <button id="export-btn" class="btn ghost" type="button">Export</button>
+        <div class="hero-actions">
+          <button id="export-current-btn" class="btn ghost" type="button">导出当前结果</button>
+          <button id="open-send-records-btn" class="btn ghost" type="button">发送记录</button>
+          <button id="refresh-page-btn" class="btn soft" type="button">刷新页面数据</button>
         </div>
       </div>
-      <div id="cards" class="cards"></div>
+      <div id="overview-cards" class="cards"></div>
     </section>
 
-    <section class="panel toolbar">
-      <div class="toolbar-head">
-        <div class="tabs">
-          <button class="tab-btn active" type="button" data-tab="current">引流品成员池</button>
-          <button class="tab-btn" type="button" data-tab="history">操作历史</button>
+    <section class="panel filters-panel">
+      <div class="filters-head">
+        <div>
+          <h2>筛选条件</h2>
+          <p class="subtle">顶部卡片筛选与下面的班期、关键词、手机号条件同时生效。</p>
         </div>
       </div>
-      <div class="filters">
-        <div class="field">
-          <label for="filter-is-wecom-added">是否已加微</label>
-          <select id="filter-is-wecom-added">
-            <option value="">全部</option>
-            <option value="true">已加微</option>
-            <option value="false">未加微</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="filter-is-mobile-bound">是否已绑手机号</label>
-          <select id="filter-is-mobile-bound">
-            <option value="">全部</option>
-            <option value="true">已绑手机号</option>
-            <option value="false">未绑手机号</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="filter-activation-state">黄小璨激活状态</label>
-          <select id="filter-activation-state"></select>
-        </div>
+      <div class="filters-grid">
         <div class="field">
           <label for="filter-class-term">班期</label>
           <select id="filter-class-term"></select>
         </div>
-        <div class="field search">
-          <label for="filter-query">搜索</label>
-          <input id="filter-query" type="text" placeholder="手机号 / external_userid / 客户昵称">
+        <div class="field wide">
+          <label for="filter-keyword">关键词</label>
+          <input id="filter-keyword" type="text" placeholder="客户昵称 / external_userid / 跟进人">
         </div>
-        <div class="field" style="justify-content:flex-end;">
+        <div class="field">
+          <label for="filter-mobile">手机号</label>
+          <input id="filter-mobile" type="text" placeholder="支持模糊筛选">
+        </div>
+        <div class="field">
           <label>&nbsp;</label>
-          <button id="search-btn" class="btn ghost" type="button">筛选</button>
+          <button id="apply-filters-btn" class="btn ghost" type="button">应用筛选</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button id="clear-filters-btn" class="btn soft" type="button">清空筛选</button>
         </div>
       </div>
     </section>
 
-    <section class="split">
-      <article id="current-panel" class="panel content-card">
-        <div class="toolbar-head" style="margin-bottom:14px;">
-          <div>
-            <h2>引流品成员池</h2>
-            <p class="subtle">读取 `user_ops_lead_pool_current`。当前主视图只围绕手机号主线、加微状态、绑手机号状态、班期和黄小璨激活状态展示。</p>
-          </div>
+    <section class="panel table-panel">
+      <div class="toolbar-row">
+        <div>
+          <h2>用户运营明细表</h2>
+          <p class="subtle">缺少 `external_userid` 的记录不能查看客户详情，也不能进入批量群发。</p>
         </div>
-        <p id="current-status" class="status-line">加载中...</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>手机号</th>
-                <th>是否已加微</th>
-                <th>是否已绑手机号</th>
-                <th>班期</th>
-                <th>黄小璨激活状态</th>
-                <th>客户昵称</th>
-                <th>external_userid</th>
-              </tr>
-            </thead>
-            <tbody id="current-body"></tbody>
-          </table>
-        </div>
-      </article>
+        <p id="page-status" class="status-line">加载中...</p>
+      </div>
 
-      <article id="history-panel" class="panel content-card hidden">
-        <div class="toolbar-head" style="margin-bottom:14px;">
-          <div>
-            <h2>操作历史</h2>
-            <p class="subtle">读取 `user_ops_lead_pool_history`，展示 lead pool 的增量写入、合并和自动验证入表记录。</p>
+      <div id="batch-bar" class="batch-bar hidden">
+        <div class="batch-row">
+          <div class="batch-copy">
+            <strong id="batch-selection-label">已选 0 人</strong>
+            <span class="subtle" id="batch-selection-subtle">支持全选当前筛选结果，并取消部分选中。</span>
+          </div>
+          <div class="hero-actions">
+            <button id="select-all-current-btn" class="btn soft" type="button">全选当前筛选结果</button>
+            <button id="clear-selection-btn" class="btn soft" type="button">清空选中</button>
+            <button id="open-batch-send-btn" class="btn primary" type="button">批量群发</button>
           </div>
         </div>
-        <p id="history-status" class="status-line">加载中...</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>手机号</th>
-                <th>external_userid</th>
-                <th>动作</th>
-                <th>来源</th>
-                <th>操作人</th>
-              </tr>
-            </thead>
-            <tbody id="history-body"></tbody>
-          </table>
-        </div>
-      </article>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 48px;">选中</th>
+              <th>客户昵称</th>
+              <th>手机号</th>
+              <th>班期</th>
+              <th>已加微状态</th>
+              <th>手机绑定状态</th>
+              <th>激活状态</th>
+              <th>external_userid</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="list-body"></tbody>
+        </table>
+      </div>
     </section>
   </div>
 
-  <div id="class-term-import-modal-backdrop" class="modal-backdrop hidden">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="class-term-import-modal-title">
-      <div class="modal-head">
+  <div id="customer-detail-backdrop" class="backdrop hidden">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="customer-detail-title">
+      <div class="drawer-head">
         <div>
-          <h2 id="class-term-import-modal-title">导入学员（手机号 + 班期）</h2>
-          <p class="subtle">支持直接粘贴或上传 Excel / utf-8 文本，格式固定为 `手机号 + 班期`。</p>
+          <h2 id="customer-detail-title">客户详情</h2>
+          <p class="subtle" id="customer-detail-subtitle">读取客户中心详情和时间线。</p>
         </div>
-        <button id="close-class-term-import-modal-btn" class="btn ghost" type="button">关闭</button>
+        <button id="close-customer-detail-btn" class="btn soft" type="button">关闭</button>
       </div>
-      <div class="modal-body">
-        <div class="field search">
-          <label for="class-term-import-text">粘贴导入</label>
-          <textarea id="class-term-import-text" placeholder="13800138030,5期&#10;13800138031,6期"></textarea>
-        </div>
-        <div class="field">
-          <label for="class-term-import-file">Excel 导入</label>
-          <input id="class-term-import-file" type="file" accept=".txt,.csv,.xlsx">
-        </div>
-        <div class="modal-actions">
-          <p id="class-term-import-status" class="status-line">准备导入。班期保留原始业务表达，是否已加微继续通过现有绑定关系推导。</p>
-          <button id="submit-class-term-import-btn" class="btn primary" type="button">导入学员</button>
-        </div>
-      </div>
-    </div>
+      <p id="customer-detail-status" class="status-line">准备读取详情...</p>
+      <section class="drawer-section">
+        <h3>基础信息</h3>
+        <div id="customer-detail-grid" class="detail-grid"></div>
+      </section>
+      <section class="drawer-section">
+        <h3>时间线</h3>
+        <div id="customer-timeline-list" class="timeline-list"></div>
+      </section>
+    </aside>
   </div>
 
-  <div id="activation-import-modal-backdrop" class="modal-backdrop hidden">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="activation-import-modal-title">
+  <div id="send-records-backdrop" class="backdrop hidden">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="send-records-title">
+      <div class="drawer-head">
+        <div>
+          <h2 id="send-records-title">发送记录</h2>
+          <p class="subtle">这里只展示当前页发起的批量群发记录，不是旧后台的记录页。</p>
+        </div>
+        <button id="close-send-records-btn" class="btn soft" type="button">关闭</button>
+      </div>
+      <p id="send-records-status" class="status-line">准备读取记录...</p>
+      <div id="send-records-list" class="record-list"></div>
+    </aside>
+  </div>
+
+  <div id="batch-send-modal-backdrop" class="backdrop center hidden">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="batch-send-title">
       <div class="modal-head">
         <div>
-          <h2 id="activation-import-modal-title">导入黄小璨激活状态</h2>
-          <p class="subtle">支持直接粘贴或上传 Excel / utf-8 文本，激活状态优先使用 `已激活 / 未激活`。</p>
+          <h2 id="batch-send-title">批量群发</h2>
+          <p class="subtle">支持文本、emoji 和最多 9 张图片。预览默认排除免打扰用户，开启包含免打扰后必须再次确认。</p>
         </div>
-        <button id="close-activation-import-modal-btn" class="btn ghost" type="button">关闭</button>
+        <button id="close-batch-send-btn" class="btn soft" type="button">关闭</button>
       </div>
+      <p id="batch-send-status" class="status-line">先填写内容，再做发送预览。</p>
       <div class="modal-body">
-        <div class="field search">
-          <label for="activation-import-text">粘贴导入</label>
-          <textarea id="activation-import-text" placeholder="13800138040,已激活&#10;13800138041,未激活"></textarea>
-        </div>
-        <div class="field">
-          <label for="activation-import-file">Excel 导入</label>
-          <input id="activation-import-file" type="file" accept=".txt,.csv,.xlsx">
-        </div>
-        <div class="modal-actions">
-          <p id="activation-import-status" class="status-line">准备导入。优先使用“已激活 / 未激活”，旧值“激活”仍兼容，非法值会直接报错。</p>
-          <button id="submit-activation-import-btn" class="btn primary" type="button">导入黄小璨激活状态</button>
-        </div>
+        <section class="panel-soft">
+          <div class="field">
+            <label for="batch-send-text">发送内容</label>
+            <textarea id="batch-send-text" placeholder="请输入本次群发文本，支持 emoji"></textarea>
+          </div>
+          <div class="image-picker">
+            <div class="image-picker-head">
+              <div>
+                <strong>附加图片</strong>
+                <div class="preview-hint">最多 9 张。可纯文本、纯图片，或文本 + 图片一起发送。</div>
+              </div>
+              <div class="hero-actions">
+                <span id="batch-image-count" class="subtle">已选 0/9 张</span>
+                <button id="pick-batch-images-btn" class="btn soft" type="button">添加图片</button>
+              </div>
+            </div>
+            <input id="batch-image-input" class="image-input-hidden" type="file" accept="image/*" multiple>
+            <div id="batch-image-list" class="image-thumb-list">
+              <div class="table-empty">暂未添加图片</div>
+            </div>
+          </div>
+          <label class="checkbox-line">
+            <input id="include-dnd-toggle" type="checkbox">
+            <span>包含免打扰用户</span>
+          </label>
+          <label id="include-dnd-confirm-line" class="checkbox-line hidden">
+            <input id="include-dnd-confirm-toggle" type="checkbox">
+            <span>我确认本次群发包含免打扰用户</span>
+          </label>
+          <div class="modal-actions">
+            <button id="preview-batch-send-btn" class="btn ghost" type="button">发送前预览</button>
+            <button id="execute-batch-send-btn" class="btn primary" type="button">确认群发</button>
+          </div>
+        </section>
+
+        <section class="panel-soft preview-panel">
+          <div class="preview-topline">
+            <div class="preview-copy">
+              <strong>最终可发送名单</strong>
+              <div id="preview-skipped-summary" class="preview-hint">默认排除免打扰，缺少 external_userid 的记录不会进入最终可发送名单。</div>
+              <div id="preview-message-summary" class="inline-note">当前未附加图片</div>
+            </div>
+            <div class="tiny-metric">
+              <span>可发人数</span>
+              <strong id="preview-eligible-count">0</strong>
+            </div>
+          </div>
+          <div class="preview-table-wrap">
+            <table class="preview-table">
+              <thead>
+                <tr>
+                  <th>客户昵称</th>
+                  <th>手机号</th>
+                  <th>发送人</th>
+                  <th>消息</th>
+                  <th>external_userid</th>
+                </tr>
+              </thead>
+              <tbody id="preview-target-body">
+                <tr><td colspan="5" class="table-empty">还没有预览结果</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
-    </div>
+    </section>
   </div>
 
   <script>
+    const CARD_SEGMENTS = {
+      lead_pool_total_count: { wecom_status: 'all', mobile_binding_status: 'all', activation_bucket: 'all' },
+      wecom_added_count: { wecom_status: 'added', mobile_binding_status: 'all', activation_bucket: 'all' },
+      wecom_not_added_count: { wecom_status: 'not_added', mobile_binding_status: 'all', activation_bucket: 'all' },
+      mobile_bound_count: { wecom_status: 'all', mobile_binding_status: 'bound', activation_bucket: 'all' },
+      mobile_unbound_count: { wecom_status: 'all', mobile_binding_status: 'unbound', activation_bucket: 'all' },
+      huangxiaocan_activated_count: { wecom_status: 'all', mobile_binding_status: 'all', activation_bucket: 'activated' },
+      huangxiaocan_not_activated_count: { wecom_status: 'all', mobile_binding_status: 'all', activation_bucket: 'not_activated' },
+    };
+    const MAX_BATCH_IMAGES = 9;
+
     const state = {
-      tab: 'current',
+      activeCardKey: 'lead_pool_total_count',
       overview: null,
       list: null,
-      history: null,
       filters: {
-        is_wecom_added: '',
-        is_mobile_bound: '',
-        huangxiaocan_activation_state: '',
         class_term_no: '',
-        query: '',
+        keyword: '',
+        mobile: '',
       },
+      selection: {
+        mode: 'manual',
+        selectedIds: new Set(),
+        excludedIds: new Set(),
+      },
+      preview: null,
+      sendRecords: [],
+      batchImages: [],
     };
 
-    const cardsEl = document.getElementById('cards');
-    const currentStatusEl = document.getElementById('current-status');
-    const currentBodyEl = document.getElementById('current-body');
-    const historyStatusEl = document.getElementById('history-status');
-    const historyBodyEl = document.getElementById('history-body');
-    const classTermImportTextEl = document.getElementById('class-term-import-text');
-    const classTermImportFileEl = document.getElementById('class-term-import-file');
-    const classTermImportStatusEl = document.getElementById('class-term-import-status');
-    const activationImportTextEl = document.getElementById('activation-import-text');
-    const activationImportFileEl = document.getElementById('activation-import-file');
-    const activationImportStatusEl = document.getElementById('activation-import-status');
-    const classTermImportModalBackdropEl = document.getElementById('class-term-import-modal-backdrop');
-    const activationImportModalBackdropEl = document.getElementById('activation-import-modal-backdrop');
-    const currentPanelEl = document.getElementById('current-panel');
-    const historyPanelEl = document.getElementById('history-panel');
-    const activationFilterEl = document.getElementById('filter-activation-state');
-    const classTermFilterEl = document.getElementById('filter-class-term');
-    const wecomAddedFilterEl = document.getElementById('filter-is-wecom-added');
-    const mobileBoundFilterEl = document.getElementById('filter-is-mobile-bound');
-    const queryFilterEl = document.getElementById('filter-query');
+    const els = {
+      overviewCards: document.getElementById('overview-cards'),
+      classTermFilter: document.getElementById('filter-class-term'),
+      keywordFilter: document.getElementById('filter-keyword'),
+      mobileFilter: document.getElementById('filter-mobile'),
+      pageStatus: document.getElementById('page-status'),
+      listBody: document.getElementById('list-body'),
+      batchBar: document.getElementById('batch-bar'),
+      batchSelectionLabel: document.getElementById('batch-selection-label'),
+      batchSelectionSubtle: document.getElementById('batch-selection-subtle'),
+      selectAllCurrentBtn: document.getElementById('select-all-current-btn'),
+      clearSelectionBtn: document.getElementById('clear-selection-btn'),
+      customerDetailBackdrop: document.getElementById('customer-detail-backdrop'),
+      customerDetailStatus: document.getElementById('customer-detail-status'),
+      customerDetailSubtitle: document.getElementById('customer-detail-subtitle'),
+      customerDetailGrid: document.getElementById('customer-detail-grid'),
+      customerTimelineList: document.getElementById('customer-timeline-list'),
+      sendRecordsBackdrop: document.getElementById('send-records-backdrop'),
+      sendRecordsStatus: document.getElementById('send-records-status'),
+      sendRecordsList: document.getElementById('send-records-list'),
+      batchSendBackdrop: document.getElementById('batch-send-modal-backdrop'),
+      batchSendStatus: document.getElementById('batch-send-status'),
+      batchSendText: document.getElementById('batch-send-text'),
+      batchImageInput: document.getElementById('batch-image-input'),
+      pickBatchImagesBtn: document.getElementById('pick-batch-images-btn'),
+      batchImageCount: document.getElementById('batch-image-count'),
+      batchImageList: document.getElementById('batch-image-list'),
+      includeDndToggle: document.getElementById('include-dnd-toggle'),
+      includeDndConfirmLine: document.getElementById('include-dnd-confirm-line'),
+      includeDndConfirmToggle: document.getElementById('include-dnd-confirm-toggle'),
+      previewEligibleCount: document.getElementById('preview-eligible-count'),
+      previewSkippedSummary: document.getElementById('preview-skipped-summary'),
+      previewMessageSummary: document.getElementById('preview-message-summary'),
+      previewTargetBody: document.getElementById('preview-target-body'),
+    };
+
+    function buildTag(label, tone) {
+      return '<span class="tag' + (tone ? ' ' + tone : '') + '">' + label + '</span>';
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function buildMessageSummary(content, imageCount) {
+      const hasText = Boolean(String(content || '').trim());
+      const normalizedImageCount = Number(imageCount || 0);
+      if (hasText && normalizedImageCount > 0) {
+        return '文本 + 图片 ' + normalizedImageCount + ' 张';
+      }
+      if (normalizedImageCount > 0) {
+        return '图片 ' + normalizedImageCount + ' 张';
+      }
+      if (hasText) {
+        return '纯文本';
+      }
+      return '未配置发送内容';
+    }
+
+    function selectedImageCountText() {
+      return '已选 ' + state.batchImages.length + '/' + MAX_BATCH_IMAGES + ' 张';
+    }
+
+    function renderBatchImages() {
+      els.batchImageCount.textContent = selectedImageCountText();
+      if (!state.batchImages.length) {
+        els.batchImageList.innerHTML = '<div class="table-empty">暂未添加图片</div>';
+        return;
+      }
+      els.batchImageList.innerHTML = state.batchImages.map((image, index) => (
+        '<div class="image-thumb">'
+        + '<img src="' + escapeHtml(image.data_url || '') + '" alt="已选图片 ' + (index + 1) + '">'
+        + '<button type="button" class="thumb-remove" data-image-index="' + index + '">删除</button>'
+        + '</div>'
+      )).join('');
+    }
+
+    function currentBatchImagesPayload() {
+      return state.batchImages.map((image) => ({
+        file_name: image.file_name,
+        content_type: image.content_type,
+        data_url: image.data_url,
+      }));
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('图片读取失败'));
+        reader.readAsDataURL(file);
+      });
+    }
 
     async function fetchJson(url, options) {
       const response = await fetch(url, options);
@@ -621,270 +887,557 @@
       return payload;
     }
 
-    function currentParams() {
+    function currentSegment() {
+      return CARD_SEGMENTS[state.activeCardKey] || CARD_SEGMENTS.lead_pool_total_count;
+    }
+
+    function currentQueryParams() {
       const params = new URLSearchParams();
-      Object.entries(state.filters).forEach(([key, value]) => {
-        if (value) params.set(key, value);
-      });
+      const segment = currentSegment();
+      if (segment.wecom_status && segment.wecom_status !== 'all') params.set('wecom_status', segment.wecom_status);
+      if (segment.mobile_binding_status && segment.mobile_binding_status !== 'all') params.set('mobile_binding_status', segment.mobile_binding_status);
+      if (segment.activation_bucket && segment.activation_bucket !== 'all') params.set('activation_bucket', segment.activation_bucket);
+      if (state.filters.class_term_no) params.set('class_term_no', state.filters.class_term_no);
+      if (state.filters.keyword) params.set('keyword', state.filters.keyword);
+      if (state.filters.mobile) params.set('mobile', state.filters.mobile);
       return params;
+    }
+
+    function clearSelection() {
+      state.selection.mode = 'manual';
+      state.selection.selectedIds = new Set();
+      state.selection.excludedIds = new Set();
+      renderBatchBar();
+      renderList();
+    }
+
+    function getCurrentItems() {
+      return ((state.list || {}).items || []);
+    }
+
+    function getSendableItems() {
+      return getCurrentItems().filter((item) => item.can_batch_send);
+    }
+
+    function isRowSelected(item) {
+      if (!item.can_batch_send) return false;
+      if (state.selection.mode === 'all_filtered') {
+        return !state.selection.excludedIds.has(item.id);
+      }
+      return state.selection.selectedIds.has(item.id);
+    }
+
+    function selectedCount() {
+      if (state.selection.mode === 'all_filtered') {
+        return Math.max(0, getCurrentItems().length - state.selection.excludedIds.size);
+      }
+      return state.selection.selectedIds.size;
+    }
+
+    function updateSelectionForRow(itemId, checked) {
+      const item = getCurrentItems().find((entry) => entry.id === itemId);
+      if (!item || !item.can_batch_send) return;
+      if (state.selection.mode === 'all_filtered') {
+        if (checked) {
+          state.selection.excludedIds.delete(itemId);
+        } else {
+          state.selection.excludedIds.add(itemId);
+        }
+      } else if (checked) {
+        state.selection.selectedIds.add(itemId);
+      } else {
+        state.selection.selectedIds.delete(itemId);
+      }
+      renderBatchBar();
+      renderList();
+    }
+
+    function buildDndReasonsHtml(reasons) {
+      if (!(reasons || []).length) {
+        return '<span class="muted">否</span>';
+      }
+      return '<div class="reason-list">' + reasons.map((reason) => {
+        const tone = reason.source_type === 'auto' ? 'warn' : 'danger';
+        return buildTag(escapeHtml(reason.reason_text || reason.reason_code || '-'), tone);
+      }).join('') + '</div>';
+    }
+
+    function firstManualReason(item) {
+      return (item.do_not_disturb_reasons || []).find((reason) => reason.source_type === 'manual') || null;
     }
 
     function renderCards() {
       const cards = ((state.overview || {}).cards || []);
-      cardsEl.innerHTML = cards.map((item) => (
-        '<article class="stat">'
-        + '<div class="label">' + item.label + '</div>'
-        + '<div class="value">' + item.value + '</div>'
+      els.overviewCards.innerHTML = cards.map((card) => (
+        '<button type="button" class="card-btn' + (card.key === state.activeCardKey ? ' selected' : '') + '" data-card-key="' + card.key + '">'
+        + '<div class="label">' + escapeHtml(card.label) + '</div>'
+        + '<div class="value">' + escapeHtml(card.value) + '</div>'
+        + '</button>'
+      )).join('');
+    }
+
+    function renderClassTermOptions() {
+      const options = (((state.list || {}).filter_options || {}).class_terms || []);
+      const html = ['<option value="">全部</option>'];
+      options.forEach((item) => {
+        const value = String(item.class_term_no ?? '');
+        const label = String(item.class_term_label ?? value);
+        html.push('<option value="' + escapeHtml(value) + '">' + escapeHtml(label) + '</option>');
+      });
+      els.classTermFilter.innerHTML = html.join('');
+      els.classTermFilter.value = state.filters.class_term_no;
+    }
+
+    function renderBatchBar() {
+      const count = selectedCount();
+      const sendableCount = getSendableItems().length;
+      const show = count > 0 || state.selection.mode === 'all_filtered';
+      els.batchBar.classList.toggle('hidden', !show);
+      els.batchSelectionLabel.textContent = '已选 ' + count + ' 人';
+      if (state.selection.mode === 'all_filtered') {
+        els.batchSelectionSubtle.textContent = '当前为“全选当前筛选结果”模式，不可发记录会在预览和执行时自动跳过。';
+        els.selectAllCurrentBtn.textContent = '取消全选当前筛选结果';
+      } else {
+        els.batchSelectionSubtle.textContent = '当前页可发送人数 ' + sendableCount + '，缺少 external_userid 的记录不会进入批量群发。';
+        els.selectAllCurrentBtn.textContent = '全选当前筛选结果';
+      }
+      document.getElementById('open-batch-send-btn').disabled = count === 0;
+    }
+
+    function renderList() {
+      const items = getCurrentItems();
+      if (!items.length) {
+        els.pageStatus.textContent = '当前筛选下暂无数据';
+        els.pageStatus.className = 'status-line';
+        els.listBody.innerHTML = '<tr><td colspan="9" class="table-empty">当前筛选下暂无数据</td></tr>';
+        renderBatchBar();
+        return;
+      }
+      els.pageStatus.textContent = '已加载 ' + items.length + ' 条记录';
+      els.pageStatus.className = 'status-line success';
+      els.listBody.innerHTML = items.map((item) => {
+        const wecomTag = item.is_added_wecom ? buildTag('已加微') : buildTag('未加微');
+        const mobileBoundTag = item.is_mobile_bound ? buildTag('已绑手机号', 'ok') : buildTag('未绑手机号', 'warn');
+        const manualReason = firstManualReason(item);
+        const dndActionLabel = manualReason ? '取消免打扰' : '设为免打扰';
+        return (
+          '<tr>'
+          + '<td><input type="checkbox" class="row-select" data-id="' + item.id + '"' + (isRowSelected(item) ? ' checked' : '') + (item.can_batch_send ? '' : ' disabled') + '></td>'
+          + '<td>' + escapeHtml(item.customer_name || '-') + '</td>'
+          + '<td>' + escapeHtml(item.mobile || '-') + '</td>'
+          + '<td>' + escapeHtml(item.class_term_label || '-') + '</td>'
+          + '<td>' + wecomTag + '</td>'
+          + '<td>' + mobileBoundTag + '</td>'
+          + '<td>' + buildTag(escapeHtml(item.activation_bucket_label || '-')) + '</td>'
+          + '<td><div class="mono">' + escapeHtml(item.external_userid || '-') + '</div></td>'
+          + '<td><div class="cell-actions">'
+          + '<button type="button" class="btn soft view-detail-btn" data-external-userid="' + escapeHtml(item.external_userid || '') + '"' + (item.can_open_customer_detail ? '' : ' disabled') + '>查看详情</button>'
+          + '<button type="button" class="btn soft toggle-dnd-btn" data-id="' + item.id + '" data-external-userid="' + escapeHtml(item.external_userid || '') + '" data-mobile="' + escapeHtml(item.mobile || '') + '" data-manual-reason-code="' + escapeHtml(manualReason ? manualReason.reason_code : 'manual_set') + '" data-has-manual="' + (manualReason ? 'true' : 'false') + '">' + dndActionLabel + '</button>'
+          + '</div></td>'
+          + '</tr>'
+        );
+      }).join('');
+      renderBatchBar();
+    }
+
+    async function loadOverviewAndList() {
+      els.pageStatus.textContent = '加载中...';
+      els.pageStatus.className = 'status-line';
+      const params = currentQueryParams().toString();
+      const [overview, list] = await Promise.all([
+        fetchJson('/api/admin/user-ops/overview' + (params ? '?' + params : '')),
+        fetchJson('/api/admin/user-ops/list' + (params ? '?' + params : '')),
+      ]);
+      state.overview = overview;
+      state.list = list;
+      renderCards();
+      renderClassTermOptions();
+      renderList();
+    }
+
+    function openBackdrop(backdrop) {
+      backdrop.classList.remove('hidden');
+    }
+
+    function closeBackdrop(backdrop) {
+      backdrop.classList.add('hidden');
+    }
+
+    function setDetailGrid(items) {
+      els.customerDetailGrid.innerHTML = items.map((item) => (
+        '<div class="detail-item"><strong>' + escapeHtml(item.label) + '</strong><span>' + escapeHtml(item.value || '-') + '</span></div>'
+      )).join('');
+    }
+
+    function setTimelineItems(items) {
+      if (!(items || []).length) {
+        els.customerTimelineList.innerHTML = '<div class="timeline-item"><strong>暂无时间线</strong><p>当前客户中心没有返回时间线事件。</p></div>';
+        return;
+      }
+      els.customerTimelineList.innerHTML = items.map((item) => (
+        '<article class="timeline-item">'
+        + '<div class="meta-row"><strong>' + escapeHtml(item.title || item.event_type || '时间线事件') + '</strong><span>' + escapeHtml(item.event_time || item.occurred_at || '') + '</span></div>'
+        + '<p>' + escapeHtml(item.summary || '') + '</p>'
         + '</article>'
       )).join('');
     }
 
-    function buildOptions(options, valueKey, labelKey, includeAll = true) {
-      const html = [];
-      if (includeAll) html.push('<option value="">全部</option>');
-      (options || []).forEach((item) => {
-        const value = String(item[valueKey] ?? '');
-        const label = String(item[labelKey] ?? value);
-        html.push('<option value="' + value + '">' + label + '</option>');
+    async function openCustomerDetail(externalUserid) {
+      if (!externalUserid) return;
+      openBackdrop(els.customerDetailBackdrop);
+      els.customerDetailStatus.textContent = '读取客户中心详情中...';
+      els.customerDetailStatus.className = 'status-line';
+      els.customerDetailSubtitle.textContent = externalUserid;
+      setDetailGrid([]);
+      setTimelineItems([]);
+      try {
+        const [detailPayload, timelinePayload] = await Promise.all([
+          fetchJson('/api/customers/' + encodeURIComponent(externalUserid)),
+          fetchJson('/api/customers/' + encodeURIComponent(externalUserid) + '/timeline?limit=20'),
+        ]);
+        const customer = detailPayload.customer || {};
+        setDetailGrid([
+          { label: '客户昵称', value: customer.customer_name },
+          { label: '手机号', value: customer.mobile },
+          { label: '跟进人', value: customer.owner_display_name || customer.owner_userid },
+          { label: '绑定状态', value: customer.binding_status },
+          { label: '报名状态', value: customer.signup_label_name || customer.signup_status },
+          { label: 'external_userid', value: customer.external_userid },
+        ]);
+        setTimelineItems(((timelinePayload.timeline || {}).items || []).slice(0, 20));
+        els.customerDetailStatus.textContent = '详情已更新';
+        els.customerDetailStatus.className = 'status-line success';
+      } catch (error) {
+        els.customerDetailStatus.textContent = (error && error.message) || '详情读取失败';
+        els.customerDetailStatus.className = 'status-line error';
+        els.customerTimelineList.innerHTML = '<div class="timeline-item"><strong>详情暂不可用</strong><p>客户中心当前没有返回可展示的数据。</p></div>';
+      }
+    }
+
+    async function toggleDoNotDisturb(payload) {
+      const result = await fetchJson('/api/admin/user-ops/do-not-disturb', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      return html.join('');
+      return result;
     }
 
-    function renderFilterOptions() {
-      const filterOptions = ((state.list || {}).filter_options || {});
-      activationFilterEl.innerHTML = buildOptions(filterOptions.activation_states || [], 'value', 'label');
-      classTermFilterEl.innerHTML = buildOptions(filterOptions.class_terms || [], 'class_term_no', 'class_term_label');
-
-      activationFilterEl.value = state.filters.huangxiaocan_activation_state;
-      classTermFilterEl.value = state.filters.class_term_no;
-      wecomAddedFilterEl.value = state.filters.is_wecom_added;
-      mobileBoundFilterEl.value = state.filters.is_mobile_bound;
-      queryFilterEl.value = state.filters.query;
-    }
-
-    function renderCurrent() {
-      const items = (state.list || {}).items || [];
-      if (!items.length) {
-        currentStatusEl.textContent = '当前筛选下暂无数据';
-        currentStatusEl.className = 'status-line';
-        currentBodyEl.innerHTML = '<tr><td colspan="7">当前筛选下暂无数据</td></tr>';
-        return;
+    function buildSelectionPayload() {
+      const payload = {
+        filters: {
+          class_term_no: state.filters.class_term_no,
+          keyword: state.filters.keyword,
+          mobile: state.filters.mobile,
+          wecom_status: currentSegment().wecom_status,
+          mobile_binding_status: currentSegment().mobile_binding_status,
+          activation_bucket: currentSegment().activation_bucket,
+        },
+      };
+      if (state.selection.mode === 'all_filtered') {
+        payload.selection_mode = 'all_filtered';
+        payload.excluded_ids = Array.from(state.selection.excludedIds);
+      } else {
+        payload.selection_mode = 'manual';
+        payload.selected_ids = Array.from(state.selection.selectedIds);
       }
-      currentStatusEl.textContent = '已加载 ' + items.length + ' 条';
-      currentStatusEl.className = 'status-line success';
-      currentBodyEl.innerHTML = items.map((item) => {
-        const wecomAddedTag = item.is_wecom_added
-          ? '<span class="tag ok">已加微</span>'
-          : '<span class="tag warn">未加微</span>';
-        const mobileBoundTag = item.is_mobile_bound
-          ? '<span class="tag ok">已绑手机号</span>'
-          : '<span class="tag warn">未绑手机号</span>';
-        const activationTagClass = item.huangxiaocan_activation_state === 'activated' ? ' ok' : '';
-        return (
+      return payload;
+    }
+
+    function buildBatchSendPayload() {
+      return Object.assign(buildSelectionPayload(), {
+        content: els.batchSendText.value,
+        include_do_not_disturb: els.includeDndToggle.checked,
+        images: currentBatchImagesPayload(),
+      });
+    }
+
+    function resetPreview() {
+      state.preview = null;
+      els.previewEligibleCount.textContent = '0';
+      els.previewSkippedSummary.textContent = '默认排除免打扰，缺少 external_userid 的记录不会进入最终可发送名单。';
+      els.previewMessageSummary.textContent = buildMessageSummary('', 0);
+      els.previewTargetBody.innerHTML = '<tr><td colspan="5" class="table-empty">还没有预览结果</td></tr>';
+    }
+
+    function renderPreview(payload) {
+      state.preview = payload;
+      els.previewEligibleCount.textContent = String(payload.eligible_count || 0);
+      els.previewSkippedSummary.textContent = payload.skipped_summary || '本次预览没有跳过记录。';
+      els.previewMessageSummary.textContent = '本次消息：' + buildMessageSummary(payload.content_preview || '', payload.image_count || 0);
+
+      const targets = payload.final_targets || [];
+      els.previewTargetBody.innerHTML = targets.length
+        ? targets.map((item) => (
           '<tr>'
-          + '<td>' + (item.mobile || '-') + '</td>'
-          + '<td>' + wecomAddedTag + '</td>'
-          + '<td>' + mobileBoundTag + '</td>'
-          + '<td>' + (item.class_term_label || '-') + '</td>'
-          + '<td><span class="tag' + activationTagClass + '">' + (item.huangxiaocan_activation_state_label || '-') + '</span></td>'
-          + '<td>' + (item.customer_name || '-') + '</td>'
-          + '<td><div class="mono">' + (item.external_userid || '-') + '</div></td>'
+          + '<td>' + escapeHtml(item.customer_name || '-') + '</td>'
+          + '<td>' + escapeHtml(item.mobile || '-') + '</td>'
+          + '<td>' + escapeHtml(item.owner_display_name || item.owner_userid || '-') + '</td>'
+          + '<td>' + escapeHtml(buildMessageSummary(payload.content_preview || '', payload.image_count || 0)) + '</td>'
+          + '<td><div class="mono">' + escapeHtml(item.external_userid || '-') + '</div></td>'
           + '</tr>'
-        );
-      }).join('');
+        )).join('')
+        : '<tr><td colspan="5" class="table-empty">当前预览没有可发送目标</td></tr>';
     }
 
-    function renderHistory() {
-      const items = (state.history || {}).items || [];
-      if (!items.length) {
-        historyStatusEl.textContent = '暂无历史记录';
-        historyStatusEl.className = 'status-line';
-        historyBodyEl.innerHTML = '<tr><td colspan="6">暂无历史记录</td></tr>';
+    async function previewBatchSend() {
+      const payload = buildBatchSendPayload();
+      if (!String(payload.content || '').trim() && !(payload.images || []).length) {
+        throw new Error('请先填写发送内容或添加图片');
+      }
+      els.batchSendStatus.textContent = '预览计算中...';
+      els.batchSendStatus.className = 'status-line';
+      const result = await fetchJson('/api/admin/user-ops/batch-send/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      renderPreview(result);
+      els.batchSendStatus.textContent = '预览已更新';
+      els.batchSendStatus.className = 'status-line success';
+    }
+
+    async function executeBatchSend() {
+      const payload = buildBatchSendPayload();
+      if (!String(payload.content || '').trim() && !(payload.images || []).length) {
+        throw new Error('请先填写发送内容或添加图片');
+      }
+      if (els.includeDndToggle.checked && !els.includeDndConfirmToggle.checked) {
+        throw new Error('包含免打扰用户时，需要再次确认');
+      }
+      els.batchSendStatus.textContent = '群发执行中...';
+      els.batchSendStatus.className = 'status-line';
+      payload.confirm = true;
+      const result = await fetchJson('/api/admin/user-ops/batch-send/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      els.batchSendStatus.textContent = '群发完成，记录 #' + result.record_id;
+      els.batchSendStatus.className = 'status-line success';
+      clearSelection();
+      await loadOverviewAndList();
+      await loadSendRecords();
+    }
+
+    async function loadSendRecords() {
+      els.sendRecordsStatus.textContent = '读取发送记录中...';
+      els.sendRecordsStatus.className = 'status-line';
+      const payload = await fetchJson('/api/admin/user-ops/send-records?limit=20&offset=0');
+      state.sendRecords = payload.items || [];
+      if (!state.sendRecords.length) {
+        els.sendRecordsStatus.textContent = '当前还没有发送记录';
+        els.sendRecordsStatus.className = 'status-line';
+        els.sendRecordsList.innerHTML = '<div class="record-item"><strong>暂无记录</strong><p>本页发起批量群发后，会在这里展示结果。</p></div>';
         return;
       }
-      historyStatusEl.textContent = '已加载 ' + items.length + ' 条';
-      historyStatusEl.className = 'status-line success';
-      historyBodyEl.innerHTML = items.map((item) => (
-        '<tr>'
-        + '<td>' + (item.created_at || '-') + '</td>'
-        + '<td>' + (item.mobile || '-') + '</td>'
-        + '<td><div class="mono">' + (item.external_userid || '-') + '</div></td>'
-        + '<td>' + (item.action_type || '-') + '</td>'
-        + '<td>' + (item.source_type || '-') + '</td>'
-        + '<td>' + (item.operator || '-') + '</td>'
-        + '</tr>'
+      els.sendRecordsStatus.textContent = '已读取 ' + state.sendRecords.length + ' 条记录';
+      els.sendRecordsStatus.className = 'status-line success';
+      els.sendRecordsList.innerHTML = state.sendRecords.map((record) => (
+        '<article class="record-item">'
+        + '<div class="meta-row"><strong>#' + escapeHtml(record.id) + '</strong><span>' + escapeHtml(record.created_at || '') + '</span><span>' + escapeHtml(record.status || '') + '</span></div>'
+        + '<p>' + escapeHtml(record.content_preview || '-') + '</p>'
+        + '<div class="reason-list">'
+        + buildTag('选中 ' + escapeHtml(record.selected_count || 0), 'ok')
+        + buildTag('可发 ' + escapeHtml(record.eligible_count || 0), 'ok')
+        + buildTag('实发 ' + escapeHtml(record.sent_count || 0), 'ok')
+        + buildTag('跳过 ' + escapeHtml(record.skipped_count || 0), 'warn')
+        + buildTag((record.include_do_not_disturb ? '包含' : '排除') + '免打扰', record.include_do_not_disturb ? 'danger' : 'ok')
+        + buildTag('发送人 ' + escapeHtml(record.sender_count || 0), 'ok')
+        + buildTag('图片 ' + escapeHtml(record.image_count || 0) + ' 张', Number(record.image_count || 0) > 0 ? 'ok' : '')
+        + '</div>'
+        + '<p>操作人：' + escapeHtml(record.operator || '-') + '</p>'
+        + '<p>发送人：' + escapeHtml((record.sender_userids || []).join(' / ') || '-') + '</p>'
+        + '</article>'
       )).join('');
     }
 
-    function renderTab() {
-      document.querySelectorAll('[data-tab]').forEach((button) => {
-        button.classList.toggle('active', button.getAttribute('data-tab') === state.tab);
-      });
-      currentPanelEl.classList.toggle('hidden', state.tab !== 'current');
-      historyPanelEl.classList.toggle('hidden', state.tab !== 'history');
-    }
-
-    function openModal(backdropEl) {
-      backdropEl.classList.remove('hidden');
-    }
-
-    function closeModal(backdropEl) {
-      backdropEl.classList.add('hidden');
-    }
-
-    async function loadOverview() {
-      state.overview = await fetchJson('/api/admin/user-ops/overview');
-      renderCards();
-    }
-
-    async function loadList() {
-      currentStatusEl.textContent = '加载中...';
-      currentStatusEl.className = 'status-line';
-      state.list = await fetchJson('/api/admin/user-ops/list?' + currentParams().toString());
-      renderFilterOptions();
-      renderCurrent();
-      renderCards();
-    }
-
-    async function loadHistory() {
-      historyStatusEl.textContent = '加载中...';
-      historyStatusEl.className = 'status-line';
-      state.history = await fetchJson('/api/admin/user-ops/history?limit=100');
-      renderHistory();
-    }
-
-    async function submitClassTermImport() {
-      const pastedText = classTermImportTextEl.value.trim();
-      const selectedFile = (classTermImportFileEl.files || [])[0];
-      if (!selectedFile && !pastedText) {
-        throw new Error('请先提供手机号 + 班期内容');
-      }
-      classTermImportStatusEl.textContent = '导入中...';
-      classTermImportStatusEl.className = 'status-line';
-
-      let result;
-      if (selectedFile) {
-        const formData = new FormData();
-        formData.append('file', selectedFile);
-        result = await fetchJson('/api/admin/user-ops/import-mobile-class-terms', {
-          method: 'POST',
-          body: formData,
-        });
-      } else {
-        result = await fetchJson('/api/admin/user-ops/import-mobile-class-terms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pasted_text: pastedText }),
-        });
-      }
-      await Promise.all([loadOverview(), loadList(), loadHistory()]);
-      classTermImportStatusEl.textContent = (
-        '导入完成：'
-        + '成功 ' + (result.success_rows || 0)
-        + ' 行，失败 ' + (result.failed_rows || 0)
-        + ' 行，重复覆盖 ' + (result.duplicate_count || 0)
-        + ' 行，已解析已加微 ' + (result.bound_count || 0)
-        + ' 条'
-      );
-      classTermImportStatusEl.className = 'status-line success';
-      if (selectedFile) {
-        classTermImportFileEl.value = '';
-      }
-    }
-
-    async function submitActivationImport() {
-      const pastedText = activationImportTextEl.value.trim();
-      const selectedFile = (activationImportFileEl.files || [])[0];
-      if (!selectedFile && !pastedText) {
-        throw new Error('请先提供手机号 + 激活状态内容');
-      }
-      activationImportStatusEl.textContent = '导入中...';
-      activationImportStatusEl.className = 'status-line';
-
-      let result;
-      if (selectedFile) {
-        const formData = new FormData();
-        formData.append('file', selectedFile);
-        result = await fetchJson('/api/admin/user-ops/import-activation-status', {
-          method: 'POST',
-          body: formData,
-        });
-      } else {
-        result = await fetchJson('/api/admin/user-ops/import-activation-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pasted_text: pastedText }),
-        });
-      }
-      await Promise.all([loadOverview(), loadList(), loadHistory()]);
-      activationImportStatusEl.textContent = (
-        '导入完成：'
-        + '成功 ' + (result.success_rows || 0)
-        + ' 行，失败 ' + (result.failed_rows || 0)
-        + ' 行，重复覆盖 ' + (result.duplicate_count || 0)
-        + ' 行'
-      );
-      activationImportStatusEl.className = 'status-line success';
-      if (selectedFile) {
-        activationImportFileEl.value = '';
-      }
-    }
-
-    function bindFilters() {
-      wecomAddedFilterEl.addEventListener('change', (event) => { state.filters.is_wecom_added = event.target.value; });
-      mobileBoundFilterEl.addEventListener('change', (event) => { state.filters.is_mobile_bound = event.target.value; });
-      activationFilterEl.addEventListener('change', (event) => { state.filters.huangxiaocan_activation_state = event.target.value; });
-      classTermFilterEl.addEventListener('change', (event) => { state.filters.class_term_no = event.target.value; });
-      queryFilterEl.addEventListener('input', (event) => { state.filters.query = event.target.value.trim(); });
-      document.getElementById('search-btn').addEventListener('click', () => loadList().catch(handleError));
-      document.getElementById('export-btn').addEventListener('click', () => {
-        window.location.href = '/api/admin/user-ops/export?' + currentParams().toString();
-      });
-      document.getElementById('open-class-term-import-modal-btn').addEventListener('click', () => openModal(classTermImportModalBackdropEl));
-      document.getElementById('open-activation-import-modal-btn').addEventListener('click', () => openModal(activationImportModalBackdropEl));
-      document.getElementById('close-class-term-import-modal-btn').addEventListener('click', () => closeModal(classTermImportModalBackdropEl));
-      document.getElementById('close-activation-import-modal-btn').addEventListener('click', () => closeModal(activationImportModalBackdropEl));
-      classTermImportModalBackdropEl.addEventListener('click', (event) => {
-        if (event.target === classTermImportModalBackdropEl) closeModal(classTermImportModalBackdropEl);
-      });
-      activationImportModalBackdropEl.addEventListener('click', (event) => {
-        if (event.target === activationImportModalBackdropEl) closeModal(activationImportModalBackdropEl);
-      });
-      document.getElementById('submit-class-term-import-btn').addEventListener('click', () => {
-        submitClassTermImport().catch((error) => {
-          classTermImportStatusEl.textContent = (error && error.message) || '导入失败';
-          classTermImportStatusEl.className = 'status-line error';
-        });
-      });
-      document.getElementById('submit-activation-import-btn').addEventListener('click', () => {
-        submitActivationImport().catch((error) => {
-          activationImportStatusEl.textContent = (error && error.message) || '导入失败';
-          activationImportStatusEl.className = 'status-line error';
-        });
-      });
-      document.querySelectorAll('[data-tab]').forEach((button) => {
-        button.addEventListener('click', () => {
-          state.tab = button.getAttribute('data-tab') || 'current';
-          renderTab();
-        });
+    function openSendRecords() {
+      openBackdrop(els.sendRecordsBackdrop);
+      loadSendRecords().catch((error) => {
+        els.sendRecordsStatus.textContent = (error && error.message) || '发送记录读取失败';
+        els.sendRecordsStatus.className = 'status-line error';
       });
     }
 
-    function handleError(error) {
-      const message = (error && error.message) || '请求失败';
-      currentStatusEl.textContent = message;
-      currentStatusEl.className = 'status-line error';
-      historyStatusEl.textContent = message;
-      historyStatusEl.className = 'status-line error';
+    function bindEvents() {
+      document.getElementById('refresh-page-btn').addEventListener('click', () => {
+        clearSelection();
+        loadOverviewAndList().catch(handlePageError);
+      });
+      document.getElementById('apply-filters-btn').addEventListener('click', () => {
+        state.filters.class_term_no = els.classTermFilter.value;
+        state.filters.keyword = els.keywordFilter.value.trim();
+        state.filters.mobile = els.mobileFilter.value.trim();
+        clearSelection();
+        loadOverviewAndList().catch(handlePageError);
+      });
+      document.getElementById('clear-filters-btn').addEventListener('click', () => {
+        state.filters.class_term_no = '';
+        state.filters.keyword = '';
+        state.filters.mobile = '';
+        els.classTermFilter.value = '';
+        els.keywordFilter.value = '';
+        els.mobileFilter.value = '';
+        state.activeCardKey = 'lead_pool_total_count';
+        clearSelection();
+        loadOverviewAndList().catch(handlePageError);
+      });
+      [els.keywordFilter, els.mobileFilter].forEach((element) => {
+        element.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            document.getElementById('apply-filters-btn').click();
+          }
+        });
+      });
+      els.overviewCards.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-card-key]');
+        if (!button) return;
+        state.activeCardKey = button.getAttribute('data-card-key') || 'lead_pool_total_count';
+        clearSelection();
+        loadOverviewAndList().catch(handlePageError);
+      });
+      document.getElementById('export-current-btn').addEventListener('click', () => {
+        const params = currentQueryParams().toString();
+        window.location.href = '/api/admin/user-ops/export' + (params ? '?' + params : '');
+      });
+      els.listBody.addEventListener('change', (event) => {
+        const checkbox = event.target.closest('.row-select');
+        if (!checkbox) return;
+        updateSelectionForRow(Number(checkbox.getAttribute('data-id')), checkbox.checked);
+      });
+      els.listBody.addEventListener('click', (event) => {
+        const detailBtn = event.target.closest('.view-detail-btn');
+        if (detailBtn) {
+          openCustomerDetail(detailBtn.getAttribute('data-external-userid') || '');
+          return;
+        }
+        const dndBtn = event.target.closest('.toggle-dnd-btn');
+        if (dndBtn) {
+          const hasManual = dndBtn.getAttribute('data-has-manual') === 'true';
+          const payload = {
+            external_userid: dndBtn.getAttribute('data-external-userid') || '',
+            mobile: dndBtn.getAttribute('data-mobile') || '',
+            reason_code: dndBtn.getAttribute('data-manual-reason-code') || 'manual_set',
+          };
+          if (hasManual) {
+            payload.action = 'disable';
+          } else {
+            payload.reason_text = '运营设置';
+          }
+          toggleDoNotDisturb(payload).then(() => loadOverviewAndList()).catch(handlePageError);
+        }
+      });
+      els.selectAllCurrentBtn.addEventListener('click', () => {
+        if (state.selection.mode === 'all_filtered') {
+          clearSelection();
+          return;
+        }
+        state.selection.mode = 'all_filtered';
+        state.selection.selectedIds = new Set();
+        state.selection.excludedIds = new Set();
+        renderBatchBar();
+        renderList();
+      });
+      els.clearSelectionBtn.addEventListener('click', () => {
+        clearSelection();
+      });
+      document.getElementById('open-batch-send-btn').addEventListener('click', () => {
+        openBackdrop(els.batchSendBackdrop);
+      });
+      els.pickBatchImagesBtn.addEventListener('click', () => {
+        els.batchImageInput.click();
+      });
+      els.batchImageInput.addEventListener('change', async (event) => {
+        const files = Array.from(event.target.files || []);
+        els.batchImageInput.value = '';
+        if (!files.length) return;
+        if (state.batchImages.length + files.length > MAX_BATCH_IMAGES) {
+          els.batchSendStatus.textContent = '最多只能添加 9 张图片';
+          els.batchSendStatus.className = 'status-line error';
+          return;
+        }
+        try {
+          const nextImages = await Promise.all(files.map(async (file) => ({
+            file_name: file.name || ('image-' + Date.now() + '.png'),
+            content_type: file.type || 'image/png',
+            data_url: await readFileAsDataUrl(file),
+          })));
+          state.batchImages = state.batchImages.concat(nextImages);
+          renderBatchImages();
+          els.batchSendStatus.textContent = '已添加 ' + state.batchImages.length + ' 张图片';
+          els.batchSendStatus.className = 'status-line success';
+          if (state.preview) {
+            resetPreview();
+          }
+        } catch (error) {
+          els.batchSendStatus.textContent = (error && error.message) || '图片读取失败';
+          els.batchSendStatus.className = 'status-line error';
+        }
+      });
+      els.batchImageList.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-image-index]');
+        if (!button) return;
+        const imageIndex = Number(button.getAttribute('data-image-index'));
+        if (Number.isNaN(imageIndex)) return;
+        state.batchImages.splice(imageIndex, 1);
+        renderBatchImages();
+        if (state.preview) {
+          resetPreview();
+        }
+      });
+      document.getElementById('close-batch-send-btn').addEventListener('click', () => {
+        closeBackdrop(els.batchSendBackdrop);
+      });
+      document.getElementById('open-send-records-btn').addEventListener('click', openSendRecords);
+      document.getElementById('close-send-records-btn').addEventListener('click', () => closeBackdrop(els.sendRecordsBackdrop));
+      document.getElementById('close-customer-detail-btn').addEventListener('click', () => closeBackdrop(els.customerDetailBackdrop));
+      els.customerDetailBackdrop.addEventListener('click', (event) => {
+        if (event.target === els.customerDetailBackdrop) closeBackdrop(els.customerDetailBackdrop);
+      });
+      els.sendRecordsBackdrop.addEventListener('click', (event) => {
+        if (event.target === els.sendRecordsBackdrop) closeBackdrop(els.sendRecordsBackdrop);
+      });
+      els.batchSendBackdrop.addEventListener('click', (event) => {
+        if (event.target === els.batchSendBackdrop) closeBackdrop(els.batchSendBackdrop);
+      });
+      els.includeDndToggle.addEventListener('change', () => {
+        els.includeDndConfirmLine.classList.toggle('hidden', !els.includeDndToggle.checked);
+        if (!els.includeDndToggle.checked) {
+          els.includeDndConfirmToggle.checked = false;
+        }
+      });
+      document.getElementById('preview-batch-send-btn').addEventListener('click', () => {
+        previewBatchSend().catch((error) => {
+          els.batchSendStatus.textContent = (error && error.message) || '预览失败';
+          els.batchSendStatus.className = 'status-line error';
+        });
+      });
+      document.getElementById('execute-batch-send-btn').addEventListener('click', () => {
+        executeBatchSend().catch((error) => {
+          els.batchSendStatus.textContent = (error && error.message) || '群发失败';
+          els.batchSendStatus.className = 'status-line error';
+        });
+      });
+    }
+
+    function handlePageError(error) {
+      els.pageStatus.textContent = (error && error.message) || '页面加载失败';
+      els.pageStatus.className = 'status-line error';
     }
 
     async function boot() {
-      bindFilters();
-      renderTab();
-      await Promise.all([loadOverview(), loadList(), loadHistory()]);
+      bindEvents();
+      renderCards();
+      renderClassTermOptions();
+      renderList();
+      renderBatchBar();
+      renderBatchImages();
+      resetPreview();
+      await loadOverviewAndList();
     }
 
-    boot().catch(handleError);
+    boot().catch(handlePageError);
   </script>
 </body>
 </html>

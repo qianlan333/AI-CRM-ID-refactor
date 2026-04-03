@@ -147,10 +147,35 @@ def _ensure_sqlite_questionnaire_mobile_type(db) -> None:
     db.execute("PRAGMA foreign_keys = ON")
 
 
+def _ensure_sqlite_user_ops_page_tables(db) -> None:
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_send_records_created
+        ON user_ops_send_records (created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_do_not_disturb_external_active
+        ON user_ops_do_not_disturb (external_userid, is_active, updated_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_do_not_disturb_mobile_active
+        ON user_ops_do_not_disturb (mobile, is_active, updated_at DESC)
+        """
+    )
+    send_record_columns = _sqlite_table_columns(db, "user_ops_send_records")
+    if send_record_columns and "image_count" not in send_record_columns:
+        db.execute("ALTER TABLE user_ops_send_records ADD COLUMN image_count INTEGER NOT NULL DEFAULT 0")
+
+
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
     _ensure_sqlite_questionnaire_mobile_type(db)
+    _ensure_sqlite_user_ops_page_tables(db)
     columns = _sqlite_table_columns(db, "archived_messages")
     if "chat_type" not in columns:
         db.execute("ALTER TABLE archived_messages ADD COLUMN chat_type TEXT NOT NULL DEFAULT 'private'")
@@ -184,6 +209,33 @@ def _init_sqlite(db) -> None:
     db.commit()
 
 
+def _ensure_postgres_user_ops_page_tables(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS user_ops_send_records
+        ADD COLUMN IF NOT EXISTS image_count INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_send_records_created
+        ON user_ops_send_records (created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_do_not_disturb_external_active
+        ON user_ops_do_not_disturb (external_userid, is_active, updated_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_do_not_disturb_mobile_active
+        ON user_ops_do_not_disturb (mobile, is_active, updated_at DESC)
+        """
+    )
+
+
 def _init_postgres(db) -> None:
     db.execute(
         """
@@ -205,6 +257,7 @@ def _init_postgres(db) -> None:
     )
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
+    _ensure_postgres_user_ops_page_tables(db)
     db.execute("ALTER TABLE questionnaire_questions DROP CONSTRAINT IF EXISTS questionnaire_questions_type_check")
     db.execute(
         """
