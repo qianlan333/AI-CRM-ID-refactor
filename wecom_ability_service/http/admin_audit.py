@@ -11,9 +11,9 @@ def admin_audit_logs():
     return _render_admin_template(
         "audit.html",
         active_nav="audit",
-        page_title="操作审计",
-        page_summary="所有后台写操作、确认执行、MCP sample call 和配置变更统一落在 admin_operation_logs。当前页提供标准化筛选、分页、排序和可分享 query params。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("操作审计", None)),
+        page_title="操作记录",
+        page_summary="这里可以查看谁在什么时间做了什么修改。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("操作记录", None)),
         audit_payload=payload,
     )
 

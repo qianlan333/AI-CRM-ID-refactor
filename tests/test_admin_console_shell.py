@@ -162,20 +162,22 @@ def test_admin_console_home_renders_navigation_and_status_chips(client):
 
     assert response.status_code == 200
     assert "CRM Console" in html
-    assert "统一后台壳 v1" in html
+    assert "客户管理后台" in html
+    assert "业务管理后台" in html
     assert "工作台" in html
-    assert "系统状态" in html
+    assert "系统概况" in html
     assert "业务总览" in html
     assert "待处理事项" in html
     assert "快捷入口" in html
     assert "客户" in html
     assert "运营" in html
     assert "问卷" in html
-    assert "MCP" in html
+    assert "AI 工具" in html
     assert "配置" in html
-    assert "同步与任务" in html
+    assert "同步任务" in html
+    assert "操作记录" in html
     assert "系统" in html
-    assert "release" in html
+    assert "当前版本" in html
 
 
 def test_admin_dashboard_shell_context_api_returns_shell_status(client):
@@ -246,11 +248,11 @@ def test_admin_console_home_renders_dashboard_sections_from_aggregates(app, clie
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Archived Messages" in html
-    assert "User Ops Lead Pool" in html
-    assert "Pending Message Batches" in html
-    assert "Deferred Jobs" in html
-    assert "Failed Questionnaire Apply" in html
-    assert "去客户中心" in html
-    assert "去同步与任务" in html
-    assert "去配置中心" in html
+    assert "聊天消息" in html
+    assert "运营名单" in html
+    assert "待确认消息批次" in html
+    assert "待处理作业" in html
+    assert "问卷处理失败" in html
+    assert "进入客户中心" in html
+    assert "进入同步任务" in html
+    assert "进入配置中心" in html

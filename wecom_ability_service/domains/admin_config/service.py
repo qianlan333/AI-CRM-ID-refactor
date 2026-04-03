@@ -31,115 +31,115 @@ TARGET_MCP_TOOL_SETTING = "mcp_tool_setting"
 APP_SETTING_DEFINITIONS = (
     {
         "key": "WECOM_CORP_ID",
-        "label": "WeCom Corp ID",
+        "label": "企业微信 Corp ID",
         "mode": "editable",
         "input_type": "text",
-        "description": "企业微信 corp_id。",
+        "description": "企业微信的唯一标识。",
     },
     {
         "key": "WECOM_AGENT_ID",
-        "label": "WeCom Agent ID",
+        "label": "企业微信 Agent ID",
         "mode": "editable",
         "input_type": "text",
-        "description": "企业微信应用 agent_id。",
+        "description": "企业微信应用的编号。",
     },
     {
         "key": "WECOM_API_BASE",
-        "label": "WeCom API Base",
+        "label": "企业微信接口地址",
         "mode": "editable",
         "input_type": "url",
-        "description": "企业微信 API 地址。",
+        "description": "企业微信接口访问地址。",
     },
     {
         "key": "WECOM_DEFAULT_OWNER_USERID",
-        "label": "Default Owner UserID",
+        "label": "默认负责人账号",
         "mode": "editable",
         "input_type": "text",
-        "description": "默认 owner userid。",
+        "description": "没有明确负责人时使用的默认负责人账号。",
     },
     {
         "key": "WECOM_PRIVATE_KEY_PATH",
-        "label": "Private Key Path",
+        "label": "会话存档私钥路径",
         "mode": "editable",
         "input_type": "text",
-        "description": "企微会话存档私钥路径。",
+        "description": "会话存档使用的私钥文件路径。",
     },
     {
         "key": "WECOM_SDK_LIB_PATH",
-        "label": "SDK Lib Path",
+        "label": "会话存档 SDK 路径",
         "mode": "editable",
         "input_type": "text",
-        "description": "企微会话存档 SDK 路径。",
+        "description": "会话存档 SDK 所在路径。",
     },
     {
         "key": "WECOM_ARCHIVE_TIMEOUT",
-        "label": "Archive Timeout",
+        "label": "会话存档超时时间",
         "mode": "editable",
         "input_type": "number",
-        "description": "企微 API 超时时间（秒）。",
+        "description": "会话存档相关请求的超时时间（秒）。",
     },
     {
         "key": "WECHAT_MP_APP_ID",
-        "label": "WeChat MP App ID",
+        "label": "微信公众号 App ID",
         "mode": "editable",
         "input_type": "text",
-        "description": "微信 H5 OAuth app_id。",
+        "description": "微信授权所使用的公众号 App ID。",
     },
     {
         "key": "WECHAT_MP_OAUTH_SCOPE",
-        "label": "WeChat OAuth Scope",
+        "label": "微信授权范围",
         "mode": "editable",
         "input_type": "text",
-        "description": "微信 OAuth scope。",
+        "description": "微信授权时使用的范围设置。",
     },
     {
         "key": "WECOM_SECRET",
-        "label": "WeCom Secret",
+        "label": "企业微信 Secret",
         "mode": "masked",
         "input_type": "password",
-        "description": "企业微信主应用 secret。只展示掩码，留空则保持不变。",
+        "description": "企业微信主应用密钥。页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "WECOM_CONTACT_SECRET",
-        "label": "WeCom Contact Secret",
+        "label": "企业微信联系人 Secret",
         "mode": "masked",
         "input_type": "password",
-        "description": "企业微信通讯录 secret。只展示掩码，留空则保持不变。",
+        "description": "企业微信联系人接口密钥。页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "WECOM_ARCHIVE_SECRET",
-        "label": "WeCom Archive Secret",
+        "label": "会话存档 Secret",
         "mode": "masked",
         "input_type": "password",
-        "description": "企业微信会话存档 secret。只展示掩码，留空则保持不变。",
+        "description": "会话存档接口密钥。页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "WECOM_CALLBACK_TOKEN",
-        "label": "Callback Token",
+        "label": "回调 Token",
         "mode": "masked",
         "input_type": "password",
-        "description": "回调 token。只展示掩码，留空则保持不变。",
+        "description": "回调验证令牌。页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "WECOM_CALLBACK_AES_KEY",
-        "label": "Callback AES Key",
+        "label": "回调 AES Key",
         "mode": "masked",
         "input_type": "password",
-        "description": "回调 AES key。只展示掩码，留空则保持不变。",
+        "description": "回调加密密钥。页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "WECHAT_MP_APP_SECRET",
-        "label": "WeChat MP App Secret",
+        "label": "微信公众号 App Secret",
         "mode": "masked",
         "input_type": "password",
-        "description": "微信 H5 OAuth secret。只展示掩码，留空则保持不变。",
+        "description": "微信授权密钥。页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "MCP_BEARER_TOKEN",
-        "label": "MCP Bearer Token",
+        "label": "AI 工具访问令牌",
         "mode": "masked",
         "input_type": "password",
-        "description": "MCP 鉴权 token。只展示是否已配置，留空则保持不变。",
+        "description": "AI 工具访问令牌。页面不会显示完整内容；留空表示保持原值。",
     },
 )
 
@@ -156,9 +156,9 @@ def _normalize_int(value: Any, *, field_name: str, minimum: int | None = None) -
     try:
         number = int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field_name} must be an integer") from exc
+        raise ValueError(f"{field_name} 必须是整数") from exc
     if minimum is not None and number < minimum:
-        raise ValueError(f"{field_name} must be >= {minimum}")
+        raise ValueError(f"{field_name} 不能小于 {minimum}")
     return number
 
 
@@ -238,11 +238,11 @@ def _recent_audit_entries(target_type: str, limit: int = 8) -> list[dict[str, An
 def config_tabs(active_key: str) -> list[dict[str, Any]]:
     items = [
         {"key": "overview", "label": "概览", "href": "/admin/config"},
-        {"key": "routing", "label": "Owner / Routing", "href": "/admin/config/routing"},
-        {"key": "signup_tags", "label": "Signup Tags", "href": "/admin/config/signup-tags"},
-        {"key": "class_term_tags", "label": "Class Term Tags", "href": "/admin/config/class-term-tags"},
-        {"key": "app_settings", "label": "App Settings", "href": "/admin/config/app-settings"},
-        {"key": "mcp_tools", "label": "MCP Tools", "href": "/admin/config/mcp-tools"},
+        {"key": "routing", "label": "负责人 / 分配规则", "href": "/admin/config/routing"},
+        {"key": "signup_tags", "label": "报名标签规则", "href": "/admin/config/signup-tags"},
+        {"key": "class_term_tags", "label": "班期标签规则", "href": "/admin/config/class-term-tags"},
+        {"key": "app_settings", "label": "系统设置", "href": "/admin/config/app-settings"},
+        {"key": "mcp_tools", "label": "AI 工具设置", "href": "/admin/config/mcp-tools"},
     ]
     return [{**item, "active": item["key"] == active_key} for item in items]
 
@@ -258,33 +258,33 @@ def build_config_home_payload() -> dict[str, Any]:
     return {
         "cards": [
             {
-                "label": "Owner / Routing",
+                "label": "负责人 / 分配规则",
                 "value": len(routing_rows),
-                "description": "owner_role_map + routing_rule_config",
+                "description": "负责人角色与客户分配规则",
                 "href": "/admin/config/routing",
             },
             {
-                "label": "Signup Tags",
+                "label": "报名标签规则",
                 "value": len(signup_rules.get("items") or []),
-                "description": f"missing {len(signup_rules.get('status_definitions') or []) - len(signup_rules.get('items') or [])}",
+                "description": f"待补齐 {len(signup_rules.get('status_definitions') or []) - len(signup_rules.get('items') or [])} 项",
                 "href": "/admin/config/signup-tags",
             },
             {
-                "label": "Class Term Tags",
+                "label": "班期标签规则",
                 "value": len(class_term_rows),
                 "description": USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
                 "href": "/admin/config/class-term-tags",
             },
             {
-                "label": "App Settings",
+                "label": "系统设置",
                 "value": len(app_rows["rows"]),
-                "description": "可编辑与掩码项分离",
+                "description": "区分可直接修改项和敏感项",
                 "href": "/admin/config/app-settings",
             },
             {
-                "label": "MCP Tools",
+                "label": "AI 工具设置",
                 "value": len(mcp_rows["rows"]),
-                "description": "tool enable/disable + console metadata",
+                "description": "管理工具启用状态和展示信息",
                 "href": "/admin/config/mcp-tools",
             },
         ]
@@ -322,17 +322,17 @@ def list_owner_routing_settings(*, query: str, active_only: bool) -> dict[str, A
         "owner_rows": owner_rows,
         "routing_rows": routing_rows,
         "summary_cards": [
-            {"label": "Owner Rows", "value": len(owner_rows), "description": "owner_role_map 当前条目"},
+            {"label": "负责人条目", "value": len(owner_rows), "description": "当前已维护的负责人角色数量"},
             {
-                "label": "Active Owners",
+                "label": "启用负责人",
                 "value": sum(1 for row in owner_rows if bool(row.get("active"))),
-                "description": "active = true",
+                "description": "当前启用中的负责人数量",
             },
-            {"label": "Routing Rules", "value": len(routing_rows), "description": "routing_rule_config 当前条目"},
+            {"label": "分配规则", "value": len(routing_rows), "description": "当前已维护的分配规则数量"},
             {
-                "label": "Active Rules",
+                "label": "启用规则",
                 "value": sum(1 for row in routing_rows if bool(row.get("active"))),
-                "description": "active = true",
+                "description": "当前启用中的分配规则数量",
             },
         ],
         "audit_entries": _recent_audit_entries(TARGET_ROUTING_RULE_CONFIG, limit=8)
@@ -408,9 +408,9 @@ def list_signup_tag_settings(*, query: str, active_only: bool) -> dict[str, Any]
         "missing_statuses": missing_statuses,
         "bootstrap_initialized": not missing_statuses,
         "summary_cards": [
-            {"label": "Definitions", "value": len(definitions), "description": "内部业务状态定义"},
-            {"label": "Active Rules", "value": len(rows), "description": "signup_tag_rules 当前条目"},
-            {"label": "Missing Statuses", "value": len(missing_statuses), "description": "未完成 bootstrap 的状态"},
+            {"label": "状态定义", "value": len(definitions), "description": "当前可用的业务状态数量"},
+            {"label": "已配置规则", "value": len(rows), "description": "当前已维护的标签规则数量"},
+            {"label": "待补齐状态", "value": len(missing_statuses), "description": "还没有对应标签规则的状态"},
         ],
         "audit_entries": _recent_audit_entries(TARGET_SIGNUP_TAG_RULE, limit=8),
     }
@@ -476,10 +476,10 @@ def list_class_term_tag_mappings(*, query: str, active_only: bool) -> dict[str, 
     return {
         "rows": rows,
         "summary_cards": [
-            {"label": "Mappings", "value": len(rows), "description": "class_term_tag_mapping 当前条目"},
-            {"label": "Active Rows", "value": sum(1 for row in rows if row["is_active"]), "description": "is_active = true"},
-            {"label": "Tag IDs Ready", "value": tag_id_configured, "description": "已完成 WeCom tag 对齐"},
-            {"label": "Missing Tag IDs", "value": max(len(rows) - tag_id_configured, 0), "description": "仍需补齐 tag_id / group_id"},
+            {"label": "规则数量", "value": len(rows), "description": "当前已维护的班期标签规则数量"},
+            {"label": "启用规则", "value": sum(1 for row in rows if row["is_active"]), "description": "当前启用中的规则数量"},
+            {"label": "已完成标签对齐", "value": tag_id_configured, "description": "已经补齐标签编号的规则数量"},
+            {"label": "待补齐标签编号", "value": max(len(rows) - tag_id_configured, 0), "description": "仍需补齐标签编号的规则数量"},
         ],
         "bootstrap_group_name": USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
         "audit_entries": _recent_audit_entries(TARGET_CLASS_TERM_TAG_MAPPING, limit=8),
@@ -494,7 +494,7 @@ def save_class_term_tag_mapping(payload: dict[str, Any], *, operator: str) -> di
     tag_name = _normalized_text(payload.get("tag_name"))
     class_term_label = _normalized_text(payload.get("class_term_label")) or f"{class_term_no}期"
     if not tag_name:
-        raise ValueError("tag_name is required")
+        raise ValueError("标签名称不能为空")
     before = repo.get_class_term_tag_mapping(mapping_id) if mapping_id else None
     saved_id = repo.upsert_class_term_tag_mapping(
         mapping_id=mapping_id,
@@ -531,7 +531,7 @@ def _validate_known_setting(key: str, value: str) -> str:
     if key == "WECOM_ARCHIVE_TIMEOUT":
         return str(_normalize_int(normalized or "0", field_name=key, minimum=1))
     if key == "WECOM_API_BASE" and normalized and not normalized.startswith(("http://", "https://")):
-        raise ValueError("WECOM_API_BASE must start with http:// or https://")
+        raise ValueError("企业微信接口地址必须以 http:// 或 https:// 开头")
     return normalized
 
 
@@ -562,9 +562,9 @@ def list_admin_app_settings(*, query: str, scope: str) -> dict[str, Any]:
         "rows": rows,
         "metadata_map": metadata_map,
         "summary_cards": [
-            {"label": "Editable", "value": editable_count, "description": "可直接编辑项"},
-            {"label": "Masked", "value": masked_count, "description": "secret / token 掩码项"},
-            {"label": "Configured", "value": configured_count, "description": "当前已配置项"},
+            {"label": "可直接编辑", "value": editable_count, "description": "可以直接修改的设置项"},
+            {"label": "敏感信息", "value": masked_count, "description": "只显示掩码的设置项"},
+            {"label": "已配置", "value": configured_count, "description": "当前已经配置完成的设置项"},
         ],
         "audit_entries": _recent_audit_entries(TARGET_APP_SETTING, limit=10),
     }
@@ -632,8 +632,85 @@ def _default_tool_group(tool_name: str) -> str:
     return "misc"
 
 
-def _default_display_name(tool_name: str) -> str:
+def _tool_group_label(value: str) -> str:
+    mapping = {
+        "crm": "客户查询",
+        "tasks": "触达任务",
+        "config": "配置规则",
+        "ops": "同步任务",
+        "misc": "其他",
+    }
+    normalized = _normalized_text(value)
+    return mapping.get(normalized, normalized or "-")
+
+
+def _legacy_default_display_name(tool_name: str) -> str:
     return tool_name.replace("_", " ").title()
+
+
+def _default_display_name(tool_name: str) -> str:
+    mapping = {
+        "resolve_customer": "定位客户",
+        "get_contact": "查看客户资料",
+        "get_customer_context": "查看客户上下文",
+        "get_messages": "查看聊天历史",
+        "get_recent_messages": "查看最近聊天",
+        "search_messages": "搜索聊天内容",
+        "get_group_chat": "查看群聊资料",
+        "mark_tags": "添加客户标签",
+        "unmark_tags": "移除客户标签",
+        "update_customer_tags": "更新客户标签",
+        "create_private_message_task": "创建单聊任务",
+        "create_group_message_task": "创建群发任务",
+        "create_moment_task": "创建朋友圈任务",
+        "record_conversion_feedback": "记录转化反馈",
+        "get_owner_role_map": "查看负责人角色",
+        "get_signup_tag_rules": "查看报名标签规则",
+        "get_routing_config": "查看分配规则",
+        "get_pending_message_batches": "查看待确认消息批次",
+        "get_message_batch": "查看消息批次详情",
+        "ack_message_batch": "确认消息批次",
+        "get_owner_recent_chat_dump": "查看负责人最近聊天",
+        "get_hourly_followup_candidates": "查看跟进候选",
+    }
+    return mapping.get(tool_name, _legacy_default_display_name(tool_name))
+
+
+def _default_tool_description(tool_name: str, fallback: str = "") -> str:
+    mapping = {
+        "resolve_customer": "根据手机号或客户编号定位客户。",
+        "get_contact": "查看单个客户的基础资料。",
+        "get_customer_context": "查看客户资料、互动记录和最近聊天。",
+        "get_messages": "查看客户完整聊天历史。",
+        "get_recent_messages": "查看客户最近聊天。",
+        "search_messages": "按关键词搜索客户聊天内容。",
+        "get_group_chat": "查看群聊资料。",
+        "mark_tags": "给客户添加标签。",
+        "unmark_tags": "移除客户标签。",
+        "update_customer_tags": "统一处理客户标签更新。",
+        "create_private_message_task": "创建单聊触达任务。",
+        "create_group_message_task": "创建群发触达任务。",
+        "create_moment_task": "创建朋友圈触达任务。",
+        "record_conversion_feedback": "记录转化反馈。",
+        "get_owner_role_map": "查看负责人角色配置。",
+        "get_signup_tag_rules": "查看报名标签规则。",
+        "get_routing_config": "查看当前分配规则。",
+        "get_pending_message_batches": "查看待确认的消息批次。",
+        "get_message_batch": "查看单个消息批次详情。",
+        "ack_message_batch": "确认消息批次已处理。",
+        "get_owner_recent_chat_dump": "查看某位负责人的最近聊天记录。",
+        "get_hourly_followup_candidates": "查看建议优先跟进的客户。",
+    }
+    return mapping.get(tool_name, fallback)
+
+
+def _audit_action_label(action_type: str) -> str:
+    mapping = {
+        "create": "新建",
+        "update": "更新",
+    }
+    normalized = _normalized_text(action_type)
+    return mapping.get(normalized, normalized or "-")
 
 
 def ensure_mcp_tool_settings_seed() -> None:
@@ -662,12 +739,15 @@ def list_mcp_tool_settings(*, query: str, enabled_only: bool) -> dict[str, Any]:
     for item in repo.list_mcp_tool_settings():
         tool_name = _normalized_text(item.get("tool_name"))
         default = defaults.get(tool_name, {})
+        raw_display_name = _normalized_text(item.get("display_name"))
+        tool_group = _normalized_text(item.get("tool_group")) or _default_tool_group(tool_name)
         row = {
             "tool_name": tool_name,
-            "tool_group": _normalized_text(item.get("tool_group")) or _default_tool_group(tool_name),
-            "display_name": _normalized_text(item.get("display_name")) or _default_display_name(tool_name),
+            "tool_group": tool_group,
+            "tool_group_label": _tool_group_label(tool_group),
+            "display_name": _default_display_name(tool_name) if not raw_display_name or raw_display_name == _legacy_default_display_name(tool_name) else raw_display_name,
             "description_override": _normalized_text(item.get("description_override")),
-            "description": _normalized_text(item.get("description_override")) or _normalized_text(default.get("description")),
+            "description": _normalized_text(item.get("description_override")) or _default_tool_description(tool_name, _normalized_text(default.get("description"))),
             "enabled": bool(item.get("enabled")),
             "visible_in_console": bool(item.get("visible_in_console")),
             "show_sample_args": bool(item.get("show_sample_args")),
@@ -687,12 +767,12 @@ def list_mcp_tool_settings(*, query: str, enabled_only: bool) -> dict[str, Any]:
         "auth_configured": bool(auth_value),
         "auth_source": auth_source,
         "summary_cards": [
-            {"label": "Tools", "value": len(rows), "description": "已表化 MCP tool settings"},
-            {"label": "Enabled", "value": sum(1 for row in rows if row["enabled"]), "description": "运行时启用工具"},
-            {"label": "Visible", "value": sum(1 for row in rows if row["visible_in_console"]), "description": "后台展示工具"},
-            {"label": "Auth", "value": "configured" if auth_value else "missing", "description": "MCP auth token 状态"},
+            {"label": "工具数量", "value": len(rows), "description": "当前可管理的 AI 工具数量"},
+            {"label": "已启用", "value": sum(1 for row in rows if row["enabled"]), "description": "当前允许调用的工具数量"},
+            {"label": "后台展示", "value": sum(1 for row in rows if row["visible_in_console"]), "description": "当前在后台显示的工具数量"},
+            {"label": "访问令牌", "value": "已配置" if auth_value else "未配置", "description": "AI 工具访问令牌状态"},
         ],
-        "audit_entries": _recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8),
+        "audit_entries": [{**item, "action_label": _audit_action_label(item.get("action_type"))} for item in _recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)],
     }
 
 
@@ -700,7 +780,7 @@ def save_mcp_tool_setting(payload: dict[str, Any], *, operator: str) -> dict[str
     tool_name = _normalized_text(payload.get("tool_name"))
     defaults = {item["name"]: item for item in _default_mcp_tool_defs() if _normalized_text(item.get("name"))}
     if tool_name not in defaults:
-        raise ValueError("tool_name is invalid")
+        raise ValueError("工具名称不合法")
     before = repo.get_mcp_tool_setting(tool_name)
     repo.upsert_mcp_tool_setting(
         tool_name=tool_name,

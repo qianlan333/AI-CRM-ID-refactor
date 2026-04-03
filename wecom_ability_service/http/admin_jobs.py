@@ -58,9 +58,9 @@ def _jobs_page(
     return _render_admin_template(
         "jobs.html",
         active_nav="jobs",
-        page_title="同步与任务",
-        page_summary="同步与任务后台页统一展示 archive sync、callback runtime、message batches 和 deferred jobs。读路径只做聚合展示，写动作统一确认并写审计。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("同步与任务", None)),
+        page_title="同步任务",
+        page_summary="在这里查看聊天同步、回调状态、消息批次和待处理作业。需要执行的操作会先让你确认。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("同步任务", None)),
         jobs_payload=payload,
         page_notice=page_notice,
         page_error=page_error,
@@ -95,7 +95,7 @@ def admin_console_jobs_action():
         if payload.get("preview_only"):
             return _jobs_page(
                 tab=active_tab,
-                page_notice="当前为 preview，勾选确认后才会真正执行 archive sync。",
+                page_notice="这里会先展示操作预览，确认后才会真正执行同步。",
                 action_result=payload,
                 query_overrides=query_overrides,
             )

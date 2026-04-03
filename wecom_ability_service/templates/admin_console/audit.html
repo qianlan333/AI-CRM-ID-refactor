@@ -14,39 +14,38 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>标准化筛选</h2>
-      <p>当前页采用统一 query param：`q / target_type / action_type / operator / target_id / page / page_size / sort_by / sort_dir`。</p>
+      <h2>筛选条件</h2>
+      <p>可以按关键词、模块、操作人和时间查看记录。</p>
     </div>
     <div class="admin-toolbar">
-      <a class="admin-button admin-button--secondary" href="{{ audit_payload.shareable_href }}">分享当前查询</a>
-      <a class="admin-button admin-button--ghost" href="/api/admin/audit/logs">原始 API</a>
+      <a class="admin-button admin-button--secondary" href="{{ audit_payload.shareable_href }}">复制当前筛选链接</a>
     </div>
   </div>
   <form class="admin-filter-bar admin-form-grid admin-form-grid--audit" method="get" action="/admin/audit">
     <label>
       <span>全文检索</span>
-      <input type="text" name="q" value="{{ audit_payload.filters.q }}" placeholder="operator / action / target / json">
+      <input type="text" name="q" value="{{ audit_payload.filters.q }}" placeholder="操作人 / 动作 / 对象">
     </label>
     <label>
-      <span>target_type</span>
+      <span>模块</span>
       <select name="target_type">
         <option value="">全部</option>
         {% for item in audit_payload.target_type_options %}
-        <option value="{{ item }}" {% if audit_payload.filters.target_type == item %}selected{% endif %}>{{ item }}</option>
+        <option value="{{ item.value }}" {% if audit_payload.filters.target_type == item.value %}selected{% endif %}>{{ item.label }}</option>
         {% endfor %}
       </select>
     </label>
     <label>
-      <span>action_type</span>
+      <span>操作</span>
       <select name="action_type">
         <option value="">全部</option>
         {% for item in audit_payload.action_type_options %}
-        <option value="{{ item }}" {% if audit_payload.filters.action_type == item %}selected{% endif %}>{{ item }}</option>
+        <option value="{{ item.value }}" {% if audit_payload.filters.action_type == item.value %}selected{% endif %}>{{ item.label }}</option>
         {% endfor %}
       </select>
     </label>
     <label>
-      <span>operator</span>
+      <span>操作人</span>
       <select name="operator">
         <option value="">全部</option>
         {% for item in audit_payload.operator_options %}
@@ -55,11 +54,11 @@
       </select>
     </label>
     <label>
-      <span>target_id</span>
-      <input type="text" name="target_id" value="{{ audit_payload.filters.target_id }}" placeholder="external_userid / tool_name / key">
+      <span>查看对象</span>
+      <input type="text" name="target_id" value="{{ audit_payload.filters.target_id }}" placeholder="客户编号 / 工具名 / 配置项">
     </label>
     <label>
-      <span>page_size</span>
+      <span>每页数量</span>
       <select name="page_size">
         {% for size in [10, 20, 50, 100] %}
         <option value="{{ size }}" {% if audit_payload.filters.page_size == size %}selected{% endif %}>{{ size }}</option>
@@ -78,8 +77,8 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>审计日志</h2>
-      <p>点击列头切换排序；点击 target 跳到对应后台页；点击详情查看 before / after。</p>
+      <h2>操作记录列表</h2>
+      <p>点击对象可以跳到对应页面，点击查看详情可查看修改前后内容。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
@@ -91,8 +90,8 @@
             <a class="admin-table-sort-link" href="{{ audit_payload.sort_links[column.key] }}">{{ column.label }}</a>
           </th>
           {% endfor %}
-          <th>Before</th>
-          <th>After</th>
+          <th>修改前</th>
+          <th>修改后</th>
           <th>跳转</th>
         </tr>
       </thead>
@@ -101,14 +100,14 @@
         <tr>
           <td>{{ item.created_at }}</td>
           <td>{{ item.operator }}</td>
-          <td>{{ item.action_type }}</td>
-          <td>{{ item.target_type }}</td>
+          <td>{{ item.action_type_label }}</td>
+          <td>{{ item.target_type_label }}</td>
           <td><code>{{ item.target_id }}</code></td>
           <td><pre class="admin-json-inline">{{ item.before_preview }}</pre></td>
           <td><pre class="admin-json-inline">{{ item.after_preview }}</pre></td>
           <td>
-            <a class="admin-inline-link admin-inline-link--compact" href="{{ item.target_href }}">target</a>
-            <a class="admin-inline-link admin-inline-link--compact" href="{{ item.detail_href }}">detail</a>
+            <a class="admin-inline-link admin-inline-link--compact" href="{{ item.target_href }}">查看对象</a>
+            <a class="admin-inline-link admin-inline-link--compact" href="{{ item.detail_href }}">查看详情</a>
           </td>
         </tr>
         {% else %}
@@ -135,56 +134,29 @@
     <div class="admin-card-head">
       <div>
         <h2>详情</h2>
-        <p>支持通过 `log_id` query param 直接分享单条审计详情。</p>
+        <p>这里展示单条记录的完整变更内容。</p>
       </div>
     </div>
     {% if audit_payload.selected_entry %}
     <div class="admin-state admin-state--inline">
-      <strong>#{{ audit_payload.selected_entry.id }} · {{ audit_payload.selected_entry.action_type }}</strong>
+      <strong>#{{ audit_payload.selected_entry.id }} · {{ audit_payload.selected_entry.action_type_label }}</strong>
       <span>{{ audit_payload.selected_entry.operator }} · {{ audit_payload.selected_entry.created_at }}</span>
-      <span>{{ audit_payload.selected_entry.target_type }} / {{ audit_payload.selected_entry.target_id }}</span>
+      <span>{{ audit_payload.selected_entry.target_type_label }} / {{ audit_payload.selected_entry.target_id }}</span>
     </div>
     <div class="admin-code-panel">
-      <h3>Before</h3>
+      <h3>修改前</h3>
       <pre class="admin-code-block">{{ audit_payload.selected_entry.before_pretty }}</pre>
     </div>
     <div class="admin-code-panel">
-      <h3>After</h3>
+      <h3>修改后</h3>
       <pre class="admin-code-block">{{ audit_payload.selected_entry.after_pretty }}</pre>
     </div>
     {% else %}
     <div class="admin-state admin-state--inline">
       <strong>尚未选择日志</strong>
-      <span>点击上表中的 `detail` 查看完整 before / after。</span>
+      <span>点击上表中的“查看详情”查看完整修改内容。</span>
     </div>
     {% endif %}
-  </article>
-
-  <article class="admin-card">
-    <div class="admin-card-head">
-      <div>
-        <h2>查询规范</h2>
-        <p>治理层统一要求：筛选器、分页、排序和 query param 可分享。</p>
-      </div>
-    </div>
-    <div class="admin-audit-list">
-      <div class="admin-audit-item">
-        <strong>筛选器</strong>
-        <span>统一使用 GET query params，支持刷新与分享。</span>
-      </div>
-      <div class="admin-audit-item">
-        <strong>分页</strong>
-        <span>统一 `page / page_size`，不在 POST body 里藏分页状态。</span>
-      </div>
-      <div class="admin-audit-item">
-        <strong>排序</strong>
-        <span>统一 `sort_by / sort_dir`，列头跳转保持可追溯。</span>
-      </div>
-      <div class="admin-audit-item">
-        <strong>页面跳转</strong>
-        <span>target 一律回到统一后台页，不再跳回旧 legacy UI。</span>
-      </div>
-    </div>
   </article>
 </section>
 {% endblock %}

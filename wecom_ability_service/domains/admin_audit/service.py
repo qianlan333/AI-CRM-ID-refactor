@@ -40,48 +40,48 @@ LEGACY_ADMIN_PATH_ROWS = [
 
 RISK_CONTROL_ROWS = [
     {
-        "scope": "Customer Tags",
-        "risk_level": "high",
-        "strategy": "preview first",
-        "confirmation": "checkbox confirm",
+        "scope": "客户标签操作",
+        "risk_level": "高",
+        "strategy": "先预览，再执行",
+        "confirmation": "勾选确认",
         "notes": "客户详情页默认 dry-run 预览；勾选确认才执行真实打标/去标。",
     },
     {
-        "scope": "Customer Tasks",
-        "risk_level": "high",
-        "strategy": "preview first",
-        "confirmation": "checkbox confirm",
+        "scope": "客户触达任务",
+        "risk_level": "高",
+        "strategy": "先预览，再执行",
+        "confirmation": "勾选确认",
         "notes": "private/group/moment task 默认先生成 preview payload。",
     },
     {
-        "scope": "Operations Imports / Backfill / Deferred Jobs",
-        "risk_level": "high",
-        "strategy": "confirm required",
-        "confirmation": "checkbox confirm",
+        "scope": "导入、回填和待处理作业",
+        "risk_level": "高",
+        "strategy": "执行前必须确认",
+        "confirmation": "勾选确认",
         "notes": "导入、回填、跑作业统一要求确认；backfill 支持 dry-run。",
     },
     {
-        "scope": "App Settings",
-        "risk_level": "high",
-        "strategy": "confirm required",
-        "confirmation": "confirm=true",
+        "scope": "系统设置",
+        "risk_level": "高",
+        "strategy": "保存前必须确认",
+        "confirmation": "明确确认后保存",
         "notes": "secret 仅 masked 展示；保存必须显式确认并落审计。",
     },
     {
-        "scope": "MCP High-Risk Sample Call",
-        "risk_level": "high",
-        "strategy": "preview or second confirm",
-        "confirmation": "confirm_high_risk",
-        "notes": "高风险 MCP 写工具默认不 live run；无 native dry-run 的只展示 request preview。",
+        "scope": "AI 工具高风险试运行",
+        "risk_level": "高",
+        "strategy": "先预览，必要时二次确认",
+        "confirmation": "高风险二次确认",
+        "notes": "高风险 AI 工具默认不直接执行；不支持原生预览的只展示本次请求内容。",
     },
 ]
 
 RUNBOOK_ROWS = [
-    {"label": "服务状态", "href": "/api/ops/status", "description": "服务 runtime 快照与健康摘要。"},
-    {"label": "Archive 健康检查", "href": "/api/archive/health", "description": "Archive SDK / 配置检查。"},
-    {"label": "MCP 控制台", "href": "/admin/mcp", "description": "查看 `/mcp` runtime、preflight 和 sample call。"},
-    {"label": "问卷中心", "href": "/admin/questionnaires", "description": "执行 questionnaire preflight 并检查提交 / apply。"},
-    {"label": "审计中心", "href": "/admin/audit", "description": "查询后台写操作、预览和配置变更。"},
+    {"label": "服务状态", "href": "/api/ops/status", "description": "查看服务运行情况和健康摘要。"},
+    {"label": "聊天同步检查", "href": "/api/archive/health", "description": "检查聊天同步相关配置和连接状态。"},
+    {"label": "AI 工具控制台", "href": "/admin/mcp", "description": "查看 AI 工具状态、环境检查和试运行。"},
+    {"label": "问卷中心", "href": "/admin/questionnaires", "description": "查看问卷环境是否齐全，并检查提交结果。"},
+    {"label": "操作记录", "href": "/admin/audit", "description": "查看后台关键操作和配置变更记录。"},
 ]
 
 TARGET_ROUTE_MAP = {
@@ -102,10 +102,10 @@ TARGET_ROUTE_MAP = {
 
 SORTABLE_COLUMNS = (
     {"key": "created_at", "label": "时间"},
-    {"key": "operator", "label": "Operator"},
-    {"key": "action_type", "label": "Action"},
-    {"key": "target_type", "label": "Target Type"},
-    {"key": "target_id", "label": "Target"},
+    {"key": "operator", "label": "操作人"},
+    {"key": "action_type", "label": "操作"},
+    {"key": "target_type", "label": "模块"},
+    {"key": "target_id", "label": "对象"},
 )
 
 
@@ -137,6 +137,61 @@ def _target_href(target_type: str, target_id: str) -> str:
     if builder:
         return builder(_normalized_text(target_id))
     return _build_href("/admin/audit", {"target_type": target_type, "target_id": target_id})
+
+
+def _target_type_label(value: Any) -> str:
+    mapping = {
+        "customer_tag_action": "客户标签",
+        "customer_task_action": "客户触达任务",
+        "questionnaire_console_action": "问卷中心",
+        "operations_console_action": "运营管理",
+        "owner_role_map": "负责人配置",
+        "routing_rule_config": "分配规则",
+        "signup_tag_rule": "报名标签规则",
+        "class_term_tag_mapping": "班期标签规则",
+        "app_setting": "系统设置",
+        "mcp_tool_setting": "AI 工具设置",
+        "mcp_preflight": "AI 工具环境检查",
+        "mcp_sample_call": "AI 工具试运行",
+        "jobs_console_action": "同步任务",
+    }
+    normalized = _normalized_text(value)
+    return mapping.get(normalized, normalized or "-")
+
+
+def _action_type_label(value: Any) -> str:
+    normalized = _normalized_text(value)
+    mapping = {
+        "ack_message_batch": "确认消息批次",
+        "apply_backfill_owner_class_terms": "执行班期回填",
+        "preview_backfill_owner_class_terms": "预览班期回填",
+        "disable_questionnaire": "停用问卷",
+        "enable_questionnaire": "启用问卷",
+        "save_questionnaire": "保存问卷",
+        "execute_mcp_sample_call": "正式试运行",
+        "preview_mcp_sample_call": "试运行预览",
+        "preview_archive_sync": "预览聊天同步",
+        "run_archive_sync": "执行聊天同步",
+        "run_deferred_jobs": "执行待处理作业",
+        "run_mcp_preflight": "执行环境检查",
+        "migrate_class_user_status": "同步班级状态",
+        "import_mobile_class_terms": "导入班期",
+        "import_activation_status": "导入激活状态",
+        "update": "更新",
+    }
+    if normalized in mapping:
+        return mapping[normalized]
+    if normalized == "execute_mark":
+        return "执行添加标签"
+    if normalized == "execute_unmark":
+        return "执行移除标签"
+    if normalized == "execute_private_message":
+        return "发送单聊任务"
+    if normalized == "execute_group_message":
+        return "发送群发任务"
+    if normalized == "execute_moment":
+        return "发送朋友圈任务"
+    return normalized or "-"
 
 
 def _pretty_json(value: Any) -> str:
@@ -193,6 +248,8 @@ def build_admin_audit_payload(args: Any) -> dict[str, Any]:
         items.append(
             {
                 **row,
+                "target_type_label": _target_type_label(row.get("target_type")),
+                "action_type_label": _action_type_label(row.get("action_type")),
                 "target_href": _target_href(_normalized_text(row.get("target_type")), _normalized_text(row.get("target_id"))),
                 "detail_href": _build_href("/admin/audit", {**filters, "log_id": row["id"]}),
                 "before_preview": _log_preview_text(row.get("before_json") or {}),
@@ -208,6 +265,8 @@ def build_admin_audit_payload(args: Any) -> dict[str, Any]:
         if row:
             selected_entry = {
                 **row,
+                "target_type_label": _target_type_label(row.get("target_type")),
+                "action_type_label": _action_type_label(row.get("action_type")),
                 "target_href": _target_href(_normalized_text(row.get("target_type")), _normalized_text(row.get("target_id"))),
                 "before_pretty": _pretty_json(row.get("before_json") or {}),
                 "after_pretty": _pretty_json(row.get("after_json") or {}),
@@ -241,17 +300,17 @@ def build_admin_audit_payload(args: Any) -> dict[str, Any]:
         "items": items,
         "selected_entry": selected_entry or {},
         "summary_cards": [
-            {"label": "Audit Logs", "value": total, "description": "当前筛选结果总数"},
-            {"label": "Operators", "value": len({item["operator"] for item in items if _normalized_text(item.get("operator"))}), "description": "当前页涉及操作人"},
-            {"label": "Targets", "value": len({item["target_type"] for item in items if _normalized_text(item.get("target_type"))}), "description": "当前页 target type 数量"},
+            {"label": "操作记录", "value": total, "description": "当前筛选结果总数"},
+            {"label": "操作人", "value": len({item["operator"] for item in items if _normalized_text(item.get("operator"))}), "description": "当前页涉及的操作人数"},
+            {"label": "模块", "value": len({item["target_type"] for item in items if _normalized_text(item.get("target_type"))}), "description": "当前页涉及的模块数量"},
             {
-                "label": "High Risk",
+                "label": "高风险操作",
                 "value": sum(
                     1
                     for item in items
                     if any(token in _normalized_text(item.get("action_type")) for token in ("execute_", "run_", "save_", "disable_", "enable_", "import_", "apply_"))
                 ),
-                "description": "当前页高风险动作数量",
+                "description": "当前页高风险操作数量",
             },
         ],
         "pagination": {
@@ -266,8 +325,8 @@ def build_admin_audit_payload(args: Any) -> dict[str, Any]:
         "sort_columns": SORTABLE_COLUMNS,
         "sort_links": sort_links,
         "operator_options": repo.list_distinct_values("operator"),
-        "action_type_options": repo.list_distinct_values("action_type"),
-        "target_type_options": repo.list_distinct_values("target_type"),
+        "action_type_options": [{"value": item, "label": _action_type_label(item)} for item in repo.list_distinct_values("action_type")],
+        "target_type_options": [{"value": item, "label": _target_type_label(item)} for item in repo.list_distinct_values("target_type")],
         "shareable_href": _build_href("/admin/audit", filters),
     }
 

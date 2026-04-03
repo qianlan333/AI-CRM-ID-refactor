@@ -15,8 +15,8 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Runbooks</h2>
-        <p>常见运维入口和 preflight 入口统一收口。</p>
+        <h2>常用入口</h2>
+        <p>这里可以快速进入常用系统入口和检查页面。</p>
       </div>
     </div>
     <div class="admin-table-wrap">
@@ -44,18 +44,18 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>风险控制策略</h2>
-        <p>高风险动作统一要求 preview first 或显式确认。</p>
+        <h2>重要操作提醒</h2>
+        <p>执行高风险操作前，请先预览或确认。</p>
       </div>
     </div>
     <div class="admin-table-wrap">
       <table class="admin-table">
         <thead>
           <tr>
-            <th>Scope</th>
-            <th>Risk</th>
-            <th>Strategy</th>
-            <th>Confirm</th>
+            <th>操作范围</th>
+            <th>风险级别</th>
+            <th>处理方式</th>
+            <th>确认方式</th>
           </tr>
         </thead>
         <tbody>
@@ -71,38 +71,5 @@
       </table>
     </div>
   </article>
-</section>
-
-<section class="admin-card">
-  <div class="admin-card-head">
-    <div>
-      <h2>旧 Admin Path 兼容策略</h2>
-      <p>旧 `/admin/*/ui` 页面不再并行维护；统一结论是 `redirect + deprecated`。</p>
-    </div>
-  </div>
-  <div class="admin-table-wrap">
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>旧路径</th>
-          <th>处理策略</th>
-          <th>新路径</th>
-          <th>状态</th>
-          <th>说明</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in legacy_rows %}
-        <tr>
-          <td><code>{{ item.legacy_path }}</code></td>
-          <td>{{ item.strategy }}</td>
-          <td><a class="admin-inline-link admin-inline-link--compact" href="{{ item.replacement }}"><code>{{ item.replacement }}</code></a></td>
-          <td>{{ item.status }}</td>
-          <td>{{ item.notes }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
 </section>
 {% endblock %}

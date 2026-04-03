@@ -683,9 +683,9 @@ def test_user_ops_shell_page_exists(client):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "CRM Console" in html
-    assert "运营看板" in html
-    assert "User Ops 列表" in html
-    assert "Deferred Jobs" in html
+    assert "运营管理" in html
+    assert "运营名单" in html
+    assert "待处理作业" in html
 
 
 def test_user_ops_legacy_ui_hides_legacy_fields_and_buttons(client):

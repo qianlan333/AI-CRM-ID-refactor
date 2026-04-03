@@ -106,12 +106,12 @@ def test_admin_audit_page_renders_filters_pagination_and_detail(app, client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "操作审计" in html
-    assert "标准化筛选" in html
-    assert "分享当前查询" in html
+    assert "操作记录" in html
+    assert "筛选条件" in html
+    assert "复制当前筛选链接" in html
     assert "WECOM_SECRET" in html
     assert "tester-beta" in html
-    assert "支持通过 `log_id` query param 直接分享单条审计详情" in html
+    assert "查看详情" in html
 
 
 def test_api_admin_audit_logs_support_filters_sort_and_pagination(app, client):
@@ -148,11 +148,10 @@ def test_admin_system_page_renders_runbooks_and_legacy_strategy(client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Runbooks" in html
-    assert "风险控制策略" in html
-    assert "旧 Admin Path 兼容策略" in html
-    assert "/admin/user-ops/ui" in html
+    assert "常用入口" in html
+    assert "重要操作提醒" in html
     assert "/admin/audit" in html
+    assert "/admin/user-ops/ui" not in html
 
 
 def test_shell_topbar_renders_governance_links(client):
@@ -160,10 +159,9 @@ def test_shell_topbar_renders_governance_links(client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "MCP Preflight" in html
-    assert "Questionnaire Preflight" in html
-    assert "Runbooks" in html
-    assert "审计" in html
+    assert "MCP Preflight" not in html
+    assert "Questionnaire Preflight" not in html
+    assert "Runbooks" not in html
 
 
 def test_admin_config_app_settings_api_requires_confirmation(client):

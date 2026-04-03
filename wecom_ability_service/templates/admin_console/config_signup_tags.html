@@ -13,8 +13,8 @@
 
 <section class="admin-card">
   <div class="admin-state admin-state--inline">
-    <strong>WeCom Tag Bootstrap：{{ "已完成" if bootstrap_initialized else "未完成" }}</strong>
-    <span>tag group: {{ tag_group_name }}</span>
+    <strong>企业微信标签准备状态：{{ "已完成" if bootstrap_initialized else "未完成" }}</strong>
+    <span>标签组：{{ tag_group_name }}</span>
     {% if missing_statuses %}
     <span>缺失状态：{{ missing_statuses | join(", ") }}</span>
     {% endif %}
@@ -25,11 +25,11 @@
   <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
     <label>
       <span>筛选</span>
-      <input type="text" name="q" value="{{ filters.q }}" placeholder="tag_id / tag_name / signup_status">
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="标签编号 / 标签名称 / 状态">
     </label>
     <label class="admin-checkbox">
       <input type="checkbox" name="active_only" value="1" {% if filters.active_only %}checked{% endif %}>
-      <span>仅看 active</span>
+      <span>仅看启用项</span>
     </label>
     <div class="admin-form-actions">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
@@ -42,17 +42,17 @@
   <div class="admin-card-head">
     <div>
       <h2>状态定义</h2>
-      <p>tag 与内部业务状态的映射定义。</p>
+      <p>这里展示标签和业务状态的对应关系。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
         <tr>
-          <th>signup_status</th>
-          <th>label</th>
-          <th>tag_name</th>
-          <th>routing_alias</th>
+          <th>状态编号</th>
+          <th>状态名称</th>
+          <th>标签名称</th>
+          <th>分配标识</th>
         </tr>
       </thead>
       <tbody>
@@ -72,20 +72,20 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>Signup Tag Rules</h2>
-      <p>当前运行时使用的 signup_tag_rules。</p>
+      <h2>报名标签规则</h2>
+      <p>这里展示当前正在使用的报名标签规则。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
         <tr>
-          <th>tag_id</th>
-          <th>tag_name</th>
-          <th>signup_status</th>
-          <th>active</th>
-          <th>updated_at</th>
-          <th>last_modified_by</th>
+          <th>标签编号</th>
+          <th>标签名称</th>
+          <th>对应状态</th>
+          <th>是否启用</th>
+          <th>更新时间</th>
+          <th>最近修改人</th>
           <th></th>
         </tr>
       </thead>
@@ -95,7 +95,7 @@
           <td><code>{{ row.tag_id }}</code></td>
           <td>{{ row.tag_name }}</td>
           <td>{{ row.signup_status }}</td>
-          <td>{{ "yes" if row.active else "no" }}</td>
+          <td>{{ "是" if row.active else "否" }}</td>
           <td>{{ row.updated_at or row.last_modified_at }}</td>
           <td>{{ row.last_modified_by or "-" }}</td>
           <td><a class="admin-inline-link" href="/admin/config/signup-tags?edit_tag={{ row.tag_id }}">编辑</a></td>
@@ -109,21 +109,21 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>编辑 Signup Tag Rule</h2>
-      <p>保存会经 domain service 校验 signup_status 合法性并写入审计。</p>
+      <h2>编辑报名标签规则</h2>
+      <p>保存前会检查状态是否有效，并记录操作人和时间。</p>
     </div>
   </div>
   <form class="admin-form-grid" method="post" action="/admin/config/signup-tags/save">
     <label>
-      <span>tag_id</span>
+      <span>标签编号</span>
       <input type="text" name="tag_id" value="{{ form_row.tag_id or '' }}" required>
     </label>
     <label>
-      <span>tag_name</span>
+      <span>标签名称</span>
       <input type="text" name="tag_name" value="{{ form_row.tag_name or '' }}" required>
     </label>
     <label>
-      <span>signup_status</span>
+      <span>对应状态</span>
       <select name="signup_status" required>
         {% for item in definitions %}
         <option value="{{ item.signup_status }}" {% if item.signup_status == form_row.signup_status %}selected{% endif %}>{{ item.signup_status }} / {{ item.label }}</option>
@@ -132,14 +132,14 @@
     </label>
     <label class="admin-checkbox">
       <input type="checkbox" name="active" value="1" {% if form_row.active %}checked{% endif %}>
-      <span>active</span>
+      <span>启用</span>
     </label>
     <label>
-      <span>operator</span>
-      <input type="text" name="operator" placeholder="who edits this config">
+      <span>操作人</span>
+      <input type="text" name="operator" placeholder="填写本次修改人">
     </label>
     <div class="admin-form-actions">
-      <button class="admin-button admin-button--primary" type="submit">保存 Signup Tag Rule</button>
+      <button class="admin-button admin-button--primary" type="submit">保存报名标签规则</button>
     </div>
   </form>
 </section>
@@ -148,7 +148,7 @@
   <div class="admin-card-head">
     <div>
       <h2>最近审计</h2>
-      <p>signup_tag_rules 最近变更记录。</p>
+      <p>这里展示报名标签规则最近的修改记录。</p>
     </div>
   </div>
   <div class="admin-audit-list">

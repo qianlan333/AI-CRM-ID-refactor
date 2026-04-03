@@ -57,11 +57,11 @@ def _mcp_list_tools(client, token: str = "mcp-token"):
 def test_admin_config_pages_render(client):
     expected = {
         "/admin/config": "配置中心",
-        "/admin/config/routing": "Owner / Routing 配置",
-        "/admin/config/signup-tags": "Signup Tags 配置",
-        "/admin/config/class-term-tags": "Class Term Tags 配置",
-        "/admin/config/app-settings": "App Settings",
-        "/admin/config/mcp-tools": "MCP Tools 配置",
+        "/admin/config/routing": "负责人 / 分配规则",
+        "/admin/config/signup-tags": "报名标签规则",
+        "/admin/config/class-term-tags": "班期标签规则",
+        "/admin/config/app-settings": "系统设置",
+        "/admin/config/mcp-tools": "AI 工具设置",
     }
     for path, marker in expected.items():
         response = client.get(path)

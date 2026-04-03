@@ -13,8 +13,8 @@
 
 <section class="admin-card">
   <div class="admin-state admin-state--inline">
-    <strong>WeCom Class Term Bootstrap</strong>
-    <span>target group: {{ bootstrap_group_name }}</span>
+    <strong>班期标签准备状态</strong>
+    <span>标签组：{{ bootstrap_group_name }}</span>
   </div>
 </section>
 
@@ -22,11 +22,11 @@
   <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
     <label>
       <span>筛选</span>
-      <input type="text" name="q" value="{{ filters.q }}" placeholder="class term / tag / group">
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="班期 / 标签 / 标签组">
     </label>
     <label class="admin-checkbox">
       <input type="checkbox" name="active_only" value="1" {% if filters.active_only %}checked{% endif %}>
-      <span>仅看 active</span>
+      <span>仅看启用项</span>
     </label>
     <div class="admin-form-actions">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
@@ -38,21 +38,21 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>Class Term Tag Mappings</h2>
-      <p>结构化维护 class term 与 WeCom tag 的对应关系。</p>
+      <h2>班期标签规则</h2>
+      <p>这里维护班期和标签之间的对应关系。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
         <tr>
-          <th>id</th>
-          <th>class_term</th>
-          <th>tag group / tag</th>
-          <th>tag_id</th>
-          <th>group_id</th>
-          <th>active</th>
-          <th>last_modified_by</th>
+          <th>编号</th>
+          <th>班期</th>
+          <th>标签组 / 标签</th>
+          <th>标签编号</th>
+          <th>标签组编号</th>
+          <th>是否启用</th>
+          <th>最近修改人</th>
           <th></th>
         </tr>
       </thead>
@@ -64,7 +64,7 @@
           <td>{{ row.tag_group_name }} / {{ row.tag_name }}</td>
           <td><code>{{ row.tag_id or "-" }}</code></td>
           <td><code>{{ row.group_id or "-" }}</code></td>
-          <td>{{ "yes" if row.is_active else "no" }}</td>
+          <td>{{ "是" if row.is_active else "否" }}</td>
           <td>{{ row.last_modified_by or "-" }}</td>
           <td><a class="admin-inline-link" href="/admin/config/class-term-tags?edit_mapping={{ row.id }}">编辑</a></td>
         </tr>
@@ -77,50 +77,50 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>编辑 Class Term Mapping</h2>
-      <p>可维护 tag/group/strategy 与内部班期号的映射。</p>
+      <h2>编辑班期标签规则</h2>
+      <p>在这里维护班期、标签组和标签编号。</p>
     </div>
   </div>
   <form class="admin-form-grid" method="post" action="/admin/config/class-term-tags/save">
     <input type="hidden" name="mapping_id" value="{{ form_row.id or '' }}">
     <label>
-      <span>class_term_no</span>
+      <span>班期编号</span>
       <input type="number" name="class_term_no" value="{{ form_row.class_term_no or '' }}" min="1" required>
     </label>
     <label>
-      <span>class_term_label</span>
+      <span>班期名称</span>
       <input type="text" name="class_term_label" value="{{ form_row.class_term_label or '' }}">
     </label>
     <label>
-      <span>tag_group_name</span>
+      <span>标签组名称</span>
       <input type="text" name="tag_group_name" value="{{ form_row.tag_group_name or '' }}" required>
     </label>
     <label>
-      <span>tag_name</span>
+      <span>标签名称</span>
       <input type="text" name="tag_name" value="{{ form_row.tag_name or '' }}" required>
     </label>
     <label>
-      <span>tag_id</span>
+      <span>标签编号</span>
       <input type="text" name="tag_id" value="{{ form_row.tag_id or '' }}">
     </label>
     <label>
-      <span>group_id</span>
+      <span>标签组编号</span>
       <input type="text" name="group_id" value="{{ form_row.group_id or '' }}">
     </label>
     <label>
-      <span>strategy_id</span>
+      <span>策略编号</span>
       <input type="text" name="strategy_id" value="{{ form_row.strategy_id or '' }}">
     </label>
     <label class="admin-checkbox">
       <input type="checkbox" name="is_active" value="1" {% if form_row.is_active %}checked{% endif %}>
-      <span>is_active</span>
+      <span>启用</span>
     </label>
     <label>
-      <span>operator</span>
-      <input type="text" name="operator" placeholder="who edits this config">
+      <span>操作人</span>
+      <input type="text" name="operator" placeholder="填写本次修改人">
     </label>
     <div class="admin-form-actions">
-      <button class="admin-button admin-button--primary" type="submit">保存 Class Term Mapping</button>
+      <button class="admin-button admin-button--primary" type="submit">保存班期标签规则</button>
     </div>
   </form>
 </section>
@@ -129,7 +129,7 @@
   <div class="admin-card-head">
     <div>
       <h2>最近审计</h2>
-      <p>class_term_tag_mapping 最近变更记录。</p>
+      <p>这里展示班期标签规则最近的修改记录。</p>
     </div>
   </div>
   <div class="admin-audit-list">

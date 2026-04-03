@@ -14,7 +14,7 @@ function updateShellStatus(payload) {
     envNode.className = `admin-chip admin-chip--${shellStatus.environment.tone || "unknown"}`;
   }
   if (releaseNode) {
-    releaseNode.textContent = `release ${shellStatus.release_sha || "local"}`;
+    releaseNode.textContent = `当前版本 ${shellStatus.release_sha || "local"}`;
   }
   if (healthNode && shellStatus.health) {
     healthNode.textContent = shellStatus.health.label || "UNKNOWN";
@@ -62,16 +62,16 @@ function bootLegacyFrames() {
 
     frame.addEventListener("load", ready, { once: true });
     window.setTimeout(() => {
-      if (loaded) {
-        return;
-      }
-      state.classList.remove("admin-state--loading");
-      state.classList.add("admin-state--error");
-      state.innerHTML = [
-        "<strong>legacy 页面载入超时</strong>",
-        "<span>壳层已经就绪，但内部 legacy 页面没有按预期完成加载。</span>",
-      ].join("");
-    }, 15000);
+    if (loaded) {
+      return;
+    }
+    state.classList.remove("admin-state--loading");
+    state.classList.add("admin-state--error");
+    state.innerHTML = [
+        "<strong>页面加载超时</strong>",
+        "<span>当前页面没有按预期完成加载，请稍后重试。</span>",
+    ].join("");
+  }, 15000);
   });
 }
 

@@ -56,9 +56,9 @@ def _mcp_page(
     return _render_admin_template(
         "mcp.html",
         active_nav="mcp",
-        page_title="MCP 控制台",
-        page_summary="MCP 控制台把现有 /mcp 产品化为统一后台页面：查看 tool registry、runtime 状态、配置落点和安全 sample call；但 tool name、/mcp path 与协议兼容性保持不变。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("MCP 控制台", None)),
+        page_title="AI 工具控制台",
+        page_summary="在这里查看 AI 工具是否可用，并做安全试运行。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("AI 工具", None)),
         page_notice=page_notice,
         page_error=page_error,
         filters=payload["filters"],
@@ -85,7 +85,7 @@ def admin_console_mcp_preflight():
         result = run_mcp_preflight(operator=_operator_from_request())
     except Exception as exc:
         return _mcp_page(page_error=str(exc))
-    return _mcp_page(page_notice="MCP preflight 已执行", preflight_result=result)
+    return _mcp_page(page_notice="环境检查已执行。", preflight_result=result)
 
 
 def admin_console_mcp_sample_call():
@@ -107,7 +107,7 @@ def admin_console_mcp_sample_call():
     except ValueError as exc:
         return _mcp_page(page_error=str(exc), form_state=form_state)
     return _mcp_page(
-        page_notice="已执行 live call" if form_state["live_run"] else "已生成 sample preview",
+        page_notice="试运行已执行。" if form_state["live_run"] else "试运行预览已生成。",
         sample_result=result,
         form_state=form_state,
     )

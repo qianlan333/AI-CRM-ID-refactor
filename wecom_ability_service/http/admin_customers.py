@@ -15,12 +15,12 @@ from .admin_console import _breadcrumb_items, _render_admin_template
 
 CUSTOMER_TABS = (
     ("basic", "基本信息"),
-    ("timeline", "Timeline"),
-    ("recent-messages", "Recent Messages"),
-    ("tags", "Tags"),
-    ("tasks", "Tasks"),
-    ("questionnaires", "Questionnaire History"),
-    ("routing", "Routing / Owner Context"),
+    ("timeline", "互动记录"),
+    ("recent-messages", "最近聊天"),
+    ("tags", "标签管理"),
+    ("tasks", "触达任务"),
+    ("questionnaires", "问卷记录"),
+    ("routing", "分配信息"),
 )
 
 
@@ -43,8 +43,8 @@ def admin_console_customers():
         "customers.html",
         active_nav="customers",
         page_title="客户中心",
-        page_summary="直接复用 customer center 读模型，列表筛选和详情入口统一纳入 CRM Console，不对 customer_center/service 加副作用。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("客户", None)),
+        page_summary="查看客户资料、标签、状态和最近互动记录。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("客户", None)),
         customer_payload=payload,
     )
 
@@ -64,26 +64,26 @@ def _render_customer_detail_page(
             "placeholder.html",
             active_nav="customers",
             page_title="客户不存在",
-            page_summary="请求的 external_userid 不在当前 customer scope 内。",
+            page_summary="当前客户编号没有查到对应客户。",
             breadcrumbs=_breadcrumb_items(
-                ("CRM Console", url_for("api.admin_console_home")),
+                ("客户管理后台", url_for("api.admin_console_home")),
                 ("客户", url_for("api.admin_console_customers")),
                 (external_userid, None),
             ),
             actions=[{"label": "返回客户列表", "href": url_for("api.admin_console_customers"), "variant": "secondary"}],
             state_title="客户不存在",
-            state_body="当前 external_userid 没有命中 customer_center 的 scope。",
-            state_items=["检查 external_userid 是否正确", "检查 contacts / bindings / archived_messages 等基础数据"],
-            page_error=page_error or "customer not found",
+            state_body="请确认客户编号是否正确，或稍后重试。",
+            state_items=["检查客户编号是否输入正确", "确认当前环境已经同步到该客户数据"],
+            page_error=page_error or "未找到客户",
         ), 404
 
     return _render_admin_template(
         "customer_detail.html",
         active_nav="customers",
         page_title=payload["customer"].get("customer_name") or external_userid,
-        page_summary="客户详情页把基础资料、timeline、recent messages、tags、tasks、问卷历史和 routing context 收口到一个工作台里。默认读路径保持无副作用。",
+        page_summary="查看客户资料、沟通记录、标签、任务和问卷记录。",
         breadcrumbs=_breadcrumb_items(
-            ("CRM Console", url_for("api.admin_console_home")),
+            ("客户管理后台", url_for("api.admin_console_home")),
             ("客户", url_for("api.admin_console_customers")),
             (payload["customer"].get("customer_name") or external_userid, None),
         ),
@@ -117,7 +117,7 @@ def admin_console_customer_tag_action(external_userid: str):
             return _render_customer_detail_page(
                 external_userid,
                 active_tab=active_tab,
-                page_notice="标签动作已执行并记录审计。",
+                page_notice="标签操作已执行，并已记录操作人和时间。",
                 action_result=action_result,
                 active_action="tags",
             )
@@ -130,7 +130,7 @@ def admin_console_customer_tag_action(external_userid: str):
         return _render_customer_detail_page(
             external_userid,
             active_tab=active_tab,
-            page_notice="当前为 dry-run 预览，勾选确认后才会真正执行。",
+            page_notice="这里会先展示操作预览，确认后才会真正执行。",
             action_result=action_result,
             active_action="tags",
         )
@@ -158,7 +158,7 @@ def admin_console_customer_task_action(external_userid: str):
             return _render_customer_detail_page(
                 external_userid,
                 active_tab=active_tab,
-                page_notice="触达任务已执行并写入审计。",
+                page_notice="触达任务已执行，并已记录操作人和时间。",
                 action_result=action_result,
                 active_action="tasks",
             )
@@ -171,7 +171,7 @@ def admin_console_customer_task_action(external_userid: str):
         return _render_customer_detail_page(
             external_userid,
             active_tab=active_tab,
-            page_notice="当前为 dry-run 预览，勾选确认后才会真正发起任务。",
+            page_notice="这里会先展示操作预览，确认后才会真正执行。",
             action_result=action_result,
             active_action="tasks",
         )

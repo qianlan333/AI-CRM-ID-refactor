@@ -12,10 +12,10 @@ ADMIN_NAV_ITEMS = (
     {"key": "customers", "label": "客户", "endpoint": "api.admin_console_customers"},
     {"key": "operations", "label": "运营", "endpoint": "api.admin_console_user_ops"},
     {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
-    {"key": "mcp", "label": "MCP", "endpoint": "api.admin_console_mcp"},
+    {"key": "mcp", "label": "AI 工具", "endpoint": "api.admin_console_mcp"},
     {"key": "config", "label": "配置", "endpoint": "api.admin_config_home"},
-    {"key": "jobs", "label": "同步与任务", "endpoint": "api.admin_console_jobs"},
-    {"key": "audit", "label": "审计", "endpoint": "api.admin_audit_logs"},
+    {"key": "jobs", "label": "同步任务", "endpoint": "api.admin_console_jobs"},
+    {"key": "audit", "label": "操作记录", "endpoint": "api.admin_audit_logs"},
     {"key": "system", "label": "系统", "endpoint": "api.admin_console_system"},
 )
 
@@ -34,17 +34,64 @@ def build_admin_shell_status() -> dict[str, Any]:
     return {
         "environment": environment,
         "release_sha": repo.get_release_sha(current_app.config),
-        "health": health,
+        "health": {
+            **health,
+            "label": _health_label(health.get("label")),
+            "detail": _health_detail(health.get("detail")),
+        },
     }
 
 
 def _bool_label(value: bool) -> str:
-    return "Enabled" if value else "Disabled"
+    return "已开启" if value else "未开启"
 
 
 def _empty_value(value: str, *, fallback: str = "Never") -> str:
     text = str(value or "").strip()
     return text or fallback
+
+
+def _health_label(value: Any) -> str:
+    mapping = {
+        "HEALTHY": "正常",
+        "DEGRADED": "受限",
+        "WARN": "需关注",
+        "OK": "正常",
+        "FAILED": "失败",
+        "MISSING": "未配置",
+        "UNKNOWN": "未知",
+    }
+    normalized = str(value or "").strip().upper()
+    return mapping.get(normalized, normalized or "未知")
+
+
+def _health_detail(value: Any) -> str:
+    mapping = {
+        "service ok": "运行正常",
+        "archive sync failed": "最近聊天同步失败",
+        "callback not configured": "回调尚未配置",
+        "background async disabled": "后台异步处理未开启",
+        "status unavailable": "状态暂时无法获取",
+    }
+    text = str(value or "").strip()
+    return mapping.get(text, text or "状态暂时无法获取")
+
+
+def _status_text(value: Any, *, default: str = "-") -> str:
+    mapping = {
+        "success": "成功",
+        "failed": "失败",
+        "pending": "待处理",
+        "processing": "处理中",
+        "running": "运行中",
+        "acked": "已确认",
+        "never": "暂无记录",
+        "ready": "已就绪",
+        "configured": "已配置",
+        "missing": "未配置",
+    }
+    text = str(value or "").strip().lower()
+    return mapping.get(text, str(value or "").strip() or default)
 
 
 def build_system_status_payload() -> dict[str, Any]:
@@ -79,58 +126,58 @@ def build_system_status_payload() -> dict[str, Any]:
     cards = [
         {
             "key": "service_health",
-            "label": "Service Health",
+            "label": "服务状态",
             "value": health["label"],
             "description": health["detail"],
             "tone": health["state"],
         },
         {
             "key": "release_sha",
-            "label": "Release SHA",
+            "label": "当前版本",
             "value": snapshot["release_sha"],
             "description": "当前部署版本",
             "tone": "neutral",
         },
         {
             "key": "database_backend",
-            "label": "Database Backend",
+            "label": "数据库",
             "value": snapshot["database_backend"],
             "description": "当前运行数据库后端",
             "tone": "neutral",
         },
         {
             "key": "callback_enabled",
-            "label": "Callback",
+            "label": "回调状态",
             "value": _bool_label(callback_enabled),
             "description": "企业微信回调开关状态",
             "tone": "healthy" if callback_enabled else "degraded",
         },
         {
             "key": "background_async_enabled",
-            "label": "Background Async",
+            "label": "后台异步处理",
             "value": _bool_label(background_async_enabled),
             "description": "后台异步处理开关",
             "tone": "healthy" if background_async_enabled else "unknown",
         },
         {
             "key": "last_archive_sync",
-            "label": "Recent Archive Sync",
-            "value": str(last_archive_sync["status"] or "").upper() or "NEVER",
-            "description": _empty_value(last_archive_sync["time"]),
+            "label": "最近聊天同步",
+            "value": _status_text(last_archive_sync["status"], default="暂无记录"),
+            "description": _empty_value(last_archive_sync["time"], fallback="暂无记录"),
             "tone": "degraded" if last_archive_sync["status"] == "failed" else "neutral",
         },
         {
             "key": "deferred_jobs",
-            "label": "Deferred Jobs",
+            "label": "待处理作业",
             "value": total_attention_jobs,
-            "description": f"pending {pending_jobs} · running {running_jobs} · failed {failed_jobs}",
+            "description": f"待处理 {pending_jobs} · 运行中 {running_jobs} · 失败 {failed_jobs}",
             "tone": "degraded" if failed_jobs else ("unknown" if total_attention_jobs else "healthy"),
         },
         {
             "key": "last_contacts_sync_time",
-            "label": "Recent Contacts Sync",
-            "value": _empty_value(snapshot["last_contacts_sync_time"]),
-            "description": "contacts 表最近更新时间",
+            "label": "最近联系人同步",
+            "value": _empty_value(snapshot["last_contacts_sync_time"], fallback="暂无记录"),
+            "description": "联系人数据最近更新时间",
             "tone": "neutral",
         },
     ]
@@ -142,35 +189,35 @@ def build_dashboard_summary() -> dict[str, Any]:
     cards = [
         {
             "key": "archived_messages_total",
-            "label": "Archived Messages",
+            "label": "聊天消息",
             "value": counts["archived_messages_total"],
-            "description": "archived_messages 总量",
+            "description": "已归档聊天消息总量",
             "href": "/admin/jobs",
         },
         {
             "key": "contacts_total",
-            "label": "Contacts",
+            "label": "联系人",
             "value": counts["contacts_total"],
-            "description": "contacts 快照总量",
+            "description": "联系人快照总量",
             "href": "/admin/customers",
         },
         {
             "key": "group_chats_total",
-            "label": "Group Chats",
+            "label": "群聊",
             "value": counts["group_chats_total"],
-            "description": "group_chats 总量",
+            "description": "群聊总量",
             "href": "/admin/jobs",
         },
         {
             "key": "customers_total",
-            "label": "Customers",
+            "label": "客户",
             "value": counts["customers_total"],
-            "description": "基于 customer scope 聚合",
+            "description": "当前客户总量",
             "href": "/admin/customers",
         },
         {
             "key": "questionnaire_total",
-            "label": "Questionnaires",
+            "label": "问卷",
             "value": counts["questionnaire_total"],
             "description": (
                 f"最近提交 {_empty_value(counts['questionnaire_latest_submission'], fallback='暂无提交')}"
@@ -179,16 +226,16 @@ def build_dashboard_summary() -> dict[str, Any]:
         },
         {
             "key": "user_ops_lead_pool_total",
-            "label": "User Ops Lead Pool",
+            "label": "运营名单",
             "value": counts["user_ops_lead_pool_total"],
-            "description": "user_ops_lead_pool_current 总量",
+            "description": "当前运营名单总量",
             "href": "/admin/user-ops",
         },
         {
             "key": "class_user_current_total",
-            "label": "Class Users",
+            "label": "班级状态",
             "value": counts["class_user_current_total"],
-            "description": "class_user_status_current 总量",
+            "description": "当前班级状态总量",
             "href": "/admin/class-users",
         },
     ]
@@ -202,20 +249,20 @@ def _build_failed_apply_group() -> dict[str, Any]:
     rows = repo.list_recent_failed_questionnaire_apply_logs(limit=5)
     items = [
         {
-            "title": f"Submission #{row['submission_id']}",
+            "title": f"提交 #{row['submission_id']}",
             "meta": _empty_value(str(row.get("created_at") or "").strip()),
-            "detail": str(row.get("error_message") or "").strip() or "questionnaire apply failed",
+            "detail": str(row.get("error_message") or "").strip() or "问卷结果处理失败",
         }
         for row in rows
     ]
     return {
         "key": "failed_questionnaire_apply",
-        "title": "Failed Questionnaire Apply",
+        "title": "问卷处理失败",
         "count": len(rows),
-        "description": "最近失败的问卷 SCRM apply 记录。",
+        "description": "最近失败的问卷处理记录。",
         "tone": "danger" if rows else "ok",
         "items": items,
-        "empty_title": "最近没有问卷 apply 失败",
+        "empty_title": "最近没有问卷处理失败",
         "href": "/admin/questionnaires",
     }
 
@@ -228,43 +275,43 @@ def _build_questionnaire_preflight_group() -> dict[str, Any]:
         anomaly_items.append(
             {
                 "title": "WeChat OAuth 未配置",
-                "meta": "问卷身份匹配能力不完整",
-                "detail": "WECHAT_MP_APP_ID / WECHAT_MP_APP_SECRET / SECRET_KEY 需要完整配置。",
+                "meta": "微信授权尚未完整配置",
+                "detail": "问卷身份识别功能暂时不完整。",
             }
         )
     if not snapshot.get("wecom_contact_configured"):
         anomaly_items.append(
             {
                 "title": "WeCom Contact 凭证缺失",
-                "meta": "问卷 SCRM 侧无法完整工作",
-                "detail": "WECOM_CORP_ID / WECOM_CONTACT_SECRET 需要完整配置。",
+                "meta": "企业微信联系人能力尚未完整配置",
+                "detail": "问卷同步到客户侧的能力可能受限。",
             }
         )
     if not snapshot.get("wecom_tags_api_available"):
         anomaly_items.append(
             {
                 "title": "Tag Probe 未通过",
-                "meta": "首页只做轻量预检",
-                "detail": str(snapshot.get("wecom_tags_api_error") or "").strip() or "tag readiness check failed",
+                "meta": "企业微信标签检查未通过",
+                "detail": str(snapshot.get("wecom_tags_api_error") or "").strip() or "当前无法确认标签接口是否正常",
             }
         )
     if not snapshot.get("identity_map_available"):
         anomaly_items.append(
             {
                 "title": "Identity Map 不可用",
-                "meta": "external contact identity 读模型不可用",
-                "detail": str(snapshot.get("identity_map_error") or "").strip() or "identity map query failed",
+                "meta": "身份映射暂时不可用",
+                "detail": str(snapshot.get("identity_map_error") or "").strip() or "当前无法读取身份映射数据",
             }
         )
 
     return {
         "key": "questionnaire_preflight",
-        "title": "Questionnaire Preflight",
+        "title": "问卷环境检查",
         "count": len(anomaly_items),
-        "description": "首页展示轻量预检摘要，深度检查仍在问卷中心。",
+        "description": "这里提示问卷环境是否存在明显异常。",
         "tone": "warn" if anomaly_items else "ok",
         "items": anomaly_items,
-        "empty_title": "问卷轻量预检正常",
+        "empty_title": "问卷环境检查正常",
         "href": "/admin/questionnaires",
     }
 
@@ -275,19 +322,19 @@ def _build_mcp_runtime_group() -> dict[str, Any]:
     if not snapshot["bearer_token_configured"]:
         items.append(
             {
-                "title": "MCP Bearer Token 缺失",
-                "meta": "MCP runtime config",
-                "detail": "MCP_BEARER_TOKEN 未配置，后台只能显示异常摘要。",
+                "title": "AI 工具访问令牌未配置",
+                "meta": "AI 工具暂时无法完整使用",
+                "detail": "请先在系统设置中补齐访问令牌。",
             }
         )
     return {
         "key": "mcp_runtime",
-        "title": "MCP Runtime",
+        "title": "AI 工具状态",
         "count": len(items),
-        "description": "MCP 运行时配置异常摘要。",
+        "description": "这里提示 AI 工具的连接和配置异常。",
         "tone": "warn" if items else "ok",
         "items": items,
-        "empty_title": "MCP runtime 配置正常",
+        "empty_title": "AI 工具配置正常",
         "href": "/admin/mcp",
     }
 

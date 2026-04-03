@@ -984,8 +984,8 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     shell_text = shell_response.get_data(as_text=True)
     assert shell_response.status_code == 200
     assert "CRM Console" in shell_text
-    assert "运营看板" in shell_text
-    assert "Class User 当前状态池" in shell_text
+    assert "运营管理" in shell_text
+    assert "班级状态" in shell_text
 
     legacy_response = client.get("/admin/_legacy/class-user-management")
     ui_text = legacy_response.get_data(as_text=True)
@@ -1011,7 +1011,7 @@ def test_admin_questionnaire_shell_page_exists(client):
     assert response.status_code == 200
     assert "CRM Console" in text
     assert "问卷中心" in text
-    assert "Preflight" in text
+    assert "环境检查" in text
     assert "问卷列表" in text
 
 
@@ -1048,7 +1048,7 @@ def test_class_user_backoffice_ui_redirects_to_shell(client):
     shell_response = client.get("/admin/class-users?tab=class-users")
     shell_text = shell_response.get_data(as_text=True)
     assert shell_response.status_code == 200
-    assert "Class User 当前状态池" in shell_text
+    assert "班级状态" in shell_text
 
 
 def test_questionnaire_preflight_returns_200_with_missing_config(client, app, monkeypatch):

@@ -67,12 +67,12 @@ def test_admin_mcp_console_page_renders_registry_and_runtime(client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "MCP 控制台" in html
-    assert "MCP Runtime 状态" in html
-    assert "Tool Registry" in html
-    assert "Sample Call / Preview" in html
+    assert "AI 工具控制台" in html
+    assert "AI 工具连接状态" in html
+    assert "工具清单" in html
+    assert "试运行" in html
     assert "resolve_customer" in html
-    assert "Customer resolution aggregate" in html
+    assert "客户定位查询" in html
 
 
 def test_admin_mcp_preflight_writes_audit_log(app, client):
@@ -80,8 +80,8 @@ def test_admin_mcp_preflight_writes_audit_log(app, client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "MCP preflight 已执行" in html
-    assert "本次 Preflight" in html
+    assert "环境检查已执行。" in html
+    assert "本次检查" in html
 
     with app.app_context():
         row = get_db().execute(
@@ -118,9 +118,9 @@ def test_admin_mcp_sample_call_defaults_task_tool_to_dry_run(app, client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "已生成 sample preview" in html
+    assert "试运行预览已生成。" in html
     assert "create_private_message_task" in html
-    assert "requested_live=no" in html
+    assert "实际执行否" in html
 
     with app.app_context():
         outbound_count = get_db().execute("SELECT COUNT(*) AS total FROM outbound_tasks").fetchone()["total"]
@@ -160,7 +160,7 @@ def test_admin_mcp_sample_call_blocks_live_high_risk_without_confirmation(app, c
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "confirm_high_risk is required for high-risk tools" in html
+    assert "高风险工具需要二次确认" in html
 
     with app.app_context():
         outbound_count = get_db().execute("SELECT COUNT(*) AS total FROM outbound_tasks").fetchone()["total"]

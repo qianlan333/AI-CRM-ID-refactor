@@ -5,7 +5,7 @@
   <div class="admin-card-head">
     <div>
       <h2>同步与任务总览</h2>
-      <p>这一页专门承接 archive sync、callback runtime、message batches 和 deferred jobs，不再使用 placeholder。</p>
+      <p>这里集中展示聊天同步、回调状态、消息批次和待处理作业。</p>
     </div>
   </div>
   <section class="admin-card-grid">
@@ -14,13 +14,13 @@
       <div class="admin-card-label">{{ card.label }}</div>
       <div class="admin-card-value admin-card-value--compact">{{ card.value }}</div>
       <p class="admin-card-copy">{{ card.description }}</p>
-      <span class="admin-inline-chip admin-inline-chip--{{ card.tone }}">{{ card.tone }}</span>
+      <span class="admin-inline-chip admin-inline-chip--{{ card.tone }}">{{ "正常" if card.tone == "ok" else ("需关注" if card.tone == "warn" else ("失败" if card.tone == "danger" else "信息")) }}</span>
     </article>
     {% endfor %}
   </section>
 </section>
 
-<nav class="admin-subnav" aria-label="Jobs Navigation">
+<nav class="admin-subnav" aria-label="同步任务导航">
   {% for item in jobs_payload.tabs %}
   <a class="admin-subnav-link{% if item.active %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
   {% endfor %}
@@ -38,33 +38,32 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Archive Sync</h2>
-        <p>最近 sync runs 与运行状态。</p>
+        <h2>聊天同步</h2>
+        <p>查看最近聊天同步结果和执行状态。</p>
       </div>
-      <a class="admin-button admin-button--secondary" href="/admin/jobs?tab=archive">进入 Archive Sync</a>
     </div>
     <div class="admin-table-wrap">
       <table class="admin-table">
         <thead>
           <tr>
-            <th>Run</th>
-            <th>Status</th>
-            <th>Owner</th>
-            <th>Fetched / Inserted</th>
-            <th>Time</th>
+            <th>同步编号</th>
+            <th>状态</th>
+            <th>负责人</th>
+            <th>拉取 / 入库</th>
+            <th>时间</th>
           </tr>
         </thead>
         <tbody>
           {% for item in jobs_payload.sync_runs[:5] %}
           <tr>
             <td>#{{ item.id }}</td>
-            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status }}</span></td>
+            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status_label or item.status }}</span></td>
             <td>{{ item.owner_userid or "-" }}</td>
             <td>{{ item.fetched_count }}/{{ item.inserted_count }}</td>
             <td>{{ item.finished_or_created_at }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="5">暂无 sync runs</td></tr>
+          <tr><td colspan="5">暂无同步记录</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -74,31 +73,30 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Callbacks</h2>
-        <p>external-contact callback / wecom events 最近处理结果。</p>
+        <h2>回调状态</h2>
+        <p>查看最近回调和事件处理结果。</p>
       </div>
-      <a class="admin-button admin-button--secondary" href="/admin/jobs?tab=callbacks">进入 Callbacks</a>
     </div>
     <div class="admin-table-wrap">
       <table class="admin-table">
         <thead>
           <tr>
-            <th>Event</th>
-            <th>Status</th>
-            <th>external_userid</th>
-            <th>Error</th>
+            <th>事件</th>
+            <th>状态</th>
+            <th>客户编号</th>
+            <th>错误</th>
           </tr>
         </thead>
         <tbody>
           {% for item in jobs_payload.callback_logs[:5] %}
           <tr>
             <td>{{ item.event_label }}</td>
-            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.process_status }}</span></td>
+            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.process_status_label }}</span></td>
             <td><code>{{ item.external_userid or "-" }}</code></td>
             <td>{{ item.error_message or "-" }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="4">暂无 callback 日志</td></tr>
+          <tr><td colspan="4">暂无回调记录</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -108,19 +106,18 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Message Batches</h2>
-        <p>pending / acked 批次与窗口。</p>
+        <h2>消息批次</h2>
+        <p>查看待处理和已确认的消息批次。</p>
       </div>
-      <a class="admin-button admin-button--secondary" href="/admin/jobs?tab=batches">进入 Batches</a>
     </div>
     <div class="admin-table-wrap">
       <table class="admin-table">
         <thead>
           <tr>
-            <th>Batch</th>
-            <th>Window</th>
-            <th>Status</th>
-            <th>Messages</th>
+            <th>批次编号</th>
+            <th>批次窗口</th>
+            <th>状态</th>
+            <th>消息数</th>
           </tr>
         </thead>
         <tbody>
@@ -128,11 +125,11 @@
           <tr>
             <td>#{{ item.id }}</td>
             <td>{{ item.window_label }}</td>
-            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status }}</span></td>
+            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status_label or item.status }}</span></td>
             <td>{{ item.message_count }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="4">暂无 message batches</td></tr>
+          <tr><td colspan="4">暂无消息批次</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -142,19 +139,18 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Deferred Jobs</h2>
-        <p>user_ops_deferred_jobs 当前队列与最近状态。</p>
+        <h2>待处理作业</h2>
+        <p>查看待处理作业队列和最近执行状态。</p>
       </div>
-      <a class="admin-button admin-button--secondary" href="/admin/jobs?tab=deferred">进入 Deferred Jobs</a>
     </div>
     <div class="admin-table-wrap">
       <table class="admin-table">
         <thead>
           <tr>
-            <th>run_after</th>
-            <th>job_type</th>
-            <th>Status</th>
-            <th>owner / external</th>
+            <th>计划执行时间</th>
+            <th>作业类型</th>
+            <th>状态</th>
+            <th>负责人 / 客户</th>
           </tr>
         </thead>
         <tbody>
@@ -162,11 +158,11 @@
           <tr>
             <td>{{ item.run_after or "-" }}</td>
             <td>{{ item.job_type or "-" }}</td>
-            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status }}</span></td>
+            <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status_label or item.status }}</span></td>
             <td>{{ item.owner_userid or "-" }} / <code>{{ item.external_userid or "-" }}</code></td>
           </tr>
           {% else %}
-          <tr><td colspan="4">暂无 deferred jobs</td></tr>
+          <tr><td colspan="4">暂无待处理作业</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -180,25 +176,24 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Archive Runtime</h2>
-        <p>最近 sync 状态、health 和手动触发入口。</p>
-      </div>
-      <div class="admin-toolbar">
-        <a class="admin-button admin-button--secondary" href="/api/archive/health">原始 Health API</a>
-        <a class="admin-button admin-button--ghost" href="/api/ops/status">Ops Status</a>
+        <h2>同步状态</h2>
+        <p>查看最近同步结果和手动执行入口。</p>
       </div>
     </div>
     <dl class="admin-definition-list">
-      <div><dt>最近 Run ID</dt><dd>{{ jobs_payload.archive_runtime.last_sync_run.id or "-" }}</dd></div>
-      <div><dt>最近状态</dt><dd>{{ jobs_payload.archive_runtime.last_sync_run.status or "never" }}</dd></div>
+      <div><dt>最近同步编号</dt><dd>{{ jobs_payload.archive_runtime.last_sync_run.id or "-" }}</dd></div>
+      <div><dt>最近状态</dt><dd>{{ jobs_payload.archive_runtime.last_sync_run.status_label or "暂无记录" }}</dd></div>
       <div><dt>最近完成时间</dt><dd>{{ jobs_payload.archive_runtime.last_sync_run.finished_or_created_at or "-" }}</dd></div>
       <div><dt>成功 / 失败</dt><dd>{{ jobs_payload.archive_runtime.sync_counts.success_count }} / {{ jobs_payload.archive_runtime.sync_counts.failed_count }}</dd></div>
     </dl>
     {% if jobs_payload.archive_runtime.health %}
-    <pre class="admin-code-block">{{ jobs_payload.archive_runtime.health|tojson(indent=2) }}</pre>
+    <details class="admin-details-block">
+      <summary>高级信息</summary>
+      <pre class="admin-code-block">{{ jobs_payload.archive_runtime.health|tojson(indent=2) }}</pre>
+    </details>
     {% elif jobs_payload.archive_runtime.health_error %}
     <section class="admin-state admin-state--error">
-      <strong>Archive health check failed</strong>
+      <strong>同步检查失败</strong>
       <span>{{ jobs_payload.archive_runtime.health_error }}</span>
     </section>
     {% endif %}
@@ -207,37 +202,37 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>手动触发 Archive Sync</h2>
-        <p>默认先 preview 当前参数；勾选确认后才真正执行。</p>
+        <h2>手动执行聊天同步</h2>
+        <p>这里会先展示操作预览，确认后才会真正执行。</p>
       </div>
     </div>
     <form method="post" action="{{ url_for('api.admin_console_jobs_action') }}" class="admin-form-stack" data-jobs-form>
       <input type="hidden" name="return_tab" value="archive">
       <input type="hidden" name="action" value="run-archive-sync">
-      <label class="admin-field"><span>start_time</span><input type="text" name="start_time" value="{{ jobs_payload.archive_runtime.sync_form.start_time }}"></label>
-      <label class="admin-field"><span>end_time</span><input type="text" name="end_time" value="{{ jobs_payload.archive_runtime.sync_form.end_time }}"></label>
-      <label class="admin-field"><span>owner_userid</span><input type="text" name="owner_userid" value="{{ jobs_payload.archive_runtime.sync_form.owner_userid }}"></label>
-      <label class="admin-field"><span>cursor</span><input type="text" name="cursor" value="{{ jobs_payload.archive_runtime.sync_form.cursor }}"></label>
-      <label class="admin-field"><span>operator</span><input type="text" name="operator" value="{{ jobs_payload.archive_runtime.sync_form.operator }}" placeholder="who runs this action"></label>
-      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>确认执行 archive sync</span></label>
-      <button class="admin-button admin-button--primary" type="submit" data-jobs-submit data-loading-label="执行 sync 中...">预览 / 执行 Archive Sync</button>
+      <label class="admin-field"><span>开始时间</span><input type="text" name="start_time" value="{{ jobs_payload.archive_runtime.sync_form.start_time }}"></label>
+      <label class="admin-field"><span>结束时间</span><input type="text" name="end_time" value="{{ jobs_payload.archive_runtime.sync_form.end_time }}"></label>
+      <label class="admin-field"><span>负责人账号</span><input type="text" name="owner_userid" value="{{ jobs_payload.archive_runtime.sync_form.owner_userid }}"></label>
+      <label class="admin-field"><span>游标</span><input type="text" name="cursor" value="{{ jobs_payload.archive_runtime.sync_form.cursor }}"></label>
+      <label class="admin-field"><span>操作人</span><input type="text" name="operator" value="{{ jobs_payload.archive_runtime.sync_form.operator }}" placeholder="填写本次执行人"></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>我确认执行同步</span></label>
+      <button class="admin-button admin-button--primary" type="submit" data-jobs-submit data-loading-label="执行同步中...">先预览，再执行同步</button>
     </form>
   </article>
 </section>
 
 <section class="admin-card">
-  <div class="admin-card-head"><h2>最近 Sync Runs</h2></div>
+  <div class="admin-card-head"><h2>最近同步记录</h2></div>
   <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_jobs') }}">
     <input type="hidden" name="tab" value="archive">
     <label class="admin-field">
-      <span>status</span>
+      <span>状态</span>
       <select name="archive_status">
         {% for option in jobs_payload.archive_status_options %}
-        <option value="{{ option }}" {% if jobs_payload.archive_filters.status == option %}selected{% endif %}>{{ option or "all" }}</option>
+        <option value="{{ option }}" {% if jobs_payload.archive_filters.status == option %}selected{% endif %}>{% if not option %}全部{% elif option == "success" %}成功{% elif option == "failed" %}失败{% else %}{{ option }}{% endif %}</option>
         {% endfor %}
       </select>
     </label>
-    <label class="admin-field"><span>limit</span><input type="number" name="archive_limit" min="1" max="100" value="{{ jobs_payload.archive_filters.limit }}"></label>
+    <label class="admin-field"><span>显示数量</span><input type="number" name="archive_limit" min="1" max="100" value="{{ jobs_payload.archive_filters.limit }}"></label>
     <div class="admin-toolbar">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
     </div>
@@ -245,22 +240,22 @@
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
-        <tr>
-          <th>Run</th>
-          <th>Status</th>
-          <th>Window</th>
-          <th>Owner</th>
-          <th>Fetched</th>
-          <th>Inserted</th>
-          <th>Finished</th>
-          <th>Error</th>
-        </tr>
+          <tr>
+            <th>同步编号</th>
+            <th>状态</th>
+            <th>时间窗口</th>
+            <th>负责人</th>
+            <th>拉取</th>
+            <th>入库</th>
+            <th>完成时间</th>
+            <th>错误</th>
+          </tr>
       </thead>
       <tbody>
         {% for item in jobs_payload.sync_runs %}
         <tr>
           <td>#{{ item.id }}</td>
-          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status }}</span></td>
+          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status_label or item.status }}</span></td>
           <td>{{ item.start_time or "-" }} ~ {{ item.end_time or "-" }}</td>
           <td>{{ item.owner_userid or "-" }}</td>
           <td>{{ item.fetched_count }}</td>
@@ -269,7 +264,7 @@
           <td>{{ item.error_message or "-" }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="8">暂无 sync runs</td></tr>
+        <tr><td colspan="8">暂无同步记录</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -281,44 +276,44 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>Callback Runtime</h2>
-      <p>external-contact callback / wecom events 运行面板。</p>
+      <h2>回调状态</h2>
+      <p>查看回调是否开启，以及最近事件处理结果。</p>
     </div>
   </div>
   <section class="admin-stat-inline-grid">
     <article class="admin-mini-stat">
-      <div class="admin-card-label">Callback Enabled</div>
-      <div class="admin-mini-stat-value">{{ "Enabled" if jobs_payload.callback_runtime.enabled else "Disabled" }}</div>
+      <div class="admin-card-label">回调开关</div>
+      <div class="admin-mini-stat-value">{{ "已开启" if jobs_payload.callback_runtime.enabled else "未开启" }}</div>
     </article>
     <article class="admin-mini-stat">
-      <div class="admin-card-label">Background Async</div>
-      <div class="admin-mini-stat-value">{{ "Enabled" if jobs_payload.callback_runtime.async_enabled else "Disabled" }}</div>
+      <div class="admin-card-label">异步处理</div>
+      <div class="admin-mini-stat-value">{{ "已开启" if jobs_payload.callback_runtime.async_enabled else "未开启" }}</div>
     </article>
     <article class="admin-mini-stat">
-      <div class="admin-card-label">Failed</div>
+      <div class="admin-card-label">失败数量</div>
       <div class="admin-mini-stat-value">{{ jobs_payload.callback_runtime.counts.failed_count }}</div>
     </article>
     <article class="admin-mini-stat">
-      <div class="admin-card-label">Pending / Processing</div>
+      <div class="admin-card-label">待处理 / 处理中</div>
       <div class="admin-mini-stat-value">{{ jobs_payload.callback_runtime.counts.pending_count }} / {{ jobs_payload.callback_runtime.counts.processing_count }}</div>
     </article>
   </section>
 </section>
 
 <section class="admin-card">
-  <div class="admin-card-head"><h2>最近 Callback / Event Logs</h2></div>
+  <div class="admin-card-head"><h2>最近回调与事件记录</h2></div>
   <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_jobs') }}">
     <input type="hidden" name="tab" value="callbacks">
     <label class="admin-field">
-      <span>process_status</span>
+      <span>处理状态</span>
       <select name="callback_status">
         {% for option in jobs_payload.callback_status_options %}
-        <option value="{{ option }}" {% if jobs_payload.callback_filters.process_status == option %}selected{% endif %}>{{ option or "all" }}</option>
+        <option value="{{ option }}" {% if jobs_payload.callback_filters.process_status == option %}selected{% endif %}>{% if not option %}全部{% elif option == "pending" %}待处理{% elif option == "processing" %}处理中{% elif option == "success" %}成功{% elif option == "failed" %}失败{% else %}{{ option }}{% endif %}</option>
         {% endfor %}
       </select>
     </label>
-    <label class="admin-field"><span>query</span><input type="text" name="callback_query" value="{{ jobs_payload.callback_filters.query }}" placeholder="change_type / external_userid / error"></label>
-    <label class="admin-field"><span>limit</span><input type="number" name="callback_limit" min="1" max="100" value="{{ jobs_payload.callback_filters.limit }}"></label>
+    <label class="admin-field"><span>关键词</span><input type="text" name="callback_query" value="{{ jobs_payload.callback_filters.query }}" placeholder="事件类型 / 客户编号 / 错误信息"></label>
+    <label class="admin-field"><span>显示数量</span><input type="number" name="callback_limit" min="1" max="100" value="{{ jobs_payload.callback_filters.limit }}"></label>
     <div class="admin-toolbar">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
     </div>
@@ -326,15 +321,15 @@
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
-        <tr>
-          <th>Event</th>
-          <th>Status</th>
-          <th>external_userid</th>
-          <th>user_id</th>
-          <th>Retries</th>
-          <th>Updated</th>
-          <th>Error</th>
-        </tr>
+          <tr>
+            <th>事件</th>
+            <th>状态</th>
+            <th>客户编号</th>
+            <th>成员账号</th>
+            <th>重试次数</th>
+            <th>更新时间</th>
+            <th>错误</th>
+          </tr>
       </thead>
       <tbody>
         {% for item in jobs_payload.callback_logs %}
@@ -343,7 +338,7 @@
             <strong>{{ item.event_label }}</strong>
             <div class="admin-mono">{{ item.event_type }}</div>
           </td>
-          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.process_status }}</span></td>
+          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.process_status_label }}</span></td>
           <td><code>{{ item.external_userid or "-" }}</code></td>
           <td>{{ item.user_id or "-" }}</td>
           <td>{{ item.retry_count }}</td>
@@ -351,7 +346,7 @@
           <td>{{ item.error_message or "-" }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="7">暂无 callback logs</td></tr>
+        <tr><td colspan="7">暂无回调记录</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -364,36 +359,36 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Message Batches</h2>
-        <p>pending / acked 批次、窗口、message count 和 ack 状态。</p>
+        <h2>消息批次</h2>
+        <p>查看待处理、已确认的消息批次和时间窗口。</p>
       </div>
     </div>
     <section class="admin-stat-inline-grid">
       <article class="admin-mini-stat">
-        <div class="admin-card-label">Pending</div>
+        <div class="admin-card-label">待处理</div>
         <div class="admin-mini-stat-value">{{ jobs_payload.batches_runtime.counts.pending_count }}</div>
       </article>
       <article class="admin-mini-stat">
-        <div class="admin-card-label">Acked</div>
+        <div class="admin-card-label">已确认</div>
         <div class="admin-mini-stat-value">{{ jobs_payload.batches_runtime.counts.acked_count }}</div>
       </article>
       <article class="admin-mini-stat">
-        <div class="admin-card-label">Total</div>
+        <div class="admin-card-label">总数</div>
         <div class="admin-mini-stat-value">{{ jobs_payload.batches_runtime.counts.total_count }}</div>
       </article>
     </section>
   </article>
 
   <article class="admin-card">
-    <div class="admin-card-head"><h2>Batch 详情</h2></div>
+    <div class="admin-card-head"><h2>批次详情</h2></div>
     {% if jobs_payload.selected_batch %}
     <dl class="admin-definition-list">
-      <div><dt>Batch</dt><dd>#{{ jobs_payload.selected_batch.id }}</dd></div>
-      <div><dt>Status</dt><dd>{{ jobs_payload.selected_batch.status }}</dd></div>
-      <div><dt>Window</dt><dd>{{ jobs_payload.selected_batch.window_label }}</dd></div>
-      <div><dt>Message Count</dt><dd>{{ jobs_payload.selected_batch.message_count }}</dd></div>
-      <div><dt>Acked At</dt><dd>{{ jobs_payload.selected_batch.acked_at or "-" }}</dd></div>
-      <div><dt>Acked By</dt><dd>{{ jobs_payload.selected_batch.acked_by or "-" }}</dd></div>
+      <div><dt>批次编号</dt><dd>#{{ jobs_payload.selected_batch.id }}</dd></div>
+      <div><dt>状态</dt><dd>{{ jobs_payload.selected_batch.status_label or jobs_payload.selected_batch.status }}</dd></div>
+      <div><dt>批次窗口</dt><dd>{{ jobs_payload.selected_batch.window_label }}</dd></div>
+      <div><dt>消息数量</dt><dd>{{ jobs_payload.selected_batch.message_count }}</dd></div>
+      <div><dt>确认时间</dt><dd>{{ jobs_payload.selected_batch.acked_at or "-" }}</dd></div>
+      <div><dt>确认人</dt><dd>{{ jobs_payload.selected_batch.acked_by or "-" }}</dd></div>
     </dl>
     {% if jobs_payload.selected_batch.status != "acked" %}
     <hr class="admin-divider">
@@ -403,34 +398,34 @@
       <input type="hidden" name="batch_id" value="{{ jobs_payload.selected_batch.id }}">
       <input type="hidden" name="batch_status" value="{{ jobs_payload.batch_filters.status }}">
       <input type="hidden" name="batch_limit" value="{{ jobs_payload.batch_filters.limit }}">
-      <label class="admin-field"><span>ack_note</span><textarea name="ack_note" rows="3" placeholder="checked from console"></textarea></label>
-      <label class="admin-field"><span>operator</span><input type="text" name="operator" placeholder="who acknowledges this batch"></label>
-      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>确认 ack 当前 batch</span></label>
-      <button class="admin-button admin-button--primary" type="submit" data-jobs-submit data-loading-label="执行 ack 中...">执行 Ack</button>
+      <label class="admin-field"><span>处理备注</span><textarea name="ack_note" rows="3" placeholder="填写处理说明"></textarea></label>
+      <label class="admin-field"><span>操作人</span><input type="text" name="operator" placeholder="填写本次处理人"></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>我确认这个批次已处理</span></label>
+      <button class="admin-button admin-button--primary" type="submit" data-jobs-submit data-loading-label="确认处理中...">确认这个批次已处理</button>
     </form>
     {% endif %}
     {% else %}
     <section class="admin-state">
-      <strong>未选择 batch</strong>
-      <span>从左侧列表里选择一个 batch，即可查看详情和执行 ack。</span>
+      <strong>尚未选择批次</strong>
+      <span>从列表中选择一个批次后，可以查看详情并确认处理。</span>
     </section>
     {% endif %}
   </article>
 </section>
 
 <section class="admin-card">
-  <div class="admin-card-head"><h2>Batches 列表</h2></div>
+  <div class="admin-card-head"><h2>批次列表</h2></div>
   <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_jobs') }}">
     <input type="hidden" name="tab" value="batches">
     <label class="admin-field">
-      <span>status</span>
+      <span>状态</span>
       <select name="batch_status">
         {% for option in jobs_payload.batch_status_options %}
-        <option value="{{ option }}" {% if jobs_payload.batch_filters.status == option %}selected{% endif %}>{{ option or "all" }}</option>
+        <option value="{{ option }}" {% if jobs_payload.batch_filters.status == option %}selected{% endif %}>{% if not option %}全部{% elif option == "pending" %}待处理{% elif option == "acked" %}已确认{% else %}{{ option }}{% endif %}</option>
         {% endfor %}
       </select>
     </label>
-    <label class="admin-field"><span>limit</span><input type="number" name="batch_limit" min="1" max="100" value="{{ jobs_payload.batch_filters.limit }}"></label>
+    <label class="admin-field"><span>显示数量</span><input type="number" name="batch_limit" min="1" max="100" value="{{ jobs_payload.batch_filters.limit }}"></label>
     <div class="admin-toolbar">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
     </div>
@@ -439,12 +434,12 @@
     <table class="admin-table">
       <thead>
         <tr>
-          <th>Batch</th>
-          <th>Window</th>
-          <th>Status</th>
-          <th>Messages</th>
-          <th>Ack</th>
-          <th>Action</th>
+          <th>批次编号</th>
+          <th>批次窗口</th>
+          <th>状态</th>
+          <th>消息数</th>
+          <th>确认人</th>
+          <th>操作</th>
         </tr>
       </thead>
       <tbody>
@@ -452,13 +447,13 @@
         <tr>
           <td>#{{ item.id }}</td>
           <td>{{ item.window_label }}</td>
-          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status }}</span></td>
+          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status_label or item.status }}</span></td>
           <td>{{ item.message_count }}</td>
           <td>{{ item.acked_by or "-" }}</td>
           <td><a class="admin-inline-link admin-inline-link--compact" href="/admin/jobs?tab=batches&batch_status={{ jobs_payload.batch_filters.status }}&batch_limit={{ jobs_payload.batch_filters.limit }}&batch_id={{ item.id }}">查看详情</a></td>
         </tr>
         {% else %}
-        <tr><td colspan="6">暂无 message batches</td></tr>
+        <tr><td colspan="6">暂无消息批次</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -467,16 +462,16 @@
 
 {% if jobs_payload.selected_batch %}
 <section class="admin-card">
-  <div class="admin-card-head"><h2>Batch Messages</h2></div>
+  <div class="admin-card-head"><h2>批次内消息</h2></div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
         <tr>
-          <th>send_time</th>
-          <th>chat_type</th>
-          <th>external_userid</th>
-          <th>owner</th>
-          <th>content</th>
+          <th>发送时间</th>
+          <th>聊天类型</th>
+          <th>客户编号</th>
+          <th>负责人账号</th>
+          <th>内容</th>
         </tr>
       </thead>
       <tbody>
@@ -489,7 +484,7 @@
           <td>{{ item.content or "-" }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="5">当前 batch 暂无 messages</td></tr>
+        <tr><td colspan="5">当前批次暂无消息</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -503,50 +498,50 @@
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>Deferred Runtime</h2>
-        <p>pending / running / success / conflict / skipped / failed 全部在一个队列里看。</p>
+        <h2>待处理作业状态</h2>
+        <p>这里统一展示待处理、运行中、成功和失败作业。</p>
       </div>
     </div>
     <section class="admin-stat-inline-grid">
-      <article class="admin-mini-stat"><div class="admin-card-label">Pending</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.pending_count }}</div></article>
-      <article class="admin-mini-stat"><div class="admin-card-label">Running</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.running_count }}</div></article>
-      <article class="admin-mini-stat"><div class="admin-card-label">Success</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.success_count }}</div></article>
-      <article class="admin-mini-stat"><div class="admin-card-label">Failed</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.failed_count }}</div></article>
+      <article class="admin-mini-stat"><div class="admin-card-label">待处理</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.pending_count }}</div></article>
+      <article class="admin-mini-stat"><div class="admin-card-label">运行中</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.running_count }}</div></article>
+      <article class="admin-mini-stat"><div class="admin-card-label">成功</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.success_count }}</div></article>
+      <article class="admin-mini-stat"><div class="admin-card-label">失败</div><div class="admin-mini-stat-value">{{ jobs_payload.deferred_runtime.counts.failed_count }}</div></article>
     </section>
   </article>
   <article class="admin-card">
     <div class="admin-card-head">
       <div>
-        <h2>手动 Run Deferred Jobs</h2>
-        <p>运行作业必须确认，执行后写统一审计。</p>
+        <h2>手动执行待处理作业</h2>
+        <p>执行前会要求确认，执行后会返回结果摘要。</p>
       </div>
     </div>
     <form method="post" action="{{ url_for('api.admin_console_jobs_action') }}" class="admin-form-stack" data-jobs-form>
       <input type="hidden" name="return_tab" value="deferred">
       <input type="hidden" name="action" value="run-deferred-jobs">
-      <label class="admin-field"><span>limit</span><input type="number" name="limit" min="1" max="200" value="20"></label>
-      <label class="admin-field"><span>operator</span><input type="text" name="operator" placeholder="who runs deferred jobs"></label>
-      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>确认执行 due deferred jobs</span></label>
-      <button class="admin-button admin-button--primary" type="submit" data-jobs-submit data-loading-label="执行作业中...">运行作业</button>
+      <label class="admin-field"><span>执行数量上限</span><input type="number" name="limit" min="1" max="200" value="20"></label>
+      <label class="admin-field"><span>操作人</span><input type="text" name="operator" placeholder="填写本次执行人"></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>我确认执行当前待处理作业</span></label>
+      <button class="admin-button admin-button--primary" type="submit" data-jobs-submit data-loading-label="执行作业中...">手动执行待处理作业</button>
     </form>
   </article>
 </section>
 
 <section class="admin-card">
-  <div class="admin-card-head"><h2>Deferred Jobs 列表</h2></div>
+  <div class="admin-card-head"><h2>待处理作业列表</h2></div>
   <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_jobs') }}">
     <input type="hidden" name="tab" value="deferred">
     <label class="admin-field">
-      <span>status</span>
+      <span>状态</span>
       <select name="job_status">
         {% for option in jobs_payload.deferred_status_options %}
-        <option value="{{ option }}" {% if jobs_payload.deferred_filters.status == option %}selected{% endif %}>{{ option or "all" }}</option>
+        <option value="{{ option }}" {% if jobs_payload.deferred_filters.status == option %}selected{% endif %}>{% if not option %}全部{% elif option == "pending" %}待处理{% elif option == "running" %}运行中{% elif option == "success" %}成功{% elif option == "conflict" %}冲突{% elif option == "skipped" %}已跳过{% elif option == "failed" %}失败{% else %}{{ option }}{% endif %}</option>
         {% endfor %}
       </select>
     </label>
-    <label class="admin-field"><span>owner_userid</span><input type="text" name="owner_userid" value="{{ jobs_payload.deferred_filters.owner_userid }}"></label>
-    <label class="admin-field"><span>external_userid</span><input type="text" name="external_userid" value="{{ jobs_payload.deferred_filters.external_userid }}"></label>
-    <label class="admin-field"><span>limit</span><input type="number" name="job_limit" min="1" max="100" value="{{ jobs_payload.deferred_filters.limit }}"></label>
+    <label class="admin-field"><span>负责人账号</span><input type="text" name="owner_userid" value="{{ jobs_payload.deferred_filters.owner_userid }}"></label>
+    <label class="admin-field"><span>客户编号</span><input type="text" name="external_userid" value="{{ jobs_payload.deferred_filters.external_userid }}"></label>
+    <label class="admin-field"><span>显示数量</span><input type="number" name="job_limit" min="1" max="100" value="{{ jobs_payload.deferred_filters.limit }}"></label>
     <div class="admin-toolbar">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
     </div>
@@ -555,12 +550,12 @@
     <table class="admin-table">
       <thead>
         <tr>
-          <th>run_after</th>
-          <th>job_type</th>
-          <th>Status</th>
-          <th>owner</th>
-          <th>external_userid</th>
-          <th>Attempts</th>
+          <th>计划执行时间</th>
+          <th>作业类型</th>
+          <th>状态</th>
+          <th>负责人账号</th>
+          <th>客户编号</th>
+          <th>尝试次数</th>
         </tr>
       </thead>
       <tbody>
@@ -568,13 +563,13 @@
         <tr>
           <td>{{ item.run_after or "-" }}</td>
           <td>{{ item.job_type or "-" }}</td>
-          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status }}</span></td>
+          <td><span class="admin-inline-chip admin-inline-chip--{{ item.status_tone }}">{{ item.status_label or item.status }}</span></td>
           <td>{{ item.owner_userid or "-" }}</td>
           <td><code>{{ item.external_userid or "-" }}</code></td>
           <td>{{ item.attempt_count }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6">暂无 deferred jobs</td></tr>
+        <tr><td colspan="6">暂无待处理作业</td></tr>
         {% endfor %}
       </tbody>
     </table>

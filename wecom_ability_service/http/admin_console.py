@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import render_template, url_for
 
-from ..domains.admin_audit import build_legacy_admin_path_rows, build_risk_control_rows, build_runbook_rows
+from ..domains.admin_audit import build_risk_control_rows, build_runbook_rows
 from ..domains.admin_dashboard import (
     build_admin_shell_status,
     build_dashboard_summary,
@@ -17,16 +17,6 @@ def _breadcrumb_items(*items: tuple[str, str | None]) -> list[dict[str, str]]:
         {"label": label, "href": href or ""}
         for label, href in items
     ]
-
-
-def _shell_links() -> list[dict[str, str]]:
-    return [
-        {"label": "MCP Preflight", "href": "/admin/mcp"},
-        {"label": "Questionnaire Preflight", "href": "/admin/questionnaires"},
-        {"label": "审计", "href": "/admin/audit"},
-        {"label": "Runbooks", "href": "/admin/system"},
-    ]
-
 
 def _render_admin_template(
     template_name: str,
@@ -44,7 +34,6 @@ def _render_admin_template(
         breadcrumbs=breadcrumbs,
         nav_items=list_admin_navigation(active_nav),
         shell_status=build_admin_shell_status(),
-        shell_links=_shell_links(),
         **extra,
     )
 
@@ -52,38 +41,38 @@ def _render_admin_template(
 def admin_console_home():
     quick_links = [
         {
-            "label": "去客户中心",
-            "description": "进入统一客户入口，查看列表、详情、timeline、recent messages、tags、tasks 和 routing context。",
+            "label": "进入客户中心",
+            "description": "查看客户资料、沟通记录、标签和任务。",
             "href": url_for("api.admin_console_customers"),
         },
         {
-            "label": "去问卷中心",
-            "description": "查看问卷定义、提交情况、preflight、SCRM apply 结果与公开路径。",
+            "label": "进入问卷中心",
+            "description": "管理问卷、查看提交结果和发布状态。",
             "href": url_for("api.admin_console_questionnaires"),
         },
         {
-            "label": "去运营看板",
-            "description": "把 user_ops、class_user 和 imports 放进一个统一运营模块。",
+            "label": "进入运营管理",
+            "description": "查看运营名单、班期、导入记录和作业状态。",
             "href": url_for("api.admin_console_user_ops"),
         },
         {
-            "label": "去同步与任务",
-            "description": "查看 archive sync、callbacks、message batches 和 deferred jobs 的统一运行面板。",
+            "label": "进入同步任务",
+            "description": "查看聊天同步、回调状态、消息批次和待处理作业。",
             "href": url_for("api.admin_console_jobs"),
         },
         {
-            "label": "去 MCP 控制台",
-            "description": "查看 MCP registry、runtime 状态、preflight 和安全 sample call。",
+            "label": "进入 AI 工具",
+            "description": "查看 AI 工具状态，并做安全试运行。",
             "href": url_for("api.admin_console_mcp"),
         },
         {
-            "label": "去配置中心",
-            "description": "进入统一配置入口，后续承接 routing / settings / tags。",
+            "label": "进入配置中心",
+            "description": "维护负责人、分配规则、标签规则和系统设置。",
             "href": url_for("api.admin_config_home"),
         },
         {
-            "label": "去审计中心",
-            "description": "查询后台写操作、配置变更、preview / live run 和最近风险动作。",
+            "label": "进入操作记录",
+            "description": "查看后台关键操作和修改记录。",
             "href": url_for("api.admin_audit_logs"),
         },
     ]
@@ -94,8 +83,8 @@ def admin_console_home():
         "dashboard.html",
         active_nav="workbench",
         page_title="工作台",
-        page_summary="CRM Console 首页现在直接展示系统状态、业务总览和待处理事项，所有指标都复用现有 domain 读模型，不在 controller 里拼装 SQL。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("工作台", None)),
+        page_summary="在这里可以快速查看系统是否正常、关键业务数据以及待处理事项。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("工作台", None)),
         system_status=system_status,
         dashboard_summary=dashboard_summary,
         dashboard_cards=dashboard_summary["cards"],
@@ -109,13 +98,12 @@ def admin_console_system():
     return _render_admin_template(
         "system.html",
         active_nav="system",
-        page_title="系统",
-        page_summary="系统页统一展示环境、release、health、runbook、风险控制策略和 legacy admin path 兼容结论，避免后台长期漂成无人维护的并行集合。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("系统", None)),
+        page_title="系统与帮助",
+        page_summary="这里可以查看系统状态、常见入口和使用提醒。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("系统", None)),
         system_status=build_system_status_payload(),
         runbook_rows=build_runbook_rows(),
         risk_rows=build_risk_control_rows(),
-        legacy_rows=build_legacy_admin_path_rows(),
     )
 
 

@@ -278,8 +278,8 @@ def test_admin_customers_pages_render_with_tabs(app, client):
 
     detail_html = detail_response.get_data(as_text=True)
     assert detail_response.status_code == 200
-    assert "Questionnaire History" in detail_html
-    assert "客户问卷" in detail_html
+    assert "问卷记录" in detail_html
+    assert "提交处理状态" in detail_html
     assert "tag-999" in detail_html
 
     tasks_html = tasks_response.get_data(as_text=True)
@@ -304,7 +304,7 @@ def test_admin_customer_detail_tag_preview_is_dry_run(app, client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "当前为 dry-run 预览" in html
+    assert "这里会先展示操作预览，确认后才会真正执行。" in html
     assert '"would_execute": true' in html
     assert "tag-2" in html
 
@@ -323,9 +323,10 @@ def test_admin_questionnaire_pages_render_detail_sections(app, client):
     assert "/s/q-1" in list_html
 
     assert detail_response.status_code == 200
-    assert "问卷编辑" in detail_html
+    assert "问卷内容" in detail_html
+    assert "访问与状态" in detail_html
     assert "最近提交" in detail_html
-    assert "SCRM Apply 结果" in detail_html
+    assert "提交处理结果" in detail_html
     assert "/s/q-1/submitted" in detail_html
 
 
@@ -336,8 +337,8 @@ def test_admin_operations_page_and_migrate_action_are_audited(app, client):
     page_html = page_response.get_data(as_text=True)
     assert page_response.status_code == 200
     assert "运营总览" in page_html
-    assert "User Ops 列表" in page_html
-    assert "Class User 当前状态池" in page_html
+    assert "运营名单" in page_html
+    assert "班级状态" in page_html
 
     action_response = client.post(
         "/admin/user-ops/actions",

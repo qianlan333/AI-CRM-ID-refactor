@@ -15,14 +15,14 @@
   <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
     <label>
       <span>筛选</span>
-      <input type="text" name="q" value="{{ filters.q }}" placeholder="key / label / description">
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="设置项 / 名称 / 说明">
     </label>
     <label>
-      <span>scope</span>
+      <span>查看范围</span>
       <select name="scope">
         <option value="" {% if not filters.scope %}selected{% endif %}>全部</option>
-        <option value="editable" {% if filters.scope == "editable" %}selected{% endif %}>editable</option>
-        <option value="masked" {% if filters.scope == "masked" %}selected{% endif %}>masked</option>
+        <option value="editable" {% if filters.scope == "editable" %}selected{% endif %}>可直接编辑</option>
+        <option value="masked" {% if filters.scope == "masked" %}selected{% endif %}>敏感信息</option>
       </select>
     </label>
     <div class="admin-form-actions">
@@ -35,8 +35,8 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>Editable Settings</h2>
-      <p>这些项可以直接编辑。保存后会写入 app_settings override，并记录审计。</p>
+      <h2>可直接编辑项</h2>
+      <p>这些内容可以直接修改。保存后会记录操作人和时间。</p>
     </div>
   </div>
   <form class="admin-form-grid admin-form-grid--stacked" method="post" action="/admin/config/app-settings/save">
@@ -44,35 +44,35 @@
     <label>
       <span>{{ row.label }} <code>{{ row.key }}</code></span>
       <input type="{{ row.input_type }}" name="setting__{{ row.key }}" value="{{ row.value }}">
-      <small>{{ row.description }} · source={{ row.source }} · last={{ row.last_modified_by or "-" }} {{ row.last_modified_at or "" }}</small>
+      <small>{{ row.description }} · 来源：{{ "数据库" if row.source == "app_settings" else "配置文件" }} · 最近修改：{{ row.last_modified_by or "-" }} {{ row.last_modified_at or "" }}</small>
     </label>
     {% endfor %}
 
     <div class="admin-card-head">
       <div>
-        <h2>Masked Secrets</h2>
-        <p>secret 不显示明文。留空表示保持当前值不变。</p>
+        <h2>敏感信息</h2>
+        <p>页面不会显示完整内容；留空表示保持原值。</p>
       </div>
     </div>
 
     {% for row in masked_rows %}
     <label>
       <span>{{ row.label }} <code>{{ row.key }}</code></span>
-      <input type="password" name="setting__{{ row.key }}" placeholder="current: {{ row.display_value or 'not configured' }}">
-      <small>{{ row.description }} · configured={{ "yes" if row.configured else "no" }} · last={{ row.last_modified_by or "-" }} {{ row.last_modified_at or "" }}</small>
+      <input type="password" name="setting__{{ row.key }}" placeholder="当前状态：{{ row.display_value or '未配置' }}">
+      <small>{{ row.description }} · 当前{{ "已配置" if row.configured else "未配置" }} · 最近修改：{{ row.last_modified_by or "-" }} {{ row.last_modified_at or "" }}</small>
     </label>
     {% endfor %}
 
     <label>
-      <span>operator</span>
-      <input type="text" name="operator" placeholder="who edits this config">
+      <span>操作人</span>
+      <input type="text" name="operator" placeholder="填写本次修改人">
     </label>
     <label class="admin-check-line">
       <input type="checkbox" name="confirm" value="1">
-      <span>确认保存 app settings 变更</span>
+      <span>我确认保存本次系统设置修改</span>
     </label>
     <div class="admin-form-actions">
-      <button class="admin-button admin-button--primary" type="submit">保存 App Settings</button>
+      <button class="admin-button admin-button--primary" type="submit">保存系统设置</button>
     </div>
   </form>
 </section>
@@ -81,19 +81,19 @@
   <div class="admin-card-head">
     <div>
       <h2>设置快照</h2>
-      <p>当前配置页展示的实际运行时来源。</p>
+      <p>这里展示当前正在生效的设置值和来源。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
         <tr>
-          <th>key</th>
-          <th>label</th>
-          <th>mode</th>
-          <th>value</th>
-          <th>source</th>
-          <th>last_modified_by</th>
+          <th>设置项</th>
+          <th>名称</th>
+          <th>类型</th>
+          <th>当前值</th>
+          <th>来源</th>
+          <th>最近修改人</th>
         </tr>
       </thead>
       <tbody>
@@ -101,9 +101,9 @@
         <tr>
           <td><code>{{ row.key }}</code></td>
           <td>{{ row.label }}</td>
-          <td>{{ row.mode }}</td>
+          <td>{{ "可直接编辑" if row.mode == "editable" else "敏感信息" }}</td>
           <td>{{ row.display_value or "-" }}</td>
-          <td>{{ row.source }}</td>
+          <td>{{ "数据库" if row.source == "app_settings" else "配置文件" }}</td>
           <td>{{ row.last_modified_by or "-" }}</td>
         </tr>
         {% endfor %}
@@ -116,7 +116,7 @@
   <div class="admin-card-head">
     <div>
       <h2>最近审计</h2>
-      <p>app_settings 最近变更记录。</p>
+      <p>这里展示系统设置最近的修改记录。</p>
     </div>
   </div>
   <div class="admin-audit-list">
