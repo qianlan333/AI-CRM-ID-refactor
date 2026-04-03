@@ -320,15 +320,19 @@ def test_admin_questionnaire_pages_render_detail_sections(app, client):
     detail_html = detail_response.get_data(as_text=True)
 
     assert list_response.status_code == 200
-    assert "问卷列表" in list_html
+    assert "问卷管理" in list_html
+    assert "创建新问卷" in list_html
+    assert "问卷名称" in list_html
+    assert "提交数" in list_html
     assert "/s/q-1" in list_html
 
     assert detail_response.status_code == 200
+    assert "编辑问卷" in detail_html
+    assert "返回问卷管理" in detail_html
     assert "问卷内容" in detail_html
-    assert "访问与状态" in detail_html
-    assert "最近提交" in detail_html
-    assert "提交处理结果" in detail_html
-    assert "/s/q-1/submitted" in detail_html
+    assert "题型 / 组件区" in detail_html
+    assert "删除问卷" in detail_html
+    assert "下载数据" in detail_html
 
 
 def test_admin_operations_page_and_migrate_action_are_audited(app, client):
@@ -337,9 +341,9 @@ def test_admin_operations_page_and_migrate_action_are_audited(app, client):
     page_response = client.get("/admin/user-ops")
     page_html = page_response.get_data(as_text=True)
     assert page_response.status_code == 200
-    assert "运营总览" in page_html
-    assert "运营名单" in page_html
-    assert "班级状态" in page_html
+    assert "运营管理" in page_html
+    assert "转化链路运营页" in page_html
+    assert "批量群发" in page_html
 
     action_response = client.post(
         "/admin/user-ops/actions",
