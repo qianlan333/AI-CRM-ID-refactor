@@ -10,6 +10,7 @@ from ..domains.admin_dashboard import (
     build_system_status_payload,
     list_admin_navigation,
 )
+from .common import _deprecated_admin_redirect
 
 
 def _breadcrumb_items(*items: tuple[str, str | None]) -> list[dict[str, str]]:
@@ -112,7 +113,7 @@ def admin_console_legacy_user_ops():
 
 
 def admin_console_legacy_questionnaires():
-    return render_template("admin_questionnaires.html")
+    return _deprecated_admin_redirect("api.admin_console_questionnaires")
 
 
 def admin_console_legacy_class_user_management():

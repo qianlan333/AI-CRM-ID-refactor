@@ -47,7 +47,7 @@ def admin_questionnaires_preflight():
 
 
 def admin_questionnaires_ui():
-    return _deprecated_admin_redirect("api.admin_console_legacy_questionnaires")
+    return _deprecated_admin_redirect("api.admin_console_questionnaires")
 
 
 def admin_create_questionnaire():
@@ -95,6 +95,11 @@ def admin_disable_questionnaire(questionnaire_id: int):
 
 
 def admin_delete_questionnaire(questionnaire_id: int):
+    questionnaire = get_questionnaire_detail(questionnaire_id)
+    if not questionnaire:
+        return jsonify({"ok": False, "error": "questionnaire not found"}), 404
+    if not questionnaire.get("is_disabled"):
+        return jsonify({"ok": False, "error": "请先停用问卷后再删除"}), 400
     deleted = delete_questionnaire(questionnaire_id)
     if not deleted:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404

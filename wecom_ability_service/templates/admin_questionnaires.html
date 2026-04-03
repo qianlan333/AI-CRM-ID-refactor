@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>问卷后台</title>
+  <title>{{ editor_page_title or "问卷编辑" }}</title>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f4f7f2;
+      --bg: #f3efe7;
       --panel: rgba(255, 255, 255, 0.96);
-      --line: rgba(34, 65, 49, 0.10);
-      --line-strong: rgba(34, 65, 49, 0.18);
-      --text: #183025;
-      --muted: #69796f;
-      --soft: #eef5ef;
-      --primary: #2f6d4c;
-      --primary-strong: #24553b;
-      --danger: #a34f39;
-      --warning-bg: #fff6dc;
-      --warning-text: #7a5a16;
-      --shadow: 0 18px 42px rgba(24, 49, 38, 0.06);
-      --shadow-soft: 0 10px 24px rgba(24, 49, 38, 0.04);
+      --line: rgba(73, 55, 29, 0.12);
+      --line-strong: rgba(73, 55, 29, 0.20);
+      --text: #271d10;
+      --muted: #766650;
+      --soft: #f4e7d7;
+      --primary: #9d6330;
+      --primary-strong: #73431a;
+      --danger: #ad5037;
+      --warning-bg: #fff2d9;
+      --warning-text: #86540d;
+      --shadow: 0 20px 50px rgba(60, 45, 24, 0.08);
+      --shadow-soft: 0 12px 30px rgba(60, 45, 24, 0.06);
       --radius-xl: 24px;
       --radius-lg: 18px;
       --radius-md: 14px;
@@ -33,8 +33,8 @@
       font-family: "PingFang SC", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(70, 129, 94, 0.10), transparent 26%),
-        radial-gradient(circle at bottom right, rgba(47, 109, 76, 0.08), transparent 20%),
+        radial-gradient(circle at top left, rgba(181, 128, 69, 0.14), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(115, 67, 26, 0.08), transparent 22%),
         var(--bg);
     }
     button, input, textarea, select { font: inherit; }
@@ -47,6 +47,19 @@
     button:disabled { opacity: 0.52; cursor: not-allowed; transform: none; box-shadow: none; }
     .hidden { display: none !important; }
     .shell { min-height: 100vh; padding: 18px; }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .back-link::before {
+      content: "←";
+      font-size: 14px;
+    }
     .topbar {
       position: sticky;
       top: 0;
@@ -61,13 +74,24 @@
       padding: 12px 16px;
       border: 1px solid var(--line);
       border-radius: 18px;
-      background: rgba(255, 255, 255, 0.88);
+      background: rgba(255, 253, 248, 0.92);
       backdrop-filter: blur(14px);
       box-shadow: var(--shadow-soft);
     }
     .topbar-meta-wrap {
       min-width: 0;
       display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+    .topbar-copy {
+      min-width: 0;
+      display: grid;
+      gap: 8px;
+    }
+    .topbar-title-row {
+      display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 10px;
     }
@@ -82,8 +106,8 @@
       align-items: center;
       padding: 6px 10px;
       border-radius: 999px;
-      background: rgba(184, 125, 30, 0.12);
-      color: #8b6117;
+      background: rgba(157, 99, 48, 0.12);
+      color: var(--primary-strong);
       font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
@@ -109,15 +133,15 @@
     .btn.primary {
       color: #fff;
       background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
-      box-shadow: 0 12px 24px rgba(34, 79, 56, 0.16);
+      box-shadow: 0 12px 24px rgba(115, 67, 26, 0.18);
     }
     .btn.secondary {
       color: var(--primary);
-      background: #e3eee5;
+      background: var(--soft);
     }
     .btn.ghost {
       color: var(--text);
-      background: #f7faf7;
+      background: #fffdf8;
       border: 1px solid var(--line);
     }
     .btn.danger {
@@ -345,8 +369,8 @@
       padding: 14px;
       text-align: left;
       border-radius: 16px;
-      background: #f8fbf8;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      background: #fffaf3;
+      border: 1px solid var(--line);
       color: var(--text);
     }
     .tool-card .tool-mark {
@@ -356,7 +380,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: #e9f2ea;
+      background: var(--soft);
       color: var(--primary);
       font-weight: 800;
       font-size: 14px;
@@ -384,9 +408,9 @@
       width: min(100%, 480px);
       padding: 12px;
       border-radius: 30px;
-      background: linear-gradient(180deg, #edf3ed 0%, #dfe8df 100%);
-      border: 1px solid rgba(45, 107, 74, 0.12);
-      box-shadow: 0 24px 48px rgba(24, 49, 38, 0.08);
+      background: linear-gradient(180deg, #f7efe3 0%, #ecdfcd 100%);
+      border: 1px solid rgba(115, 67, 26, 0.12);
+      box-shadow: 0 24px 48px rgba(60, 45, 24, 0.10);
     }
     .phone-topbar {
       display: flex;
@@ -397,30 +421,30 @@
       width: 34%;
       height: 24px;
       border-radius: 999px;
-      background: rgba(24, 49, 38, 0.88);
+      background: rgba(39, 29, 16, 0.88);
     }
     .phone-screen {
       min-height: 720px;
       padding: 16px 14px 18px;
       border-radius: 22px;
       background:
-        radial-gradient(circle at top left, rgba(77, 132, 99, 0.10), transparent 26%),
-        #fcfdfb;
+        radial-gradient(circle at top left, rgba(181, 128, 69, 0.10), transparent 26%),
+        #fffdfa;
       border: 1px solid rgba(255,255,255,0.65);
     }
     .preview-head {
       padding: 16px;
       border-radius: 18px;
       background: #ffffff;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      border: 1px solid var(--line);
       box-shadow: var(--shadow-soft);
       cursor: pointer;
     }
     .preview-head.active,
     .preview-question.active,
     .preview-rule.active {
-      border-color: rgba(45, 107, 74, 0.34);
-      box-shadow: 0 0 0 3px rgba(45, 107, 74, 0.08);
+      border-color: rgba(157, 99, 48, 0.32);
+      box-shadow: 0 0 0 3px rgba(157, 99, 48, 0.10);
     }
     .preview-head h2 {
       margin: 8px 0 6px;
@@ -445,7 +469,7 @@
       padding: 14px;
       border-radius: 16px;
       background: #ffffff;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      border: 1px solid var(--line);
       cursor: pointer;
     }
     .preview-question h4,
@@ -478,8 +502,8 @@
     .option-pill {
       padding: 9px 11px;
       border-radius: 12px;
-      background: #f7faf7;
-      border: 1px solid rgba(45, 107, 74, 0.08);
+      background: #fff8ef;
+      border: 1px solid rgba(157, 99, 48, 0.10);
       font-size: 13px;
       color: var(--text);
     }
@@ -487,7 +511,7 @@
       margin-top: 14px;
       padding: 12px 14px;
       border-radius: 16px;
-      background: linear-gradient(135deg, rgba(45, 107, 74, 0.08), rgba(45, 107, 74, 0.03));
+      background: linear-gradient(135deg, rgba(157, 99, 48, 0.10), rgba(157, 99, 48, 0.04));
       color: var(--muted);
       font-size: 13px;
       line-height: 1.7;
@@ -500,8 +524,8 @@
     .config-group {
       padding: 14px;
       border-radius: 16px;
-      background: #f9fbf8;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      background: #fffaf3;
+      border: 1px solid var(--line);
       margin-bottom: 12px;
     }
     .config-group.danger-zone {
@@ -542,7 +566,7 @@
       margin-top: 7px;
       padding: 12px 13px;
       border-radius: 14px;
-      border: 1px solid rgba(45, 107, 74, 0.14);
+      border: 1px solid var(--line);
       background: #ffffff;
       color: var(--text);
       outline: none;
@@ -553,7 +577,7 @@
       padding: 12px;
       border-radius: 14px;
       background: #ffffff;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      border: 1px solid var(--line);
       margin-bottom: 12px;
     }
     .rule-nav-list {
@@ -567,12 +591,12 @@
       text-align: left;
       border-radius: 14px;
       background: #ffffff;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      border: 1px solid var(--line);
       color: var(--text);
     }
     .rule-nav-item.active {
-      border-color: rgba(45, 107, 74, 0.28);
-      box-shadow: 0 0 0 3px rgba(45, 107, 74, 0.08);
+      border-color: rgba(157, 99, 48, 0.28);
+      box-shadow: 0 0 0 3px rgba(157, 99, 48, 0.10);
     }
     .rule-nav-item strong {
       display: block;
@@ -620,7 +644,7 @@
       gap: 6px;
       padding: 7px 10px;
       border-radius: 999px;
-      background: #e8f2e9;
+      background: #f4e7d7;
       color: var(--primary);
       font-size: 12px;
       font-weight: 700;
@@ -632,7 +656,7 @@
     .tag-inline { margin-top: 10px; }
     .tag-fallback {
       margin-top: 10px;
-      border-top: 1px dashed rgba(45, 107, 74, 0.16);
+      border-top: 1px dashed rgba(157, 99, 48, 0.18);
       padding-top: 10px;
     }
     .tag-fallback summary {
@@ -645,7 +669,7 @@
       margin-top: 10px;
       padding: 12px 14px;
       border-radius: 16px;
-      background: #f4f7f2;
+      background: #fbf8f2;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.6;
@@ -653,7 +677,7 @@
     .empty-state {
       padding: 24px 18px;
       border-radius: 18px;
-      border: 1px dashed rgba(45, 107, 74, 0.16);
+      border: 1px dashed rgba(157, 99, 48, 0.18);
       color: var(--muted);
       text-align: center;
       font-size: 14px;
@@ -698,8 +722,8 @@
       margin: 12px 0 16px;
       padding: 12px 13px;
       border-radius: 14px;
-      border: 1px solid rgba(45, 107, 74, 0.14);
-      background: #fbfdfb;
+      border: 1px solid var(--line);
+      background: #fffdfa;
     }
     .tag-modal-grid {
       display: grid;
@@ -710,8 +734,8 @@
     .tag-selected-panel {
       padding: 14px;
       border-radius: 18px;
-      background: #f8fbf8;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      background: #fffaf3;
+      border: 1px solid var(--line);
     }
     .tag-group {
       margin-bottom: 16px;
@@ -731,16 +755,16 @@
     .tag-chip {
       padding: 8px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(45, 107, 74, 0.14);
+      border: 1px solid var(--line);
       background: #ffffff;
       color: var(--text);
       font-size: 12px;
       font-weight: 700;
     }
     .tag-chip.active {
-      background: #e8f2e9;
+      background: #f4e7d7;
       color: var(--primary);
-      border-color: rgba(45, 107, 74, 0.24);
+      border-color: rgba(157, 99, 48, 0.24);
     }
     .tag-selected-panel h4 {
       margin: 0 0 10px;
@@ -767,7 +791,7 @@
       height: calc(100vh - 32px);
       border-radius: 28px;
       background: #ffffff;
-      border: 1px solid rgba(45, 107, 74, 0.10);
+      border: 1px solid var(--line);
       box-shadow: 0 30px 70px rgba(12, 23, 17, 0.20);
       padding: 20px;
       overflow: auto;
@@ -781,7 +805,7 @@
       display: grid;
       gap: 4px;
       padding: 12px 0;
-      border-bottom: 1px solid rgba(45, 107, 74, 0.08);
+      border-bottom: 1px solid rgba(157, 99, 48, 0.10);
     }
     .drawer-row span {
       color: var(--muted);
@@ -805,7 +829,7 @@
       max-width: 320px;
       padding: 14px 16px;
       border-radius: 16px;
-      background: rgba(24, 49, 38, 0.92);
+      background: rgba(39, 29, 16, 0.92);
       color: #fff;
       box-shadow: 0 20px 40px rgba(12, 23, 17, 0.18);
       font-size: 14px;
@@ -824,17 +848,15 @@
     }
     @media (max-width: 980px) {
       .shell { padding: 14px; }
+      .page-head {
+        padding-top: 0;
+        flex-direction: column;
+      }
       .topbar {
         position: static;
         padding: 12px 14px;
         border-radius: 16px;
       }
-      .management-toolbar,
-      .management-filters { flex-direction: column; }
-      .management-actions { justify-content: stretch; }
-      .management-actions .btn { flex: 1 1 160px; }
-      .management-filter.search,
-      .management-filter.status { flex: 1 1 auto; }
       .workspace { grid-template-columns: 1fr; }
       .sidebar {
         position: static;
@@ -853,40 +875,20 @@
   <div class="shell">
     <header class="topbar">
       <div class="topbar-meta-wrap">
-        <h1 id="topbar-title">新建问卷</h1>
-        <span id="draft-indicator" class="draft-indicator hidden">未保存修改</span>
+        <div class="topbar-copy">
+          <a id="back-link" class="back-link" href="{{ editor_back_href or '/admin/questionnaires' }}">返回问卷管理</a>
+          <div class="topbar-title-row">
+            <h1 id="topbar-title">{{ editor_heading or "新建问卷" }}</h1>
+            <span id="draft-indicator" class="draft-indicator hidden">未保存修改</span>
+          </div>
+        </div>
       </div>
       <div class="topbar-actions">
+        <div id="editor-secondary-actions" class="header-actions"></div>
         <button id="reset-btn" type="button" class="btn ghost">重置当前</button>
         <button id="save-btn" type="button" class="btn primary">保存问卷</button>
       </div>
     </header>
-
-    <section class="card management-card">
-      <div class="management-toolbar">
-        <div>
-          <div class="eyebrow">问卷管理</div>
-          <h2>问卷管理页</h2>
-        </div>
-        <div class="management-actions">
-          <button id="create-btn" type="button" class="btn primary emphasis">创建新问卷</button>
-          <button id="reload-list-btn" type="button" class="btn ghost">刷新</button>
-        </div>
-      </div>
-      <div class="management-filters">
-        <label class="management-filter search">搜索问卷
-          <input id="list-search" type="text" placeholder="按问卷名称搜索">
-        </label>
-        <label class="management-filter status">状态筛选
-          <select id="status-filter">
-            <option value="all">全部</option>
-            <option value="enabled">启用中</option>
-            <option value="disabled">已停用</option>
-          </select>
-        </label>
-      </div>
-      <div id="questionnaire-list" class="management-table-wrap"></div>
-    </section>
 
     <div class="workspace">
       <aside class="sidebar">
@@ -968,7 +970,7 @@
             <div id="tag-modal-selected" class="tag-badges"></div>
             <details class="tag-fallback">
               <summary>手工填写 tag_id 兜底</summary>
-              <input id="tag-modal-manual" type="text" placeholder='例如 ["etxxx1","etxxx2"]' style="width:100%;margin-top:10px;padding:11px 12px;border-radius:12px;border:1px solid rgba(45,107,74,0.14);">
+              <input id="tag-modal-manual" type="text" placeholder='例如 ["etxxx1","etxxx2"]' style="width:100%;margin-top:10px;padding:11px 12px;border-radius:12px;border:1px solid rgba(73,55,29,0.12);">
             </details>
           </div>
         </div>
@@ -994,6 +996,14 @@
     <div id="toast" class="toast hidden"></div>
   </div>
   <script>
+    const editorConfig = {
+      mode: {{ (editor_mode or 'new')|tojson }},
+      heading: {{ (editor_heading or '问卷编辑')|tojson }},
+      subtitle: "",
+      backHref: {{ (editor_back_href or '/admin/questionnaires')|tojson }},
+      initialQuestionnaire: {{ initial_questionnaire|tojson }},
+      initialQuestionnaireId: {{ initial_questionnaire_id|tojson }},
+    };
     const listEl = document.getElementById('questionnaire-list');
     const listSearchEl = document.getElementById('list-search');
     const statusFilterEl = document.getElementById('status-filter');
@@ -1003,6 +1013,10 @@
     const inspectorBodyEl = document.getElementById('inspector-body');
     const inspectorTitleEl = document.getElementById('inspector-title');
     const inspectorSubtitleEl = document.getElementById('inspector-subtitle');
+    const backLinkEl = document.getElementById('back-link');
+    const editorPageTitleEl = document.getElementById('editor-page-title');
+    const editorPageSubtitleEl = document.getElementById('editor-page-subtitle');
+    const editorSecondaryActionsEl = document.getElementById('editor-secondary-actions');
     const topbarTitleEl = document.getElementById('topbar-title');
     const draftIndicatorEl = document.getElementById('draft-indicator');
     const tagCatalogMessageEl = document.getElementById('tag-catalog-message');
@@ -1022,10 +1036,12 @@
       availableTagMap: new Map(),
       questionnaire: null,
       currentId: null,
+      editorMode: editorConfig.mode || 'new',
       selection: { kind: 'questionnaire' },
       ruleMode: false,
       lastRuleKey: '',
       initialSnapshot: '',
+      persistedIsDisabled: false,
       listSearch: '',
       statusFilter: 'all',
       loadingList: false,
@@ -1117,6 +1133,12 @@
       if (questionnaire.public_url) return questionnaire.public_url;
       const slug = String(questionnaire.slug || '').trim();
       return slug ? `${window.location.origin}/s/${slug}` : '';
+    }
+
+    function questionnaireDisplayName(item, fallback = '未命名问卷') {
+      const title = String(item?.title || '').trim();
+      const name = String(item?.name || '').trim();
+      return title || name || fallback;
     }
 
     function fieldLabel(fieldName) {
@@ -1458,6 +1480,7 @@
 
     function rememberDraftSnapshot() {
       state.initialSnapshot = state.questionnaire ? serializeDraftSnapshot() : '';
+      state.persistedIsDisabled = Boolean(state.currentId && state.questionnaire && state.questionnaire.is_disabled);
       updateDraftIndicator();
     }
 
@@ -1531,6 +1554,7 @@
     }
 
     async function loadList() {
+      if (!listEl) return;
       state.loadingList = true;
       listEl.innerHTML = '<div class="empty-state">问卷列表加载中...</div>';
       try {
@@ -1571,12 +1595,13 @@
     }
 
     async function deleteQuestionnaireItem(item) {
-      if (!window.confirm(`确认删除问卷「${item.name}」吗？`)) return;
+      if (!window.confirm('删除后不可恢复，确认删除该问卷吗？')) return;
       await fetchJson(`/api/admin/questionnaires/${item.id}`, { method: 'DELETE' });
-      showToast('问卷已删除');
       if (state.currentId === item.id) {
-        resetDraft();
+        window.location.assign(editorConfig.backHref);
+        return;
       }
+      showToast('问卷已删除');
       await loadList();
     }
 
@@ -1598,6 +1623,7 @@
     }
 
     function renderManagementTable() {
+      if (!listEl) return;
       if (!state.list.length) {
         listEl.innerHTML = '<div class="empty-state">还没有问卷，点击「创建新问卷」开始搭建。</div>';
         return;
@@ -1661,12 +1687,38 @@
     }
 
     function renderList() {
+      if (!listEl) return;
       renderManagementTable();
     }
 
+    function renderEditorSecondaryActions() {
+      if (!editorSecondaryActionsEl) return;
+      if (!state.currentId) {
+        editorSecondaryActionsEl.innerHTML = '';
+        return;
+      }
+      editorSecondaryActionsEl.innerHTML = `
+        <button id="editor-share-btn" type="button" class="btn ghost">分享</button>
+        <button id="editor-export-btn" type="button" class="btn ghost">下载数据</button>
+      `;
+      const shareBtn = document.getElementById('editor-share-btn');
+      const exportBtn = document.getElementById('editor-export-btn');
+      shareBtn?.addEventListener('click', () => {
+        copyText(buildPublicUrl(), '分享链接已复制');
+      });
+      exportBtn?.addEventListener('click', () => {
+        window.open(`/api/admin/questionnaires/${state.currentId}/export`, '_blank');
+      });
+    }
+
     function renderTopbar() {
-      const title = state.questionnaire.name || state.questionnaire.title || '新建问卷';
+      const title = questionnaireDisplayName(state.questionnaire, state.currentId ? '编辑问卷' : '新建问卷');
       topbarTitleEl.textContent = title;
+      if (editorPageTitleEl) {
+        editorPageTitleEl.textContent = state.currentId ? '编辑问卷' : '新建问卷';
+      }
+      document.title = `${state.currentId ? '编辑问卷' : '新建问卷'} · ${title || '问卷编辑'}`;
+      renderEditorSecondaryActions();
       updateDraftIndicator();
     }
 
@@ -1677,7 +1729,7 @@
       previewHeadEl.innerHTML = `
         <div class="question-type">问卷设置</div>
         <h2>${escapeHtml(questionnaire.title || '未填写问卷标题')}</h2>
-        <p>${escapeHtml(questionnaire.description || '点击当前卡片可在右侧编辑问卷名称、问卷标题、问卷说明、提交后跳转地址、分享标识和停用状态。')}</p>
+        <p>${escapeHtml(questionnaire.description || '可在右侧维护标题、说明、分享标识和停用状态。')}</p>
       `;
       previewHeadEl.onclick = () => selectQuestionnaire();
 
@@ -1717,7 +1769,7 @@
           <div class="tag-badges">${buildTagBadges(normalizedSelected)}</div>
           <details class="tag-fallback">
             <summary>手工填写 tag_id 兜底</summary>
-            <input class="manual-tag-input" type="text" placeholder='例如 ["etxxx1","etxxx2"]' style="width:100%;margin-top:10px;padding:11px 12px;border-radius:12px;border:1px solid rgba(45,107,74,0.14);">
+            <input class="manual-tag-input" type="text" placeholder='例如 ["etxxx1","etxxx2"]' style="width:100%;margin-top:10px;padding:11px 12px;border-radius:12px;border:1px solid rgba(73,55,29,0.12);">
           </details>
         </div>
       `;
@@ -1736,6 +1788,7 @@
     function renderQuestionnaireInspector() {
       inspectorTitleEl.textContent = '问卷设置';
       inspectorSubtitleEl.textContent = '编辑当前问卷的基础信息。';
+      const deleteDisabled = !state.persistedIsDisabled;
       const deleteSection = state.currentId ? `
         <section class="config-group danger-zone">
           <div class="config-head">
@@ -1743,7 +1796,15 @@
               <h3>危险操作</h3>
             </div>
           </div>
-          <button id="delete-questionnaire-btn" type="button" class="btn danger">删除问卷</button>
+          <button
+            id="delete-questionnaire-btn"
+            type="button"
+            class="btn danger"
+            ${deleteDisabled ? 'disabled title="请先停用后删除"' : ''}
+          >
+            删除问卷
+          </button>
+          ${deleteDisabled ? '<p>请先停用问卷后再删除。</p>' : ''}
         </section>
       ` : '';
       inspectorBodyEl.innerHTML = `
@@ -1808,7 +1869,7 @@
         deleteBtn.addEventListener('click', () => {
           deleteQuestionnaireItem({
             id: state.currentId,
-            name: state.questionnaire.name || '未命名问卷',
+            name: questionnaireDisplayName(state.questionnaire),
           }).catch((error) => showToast(error.message || '删除失败，请稍后重试', true));
         });
       }
@@ -2124,11 +2185,20 @@
         body: JSON.stringify(payload),
       });
       resetDraft(data.questionnaire);
+      state.editorMode = state.currentId ? 'edit' : 'new';
+      if (!wasEditing && state.currentId) {
+        window.history.replaceState({}, '', `/admin/questionnaires/${state.currentId}`);
+      }
       await loadList();
       showToast(wasEditing ? '问卷已更新' : '问卷已创建');
     }
 
-    document.getElementById('create-btn').addEventListener('click', () => startNewQuestionnaire());
+    if (backLinkEl) {
+      backLinkEl.addEventListener('click', (event) => {
+        if (confirmDiscardChanges()) return;
+        event.preventDefault();
+      });
+    }
     document.getElementById('reset-btn').addEventListener('click', () => {
       if (!confirmDiscardChanges()) return;
       if (state.currentId) {
@@ -2138,15 +2208,21 @@
       resetDraft();
     });
     document.getElementById('save-btn').addEventListener('click', () => saveQuestionnaire().catch((error) => showToast(error.message || '保存失败，请检查当前配置后重试', true)));
-    document.getElementById('reload-list-btn').addEventListener('click', () => loadList());
-    listSearchEl.addEventListener('input', (event) => {
-      state.listSearch = event.target.value || '';
-      renderList();
-    });
-    statusFilterEl.addEventListener('change', (event) => {
-      state.statusFilter = event.target.value || 'all';
-      renderList();
-    });
+    if (document.getElementById('reload-list-btn')) {
+      document.getElementById('reload-list-btn').addEventListener('click', () => loadList());
+    }
+    if (listSearchEl) {
+      listSearchEl.addEventListener('input', (event) => {
+        state.listSearch = event.target.value || '';
+        renderList();
+      });
+    }
+    if (statusFilterEl) {
+      statusFilterEl.addEventListener('change', (event) => {
+        state.statusFilter = event.target.value || 'all';
+        renderList();
+      });
+    }
     document.getElementById('add-single').addEventListener('click', () => addQuestion('single_choice'));
     document.getElementById('add-multi').addEventListener('click', () => addQuestion('multi_choice'));
     document.getElementById('add-textarea').addEventListener('click', () => addQuestion('textarea'));
@@ -2180,11 +2256,14 @@
       if (event.target === drawerOverlayEl) closeDrawer();
     });
 
-    resetDraft();
-    Promise.all([
-      loadAvailableTags(),
-      loadList(),
-    ]).then(() => {
+    if (editorConfig.initialQuestionnaire) {
+      resetDraft(editorConfig.initialQuestionnaire);
+    } else {
+      resetDraft();
+    }
+    const bootTasks = [loadAvailableTags()];
+    if (listEl) bootTasks.push(loadList());
+    Promise.all(bootTasks).then(() => {
       renderWorkspace();
     }).catch((error) => {
       showToast(error.message || '页面初始化失败，请刷新后重试', true);
