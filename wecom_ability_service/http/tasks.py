@@ -11,6 +11,8 @@ def _handle_wecom_task(task_type: str, fn_name: str):
     try:
         result = dispatch_wecom_task(task_type, fn_name, payload)
         return jsonify({"ok": True, **result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except (WeComClientError, AttributeError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 502
 

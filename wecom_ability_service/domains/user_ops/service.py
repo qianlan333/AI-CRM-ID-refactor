@@ -3248,6 +3248,10 @@ def upsert_user_ops_huangxiaocan_activation_source(
         source_type="huangxiaocan_activation_import",
         remark="patched existing lead member from activation source",
     )
+    current_pool_apply_payload = _apply_activation_status_to_user_ops_pool_current_member(
+        mobile=normalized_mobile,
+        activation_status=normalized_state,
+    )
     source_row = db.execute(
         """
         SELECT mobile, activation_state, import_batch_id, created_by, is_active, created_at, updated_at
@@ -3261,7 +3265,7 @@ def upsert_user_ops_huangxiaocan_activation_source(
     return {
         "ok": True,
         "action_type": "activation_source_insert" if existing is None else "activation_source_update",
-        "matched_member": bool(apply_payload.get("matched_member")),
+        "matched_member": bool(apply_payload.get("matched_member") or current_pool_apply_payload.get("matched_member")),
         "created_member": False,
         "source": {
             "mobile": normalized_mobile,
@@ -3533,6 +3537,170 @@ def _resolve_lead_pool_binding_by_mobile(mobile: str) -> dict[str, Any]:
         "is_mobile_bound": is_mobile_bound,
         "is_wecom_added": bool(external_userid),
     }
+
+
+def _get_user_ops_pool_current_member_by_identity(*, mobile: str = "", external_userid: str = "") -> dict[str, Any] | None:
+    normalized_external_userid = str(external_userid or "").strip()
+    normalized_mobile = str(mobile or "").strip()
+    if normalized_external_userid:
+        row = get_db().execute(
+            """
+            SELECT
+                id,
+                mobile,
+                external_userid,
+                customer_name,
+                owner_userid,
+                current_status,
+                is_wecom_bound,
+                activation_status,
+                activation_remark,
+                class_term_no,
+                class_term_label,
+                source_type
+            FROM user_ops_pool_current
+            WHERE external_userid = ?
+            LIMIT 1
+            """,
+            (normalized_external_userid,),
+        ).fetchone()
+        if row:
+            return dict(row)
+    if normalized_mobile:
+        row = get_db().execute(
+            """
+            SELECT
+                id,
+                mobile,
+                external_userid,
+                customer_name,
+                owner_userid,
+                current_status,
+                is_wecom_bound,
+                activation_status,
+                activation_remark,
+                class_term_no,
+                class_term_label,
+                source_type
+            FROM user_ops_pool_current
+            WHERE mobile = ?
+            LIMIT 1
+            """,
+            (normalized_mobile,),
+        ).fetchone()
+        if row:
+            return dict(row)
+    return None
+
+
+def _upsert_user_ops_pool_current_import_member(
+    *,
+    mobile: str,
+    external_userid: str = "",
+    customer_name: str = "",
+    owner_userid: str = "",
+    is_wecom_bound: bool = False,
+    class_term_no: int | None = None,
+    class_term_label: str = "",
+    source_type: str = "student_import",
+) -> None:
+    normalized_mobile = _normalize_mobile(mobile)
+    normalized_external_userid = str(external_userid or "").strip()
+    existing = _get_user_ops_pool_current_member_by_identity(
+        mobile=normalized_mobile,
+        external_userid=normalized_external_userid,
+    )
+    final_external_userid = normalized_external_userid or str((existing or {}).get("external_userid") or "").strip()
+    final_customer_name = str(customer_name or "").strip() or str((existing or {}).get("customer_name") or "").strip()
+    final_owner_userid = str(owner_userid or "").strip() or str((existing or {}).get("owner_userid") or "").strip()
+    final_class_term_no = class_term_no if class_term_no not in (None, "") else (existing or {}).get("class_term_no")
+    final_class_term_label = str(class_term_label or "").strip() or str((existing or {}).get("class_term_label") or "").strip()
+    final_source_type = str(source_type or "").strip() or str((existing or {}).get("source_type") or "").strip() or "student_import"
+    activation_status = str((existing or {}).get("activation_status") or "").strip() or "not_activated"
+    activation_remark = str((existing or {}).get("activation_remark") or "").strip()
+    current_status = str((existing or {}).get("current_status") or "").strip() or "lead_trial"
+    db = get_db()
+    if existing:
+        db.execute(
+            """
+            UPDATE user_ops_pool_current
+            SET mobile = ?,
+                external_userid = ?,
+                customer_name = ?,
+                owner_userid = ?,
+                current_status = ?,
+                is_wecom_bound = ?,
+                activation_status = ?,
+                activation_remark = ?,
+                class_term_no = ?,
+                class_term_label = ?,
+                source_type = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                normalized_mobile,
+                final_external_userid,
+                final_customer_name,
+                final_owner_userid,
+                current_status,
+                _db_bool(bool(is_wecom_bound)),
+                activation_status,
+                activation_remark,
+                final_class_term_no,
+                final_class_term_label,
+                final_source_type,
+                int(existing["id"]),
+            ),
+        )
+        return
+    db.execute(
+        """
+        INSERT INTO user_ops_pool_current (
+            mobile, external_userid, customer_name, owner_userid, current_status, is_wecom_bound,
+            activation_status, activation_remark, class_term_no, class_term_label, source_type, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        (
+            normalized_mobile,
+            final_external_userid,
+            final_customer_name,
+            final_owner_userid,
+            current_status,
+            _db_bool(bool(is_wecom_bound)),
+            activation_status,
+            activation_remark,
+            final_class_term_no,
+            final_class_term_label,
+            final_source_type,
+        ),
+    )
+
+
+def _apply_activation_status_to_user_ops_pool_current_member(
+    *,
+    mobile: str,
+    activation_status: str,
+) -> dict[str, Any]:
+    normalized_mobile = _normalize_mobile(mobile)
+    normalized_status = str(activation_status or "").strip() or "not_activated"
+    existing = _get_user_ops_pool_current_member_by_identity(mobile=normalized_mobile)
+    if not existing:
+        return {"matched_member": False}
+    get_db().execute(
+        """
+        UPDATE user_ops_pool_current
+        SET activation_status = ?, activation_remark = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            normalized_status,
+            "已激活" if normalized_status == "activated" else "未激活",
+            int(existing["id"]),
+        ),
+    )
+    return {"matched_member": True, "id": int(existing["id"])}
 
 
 def _parse_activation_status_line(line: str) -> tuple[str, str, str]:
@@ -3816,11 +3984,22 @@ def import_mobile_class_term_source(
             operator=operator,
             remark=f"class term import batch={batch_id}",
         )
+        _upsert_user_ops_pool_current_import_member(
+            mobile=mobile,
+            external_userid=resolved["external_userid"],
+            customer_name=resolved["customer_name"],
+            owner_userid=resolved["owner_userid"],
+            is_wecom_bound=resolved["is_mobile_bound"],
+            class_term_no=row["class_term_no"],
+            class_term_label=row["class_term_label"],
+            source_type="student_import",
+        )
         members.append(dict(result.get("member") or {}))
         applied_count += 1
         if bool((result.get("member") or {}).get("is_wecom_added")):
             bound_count += 1
 
+    db.commit()
     return {
         "ok": True,
         "import_type": "class_term_source",

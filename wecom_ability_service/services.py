@@ -22,6 +22,7 @@ from .domains.routing_config.service import (
 from .domains.tags import repo as tags_repo
 from .domains.tags import service as tags_domain_service
 from .domains.tasks import service as tasks_domain_service
+from .domains.user_ops import page_service as user_ops_page_service
 from .domains.user_ops import service as user_ops_domain_service
 from .infra.helpers import (
     db_bool as _db_bool,
@@ -490,27 +491,60 @@ def run_due_user_ops_deferred_jobs(limit: int = 20) -> dict[str, Any]:
 
 def list_user_ops_pool(
     *,
+    wecom_status: str = "",
+    mobile_binding_status: str = "",
+    activation_bucket: str = "",
     is_wecom_added: str = "",
     is_mobile_bound: str = "",
     huangxiaocan_activation_state: str = "",
     class_term_no: str = "",
+    keyword: str = "",
+    mobile: str = "",
     owner_userid: str = "",
     query: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.list_user_ops_pool(
+    return user_ops_page_service.list_user_ops_pool(
+        wecom_status=wecom_status,
+        mobile_binding_status=mobile_binding_status,
+        activation_bucket=activation_bucket,
         is_wecom_added=is_wecom_added,
         is_mobile_bound=is_mobile_bound,
         huangxiaocan_activation_state=huangxiaocan_activation_state,
         class_term_no=class_term_no,
+        keyword=keyword,
+        mobile=mobile,
         owner_userid=owner_userid,
         query=query,
     )
 
 
-def get_user_ops_overview() -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.get_user_ops_overview()
+def get_user_ops_overview(
+    *,
+    wecom_status: str = "",
+    mobile_binding_status: str = "",
+    activation_bucket: str = "",
+    is_wecom_added: str = "",
+    is_mobile_bound: str = "",
+    huangxiaocan_activation_state: str = "",
+    class_term_no: str = "",
+    keyword: str = "",
+    mobile: str = "",
+    owner_userid: str = "",
+    query: str = "",
+) -> dict[str, Any]:
+    return user_ops_page_service.get_user_ops_overview(
+        wecom_status=wecom_status,
+        mobile_binding_status=mobile_binding_status,
+        activation_bucket=activation_bucket,
+        is_wecom_added=is_wecom_added,
+        is_mobile_bound=is_mobile_bound,
+        huangxiaocan_activation_state=huangxiaocan_activation_state,
+        class_term_no=class_term_no,
+        keyword=keyword,
+        mobile=mobile,
+        owner_userid=owner_userid,
+        query=query,
+    )
 
 
 def list_user_ops_history(limit: int = 100) -> dict[str, Any]:
@@ -520,22 +554,55 @@ def list_user_ops_history(limit: int = 100) -> dict[str, Any]:
 
 def export_user_ops_pool(
     *,
+    wecom_status: str = "",
+    mobile_binding_status: str = "",
+    activation_bucket: str = "",
     is_wecom_added: str = "",
     is_mobile_bound: str = "",
     huangxiaocan_activation_state: str = "",
     class_term_no: str = "",
+    keyword: str = "",
+    mobile: str = "",
     owner_userid: str = "",
     query: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.export_user_ops_pool(
+    return user_ops_page_service.export_user_ops_pool(
+        wecom_status=wecom_status,
+        mobile_binding_status=mobile_binding_status,
+        activation_bucket=activation_bucket,
         is_wecom_added=is_wecom_added,
         is_mobile_bound=is_mobile_bound,
         huangxiaocan_activation_state=huangxiaocan_activation_state,
         class_term_no=class_term_no,
+        keyword=keyword,
+        mobile=mobile,
         owner_userid=owner_userid,
         query=query,
     )
+
+
+def set_user_ops_do_not_disturb(payload: dict[str, Any]) -> dict[str, Any]:
+    return user_ops_page_service.set_user_ops_do_not_disturb(payload)
+
+
+def preview_user_ops_batch_send(payload: dict[str, Any]) -> dict[str, Any]:
+    return user_ops_page_service.preview_user_ops_batch_send(payload)
+
+
+def execute_user_ops_batch_send(payload: dict[str, Any]) -> dict[str, Any]:
+    return user_ops_page_service.execute_user_ops_batch_send(payload)
+
+
+def list_user_ops_send_records(*, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    return user_ops_page_service.list_user_ops_send_records(limit=limit, offset=offset)
+
+
+def get_user_ops_send_record_detail(record_id: int) -> dict[str, Any]:
+    return user_ops_page_service.get_user_ops_send_record_detail(record_id)
+
+
+def refresh_user_ops_send_record_status(record_id: int) -> dict[str, Any]:
+    return user_ops_page_service.refresh_user_ops_send_record_status(record_id)
 
 
 def write_user_ops_lead_pool_history(

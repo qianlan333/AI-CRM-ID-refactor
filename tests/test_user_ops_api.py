@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from io import BytesIO
+import json
 from zipfile import ZipFile
 
 import pytest
@@ -26,6 +28,46 @@ from wecom_ability_service.services import (
     sync_user_ops_class_term_tag_definitions,
     upsert_user_ops_lead_pool_member,
 )
+
+
+def _test_image_data_url(label: str = "page") -> str:
+    encoded = base64.b64encode(f"page-image-{label}".encode("utf-8")).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def _test_png_bytes() -> bytes:
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+b5f0AAAAASUVORK5CYII="
+    )
+
+
+def _build_batch_send_form_data(
+    *,
+    selection_mode: str,
+    content: str = "",
+    selected_ids: list[int] | None = None,
+    excluded_ids: list[int] | None = None,
+    filters: dict | None = None,
+    include_do_not_disturb: bool = False,
+    confirm: bool = False,
+    operator: str = "",
+    images: list[tuple[str, bytes, str]] | None = None,
+):
+    payload = {
+        "selection_mode": selection_mode,
+        "content": content,
+        "filters_json": json.dumps(filters or {}, ensure_ascii=False),
+        "selected_ids_json": json.dumps(selected_ids or []),
+        "excluded_ids_json": json.dumps(excluded_ids or []),
+        "include_do_not_disturb": "true" if include_do_not_disturb else "false",
+    }
+    if confirm:
+        payload["confirm"] = "true"
+    if operator:
+        payload["operator"] = operator
+    if images:
+        payload["images"] = [(BytesIO(file_bytes), file_name, mime_type) for file_name, file_bytes, mime_type in images]
+    return payload
 
 
 @pytest.fixture()
@@ -534,6 +576,104 @@ def _seed_user_ops_lead_pool_read_model(app) -> None:
         )
         db.execute(
             """
+            INSERT INTO people (id, mobile, third_party_user_id, created_at, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (201, "13800138002", "tp-page-201"),
+        )
+        db.execute(
+            """
+            INSERT INTO external_contact_bindings (
+                external_userid, person_id, first_bound_by_userid, first_owner_userid, last_owner_userid, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("wm_lead_bound", 201, "sales_01", "sales_01", "sales_01"),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_current (
+                mobile, external_userid, customer_name, owner_userid, current_status, is_wecom_bound,
+                activation_status, activation_remark, class_term_no, class_term_label, source_type,
+                created_at, updated_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138002",
+                "wm_lead_bound",
+                "已绑定引流用户",
+                "sales_01",
+                "lead_trial",
+                True,
+                "activated",
+                "已激活",
+                6,
+                "6期",
+                "student_import",
+                "",
+                "wm_external_only_001",
+                "外部联系人",
+                "sales_02",
+                "lead_trial",
+                True,
+                "not_activated",
+                "",
+                5,
+                "5期",
+                "sidebar_class_term",
+                "13800138061",
+                "",
+                "",
+                "",
+                "lead_trial",
+                False,
+                "not_activated",
+                "未激活",
+                4,
+                "4期",
+                "activation_import",
+                "13800138062",
+                "",
+                "",
+                "",
+                "lead_trial",
+                False,
+                "not_activated",
+                "",
+                None,
+                "",
+                "student_import",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_activation_status_source (
+                mobile, activation_status, activation_remark, created_by, is_active, created_at, updated_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138002",
+                "activated",
+                "已激活",
+                "test",
+                True,
+                "13800138061",
+                "not_activated",
+                "未激活",
+                "test",
+                True,
+            ),
+        )
+        db.execute(
+            """
             INSERT INTO user_ops_lead_pool_history (
                 mobile, external_userid, action_type, source_type, operator, before_json, after_json, remark, created_at
             )
@@ -563,6 +703,177 @@ def _seed_user_ops_lead_pool_read_model(app) -> None:
         db.commit()
 
 
+def _seed_user_ops_page_action_data(app) -> None:
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO owner_role_map (userid, display_name, role, active)
+            VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+            ON CONFLICT(userid) DO UPDATE SET display_name = excluded.display_name, role = excluded.role, active = excluded.active
+            """,
+            ("sales_01", "ZhaoYanFang", "sales", True, "sales_02", "QianLan", "sales", True),
+        )
+        db.execute(
+            """
+            INSERT INTO people (id, mobile, third_party_user_id, created_at, updated_at)
+            VALUES
+            (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                301,
+                "13800138111",
+                "tp-page-301",
+                302,
+                "13800138112",
+                "tp-page-302",
+                303,
+                "13800138113",
+                "tp-page-303",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO external_contact_bindings (
+                external_userid, person_id, first_bound_by_userid, first_owner_userid, last_owner_userid, created_at, updated_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "wm_send_auto_dnd",
+                301,
+                "sales_01",
+                "sales_01",
+                "sales_01",
+                "wm_send_manual_dnd",
+                302,
+                "sales_01",
+                "sales_01",
+                "sales_01",
+                "wm_send_eligible",
+                303,
+                "sales_02",
+                "sales_02",
+                "sales_02",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO class_user_status_current (
+                external_userid, signup_status, signup_label_name, customer_name_snapshot, owner_userid_snapshot,
+                mobile_snapshot, set_by_userid, set_at, wecom_tag_sync_status, wecom_tag_sync_error, status_flags_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+            """,
+            (
+                "wm_send_auto_dnd",
+                "signed_3999",
+                "已报名3999",
+                "正价用户",
+                "sales_01",
+                "13800138111",
+                "sales_01",
+                "success",
+                "",
+                "{}",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_current (
+                mobile, external_userid, customer_name, owner_userid, current_status, is_wecom_bound,
+                activation_status, activation_remark, class_term_no, class_term_label, source_type,
+                created_at, updated_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138111",
+                "wm_send_auto_dnd",
+                "正价用户",
+                "sales_01",
+                "lead_trial",
+                True,
+                "activated",
+                "已激活",
+                8,
+                "8期",
+                "student_import",
+                "13800138112",
+                "wm_send_manual_dnd",
+                "手动免打扰用户",
+                "sales_01",
+                "lead_trial",
+                True,
+                "not_activated",
+                "",
+                8,
+                "8期",
+                "student_import",
+                "13800138113",
+                "wm_send_eligible",
+                "可发送用户",
+                "sales_02",
+                "lead_trial",
+                True,
+                "activated",
+                "已激活",
+                9,
+                "9期",
+                "student_import",
+                "13800138114",
+                "",
+                "手机号名单用户",
+                "sales_02",
+                "lead_trial",
+                False,
+                "not_activated",
+                "",
+                9,
+                "9期",
+                "student_import",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_activation_status_source (
+                mobile, activation_status, activation_remark, created_by, is_active, created_at, updated_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "13800138111",
+                "activated",
+                "已激活",
+                "test",
+                True,
+                "13800138112",
+                "not_activated",
+                "未激活",
+                "test",
+                True,
+                "13800138113",
+                "activated",
+                "已激活",
+                "test",
+                True,
+            ),
+        )
+        db.commit()
+
+
 def test_user_ops_overview_counts_are_correct(client, app):
     _seed_user_ops_lead_pool_read_model(app)
 
@@ -576,8 +887,8 @@ def test_user_ops_overview_counts_are_correct(client, app):
     assert payload["mobile_bound_count"] == 1
     assert payload["mobile_unbound_count"] == 3
     assert payload["huangxiaocan_activated_count"] == 1
-    assert payload["huangxiaocan_not_activated_count"] == 1
-    assert payload["huangxiaocan_unknown_count"] == 2
+    assert payload["huangxiaocan_not_activated_count"] == 3
+    assert "huangxiaocan_unknown_count" not in payload
     assert "signed_999_count" not in payload
     assert "signed_3999_count" not in payload
 
@@ -596,8 +907,8 @@ def test_user_ops_overview_counts_phone_centric_union_without_double_count(clien
     assert cards["mobile_bound_count"] == 1
     assert cards["mobile_unbound_count"] == 3
     assert cards["huangxiaocan_activated_count"] == 1
-    assert cards["huangxiaocan_not_activated_count"] == 1
-    assert cards["huangxiaocan_unknown_count"] == 2
+    assert cards["huangxiaocan_not_activated_count"] == 3
+    assert "huangxiaocan_unknown_count" not in cards
     assert "signed_999_count" not in cards
     assert "signed_3999_count" not in cards
 
@@ -653,6 +964,523 @@ def test_user_ops_export_returns_current_pool_rows(client, app):
     assert "高意向备注" not in content
 
 
+def test_user_ops_overview_accepts_new_filters_and_keeps_total_view_for_cards(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
+
+    response = client.get("/api/admin/user-ops/overview?wecom_status=added&class_term_no=4")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["filters"]["wecom_status"] == "added"
+    cards = {item["key"]: item["value"] for item in payload["cards"]}
+    assert cards["lead_pool_total_count"] == 1
+    assert cards["wecom_added_count"] == 0
+    assert cards["wecom_not_added_count"] == 1
+    assert cards["mobile_bound_count"] == 0
+    assert cards["mobile_unbound_count"] == 1
+    assert cards["huangxiaocan_activated_count"] == 0
+    assert cards["huangxiaocan_not_activated_count"] == 1
+    assert "huangxiaocan_unknown_count" not in cards
+
+
+def test_user_ops_list_supports_new_filters_and_derived_fields(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
+
+    response = client.get(
+        "/api/admin/user-ops/list?wecom_status=added&mobile_binding_status=bound&activation_bucket=activated&class_term_no=6"
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["external_userid"] == "wm_lead_bound"
+    assert item["is_added_wecom"] is True
+    assert item["is_mobile_bound"] is True
+    assert item["activation_bucket"] == "activated"
+    assert item["do_not_disturb"] is False
+    assert item["do_not_disturb_reasons"] == []
+    assert item["can_open_customer_detail"] is True
+    assert item["can_batch_send"] is True
+
+
+def test_user_ops_list_unbound_member_without_external_userid_disables_actions(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
+
+    response = client.get("/api/admin/user-ops/list?wecom_status=not_added&mobile_binding_status=unbound&class_term_no=4")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["mobile"] == "13800138061"
+    assert item["external_userid"] == ""
+    assert item["activation_bucket"] == "not_activated"
+    assert item["can_open_customer_detail"] is False
+    assert item["can_batch_send"] is False
+
+
+def test_user_ops_list_bound_member_with_external_userid_keeps_detail_enabled(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
+
+    response = client.get("/api/admin/user-ops/list?wecom_status=added&class_term_no=6")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["external_userid"] == "wm_lead_bound"
+    assert item["can_open_customer_detail"] is True
+
+
+def test_user_ops_list_treats_missing_mobile_activation_as_not_activated(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
+
+    response = client.get("/api/admin/user-ops/list?wecom_status=added&mobile_binding_status=unbound")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["external_userid"] == "wm_external_only_001"
+    assert item["mobile"] == ""
+    assert item["activation_bucket"] == "not_activated"
+    assert item["activation_bucket_label"] == "黄小璨未激活"
+
+
+def test_user_ops_do_not_disturb_manual_reason_can_be_enabled_and_cleared(client, app):
+    _seed_user_ops_page_action_data(app)
+
+    enable_response = client.post(
+        "/api/admin/user-ops/do-not-disturb",
+        json={
+            "external_userid": "wm_send_auto_dnd",
+            "reason_code": "manual_note",
+            "reason_text": "运营手动设置",
+            "operator": "test_operator",
+        },
+    )
+    enable_payload = enable_response.get_json()
+
+    assert enable_response.status_code == 200
+    reason_codes = {item["reason_code"] for item in enable_payload["do_not_disturb_reasons"]}
+    assert enable_payload["do_not_disturb"] is True
+    assert reason_codes == {"signed_paid_course", "manual_note"}
+
+    disable_response = client.post(
+        "/api/admin/user-ops/do-not-disturb",
+        json={
+            "external_userid": "wm_send_auto_dnd",
+            "reason_code": "manual_note",
+            "action": "disable",
+        },
+    )
+    disable_payload = disable_response.get_json()
+
+    assert disable_response.status_code == 200
+    assert disable_payload["do_not_disturb"] is True
+    assert disable_payload["do_not_disturb_reasons"] == [
+        {"source_type": "auto", "reason_code": "signed_paid_course", "reason_text": "已报名正价课"}
+    ]
+
+
+def test_user_ops_batch_send_preview_respects_dnd_and_external_userid(client, app):
+    _seed_user_ops_page_action_data(app)
+    client.post(
+        "/api/admin/user-ops/do-not-disturb",
+        json={
+            "external_userid": "wm_send_manual_dnd",
+            "reason_code": "manual_note",
+            "reason_text": "运营手动设置",
+            "operator": "test_operator",
+        },
+    )
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        json={"selection_mode": "all_filtered", "content": "今天统一跟进"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["selected_count"] == 4
+    assert payload["eligible_count"] == 1
+    assert payload["skipped_count"] == 3
+    assert payload["skipped_by_reason"] == {"do_not_disturb": 2, "missing_external_userid": 1}
+    assert payload["skipped_summary"] == "已跳过 3 人：2 人免打扰，1 人缺少 external_userid"
+    assert payload["image_count"] == 0
+    assert payload["final_targets"] == [
+        {
+            "id": payload["final_targets"][0]["id"],
+            "external_userid": "wm_send_eligible",
+            "customer_name": "可发送用户",
+            "owner_userid": "sales_02",
+            "owner_display_name": "QianLan",
+            "mobile": "13800138113",
+        }
+    ]
+    assert payload["sender_buckets"] == [
+        {"owner_userid": "sales_02", "owner_display_name": "QianLan", "count": 1}
+    ]
+
+    include_response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        json={"selection_mode": "all_filtered", "content": "今天统一跟进", "include_do_not_disturb": True},
+    )
+    include_payload = include_response.get_json()
+
+    assert include_response.status_code == 200
+    assert include_payload["eligible_count"] == 3
+    assert include_payload["skipped_by_reason"] == {"missing_external_userid": 1}
+    assert include_payload["image_count"] == 0
+
+
+def test_user_ops_batch_send_preview_supports_manual_selected_items(client, app):
+    _seed_user_ops_page_action_data(app)
+    client.post(
+        "/api/admin/user-ops/do-not-disturb",
+        json={
+            "external_userid": "wm_send_manual_dnd",
+            "reason_code": "manual_note",
+            "reason_text": "运营手动设置",
+            "operator": "test_operator",
+        },
+    )
+
+    list_payload = client.get("/api/admin/user-ops/list").get_json()
+    items_by_external = {item["external_userid"]: item for item in list_payload["items"]}
+    manual_ids = [
+        items_by_external["wm_send_manual_dnd"]["id"],
+        items_by_external["wm_send_eligible"]["id"],
+        next(item["id"] for item in list_payload["items"] if item["external_userid"] == ""),
+    ]
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        json={
+            "selection_mode": "manual",
+            "selected_ids": manual_ids,
+            "content": "今天统一跟进",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["selected_count"] == 3
+    assert payload["eligible_count"] == 1
+    assert payload["skipped_count"] == 2
+    assert payload["skipped_by_reason"] == {"do_not_disturb": 1, "missing_external_userid": 1}
+    assert [item["external_userid"] for item in payload["final_targets"]] == ["wm_send_eligible"]
+
+
+def test_user_ops_batch_send_preview_supports_emoji_and_images(client, app):
+    _seed_user_ops_page_action_data(app)
+    list_payload = client.get("/api/admin/user-ops/list").get_json()
+    items_by_external = {item["external_userid"]: item for item in list_payload["items"]}
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        data=_build_batch_send_form_data(
+            selection_mode="manual",
+            selected_ids=[items_by_external["wm_send_eligible"]["id"]],
+            content="今天统一跟进🙂",
+            images=[("hello.png", _test_png_bytes(), "image/png")],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["content_preview"] == "今天统一跟进🙂"
+    assert payload["image_count"] == 1
+    assert payload["eligible_count"] == 1
+
+
+def test_user_ops_batch_send_preview_rejects_fourth_image(client, app):
+    _seed_user_ops_page_action_data(app)
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        data=_build_batch_send_form_data(
+            selection_mode="all_filtered",
+            images=[(f"img-{index}.png", _test_png_bytes(), "image/png") for index in range(1, 5)],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["error"] == "at most 3 images are allowed"
+
+
+def test_user_ops_batch_send_preview_rejects_non_image_file(client, app):
+    _seed_user_ops_page_action_data(app)
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        data=_build_batch_send_form_data(
+            selection_mode="all_filtered",
+            images=[("bad.txt", b"not-an-image", "text/plain")],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "only image files are allowed"
+
+
+def test_user_ops_batch_send_preview_rejects_empty_content_and_images(client, app):
+    _seed_user_ops_page_action_data(app)
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        data=_build_batch_send_form_data(selection_mode="all_filtered"),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "content or images is required"
+
+
+def test_user_ops_batch_send_execute_requires_confirm_and_writes_send_record(client, app, monkeypatch):
+    _seed_user_ops_page_action_data(app)
+    client.post(
+        "/api/admin/user-ops/do-not-disturb",
+        json={
+            "external_userid": "wm_send_manual_dnd",
+            "reason_code": "manual_note",
+            "reason_text": "运营手动设置",
+            "operator": "test_operator",
+        },
+    )
+
+    calls: list[dict[str, object]] = []
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        calls.append({"task_type": task_type, "fn_name": fn_name, "payload": payload})
+        return {"task_id": 900 + len(calls), "wecom_result": {"msgid": f"page-task-{len(calls)}"}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.user_ops.page_service.dispatch_wecom_task", fake_dispatch)
+
+    bad_response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={"selection_mode": "all_filtered", "content": "今天统一跟进"},
+    )
+    bad_payload = bad_response.get_json()
+
+    assert bad_response.status_code == 400
+    assert bad_payload["error"] == "confirm=true is required"
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        data=_build_batch_send_form_data(
+            selection_mode="all_filtered",
+            content="今天统一跟进🙂",
+            include_do_not_disturb=True,
+            confirm=True,
+            operator="test_operator",
+            images=[
+                ("first.png", _test_png_bytes(), "image/png"),
+                ("second.png", _test_png_bytes(), "image/png"),
+            ],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["eligible_count"] == 3
+    assert payload["sent_count"] == 3
+    assert payload["execution_summary"]["selected_count"] == 4
+    assert payload["execution_summary"]["eligible_count"] == 3
+    assert payload["execution_summary"]["sent_count"] == 3
+    assert payload["execution_summary"]["sender_count"] == 2
+    assert payload["execution_summary"]["status"] == "sent"
+    assert payload["skip_summary"]["skipped_count"] == 1
+    assert payload["skip_summary"]["skipped_by_reason"] == {"missing_external_userid": 1}
+    assert len(payload["task_results"]) == 2
+    assert {item["owner_userid"] for item in payload["task_results"]} == {"sales_01", "sales_02"}
+    assert payload["image_count"] == 2
+    assert payload["execution_summary"]["image_count"] == 2
+    assert len(calls) == 2
+    assert calls[0]["payload"]["text"]["content"] == "今天统一跟进🙂"
+    assert len(calls[0]["payload"]["images"]) == 2
+
+    records_response = client.get("/api/admin/user-ops/send-records")
+    records_payload = records_response.get_json()
+
+    assert records_response.status_code == 200
+    assert records_payload["total"] == 1
+    assert records_payload["items"][0]["id"] == payload["record_id"]
+    assert records_payload["items"][0]["operator"] == "test_operator"
+    assert records_payload["items"][0]["content_preview"] == "今天统一跟进🙂"
+    assert records_payload["items"][0]["image_count"] == 2
+    assert "image_meta" not in records_payload["items"][0]
+    assert "image_file_names" not in records_payload["items"][0]
+    assert records_payload["items"][0]["status"] == "sent"
+    assert records_payload["items"][0]["status_label"] == "已创建完成"
+    assert records_payload["items"][0]["selected_count"] == 4
+    assert records_payload["items"][0]["eligible_count"] == 3
+    assert records_payload["items"][0]["sent_count"] == 3
+    assert records_payload["items"][0]["skipped_count"] == 1
+    assert records_payload["items"][0]["include_do_not_disturb"] is True
+    assert records_payload["items"][0]["sender_count"] == 2
+    assert records_payload["items"][0]["owner_count"] == 2
+    assert records_payload["items"][0]["outbound_task_ids"] == [901, 902]
+
+    detail_response = client.get(f"/api/admin/user-ops/send-records/{payload['record_id']}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    assert detail_payload["record"]["id"] == payload["record_id"]
+    assert detail_payload["record"]["status"] == "sent"
+    assert detail_payload["record"]["status_label"] == "已创建完成"
+    assert detail_payload["record"]["status_source"] == "task_creation"
+    assert detail_payload["record"]["delivery_status_supported"] is False
+    assert "暂无官方发送结果轮询能力" in detail_payload["record"]["status_note"]
+    assert "image_meta" not in detail_payload["record"]
+    assert "image_file_names" not in detail_payload["record"]
+    assert len(detail_payload["record"]["task_results"]) == 2
+    assert {item["owner_userid"] for item in detail_payload["record"]["task_results"]} == {"sales_01", "sales_02"}
+    assert all(item["status"] == "created" for item in detail_payload["record"]["task_results"])
+    assert all(item["msgid"] for item in detail_payload["record"]["task_results"])
+    assert all(item["error_message"] == "" for item in detail_payload["record"]["task_results"])
+
+    refresh_response = client.post(f"/api/admin/user-ops/send-records/{payload['record_id']}/refresh")
+    refresh_payload = refresh_response.get_json()
+
+    assert refresh_response.status_code == 200
+    assert refresh_payload["record"]["id"] == payload["record_id"]
+    assert refresh_payload["record"]["status"] == "sent"
+    assert refresh_payload["record"]["last_status_sync_at"]
+
+
+def test_user_ops_batch_send_execute_marks_partial_failed_with_sender_error_details(client, app, monkeypatch):
+    _seed_user_ops_page_action_data(app)
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        sender = ((payload.get("sender") or [""]) if isinstance(payload.get("sender"), list) else [payload.get("sender")])[0]
+        if sender == "sales_02":
+            raise wecom_client_module.WeComClientError(
+                "sales_02 create failed",
+                stage="/cgi-bin/externalcontact/add_msg_template",
+                category="wecom_api",
+                payload={"errmsg": "sales_02 create failed"},
+            )
+        return {"task_id": 990, "wecom_result": {"msgid": "page-task-success"}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.user_ops.page_service.dispatch_wecom_task", fake_dispatch)
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={
+            "selection_mode": "all_filtered",
+            "content": "今天统一跟进",
+            "include_do_not_disturb": True,
+            "confirm": True,
+            "operator": "partial_operator",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["sent_count"] == 2
+    assert payload["execution_summary"]["status"] == "partial_failed"
+    assert len(payload["task_results"]) == 2
+    assert {item["status"] for item in payload["task_results"]} == {"created", "failed"}
+    failed_item = next(item for item in payload["task_results"] if item["status"] == "failed")
+    assert failed_item["owner_userid"] == "sales_02"
+    assert failed_item["error_message"] == "sales_02 create failed"
+
+    detail_response = client.get(f"/api/admin/user-ops/send-records/{payload['record_id']}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    assert detail_payload["record"]["status"] == "partial_failed"
+    assert detail_payload["record"]["status_label"] == "部分创建失败"
+    assert len(detail_payload["record"]["task_results"]) == 2
+    failed_detail = next(item for item in detail_payload["record"]["task_results"] if item["status"] == "failed")
+    assert failed_detail["owner_userid"] == "sales_02"
+    assert failed_detail["error_message"] == "sales_02 create failed"
+    assert failed_detail["task_id"] is None
+    assert failed_detail["msgid"] == ""
+
+
+def test_user_ops_batch_send_execute_marks_failed_when_all_sender_tasks_fail(client, app, monkeypatch):
+    _seed_user_ops_page_action_data(app)
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        sender = ((payload.get("sender") or [""]) if isinstance(payload.get("sender"), list) else [payload.get("sender")])[0]
+        raise wecom_client_module.WeComClientError(
+            f"{sender} create failed",
+            stage="/cgi-bin/externalcontact/add_msg_template",
+            category="wecom_api",
+            payload={"errmsg": f"{sender} create failed"},
+        )
+
+    monkeypatch.setattr("wecom_ability_service.domains.user_ops.page_service.dispatch_wecom_task", fake_dispatch)
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={
+            "selection_mode": "all_filtered",
+            "content": "今天统一跟进",
+            "include_do_not_disturb": True,
+            "confirm": True,
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["sent_count"] == 0
+    assert payload["execution_summary"]["status"] == "failed"
+    assert len(payload["task_results"]) == 2
+    assert all(item["status"] == "failed" for item in payload["task_results"])
+
+    detail_response = client.get(f"/api/admin/user-ops/send-records/{payload['record_id']}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    assert detail_payload["record"]["status"] == "failed"
+    assert detail_payload["record"]["status_label"] == "创建失败"
+    assert len(detail_payload["record"]["task_results"]) == 2
+    assert all(item["error_message"] for item in detail_payload["record"]["task_results"])
+
+
+def test_user_ops_batch_send_execute_supports_pure_image(client, app, monkeypatch):
+    _seed_user_ops_page_action_data(app)
+    list_payload = client.get("/api/admin/user-ops/list").get_json()
+    items_by_external = {item["external_userid"]: item for item in list_payload["items"]}
+
+    calls: list[dict[str, object]] = []
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        calls.append({"task_type": task_type, "fn_name": fn_name, "payload": payload})
+        return {"task_id": 950 + len(calls), "wecom_result": {"msgid": f"page-task-img-{len(calls)}"}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.user_ops.page_service.dispatch_wecom_task", fake_dispatch)
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        data=_build_batch_send_form_data(
+            selection_mode="manual",
+            selected_ids=[items_by_external["wm_send_eligible"]["id"]],
+            confirm=True,
+            images=[("only-image.png", _test_png_bytes(), "image/png")],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["image_count"] == 1
+    assert payload["sent_count"] == 1
+    assert "text" not in calls[0]["payload"]
+    assert len(calls[0]["payload"]["images"]) == 1
+
+
 def test_user_ops_history_returns_lead_pool_records(client, app):
     _seed_user_ops_lead_pool_read_model(app)
 
@@ -668,13 +1496,20 @@ def test_user_ops_history_returns_lead_pool_records(client, app):
     assert "after_json" in payload["items"][0]
 
 
-def test_user_ops_ui_route_redirects_to_shell(client):
-    response = client.get("/admin/user-ops/ui", follow_redirects=False)
+def test_user_ops_ui_route_renders_conversion_page(client):
+    response = client.get("/admin/user-ops/ui")
+    html = response.get_data(as_text=True)
 
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/user-ops")
-    assert response.headers["X-Admin-Deprecated"] == "true"
-    assert response.headers["X-Admin-Replacement"].endswith("/admin/user-ops")
+    assert response.status_code == 200
+    assert "运营管理" in html
+    assert "转化链路运营页" in html
+    assert "用户运营明细表" in html
+    assert "发送记录" in html
+    assert "批量群发" in html
+    assert "免打扰" in html
+    assert "激活待录入" not in html
+    assert "操作历史" not in html
+    assert "导入" not in html
 
 
 def test_user_ops_shell_page_exists(client):
@@ -682,41 +1517,36 @@ def test_user_ops_shell_page_exists(client):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "CRM Console" in html
     assert "运营管理" in html
-    assert "运营名单" in html
-    assert "待处理作业" in html
+    assert "转化链路运营页" in html
+    assert "用户运营明细表" in html
+    assert "发送记录" in html
+    assert "批量群发" in html
+    assert "待处理作业" not in html
 
 
 def test_user_ops_legacy_ui_hides_legacy_fields_and_buttons(client):
     response = client.get("/admin/_legacy/user-ops")
     html = response.get_data(as_text=True)
-    page_shell = html.split('<div id="class-term-import-modal-backdrop"', 1)[0]
 
     assert response.status_code == 200
-    assert "导入学员" in page_shell
-    assert "导入黄小璨激活状态" in page_shell
-    assert 'id="open-class-term-import-modal-btn"' in page_shell
-    assert 'id="open-activation-import-modal-btn"' in page_shell
-    assert "Reload" not in page_shell
-    assert 'id="class-term-import-text"' not in page_shell
-    assert 'id="class-term-import-file"' not in page_shell
-    assert 'id="activation-import-text"' not in page_shell
-    assert 'id="activation-import-file"' not in page_shell
-    assert "班期回填" not in page_shell
-    assert "执行待处理自动归班任务" not in page_shell
-    assert "检查标签" not in page_shell
-    assert html.count('<section class="panel toolbar">') == 1
-    assert 'id="class-term-import-modal-backdrop" class="modal-backdrop hidden"' in html
-    assert 'id="activation-import-modal-backdrop" class="modal-backdrop hidden"' in html
-    assert '<label for="filter-current-status">当前状态</label>' not in html
-    assert '<label for="filter-owner">跟进人</label>' not in html
-    assert "<th>当前状态</th>" not in html
-    assert "<th>高意向备注</th>" not in html
-    assert "已报名999" not in html
-    assert "已报名3999" not in html
-    assert "signed_999" not in html
-    assert "signed_3999" not in html
+    assert "发送记录" in html
+    assert "免打扰" in html
+    assert "批量群发" in html
+    assert "转化链路运营页" in html
+    assert "用户运营明细表" in html
+    assert "操作历史" not in html
+    assert "运营名单历史" not in html
+    assert "待处理作业" not in html
+    assert "班期状态" not in html
+    assert "班期状态历史" not in html
+    assert "导入" not in html
+    assert "班期回填" not in html
+    assert "执行待处理自动归班任务" not in html
+    assert "激活待录入" not in html
+    assert 'id="batch-send-modal-backdrop" class="backdrop center hidden"' in html
+    assert 'id="send-records-backdrop" class="backdrop hidden"' in html
+    assert 'id="customer-detail-backdrop" class="backdrop hidden"' in html
 
 
 def test_user_ops_legacy_ui_prioritizes_phone_bound_class_term_activation_columns(client):
@@ -724,43 +1554,92 @@ def test_user_ops_legacy_ui_prioritizes_phone_bound_class_term_activation_column
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    phone_index = html.index("<th>手机号</th>")
-    wecom_added_index = html.index("<th>是否已加微</th>")
-    mobile_bound_index = html.index("<th>是否已绑手机号</th>")
-    class_term_index = html.index("<th>班期</th>")
-    activation_index = html.index("<th>黄小璨激活状态</th>")
+    checkbox_index = html.index("<th style=\"width: 48px;\">选中</th>")
     customer_name_index = html.index("<th>客户昵称</th>")
+    phone_index = html.index("<th>手机号</th>")
+    class_term_index = html.index("<th>班期</th>")
+    wecom_added_index = html.index("<th>已加微状态</th>")
+    mobile_bound_index = html.index("<th>手机绑定状态</th>")
+    activation_index = html.index("<th>激活状态</th>")
     external_index = html.index("<th>external_userid</th>")
+    actions_index = html.index("<th>操作</th>")
 
-    assert phone_index < wecom_added_index < mobile_bound_index < class_term_index < activation_index < customer_name_index < external_index
+    assert checkbox_index < customer_name_index < phone_index < class_term_index < wecom_added_index < mobile_bound_index < activation_index < external_index < actions_index
+    assert "<th>免打扰</th>" not in html
 
 
-def test_user_ops_legacy_ui_uses_modal_import_structure(client):
+def test_user_ops_legacy_ui_includes_batch_send_modal_and_drawers(client):
     response = client.get("/admin/_legacy/user-ops")
     html = response.get_data(as_text=True)
-    class_modal = html.split('<div id="class-term-import-modal-backdrop"', 1)[1].split(
-        '<div id="activation-import-modal-backdrop"', 1
-    )[0]
-    activation_modal = html.split('<div id="activation-import-modal-backdrop"', 1)[1]
 
     assert response.status_code == 200
-    assert 'id="class-term-import-modal-backdrop" class="modal-backdrop hidden"' in html
-    assert 'id="activation-import-modal-backdrop" class="modal-backdrop hidden"' in html
-    assert ">引流品成员池<" in html
-    assert 'id="class-term-import-modal-title">导入学员（手机号 + 班期）<' in class_modal
-    assert '<label for="class-term-import-text">粘贴导入</label>' in class_modal
-    assert '<label for="class-term-import-file">Excel 导入</label>' in class_modal
-    assert 'id="submit-class-term-import-btn"' in class_modal
-    assert 'id="close-class-term-import-modal-btn"' in class_modal
-    assert '>导入学员</button>' in class_modal
-    assert 'id="activation-import-modal-title">导入黄小璨激活状态<' in activation_modal
-    assert '<label for="activation-import-text">粘贴导入</label>' in activation_modal
-    assert '<label for="activation-import-file">Excel 导入</label>' in activation_modal
-    assert 'id="submit-activation-import-btn"' in activation_modal
-    assert 'id="close-activation-import-modal-btn"' in activation_modal
-    assert '>导入黄小璨激活状态</button>' in activation_modal
-    assert "13800138040,已激活" in html
-    assert "当前状态池" not in html
+    assert 'id="open-send-records-btn"' in html
+    assert 'id="open-batch-send-btn"' in html
+    assert 'id="batch-send-text"' in html
+    assert 'id="batch-image-input"' in html
+    assert 'id="pick-batch-images-btn"' in html
+    assert 'id="batch-image-list"' in html
+    assert 'id="batch-image-count"' in html
+    assert 'id="include-dnd-toggle"' in html
+    assert 'id="include-dnd-confirm-toggle"' in html
+    assert 'id="preview-target-body"' in html
+    assert 'id="preview-eligible-count"' in html
+    assert 'id="preview-skipped-summary"' in html
+    assert 'id="preview-message-summary"' in html
+    assert 'id="customer-detail-grid"' in html
+    assert 'id="customer-timeline-list"' in html
+    assert 'id="send-record-detail-panel"' in html
+    assert 'id="send-record-detail-summary"' in html
+    assert 'id="send-record-task-results"' in html
+    assert 'id="refresh-send-record-status-btn"' in html
+    assert 'id="back-send-record-list-btn"' in html
+    assert "发送内容" in html
+    assert "包含免打扰用户" in html
+    assert "附加图片" in html
+    assert "最多 3 张" in html
+
+
+def test_user_ops_batch_send_modal_removes_large_stats_and_sender_bucket_from_main_ui(client):
+    response = client.get("/admin/user-ops/ui")
+    html = response.get_data(as_text=True)
+    modal_start = html.index('id="batch-send-modal-backdrop"')
+    modal_end = html.index("<script>", modal_start)
+    modal_section = html[modal_start:modal_end]
+
+    assert response.status_code == 200
+    assert "选中人数" not in modal_section
+    assert "跳过人数" not in modal_section
+    assert "发送人分桶" not in modal_section
+    assert "免打扰开关" not in modal_section
+    assert 'id="preview-owner-buckets"' not in modal_section
+    assert 'id="preview-selected-count"' not in modal_section
+    assert 'id="preview-skipped-count"' not in modal_section
+    assert 'id="preview-owner-count"' not in modal_section
+    assert 'id="preview-eligible-count"' in modal_section
+    assert 'class="panel-soft preview-panel"' in modal_section
+    assert modal_section.index('id="include-dnd-toggle"') < modal_section.index('id="preview-target-body"')
+
+
+def test_user_ops_detail_column_is_removed_and_dnd_action_copy_is_simplified(client):
+    response = client.get("/admin/user-ops/ui")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "<th>免打扰</th>" not in html
+    assert "查看详情" in html
+    assert "取消手动免打扰" not in html
+    assert "运营手动设置" not in html
+    assert "取消免打扰" in html
+
+
+def test_user_ops_template_keeps_detail_button_and_dnd_actions(client):
+    response = client.get("/admin/user-ops/ui")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'class="btn soft view-detail-btn"' in html
+    assert 'class="btn soft toggle-dnd-btn"' in html
+    assert "<th>免打扰</th>" not in html
 
 
 def test_sync_user_ops_class_term_tag_definitions_updates_tag_identity_fields(app, user_ops_contact_client):

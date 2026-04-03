@@ -7,7 +7,10 @@ from .admin_customers import register_routes as register_admin_customer_console_
 from .admin_audit import register_routes as register_admin_audit_console_routes
 from .admin_mcp import register_routes as register_admin_mcp_console_routes
 from .admin_operations import register_routes as register_admin_operations_console_routes
-from .admin_questionnaire_console import register_routes as register_admin_questionnaire_console_routes
+try:
+    from .admin_questionnaire_console import register_routes as register_admin_questionnaire_console_routes
+except ModuleNotFoundError:  # pragma: no cover - compatibility shim for older file layout
+    from .admin_questionnaires import register_routes as register_admin_questionnaire_console_routes
 from .admin_config import register_routes as register_admin_config_routes
 from .admin_console import register_routes as register_admin_console_routes
 from .admin_dashboard import register_routes as register_admin_dashboard_routes
