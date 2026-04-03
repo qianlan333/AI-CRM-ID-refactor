@@ -41,6 +41,10 @@ from ..questionnaire import build_questionnaire_preflight_payload
 from ..tags.service import mark_customer_tags, unmark_customer_tags
 from ..tasks.service import dispatch_wecom_task
 from . import repo
+from .customer_profile_service import (
+    build_customer_detail_payload as build_customer_profile_page_payload,
+    build_customer_list_payload as build_customer_search_payload,
+)
 
 TARGET_CUSTOMER_TAG_ACTION = "customer_tag_action"
 TARGET_CUSTOMER_TASK_ACTION = "customer_task_action"
@@ -364,23 +368,7 @@ def _audit_log(
 
 
 def build_customer_list_payload(args: Any) -> dict[str, Any]:
-    filters = parse_customer_filters(args)
-    payload = list_customers(filters)
-    rows = payload.get("items") or payload.get("customers") or []
-    owner_options = sorted(
-        {
-            (str(item.get("owner_userid") or "").strip(), str(item.get("owner_display_name") or "").strip())
-            for item in rows
-            if str(item.get("owner_userid") or "").strip()
-        },
-        key=lambda item: item[1] or item[0],
-    )
-    return {
-        **payload,
-        "customers": rows,
-        "owner_options": [{"userid": userid, "display_name": display_name or userid} for userid, display_name in owner_options],
-        "filters": payload.get("filters") or filters,
-    }
+    return build_customer_search_payload(args)
 
 
 def _build_recent_messages(external_userid: str, *, limit: int = 20) -> list[dict[str, Any]]:
@@ -420,32 +408,7 @@ def _build_customer_questionnaire_rows(external_userid: str, *, limit: int = 20)
 
 
 def build_customer_detail_payload(external_userid: str) -> dict[str, Any] | None:
-    detail = get_customer_detail(external_userid)
-    if not detail:
-        return None
-    owner_role = get_owner_role(_normalized_text(detail.get("owner_userid"))) or {}
-    signup_status = _normalized_text((detail.get("class_user_status") or {}).get("signup_status"))
-    routing_context = resolve_contact_routing_context(
-        _normalized_text(detail.get("owner_userid")),
-        _normalized_text(owner_role.get("role")),
-        signup_status,
-    )
-    timeline = get_customer_timeline(external_userid, parse_timeline_filters({"limit": "20", "offset": "0", "event_type": ""}))
-    recent_messages = _build_recent_messages(external_userid, limit=20)
-    questionnaire_rows = _build_customer_questionnaire_rows(external_userid, limit=20)
-    outbound_tasks = repo.list_customer_outbound_tasks(external_userid, limit=20)
-    routing_definition = get_signup_status_definition(signup_status) or {}
-    return {
-        "customer": detail,
-        "owner_role": owner_role,
-        "routing_context": routing_context,
-        "routing_definition": routing_definition,
-        "timeline": timeline or {"items": [], "total": 0, "count": 0},
-        "recent_messages": recent_messages,
-        "questionnaire_history": questionnaire_rows,
-        "outbound_tasks": outbound_tasks,
-        "tag_count": len(detail.get("tags") or []),
-    }
+    return build_customer_profile_page_payload(external_userid)
 
 
 def preview_customer_tag_action(

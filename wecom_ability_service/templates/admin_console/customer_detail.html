@@ -1,363 +1,114 @@
 {% extends "admin_console/base.html" %}
 
 {% block content %}
-<section class="admin-card">
-  <div class="admin-split admin-split--hero">
+<section
+  class="admin-card admin-module-banner"
+  data-customer-profile-root
+  data-external-userid="{{ customer_payload.customer.external_userid }}"
+  data-initial-section="{{ customer_payload.initial_section }}"
+  data-tags-url="{{ customer_profile_urls.tags }}"
+  data-questionnaire-url="{{ customer_profile_urls.questionnaire_answers }}"
+  data-messages-url="{{ customer_profile_urls.messages }}"
+>
+  <div class="admin-card-head">
     <div>
-      <div class="admin-detail-title-row">
-        <h2>{{ customer_payload.customer.customer_name or "未命名客户" }}</h2>
-        <span class="admin-inline-chip">{{ customer_payload.customer.binding_status }}</span>
-      </div>
-      <p class="admin-card-copy">
-        {% if customer_payload.customer.remark %}备注：{{ customer_payload.customer.remark }}{% else %}查看客户资料、互动记录和跟进情况。{% endif %}
-      </p>
+      <h2>客户档案</h2>
+      <p>{{ customer_payload.customer.customer_name }}</p>
     </div>
-    <div class="admin-stat-inline-grid">
-      <article class="admin-mini-stat">
-        <div class="admin-card-label">负责人</div>
-        <div class="admin-mini-stat-value">{{ customer_payload.customer.owner_display_name or customer_payload.customer.owner_userid or "-" }}</div>
-      </article>
-      <article class="admin-mini-stat">
-        <div class="admin-card-label">最近消息</div>
-        <div class="admin-mini-stat-value">{{ customer_payload.customer.last_message_at or "-" }}</div>
-      </article>
-      <article class="admin-mini-stat">
-        <div class="admin-card-label">标签数</div>
-        <div class="admin-mini-stat-value">{{ customer_payload.tag_count }}</div>
-      </article>
+    <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_console_customers') }}">返回客户列表</a>
+  </div>
+
+  <div class="admin-profile-grid" id="customer-basic">
+    <div class="admin-profile-field">
+      <span>姓名</span>
+      <strong>{{ customer_payload.customer.customer_name or "未命名客户" }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>手机号</span>
+      <strong>{{ customer_payload.customer.mobile or "未填写" }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>负责人</span>
+      <strong>{{ customer_payload.customer.owner or customer_payload.customer.owner_userid or "未分配" }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>用户 ID</span>
+      <strong>{{ customer_payload.customer.user_id }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>unionid</span>
+      <strong>{{ customer_payload.customer.unionid or "未绑定" }}</strong>
     </div>
   </div>
 </section>
 
-<nav class="admin-subnav">
-  {% for item in customer_tabs %}
-  <a class="admin-subnav-link{% if item.active %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
-  {% endfor %}
-</nav>
+<section class="admin-card" id="customer-live-tags">
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>实时标签</h2>
+    </div>
+  </div>
+  <div class="admin-state admin-state--inline admin-state--loading" data-profile-tags-state>
+    <strong>正在加载实时标签</strong>
+    <span>标签通过企微实时读取，不写入数据库。</span>
+  </div>
+  <div class="admin-profile-tag-list" data-profile-tags hidden></div>
+</section>
+
+<section class="admin-card" id="customer-questionnaire-answers">
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>问卷记录</h2>
+    </div>
+  </div>
+  <div class="admin-state admin-state--inline admin-state--loading" data-profile-questionnaire-state>
+    <strong>正在加载问卷记录</strong>
+    <span>这里只展示题目和答案。</span>
+  </div>
+  <div class="admin-table-wrap" data-profile-questionnaire-wrap hidden>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>问题</th>
+          <th>答案</th>
+        </tr>
+      </thead>
+      <tbody data-profile-questionnaire-body></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-card" id="customer-message-records">
+  <div class="admin-card-head">
+    <div>
+      <h2>聊天记录</h2>
+      <p>默认显示最近 30 条，页面按时间从旧到新展示。</p>
+    </div>
+    <div class="admin-toolbar">
+      <button type="button" class="admin-button admin-button--ghost" data-profile-fetch-all-messages>
+        获取全部聊天记录
+      </button>
+    </div>
+  </div>
+  <div class="admin-state admin-state--inline admin-state--loading" data-profile-messages-state>
+    <strong>正在加载聊天记录</strong>
+    <span>默认只读取最近 30 条。</span>
+  </div>
+  <div class="admin-profile-message-list" data-profile-messages hidden></div>
+</section>
 
 {% if action_result %}
 <section class="admin-card">
-  <div class="admin-card-head">
+  <div class="admin-card-head admin-card-head--tight">
     <div>
-      <h2>最近交互结果</h2>
-      <p>这里会先展示操作预览，确认后才会真正执行。</p>
+      <h2>处理结果</h2>
     </div>
   </div>
-  <pre class="admin-code-block">{{ action_result|tojson(indent=2) }}</pre>
+  <pre class="admin-code-block">{{ action_result | tojson(indent=2) }}</pre>
 </section>
 {% endif %}
+{% endblock %}
 
-{% if active_tab == "basic" %}
-<section class="admin-grid-2">
-  <article class="admin-card">
-    <div class="admin-card-head"><h2>基本信息</h2></div>
-    <dl class="admin-definition-list">
-      <div><dt>客户名</dt><dd>{{ customer_payload.customer.customer_name or "-" }}</dd></div>
-      <div><dt>负责人</dt><dd>{{ customer_payload.customer.owner_display_name or customer_payload.customer.owner_userid or "-" }}</dd></div>
-      <div><dt>手机号</dt><dd>{{ customer_payload.customer.mobile or "-" }}</dd></div>
-      <div><dt>最近触达</dt><dd>{{ customer_payload.customer.last_touch_at or "-" }}</dd></div>
-      <div><dt>描述</dt><dd>{{ customer_payload.customer.description or "-" }}</dd></div>
-      <div><dt>更新时间</dt><dd>{{ customer_payload.customer.updated_at or "-" }}</dd></div>
-    </dl>
-  </article>
-  <article class="admin-card">
-    <div class="admin-card-head"><h2>状态与身份</h2></div>
-    <dl class="admin-definition-list">
-      <div><dt>绑定状态</dt><dd>{{ customer_payload.customer.binding_status }}</dd></div>
-      <div><dt>身份状态</dt><dd>{{ customer_payload.customer.identity.status or "-" }}</dd></div>
-      <div><dt>最近消息</dt><dd>{{ customer_payload.customer.last_message_at or "-" }}</dd></div>
-      <div><dt>标签数量</dt><dd>{{ customer_payload.tag_count }}</dd></div>
-    </dl>
-    <details class="admin-details-block">
-      <summary>高级信息</summary>
-      <dl class="admin-definition-list">
-        <div><dt>客户编号</dt><dd>{{ customer_payload.customer.external_userid }}</dd></div>
-        <div><dt>内部人员编号</dt><dd>{{ customer_payload.customer.binding.person_id or "-" }}</dd></div>
-        <div><dt>第三方编号</dt><dd>{{ customer_payload.customer.binding.third_party_user_id or "-" }}</dd></div>
-        <div><dt>unionid</dt><dd>{{ customer_payload.customer.identity.unionid or "-" }}</dd></div>
-        <div><dt>openid</dt><dd>{{ customer_payload.customer.identity.openid or "-" }}</dd></div>
-      </dl>
-    </details>
-  </article>
-</section>
-
-<section class="admin-card">
-  <div class="admin-card-head"><h2>跟进人与状态快照</h2></div>
-  <div class="admin-table-wrap">
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>负责人账号</th>
-          <th>备注</th>
-          <th>是否主跟进</th>
-          <th>关系状态</th>
-          <th>更新时间</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in customer_payload.customer.follow_users %}
-        <tr>
-          <td><code>{{ item.userid or "-" }}</code></td>
-          <td>{{ item.remark or item.description or "-" }}</td>
-          <td>{{ "是" if item.is_primary else "否" }}</td>
-          <td>{{ item.relation_status or "-" }}</td>
-          <td>{{ item.updated_at or "-" }}</td></tr>
-        {% else %}
-        <tr><td colspan="5">暂无跟进人记录</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% elif active_tab == "timeline" %}
-<section class="admin-card">
-  <div class="admin-card-head">
-    <div>
-      <h2>互动记录</h2>
-      <p>这里展示客户最近的重要互动和变化记录。</p>
-    </div>
-  </div>
-  <div class="admin-table-wrap">
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>时间</th>
-          <th>类型</th>
-          <th>标题</th>
-          <th>摘要</th>
-          <th>处理人</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in customer_payload.timeline["items"] %}
-        <tr>
-          <td>{{ item.event_time or "-" }}</td>
-          <td>{{ item.event_type }}</td>
-          <td>{{ item.title }}</td>
-          <td>{{ item.summary or "-" }}</td>
-          <td>{{ item.operator_userid or "-" }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5">暂无互动记录</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% elif active_tab == "recent-messages" %}
-<section class="admin-card">
-  <div class="admin-card-head"><h2>最近聊天</h2></div>
-  <div class="admin-table-wrap">
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>时间</th>
-          <th>类型</th>
-          <th>发送方</th>
-          <th>接收方</th>
-          <th>内容</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in customer_payload.recent_messages %}
-        <tr>
-          <td>{{ item.send_time or "-" }}</td>
-          <td>{{ item.msgtype or item.chat_type or "-" }}</td>
-          <td>{{ item.sender or "-" }}</td>
-          <td>{{ item.receiver or item.room_name or "-" }}</td>
-          <td>{{ item.content or "-" }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5">暂无最近聊天记录</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% elif active_tab == "tags" %}
-<section class="admin-grid-2">
-  <article class="admin-card">
-    <div class="admin-card-head"><h2>当前标签</h2></div>
-    <div class="admin-token-list admin-token-list--wrap">
-      {% for tag in customer_payload.customer.tags %}
-      <span class="admin-token">{{ tag.tag_name or tag.tag_id }}</span>
-      {% else %}
-      <span class="admin-muted">暂无标签</span>
-      {% endfor %}
-    </div>
-  </article>
-  <article class="admin-card">
-    <div class="admin-card-head">
-      <div>
-        <h2>标签操作</h2>
-        <p>这里会先展示操作预览，确认后才会真正执行。</p>
-      </div>
-    </div>
-    <form method="post" action="{{ url_for('api.admin_console_customer_tag_action', external_userid=customer_payload.customer.external_userid) }}" class="admin-form-stack">
-      <input type="hidden" name="return_tab" value="tags">
-      <label class="admin-field">
-        <span>操作</span>
-        <select name="tag_action">
-          <option value="mark">添加标签</option>
-          <option value="unmark">移除标签</option>
-        </select>
-      </label>
-      <label class="admin-field">
-        <span>负责人账号</span>
-        <input type="text" name="userid" value="{{ customer_payload.customer.owner_userid }}">
-      </label>
-      <label class="admin-field">
-        <span>标签编号</span>
-        <input type="text" name="tag_ids" placeholder="多个标签请用逗号分隔">
-      </label>
-      <label class="admin-check-line">
-        <input type="checkbox" name="confirm" value="1">
-        <span>我确认执行本次标签操作</span>
-      </label>
-      <button class="admin-button admin-button--primary" type="submit">先预览，再执行</button>
-    </form>
-  </article>
-</section>
-{% elif active_tab == "tasks" %}
-<section class="admin-grid-2">
-  <article class="admin-card">
-    <div class="admin-card-head">
-      <div>
-        <h2>创建触达任务</h2>
-        <p>这里会先展示操作预览，确认后才会真正执行。</p>
-      </div>
-    </div>
-    <form method="post" action="{{ url_for('api.admin_console_customer_task_action', external_userid=customer_payload.customer.external_userid) }}" class="admin-form-stack">
-      <input type="hidden" name="return_tab" value="tasks">
-      <label class="admin-field">
-        <span>任务类型</span>
-        <select name="task_type">
-          <option value="private_message">单聊消息</option>
-          <option value="group_message">群发消息</option>
-          <option value="moment">朋友圈任务</option>
-        </select>
-      </label>
-      <label class="admin-field">
-        <span>负责人账号</span>
-        <input type="text" name="userid" value="{{ customer_payload.customer.owner_userid }}">
-      </label>
-      <label class="admin-field">
-        <span>内容</span>
-        <textarea name="content" rows="4" placeholder="输入触达内容"></textarea>
-      </label>
-      <label class="admin-check-line">
-        <input type="checkbox" name="confirm" value="1">
-        <span>我确认执行本次触达任务</span>
-      </label>
-      <button class="admin-button admin-button--primary" type="submit">先预览，再执行</button>
-    </form>
-    <div class="admin-muted">
-      朋友圈任务的历史记录可能不完整，请以实际执行结果为准。
-    </div>
-  </article>
-  <article class="admin-card">
-    <div class="admin-card-head"><h2>最近任务</h2></div>
-    <div class="admin-table-wrap">
-      <table class="admin-table">
-        <thead>
-        <tr>
-          <th>时间</th>
-          <th>类型</th>
-          <th>状态</th>
-          <th>任务编号</th>
-        </tr>
-        </thead>
-        <tbody>
-          {% for item in customer_payload.outbound_tasks %}
-          <tr>
-            <td>{{ item.created_at or "-" }}</td>
-            <td>
-              {% if item.task_type == "private_message" %}单聊消息{% elif item.task_type == "group_message" %}群发消息{% elif item.task_type == "moment" %}朋友圈任务{% else %}{{ item.task_type }}{% endif %}
-            </td>
-            <td>{{ item.status }}</td>
-            <td>{{ item.wecom_task_id or "-" }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="4">当前客户暂无任务记录</td></tr>
-          {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </article>
-</section>
-{% elif active_tab == "questionnaires" %}
-<section class="admin-card">
-  <div class="admin-card-head"><h2>问卷记录</h2></div>
-  <div class="admin-table-wrap">
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>提交时间</th>
-          <th>问卷</th>
-          <th>分数</th>
-          <th>最终标签</th>
-          <th>提交处理状态</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in customer_payload.questionnaire_history %}
-        <tr>
-          <td>{{ item.submitted_at or "-" }}</td>
-          <td>
-            <strong>{{ item.questionnaire_title or item.questionnaire_name or "-" }}</strong>
-            <div class="admin-mono">#{{ item.questionnaire_id }}</div>
-          </td>
-          <td>{{ item.total_score }}</td>
-          <td>
-            <div class="admin-token-list admin-token-list--wrap">
-              {% for tag in item.final_tags %}
-              <span class="admin-token">{{ tag }}</span>
-              {% else %}
-              <span class="admin-muted">-</span>
-              {% endfor %}
-            </div>
-          </td>
-          <td>{{ item.scrm_apply_status_label or "-" }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5">暂无问卷提交记录</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% elif active_tab == "routing" %}
-<section class="admin-grid-2">
-  <article class="admin-card">
-    <div class="admin-card-head"><h2>分配概况</h2></div>
-    <dl class="admin-definition-list">
-      <div><dt>负责人账号</dt><dd>{{ customer_payload.customer.owner_userid or "-" }}</dd></div>
-      <div><dt>负责人名称</dt><dd>{{ customer_payload.customer.owner_display_name or "-" }}</dd></div>
-      <div><dt>负责人角色</dt><dd>{{ customer_payload.owner_role.role or "-" }}</dd></div>
-      <div><dt>当前状态</dt><dd>{{ customer_payload.customer.class_user_status.signup_status or "-" }}</dd></div>
-      <div><dt>分配标识</dt><dd>{{ customer_payload.routing_definition.routing_alias or "-" }}</dd></div>
-    </dl>
-  </article>
-  <article class="admin-card">
-    <div class="admin-card-head"><h2>规则说明</h2></div>
-    <dl class="admin-definition-list">
-      <div><dt>分配目标</dt><dd>{{ customer_payload.routing_context.routing_target or "-" }}</dd></div>
-      <div><dt>回退目标</dt><dd>{{ customer_payload.routing_context.fallback_target or "-" }}</dd></div>
-      <div><dt>销售角色处理</dt><dd>{{ customer_payload.routing_context.when_owner_role_sales or "-" }}</dd></div>
-      <div><dt>交付角色处理</dt><dd>{{ customer_payload.routing_context.when_owner_role_delivery or "-" }}</dd></div>
-    </dl>
-    <details class="admin-details-block">
-      <summary>高级信息</summary>
-      <pre class="admin-code-block">{{ customer_payload.routing_context|tojson(indent=2) }}</pre>
-    </details>
-  </article>
-</section>
-<section class="admin-card">
-  <div class="admin-card-head"><h2>补充信息</h2></div>
-  <details class="admin-details-block">
-    <summary>高级信息</summary>
-    <pre class="admin-code-block">{{ customer_payload.customer.sidebar_context|tojson(indent=2) }}</pre>
-  </details>
-</section>
-{% endif %}
+{% block scripts_extra %}
+<script defer src="{{ url_for('static', filename='admin_console/customer_profile.js') }}"></script>
 {% endblock %}
