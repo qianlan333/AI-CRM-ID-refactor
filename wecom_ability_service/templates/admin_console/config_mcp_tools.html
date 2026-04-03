@@ -1,0 +1,149 @@
+{% extends "admin_console/config_base.html" %}
+
+{% block config_content %}
+<section class="admin-card-grid">
+  {% for card in summary_cards %}
+  <article class="admin-card admin-stat-card admin-stat-card--nested">
+    <div class="admin-card-label">{{ card.label }}</div>
+    <div class="admin-card-value admin-card-value--compact">{{ card.value }}</div>
+    <p class="admin-card-copy">{{ card.description }}</p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="admin-card">
+  <div class="admin-state admin-state--inline">
+    <strong>MCP Auth：{{ "已配置" if auth_configured else "未配置" }}</strong>
+    <span>source={{ auth_source }}</span>
+  </div>
+</section>
+
+<section class="admin-card">
+  <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
+    <label>
+      <span>筛选</span>
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="tool / group / description">
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="enabled_only" value="1" {% if filters.enabled_only %}checked{% endif %}>
+      <span>仅看 enabled</span>
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
+      <a class="admin-button admin-button--ghost" href="/admin/config/mcp-tools">重置</a>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>MCP Tool Settings</h2>
+      <p>tool name 固定不变；后台可维护 group / display / description / enabled / sample visibility。</p>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>tool_name</th>
+          <th>group</th>
+          <th>display_name</th>
+          <th>enabled</th>
+          <th>visible</th>
+          <th>sample args</th>
+          <th>sample output</th>
+          <th>last_modified_by</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><code>{{ row.tool_name }}</code></td>
+          <td>{{ row.tool_group }}</td>
+          <td>{{ row.display_name }}</td>
+          <td>{{ "yes" if row.enabled else "no" }}</td>
+          <td>{{ "yes" if row.visible_in_console else "no" }}</td>
+          <td>{{ "yes" if row.show_sample_args else "no" }}</td>
+          <td>{{ "yes" if row.show_sample_output else "no" }}</td>
+          <td>{{ row.last_modified_by or "-" }}</td>
+          <td><a class="admin-inline-link" href="/admin/config/mcp-tools?edit_tool={{ row.tool_name }}">编辑</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>编辑 MCP Tool</h2>
+      <p>enabled 控制 MCP runtime 是否暴露该 tool；visible_in_console 只控制后台展示。</p>
+    </div>
+  </div>
+  <form class="admin-form-grid" method="post" action="/admin/config/mcp-tools/save">
+    <label>
+      <span>tool_name</span>
+      <input type="text" name="tool_name" value="{{ form_row.tool_name or '' }}" required>
+    </label>
+    <label>
+      <span>tool_group</span>
+      <input type="text" name="tool_group" value="{{ form_row.tool_group or '' }}">
+    </label>
+    <label>
+      <span>display_name</span>
+      <input type="text" name="display_name" value="{{ form_row.display_name or '' }}">
+    </label>
+    <label>
+      <span>description_override</span>
+      <input type="text" name="description_override" value="{{ form_row.description_override or '' }}">
+    </label>
+    <label>
+      <span>sort_order</span>
+      <input type="number" name="sort_order" min="0" value="{{ form_row.sort_order or 0 }}">
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="enabled" value="1" {% if form_row.enabled %}checked{% endif %}>
+      <span>enabled</span>
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="visible_in_console" value="1" {% if form_row.visible_in_console %}checked{% endif %}>
+      <span>visible_in_console</span>
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="show_sample_args" value="1" {% if form_row.show_sample_args %}checked{% endif %}>
+      <span>show_sample_args</span>
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="show_sample_output" value="1" {% if form_row.show_sample_output %}checked{% endif %}>
+      <span>show_sample_output</span>
+    </label>
+    <label>
+      <span>operator</span>
+      <input type="text" name="operator" placeholder="who edits this config">
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">保存 MCP Tool</button>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近审计</h2>
+      <p>mcp_tool_settings 最近变更记录。</p>
+    </div>
+  </div>
+  <div class="admin-audit-list">
+    {% for item in audit_entries %}
+    <div class="admin-audit-item">
+      <strong>{{ item.target_id }}</strong>
+      <span>{{ item.action_type }} · {{ item.operator }} · {{ item.created_at }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

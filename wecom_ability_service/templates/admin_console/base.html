@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title }} · CRM Console</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/admin_console.css') }}">
+  {% block head_extra %}{% endblock %}
+  <script defer src="{{ url_for('static', filename='admin_console/admin_console.js') }}"></script>
+</head>
+<body
+  class="admin-shell"
+  data-shell-context-url="{{ url_for('api.admin_dashboard_shell_context') }}"
+>
+  <div class="admin-layout">
+    <aside class="admin-sidebar">
+      <div class="admin-brand">
+        <div class="admin-brand-mark">CRM</div>
+        <div>
+          <div class="admin-brand-title">CRM Console</div>
+          <div class="admin-brand-subtitle">统一后台壳 v1</div>
+        </div>
+      </div>
+
+      <nav class="admin-nav" aria-label="CRM Console Navigation">
+        {% for item in nav_items %}
+        <a
+          class="admin-nav-link{% if item.active %} is-active{% endif %}"
+          href="{{ url_for(item.endpoint) }}"
+        >
+          <span class="admin-nav-label">{{ item.label }}</span>
+        </a>
+        {% endfor %}
+      </nav>
+
+      <section class="admin-sidebar-foot">
+        <div class="admin-side-note">本期目标</div>
+        <p>统一入口、统一布局、统一状态栏，legacy 模块先挂壳承载。</p>
+      </section>
+    </aside>
+
+    <div class="admin-main-wrap">
+      <header class="admin-topbar">
+        <div class="admin-topbar-head">
+          <nav class="admin-breadcrumbs" aria-label="Breadcrumb">
+            {% for crumb in breadcrumbs %}
+            {% if crumb.href %}
+            <a href="{{ crumb.href }}">{{ crumb.label }}</a>
+            {% else %}
+            <span>{{ crumb.label }}</span>
+            {% endif %}
+            {% endfor %}
+          </nav>
+          <div>
+            <h1 class="admin-page-title">{{ page_title }}</h1>
+            <p class="admin-page-summary">{{ page_summary }}</p>
+          </div>
+        </div>
+
+        <div class="admin-topbar-meta">
+          <div class="admin-chip admin-chip--{{ shell_status.environment.tone }}" data-shell-env>
+            {{ shell_status.environment.label }}
+          </div>
+          <div class="admin-chip admin-chip--neutral" data-shell-release>
+            release {{ shell_status.release_sha }}
+          </div>
+          <div class="admin-chip admin-chip--{{ shell_status.health.state }}" data-shell-health>
+            {{ shell_status.health.label }}
+          </div>
+          <div class="admin-chip admin-chip--neutral admin-chip--detail" data-shell-health-detail>
+            {{ shell_status.health.detail }}
+          </div>
+        </div>
+      </header>
+
+      <section class="admin-shell-links" aria-label="Shell Utilities">
+        {% for item in shell_links %}
+        <a class="admin-shell-link" href="{{ item.href }}">{{ item.label }}</a>
+        {% endfor %}
+      </section>
+
+      <main class="admin-page">
+        {% if page_notice %}
+        <section class="admin-alert admin-alert--success">{{ page_notice }}</section>
+        {% endif %}
+        {% if page_error %}
+        <section class="admin-alert admin-alert--error">{{ page_error }}</section>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  {% block scripts_extra %}{% endblock %}
+</body>
+</html>

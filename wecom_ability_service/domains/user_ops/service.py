@@ -34,6 +34,10 @@ class ThirdPartyUserSyncError(RuntimeError):
     pass
 
 
+def _db_bool(value: Any) -> bool | int:
+    return value if get_db_backend() == "postgres" else (1 if bool(value) else 0)
+
+
 def get_user_ops_deferred_job_counts() -> dict[str, int]:
     from . import repo
 
@@ -180,6 +184,10 @@ def _ensure_class_term_tag_mapping_seed() -> None:
             ),
         )
     db.commit()
+
+
+def ensure_class_term_tag_mapping_seed() -> None:
+    _ensure_class_term_tag_mapping_seed()
 
 
 def sync_user_ops_class_term_tag_definitions() -> dict[str, Any]:

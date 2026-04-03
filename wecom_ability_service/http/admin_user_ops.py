@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, jsonify, request
 
 from ..domains.routing_config import DEFAULT_SALES_ROUTE_OWNER_USERID
 from ..services import (
@@ -14,7 +14,7 @@ from ..services import (
     run_due_user_ops_deferred_jobs,
 )
 from ..wecom_client import WeComClientError
-from .common import _build_excel_xml, _coerce_request_bool, _wecom_error_response
+from .common import _build_excel_xml, _coerce_request_bool, _deprecated_admin_redirect, _wecom_error_response
 
 
 def admin_user_ops_overview():
@@ -194,7 +194,7 @@ def admin_user_ops_export():
 
 
 def admin_user_ops_ui():
-    return render_template("admin_user_ops.html")
+    return _deprecated_admin_redirect("api.admin_console_user_ops")
 
 
 

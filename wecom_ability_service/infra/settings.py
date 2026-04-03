@@ -6,6 +6,8 @@ from ..db import get_db
 
 
 SENSITIVE_KEYS = {
+    "MCP_BEARER_TOKEN",
+    "SIDEBAR_THIRD_PARTY_API_TOKEN",
     "WECOM_CONTACT_SECRET",
     "WECOM_SECRET",
     "WECOM_ARCHIVE_SECRET",

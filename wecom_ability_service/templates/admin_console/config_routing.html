@@ -1,0 +1,244 @@
+{% extends "admin_console/config_base.html" %}
+
+{% block config_content %}
+<section class="admin-card-grid">
+  {% for card in summary_cards %}
+  <article class="admin-card admin-stat-card admin-stat-card--nested">
+    <div class="admin-card-label">{{ card.label }}</div>
+    <div class="admin-card-value">{{ card.value }}</div>
+    <p class="admin-card-copy">{{ card.description }}</p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="admin-card">
+  <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
+    <label>
+      <span>筛选</span>
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="userid / role / rule / target">
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="active_only" value="1" {% if filters.active_only %}checked{% endif %}>
+      <span>仅看 active</span>
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
+      <a class="admin-button admin-button--ghost" href="/admin/config/routing">重置</a>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>Owner Role Map</h2>
+      <p>owner_role_map 决定 owner 的角色语义，也是 routing 判断的前置输入。</p>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>userid</th>
+          <th>display_name</th>
+          <th>role</th>
+          <th>active</th>
+          <th>updated_at</th>
+          <th>last_modified_by</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in owner_rows %}
+        <tr>
+          <td><code>{{ row.userid }}</code></td>
+          <td>{{ row.display_name }}</td>
+          <td>{{ row.role }}</td>
+          <td>{{ "yes" if row.active else "no" }}</td>
+          <td>{{ row.updated_at or row.last_modified_at }}</td>
+          <td>{{ row.last_modified_by or "-" }}</td>
+          <td><a class="admin-inline-link" href="/admin/config/routing?edit_owner={{ row.userid }}">编辑</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>编辑 Owner Role</h2>
+      <p>保存会写入 owner_role_map，并记录配置审计。</p>
+    </div>
+  </div>
+  <form class="admin-form-grid" method="post" action="/admin/config/routing/owner-role">
+    <label>
+      <span>userid</span>
+      <input type="text" name="userid" value="{{ owner_form.userid or '' }}" required>
+    </label>
+    <label>
+      <span>display_name</span>
+      <input type="text" name="display_name" value="{{ owner_form.display_name or '' }}">
+    </label>
+    <label>
+      <span>role</span>
+      <select name="role" required>
+        {% for item in role_options %}
+        <option value="{{ item }}" {% if item == owner_form.role %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="active" value="1" {% if owner_form.active %}checked{% endif %}>
+      <span>active</span>
+    </label>
+    <label>
+      <span>operator</span>
+      <input type="text" name="operator" placeholder="who edits this config">
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">保存 Owner Role</button>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>Routing Rules</h2>
+      <p>routing_rule_config 现在是运行时第一来源，definitions.py 只做 seed/fallback。</p>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>rule_key</th>
+          <th>routing_alias</th>
+          <th>route_owner</th>
+          <th>routing_target</th>
+          <th>fallback</th>
+          <th>sales</th>
+          <th>delivery</th>
+          <th>active</th>
+          <th>last_modified_by</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in routing_rows %}
+        <tr>
+          <td><code>{{ row.rule_key }}</code></td>
+          <td>{{ row.routing_alias or "-" }}</td>
+          <td>{{ row.route_owner_userid or "-" }} / {{ row.route_owner_role or "-" }}</td>
+          <td>{{ row.routing_target or "-" }}</td>
+          <td>{{ row.fallback_target or "-" }}</td>
+          <td>{{ row.when_owner_role_sales or "-" }}</td>
+          <td>{{ row.when_owner_role_delivery or "-" }}</td>
+          <td>{{ "yes" if row.active else "no" }}</td>
+          <td>{{ row.last_modified_by or "-" }}</td>
+          <td><a class="admin-inline-link" href="/admin/config/routing?edit_rule={{ row.rule_key }}">编辑</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>编辑 Routing Rule</h2>
+      <p>可维护 route owner / role / target / fallback，以及 signup routing alias。</p>
+    </div>
+  </div>
+  <form class="admin-form-grid" method="post" action="/admin/config/routing/rule">
+    <label>
+      <span>rule_key</span>
+      <input type="text" name="rule_key" value="{{ routing_form.rule_key or '' }}" required>
+    </label>
+    <label>
+      <span>routing_alias</span>
+      <input type="text" name="routing_alias" value="{{ routing_form.routing_alias or '' }}">
+    </label>
+    <label>
+      <span>route_owner_userid</span>
+      <input type="text" name="route_owner_userid" value="{{ routing_form.route_owner_userid or '' }}">
+    </label>
+    <label>
+      <span>route_owner_role</span>
+      <select name="route_owner_role">
+        <option value="">-</option>
+        {% for item in role_options %}
+        <option value="{{ item }}" {% if item == routing_form.route_owner_role %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>routing_target</span>
+      <select name="routing_target">
+        <option value="">-</option>
+        {% for item in routing_target_options %}
+        <option value="{{ item }}" {% if item == routing_form.routing_target %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>fallback_target</span>
+      <select name="fallback_target">
+        <option value="">-</option>
+        {% for item in routing_target_options %}
+        <option value="{{ item }}" {% if item == routing_form.fallback_target %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>when_owner_role_sales</span>
+      <select name="when_owner_role_sales">
+        <option value="">-</option>
+        {% for item in routing_target_options %}
+        <option value="{{ item }}" {% if item == routing_form.when_owner_role_sales %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>when_owner_role_delivery</span>
+      <select name="when_owner_role_delivery">
+        <option value="">-</option>
+        {% for item in routing_target_options %}
+        <option value="{{ item }}" {% if item == routing_form.when_owner_role_delivery %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="active" value="1" {% if routing_form.active %}checked{% endif %}>
+      <span>active</span>
+    </label>
+    <label>
+      <span>operator</span>
+      <input type="text" name="operator" placeholder="who edits this config">
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">保存 Routing Rule</button>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近审计</h2>
+      <p>展示 owner_role_map 和 routing_rule_config 最近的配置变更。</p>
+    </div>
+  </div>
+  <div class="admin-audit-list">
+    {% for item in audit_entries %}
+    <div class="admin-audit-item">
+      <strong>{{ item.target_id }}</strong>
+      <span>{{ item.action_type }} · {{ item.operator }} · {{ item.created_at }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

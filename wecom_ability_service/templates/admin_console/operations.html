@@ -1,0 +1,357 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>运营总览</h2>
+      <p>User Ops 和 Class User 在一个模块内统一展示，动作入口统一做确认和审计。</p>
+    </div>
+  </div>
+  <section class="admin-card-grid">
+    {% for card in operations_payload.overview.cards %}
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">{{ card.label }}</div>
+      <div class="admin-card-value">{{ card.value }}</div>
+    </article>
+    {% endfor %}
+  </section>
+</section>
+
+<nav class="admin-subnav">
+  {% for item in operations_payload.tabs %}
+  <a class="admin-subnav-link{% if item.active %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+  {% endfor %}
+</nav>
+
+{% if action_result %}
+<section class="admin-card">
+  <div class="admin-card-head"><h2>最近操作结果</h2></div>
+  <pre class="admin-code-block">{{ action_result|tojson(indent=2) }}</pre>
+</section>
+{% endif %}
+
+{% if operations_payload.active_tab in ["overview", "user-ops"] %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>User Ops 列表</h2>
+      <p>复用现有 lead pool 读模型，过滤条件不改 schema。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="/api/admin/user-ops/list">原始 API</a>
+      <a class="admin-button admin-button--ghost" href="/api/admin/user-ops/export">导出当前筛选</a>
+    </div>
+  </div>
+  <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_user_ops') }}">
+    <input type="hidden" name="tab" value="user-ops">
+    <label class="admin-field"><span>关键词</span><input type="text" name="query" value="{{ operations_payload.user_ops_filters.query }}"></label>
+    <label class="admin-field"><span>owner_userid</span><input type="text" name="owner_userid" value="{{ operations_payload.user_ops_filters.owner_userid }}"></label>
+    <label class="admin-field"><span>class_term_no</span><input type="text" name="class_term_no" value="{{ operations_payload.user_ops_filters.class_term_no }}"></label>
+    <label class="admin-field"><span>is_wecom_added</span><input type="text" name="is_wecom_added" value="{{ operations_payload.user_ops_filters.is_wecom_added }}"></label>
+    <label class="admin-field"><span>is_mobile_bound</span><input type="text" name="is_mobile_bound" value="{{ operations_payload.user_ops_filters.is_mobile_bound }}"></label>
+    <label class="admin-field"><span>activation_state</span><input type="text" name="huangxiaocan_activation_state" value="{{ operations_payload.user_ops_filters.huangxiaocan_activation_state }}"></label>
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
+    </div>
+  </form>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>客户</th>
+          <th>手机号</th>
+          <th>Owner</th>
+          <th>加微</th>
+          <th>手机号绑定</th>
+          <th>班期</th>
+          <th>激活状态</th>
+          <th>更新时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in operations_payload.user_ops_list["items"] %}
+        <tr>
+          <td>
+            <strong>{{ item.customer_name or "-" }}</strong>
+            <div class="admin-mono">{{ item.external_userid or "-" }}</div>
+          </td>
+          <td>{{ item.mobile or "-" }}</td>
+          <td>{{ item.owner_display_name or item.owner_userid or "-" }}</td>
+          <td>{{ "是" if item.is_wecom_added else "否" }}</td>
+          <td>{{ "是" if item.is_mobile_bound else "否" }}</td>
+          <td>{{ item.class_term_label or item.class_term_no or "-" }}</td>
+          <td>{{ item.huangxiaocan_activation_state_label or item.huangxiaocan_activation_state or "-" }}</td>
+          <td>{{ item.updated_at or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">暂无 user ops 数据</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if operations_payload.active_tab in ["overview", "history"] %}
+<section class="admin-card">
+  <div class="admin-card-head"><h2>User Ops 历史</h2></div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>external_userid</th>
+          <th>动作</th>
+          <th>operator</th>
+          <th>source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in operations_payload.user_ops_history["items"] %}
+        <tr>
+          <td>{{ item.created_at or "-" }}</td>
+          <td><code>{{ item.external_userid or "-" }}</code></td>
+          <td>{{ item.action_type or "-" }}</td>
+          <td>{{ item.operator or "-" }}</td>
+          <td>{{ item.source_type or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">暂无 history</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if operations_payload.active_tab in ["overview", "class-users"] %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>Class User 当前状态池</h2>
+      <p>统一纳入运营模块，但继续复用现有 class_user 读模型。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="/api/admin/class-user-management">原始 API</a>
+      <a class="admin-button admin-button--ghost" href="/api/admin/class-user-management/export">导出</a>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>客户</th>
+          <th>手机号</th>
+          <th>跟进人</th>
+          <th>当前状态</th>
+          <th>更新时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in operations_payload.class_user_list["items"] %}
+        <tr>
+          <td>
+            <strong>{{ item.customer_name or "-" }}</strong>
+            <div class="admin-mono">{{ item.external_userid or "-" }}</div>
+          </td>
+          <td>{{ item.mobile or "-" }}</td>
+          <td>{{ item.follow_user_display_name or item.follow_user_userid or "-" }}</td>
+          <td>{{ item.status_fields.current_tag_name or item.status_fields.signup_status or "-" }}</td>
+          <td>{{ item.updated_at or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">暂无 class_user 数据</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if operations_payload.active_tab in ["overview", "class-history"] %}
+<section class="admin-card">
+  <div class="admin-card-head"><h2>Class User 历史</h2></div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>变更时间</th>
+          <th>客户</th>
+          <th>旧状态</th>
+          <th>新状态</th>
+          <th>操作人</th>
+          <th>企微同步</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in operations_payload.class_user_history["items"] %}
+        <tr>
+          <td>{{ item.set_at or item.created_at or "-" }}</td>
+          <td>
+            <strong>{{ item.customer_name_snapshot or "-" }}</strong>
+            <div class="admin-mono">{{ item.external_userid or "-" }}</div>
+          </td>
+          <td>{{ item.old_label_name or item.old_signup_status or "-" }}</td>
+          <td>{{ item.new_label_name or item.new_signup_status or "-" }}</td>
+          <td>{{ item.set_by_userid or "-" }}</td>
+          <td>{{ item.wecom_tag_sync_status or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">暂无 class_user 历史</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if operations_payload.active_tab in ["overview", "imports"] %}
+<section class="admin-grid-2">
+  <article class="admin-card">
+    <div class="admin-card-head">
+      <div>
+        <h2>导入入口</h2>
+        <p>导入动作必须显式确认后才执行，并写入统一审计。</p>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('api.admin_console_operations_action') }}" enctype="multipart/form-data" class="admin-form-stack">
+      <input type="hidden" name="return_tab" value="imports">
+      <input type="hidden" name="action" value="import-mobile-class-terms">
+      <label class="admin-field"><span>班期导入文件</span><input type="file" name="file"></label>
+      <label class="admin-field"><span>或 pasted_text</span><textarea name="pasted_text" rows="5"></textarea></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>确认执行班期导入</span></label>
+      <button class="admin-button admin-button--primary" type="submit">执行班期导入</button>
+    </form>
+    <hr class="admin-divider">
+    <form method="post" action="{{ url_for('api.admin_console_operations_action') }}" enctype="multipart/form-data" class="admin-form-stack">
+      <input type="hidden" name="return_tab" value="imports">
+      <input type="hidden" name="action" value="import-activation-status">
+      <label class="admin-field"><span>激活状态导入文件</span><input type="file" name="file"></label>
+      <label class="admin-field"><span>或 pasted_text</span><textarea name="pasted_text" rows="5"></textarea></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>确认执行激活状态导入</span></label>
+      <button class="admin-button admin-button--primary" type="submit">执行激活状态导入</button>
+    </form>
+  </article>
+  <article class="admin-card">
+    <div class="admin-card-head"><h2>最近导入批次</h2></div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>类型</th>
+            <th>文件</th>
+            <th>成功/失败</th>
+            <th>创建人</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in operations_payload.import_batches %}
+          <tr>
+            <td>{{ item.created_at or "-" }}</td>
+            <td>{{ item.import_type }}</td>
+            <td>{{ item.file_name or "-" }}</td>
+            <td>{{ item.success_rows }}/{{ item.failed_rows }}</td>
+            <td>{{ item.created_by or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">暂无导入批次</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% endif %}
+
+{% if operations_payload.active_tab in ["overview", "deferred"] %}
+<section class="admin-grid-2">
+  <article class="admin-card">
+    <div class="admin-card-head">
+      <div>
+        <h2>Deferred Jobs</h2>
+        <p>运行作业需要确认；执行后会记录 admin_operation_logs。</p>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('api.admin_console_operations_action') }}" class="admin-form-stack">
+      <input type="hidden" name="return_tab" value="deferred">
+      <input type="hidden" name="action" value="run-deferred-jobs">
+      <label class="admin-field"><span>limit</span><input type="number" name="limit" min="1" max="200" value="20"></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>确认运行 due deferred jobs</span></label>
+      <button class="admin-button admin-button--primary" type="submit">运行作业</button>
+    </form>
+    <hr class="admin-divider">
+    <form method="post" action="{{ url_for('api.admin_console_operations_action') }}" class="admin-form-stack">
+      <input type="hidden" name="return_tab" value="deferred">
+      <input type="hidden" name="action" value="backfill-owner-class-terms">
+      <label class="admin-field"><span>owner_userid</span><input type="text" name="owner_userid"></label>
+      <label class="admin-field"><span>class_term_min</span><input type="number" name="class_term_min" min="1" value="1"></label>
+      <label class="admin-field"><span>class_term_max</span><input type="number" name="class_term_max" min="1" value="5"></label>
+      <label class="admin-field"><span>entry_source</span><input type="text" name="entry_source"></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>勾选后才真实写入；不勾选时返回 dry-run</span></label>
+      <button class="admin-button admin-button--primary" type="submit">预览 / 执行回填</button>
+    </form>
+  </article>
+  <article class="admin-card">
+    <div class="admin-card-head"><h2>当前队列</h2></div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>run_after</th>
+            <th>job_type</th>
+            <th>external_userid</th>
+            <th>owner</th>
+            <th>status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in operations_payload.deferred_jobs %}
+          <tr>
+            <td>{{ item.run_after or "-" }}</td>
+            <td>{{ item.job_type }}</td>
+            <td><code>{{ item.external_userid or "-" }}</code></td>
+            <td>{{ item.owner_userid or "-" }}</td>
+            <td>{{ item.status }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">暂无 deferred jobs</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% endif %}
+
+{% if operations_payload.active_tab == "overview" %}
+<section class="admin-card">
+  <div class="admin-card-head"><h2>最近运营审计</h2></div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>action</th>
+          <th>target</th>
+          <th>operator</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in operations_payload.recent_audit %}
+        <tr>
+          <td>{{ item.created_at or "-" }}</td>
+          <td>{{ item.action_type or "-" }}</td>
+          <td>{{ item.target_id or "-" }}</td>
+          <td>{{ item.operator or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">暂无运营审计</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

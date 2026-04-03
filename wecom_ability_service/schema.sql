@@ -413,6 +413,52 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS routing_rule_config (
+    rule_key TEXT PRIMARY KEY,
+    routing_alias TEXT NOT NULL DEFAULT '',
+    route_owner_userid TEXT NOT NULL DEFAULT '',
+    route_owner_role TEXT NOT NULL DEFAULT '',
+    routing_target TEXT NOT NULL DEFAULT '',
+    fallback_target TEXT NOT NULL DEFAULT '',
+    when_owner_role_sales TEXT NOT NULL DEFAULT '',
+    when_owner_role_delivery TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_routing_rule_config_active
+ON routing_rule_config (active);
+
+CREATE TABLE IF NOT EXISTS mcp_tool_settings (
+    tool_name TEXT PRIMARY KEY,
+    tool_group TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '',
+    description_override TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    visible_in_console INTEGER NOT NULL DEFAULT 1,
+    show_sample_args INTEGER NOT NULL DEFAULT 0,
+    show_sample_output INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcp_tool_settings_enabled
+ON mcp_tool_settings (enabled);
+
+CREATE TABLE IF NOT EXISTS admin_operation_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operator TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL DEFAULT '',
+    target_type TEXT NOT NULL DEFAULT '',
+    target_id TEXT NOT NULL DEFAULT '',
+    before_json TEXT NOT NULL DEFAULT '{}',
+    after_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_operation_logs_target
+ON admin_operation_logs (target_type, target_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS archive_sync_state (
     state_key TEXT PRIMARY KEY,
     last_seq INTEGER NOT NULL DEFAULT 0,

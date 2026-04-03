@@ -1,0 +1,103 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>系统状态</h2>
+      <p>环境、版本、数据库和同步运行态统一收口到首页。</p>
+    </div>
+  </div>
+  <section class="admin-card-grid">
+    {% for card in system_status.cards %}
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">{{ card.label }}</div>
+      <div class="admin-card-value admin-card-value--compact">{{ card.value }}</div>
+      <p class="admin-card-copy">{{ card.description }}</p>
+      {% if card.tone and card.tone != "neutral" %}
+      <span class="admin-inline-chip admin-inline-chip--{{ card.tone }}">{{ card.tone }}</span>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </section>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>业务总览</h2>
+      <p>首页只展示已经存在的数据口径，不新发明第二套指标体系。</p>
+    </div>
+  </div>
+  <section class="admin-card-grid">
+    {% for card in dashboard_cards %}
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">{{ card.label }}</div>
+      <div class="admin-card-value">{{ card.value }}</div>
+      <p class="admin-card-copy">{{ card.description }}</p>
+      {% if card.href %}
+      <a class="admin-inline-link" href="{{ card.href }}">查看模块</a>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </section>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>待处理事项</h2>
+      <p>当前共 {{ todo_total }} 项待处理。失败项、队列积压和轻量预检异常在这里统一收口。</p>
+    </div>
+  </div>
+  <div class="admin-todo-grid">
+    {% for group in todo_groups %}
+    <article class="admin-card admin-todo-card admin-todo-card--{{ group['tone'] }}">
+      <div class="admin-todo-head">
+        <div>
+          <h3>{{ group["title"] }}</h3>
+          <p>{{ group["description"] }}</p>
+        </div>
+        <span class="admin-todo-count admin-todo-count--{{ group['tone'] }}">{{ group["count"] }}</span>
+      </div>
+      {% if group["items"] %}
+      <ul class="admin-todo-list">
+        {% for item in group["items"] %}
+        <li class="admin-todo-item">
+          <strong>{{ item["title"] }}</strong>
+          <span>{{ item["meta"] }}</span>
+          <p>{{ item["detail"] }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="admin-state admin-state--inline">
+        <strong>{{ group["empty_title"] }}</strong>
+        <span>当前没有额外待处理项。</span>
+      </div>
+      {% endif %}
+      {% if group["href"] %}
+      <a class="admin-inline-link" href="{{ group['href'] }}">打开模块</a>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>快捷入口</h2>
+      <p>首页直接跳转到现有后台模块，不重写模块内部业务。</p>
+    </div>
+  </div>
+  <div class="admin-quick-links">
+    {% for item in quick_links %}
+    <a class="admin-quick-link" href="{{ item.href }}">
+      <strong>{{ item.label }}</strong>
+      <span>{{ item.description }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

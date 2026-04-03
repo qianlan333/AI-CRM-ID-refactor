@@ -1,0 +1,163 @@
+{% extends "admin_console/config_base.html" %}
+
+{% block config_content %}
+<section class="admin-card-grid">
+  {% for card in summary_cards %}
+  <article class="admin-card admin-stat-card admin-stat-card--nested">
+    <div class="admin-card-label">{{ card.label }}</div>
+    <div class="admin-card-value">{{ card.value }}</div>
+    <p class="admin-card-copy">{{ card.description }}</p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="admin-card">
+  <div class="admin-state admin-state--inline">
+    <strong>WeCom Tag Bootstrap：{{ "已完成" if bootstrap_initialized else "未完成" }}</strong>
+    <span>tag group: {{ tag_group_name }}</span>
+    {% if missing_statuses %}
+    <span>缺失状态：{{ missing_statuses | join(", ") }}</span>
+    {% endif %}
+  </div>
+</section>
+
+<section class="admin-card">
+  <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
+    <label>
+      <span>筛选</span>
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="tag_id / tag_name / signup_status">
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="active_only" value="1" {% if filters.active_only %}checked{% endif %}>
+      <span>仅看 active</span>
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
+      <a class="admin-button admin-button--ghost" href="/admin/config/signup-tags">重置</a>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>状态定义</h2>
+      <p>tag 与内部业务状态的映射定义。</p>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>signup_status</th>
+          <th>label</th>
+          <th>tag_name</th>
+          <th>routing_alias</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in definitions %}
+        <tr>
+          <td><code>{{ row.signup_status }}</code></td>
+          <td>{{ row.label }}</td>
+          <td>{{ row.tag_name }}</td>
+          <td>{{ row.routing_alias }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>Signup Tag Rules</h2>
+      <p>当前运行时使用的 signup_tag_rules。</p>
+    </div>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>tag_id</th>
+          <th>tag_name</th>
+          <th>signup_status</th>
+          <th>active</th>
+          <th>updated_at</th>
+          <th>last_modified_by</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><code>{{ row.tag_id }}</code></td>
+          <td>{{ row.tag_name }}</td>
+          <td>{{ row.signup_status }}</td>
+          <td>{{ "yes" if row.active else "no" }}</td>
+          <td>{{ row.updated_at or row.last_modified_at }}</td>
+          <td>{{ row.last_modified_by or "-" }}</td>
+          <td><a class="admin-inline-link" href="/admin/config/signup-tags?edit_tag={{ row.tag_id }}">编辑</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>编辑 Signup Tag Rule</h2>
+      <p>保存会经 domain service 校验 signup_status 合法性并写入审计。</p>
+    </div>
+  </div>
+  <form class="admin-form-grid" method="post" action="/admin/config/signup-tags/save">
+    <label>
+      <span>tag_id</span>
+      <input type="text" name="tag_id" value="{{ form_row.tag_id or '' }}" required>
+    </label>
+    <label>
+      <span>tag_name</span>
+      <input type="text" name="tag_name" value="{{ form_row.tag_name or '' }}" required>
+    </label>
+    <label>
+      <span>signup_status</span>
+      <select name="signup_status" required>
+        {% for item in definitions %}
+        <option value="{{ item.signup_status }}" {% if item.signup_status == form_row.signup_status %}selected{% endif %}>{{ item.signup_status }} / {{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="admin-checkbox">
+      <input type="checkbox" name="active" value="1" {% if form_row.active %}checked{% endif %}>
+      <span>active</span>
+    </label>
+    <label>
+      <span>operator</span>
+      <input type="text" name="operator" placeholder="who edits this config">
+    </label>
+    <div class="admin-form-actions">
+      <button class="admin-button admin-button--primary" type="submit">保存 Signup Tag Rule</button>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近审计</h2>
+      <p>signup_tag_rules 最近变更记录。</p>
+    </div>
+  </div>
+  <div class="admin-audit-list">
+    {% for item in audit_entries %}
+    <div class="admin-audit-item">
+      <strong>{{ item.target_id }}</strong>
+      <span>{{ item.action_type }} · {{ item.operator }} · {{ item.created_at }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

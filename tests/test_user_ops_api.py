@@ -668,19 +668,28 @@ def test_user_ops_history_returns_lead_pool_records(client, app):
     assert "after_json" in payload["items"][0]
 
 
-def test_user_ops_ui_route_exists(client):
-    response = client.get("/admin/user-ops/ui")
+def test_user_ops_ui_route_redirects_to_shell(client):
+    response = client.get("/admin/user-ops/ui", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/user-ops")
+    assert response.headers["X-Admin-Deprecated"] == "true"
+    assert response.headers["X-Admin-Replacement"].endswith("/admin/user-ops")
+
+
+def test_user_ops_shell_page_exists(client):
+    response = client.get("/admin/user-ops")
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "统一用户运营看板 v2" in html
-    assert "已激活 / 未激活" in html
-    assert 'id="open-class-term-import-modal-btn"' in html
-    assert 'id="open-activation-import-modal-btn"' in html
+    assert "CRM Console" in html
+    assert "运营看板" in html
+    assert "User Ops 列表" in html
+    assert "Deferred Jobs" in html
 
 
-def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
-    response = client.get("/admin/user-ops/ui")
+def test_user_ops_legacy_ui_hides_legacy_fields_and_buttons(client):
+    response = client.get("/admin/_legacy/user-ops")
     html = response.get_data(as_text=True)
     page_shell = html.split('<div id="class-term-import-modal-backdrop"', 1)[0]
 
@@ -710,8 +719,8 @@ def test_user_ops_ui_hides_legacy_fields_and_buttons(client):
     assert "signed_3999" not in html
 
 
-def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(client):
-    response = client.get("/admin/user-ops/ui")
+def test_user_ops_legacy_ui_prioritizes_phone_bound_class_term_activation_columns(client):
+    response = client.get("/admin/_legacy/user-ops")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
@@ -726,8 +735,8 @@ def test_user_ops_ui_prioritizes_phone_bound_class_term_activation_columns(clien
     assert phone_index < wecom_added_index < mobile_bound_index < class_term_index < activation_index < customer_name_index < external_index
 
 
-def test_user_ops_ui_uses_modal_import_structure(client):
-    response = client.get("/admin/user-ops/ui")
+def test_user_ops_legacy_ui_uses_modal_import_structure(client):
+    response = client.get("/admin/_legacy/user-ops")
     html = response.get_data(as_text=True)
     class_modal = html.split('<div id="class-term-import-modal-backdrop"', 1)[1].split(
         '<div id="activation-import-modal-backdrop"', 1

@@ -1,0 +1,92 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>Preflight</h2>
+      <p>环境检查仍复用现有问卷 preflight 口径，只在后台里做可视化收口。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="/api/admin/questionnaires/preflight">原始 preflight API</a>
+      <a class="admin-button admin-button--ghost" href="/api/admin/wecom/tags">企微标签 API</a>
+    </div>
+  </div>
+  {% if questionnaire_payload.preflight_error %}
+  <div class="admin-alert admin-alert--error">{{ questionnaire_payload.preflight_error }}</div>
+  {% endif %}
+  <section class="admin-stat-inline-grid">
+    <article class="admin-mini-stat">
+      <div class="admin-card-label">WeChat OAuth</div>
+      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.wechat_oauth_configured else "Missing" }}</div>
+    </article>
+    <article class="admin-mini-stat">
+      <div class="admin-card-label">WeCom Contact</div>
+      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.wecom_contact_configured else "Missing" }}</div>
+    </article>
+    <article class="admin-mini-stat">
+      <div class="admin-card-label">WeCom Tags API</div>
+      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.wecom_tags_api_available else "Error" }}</div>
+    </article>
+    <article class="admin-mini-stat">
+      <div class="admin-card-label">Identity Map</div>
+      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.identity_map_available else "Error" }}</div>
+    </article>
+  </section>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>问卷列表</h2>
+      <p>查看问卷定义、public path、最近提交和禁用状态。点击进入详情页进行编辑。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="/api/admin/questionnaires">原始 API</a>
+    </div>
+  </div>
+  {% if questionnaire_payload.questionnaires %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>问卷</th>
+          <th>Slug / Public Path</th>
+          <th>提交数</th>
+          <th>最近提交</th>
+          <th>状态</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in questionnaire_payload.questionnaires %}
+        <tr>
+          <td>
+            <strong>{{ item.title or item.name }}</strong>
+            <div class="admin-muted">{{ item.description or "-" }}</div>
+          </td>
+          <td>
+            <code>{{ item.slug }}</code>
+            <div><a class="admin-inline-link" href="{{ item.public_path }}">{{ item.public_path }}</a></div>
+          </td>
+          <td>{{ item.submission_count }}</td>
+          <td>{{ item.last_submitted_at or "-" }}</td>
+          <td>
+            <span class="admin-inline-chip{% if item.is_disabled %} admin-inline-chip--danger{% endif %}">
+              {{ "disabled" if item.is_disabled else "published" }}
+            </span>
+          </td>
+          <td><a class="admin-inline-link" href="{{ url_for('api.admin_console_questionnaire_detail', questionnaire_id=item.id) }}">进入详情</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-state">
+    <strong>暂无问卷</strong>
+    <span>当前环境还没有 questionnaire 定义。</span>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

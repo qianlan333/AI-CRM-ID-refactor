@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from xml.sax.saxutils import escape as xml_escape
 
-from flask import current_app, jsonify, request
+from flask import current_app, jsonify, redirect, request, url_for
 
 from ..infra.wecom_runtime import ContactWeComRuntimeClient, get_contact_runtime_client
 from ..wecom_client import WeComClientError
@@ -117,3 +117,12 @@ def _build_excel_xml(headers: list[str], rows: list[list[str]]) -> bytes:
     lines.extend(_render_row(row) for row in rows)
     lines.extend(["</Table>", "</Worksheet>", "</Workbook>"])
     return "\n".join(lines).encode("utf-8")
+
+
+def _deprecated_admin_redirect(endpoint: str, *, replacement: str = "", **values):
+    location = replacement or url_for(endpoint, **values)
+    response = redirect(location, code=302)
+    response.headers["X-Admin-Deprecated"] = "true"
+    response.headers["X-Admin-Replacement"] = location
+    response.headers["Cache-Control"] = "no-store"
+    return response

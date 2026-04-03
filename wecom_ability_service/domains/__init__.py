@@ -21,6 +21,41 @@ class DomainLayoutSpec:
 # Optional domain-local companion modules such as definitions.py or
 # preflight_service.py are allowed when they do not introduce a third pattern.
 DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
+    "admin_jobs": DomainLayoutSpec(
+        name="admin_jobs",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Sync runs, callback runtime, message batches, and deferred jobs console aggregates.",
+    ),
+    "admin_audit": DomainLayoutSpec(
+        name="admin_audit",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Admin audit query, governance policies, and legacy-path compatibility decisions.",
+    ),
+    "admin_console": DomainLayoutSpec(
+        name="admin_console",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Admin console page-level read models, previews, and audited action wrappers.",
+    ),
+    "admin_config": DomainLayoutSpec(
+        name="admin_config",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Admin configuration center read models, validation, persistence, and audit.",
+    ),
+    "admin_dashboard": DomainLayoutSpec(
+        name="admin_dashboard",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Admin shell navigation, environment badges, and dashboard status cards.",
+    ),
     "archive": DomainLayoutSpec(
         name="archive",
         mode="simple",

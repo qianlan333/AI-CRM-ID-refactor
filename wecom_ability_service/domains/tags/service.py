@@ -77,6 +77,30 @@ def get_signup_tag_rules_config() -> dict[str, Any]:
     }
 
 
+def save_signup_tag_rule_config(*, tag_id: str, tag_name: str, signup_status: str, active: Any) -> dict[str, Any]:
+    normalized_tag_id = str(tag_id or "").strip()
+    normalized_tag_name = str(tag_name or "").strip()
+    normalized_signup_status = str(signup_status or "").strip()
+    if not normalized_tag_id:
+        raise ValueError("tag_id is required")
+    if not normalized_tag_name:
+        raise ValueError("tag_name is required")
+    if not get_signup_status_definition(normalized_signup_status):
+        allowed = ", ".join(item["signup_status"] for item in SIGNUP_TAG_STATUS_DEFINITIONS)
+        raise ValueError(f"signup_status must be one of: {allowed}")
+    repo.upsert_signup_tag_rule(
+        normalized_tag_id,
+        normalized_tag_name,
+        normalized_signup_status,
+        active=bool(active) if isinstance(active, bool) else str(active or "").strip().lower() in {"1", "true", "yes", "y", "on"},
+    )
+    matched = next(
+        (item for item in repo.list_signup_tag_rules(active_only=False) if str(item.get("tag_id") or "").strip() == normalized_tag_id),
+        {},
+    )
+    return dict(matched)
+
+
 def resolve_signup_status_from_tags(tags: list[dict[str, Any]]) -> dict[str, Any]:
     rules = repo.list_signup_tag_rules(active_only=True)
     status_by_tag_id: dict[str, str] = {}

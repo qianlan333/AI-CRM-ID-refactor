@@ -976,17 +976,47 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     assert "学员乙" in export_text
     assert "报名引流品" not in export_text
 
-    ui_response = client.get("/admin/class-user-management/ui")
-    ui_text = ui_response.get_data(as_text=True)
-    assert ui_response.status_code == 200
+    ui_response = client.get("/admin/class-user-management/ui", follow_redirects=False)
+    assert ui_response.status_code == 302
+    assert ui_response.headers["Location"].endswith("/admin/class-users?tab=class-users")
+
+    shell_response = client.get("/admin/class-users?tab=class-users")
+    shell_text = shell_response.get_data(as_text=True)
+    assert shell_response.status_code == 200
+    assert "CRM Console" in shell_text
+    assert "运营看板" in shell_text
+    assert "Class User 当前状态池" in shell_text
+
+    legacy_response = client.get("/admin/_legacy/class-user-management")
+    ui_text = legacy_response.get_data(as_text=True)
+    assert legacy_response.status_code == 200
     assert "班期用户管理" in ui_text
     assert "导出当前筛选结果" in ui_text
     assert "检查并补齐标签" in ui_text
     assert "status_fields.operation_flags" in ui_text
 
 
-def test_admin_questionnaire_ui_contains_tag_picker_fallback(client):
-    response = client.get("/admin/questionnaires/ui")
+def test_admin_questionnaire_ui_redirects_to_shell(client):
+    response = client.get("/admin/questionnaires/ui", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/questionnaires")
+    assert response.headers["X-Admin-Deprecated"] == "true"
+
+
+def test_admin_questionnaire_shell_page_exists(client):
+    response = client.get("/admin/questionnaires")
+    text = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "CRM Console" in text
+    assert "问卷中心" in text
+    assert "Preflight" in text
+    assert "问卷列表" in text
+
+
+def test_admin_questionnaire_legacy_ui_contains_tag_picker_fallback(client):
+    response = client.get("/admin/_legacy/questionnaires")
     text = response.get_data(as_text=True)
     assert response.status_code == 200
     assert "手工填写 tag_id 兜底" in text
@@ -995,8 +1025,8 @@ def test_admin_questionnaire_ui_contains_tag_picker_fallback(client):
     assert "最近提交调试" in text
 
 
-def test_admin_questionnaire_ui_script_has_valid_javascript(client):
-    response = client.get("/admin/questionnaires/ui")
+def test_admin_questionnaire_legacy_ui_script_has_valid_javascript(client):
+    response = client.get("/admin/_legacy/questionnaires")
     text = response.get_data(as_text=True)
     match = re.search(r"<script>(.*?)</script>", text, re.S)
     assert match is not None
@@ -1006,6 +1036,19 @@ def test_admin_questionnaire_ui_script_has_valid_javascript(client):
     completed = subprocess.run(["node", "--check", script_path], capture_output=True, text=True)
     Path(script_path).unlink(missing_ok=True)
     assert completed.returncode == 0, completed.stderr
+
+
+def test_class_user_backoffice_ui_redirects_to_shell(client):
+    response = client.get("/admin/class-user-backoffice/ui", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/class-users?tab=class-users")
+    assert response.headers["X-Admin-Deprecated"] == "true"
+
+    shell_response = client.get("/admin/class-users?tab=class-users")
+    shell_text = shell_response.get_data(as_text=True)
+    assert shell_response.status_code == 200
+    assert "Class User 当前状态池" in shell_text
 
 
 def test_questionnaire_preflight_returns_200_with_missing_config(client, app, monkeypatch):
