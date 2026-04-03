@@ -169,6 +169,10 @@ def _ensure_sqlite_user_ops_page_tables(db) -> None:
     send_record_columns = _sqlite_table_columns(db, "user_ops_send_records")
     if send_record_columns and "image_count" not in send_record_columns:
         db.execute("ALTER TABLE user_ops_send_records ADD COLUMN image_count INTEGER NOT NULL DEFAULT 0")
+    if send_record_columns and "task_results_json" not in send_record_columns:
+        db.execute("ALTER TABLE user_ops_send_records ADD COLUMN task_results_json TEXT NOT NULL DEFAULT '[]'")
+    if send_record_columns and "last_status_sync_at" not in send_record_columns:
+        db.execute("ALTER TABLE user_ops_send_records ADD COLUMN last_status_sync_at TEXT")
 
 
 def _init_sqlite(db) -> None:
@@ -214,6 +218,18 @@ def _ensure_postgres_user_ops_page_tables(db) -> None:
         """
         ALTER TABLE IF EXISTS user_ops_send_records
         ADD COLUMN IF NOT EXISTS image_count INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS user_ops_send_records
+        ADD COLUMN IF NOT EXISTS task_results_json JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS user_ops_send_records
+        ADD COLUMN IF NOT EXISTS last_status_sync_at TIMESTAMPTZ
         """
     )
     db.execute(

@@ -333,12 +333,53 @@
       display: grid;
       gap: 12px;
     }
+    .task-result-list {
+      display: grid;
+      gap: 12px;
+    }
     .timeline-item,
     .record-item {
       padding: 14px;
       border-radius: 16px;
       background: #fffdfa;
       border: 1px solid rgba(58, 42, 23, 0.08);
+    }
+    .record-item-actions {
+      margin-top: 10px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .record-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 14px;
+    }
+    .record-detail-note {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .task-result-card {
+      padding: 14px;
+      border-radius: 16px;
+      background: #fffdfa;
+      border: 1px solid rgba(58, 42, 23, 0.08);
+      display: grid;
+      gap: 10px;
+    }
+    .task-result-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 14px;
+    }
+    .task-result-field {
+      display: grid;
+      gap: 4px;
+    }
+    .task-result-field strong {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
     }
     .timeline-item p,
     .record-item p {
@@ -665,7 +706,31 @@
         <button id="close-send-records-btn" class="btn soft" type="button">关闭</button>
       </div>
       <p id="send-records-status" class="status-line">准备读取记录...</p>
-      <div id="send-records-list" class="record-list"></div>
+      <div id="send-records-list-panel">
+        <div id="send-records-list" class="record-list"></div>
+      </div>
+      <section id="send-record-detail-panel" class="drawer-section hidden">
+        <div class="drawer-head">
+          <div>
+            <h3>群发任务详情</h3>
+            <p id="send-record-detail-subtitle" class="subtle">查看这次批量群发按 sender / owner 分桶后的任务结果。</p>
+          </div>
+          <div class="hero-actions">
+            <button id="back-send-record-list-btn" class="btn soft" type="button">返回列表</button>
+            <button id="refresh-send-record-status-btn" class="btn ghost" type="button">刷新状态</button>
+          </div>
+        </div>
+        <p id="send-record-detail-status" class="status-line">准备读取详情...</p>
+        <div id="send-record-detail-summary" class="record-detail-grid"></div>
+        <p id="send-record-detail-note" class="record-detail-note"></p>
+        <div class="panel-soft">
+          <div class="meta-row">
+            <strong>sender / owner 任务结果</strong>
+            <span>这里只展示任务创建结果，不冒充最终送达结果。</span>
+          </div>
+          <div id="send-record-task-results" class="task-result-list"></div>
+        </div>
+      </section>
     </aside>
   </div>
 
@@ -674,7 +739,7 @@
       <div class="modal-head">
         <div>
           <h2 id="batch-send-title">批量群发</h2>
-          <p class="subtle">支持文本、emoji 和最多 9 张图片。预览默认排除免打扰用户，开启包含免打扰后必须再次确认。</p>
+          <p class="subtle">支持文本、emoji 和最多 3 张图片。预览默认排除免打扰用户，开启包含免打扰后必须再次确认。</p>
         </div>
         <button id="close-batch-send-btn" class="btn soft" type="button">关闭</button>
       </div>
@@ -689,10 +754,10 @@
             <div class="image-picker-head">
               <div>
                 <strong>附加图片</strong>
-                <div class="preview-hint">最多 9 张。可纯文本、纯图片，或文本 + 图片一起发送。</div>
+                <div class="preview-hint">最多 3 张。可纯文本、纯图片，或文本 + 图片一起发送。</div>
               </div>
               <div class="hero-actions">
-                <span id="batch-image-count" class="subtle">已选 0/9 张</span>
+                <span id="batch-image-count" class="subtle">已选 0/3 张</span>
                 <button id="pick-batch-images-btn" class="btn soft" type="button">添加图片</button>
               </div>
             </div>
@@ -758,7 +823,8 @@
       huangxiaocan_activated_count: { wecom_status: 'all', mobile_binding_status: 'all', activation_bucket: 'activated' },
       huangxiaocan_not_activated_count: { wecom_status: 'all', mobile_binding_status: 'all', activation_bucket: 'not_activated' },
     };
-    const MAX_BATCH_IMAGES = 9;
+    const MAX_BATCH_IMAGES = 3;
+    const MAX_BATCH_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
     const state = {
       activeCardKey: 'lead_pool_total_count',
@@ -798,7 +864,16 @@
       customerTimelineList: document.getElementById('customer-timeline-list'),
       sendRecordsBackdrop: document.getElementById('send-records-backdrop'),
       sendRecordsStatus: document.getElementById('send-records-status'),
+      sendRecordsListPanel: document.getElementById('send-records-list-panel'),
       sendRecordsList: document.getElementById('send-records-list'),
+      sendRecordDetailPanel: document.getElementById('send-record-detail-panel'),
+      sendRecordDetailSubtitle: document.getElementById('send-record-detail-subtitle'),
+      sendRecordDetailStatus: document.getElementById('send-record-detail-status'),
+      sendRecordDetailSummary: document.getElementById('send-record-detail-summary'),
+      sendRecordDetailNote: document.getElementById('send-record-detail-note'),
+      sendRecordTaskResults: document.getElementById('send-record-task-results'),
+      backSendRecordListBtn: document.getElementById('back-send-record-list-btn'),
+      refreshSendRecordStatusBtn: document.getElementById('refresh-send-record-status-btn'),
       batchSendBackdrop: document.getElementById('batch-send-modal-backdrop'),
       batchSendStatus: document.getElementById('batch-send-status'),
       batchSendText: document.getElementById('batch-send-text'),
@@ -843,6 +918,25 @@
       return '未配置发送内容';
     }
 
+    function buildSkippedReasonSummary(skippedReasons) {
+      const payload = skippedReasons || {};
+      const parts = [];
+      if (Number(payload.do_not_disturb || 0) > 0) {
+        parts.push(payload.do_not_disturb + ' 人免打扰');
+      }
+      if (Number(payload.missing_external_userid || 0) > 0) {
+        parts.push(payload.missing_external_userid + ' 人缺少 external_userid');
+      }
+      if (Number(payload.missing_owner_userid || 0) > 0) {
+        parts.push(payload.missing_owner_userid + ' 人缺少发送人');
+      }
+      if (!parts.length) {
+        return '本次没有跳过记录';
+      }
+      const total = Object.values(payload).reduce((sum, value) => sum + Number(value || 0), 0);
+      return '已跳过 ' + total + ' 人：' + parts.join('，');
+    }
+
     function selectedImageCountText() {
       return '已选 ' + state.batchImages.length + '/' + MAX_BATCH_IMAGES + ' 张';
     }
@@ -855,27 +949,10 @@
       }
       els.batchImageList.innerHTML = state.batchImages.map((image, index) => (
         '<div class="image-thumb">'
-        + '<img src="' + escapeHtml(image.data_url || '') + '" alt="已选图片 ' + (index + 1) + '">'
+        + '<img src="' + escapeHtml(image.previewUrl || '') + '" alt="已选图片 ' + (index + 1) + '">'
         + '<button type="button" class="thumb-remove" data-image-index="' + index + '">删除</button>'
         + '</div>'
       )).join('');
-    }
-
-    function currentBatchImagesPayload() {
-      return state.batchImages.map((image) => ({
-        file_name: image.file_name,
-        content_type: image.content_type,
-        data_url: image.data_url,
-      }));
-    }
-
-    function readFileAsDataUrl(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('图片读取失败'));
-        reader.readAsDataURL(file);
-      });
     }
 
     async function fetchJson(url, options) {
@@ -885,6 +962,19 @@
         throw new Error(payload.error || ('请求失败(' + response.status + ')'));
       }
       return payload;
+    }
+
+
+    function revokeBatchImageUrls() {
+      state.batchImages.forEach((image) => {
+        if (image && image.previewUrl) {
+          URL.revokeObjectURL(image.previewUrl);
+        }
+      });
+    }
+
+    function currentBatchImageFiles() {
+      return state.batchImages.map((image) => image.file).filter(Boolean);
     }
 
     function currentSegment() {
@@ -1144,12 +1234,23 @@
       return payload;
     }
 
-    function buildBatchSendPayload() {
-      return Object.assign(buildSelectionPayload(), {
-        content: els.batchSendText.value,
-        include_do_not_disturb: els.includeDndToggle.checked,
-        images: currentBatchImagesPayload(),
+    function buildBatchSendRequestBody(options) {
+      const settings = options || {};
+      const selectionPayload = buildSelectionPayload();
+      const formData = new FormData();
+      formData.append('selection_mode', selectionPayload.selection_mode || 'manual');
+      formData.append('filters_json', JSON.stringify(selectionPayload.filters || {}));
+      formData.append('selected_ids_json', JSON.stringify(selectionPayload.selected_ids || []));
+      formData.append('excluded_ids_json', JSON.stringify(selectionPayload.excluded_ids || []));
+      formData.append('content', els.batchSendText.value);
+      formData.append('include_do_not_disturb', els.includeDndToggle.checked ? 'true' : 'false');
+      if (settings.confirm) {
+        formData.append('confirm', 'true');
+      }
+      currentBatchImageFiles().forEach((file) => {
+        formData.append('images', file);
       });
+      return formData;
     }
 
     function resetPreview() {
@@ -1158,6 +1259,53 @@
       els.previewSkippedSummary.textContent = '默认排除免打扰，缺少 external_userid 的记录不会进入最终可发送名单。';
       els.previewMessageSummary.textContent = buildMessageSummary('', 0);
       els.previewTargetBody.innerHTML = '<tr><td colspan="5" class="table-empty">还没有预览结果</td></tr>';
+    }
+
+    function showSendRecordListView() {
+      els.sendRecordsListPanel.classList.remove('hidden');
+      els.sendRecordDetailPanel.classList.add('hidden');
+    }
+
+    function buildRecordDetailField(label, value) {
+      return '<div class="detail-item"><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(value || '-') + '</span></div>';
+    }
+
+    function renderSendRecordDetail(record) {
+      const skippedSummary = buildSkippedReasonSummary(record.skipped_reasons);
+      els.sendRecordDetailSubtitle.textContent = '记录 #' + record.id + ' · ' + (record.created_at || '');
+      els.sendRecordDetailSummary.innerHTML = [
+        buildRecordDetailField('record_id', '#' + record.id),
+        buildRecordDetailField('创建时间', record.created_at || '-'),
+        buildRecordDetailField('操作人', record.operator || '-'),
+        buildRecordDetailField('状态', record.status_label || record.status || '-'),
+        buildRecordDetailField('消息摘要', buildMessageSummary(record.content_preview || '', record.image_count || 0)),
+        buildRecordDetailField('内容预览', record.content_preview || '-'),
+        buildRecordDetailField('图片数量', String(record.image_count || 0)),
+        buildRecordDetailField('免打扰范围', record.include_do_not_disturb ? '包含免打扰用户' : '默认排除免打扰'),
+        buildRecordDetailField('选择人数', String(record.selected_count || 0)),
+        buildRecordDetailField('可发人数', String(record.eligible_count || 0)),
+        buildRecordDetailField('实发人数', String(record.sent_count || 0)),
+        buildRecordDetailField('跳过人数', String(record.skipped_count || 0)),
+        buildRecordDetailField('跳过摘要', skippedSummary),
+        buildRecordDetailField('最近刷新时间', record.last_status_sync_at || '尚未刷新'),
+      ].join('');
+      els.sendRecordDetailNote.textContent = record.status_note || '当前只支持任务创建结果追踪。';
+      const taskResults = record.task_results || [];
+      els.sendRecordTaskResults.innerHTML = taskResults.length ? taskResults.map((item) => (
+        '<article class="task-result-card">'
+        + '<div class="meta-row"><strong>' + escapeHtml(item.owner_display_name || item.owner_userid || '-') + '</strong><span>' + escapeHtml(item.status_label || item.status || '-') + '</span></div>'
+        + '<div class="task-result-grid">'
+        + '<div class="task-result-field"><strong>owner_userid / sender_userid</strong><span>' + escapeHtml((item.owner_userid || '-') + ' / ' + (item.sender_userid || '-')) + '</span></div>'
+        + '<div class="task-result-field"><strong>external_userids 数量</strong><span>' + escapeHtml(item.external_userid_count || 0) + '</span></div>'
+        + '<div class="task-result-field"><strong>target_count</strong><span>' + escapeHtml(item.target_count || 0) + '</span></div>'
+        + '<div class="task-result-field"><strong>task_id</strong><span>' + escapeHtml(item.task_id || '-') + '</span></div>'
+        + '<div class="task-result-field"><strong>msgid</strong><span>' + escapeHtml(item.msgid || '-') + '</span></div>'
+        + '<div class="task-result-field"><strong>当前状态</strong><span>' + escapeHtml(item.status_label || item.status || '-') + '</span></div>'
+        + '<div class="task-result-field"><strong>error_message</strong><span>' + escapeHtml(item.error_message || '-') + '</span></div>'
+        + '<div class="task-result-field"><strong>external_userids</strong><span>' + escapeHtml((item.external_userids || []).join(' / ') || '-') + '</span></div>'
+        + '</div>'
+        + '</article>'
+      )).join('') : '<div class="table-empty">当前没有可展示的 sender 任务结果</div>';
     }
 
     function renderPreview(payload) {
@@ -1181,16 +1329,14 @@
     }
 
     async function previewBatchSend() {
-      const payload = buildBatchSendPayload();
-      if (!String(payload.content || '').trim() && !(payload.images || []).length) {
+      if (!String(els.batchSendText.value || '').trim() && !state.batchImages.length) {
         throw new Error('请先填写发送内容或添加图片');
       }
       els.batchSendStatus.textContent = '预览计算中...';
       els.batchSendStatus.className = 'status-line';
       const result = await fetchJson('/api/admin/user-ops/batch-send/preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: buildBatchSendRequestBody(),
       });
       renderPreview(result);
       els.batchSendStatus.textContent = '预览已更新';
@@ -1198,8 +1344,7 @@
     }
 
     async function executeBatchSend() {
-      const payload = buildBatchSendPayload();
-      if (!String(payload.content || '').trim() && !(payload.images || []).length) {
+      if (!String(els.batchSendText.value || '').trim() && !state.batchImages.length) {
         throw new Error('请先填写发送内容或添加图片');
       }
       if (els.includeDndToggle.checked && !els.includeDndConfirmToggle.checked) {
@@ -1207,17 +1352,45 @@
       }
       els.batchSendStatus.textContent = '群发执行中...';
       els.batchSendStatus.className = 'status-line';
-      payload.confirm = true;
       const result = await fetchJson('/api/admin/user-ops/batch-send/execute', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: buildBatchSendRequestBody({ confirm: true }),
       });
       els.batchSendStatus.textContent = '群发完成，记录 #' + result.record_id;
       els.batchSendStatus.className = 'status-line success';
+      revokeBatchImageUrls();
+      state.batchImages = [];
+      renderBatchImages();
       clearSelection();
       await loadOverviewAndList();
       await loadSendRecords();
+    }
+
+    async function loadSendRecordDetail(recordId) {
+      els.sendRecordDetailStatus.textContent = '读取任务详情中...';
+      els.sendRecordDetailStatus.className = 'status-line';
+      const payload = await fetchJson('/api/admin/user-ops/send-records/' + encodeURIComponent(recordId));
+      state.sendRecordDetail = payload.record || null;
+      renderSendRecordDetail(state.sendRecordDetail || {});
+      els.sendRecordDetailStatus.textContent = '详情已更新';
+      els.sendRecordDetailStatus.className = 'status-line success';
+      els.sendRecordsListPanel.classList.add('hidden');
+      els.sendRecordDetailPanel.classList.remove('hidden');
+    }
+
+    async function refreshSendRecordStatus() {
+      if (!state.sendRecordDetail || !state.sendRecordDetail.id) return;
+      els.sendRecordDetailStatus.textContent = '刷新状态中...';
+      els.sendRecordDetailStatus.className = 'status-line';
+      const payload = await fetchJson('/api/admin/user-ops/send-records/' + encodeURIComponent(state.sendRecordDetail.id) + '/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      state.sendRecordDetail = payload.record || null;
+      renderSendRecordDetail(state.sendRecordDetail || {});
+      await loadSendRecords();
+      els.sendRecordDetailStatus.textContent = '状态已刷新';
+      els.sendRecordDetailStatus.className = 'status-line success';
     }
 
     async function loadSendRecords() {
@@ -1235,25 +1408,27 @@
       els.sendRecordsStatus.className = 'status-line success';
       els.sendRecordsList.innerHTML = state.sendRecords.map((record) => (
         '<article class="record-item">'
-        + '<div class="meta-row"><strong>#' + escapeHtml(record.id) + '</strong><span>' + escapeHtml(record.created_at || '') + '</span><span>' + escapeHtml(record.status || '') + '</span></div>'
+        + '<div class="meta-row"><strong>#' + escapeHtml(record.id) + '</strong><span>' + escapeHtml(record.created_at || '') + '</span><span>' + escapeHtml(record.status_label || record.status || '') + '</span></div>'
         + '<p>' + escapeHtml(record.content_preview || '-') + '</p>'
         + '<div class="reason-list">'
         + buildTag('选中 ' + escapeHtml(record.selected_count || 0), 'ok')
         + buildTag('可发 ' + escapeHtml(record.eligible_count || 0), 'ok')
         + buildTag('实发 ' + escapeHtml(record.sent_count || 0), 'ok')
         + buildTag('跳过 ' + escapeHtml(record.skipped_count || 0), 'warn')
-        + buildTag((record.include_do_not_disturb ? '包含' : '排除') + '免打扰', record.include_do_not_disturb ? 'danger' : 'ok')
-        + buildTag('发送人 ' + escapeHtml(record.sender_count || 0), 'ok')
         + buildTag('图片 ' + escapeHtml(record.image_count || 0) + ' 张', Number(record.image_count || 0) > 0 ? 'ok' : '')
         + '</div>'
         + '<p>操作人：' + escapeHtml(record.operator || '-') + '</p>'
-        + '<p>发送人：' + escapeHtml((record.sender_userids || []).join(' / ') || '-') + '</p>'
+        + '<p>' + escapeHtml(buildSkippedReasonSummary(record.skipped_reasons)) + '</p>'
+        + '<div class="record-item-actions">'
+        + '<button type="button" class="btn soft view-send-record-detail-btn" data-record-id="' + escapeHtml(record.id) + '">查看详情</button>'
+        + '</div>'
         + '</article>'
       )).join('');
     }
 
     function openSendRecords() {
       openBackdrop(els.sendRecordsBackdrop);
+      showSendRecordListView();
       loadSendRecords().catch((error) => {
         els.sendRecordsStatus.textContent = (error && error.message) || '发送记录读取失败';
         els.sendRecordsStatus.className = 'status-line error';
@@ -1353,26 +1528,32 @@
         els.batchImageInput.value = '';
         if (!files.length) return;
         if (state.batchImages.length + files.length > MAX_BATCH_IMAGES) {
-          els.batchSendStatus.textContent = '最多只能添加 9 张图片';
+          els.batchSendStatus.textContent = '最多只能添加 3 张图片';
           els.batchSendStatus.className = 'status-line error';
           return;
         }
-        try {
-          const nextImages = await Promise.all(files.map(async (file) => ({
-            file_name: file.name || ('image-' + Date.now() + '.png'),
-            content_type: file.type || 'image/png',
-            data_url: await readFileAsDataUrl(file),
-          })));
-          state.batchImages = state.batchImages.concat(nextImages);
-          renderBatchImages();
-          els.batchSendStatus.textContent = '已添加 ' + state.batchImages.length + ' 张图片';
-          els.batchSendStatus.className = 'status-line success';
-          if (state.preview) {
-            resetPreview();
-          }
-        } catch (error) {
-          els.batchSendStatus.textContent = (error && error.message) || '图片读取失败';
+        const invalidFile = files.find((file) => !String(file.type || '').startsWith('image/'));
+        if (invalidFile) {
+          els.batchSendStatus.textContent = '只能选择图片文件';
           els.batchSendStatus.className = 'status-line error';
+          return;
+        }
+        const oversizedFile = files.find((file) => Number(file.size || 0) > MAX_BATCH_IMAGE_SIZE_BYTES);
+        if (oversizedFile) {
+          els.batchSendStatus.textContent = '图片大小不能超过 5MB';
+          els.batchSendStatus.className = 'status-line error';
+          return;
+        }
+        const nextImages = files.map((file) => ({
+          file,
+          previewUrl: URL.createObjectURL(file),
+        }));
+        state.batchImages = state.batchImages.concat(nextImages);
+        renderBatchImages();
+        els.batchSendStatus.textContent = '已添加 ' + state.batchImages.length + ' 张图片';
+        els.batchSendStatus.className = 'status-line success';
+        if (state.preview) {
+          resetPreview();
         }
       });
       els.batchImageList.addEventListener('click', (event) => {
@@ -1380,7 +1561,10 @@
         if (!button) return;
         const imageIndex = Number(button.getAttribute('data-image-index'));
         if (Number.isNaN(imageIndex)) return;
-        state.batchImages.splice(imageIndex, 1);
+        const removed = state.batchImages.splice(imageIndex, 1);
+        if (removed[0] && removed[0].previewUrl) {
+          URL.revokeObjectURL(removed[0].previewUrl);
+        }
         renderBatchImages();
         if (state.preview) {
           resetPreview();
@@ -1391,12 +1575,29 @@
       });
       document.getElementById('open-send-records-btn').addEventListener('click', openSendRecords);
       document.getElementById('close-send-records-btn').addEventListener('click', () => closeBackdrop(els.sendRecordsBackdrop));
+      els.backSendRecordListBtn.addEventListener('click', () => {
+        showSendRecordListView();
+      });
+      els.refreshSendRecordStatusBtn.addEventListener('click', () => {
+        refreshSendRecordStatus().catch((error) => {
+          els.sendRecordDetailStatus.textContent = (error && error.message) || '状态刷新失败';
+          els.sendRecordDetailStatus.className = 'status-line error';
+        });
+      });
       document.getElementById('close-customer-detail-btn').addEventListener('click', () => closeBackdrop(els.customerDetailBackdrop));
       els.customerDetailBackdrop.addEventListener('click', (event) => {
         if (event.target === els.customerDetailBackdrop) closeBackdrop(els.customerDetailBackdrop);
       });
       els.sendRecordsBackdrop.addEventListener('click', (event) => {
         if (event.target === els.sendRecordsBackdrop) closeBackdrop(els.sendRecordsBackdrop);
+      });
+      els.sendRecordsList.addEventListener('click', (event) => {
+        const button = event.target.closest('.view-send-record-detail-btn');
+        if (!button) return;
+        loadSendRecordDetail(Number(button.getAttribute('data-record-id'))).catch((error) => {
+          els.sendRecordDetailStatus.textContent = (error && error.message) || '任务详情读取失败';
+          els.sendRecordDetailStatus.className = 'status-line error';
+        });
       });
       els.batchSendBackdrop.addEventListener('click', (event) => {
         if (event.target === els.batchSendBackdrop) closeBackdrop(els.batchSendBackdrop);

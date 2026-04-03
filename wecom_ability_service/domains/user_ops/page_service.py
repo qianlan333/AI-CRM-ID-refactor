@@ -12,6 +12,7 @@ from ..tasks.private_message import (
     has_private_message_body,
 )
 from ..tasks.service import dispatch_wecom_task
+from ...wecom_client import WeComClientError
 
 AUTO_DND_SIGNUP_STATUSES = {"signed_3999"}
 MANUAL_DND_SOURCE_TYPE = "manual"
@@ -25,6 +26,19 @@ PAID_COURSE_DND_REASON = {
 ACTIVATION_BUCKET_LABELS = {
     "activated": "黄小璨已激活",
     "not_activated": "黄小璨未激活",
+}
+SEND_RECORD_TRACKING_NOTE = "当前只支持任务创建结果追踪，暂无官方发送结果轮询能力。"
+SEND_RECORD_STATUS_LABELS = {
+    "created": "已创建任务",
+    "sent": "已创建完成",
+    "partial_failed": "部分创建失败",
+    "failed": "创建失败",
+}
+TASK_RESULT_STATUS_LABELS = {
+    "created": "已创建任务",
+    "failed": "创建失败",
+    "sent": "已创建完成",
+    "partial_failed": "部分创建失败",
 }
 
 
@@ -137,6 +151,16 @@ def _normalize_id_list(value: Any) -> list[int]:
         if normalized > 0:
             result.append(normalized)
     return result
+
+
+def _status_label(status: Any) -> str:
+    normalized = _normalize_str(status)
+    return SEND_RECORD_STATUS_LABELS.get(normalized, normalized or "-")
+
+
+def _task_result_status_label(status: Any) -> str:
+    normalized = _normalize_str(status)
+    return TASK_RESULT_STATUS_LABELS.get(normalized, normalized or "-")
 
 
 def _build_placeholders(count: int) -> str:
@@ -716,6 +740,289 @@ def _build_private_message_payload(payload: dict[str, Any]) -> tuple[dict[str, A
     return task_payload, content_preview, image_count
 
 
+def _owner_display_name_map(owner_userids: list[str]) -> dict[str, str]:
+    normalized_owner_userids = sorted({_normalize_str(item) for item in owner_userids if _normalize_str(item)})
+    if not normalized_owner_userids:
+        return {}
+    rows = get_db().execute(
+        f"""
+        SELECT userid, display_name
+        FROM owner_role_map
+        WHERE userid IN ({_build_placeholders(len(normalized_owner_userids))})
+        """,
+        tuple(normalized_owner_userids),
+    ).fetchall()
+    return {
+        _normalize_str(row.get("userid")): _normalize_str(row.get("display_name"))
+        for row in rows
+        if _normalize_str(row.get("userid"))
+    }
+
+
+def _extract_sender_userids_from_request_payload(request_payload: dict[str, Any]) -> list[str]:
+    raw_sender = request_payload.get("sender")
+    if isinstance(raw_sender, list):
+        return [_normalize_str(item) for item in raw_sender if _normalize_str(item)]
+    normalized_sender = _normalize_str(raw_sender)
+    return [normalized_sender] if normalized_sender else []
+
+
+def _extract_external_userids_from_request_payload(request_payload: dict[str, Any]) -> list[str]:
+    raw_external_userids = request_payload.get("external_userid")
+    if isinstance(raw_external_userids, list):
+        return [_normalize_str(item) for item in raw_external_userids if _normalize_str(item)]
+    normalized_external_userid = _normalize_str(raw_external_userids)
+    if normalized_external_userid:
+        return [normalized_external_userid]
+    raw_external_userids = request_payload.get("external_userids")
+    if isinstance(raw_external_userids, list):
+        return [_normalize_str(item) for item in raw_external_userids if _normalize_str(item)]
+    normalized_external_userid = _normalize_str(raw_external_userids)
+    return [normalized_external_userid] if normalized_external_userid else []
+
+
+def _build_sender_success_result(owner_userid: str, items: list[dict[str, Any]], result: dict[str, Any]) -> dict[str, Any]:
+    wecom_result = result.get("wecom_result") if isinstance(result.get("wecom_result"), dict) else {}
+    return {
+        "owner_userid": owner_userid,
+        "sender_userid": owner_userid,
+        "owner_display_name": _normalize_str(items[0].get("owner_display_name")) if items else owner_userid,
+        "external_userids": [item["external_userid"] for item in items],
+        "external_userid_count": len(items),
+        "target_count": len(items),
+        "task_id": int(result["task_id"]),
+        "wecom_task_id": _normalize_str(
+            wecom_result.get("msgid")
+            or wecom_result.get("jobid")
+            or wecom_result.get("task_id")
+            or wecom_result.get("moment_id")
+        ),
+        "msgid": _normalize_str(wecom_result.get("msgid")),
+        "status": "created",
+        "error_message": "",
+    }
+
+
+def _build_sender_failure_result(owner_userid: str, items: list[dict[str, Any]], exc: Exception) -> dict[str, Any]:
+    task_id = getattr(exc, "local_task_id", None)
+    payload = getattr(exc, "payload", {}) if isinstance(exc, WeComClientError) else {}
+    return {
+        "owner_userid": owner_userid,
+        "sender_userid": owner_userid,
+        "owner_display_name": _normalize_str(items[0].get("owner_display_name")) if items else owner_userid,
+        "external_userids": [item["external_userid"] for item in items],
+        "external_userid_count": len(items),
+        "target_count": len(items),
+        "task_id": int(task_id) if isinstance(task_id, int) or (isinstance(task_id, str) and str(task_id).isdigit()) else None,
+        "wecom_task_id": _normalize_str(payload.get("msgid") or payload.get("jobid") or payload.get("task_id") or payload.get("moment_id")),
+        "msgid": _normalize_str(payload.get("msgid")),
+        "status": "failed",
+        "error_message": str(exc),
+        "error_stage": _normalize_str(getattr(exc, "stage", "")),
+        "error_category": _normalize_str(getattr(exc, "category", "")),
+    }
+
+
+def _normalize_task_result_item(item: dict[str, Any], owner_display_names: dict[str, str] | None = None) -> dict[str, Any]:
+    external_userids = _extract_external_userids_from_request_payload(item) if "external_userids" not in item else [
+        _normalize_str(value) for value in (item.get("external_userids") or []) if _normalize_str(value)
+    ]
+    owner_userid = _normalize_str(item.get("owner_userid") or item.get("sender_userid"))
+    task_id_raw = item.get("task_id")
+    task_id = int(task_id_raw) if str(task_id_raw).isdigit() else None
+    status = _normalize_str(item.get("status")) or ("failed" if _normalize_str(item.get("error_message")) else "created")
+    owner_display_name = _normalize_str(item.get("owner_display_name")) or (owner_display_names or {}).get(owner_userid, "") or owner_userid
+    return {
+        "owner_userid": owner_userid,
+        "sender_userid": _normalize_str(item.get("sender_userid")) or owner_userid,
+        "owner_display_name": owner_display_name,
+        "external_userids": external_userids,
+        "external_userid_count": len(external_userids),
+        "target_count": int(item.get("target_count") or len(external_userids) or 0),
+        "task_id": task_id,
+        "wecom_task_id": _normalize_str(item.get("wecom_task_id")),
+        "msgid": _normalize_str(item.get("msgid")),
+        "status": status,
+        "status_label": _task_result_status_label(status),
+        "error_message": _normalize_str(item.get("error_message")),
+        "error_stage": _normalize_str(item.get("error_stage")),
+        "error_category": _normalize_str(item.get("error_category")),
+    }
+
+
+def _derive_record_status(task_results: list[dict[str, Any]], *, eligible_count: int) -> str:
+    success_count = sum(1 for item in task_results if _normalize_str(item.get("status")) != "failed")
+    failed_count = sum(1 for item in task_results if _normalize_str(item.get("status")) == "failed")
+    if success_count and failed_count:
+        return "partial_failed"
+    if success_count:
+        return "sent"
+    if failed_count:
+        return "failed"
+    return "created" if eligible_count == 0 else "failed"
+
+
+def _fetch_outbound_task_rows(task_ids: list[int]) -> list[dict[str, Any]]:
+    normalized_task_ids = [int(task_id) for task_id in task_ids if int(task_id) > 0]
+    if not normalized_task_ids:
+        return []
+    rows = get_db().execute(
+        f"""
+        SELECT id, task_type, request_payload, response_payload, wecom_task_id, status, created_at
+        FROM outbound_tasks
+        WHERE id IN ({_build_placeholders(len(normalized_task_ids))})
+        ORDER BY id ASC
+        """,
+        tuple(normalized_task_ids),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _task_result_from_outbound_task_row(row: dict[str, Any], owner_display_names: dict[str, str]) -> dict[str, Any]:
+    request_payload = _json_loads(row.get("request_payload"), default={})
+    response_payload = _json_loads(row.get("response_payload"), default={})
+    sender_userids = _extract_sender_userids_from_request_payload(request_payload)
+    owner_userid = sender_userids[0] if sender_userids else ""
+    status = _normalize_str(row.get("status")) or ("failed" if _normalize_str(response_payload.get("error")) else "created")
+    return _normalize_task_result_item(
+        {
+            "owner_userid": owner_userid,
+            "sender_userid": owner_userid,
+            "owner_display_name": owner_display_names.get(owner_userid, owner_userid),
+            "external_userids": _extract_external_userids_from_request_payload(request_payload),
+            "target_count": len(_extract_external_userids_from_request_payload(request_payload)),
+            "task_id": row.get("id"),
+            "wecom_task_id": _normalize_str(row.get("wecom_task_id")),
+            "msgid": _normalize_str(response_payload.get("msgid") or row.get("wecom_task_id")),
+            "status": status,
+            "error_message": _normalize_str(response_payload.get("error") or response_payload.get("errmsg")),
+        },
+        owner_display_names=owner_display_names,
+    )
+
+
+def _sender_userids_from_task_results(task_results: list[dict[str, Any]]) -> list[str]:
+    result: list[str] = []
+    for item in task_results:
+        sender_userid = _normalize_str(item.get("sender_userid") or item.get("owner_userid"))
+        if sender_userid and sender_userid not in result:
+            result.append(sender_userid)
+    return result
+
+
+def _load_send_record_row(record_id: int) -> dict[str, Any] | None:
+    row = get_db().execute(
+        """
+        SELECT
+            id,
+            task_type,
+            outbound_task_ids_json,
+            task_results_json,
+            selected_count,
+            eligible_count,
+            sent_count,
+            skipped_count,
+            skipped_reasons_json,
+            include_do_not_disturb,
+            content_preview,
+            image_count,
+            sender_userids_json,
+            filter_snapshot_json,
+            operator,
+            status,
+            last_status_sync_at,
+            created_at
+        FROM user_ops_send_records
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(record_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _hydrate_task_results(row: dict[str, Any]) -> list[dict[str, Any]]:
+    stored = _decode_json_list(row.get("task_results_json"))
+    owner_display_names = _owner_display_name_map(
+        [_normalize_str(item.get("owner_userid") or item.get("sender_userid")) for item in stored if isinstance(item, dict)]
+    )
+    if stored:
+        return [_normalize_task_result_item(item, owner_display_names=owner_display_names) for item in stored if isinstance(item, dict)]
+
+    outbound_task_ids = [int(item) for item in _decode_json_list(row.get("outbound_task_ids_json")) if str(item).isdigit()]
+    outbound_rows = _fetch_outbound_task_rows(outbound_task_ids)
+    owner_display_names = _owner_display_name_map(
+        [
+            (_extract_sender_userids_from_request_payload(_json_loads(outbound_row.get("request_payload"), default={})) or [""])[0]
+            for outbound_row in outbound_rows
+        ]
+    )
+    return [_task_result_from_outbound_task_row(outbound_row, owner_display_names) for outbound_row in outbound_rows]
+
+
+def _serialize_send_record_summary(row: dict[str, Any], task_results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    hydrated_task_results = task_results if task_results is not None else _hydrate_task_results(row)
+    sender_userids = [str(item) for item in _decode_json_list(row.get("sender_userids_json")) if _normalize_str(item)]
+    if not sender_userids:
+        sender_userids = _sender_userids_from_task_results(hydrated_task_results)
+    status = _normalize_str(row.get("status")) or _derive_record_status(hydrated_task_results, eligible_count=int(row.get("eligible_count") or 0))
+    return {
+        "id": int(row["id"]),
+        "task_type": _normalize_str(row.get("task_type")),
+        "outbound_task_ids": [int(item) for item in _decode_json_list(row.get("outbound_task_ids_json")) if str(item).isdigit()],
+        "selected_count": int(row.get("selected_count") or 0),
+        "eligible_count": int(row.get("eligible_count") or 0),
+        "sent_count": int(row.get("sent_count") or 0),
+        "skipped_count": int(row.get("skipped_count") or 0),
+        "skipped_reasons": _json_loads(row.get("skipped_reasons_json"), default={}),
+        "include_do_not_disturb": bool(row.get("include_do_not_disturb")),
+        "content_preview": _normalize_str(row.get("content_preview")),
+        "image_count": int(row.get("image_count") or 0),
+        "sender_userids": sender_userids,
+        "filter_snapshot": _json_loads(row.get("filter_snapshot_json"), default={}),
+        "operator": _normalize_str(row.get("operator")),
+        "status": status,
+        "status_label": _status_label(status),
+        "status_source": "task_creation",
+        "created_at": stringify_db_timestamp(row.get("created_at")),
+        "last_status_sync_at": stringify_db_timestamp(row.get("last_status_sync_at")),
+        "sender_count": len(sender_userids),
+        "owner_count": len(sender_userids),
+    }
+
+
+def _serialize_send_record_detail(row: dict[str, Any], task_results: list[dict[str, Any]]) -> dict[str, Any]:
+    summary = _serialize_send_record_summary(row, task_results=task_results)
+    return {
+        **summary,
+        "task_results": task_results,
+        "delivery_status_supported": False,
+        "status_note": SEND_RECORD_TRACKING_NOTE,
+    }
+
+
+def _update_send_record_tracking(record_id: int, *, task_results: list[dict[str, Any]], status: str) -> dict[str, Any] | None:
+    sender_userids = _sender_userids_from_task_results(task_results)
+    get_db().execute(
+        """
+        UPDATE user_ops_send_records
+        SET task_results_json = ?,
+            sender_userids_json = ?,
+            status = ?,
+            last_status_sync_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            _json_dumps(task_results),
+            _json_dumps(sender_userids),
+            status,
+            int(record_id),
+        ),
+    )
+    get_db().commit()
+    return _load_send_record_row(record_id)
+
+
 def preview_user_ops_batch_send(payload: dict[str, Any]) -> dict[str, Any]:
     task_payload, content_preview, image_count = _build_private_message_payload(payload)
     plan = _build_batch_send_plan(payload)
@@ -740,6 +1047,7 @@ def preview_user_ops_batch_send(payload: dict[str, Any]) -> dict[str, Any]:
 def _insert_send_record(
     *,
     outbound_task_ids: list[int],
+    task_results: list[dict[str, Any]],
     selected_count: int,
     eligible_count: int,
     sent_count: int,
@@ -758,6 +1066,7 @@ def _insert_send_record(
         INSERT INTO user_ops_send_records (
             task_type,
             outbound_task_ids_json,
+            task_results_json,
             selected_count,
             eligible_count,
             sent_count,
@@ -770,14 +1079,16 @@ def _insert_send_record(
             filter_snapshot_json,
             operator,
             status,
+            last_status_sync_at,
             created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
         """,
         (
             "private_message",
             _json_dumps(outbound_task_ids),
+            _json_dumps(task_results),
             selected_count,
             eligible_count,
             sent_count,
@@ -812,30 +1123,27 @@ def execute_user_ops_batch_send(payload: dict[str, Any]) -> dict[str, Any]:
 
     for owner_userid, items in sorted(grouped_targets.items()):
         sender_userids.append(owner_userid)
-        result = dispatch_wecom_task(
-            "private_message",
-            "create_private_message_task",
-            {
-                "sender": [owner_userid],
-                "external_userid": [item["external_userid"] for item in items],
-                **task_payload,
-            },
-        )
-        outbound_task_ids.append(int(result["task_id"]))
-        task_results.append(
-            {
-                "owner_userid": owner_userid,
-                "task_id": int(result["task_id"]),
-                "target_count": len(items),
-                "external_userids": [item["external_userid"] for item in items],
-                "wecom_result": result["wecom_result"],
-            }
-        )
+        request_payload = {
+            "sender": [owner_userid],
+            "external_userid": [item["external_userid"] for item in items],
+            **task_payload,
+        }
+        try:
+            result = dispatch_wecom_task(
+                "private_message",
+                "create_private_message_task",
+                request_payload,
+            )
+            outbound_task_ids.append(int(result["task_id"]))
+            task_results.append(_build_sender_success_result(owner_userid, items, result))
+        except (WeComClientError, AttributeError) as exc:
+            task_results.append(_build_sender_failure_result(owner_userid, items, exc))
 
-    sent_count = len(plan["eligible_items"])
-    status = "sent" if sent_count else "skipped"
+    sent_count = sum(int(item.get("target_count") or 0) for item in task_results if _normalize_str(item.get("status")) != "failed")
+    status = _derive_record_status(task_results, eligible_count=plan["eligible_count"])
     record_id = _insert_send_record(
         outbound_task_ids=outbound_task_ids,
+        task_results=task_results,
         selected_count=plan["selected_count"],
         eligible_count=plan["eligible_count"],
         sent_count=sent_count,
@@ -866,6 +1174,7 @@ def execute_user_ops_batch_send(payload: dict[str, Any]) -> dict[str, Any]:
             "sender_count": len(sender_userids),
             "image_count": image_count,
             "status": status,
+            "status_label": _status_label(status),
         },
         "skip_summary": {
             "skipped_count": plan["skipped_count"],
@@ -885,6 +1194,7 @@ def list_user_ops_send_records(*, limit: int = 20, offset: int = 0) -> dict[str,
             id,
             task_type,
             outbound_task_ids_json,
+            task_results_json,
             selected_count,
             eligible_count,
             sent_count,
@@ -897,6 +1207,7 @@ def list_user_ops_send_records(*, limit: int = 20, offset: int = 0) -> dict[str,
             filter_snapshot_json,
             operator,
             status,
+            last_status_sync_at,
             created_at
         FROM user_ops_send_records
         ORDER BY id DESC
@@ -907,30 +1218,26 @@ def list_user_ops_send_records(*, limit: int = 20, offset: int = 0) -> dict[str,
     ).fetchall()
     total_row = get_db().execute("SELECT COUNT(*) AS total FROM user_ops_send_records").fetchone()
     return {
-        "items": [
-            {
-                "id": int(row["id"]),
-                "task_type": _normalize_str(row.get("task_type")),
-                "outbound_task_ids": [int(item) for item in _decode_json_list(row.get("outbound_task_ids_json")) if str(item).isdigit()],
-                "selected_count": int(row.get("selected_count") or 0),
-                "eligible_count": int(row.get("eligible_count") or 0),
-                "sent_count": int(row.get("sent_count") or 0),
-                "skipped_count": int(row.get("skipped_count") or 0),
-                "skipped_reasons": _json_loads(row.get("skipped_reasons_json"), default={}),
-                "include_do_not_disturb": bool(row.get("include_do_not_disturb")),
-                "content_preview": _normalize_str(row.get("content_preview")),
-                "image_count": int(row.get("image_count") or 0),
-                "sender_userids": [str(item) for item in _decode_json_list(row.get("sender_userids_json")) if _normalize_str(item)],
-                "filter_snapshot": _json_loads(row.get("filter_snapshot_json"), default={}),
-                "operator": _normalize_str(row.get("operator")),
-                "status": _normalize_str(row.get("status")),
-                "created_at": stringify_db_timestamp(row.get("created_at")),
-                "sender_count": len([str(item) for item in _decode_json_list(row.get("sender_userids_json")) if _normalize_str(item)]),
-                "owner_count": len([str(item) for item in _decode_json_list(row.get("sender_userids_json")) if _normalize_str(item)]),
-            }
-            for row in rows
-        ],
+        "items": [_serialize_send_record_summary(dict(row)) for row in rows],
         "limit": normalized_limit,
         "offset": normalized_offset,
         "total": int((total_row or {}).get("total") or 0),
     }
+
+
+def get_user_ops_send_record_detail(record_id: int) -> dict[str, Any]:
+    row = _load_send_record_row(int(record_id))
+    if row is None:
+        raise LookupError("send record not found")
+    task_results = _hydrate_task_results(row)
+    return {"record": _serialize_send_record_detail(row, task_results)}
+
+
+def refresh_user_ops_send_record_status(record_id: int) -> dict[str, Any]:
+    row = _load_send_record_row(int(record_id))
+    if row is None:
+        raise LookupError("send record not found")
+    task_results = _hydrate_task_results(row)
+    status = _derive_record_status(task_results, eligible_count=int(row.get("eligible_count") or 0))
+    refreshed_row = _update_send_record_tracking(int(record_id), task_results=task_results, status=status) or row
+    return {"record": _serialize_send_record_detail(refreshed_row, task_results)}

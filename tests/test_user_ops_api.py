@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime
 from io import BytesIO
+import json
 from zipfile import ZipFile
 
 import pytest
@@ -32,6 +33,41 @@ from wecom_ability_service.services import (
 def _test_image_data_url(label: str = "page") -> str:
     encoded = base64.b64encode(f"page-image-{label}".encode("utf-8")).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def _test_png_bytes() -> bytes:
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+b5f0AAAAASUVORK5CYII="
+    )
+
+
+def _build_batch_send_form_data(
+    *,
+    selection_mode: str,
+    content: str = "",
+    selected_ids: list[int] | None = None,
+    excluded_ids: list[int] | None = None,
+    filters: dict | None = None,
+    include_do_not_disturb: bool = False,
+    confirm: bool = False,
+    operator: str = "",
+    images: list[tuple[str, bytes, str]] | None = None,
+):
+    payload = {
+        "selection_mode": selection_mode,
+        "content": content,
+        "filters_json": json.dumps(filters or {}, ensure_ascii=False),
+        "selected_ids_json": json.dumps(selected_ids or []),
+        "excluded_ids_json": json.dumps(excluded_ids or []),
+        "include_do_not_disturb": "true" if include_do_not_disturb else "false",
+    }
+    if confirm:
+        payload["confirm"] = "true"
+    if operator:
+        payload["operator"] = operator
+    if images:
+        payload["images"] = [(BytesIO(file_bytes), file_name, mime_type) for file_name, file_bytes, mime_type in images]
+    return payload
 
 
 @pytest.fixture()
@@ -1144,12 +1180,13 @@ def test_user_ops_batch_send_preview_supports_emoji_and_images(client, app):
 
     response = client.post(
         "/api/admin/user-ops/batch-send/preview",
-        json={
-            "selection_mode": "manual",
-            "selected_ids": [items_by_external["wm_send_eligible"]["id"]],
-            "content": "今天统一跟进🙂",
-            "images": [{"file_name": "hello.png", "data_url": _test_image_data_url("preview")}],
-        },
+        data=_build_batch_send_form_data(
+            selection_mode="manual",
+            selected_ids=[items_by_external["wm_send_eligible"]["id"]],
+            content="今天统一跟进🙂",
+            images=[("hello.png", _test_png_bytes(), "image/png")],
+        ),
+        content_type="multipart/form-data",
     )
     payload = response.get_json()
 
@@ -1159,23 +1196,52 @@ def test_user_ops_batch_send_preview_supports_emoji_and_images(client, app):
     assert payload["eligible_count"] == 1
 
 
-def test_user_ops_batch_send_preview_rejects_tenth_image(client, app):
+def test_user_ops_batch_send_preview_rejects_fourth_image(client, app):
     _seed_user_ops_page_action_data(app)
 
     response = client.post(
         "/api/admin/user-ops/batch-send/preview",
-        json={
-            "selection_mode": "all_filtered",
-            "images": [
-                {"file_name": f"img-{index}.png", "data_url": _test_image_data_url(str(index))}
-                for index in range(1, 11)
-            ],
-        },
+        data=_build_batch_send_form_data(
+            selection_mode="all_filtered",
+            images=[(f"img-{index}.png", _test_png_bytes(), "image/png") for index in range(1, 5)],
+        ),
+        content_type="multipart/form-data",
     )
     payload = response.get_json()
 
     assert response.status_code == 400
-    assert payload["error"] == "at most 9 images are allowed"
+    assert payload["error"] == "at most 3 images are allowed"
+
+
+def test_user_ops_batch_send_preview_rejects_non_image_file(client, app):
+    _seed_user_ops_page_action_data(app)
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        data=_build_batch_send_form_data(
+            selection_mode="all_filtered",
+            images=[("bad.txt", b"not-an-image", "text/plain")],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "only image files are allowed"
+
+
+def test_user_ops_batch_send_preview_rejects_empty_content_and_images(client, app):
+    _seed_user_ops_page_action_data(app)
+    response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        data=_build_batch_send_form_data(selection_mode="all_filtered"),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "content or images is required"
 
 
 def test_user_ops_batch_send_execute_requires_confirm_and_writes_send_record(client, app, monkeypatch):
@@ -1209,17 +1275,18 @@ def test_user_ops_batch_send_execute_requires_confirm_and_writes_send_record(cli
 
     response = client.post(
         "/api/admin/user-ops/batch-send/execute",
-        json={
-            "selection_mode": "all_filtered",
-            "content": "今天统一跟进🙂",
-            "include_do_not_disturb": True,
-            "images": [
-                {"file_name": "first.png", "data_url": _test_image_data_url("1")},
-                {"file_name": "second.png", "data_url": _test_image_data_url("2")},
+        data=_build_batch_send_form_data(
+            selection_mode="all_filtered",
+            content="今天统一跟进🙂",
+            include_do_not_disturb=True,
+            confirm=True,
+            operator="test_operator",
+            images=[
+                ("first.png", _test_png_bytes(), "image/png"),
+                ("second.png", _test_png_bytes(), "image/png"),
             ],
-            "confirm": True,
-            "operator": "test_operator",
-        },
+        ),
+        content_type="multipart/form-data",
     )
     payload = response.get_json()
 
@@ -1250,6 +1317,10 @@ def test_user_ops_batch_send_execute_requires_confirm_and_writes_send_record(cli
     assert records_payload["items"][0]["operator"] == "test_operator"
     assert records_payload["items"][0]["content_preview"] == "今天统一跟进🙂"
     assert records_payload["items"][0]["image_count"] == 2
+    assert "image_meta" not in records_payload["items"][0]
+    assert "image_file_names" not in records_payload["items"][0]
+    assert records_payload["items"][0]["status"] == "sent"
+    assert records_payload["items"][0]["status_label"] == "已创建完成"
     assert records_payload["items"][0]["selected_count"] == 4
     assert records_payload["items"][0]["eligible_count"] == 3
     assert records_payload["items"][0]["sent_count"] == 3
@@ -1258,6 +1329,124 @@ def test_user_ops_batch_send_execute_requires_confirm_and_writes_send_record(cli
     assert records_payload["items"][0]["sender_count"] == 2
     assert records_payload["items"][0]["owner_count"] == 2
     assert records_payload["items"][0]["outbound_task_ids"] == [901, 902]
+
+    detail_response = client.get(f"/api/admin/user-ops/send-records/{payload['record_id']}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    assert detail_payload["record"]["id"] == payload["record_id"]
+    assert detail_payload["record"]["status"] == "sent"
+    assert detail_payload["record"]["status_label"] == "已创建完成"
+    assert detail_payload["record"]["status_source"] == "task_creation"
+    assert detail_payload["record"]["delivery_status_supported"] is False
+    assert "暂无官方发送结果轮询能力" in detail_payload["record"]["status_note"]
+    assert "image_meta" not in detail_payload["record"]
+    assert "image_file_names" not in detail_payload["record"]
+    assert len(detail_payload["record"]["task_results"]) == 2
+    assert {item["owner_userid"] for item in detail_payload["record"]["task_results"]} == {"sales_01", "sales_02"}
+    assert all(item["status"] == "created" for item in detail_payload["record"]["task_results"])
+    assert all(item["msgid"] for item in detail_payload["record"]["task_results"])
+    assert all(item["error_message"] == "" for item in detail_payload["record"]["task_results"])
+
+    refresh_response = client.post(f"/api/admin/user-ops/send-records/{payload['record_id']}/refresh")
+    refresh_payload = refresh_response.get_json()
+
+    assert refresh_response.status_code == 200
+    assert refresh_payload["record"]["id"] == payload["record_id"]
+    assert refresh_payload["record"]["status"] == "sent"
+    assert refresh_payload["record"]["last_status_sync_at"]
+
+
+def test_user_ops_batch_send_execute_marks_partial_failed_with_sender_error_details(client, app, monkeypatch):
+    _seed_user_ops_page_action_data(app)
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        sender = ((payload.get("sender") or [""]) if isinstance(payload.get("sender"), list) else [payload.get("sender")])[0]
+        if sender == "sales_02":
+            raise wecom_client_module.WeComClientError(
+                "sales_02 create failed",
+                stage="/cgi-bin/externalcontact/add_msg_template",
+                category="wecom_api",
+                payload={"errmsg": "sales_02 create failed"},
+            )
+        return {"task_id": 990, "wecom_result": {"msgid": "page-task-success"}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.user_ops.page_service.dispatch_wecom_task", fake_dispatch)
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={
+            "selection_mode": "all_filtered",
+            "content": "今天统一跟进",
+            "include_do_not_disturb": True,
+            "confirm": True,
+            "operator": "partial_operator",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["sent_count"] == 2
+    assert payload["execution_summary"]["status"] == "partial_failed"
+    assert len(payload["task_results"]) == 2
+    assert {item["status"] for item in payload["task_results"]} == {"created", "failed"}
+    failed_item = next(item for item in payload["task_results"] if item["status"] == "failed")
+    assert failed_item["owner_userid"] == "sales_02"
+    assert failed_item["error_message"] == "sales_02 create failed"
+
+    detail_response = client.get(f"/api/admin/user-ops/send-records/{payload['record_id']}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    assert detail_payload["record"]["status"] == "partial_failed"
+    assert detail_payload["record"]["status_label"] == "部分创建失败"
+    assert len(detail_payload["record"]["task_results"]) == 2
+    failed_detail = next(item for item in detail_payload["record"]["task_results"] if item["status"] == "failed")
+    assert failed_detail["owner_userid"] == "sales_02"
+    assert failed_detail["error_message"] == "sales_02 create failed"
+    assert failed_detail["task_id"] is None
+    assert failed_detail["msgid"] == ""
+
+
+def test_user_ops_batch_send_execute_marks_failed_when_all_sender_tasks_fail(client, app, monkeypatch):
+    _seed_user_ops_page_action_data(app)
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        sender = ((payload.get("sender") or [""]) if isinstance(payload.get("sender"), list) else [payload.get("sender")])[0]
+        raise wecom_client_module.WeComClientError(
+            f"{sender} create failed",
+            stage="/cgi-bin/externalcontact/add_msg_template",
+            category="wecom_api",
+            payload={"errmsg": f"{sender} create failed"},
+        )
+
+    monkeypatch.setattr("wecom_ability_service.domains.user_ops.page_service.dispatch_wecom_task", fake_dispatch)
+
+    response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={
+            "selection_mode": "all_filtered",
+            "content": "今天统一跟进",
+            "include_do_not_disturb": True,
+            "confirm": True,
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["sent_count"] == 0
+    assert payload["execution_summary"]["status"] == "failed"
+    assert len(payload["task_results"]) == 2
+    assert all(item["status"] == "failed" for item in payload["task_results"])
+
+    detail_response = client.get(f"/api/admin/user-ops/send-records/{payload['record_id']}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    assert detail_payload["record"]["status"] == "failed"
+    assert detail_payload["record"]["status_label"] == "创建失败"
+    assert len(detail_payload["record"]["task_results"]) == 2
+    assert all(item["error_message"] for item in detail_payload["record"]["task_results"])
 
 
 def test_user_ops_batch_send_execute_supports_pure_image(client, app, monkeypatch):
@@ -1275,12 +1464,13 @@ def test_user_ops_batch_send_execute_supports_pure_image(client, app, monkeypatc
 
     response = client.post(
         "/api/admin/user-ops/batch-send/execute",
-        json={
-            "selection_mode": "manual",
-            "selected_ids": [items_by_external["wm_send_eligible"]["id"]],
-            "images": [{"file_name": "only-image.png", "data_url": _test_image_data_url("only")}],
-            "confirm": True,
-        },
+        data=_build_batch_send_form_data(
+            selection_mode="manual",
+            selected_ids=[items_by_external["wm_send_eligible"]["id"]],
+            confirm=True,
+            images=[("only-image.png", _test_png_bytes(), "image/png")],
+        ),
+        content_type="multipart/form-data",
     )
     payload = response.get_json()
 
@@ -1398,28 +1588,36 @@ def test_user_ops_legacy_ui_includes_batch_send_modal_and_drawers(client):
     assert 'id="preview-message-summary"' in html
     assert 'id="customer-detail-grid"' in html
     assert 'id="customer-timeline-list"' in html
+    assert 'id="send-record-detail-panel"' in html
+    assert 'id="send-record-detail-summary"' in html
+    assert 'id="send-record-task-results"' in html
+    assert 'id="refresh-send-record-status-btn"' in html
+    assert 'id="back-send-record-list-btn"' in html
     assert "发送内容" in html
     assert "包含免打扰用户" in html
     assert "附加图片" in html
-    assert "最多 9 张" in html
+    assert "最多 3 张" in html
 
 
 def test_user_ops_batch_send_modal_removes_large_stats_and_sender_bucket_from_main_ui(client):
     response = client.get("/admin/user-ops/ui")
     html = response.get_data(as_text=True)
+    modal_start = html.index('id="batch-send-modal-backdrop"')
+    modal_end = html.index("<script>", modal_start)
+    modal_section = html[modal_start:modal_end]
 
     assert response.status_code == 200
-    assert "选中人数" not in html
-    assert "跳过人数" not in html
-    assert "发送人分桶" not in html
-    assert "免打扰开关" not in html
-    assert 'id="preview-owner-buckets"' not in html
-    assert 'id="preview-selected-count"' not in html
-    assert 'id="preview-skipped-count"' not in html
-    assert 'id="preview-owner-count"' not in html
-    assert 'id="preview-eligible-count"' in html
-    assert 'class="panel-soft preview-panel"' in html
-    assert html.index('id="include-dnd-toggle"') < html.index('id="preview-target-body"')
+    assert "选中人数" not in modal_section
+    assert "跳过人数" not in modal_section
+    assert "发送人分桶" not in modal_section
+    assert "免打扰开关" not in modal_section
+    assert 'id="preview-owner-buckets"' not in modal_section
+    assert 'id="preview-selected-count"' not in modal_section
+    assert 'id="preview-skipped-count"' not in modal_section
+    assert 'id="preview-owner-count"' not in modal_section
+    assert 'id="preview-eligible-count"' in modal_section
+    assert 'class="panel-soft preview-panel"' in modal_section
+    assert modal_section.index('id="include-dnd-toggle"') < modal_section.index('id="preview-target-body"')
 
 
 def test_user_ops_detail_column_is_removed_and_dnd_action_copy_is_simplified(client):

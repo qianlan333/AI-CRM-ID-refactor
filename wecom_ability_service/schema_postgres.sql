@@ -254,6 +254,7 @@ CREATE TABLE IF NOT EXISTS user_ops_send_records (
     id BIGSERIAL PRIMARY KEY,
     task_type TEXT NOT NULL DEFAULT 'private_message',
     outbound_task_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    task_results_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     selected_count INTEGER NOT NULL DEFAULT 0,
     eligible_count INTEGER NOT NULL DEFAULT 0,
     sent_count INTEGER NOT NULL DEFAULT 0,
@@ -266,6 +267,7 @@ CREATE TABLE IF NOT EXISTS user_ops_send_records (
     filter_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     operator TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'created',
+    last_status_sync_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

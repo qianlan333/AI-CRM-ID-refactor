@@ -1,24 +1,39 @@
 from __future__ import annotations
 
+import base64
+import imghdr
+import json
+
 from flask import Response, jsonify, render_template, request
 
 from ..domains.routing_config import DEFAULT_SALES_ROUTE_OWNER_USERID
+from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
 from ..services import (
     backfill_owner_class_terms_into_lead_pool,
     execute_user_ops_batch_send,
     export_user_ops_pool,
     get_user_ops_overview,
+    get_user_ops_send_record_detail,
     import_activation_status_source,
     import_mobile_class_term_source,
     list_user_ops_history,
     list_user_ops_pool,
     list_user_ops_send_records,
     preview_user_ops_batch_send,
+    refresh_user_ops_send_record_status,
     run_due_user_ops_deferred_jobs,
     set_user_ops_do_not_disturb,
 )
 from ..wecom_client import WeComClientError
 from .common import _build_excel_xml, _coerce_request_bool, _wecom_error_response
+
+MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
 
 
 def _page_filters_from_request_args() -> dict[str, str]:
@@ -35,6 +50,63 @@ def _page_filters_from_request_args() -> dict[str, str]:
         "huangxiaocan_activation_state": request.args.get("huangxiaocan_activation_state", "").strip(),
         "query": request.args.get("query", "").strip(),
     }
+
+
+def _parse_json_form_field(field_name: str, default):
+    raw = str(request.form.get(field_name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be valid json") from exc
+
+
+def _normalize_one_time_batch_send_images():
+    files = [item for item in list(request.files.getlist("images") or []) if getattr(item, "filename", "")]
+    if len(files) > MAX_PRIVATE_MESSAGE_IMAGES:
+        raise ValueError(f"at most {MAX_PRIVATE_MESSAGE_IMAGES} images are allowed")
+
+    images = []
+    for index, file_storage in enumerate(files, start=1):
+        file_name = str(getattr(file_storage, "filename", "") or f"image-{index}.png").strip() or f"image-{index}.png"
+        mime_type = str(getattr(file_storage, "mimetype", "") or "").strip().lower()
+        if not mime_type.startswith("image/"):
+            raise ValueError("only image files are allowed")
+        file_bytes = file_storage.read()
+        if len(file_bytes) > MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES:
+            raise ValueError("image file is too large (max 5MB)")
+        detected_type = ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES.get(str(imghdr.what(None, h=file_bytes) or "").lower(), "")
+        if not detected_type:
+            raise ValueError("only image files are allowed")
+        images.append(
+            {
+                "file_name": file_name,
+                "content_type": detected_type,
+                "data_base64": base64.b64encode(file_bytes).decode("ascii"),
+            }
+        )
+    return images
+
+
+def _batch_send_payload_from_request() -> dict:
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+
+    payload = {
+        "selection_mode": str(request.form.get("selection_mode") or "").strip(),
+        "content": str(request.form.get("content") or "").strip(),
+        "include_do_not_disturb": _coerce_request_bool(request.form.get("include_do_not_disturb"), default=False),
+        "confirm": _coerce_request_bool(request.form.get("confirm"), default=False),
+        "operator": str(request.form.get("operator") or "").strip(),
+        "filters": _parse_json_form_field("filters_json", {}),
+        "selected_ids": _parse_json_form_field("selected_ids_json", []),
+        "excluded_ids": _parse_json_form_field("excluded_ids_json", []),
+    }
+    images = _normalize_one_time_batch_send_images()
+    if images:
+        payload["images"] = images
+    return payload
 
 
 def admin_user_ops_overview():
@@ -211,8 +283,8 @@ def admin_user_ops_do_not_disturb():
 
 
 def admin_user_ops_batch_send_preview():
-    payload_json = request.get_json(silent=True) or {}
     try:
+        payload_json = _batch_send_payload_from_request()
         payload = preview_user_ops_batch_send(payload_json)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -220,8 +292,8 @@ def admin_user_ops_batch_send_preview():
 
 
 def admin_user_ops_batch_send_execute():
-    payload_json = request.get_json(silent=True) or {}
     try:
+        payload_json = _batch_send_payload_from_request()
         payload = execute_user_ops_batch_send(payload_json)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -237,6 +309,22 @@ def admin_user_ops_send_records():
     except ValueError:
         return jsonify({"ok": False, "error": "limit and offset must be integers"}), 400
     payload = list_user_ops_send_records(limit=limit, offset=offset)
+    return jsonify({"ok": True, **payload})
+
+
+def admin_user_ops_send_record_detail(record_id: int):
+    try:
+        payload = get_user_ops_send_record_detail(record_id)
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, **payload})
+
+
+def admin_user_ops_send_record_refresh(record_id: int):
+    try:
+        payload = refresh_user_ops_send_record_status(record_id)
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
     return jsonify({"ok": True, **payload})
 
 
@@ -261,4 +349,6 @@ def register_routes(bp):
     bp.route('/api/admin/user-ops/batch-send/preview', methods=['POST'])(admin_user_ops_batch_send_preview)
     bp.route('/api/admin/user-ops/batch-send/execute', methods=['POST'])(admin_user_ops_batch_send_execute)
     bp.route('/api/admin/user-ops/send-records', methods=['GET'])(admin_user_ops_send_records)
+    bp.route('/api/admin/user-ops/send-records/<int:record_id>', methods=['GET'])(admin_user_ops_send_record_detail)
+    bp.route('/api/admin/user-ops/send-records/<int:record_id>/refresh', methods=['POST'])(admin_user_ops_send_record_refresh)
     bp.route('/admin/user-ops/ui', methods=['GET'])(admin_user_ops_ui)

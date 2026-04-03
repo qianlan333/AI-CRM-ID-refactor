@@ -254,6 +254,7 @@ CREATE TABLE IF NOT EXISTS user_ops_send_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_type TEXT NOT NULL DEFAULT 'private_message',
     outbound_task_ids_json TEXT NOT NULL DEFAULT '[]',
+    task_results_json TEXT NOT NULL DEFAULT '[]',
     selected_count INTEGER NOT NULL DEFAULT 0,
     eligible_count INTEGER NOT NULL DEFAULT 0,
     sent_count INTEGER NOT NULL DEFAULT 0,
@@ -266,6 +267,7 @@ CREATE TABLE IF NOT EXISTS user_ops_send_records (
     filter_snapshot_json TEXT NOT NULL DEFAULT '{}',
     operator TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'created',
+    last_status_sync_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

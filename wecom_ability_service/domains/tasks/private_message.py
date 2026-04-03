@@ -5,7 +5,7 @@ import mimetypes
 from copy import deepcopy
 from typing import Any, Callable
 
-MAX_PRIVATE_MESSAGE_IMAGES = 9
+MAX_PRIVATE_MESSAGE_IMAGES = 3
 
 
 def _normalize_str(value: Any) -> str:

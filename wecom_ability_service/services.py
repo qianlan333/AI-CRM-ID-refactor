@@ -597,6 +597,14 @@ def list_user_ops_send_records(*, limit: int = 20, offset: int = 0) -> dict[str,
     return user_ops_page_service.list_user_ops_send_records(limit=limit, offset=offset)
 
 
+def get_user_ops_send_record_detail(record_id: int) -> dict[str, Any]:
+    return user_ops_page_service.get_user_ops_send_record_detail(record_id)
+
+
+def refresh_user_ops_send_record_status(record_id: int) -> dict[str, Any]:
+    return user_ops_page_service.refresh_user_ops_send_record_status(record_id)
+
+
 def write_user_ops_lead_pool_history(
     *,
     mobile: str,
