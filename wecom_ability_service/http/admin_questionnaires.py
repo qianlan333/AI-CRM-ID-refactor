@@ -47,7 +47,7 @@ def admin_questionnaires_preflight():
 
 
 def admin_questionnaires_ui():
-    return _deprecated_admin_redirect("api.admin_console_legacy_questionnaires")
+    return _deprecated_admin_redirect("api.admin_console_questionnaires")
 
 
 def admin_create_questionnaire():

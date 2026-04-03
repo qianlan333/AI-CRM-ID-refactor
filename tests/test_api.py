@@ -996,41 +996,68 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     assert "status_fields.operation_flags" in ui_text
 
 
-def test_admin_questionnaire_ui_redirects_to_legacy_ui(client):
+def test_admin_questionnaire_ui_redirects_to_management_page(client):
     response = client.get("/admin/questionnaires/ui", follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/_legacy/questionnaires")
+    assert response.headers["Location"].endswith("/admin/questionnaires")
     assert response.headers["X-Admin-Deprecated"] == "true"
 
 
-def test_admin_questionnaire_shell_page_exists(client):
+def test_admin_questionnaire_legacy_ui_redirects_to_management_page(client):
+    response = client.get("/admin/_legacy/questionnaires", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/questionnaires")
+    assert response.headers["X-Admin-Deprecated"] == "true"
+
+
+def test_admin_questionnaire_management_page_exists(client):
     response = client.get("/admin/questionnaires")
     text = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert "CRM Console" in text
-    assert "问卷中心" in text
-    assert "环境检查" in text
-    assert "问卷列表" in text
+    assert "问卷管理" in text
+    assert "创建新问卷" in text
+    assert "问卷名称" in text
+    assert "创建时间" in text
+    assert "提交数" in text
+    assert '<div class="workspace">' not in text
 
 
-def test_admin_questionnaire_legacy_ui_contains_tag_picker_fallback(client):
-    response = client.get("/admin/_legacy/questionnaires")
+def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client):
+    response = client.get("/admin/questionnaires/new")
     text = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert "创建新问卷" in text
-    assert "问卷创建时间" in text
-    assert "分享" in text
-    assert "下载数据" in text
+    assert "返回问卷管理" in text
+    assert "新建问卷" in text
+    assert "保存问卷" in text
+    assert "重置当前" in text
+    assert "题型 / 组件区" in text
     assert "手工填写 tag_id 兜底" in text
     assert "企微标签加载失败，可稍后重试或手工填写 tag_id" in text
-    assert "环境检查" not in text
-    assert "最近提交调试" not in text
+    assert '<div id="questionnaire-list"' not in text
 
 
-def test_admin_questionnaire_legacy_ui_script_has_valid_javascript(client):
-    response = client.get("/admin/_legacy/questionnaires")
+def test_admin_questionnaire_editor_existing_page_contains_editor(client):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    questionnaire_id = create_response.get_json()["questionnaire"]["id"]
+
+    response = client.get(f"/admin/questionnaires/{questionnaire_id}")
+    text = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "返回问卷管理" in text
+    assert "编辑问卷" in text
+    assert "分享" in text
+    assert "下载数据" in text
+    assert "删除问卷" in text
+    assert '<div id="questionnaire-list"' not in text
+
+
+def test_admin_questionnaire_editor_page_script_has_valid_javascript(client):
+    response = client.get("/admin/questionnaires/new")
     text = response.get_data(as_text=True)
     match = re.search(r"<script>(.*?)</script>", text, re.S)
     assert match is not None

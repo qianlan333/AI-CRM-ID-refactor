@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>问卷后台</title>
+  <title>{{ editor_page_title or "问卷编辑" }}</title>
   <style>
     :root {
       color-scheme: light;
@@ -47,6 +47,43 @@
     button:disabled { opacity: 0.52; cursor: not-allowed; transform: none; box-shadow: none; }
     .hidden { display: none !important; }
     .shell { min-height: 100vh; padding: 18px; }
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 auto 14px;
+      max-width: 1600px;
+      padding: 6px 4px 0;
+    }
+    .page-copy {
+      min-width: 0;
+    }
+    .page-head-title {
+      margin: 8px 0 0;
+      font-size: clamp(30px, 3.2vw, 42px);
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+    .page-head-subtitle {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .back-link::before {
+      content: "←";
+      font-size: 14px;
+    }
     .topbar {
       position: sticky;
       top: 0;
@@ -824,17 +861,15 @@
     }
     @media (max-width: 980px) {
       .shell { padding: 14px; }
+      .page-head {
+        padding-top: 0;
+        flex-direction: column;
+      }
       .topbar {
         position: static;
         padding: 12px 14px;
         border-radius: 16px;
       }
-      .management-toolbar,
-      .management-filters { flex-direction: column; }
-      .management-actions { justify-content: stretch; }
-      .management-actions .btn { flex: 1 1 160px; }
-      .management-filter.search,
-      .management-filter.status { flex: 1 1 auto; }
       .workspace { grid-template-columns: 1fr; }
       .sidebar {
         position: static;
@@ -851,9 +886,17 @@
 </head>
 <body>
   <div class="shell">
+    <section class="page-head">
+      <div class="page-copy">
+        <a id="back-link" class="back-link" href="{{ editor_back_href or '/admin/questionnaires' }}">返回问卷管理</a>
+        <h1 id="editor-page-title" class="page-head-title">{{ editor_heading or "问卷编辑" }}</h1>
+        <p id="editor-page-subtitle" class="page-head-subtitle">{{ editor_subtitle or "维护当前问卷的题目、分数规则和发布设置。" }}</p>
+      </div>
+      <div id="editor-secondary-actions" class="header-actions"></div>
+    </section>
     <header class="topbar">
       <div class="topbar-meta-wrap">
-        <h1 id="topbar-title">新建问卷</h1>
+        <h1 id="topbar-title">{{ editor_heading or "新建问卷" }}</h1>
         <span id="draft-indicator" class="draft-indicator hidden">未保存修改</span>
       </div>
       <div class="topbar-actions">
@@ -861,32 +904,6 @@
         <button id="save-btn" type="button" class="btn primary">保存问卷</button>
       </div>
     </header>
-
-    <section class="card management-card">
-      <div class="management-toolbar">
-        <div>
-          <div class="eyebrow">问卷管理</div>
-          <h2>问卷管理页</h2>
-        </div>
-        <div class="management-actions">
-          <button id="create-btn" type="button" class="btn primary emphasis">创建新问卷</button>
-          <button id="reload-list-btn" type="button" class="btn ghost">刷新</button>
-        </div>
-      </div>
-      <div class="management-filters">
-        <label class="management-filter search">搜索问卷
-          <input id="list-search" type="text" placeholder="按问卷名称搜索">
-        </label>
-        <label class="management-filter status">状态筛选
-          <select id="status-filter">
-            <option value="all">全部</option>
-            <option value="enabled">启用中</option>
-            <option value="disabled">已停用</option>
-          </select>
-        </label>
-      </div>
-      <div id="questionnaire-list" class="management-table-wrap"></div>
-    </section>
 
     <div class="workspace">
       <aside class="sidebar">
@@ -994,6 +1011,14 @@
     <div id="toast" class="toast hidden"></div>
   </div>
   <script>
+    const editorConfig = {
+      mode: {{ (editor_mode or 'new')|tojson }},
+      heading: {{ (editor_heading or '问卷编辑')|tojson }},
+      subtitle: {{ (editor_subtitle or '维护当前问卷的题目、分数规则和发布设置。')|tojson }},
+      backHref: {{ (editor_back_href or '/admin/questionnaires')|tojson }},
+      initialQuestionnaire: {{ initial_questionnaire|tojson }},
+      initialQuestionnaireId: {{ initial_questionnaire_id|tojson }},
+    };
     const listEl = document.getElementById('questionnaire-list');
     const listSearchEl = document.getElementById('list-search');
     const statusFilterEl = document.getElementById('status-filter');
@@ -1003,6 +1028,10 @@
     const inspectorBodyEl = document.getElementById('inspector-body');
     const inspectorTitleEl = document.getElementById('inspector-title');
     const inspectorSubtitleEl = document.getElementById('inspector-subtitle');
+    const backLinkEl = document.getElementById('back-link');
+    const editorPageTitleEl = document.getElementById('editor-page-title');
+    const editorPageSubtitleEl = document.getElementById('editor-page-subtitle');
+    const editorSecondaryActionsEl = document.getElementById('editor-secondary-actions');
     const topbarTitleEl = document.getElementById('topbar-title');
     const draftIndicatorEl = document.getElementById('draft-indicator');
     const tagCatalogMessageEl = document.getElementById('tag-catalog-message');
@@ -1022,6 +1051,7 @@
       availableTagMap: new Map(),
       questionnaire: null,
       currentId: null,
+      editorMode: editorConfig.mode || 'new',
       selection: { kind: 'questionnaire' },
       ruleMode: false,
       lastRuleKey: '',
@@ -1531,6 +1561,7 @@
     }
 
     async function loadList() {
+      if (!listEl) return;
       state.loadingList = true;
       listEl.innerHTML = '<div class="empty-state">问卷列表加载中...</div>';
       try {
@@ -1573,10 +1604,11 @@
     async function deleteQuestionnaireItem(item) {
       if (!window.confirm(`确认删除问卷「${item.name}」吗？`)) return;
       await fetchJson(`/api/admin/questionnaires/${item.id}`, { method: 'DELETE' });
-      showToast('问卷已删除');
       if (state.currentId === item.id) {
-        resetDraft();
+        window.location.assign(editorConfig.backHref);
+        return;
       }
+      showToast('问卷已删除');
       await loadList();
     }
 
@@ -1598,6 +1630,7 @@
     }
 
     function renderManagementTable() {
+      if (!listEl) return;
       if (!state.list.length) {
         listEl.innerHTML = '<div class="empty-state">还没有问卷，点击「创建新问卷」开始搭建。</div>';
         return;
@@ -1661,12 +1694,43 @@
     }
 
     function renderList() {
+      if (!listEl) return;
       renderManagementTable();
     }
 
+    function renderEditorSecondaryActions() {
+      if (!editorSecondaryActionsEl) return;
+      if (!state.currentId) {
+        editorSecondaryActionsEl.innerHTML = '';
+        return;
+      }
+      editorSecondaryActionsEl.innerHTML = `
+        <button id="editor-share-btn" type="button" class="btn ghost">分享</button>
+        <button id="editor-export-btn" type="button" class="btn ghost">下载数据</button>
+      `;
+      const shareBtn = document.getElementById('editor-share-btn');
+      const exportBtn = document.getElementById('editor-export-btn');
+      shareBtn?.addEventListener('click', () => {
+        copyText(buildPublicUrl(), '分享链接已复制');
+      });
+      exportBtn?.addEventListener('click', () => {
+        window.open(`/api/admin/questionnaires/${state.currentId}/export`, '_blank');
+      });
+    }
+
     function renderTopbar() {
-      const title = state.questionnaire.name || state.questionnaire.title || '新建问卷';
+      const title = state.questionnaire.name || state.questionnaire.title || (state.currentId ? '编辑问卷' : '新建问卷');
       topbarTitleEl.textContent = title;
+      if (editorPageTitleEl) {
+        editorPageTitleEl.textContent = state.currentId ? '编辑问卷' : '新建问卷';
+      }
+      if (editorPageSubtitleEl) {
+        editorPageSubtitleEl.textContent = state.currentId
+          ? '维护当前问卷的题目、分数规则和发布设置。'
+          : '从空白模板开始搭建题目、标签和分数规则。';
+      }
+      document.title = `${state.currentId ? '编辑问卷' : '新建问卷'} · ${title || '问卷编辑'}`;
+      renderEditorSecondaryActions();
       updateDraftIndicator();
     }
 
@@ -2124,11 +2188,20 @@
         body: JSON.stringify(payload),
       });
       resetDraft(data.questionnaire);
+      state.editorMode = state.currentId ? 'edit' : 'new';
+      if (!wasEditing && state.currentId) {
+        window.history.replaceState({}, '', `/admin/questionnaires/${state.currentId}`);
+      }
       await loadList();
       showToast(wasEditing ? '问卷已更新' : '问卷已创建');
     }
 
-    document.getElementById('create-btn').addEventListener('click', () => startNewQuestionnaire());
+    if (backLinkEl) {
+      backLinkEl.addEventListener('click', (event) => {
+        if (confirmDiscardChanges()) return;
+        event.preventDefault();
+      });
+    }
     document.getElementById('reset-btn').addEventListener('click', () => {
       if (!confirmDiscardChanges()) return;
       if (state.currentId) {
@@ -2138,15 +2211,21 @@
       resetDraft();
     });
     document.getElementById('save-btn').addEventListener('click', () => saveQuestionnaire().catch((error) => showToast(error.message || '保存失败，请检查当前配置后重试', true)));
-    document.getElementById('reload-list-btn').addEventListener('click', () => loadList());
-    listSearchEl.addEventListener('input', (event) => {
-      state.listSearch = event.target.value || '';
-      renderList();
-    });
-    statusFilterEl.addEventListener('change', (event) => {
-      state.statusFilter = event.target.value || 'all';
-      renderList();
-    });
+    if (document.getElementById('reload-list-btn')) {
+      document.getElementById('reload-list-btn').addEventListener('click', () => loadList());
+    }
+    if (listSearchEl) {
+      listSearchEl.addEventListener('input', (event) => {
+        state.listSearch = event.target.value || '';
+        renderList();
+      });
+    }
+    if (statusFilterEl) {
+      statusFilterEl.addEventListener('change', (event) => {
+        state.statusFilter = event.target.value || 'all';
+        renderList();
+      });
+    }
     document.getElementById('add-single').addEventListener('click', () => addQuestion('single_choice'));
     document.getElementById('add-multi').addEventListener('click', () => addQuestion('multi_choice'));
     document.getElementById('add-textarea').addEventListener('click', () => addQuestion('textarea'));
@@ -2180,11 +2259,14 @@
       if (event.target === drawerOverlayEl) closeDrawer();
     });
 
-    resetDraft();
-    Promise.all([
-      loadAvailableTags(),
-      loadList(),
-    ]).then(() => {
+    if (editorConfig.initialQuestionnaire) {
+      resetDraft(editorConfig.initialQuestionnaire);
+    } else {
+      resetDraft();
+    }
+    const bootTasks = [loadAvailableTags()];
+    if (listEl) bootTasks.push(loadList());
+    Promise.all(bootTasks).then(() => {
       renderWorkspace();
     }).catch((error) => {
       showToast(error.message || '页面初始化失败，请刷新后重试', true);
