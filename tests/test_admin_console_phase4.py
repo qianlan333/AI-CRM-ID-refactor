@@ -265,28 +265,29 @@ def _seed_phase4_data(app) -> None:
         db.commit()
 
 
-def test_admin_customers_pages_render_with_tabs(app, client):
+def test_admin_customers_pages_render_as_search_and_profile(app, client):
     _seed_phase4_data(app)
 
     list_response = client.get("/admin/customers")
     detail_response = client.get("/admin/customers/ext-1?tab=questionnaires")
-    tasks_response = client.get("/admin/customers/ext-1?tab=tasks")
 
     assert list_response.status_code == 200
-    assert "客户列表" in list_response.get_data(as_text=True)
-    assert "进入详情" in list_response.get_data(as_text=True)
+    list_html = list_response.get_data(as_text=True)
+    assert "客户查找" in list_html
+    assert "查看档案" in list_html
+    assert "name=\"status\"" not in list_html
+    assert "name=\"tag\"" not in list_html
+    assert "最近消息" not in list_html
+    assert "更新时间" not in list_html
 
     detail_html = detail_response.get_data(as_text=True)
     assert detail_response.status_code == 200
+    assert "客户档案" in detail_html
+    assert "实时标签" in detail_html
     assert "问卷记录" in detail_html
-    assert "提交处理状态" in detail_html
-    assert "tag-999" in detail_html
-
-    tasks_html = tasks_response.get_data(as_text=True)
-    assert tasks_response.status_code == 200
-    assert "创建触达任务" in tasks_html
-    assert "最近任务" in tasks_html
-    assert "task-1" in tasks_html
+    assert "聊天记录" in detail_html
+    assert "互动记录" not in detail_html
+    assert "高级信息" not in detail_html
 
 
 def test_admin_customer_detail_tag_preview_is_dry_run(app, client):

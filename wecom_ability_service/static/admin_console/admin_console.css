@@ -1022,6 +1022,105 @@ code {
   margin-top: 20px;
 }
 
+.admin-toolbar--pager {
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+.admin-customer-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-customer-name {
+  font-weight: 800;
+}
+
+.admin-customer-subtext {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.admin-profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.admin-profile-field span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-profile-field strong {
+  font-size: 16px;
+}
+
+.admin-profile-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-profile-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f3eadb;
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.admin-profile-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-profile-message {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.admin-profile-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.admin-profile-message-content {
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.admin-code-block {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: #f9f6ef;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+
 @media (max-width: 1240px) {
   .admin-card-grid,
   .admin-card-grid--triple,
@@ -1030,7 +1129,8 @@ code {
   .admin-grid-2,
   .admin-quick-links,
   .admin-split-grid,
-  .admin-todo-grid {
+  .admin-todo-grid,
+  .admin-profile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1071,7 +1171,8 @@ code {
   .admin-grid-2,
   .admin-quick-links,
   .admin-split-grid,
-  .admin-todo-grid {
+  .admin-todo-grid,
+  .admin-profile-grid {
     grid-template-columns: 1fr;
   }
 
