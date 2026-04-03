@@ -18,10 +18,10 @@ TARGET_JOBS_ACTION = "jobs_console_action"
 
 JOB_TABS = (
     {"key": "overview", "label": "概览"},
-    {"key": "archive", "label": "Archive Sync"},
-    {"key": "callbacks", "label": "Callbacks"},
-    {"key": "batches", "label": "Message Batches"},
-    {"key": "deferred", "label": "Deferred Jobs"},
+    {"key": "archive", "label": "聊天同步"},
+    {"key": "callbacks", "label": "回调状态"},
+    {"key": "batches", "label": "消息批次"},
+    {"key": "deferred", "label": "待处理作业"},
 )
 
 
@@ -56,6 +56,25 @@ def _status_tone(status: str) -> str:
     if normalized_status in {"pending", "running", "processing", "conflict", "skipped"}:
         return "warn"
     return "neutral"
+
+
+def _status_label(status: Any) -> str:
+    mapping = {
+        "success": "成功",
+        "failed": "失败",
+        "pending": "待处理",
+        "processing": "处理中",
+        "running": "运行中",
+        "conflict": "冲突",
+        "skipped": "已跳过",
+        "acked": "已确认",
+        "enabled": "已开启",
+        "disabled": "未开启",
+        "healthy": "正常",
+        "never": "暂无记录",
+    }
+    normalized = _normalized_text(status).lower()
+    return mapping.get(normalized, _normalized_text(status) or "-")
 
 
 def _batch_status_options() -> list[str]:
@@ -130,7 +149,7 @@ def _sync_row_view(row: dict[str, Any]) -> dict[str, Any]:
     status = _normalized_text(row.get("status")) or "unknown"
     return {
         **row,
-        "status_label": status.upper(),
+        "status_label": _status_label(status),
         "status_tone": _status_tone(status),
         "finished_or_created_at": _normalized_text(row.get("finished_at")) or _normalized_text(row.get("created_at")) or "-",
     }
@@ -141,7 +160,8 @@ def _callback_row_view(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
         "status_tone": _status_tone(status),
-        "event_label": _normalized_text(row.get("change_type")) or _normalized_text(row.get("event_type")) or "callback",
+        "process_status_label": _status_label(status),
+        "event_label": _normalized_text(row.get("change_type")) or _normalized_text(row.get("event_type")) or "回调事件",
     }
 
 
@@ -149,6 +169,7 @@ def _batch_row_view(row: dict[str, Any]) -> dict[str, Any]:
     status = _normalized_text(row.get("status")) or "pending"
     return {
         **row,
+        "status_label": _status_label(status),
         "status_tone": _status_tone(status),
         "window_label": f"{_normalized_text(row.get('window_start'))} ~ {_normalized_text(row.get('window_end'))}",
     }
@@ -158,6 +179,7 @@ def _deferred_row_view(row: dict[str, Any]) -> dict[str, Any]:
     status = _normalized_text(row.get("status")) or "pending"
     return {
         **row,
+        "status_label": _status_label(status),
         "status_tone": _status_tone(status),
     }
 
@@ -167,15 +189,15 @@ def _build_pending_message_batches_group() -> dict[str, Any]:
     total_count = len(rows)
     return {
         "key": "pending_message_batches",
-        "title": "Pending Message Batches",
+        "title": "待确认消息批次",
         "count": total_count,
-        "description": "待确认的 archive message batches。",
+        "description": "这里展示还没有确认处理的消息批次。",
         "tone": "warn" if total_count else "ok",
         "items": [
             {
-                "title": f"Batch #{item['id']}",
+                "title": f"消息批次 #{item['id']}",
                 "meta": item["window_label"],
-                "detail": f"消息 {int(item.get('message_count') or 0)} 条 · 状态 {item.get('status', 'pending')}",
+                "detail": f"消息 {int(item.get('message_count') or 0)} 条 · 状态 {_status_label(item.get('status', 'pending'))}",
             }
             for item in rows
         ],
@@ -193,26 +215,26 @@ def _build_deferred_jobs_group() -> dict[str, Any]:
         items.append(
             {
                 "title": f"{total_pending} 个待执行任务",
-                "meta": "status = pending",
-                "detail": "来自 user_ops_deferred_jobs",
+                "meta": "等待执行",
+                "detail": "需要按计划继续处理",
             }
         )
     if total_failed:
         items.append(
             {
                 "title": f"{total_failed} 个失败任务",
-                "meta": "status = failed",
+                "meta": "执行失败",
                 "detail": "需要人工复查或重试",
             }
         )
     return {
         "key": "deferred_jobs",
-        "title": "Deferred Jobs",
+        "title": "待处理作业",
         "count": total_pending + total_failed,
-        "description": "user_ops 延迟任务待处理与失败项。",
+        "description": "这里展示待处理和失败的作业。",
         "tone": "danger" if total_failed else ("warn" if total_pending else "ok"),
         "items": items,
-        "empty_title": "暂无 deferred jobs 异常",
+        "empty_title": "暂无待处理作业异常",
         "href": "/admin/jobs?tab=deferred&job_status=pending",
     }
 
@@ -221,19 +243,19 @@ def _build_failed_sync_group() -> dict[str, Any]:
     rows = [_sync_row_view(item) for item in repo.list_sync_runs(status="failed", limit=5)]
     return {
         "key": "failed_sync_runs",
-        "title": "Failed Sync Runs",
+        "title": "同步失败",
         "count": len(rows),
-        "description": "最近失败的 archive sync 任务。",
+        "description": "这里展示最近失败的聊天同步。",
         "tone": "danger" if rows else "ok",
         "items": [
             {
-                "title": f"Sync #{row['id']}",
+                "title": f"同步任务 #{row['id']}",
                 "meta": row["finished_or_created_at"],
-                "detail": _normalized_text(row.get("error_message")) or "archive sync failed",
+                "detail": _normalized_text(row.get("error_message")) or "聊天同步失败",
             }
             for row in rows
         ],
-        "empty_title": "最近没有 sync 失败",
+        "empty_title": "最近没有同步失败",
         "href": "/admin/jobs?tab=archive&archive_status=failed",
     }
 
@@ -242,19 +264,19 @@ def _build_failed_callbacks_group() -> dict[str, Any]:
     rows = [_callback_row_view(item) for item in repo.list_callback_logs(process_status="failed", limit=5)]
     return {
         "key": "failed_callbacks",
-        "title": "Failed Callbacks",
+        "title": "回调失败",
         "count": len(rows),
         "description": "最近失败的回调处理记录。",
         "tone": "danger" if rows else "ok",
         "items": [
             {
                 "title": item["event_label"],
-                "meta": _normalized_text(item.get("updated_at")) or _normalized_text(item.get("created_at")) or "Never",
-                "detail": _normalized_text(item.get("error_message")) or _normalized_text(item.get("external_userid")) or "callback processing failed",
+                "meta": _normalized_text(item.get("updated_at")) or _normalized_text(item.get("created_at")) or "暂无时间",
+                "detail": _normalized_text(item.get("error_message")) or _normalized_text(item.get("external_userid")) or "回调处理失败",
             }
             for item in rows
         ],
-        "empty_title": "最近没有 callback 失败",
+        "empty_title": "最近没有回调失败",
         "href": "/admin/jobs?tab=callbacks&callback_status=failed",
     }
 
@@ -361,29 +383,29 @@ def build_jobs_payload(args: Any) -> dict[str, Any]:
 
     summary_cards = [
         {
-            "label": "Archive Sync",
-            "value": (_normalized_text(last_sync_run.get("status")) or "never").upper(),
+            "label": "聊天同步",
+            "value": _status_label(_normalized_text(last_sync_run.get("status")) or "never"),
             "description": (
-                f"run #{last_sync_run.get('id') or '-'} · {_normalized_text(last_sync_run.get('finished_at')) or _normalized_text(last_sync_run.get('created_at')) or 'Never'}"
+                f"任务 #{last_sync_run.get('id') or '-'} · {_normalized_text(last_sync_run.get('finished_at')) or _normalized_text(last_sync_run.get('created_at')) or '暂无记录'}"
             ),
             "tone": _status_tone(_normalized_text(last_sync_run.get("status")) or "unknown"),
         },
         {
-            "label": "Callbacks",
-            "value": "Enabled" if _callback_enabled() else "Disabled",
-            "description": f"failed {int(callback_counts.get('failed_count') or 0)} · async {'on' if bool(current_app.config.get('CALLBACK_ASYNC_ENABLED', True)) else 'off'}",
+            "label": "回调状态",
+            "value": "已开启" if _callback_enabled() else "未开启",
+            "description": f"失败 {int(callback_counts.get('failed_count') or 0)} · 异步{'已开启' if bool(current_app.config.get('CALLBACK_ASYNC_ENABLED', True)) else '未开启'}",
             "tone": "ok" if _callback_enabled() else "danger",
         },
         {
-            "label": "Message Batches",
+            "label": "消息批次",
             "value": int(batch_counts.get("pending_count") or 0),
-            "description": f"pending · acked {int(batch_counts.get('acked_count') or 0)}",
+            "description": f"待处理 · 已确认 {int(batch_counts.get('acked_count') or 0)}",
             "tone": "warn" if int(batch_counts.get("pending_count") or 0) else "ok",
         },
         {
-            "label": "Deferred Jobs",
+            "label": "待处理作业",
             "value": int(deferred_counts.get("pending_count") or 0),
-            "description": f"pending · failed {int(deferred_counts.get('failed_count') or 0)}",
+            "description": f"待处理 · 失败 {int(deferred_counts.get('failed_count') or 0)}",
             "tone": "danger" if int(deferred_counts.get("failed_count") or 0) else ("warn" if int(deferred_counts.get("pending_count") or 0) else "ok"),
         },
     ]
@@ -507,7 +529,7 @@ def execute_jobs_action(*, action: str, form: Any, operator: str) -> dict[str, A
     if normalized_action == "run-archive-sync":
         request_payload = _archive_sync_request_payload(form)
         if not request_payload["start_time"] or not request_payload["end_time"] or not request_payload["owner_userid"]:
-            raise ValueError("start_time, end_time and owner_userid are required")
+            raise ValueError("开始时间、结束时间和负责人账号不能为空")
         if not _normalized_bool(form.get("confirm")):
             preview = {
                 "ok": True,
@@ -535,12 +557,12 @@ def execute_jobs_action(*, action: str, form: Any, operator: str) -> dict[str, A
 
     if normalized_action == "ack-message-batch":
         if not _normalized_bool(form.get("confirm")):
-            raise ValueError("confirm is required before acking message batch")
+            raise ValueError("确认消息批次前请先勾选确认")
         batch_id = _normalized_int(form.get("batch_id"), default=0, minimum=1, maximum=10**9)
         ack_note = _normalized_text(form.get("ack_note"))
         payload = ack_message_batch(batch_id, ack_note=ack_note, acked_by=operator_value)
         if not payload:
-            raise ValueError("message batch not found")
+            raise ValueError("未找到对应消息批次")
         result = dict(payload)
         _audit_log(
             operator=operator_value,
@@ -553,7 +575,7 @@ def execute_jobs_action(*, action: str, form: Any, operator: str) -> dict[str, A
 
     if normalized_action == "run-deferred-jobs":
         if not _normalized_bool(form.get("confirm")):
-            raise ValueError("confirm is required before running deferred jobs")
+            raise ValueError("执行待处理作业前请先勾选确认")
         limit = _normalized_int(form.get("limit"), default=20)
         payload = run_due_user_ops_deferred_jobs(limit=limit)
         _audit_log(
@@ -565,4 +587,4 @@ def execute_jobs_action(*, action: str, form: Any, operator: str) -> dict[str, A
         )
         return payload
 
-    raise ValueError("unsupported jobs action")
+    raise ValueError("不支持的同步任务操作")

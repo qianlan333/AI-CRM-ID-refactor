@@ -124,10 +124,10 @@ def test_admin_jobs_page_renders_real_sections_not_placeholder(app, client, monk
 
     assert response.status_code == 200
     assert "同步与任务总览" in html
-    assert "Archive Sync" in html
-    assert "Callbacks" in html
-    assert "Message Batches" in html
-    assert "Deferred Jobs" in html
+    assert "聊天同步" in html
+    assert "回调状态" in html
+    assert "消息批次" in html
+    assert "待处理作业" in html
     assert "同步与任务面板待接入" not in html
 
 
@@ -138,10 +138,10 @@ def test_admin_jobs_batches_tab_renders_batch_detail_and_messages(app, client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Batch 详情" in html
-    assert "Batch Messages" in html
+    assert "批次详情" in html
+    assert "批次内消息" in html
     assert "hello batch" in html
-    assert "执行 Ack" in html
+    assert "确认这个批次已处理" in html
 
 
 def test_admin_jobs_ack_batch_updates_status_and_writes_audit(app, client):
@@ -256,7 +256,7 @@ def test_admin_jobs_archive_sync_page_defaults_to_preview_and_writes_preview_aud
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "当前为 preview，勾选确认后才会真正执行 archive sync。" in html
+    assert "这里会先展示操作预览，确认后才会真正执行同步。" in html
     assert '"preview_only": true' in html
     assert '"cursor": "cursor-a"' in html
 
@@ -375,7 +375,7 @@ def test_api_admin_jobs_message_batch_detail_and_ack(app, client):
         json={"ack_note": "checked by api", "operator": "tester-api"},
     )
     assert missing_confirm.status_code == 400
-    assert missing_confirm.get_json()["error"] == "confirm is required before acking message batch"
+    assert missing_confirm.get_json()["error"] == "确认消息批次前请先勾选确认"
 
     ack_response = client.post(
         "/api/admin/jobs/message-batches/1/ack",
@@ -448,7 +448,7 @@ def test_api_admin_jobs_deferred_jobs_run_requires_confirm_and_returns_summary(a
         json={"limit": 3, "operator": "tester-api"},
     )
     assert missing_confirm.status_code == 400
-    assert missing_confirm.get_json()["error"] == "confirm is required before running deferred jobs"
+    assert missing_confirm.get_json()["error"] == "执行待处理作业前请先勾选确认"
 
     monkeypatch.setattr(
         "wecom_ability_service.domains.admin_jobs.service.run_due_user_ops_deferred_jobs",

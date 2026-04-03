@@ -4,12 +4,8 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>Preflight</h2>
-      <p>环境检查仍复用现有问卷 preflight 口径，只在后台里做可视化收口。</p>
-    </div>
-    <div class="admin-toolbar">
-      <a class="admin-button admin-button--secondary" href="/api/admin/questionnaires/preflight">原始 preflight API</a>
-      <a class="admin-button admin-button--ghost" href="/api/admin/wecom/tags">企微标签 API</a>
+      <h2>环境检查</h2>
+      <p>这里可以先确认问卷相关环境是否已经准备好。</p>
     </div>
   </div>
   {% if questionnaire_payload.preflight_error %}
@@ -17,20 +13,20 @@
   {% endif %}
   <section class="admin-stat-inline-grid">
     <article class="admin-mini-stat">
-      <div class="admin-card-label">WeChat OAuth</div>
-      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.wechat_oauth_configured else "Missing" }}</div>
+      <div class="admin-card-label">微信授权</div>
+      <div class="admin-mini-stat-value">{{ "已就绪" if questionnaire_payload.preflight.wechat_oauth_configured else "未配置" }}</div>
     </article>
     <article class="admin-mini-stat">
-      <div class="admin-card-label">WeCom Contact</div>
-      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.wecom_contact_configured else "Missing" }}</div>
+      <div class="admin-card-label">企业微信联系人</div>
+      <div class="admin-mini-stat-value">{{ "已就绪" if questionnaire_payload.preflight.wecom_contact_configured else "未配置" }}</div>
     </article>
     <article class="admin-mini-stat">
-      <div class="admin-card-label">WeCom Tags API</div>
-      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.wecom_tags_api_available else "Error" }}</div>
+      <div class="admin-card-label">企业微信标签</div>
+      <div class="admin-mini-stat-value">{{ "已就绪" if questionnaire_payload.preflight.wecom_tags_api_available else "失败" }}</div>
     </article>
     <article class="admin-mini-stat">
-      <div class="admin-card-label">Identity Map</div>
-      <div class="admin-mini-stat-value">{{ "Ready" if questionnaire_payload.preflight.identity_map_available else "Error" }}</div>
+      <div class="admin-card-label">身份映射</div>
+      <div class="admin-mini-stat-value">{{ "已就绪" if questionnaire_payload.preflight.identity_map_available else "失败" }}</div>
     </article>
   </section>
 </section>
@@ -39,10 +35,7 @@
   <div class="admin-card-head">
     <div>
       <h2>问卷列表</h2>
-      <p>查看问卷定义、public path、最近提交和禁用状态。点击进入详情页进行编辑。</p>
-    </div>
-    <div class="admin-toolbar">
-      <a class="admin-button admin-button--secondary" href="/api/admin/questionnaires">原始 API</a>
+      <p>查看问卷定义、访问地址、提交情况和启停状态。</p>
     </div>
   </div>
   {% if questionnaire_payload.questionnaires %}
@@ -51,7 +44,7 @@
       <thead>
         <tr>
           <th>问卷</th>
-          <th>Slug / Public Path</th>
+          <th>访问地址</th>
           <th>提交数</th>
           <th>最近提交</th>
           <th>状态</th>
@@ -66,17 +59,17 @@
             <div class="admin-muted">{{ item.description or "-" }}</div>
           </td>
           <td>
-            <code>{{ item.slug }}</code>
+            <div class="admin-mono">{{ item.slug }}</div>
             <div><a class="admin-inline-link" href="{{ item.public_path }}">{{ item.public_path }}</a></div>
           </td>
           <td>{{ item.submission_count }}</td>
           <td>{{ item.last_submitted_at or "-" }}</td>
           <td>
             <span class="admin-inline-chip{% if item.is_disabled %} admin-inline-chip--danger{% endif %}">
-              {{ "disabled" if item.is_disabled else "published" }}
+              {{ "已停用" if item.is_disabled else "已发布" }}
             </span>
           </td>
-          <td><a class="admin-inline-link" href="{{ url_for('api.admin_console_questionnaire_detail', questionnaire_id=item.id) }}">进入详情</a></td>
+          <td><a class="admin-inline-link" href="{{ url_for('api.admin_console_questionnaire_detail', questionnaire_id=item.id) }}">查看与编辑</a></td>
         </tr>
         {% endfor %}
       </tbody>

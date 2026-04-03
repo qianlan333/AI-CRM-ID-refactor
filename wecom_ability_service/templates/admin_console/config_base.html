@@ -2,7 +2,7 @@
 
 {% block content %}
 <section class="admin-card admin-module-banner">
-  <nav class="admin-subnav" aria-label="Config Navigation">
+  <nav class="admin-subnav" aria-label="配置导航">
     {% for item in config_tabs %}
     <a class="admin-subnav-link{% if item.active %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
     {% endfor %}

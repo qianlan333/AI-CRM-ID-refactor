@@ -76,8 +76,8 @@ def admin_config_home():
         "config_overview.html",
         active_tab="overview",
         page_title="配置中心",
-        page_summary="配置中心统一承接 owner/routing、标签规则、app settings 和 MCP settings。运行时表优先，代码常量只做 seed/fallback。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("配置中心", None)),
+        page_summary="在这里维护分配规则、标签规则、班期规则、系统设置和 AI 工具设置。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("配置中心", None)),
         overview_cards=payload["cards"],
     )
 
@@ -96,12 +96,12 @@ def _routing_page(*, page_error: str = ""):
     return _render_config_template(
         "config_routing.html",
         active_tab="routing",
-        page_title="Owner / Routing 配置",
-        page_summary="owner_role_map 与 routing_rule_config 共用一个页面维护。routing runtime 优先走表配置，不再只靠 definitions.py。",
+        page_title="负责人 / 分配规则",
+        page_summary="在这里维护负责人角色和客户分配规则。",
         breadcrumbs=_breadcrumb_items(
-            ("CRM Console", url_for("api.admin_console_home")),
+            ("客户管理后台", url_for("api.admin_console_home")),
             ("配置中心", url_for("api.admin_config_home")),
-            ("Owner / Routing", None),
+            ("负责人 / 分配规则", None),
         ),
         page_notice="保存成功" if _query_bool("saved") else "",
         page_error=page_error,
@@ -148,12 +148,12 @@ def _signup_tags_page(*, page_error: str = ""):
     return _render_config_template(
         "config_signup_tags.html",
         active_tab="signup_tags",
-        page_title="Signup Tags 配置",
-        page_summary="signup_tag_rules 负责 WeCom tag 到内部 signup_status 的映射。页面同时展示 bootstrap 状态和业务状态定义。",
+        page_title="报名标签规则",
+        page_summary="在这里维护报名标签和业务状态之间的对应关系。",
         breadcrumbs=_breadcrumb_items(
-            ("CRM Console", url_for("api.admin_console_home")),
+            ("客户管理后台", url_for("api.admin_console_home")),
             ("配置中心", url_for("api.admin_config_home")),
-            ("Signup Tags", None),
+            ("报名标签规则", None),
         ),
         page_notice="保存成功" if _query_bool("saved") else "",
         page_error=page_error,
@@ -194,12 +194,12 @@ def _class_term_tags_page(*, page_error: str = ""):
     return _render_config_template(
         "config_class_term_tags.html",
         active_tab="class_term_tags",
-        page_title="Class Term Tags 配置",
-        page_summary="class_term_tag_mapping 负责班期与 WeCom tag 的映射。页面展示 bootstrap 覆盖情况，并允许直接维护结构化映射。",
+        page_title="班期标签规则",
+        page_summary="在这里维护班期和标签之间的对应关系。",
         breadcrumbs=_breadcrumb_items(
-            ("CRM Console", url_for("api.admin_console_home")),
+            ("客户管理后台", url_for("api.admin_console_home")),
             ("配置中心", url_for("api.admin_config_home")),
-            ("Class Term Tags", None),
+            ("班期标签规则", None),
         ),
         page_notice="保存成功" if _query_bool("saved") else "",
         page_error=page_error,
@@ -234,12 +234,12 @@ def _app_settings_page(*, page_error: str = ""):
     return _render_config_template(
         "config_app_settings.html",
         active_tab="app_settings",
-        page_title="App Settings",
-        page_summary="app_settings 区分可直接编辑项和 secret 掩码项。secret 只显示 masked 状态，更新时留空表示保持不变。",
+        page_title="系统设置",
+        page_summary="在这里维护系统参数；涉及敏感信息的内容只显示掩码。",
         breadcrumbs=_breadcrumb_items(
-            ("CRM Console", url_for("api.admin_console_home")),
+            ("客户管理后台", url_for("api.admin_console_home")),
             ("配置中心", url_for("api.admin_config_home")),
-            ("App Settings", None),
+            ("系统设置", None),
         ),
         page_notice="保存成功" if _query_bool("saved") else "",
         page_error=page_error,
@@ -267,7 +267,7 @@ def _extract_setting_form_payload() -> dict[str, str]:
 
 def admin_config_save_app_settings():
     if not _request_confirmed():
-        return _app_settings_page(page_error="confirm is required before saving app settings")
+        return _app_settings_page(page_error="保存前请先确认本次修改。")
     try:
         save_admin_app_settings(_extract_setting_form_payload(), operator=_operator_from_request())
     except ValueError as exc:
@@ -287,12 +287,12 @@ def _mcp_tools_page(*, page_error: str = ""):
     return _render_config_template(
         "config_mcp_tools.html",
         active_tab="mcp_tools",
-        page_title="MCP Tools 配置",
-        page_summary="MCP tool settings 负责工具启停、后台展示分组/文案，以及 sample args / output 可见性。tool name 保持不变。",
+        page_title="AI 工具设置",
+        page_summary="在这里维护 AI 工具的展示方式、启用状态和说明文字。",
         breadcrumbs=_breadcrumb_items(
-            ("CRM Console", url_for("api.admin_console_home")),
+            ("客户管理后台", url_for("api.admin_console_home")),
             ("配置中心", url_for("api.admin_config_home")),
-            ("MCP Tools", None),
+            ("AI 工具设置", None),
         ),
         page_notice="保存成功" if _query_bool("saved") else "",
         page_error=page_error,

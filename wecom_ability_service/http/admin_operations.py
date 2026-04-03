@@ -20,9 +20,9 @@ def _render_operations_page(
     return _render_admin_template(
         "operations.html",
         active_nav="operations",
-        page_title="运营看板",
-        page_summary="把 user_ops、class_user、导入批次、deferred jobs 和关键操作确认统一放进一个后台模块里。读路径复用现有 service，写动作统一做确认和审计。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("运营", None)),
+        page_title="运营管理",
+        page_summary="在这里处理运营名单、班期状态、导入记录和待处理作业。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("运营", None)),
         operations_payload=payload,
         page_notice=page_notice,
         page_error=page_error,
@@ -49,7 +49,7 @@ def admin_console_operations_action():
         tab = str(request.form.get("return_tab") or request.args.get("tab") or "").strip()
         return _render_operations_page(
             tab=tab,
-            page_notice="操作已完成，结果与审计已刷新。",
+            page_notice="操作已完成，并已记录操作人和时间。",
             action_result=payload,
         )
     except Exception as exc:

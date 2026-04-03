@@ -17,12 +17,12 @@
       <div class="admin-brand">
         <div class="admin-brand-mark">CRM</div>
         <div>
-          <div class="admin-brand-title">CRM Console</div>
-          <div class="admin-brand-subtitle">统一后台壳 v1</div>
+          <div class="admin-brand-title">客户管理后台</div>
+          <div class="admin-brand-subtitle">业务管理后台</div>
         </div>
       </div>
 
-      <nav class="admin-nav" aria-label="CRM Console Navigation">
+      <nav class="admin-nav" aria-label="客户管理后台导航">
         {% for item in nav_items %}
         <a
           class="admin-nav-link{% if item.active %} is-active{% endif %}"
@@ -32,11 +32,6 @@
         </a>
         {% endfor %}
       </nav>
-
-      <section class="admin-sidebar-foot">
-        <div class="admin-side-note">本期目标</div>
-        <p>统一入口、统一布局、统一状态栏，legacy 模块先挂壳承载。</p>
-      </section>
     </aside>
 
     <div class="admin-main-wrap">
@@ -62,7 +57,7 @@
             {{ shell_status.environment.label }}
           </div>
           <div class="admin-chip admin-chip--neutral" data-shell-release>
-            release {{ shell_status.release_sha }}
+            当前版本 {{ shell_status.release_sha }}
           </div>
           <div class="admin-chip admin-chip--{{ shell_status.health.state }}" data-shell-health>
             {{ shell_status.health.label }}
@@ -72,12 +67,6 @@
           </div>
         </div>
       </header>
-
-      <section class="admin-shell-links" aria-label="Shell Utilities">
-        {% for item in shell_links %}
-        <a class="admin-shell-link" href="{{ item.href }}">{{ item.label }}</a>
-        {% endfor %}
-      </section>
 
       <main class="admin-page">
         {% if page_notice %}

@@ -19,8 +19,8 @@ def admin_console_questionnaires():
         "questionnaires.html",
         active_nav="questionnaires",
         page_title="问卷中心",
-        page_summary="问卷列表、preflight、公开路径和提交概览直接纳入 CRM Console；问卷底层 schema 与 admin API 保持不变。",
-        breadcrumbs=_breadcrumb_items(("CRM Console", url_for("api.admin_console_home")), ("问卷", None)),
+        page_summary="在这里管理问卷、查看发布状态、环境检查和提交情况。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("问卷", None)),
         questionnaire_payload=payload,
     )
 
@@ -38,17 +38,17 @@ def _render_questionnaire_detail_page(
             "placeholder.html",
             active_nav="questionnaires",
             page_title="问卷不存在",
-            page_summary="当前 questionnaire_id 不存在。",
+            page_summary="当前没有找到这个问卷。",
             breadcrumbs=_breadcrumb_items(
-                ("CRM Console", url_for("api.admin_console_home")),
+                ("客户管理后台", url_for("api.admin_console_home")),
                 ("问卷", url_for("api.admin_console_questionnaires")),
                 (str(questionnaire_id), None),
             ),
             actions=[{"label": "返回问卷列表", "href": url_for("api.admin_console_questionnaires"), "variant": "secondary"}],
             state_title="问卷不存在",
-            state_body="检查 questionnaire_id 是否正确。",
-            state_items=["问卷可能已被删除", "也可能当前环境尚未初始化样例数据"],
-            page_error=page_error or "questionnaire not found",
+            state_body="请确认问卷编号是否正确，或稍后重试。",
+            state_items=["问卷可能已被删除", "当前环境也可能还没有初始化相关数据"],
+            page_error=page_error or "未找到问卷",
         ), 404
     questionnaire = payload["questionnaire"]
     editor_payload = editor_override or {
@@ -65,9 +65,9 @@ def _render_questionnaire_detail_page(
         "questionnaire_detail.html",
         active_nav="questionnaires",
         page_title=questionnaire.get("title") or questionnaire.get("name") or f"问卷 #{questionnaire_id}",
-        page_summary="问卷编辑页继续复用现有问卷 domain 和 admin API 口径，提供定义编辑、发布/禁用、preflight、submission 与 apply 结果查看。",
+        page_summary="查看问卷内容、提交结果、发布状态和环境情况。",
         breadcrumbs=_breadcrumb_items(
-            ("CRM Console", url_for("api.admin_console_home")),
+            ("客户管理后台", url_for("api.admin_console_home")),
             ("问卷", url_for("api.admin_console_questionnaires")),
             (questionnaire.get("title") or questionnaire.get("name") or str(questionnaire_id), None),
         ),
@@ -86,7 +86,7 @@ def admin_console_questionnaire_save(questionnaire_id: int):
     operator = str(request.form.get("operator") or request.headers.get("X-Admin-Operator") or "").strip()
     try:
         save_questionnaire_editor(questionnaire_id, form=request.form, operator=operator)
-        return _render_questionnaire_detail_page(questionnaire_id, page_notice="问卷定义已保存并写入审计。")
+        return _render_questionnaire_detail_page(questionnaire_id, page_notice="问卷内容已保存，并已记录操作人和时间。")
     except Exception as exc:
         editor_override = {
             "name": str(request.form.get("name") or "").strip(),
@@ -110,7 +110,7 @@ def admin_console_questionnaire_toggle(questionnaire_id: int):
     try:
         is_disabled = str(request.form.get("toggle_action") or "").strip() == "disable"
         toggle_questionnaire_disabled(questionnaire_id, is_disabled=is_disabled, operator=operator)
-        notice = "问卷已禁用。" if is_disabled else "问卷已重新启用。"
+        notice = "问卷已停用。" if is_disabled else "问卷已重新启用。"
         return _render_questionnaire_detail_page(questionnaire_id, page_notice=notice)
     except Exception as exc:
         return _render_questionnaire_detail_page(questionnaire_id, page_error=str(exc))

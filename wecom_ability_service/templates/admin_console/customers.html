@@ -5,7 +5,7 @@
   <div class="admin-card-head">
     <div>
       <h2>筛选与概览</h2>
-      <p>客户列表直接复用现有 customer center 读模型，所有筛选都是无副作用查询。</p>
+      <p>通过筛选快速找到客户，并进入详情页查看沟通和跟进情况。</p>
     </div>
   </div>
   <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_customers') }}">
@@ -14,7 +14,7 @@
       <input type="text" name="keyword" value="{{ customer_payload.filters.keyword }}">
     </label>
     <label class="admin-field">
-      <span>Owner</span>
+      <span>负责人</span>
       <select name="owner_userid">
         <option value="">全部</option>
         {% for item in customer_payload.owner_options %}
@@ -61,7 +61,7 @@
       <div class="admin-mini-stat-value">{{ customer_payload.customers|length }}</div>
     </article>
     <article class="admin-mini-stat">
-      <div class="admin-card-label">Offset</div>
+      <div class="admin-card-label">当前位置</div>
       <div class="admin-mini-stat-value">{{ customer_payload.offset }}</div>
     </article>
   </section>
@@ -71,10 +71,7 @@
   <div class="admin-card-head">
     <div>
       <h2>客户列表</h2>
-      <p>点击任意客户进入统一详情页，查看 timeline、recent messages、tags、tasks、问卷历史与 routing context。</p>
-    </div>
-    <div class="admin-toolbar">
-      <a class="admin-button admin-button--secondary" href="/api/customers">原始 API</a>
+      <p>点击任意客户进入详情页，查看互动记录、最近聊天、标签、任务和问卷记录。</p>
     </div>
   </div>
   {% if customer_payload.customers %}
@@ -83,7 +80,7 @@
       <thead>
         <tr>
           <th>客户</th>
-          <th>Owner</th>
+          <th>负责人</th>
           <th>手机号</th>
           <th>状态</th>
           <th>标签</th>
@@ -97,7 +94,7 @@
         <tr>
           <td>
             <strong>{{ item.customer_name or "-" }}</strong>
-            <div class="admin-mono">{{ item.external_userid }}</div>
+            <div class="admin-mono">客户编号：{{ item.external_userid }}</div>
             {% if item.remark %}
             <div class="admin-muted">{{ item.remark }}</div>
             {% endif %}
@@ -123,7 +120,7 @@
           <td>{{ item.last_message_at or "-" }}</td>
           <td>{{ item.updated_at or "-" }}</td>
           <td>
-            <a class="admin-inline-link" href="{{ url_for('api.admin_console_customer_detail', external_userid=item.external_userid) }}">进入详情</a>
+            <a class="admin-inline-link" href="{{ url_for('api.admin_console_customer_detail', external_userid=item.external_userid) }}">查看详情</a>
           </td>
         </tr>
         {% endfor %}

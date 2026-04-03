@@ -15,11 +15,11 @@
   <form class="admin-filter-bar admin-form-grid admin-form-grid--filters" method="get">
     <label>
       <span>筛选</span>
-      <input type="text" name="q" value="{{ filters.q }}" placeholder="userid / role / rule / target">
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="负责人账号 / 角色 / 规则 / 目标">
     </label>
     <label class="admin-checkbox">
       <input type="checkbox" name="active_only" value="1" {% if filters.active_only %}checked{% endif %}>
-      <span>仅看 active</span>
+      <span>仅看启用项</span>
     </label>
     <div class="admin-form-actions">
       <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
@@ -31,20 +31,20 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>Owner Role Map</h2>
-      <p>owner_role_map 决定 owner 的角色语义，也是 routing 判断的前置输入。</p>
+      <h2>负责人角色</h2>
+      <p>在这里维护负责人账号和角色。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
         <tr>
-          <th>userid</th>
-          <th>display_name</th>
-          <th>role</th>
-          <th>active</th>
-          <th>updated_at</th>
-          <th>last_modified_by</th>
+          <th>负责人账号</th>
+          <th>显示名称</th>
+          <th>角色</th>
+          <th>是否启用</th>
+          <th>更新时间</th>
+          <th>最近修改人</th>
           <th></th>
         </tr>
       </thead>
@@ -54,7 +54,7 @@
           <td><code>{{ row.userid }}</code></td>
           <td>{{ row.display_name }}</td>
           <td>{{ row.role }}</td>
-          <td>{{ "yes" if row.active else "no" }}</td>
+          <td>{{ "是" if row.active else "否" }}</td>
           <td>{{ row.updated_at or row.last_modified_at }}</td>
           <td>{{ row.last_modified_by or "-" }}</td>
           <td><a class="admin-inline-link" href="/admin/config/routing?edit_owner={{ row.userid }}">编辑</a></td>
@@ -68,21 +68,21 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>编辑 Owner Role</h2>
-      <p>保存会写入 owner_role_map，并记录配置审计。</p>
+      <h2>编辑负责人角色</h2>
+      <p>保存后会更新负责人角色设置，并记录操作人和时间。</p>
     </div>
   </div>
   <form class="admin-form-grid" method="post" action="/admin/config/routing/owner-role">
     <label>
-      <span>userid</span>
+      <span>负责人账号</span>
       <input type="text" name="userid" value="{{ owner_form.userid or '' }}" required>
     </label>
     <label>
-      <span>display_name</span>
+      <span>显示名称</span>
       <input type="text" name="display_name" value="{{ owner_form.display_name or '' }}">
     </label>
     <label>
-      <span>role</span>
+      <span>角色</span>
       <select name="role" required>
         {% for item in role_options %}
         <option value="{{ item }}" {% if item == owner_form.role %}selected{% endif %}>{{ item }}</option>
@@ -91,14 +91,14 @@
     </label>
     <label class="admin-checkbox">
       <input type="checkbox" name="active" value="1" {% if owner_form.active %}checked{% endif %}>
-      <span>active</span>
+      <span>启用</span>
     </label>
     <label>
-      <span>operator</span>
-      <input type="text" name="operator" placeholder="who edits this config">
+      <span>操作人</span>
+      <input type="text" name="operator" placeholder="填写本次修改人">
     </label>
     <div class="admin-form-actions">
-      <button class="admin-button admin-button--primary" type="submit">保存 Owner Role</button>
+      <button class="admin-button admin-button--primary" type="submit">保存负责人角色</button>
     </div>
   </form>
 </section>
@@ -106,23 +106,23 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>Routing Rules</h2>
-      <p>routing_rule_config 现在是运行时第一来源，definitions.py 只做 seed/fallback。</p>
+      <h2>分配规则</h2>
+      <p>在这里维护客户如何分配给负责人和后续处理目标。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
         <tr>
-          <th>rule_key</th>
-          <th>routing_alias</th>
-          <th>route_owner</th>
-          <th>routing_target</th>
-          <th>fallback</th>
-          <th>sales</th>
-          <th>delivery</th>
-          <th>active</th>
-          <th>last_modified_by</th>
+          <th>规则编号</th>
+          <th>分配标识</th>
+          <th>负责人</th>
+          <th>分配目标</th>
+          <th>回退目标</th>
+          <th>销售角色</th>
+          <th>交付角色</th>
+          <th>是否启用</th>
+          <th>最近修改人</th>
           <th></th>
         </tr>
       </thead>
@@ -136,7 +136,7 @@
           <td>{{ row.fallback_target or "-" }}</td>
           <td>{{ row.when_owner_role_sales or "-" }}</td>
           <td>{{ row.when_owner_role_delivery or "-" }}</td>
-          <td>{{ "yes" if row.active else "no" }}</td>
+          <td>{{ "是" if row.active else "否" }}</td>
           <td>{{ row.last_modified_by or "-" }}</td>
           <td><a class="admin-inline-link" href="/admin/config/routing?edit_rule={{ row.rule_key }}">编辑</a></td>
         </tr>
@@ -149,25 +149,25 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>编辑 Routing Rule</h2>
-      <p>可维护 route owner / role / target / fallback，以及 signup routing alias。</p>
+      <h2>编辑分配规则</h2>
+      <p>在这里维护负责人、角色、分配目标和回退规则。</p>
     </div>
   </div>
   <form class="admin-form-grid" method="post" action="/admin/config/routing/rule">
     <label>
-      <span>rule_key</span>
+      <span>规则编号</span>
       <input type="text" name="rule_key" value="{{ routing_form.rule_key or '' }}" required>
     </label>
     <label>
-      <span>routing_alias</span>
+      <span>分配标识</span>
       <input type="text" name="routing_alias" value="{{ routing_form.routing_alias or '' }}">
     </label>
     <label>
-      <span>route_owner_userid</span>
+      <span>负责人账号</span>
       <input type="text" name="route_owner_userid" value="{{ routing_form.route_owner_userid or '' }}">
     </label>
     <label>
-      <span>route_owner_role</span>
+      <span>负责人角色</span>
       <select name="route_owner_role">
         <option value="">-</option>
         {% for item in role_options %}
@@ -176,7 +176,7 @@
       </select>
     </label>
     <label>
-      <span>routing_target</span>
+      <span>分配目标</span>
       <select name="routing_target">
         <option value="">-</option>
         {% for item in routing_target_options %}
@@ -185,7 +185,7 @@
       </select>
     </label>
     <label>
-      <span>fallback_target</span>
+      <span>回退目标</span>
       <select name="fallback_target">
         <option value="">-</option>
         {% for item in routing_target_options %}
@@ -194,7 +194,7 @@
       </select>
     </label>
     <label>
-      <span>when_owner_role_sales</span>
+      <span>销售角色处理</span>
       <select name="when_owner_role_sales">
         <option value="">-</option>
         {% for item in routing_target_options %}
@@ -203,7 +203,7 @@
       </select>
     </label>
     <label>
-      <span>when_owner_role_delivery</span>
+      <span>交付角色处理</span>
       <select name="when_owner_role_delivery">
         <option value="">-</option>
         {% for item in routing_target_options %}
@@ -213,14 +213,14 @@
     </label>
     <label class="admin-checkbox">
       <input type="checkbox" name="active" value="1" {% if routing_form.active %}checked{% endif %}>
-      <span>active</span>
+      <span>启用</span>
     </label>
     <label>
-      <span>operator</span>
-      <input type="text" name="operator" placeholder="who edits this config">
+      <span>操作人</span>
+      <input type="text" name="operator" placeholder="填写本次修改人">
     </label>
     <div class="admin-form-actions">
-      <button class="admin-button admin-button--primary" type="submit">保存 Routing Rule</button>
+      <button class="admin-button admin-button--primary" type="submit">保存分配规则</button>
     </div>
   </form>
 </section>
@@ -229,7 +229,7 @@
   <div class="admin-card-head">
     <div>
       <h2>最近审计</h2>
-      <p>展示 owner_role_map 和 routing_rule_config 最近的配置变更。</p>
+      <p>这里展示负责人和分配规则最近的修改记录。</p>
     </div>
   </div>
   <div class="admin-audit-list">

@@ -68,144 +68,144 @@ MCP_NATIVE_DRY_RUN_TOOLS = {
 
 MCP_TOOL_SERVICE_MAP: dict[str, dict[str, Any]] = {
     "resolve_customer": {
-        "application_service": "Customer resolution aggregate",
+        "application_service": "客户定位查询",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._build_customer_context_payload",
             "wecom_ability_service.customer_center.service.get_customer_detail",
         ],
-        "note": "客户定位；可附带 customer context / timeline / recent messages。",
+        "note": "用于定位客户，也可以同时带出客户概况、互动记录和最近聊天。",
     },
     "get_contact": {
-        "application_service": "Contact snapshot read",
+        "application_service": "客户资料读取",
         "service_paths": ["wecom_ability_service.services.get_contact_by_external_userid"],
-        "note": "读取单个客户 contact 快照。",
+        "note": "读取单个客户资料快照。",
     },
     "get_customer_context": {
-        "application_service": "Customer context aggregate",
+        "application_service": "客户上下文汇总",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._build_customer_context_payload",
             "wecom_ability_service.customer_timeline.service.get_customer_timeline",
         ],
-        "note": "聚合 customer center、timeline、recent messages。",
+        "note": "汇总客户资料、互动记录和最近聊天。",
     },
     "get_messages": {
-        "application_service": "Archive message history read",
+        "application_service": "聊天历史读取",
         "service_paths": ["wecom_ability_service.services.get_messages_by_user"],
-        "note": "读取 archived_messages 全量历史。",
+        "note": "读取客户聊天历史记录。",
     },
     "get_recent_messages": {
-        "application_service": "Archive recent message read",
+        "application_service": "最近聊天读取",
         "service_paths": ["wecom_ability_service.services.get_recent_messages_by_user"],
         "note": "读取最近消息摘要。",
     },
     "search_messages": {
-        "application_service": "Archive message search",
+        "application_service": "聊天搜索",
         "service_paths": ["wecom_ability_service.services.search_messages"],
-        "note": "按 external_userid + keyword 搜索消息。",
+        "note": "按客户编号和关键词搜索聊天内容。",
     },
     "get_group_chat": {
-        "application_service": "Group chat snapshot read",
+        "application_service": "群聊资料读取",
         "service_paths": ["wecom_ability_service.services.get_group_chat_by_chat_id"],
-        "note": "读取群聊快照。",
+        "note": "读取群聊资料快照。",
     },
     "mark_tags": {
-        "application_service": "Customer tag mutate",
+        "application_service": "客户标签更新",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._update_customer_tags",
             "wecom_ability_service.wecom_client.WeComClient.mark_tag",
         ],
-        "note": "写 WeCom 标签并更新本地 tag snapshot。",
+        "note": "给客户补充标签，并同步本地标签快照。",
     },
     "unmark_tags": {
-        "application_service": "Customer tag mutate",
+        "application_service": "客户标签更新",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._update_customer_tags",
             "wecom_ability_service.wecom_client.WeComClient.mark_tag",
         ],
-        "note": "写 WeCom 标签并移除本地 tag snapshot。",
+        "note": "移除客户标签，并同步本地标签快照。",
     },
     "update_customer_tags": {
-        "application_service": "Customer tag mutate",
+        "application_service": "客户标签更新",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._update_customer_tags",
             "wecom_ability_service.wecom_client.WeComClient.mark_tag",
         ],
-        "note": "统一 add/remove tags 的组合写入口。",
+        "note": "统一处理添加和移除标签。",
     },
     "create_private_message_task": {
-        "application_service": "Outbound private message task",
+        "application_service": "单聊触达任务",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._call_business_task",
             "wecom_ability_service.mcp_adapter._call_wecom_task",
         ],
-        "note": "支持 business input 和 raw payload；dry_run 默认开启。",
+        "note": "创建单聊触达任务，默认先预览。",
     },
     "create_group_message_task": {
-        "application_service": "Outbound group message task",
+        "application_service": "群发触达任务",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._call_business_task",
             "wecom_ability_service.mcp_adapter._call_wecom_task",
         ],
-        "note": "群发 welcome / followup 任务；dry_run 默认开启。",
+        "note": "创建群发触达任务，默认先预览。",
     },
     "create_moment_task": {
-        "application_service": "Outbound moment task",
+        "application_service": "朋友圈触达任务",
         "service_paths": [
             "wecom_ability_service.mcp_adapter._call_business_task",
             "wecom_ability_service.mcp_adapter._call_wecom_task",
         ],
-        "note": "企业微信朋友圈任务；dry_run 默认开启。",
+        "note": "创建朋友圈触达任务，默认先预览。",
     },
     "record_conversion_feedback": {
-        "application_service": "Conversion feedback write",
+        "application_service": "转化反馈记录",
         "service_paths": ["wecom_ability_service.services.record_conversion_feedback"],
-        "note": "写 conversion feedback，不支持 runtime dry_run。",
+        "note": "记录转化反馈，默认不直接执行试写。",
     },
     "get_owner_role_map": {
-        "application_service": "Owner role config read",
+        "application_service": "负责人角色读取",
         "service_paths": ["wecom_ability_service.services.list_owner_role_map"],
-        "note": "读取 owner_role_map 运行时配置。",
+        "note": "读取当前负责人角色配置。",
     },
     "get_signup_tag_rules": {
-        "application_service": "Signup tag rules read",
+        "application_service": "报名标签规则读取",
         "service_paths": ["wecom_ability_service.services.get_signup_tag_rules_config"],
-        "note": "读取 signup_tag_rules 运行时配置。",
+        "note": "读取当前报名标签规则。",
     },
     "get_routing_config": {
-        "application_service": "Routing runtime read",
+        "application_service": "分配规则读取",
         "service_paths": ["wecom_ability_service.services.get_routing_config"],
-        "note": "读取 owner/routing runtime 聚合。",
+        "note": "读取当前分配规则。",
     },
     "get_pending_message_batches": {
-        "application_service": "Archive batch queue read",
+        "application_service": "待确认消息批次读取",
         "service_paths": [
             "wecom_ability_service.services.materialize_message_batches",
             "wecom_ability_service.services.list_message_batches",
         ],
-        "note": "读取待确认 message batches。",
+        "note": "读取待确认的消息批次。",
     },
     "get_message_batch": {
-        "application_service": "Archive batch detail read",
+        "application_service": "消息批次详情读取",
         "service_paths": [
             "wecom_ability_service.services.materialize_message_batches",
             "wecom_ability_service.services.get_message_batch",
         ],
-        "note": "读取单个 message batch 详情。",
+        "note": "读取单个消息批次详情。",
     },
     "ack_message_batch": {
-        "application_service": "Archive batch ack write",
+        "application_service": "消息批次确认",
         "service_paths": ["wecom_ability_service.services.ack_message_batch"],
-        "note": "确认 batch，存在状态写入。",
+        "note": "确认消息批次已处理。",
     },
     "get_owner_recent_chat_dump": {
-        "application_service": "Owner recent chat dump aggregate",
+        "application_service": "负责人最近聊天汇总",
         "service_paths": ["wecom_ability_service.mcp_adapter._build_owner_recent_chat_dump"],
-        "note": "按顾问聚合 private / group 最近聊天。",
+        "note": "按负责人汇总最近单聊和群聊记录。",
     },
     "get_hourly_followup_candidates": {
-        "application_service": "Followup candidate scoring",
+        "application_service": "跟进候选筛选",
         "service_paths": ["wecom_ability_service.mcp_adapter._build_followup_candidates"],
-        "note": "基于 archived_messages + tags + class status 生成跟进候选。",
+        "note": "根据聊天、标签和班级状态生成跟进候选。",
     },
 }
 
@@ -261,12 +261,12 @@ MCP_TOOL_SAMPLE_OUTPUTS: dict[str, dict[str, Any]] = {
 
 OPERATIONS_TABS = (
     {"key": "overview", "label": "总览"},
-    {"key": "user-ops", "label": "User Ops 列表"},
-    {"key": "history", "label": "User Ops 历史"},
+    {"key": "user-ops", "label": "运营名单"},
+    {"key": "history", "label": "运营名单历史"},
     {"key": "imports", "label": "导入"},
-    {"key": "deferred", "label": "Deferred Jobs"},
-    {"key": "class-users", "label": "Class User"},
-    {"key": "class-history", "label": "Class History"},
+    {"key": "deferred", "label": "待处理作业"},
+    {"key": "class-users", "label": "班级状态"},
+    {"key": "class-history", "label": "班级状态历史"},
 )
 
 
@@ -288,6 +288,21 @@ def _normalize_bool(value: Any) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     return _normalized_text(value).lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _ui_status_label(value: Any) -> str:
+    mapping = {
+        "success": "成功",
+        "failed": "失败",
+        "pending": "待处理",
+        "processing": "处理中",
+        "running": "运行中",
+        "acked": "已确认",
+        "disabled": "已停用",
+        "enabled": "已启用",
+    }
+    normalized = _normalized_text(value).lower()
+    return mapping.get(normalized, _normalized_text(value) or "-")
 
 
 def _json_loads(value: Any, *, default: Any) -> Any:
@@ -398,6 +413,7 @@ def _build_customer_questionnaire_rows(external_userid: str, *, limit: int = 20)
             {
                 **row,
                 "final_tags": _json_loads(row.get("final_tags"), default=[]),
+                "scrm_apply_status_label": _ui_status_label(row.get("scrm_apply_status")),
             }
         )
     return results
@@ -441,16 +457,16 @@ def preview_customer_tag_action(
 ) -> dict[str, Any]:
     detail = get_customer_detail(external_userid)
     if not detail:
-        raise ValueError("customer not found")
+        raise ValueError("未找到客户")
     normalized_action = _normalized_text(action)
     if normalized_action not in {"mark", "unmark"}:
-        raise ValueError("action must be mark or unmark")
+        raise ValueError("标签操作类型不正确")
     normalized_userid = _normalized_text(userid) or _normalized_text(detail.get("owner_userid"))
     if not normalized_userid:
-        raise ValueError("userid is required")
+        raise ValueError("负责人账号不能为空")
     normalized_tag_ids = _split_csv(tag_ids)
     if not normalized_tag_ids:
-        raise ValueError("tag_ids is required")
+        raise ValueError("请填写标签编号")
     current_tags = [dict(item) for item in (detail.get("tags") or [])]
     return {
         "ok": True,
@@ -520,16 +536,16 @@ def preview_customer_task_action(
 ) -> dict[str, Any]:
     detail = get_customer_detail(external_userid)
     if not detail:
-        raise ValueError("customer not found")
+        raise ValueError("未找到客户")
     normalized_task_type = _normalized_text(task_type)
     if normalized_task_type not in {"private_message", "group_message", "moment"}:
-        raise ValueError("task_type must be private_message, group_message or moment")
+        raise ValueError("任务类型不正确")
     normalized_userid = _normalized_text(userid) or _normalized_text(detail.get("owner_userid"))
     normalized_content = _normalized_text(content)
     if not normalized_content:
-        raise ValueError("content is required")
+        raise ValueError("请输入触达内容")
     if not normalized_userid:
-        raise ValueError("userid is required")
+        raise ValueError("负责人账号不能为空")
     if normalized_task_type == "private_message":
         payload = {
             "chat_type": "single",
@@ -615,7 +631,7 @@ def build_questionnaire_index_payload() -> dict[str, Any]:
             required_keys = ["WECOM_CORP_ID", "WECOM_CONTACT_SECRET", "WECOM_API_BASE"]
             missing = [key for key in required_keys if not _normalized_text(current_app.config.get(key))]
             if missing:
-                raise RuntimeError(f"missing config: {', '.join(missing)}")
+                raise RuntimeError(f"缺少配置：{', '.join(missing)}")
             return [{"tag_id": "config-ok", "tag_name": "config-ok"}]
 
         preflight = build_questionnaire_preflight_payload(
@@ -663,6 +679,7 @@ def build_questionnaire_detail_payload(questionnaire_id: int) -> dict[str, Any] 
             {
                 **row,
                 "final_tags": _json_loads(row.get("final_tags"), default=[]),
+                "status_label": _ui_status_label(row.get("status")),
             }
             for row in repo.list_questionnaire_apply_logs(int(questionnaire_id), limit=50)
         ],
@@ -675,9 +692,9 @@ def parse_questionnaire_editor_form(form: Any) -> dict[str, Any]:
     questions = _json_loads(questions_json, default=[])
     score_rules = _json_loads(score_rules_json, default=[])
     if questions_json and not isinstance(questions, list):
-        raise ValueError("questions_json must be a JSON array")
+        raise ValueError("题目内容必须是 JSON 数组")
     if score_rules_json and not isinstance(score_rules, list):
-        raise ValueError("score_rules_json must be a JSON array")
+        raise ValueError("评分规则必须是 JSON 数组")
     return {
         "name": _normalized_text(form.get("name")),
         "slug": _normalized_text(form.get("slug")),
@@ -698,11 +715,11 @@ def save_questionnaire_editor(
 ) -> dict[str, Any]:
     before = get_questionnaire_detail(int(questionnaire_id))
     if not before:
-        raise ValueError("questionnaire not found")
+        raise ValueError("未找到问卷")
     payload = parse_questionnaire_editor_form(form)
     updated = update_questionnaire(int(questionnaire_id), payload)
     if not updated:
-        raise ValueError("questionnaire not found")
+        raise ValueError("未找到问卷")
     _audit_log(
         operator=operator,
         action_type="save_questionnaire",
@@ -717,10 +734,10 @@ def save_questionnaire_editor(
 def toggle_questionnaire_disabled(questionnaire_id: int, *, is_disabled: bool, operator: str) -> dict[str, Any]:
     before = get_questionnaire_detail(int(questionnaire_id))
     if not before:
-        raise ValueError("questionnaire not found")
+        raise ValueError("未找到问卷")
     updated = disable_questionnaire(int(questionnaire_id), is_disabled)
     if not updated:
-        raise ValueError("questionnaire not found")
+        raise ValueError("未找到问卷")
     _audit_log(
         operator=operator,
         action_type="disable_questionnaire" if is_disabled else "enable_questionnaire",
@@ -820,7 +837,7 @@ def execute_operations_action(
 
     if normalized_action == "run-deferred-jobs":
         if not _normalize_bool(form.get("confirm")):
-            raise ValueError("confirm is required before running deferred jobs")
+            raise ValueError("执行待处理作业前请先勾选确认")
         limit = _normalized_int(form.get("limit"), default=20, minimum=1, maximum=200)
         payload = run_due_user_ops_deferred_jobs(limit=limit)
         _audit_log(
@@ -835,7 +852,7 @@ def execute_operations_action(
 
     if normalized_action == "migrate-class-user":
         if not _normalize_bool(form.get("confirm")):
-            raise ValueError("confirm is required before running class-user migrate")
+            raise ValueError("执行班级状态同步前请先勾选确认")
         payload = migrate_class_user_status_from_contact_tags()
         _audit_log(
             operator=operator_value,
@@ -849,11 +866,11 @@ def execute_operations_action(
 
     if normalized_action in {"import-mobile-class-terms", "import-activation-status"}:
         if not _normalize_bool(form.get("confirm")):
-            raise ValueError("confirm is required before import")
+            raise ValueError("导入前请先勾选确认")
         uploaded_file = files.get("file") if files else None
         pasted_text = _normalized_text(form.get("pasted_text"))
         if not uploaded_file and not pasted_text:
-            raise ValueError("file or pasted_text is required")
+            raise ValueError("请上传文件或粘贴内容")
         if normalized_action == "import-mobile-class-terms":
             if uploaded_file and uploaded_file.filename:
                 payload = import_mobile_class_term_source(
@@ -888,7 +905,7 @@ def execute_operations_action(
         )
         return payload
 
-    raise ValueError("unsupported operations action")
+    raise ValueError("不支持的运营操作")
 
 
 def _mcp_default_tool_defs() -> list[dict[str, Any]]:
@@ -920,7 +937,16 @@ def _mcp_risk_level(tool_name: str) -> str:
 
 
 def _mcp_risk_label(tool_name: str) -> str:
-    return "High Risk" if tool_name in MCP_HIGH_RISK_TOOLS else "Read Only"
+    return "高风险" if tool_name in MCP_HIGH_RISK_TOOLS else "只读"
+
+
+def _mcp_action_label(action_type: Any) -> str:
+    mapping = {
+        "run_mcp_preflight": "环境检查",
+        "preview_mcp_sample_call": "试运行预览",
+        "execute_mcp_sample_call": "正式试运行",
+    }
+    return mapping.get(_normalized_text(action_type), _normalized_text(action_type) or "-")
 
 
 def _build_schema_example(schema: dict[str, Any]) -> Any:
@@ -969,7 +995,8 @@ def _mcp_registry_rows(*, query: str, enabled_only: bool, visible_only: bool) ->
             {
                 **row,
                 "tool_name": tool_name,
-                "category": _normalized_text(row.get("tool_group")) or "misc",
+                "category": _normalized_text(row.get("tool_group_label")) or _normalized_text(row.get("tool_group")) or "其他",
+                "tool_group": _normalized_text(row.get("tool_group_label")) or _normalized_text(row.get("tool_group")) or "其他",
                 "risk_level": _mcp_risk_level(tool_name),
                 "risk_label": _mcp_risk_label(tool_name),
                 "description": _normalized_text(row.get("description")) or _normalized_text(default.get("description")),
@@ -979,7 +1006,7 @@ def _mcp_registry_rows(*, query: str, enabled_only: bool, visible_only: bool) ->
                 "sample_args_pretty": _pretty_json(sample_args),
                 "sample_output": sample_output,
                 "sample_output_pretty": _pretty_json(sample_output),
-                "application_service": _normalized_text(mapping.get("application_service")) or "Runtime helper",
+                "application_service": _normalized_text(mapping.get("application_service")) or "后台工具处理",
                 "service_paths": mapping.get("service_paths") or ["wecom_ability_service.mcp_adapter._call_tool"],
                 "service_note": _normalized_text(mapping.get("note")),
             }
@@ -1000,12 +1027,12 @@ def build_mcp_console_payload(args: Any) -> dict[str, Any]:
     last_sample_logs = repo.list_recent_admin_operation_logs(target_type=TARGET_MCP_SAMPLE_CALL_ACTION, limit=10)
     latest_preflight = last_preflight_logs[0] if last_preflight_logs else {}
 
-    routing_detail = "routing config ready"
+    routing_detail = "分配规则已就绪"
     routing_ok = True
     try:
         routing_payload = get_routing_config()
         routing_rules = routing_payload.get("routing_rules") if isinstance(routing_payload, dict) else {}
-        routing_detail = f"{len(routing_rules or {})} routing rules"
+        routing_detail = f"当前共 {len(routing_rules or {})} 条分配规则"
     except Exception as exc:
         routing_ok = False
         routing_detail = str(exc)
@@ -1014,48 +1041,48 @@ def build_mcp_console_payload(args: Any) -> dict[str, Any]:
     task_missing_keys = [key for key in task_required_keys if not _normalized_text(current_app.config.get(key))]
     dependency_checks = [
         {
-            "label": "Database",
+            "label": "数据库",
             "status": "ok" if dependency_snapshot["database_ok"] else "danger",
             "value": dependency_snapshot["database_backend"],
-            "detail": "CRM backend database connection",
+            "detail": "客户管理后台数据库连接情况",
         },
         {
-            "label": "Contacts Read Model",
+            "label": "客户数据",
             "status": "ok" if int(dependency_snapshot.get("contacts_total") or 0) >= 0 else "danger",
             "value": dependency_snapshot.get("contacts_total") or 0,
-            "detail": _normalized_text(dependency_snapshot.get("contacts_latest_updated_at")) or "no contacts snapshot yet",
+            "detail": _normalized_text(dependency_snapshot.get("contacts_latest_updated_at")) or "当前还没有联系人数据",
         },
         {
-            "label": "Archive Message Store",
+            "label": "聊天归档",
             "status": "ok" if int(dependency_snapshot.get("archived_messages_total") or 0) >= 0 else "danger",
             "value": dependency_snapshot.get("archived_messages_total") or 0,
-            "detail": _normalized_text(dependency_snapshot.get("archived_messages_latest_send_time")) or "no archived messages yet",
+            "detail": _normalized_text(dependency_snapshot.get("archived_messages_latest_send_time")) or "当前还没有聊天归档数据",
         },
         {
-            "label": "Routing Runtime",
+            "label": "分配规则",
             "status": "ok" if routing_ok else "danger",
-            "value": "ready" if routing_ok else "error",
+            "value": "已就绪" if routing_ok else "失败",
             "detail": routing_detail,
         },
         {
-            "label": "Task Dispatch Config",
+            "label": "任务发送配置",
             "status": "ok" if not task_missing_keys else "warn",
-            "value": "ready" if not task_missing_keys else "missing",
-            "detail": ", ".join(task_missing_keys) if task_missing_keys else "WeCom task config present",
+            "value": "已就绪" if not task_missing_keys else "未配置",
+            "detail": f"还有 {len(task_missing_keys)} 项配置未完成" if task_missing_keys else "任务发送相关配置已齐全",
         },
         {
-            "label": "Pending Message Batches",
+            "label": "待确认消息批次",
             "status": "warn" if int(dependency_snapshot.get("message_batches_pending") or 0) else "ok",
             "value": dependency_snapshot.get("message_batches_pending") or 0,
-            "detail": f"total batches {int(dependency_snapshot.get('message_batches_total') or 0)}",
+            "detail": f"批次总数 {int(dependency_snapshot.get('message_batches_total') or 0)}",
         },
     ]
 
     summary_cards = [
-        {"label": "Registry Tools", "value": len(rows), "description": "后台可检索到的 MCP tools"},
-        {"label": "Enabled", "value": sum(1 for item in rows if item["enabled"]), "description": "运行时允许调用"},
-        {"label": "Visible", "value": sum(1 for item in rows if item["visible_in_console"]), "description": "registry 中可见"},
-        {"label": "High Risk", "value": sum(1 for item in rows if item["risk_level"] == "high"), "description": "默认仅 dry-run / 二次确认"},
+        {"label": "工具数量", "value": len(rows), "description": "当前可查看的 AI 工具数量"},
+        {"label": "已启用", "value": sum(1 for item in rows if item["enabled"]), "description": "当前允许调用的工具数量"},
+        {"label": "后台显示", "value": sum(1 for item in rows if item["visible_in_console"]), "description": "当前在后台显示的工具数量"},
+        {"label": "高风险工具", "value": sum(1 for item in rows if item["risk_level"] == "high"), "description": "执行前需要额外确认的工具数量"},
     ]
 
     return {
@@ -1071,8 +1098,8 @@ def build_mcp_console_payload(args: Any) -> dict[str, Any]:
         },
         "dependency_checks": dependency_checks,
         "latest_preflight_log": latest_preflight,
-        "recent_preflight_logs": last_preflight_logs,
-        "recent_sample_logs": last_sample_logs,
+        "recent_preflight_logs": [{**item, "action_label": _mcp_action_label(item.get("action_type"))} for item in last_preflight_logs],
+        "recent_sample_logs": [{**item, "action_label": _mcp_action_label(item.get("action_type"))} for item in last_sample_logs],
     }
 
 
@@ -1158,17 +1185,17 @@ def run_mcp_sample_call(
     registry_rows = _mcp_registry_rows(query="", enabled_only=False, visible_only=False)
     registry_map = {item["tool_name"]: item for item in registry_rows}
     if normalized_tool_name not in registry_map:
-        raise ValueError("unknown tool_name")
+        raise ValueError("未找到对应工具")
 
     arguments = _json_loads(arguments_json, default=None)
     if not isinstance(arguments, dict):
-        raise ValueError("arguments_json must be a JSON object")
+        raise ValueError("输入内容必须是 JSON 对象")
 
     tool_row = registry_map[normalized_tool_name]
     high_risk = normalized_tool_name in MCP_HIGH_RISK_TOOLS
     requested_live = bool(live_run)
     if requested_live and high_risk and not confirm_high_risk:
-        raise ValueError("confirm_high_risk is required for high-risk tools")
+        raise ValueError("高风险工具需要二次确认")
 
     warnings: list[str] = []
     mode = "live" if requested_live else "preview"
@@ -1179,7 +1206,7 @@ def run_mcp_sample_call(
             "ok": False,
             "mode": mode,
             "tool_name": normalized_tool_name,
-            "error": "tool is disabled in runtime",
+            "error": "当前工具已停用，暂不允许试运行",
             "preview_payload": payload,
         }
     elif not requested_live and normalized_tool_name in MCP_NATIVE_DRY_RUN_TOOLS:
@@ -1193,7 +1220,7 @@ def run_mcp_sample_call(
             "runtime_result": _normalize_mcp_runtime_result(execute_mcp_tool_runtime(normalized_tool_name, payload)),
         }
     elif not requested_live and high_risk:
-        warnings.append("tool has no native dry_run support; console only shows request preview")
+        warnings.append("该工具不支持原生预览，当前只展示本次请求内容")
         result = {
             "ok": True,
             "mode": mode,
@@ -1234,6 +1261,8 @@ def run_mcp_sample_call(
         **result,
         "tool_name": normalized_tool_name,
         "risk_level": _mcp_risk_level(normalized_tool_name),
+        "risk_label": _mcp_risk_label(normalized_tool_name),
+        "mode_label": "正式执行" if requested_live else "预览",
         "requested_live": requested_live,
         "submitted_arguments": arguments,
         "submitted_arguments_pretty": _pretty_json(arguments),
