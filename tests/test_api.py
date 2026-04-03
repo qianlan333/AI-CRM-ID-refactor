@@ -1023,6 +1023,10 @@ def test_admin_questionnaire_management_page_exists(client):
     assert "问卷名称" in text
     assert "创建时间" in text
     assert "提交数" in text
+    assert "还没有问卷" in text
+    assert "没有匹配的问卷，请调整搜索词或筛选条件" in text
+    assert 'data-action="delete"' in text
+    assert "questionnaire-name-sub" not in text
     assert '<div class="workspace">' not in text
 
 
@@ -1037,6 +1041,7 @@ def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client
     assert "题型 / 组件区" in text
     assert "手工填写 tag_id 兜底" in text
     assert "企微标签加载失败，可稍后重试或手工填写 tag_id" in text
+    assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
 
 
@@ -1053,6 +1058,7 @@ def test_admin_questionnaire_editor_existing_page_contains_editor(client):
     assert "分享" in text
     assert "下载数据" in text
     assert "删除问卷" in text
+    assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
 
 
@@ -2287,6 +2293,29 @@ def test_questionnaire_admin_routes_and_public_h5(client):
     enable_response = client.post(f"/api/admin/questionnaires/{questionnaire_id}/disable", json={"is_disabled": False})
     assert enable_response.status_code == 200
     assert enable_response.get_json()["questionnaire"]["is_disabled"] is False
+
+
+def test_admin_delete_questionnaire_requires_disabled_state(client):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    questionnaire_id = create_response.get_json()["questionnaire"]["id"]
+
+    enabled_delete_response = client.delete(f"/api/admin/questionnaires/{questionnaire_id}")
+    assert enabled_delete_response.status_code == 400
+    assert enabled_delete_response.get_json()["error"] == "请先停用问卷后再删除"
+
+    disable_response = client.post(
+        f"/api/admin/questionnaires/{questionnaire_id}/disable",
+        json={"is_disabled": True},
+    )
+    assert disable_response.status_code == 200
+    assert disable_response.get_json()["questionnaire"]["is_disabled"] is True
+
+    delete_response = client.delete(f"/api/admin/questionnaires/{questionnaire_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.get_json()["deleted"] is True
+
+    detail_response = client.get(f"/api/admin/questionnaires/{questionnaire_id}")
+    assert detail_response.status_code == 404
 
 
 def test_non_wechat_browser_is_blocked_for_questionnaire_page(client):

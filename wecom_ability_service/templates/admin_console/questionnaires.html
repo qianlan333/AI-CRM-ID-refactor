@@ -12,6 +12,11 @@
     gap: 10px;
   }
 
+  #questionnaire-empty-state[hidden],
+  #questionnaire-table-wrap[hidden] {
+    display: none !important;
+  }
+
   .questionnaire-summary-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -63,7 +68,6 @@
     font-weight: 800;
   }
 
-  .questionnaire-name-sub,
   .questionnaire-row-muted {
     color: var(--muted);
     margin-top: 6px;
@@ -74,7 +78,6 @@
     background: rgba(121, 112, 97, 0.05);
   }
 
-  .questionnaire-row-disabled .questionnaire-name-sub,
   .questionnaire-row-disabled .questionnaire-row-muted,
   .questionnaire-row-disabled .questionnaire-name-main {
     color: #9a927f;
@@ -88,6 +91,10 @@
     min-height: 34px;
     padding: 6px 12px;
     font-size: 13px;
+  }
+
+  .questionnaire-row-actions .admin-button[disabled] {
+    cursor: not-allowed;
   }
 
   .questionnaire-table td:last-child,
@@ -254,6 +261,12 @@
     return Number.isNaN(timestamp) ? 0 : timestamp;
   }
 
+  function questionnaireDisplayName(item) {
+    const title = String(item?.title || '').trim();
+    const name = String(item?.name || '').trim();
+    return title || name || '未命名问卷';
+  }
+
   function formatDateTime(value) {
     const raw = String(value || '').trim();
     if (!raw) return '-';
@@ -271,7 +284,8 @@
         if (state.status === 'enabled' && item.is_disabled) return false;
         if (state.status === 'disabled' && !item.is_disabled) return false;
         if (!keyword) return true;
-        return String(item.name || '').toLowerCase().includes(keyword);
+        return questionnaireDisplayName(item).toLowerCase().includes(keyword)
+          || String(item.name || '').toLowerCase().includes(keyword);
       })
       .sort((left, right) => {
         const statusDiff = Number(Boolean(left.is_disabled)) - Number(Boolean(right.is_disabled));
@@ -316,29 +330,39 @@
     }, isError ? 5600 : 3200);
   }
 
+  function renderEmptyState(title, body = '') {
+    emptyStateEl.innerHTML = body
+      ? `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`
+      : `<strong>${escapeHtml(title)}</strong>`;
+    emptyStateEl.hidden = false;
+  }
+
   function renderTable() {
     const items = filteredQuestionnaires();
     const hasAny = state.questionnaires.length > 0;
-    emptyStateEl.hidden = hasAny;
-    tableWrapEl.hidden = !hasAny;
     if (!hasAny) {
+      renderEmptyState('还没有问卷', '点击「创建新问卷」开始搭建。');
       tableBodyEl.innerHTML = '';
+      tableWrapEl.hidden = true;
       return;
     }
     if (!items.length) {
-      tableBodyEl.innerHTML = '<tr><td colspan="4">没有符合当前筛选条件的问卷。</td></tr>';
+      renderEmptyState('没有匹配的问卷，请调整搜索词或筛选条件');
+      tableBodyEl.innerHTML = '';
+      tableWrapEl.hidden = true;
       return;
     }
+    emptyStateEl.hidden = true;
+    tableWrapEl.hidden = false;
     tableBodyEl.innerHTML = items.map((item) => `
       <tr class="${item.is_disabled ? 'questionnaire-row-disabled' : ''}" data-questionnaire-id="${item.id}">
         <td>
           <div class="questionnaire-name-line">
-            <span class="questionnaire-name-main">${escapeHtml(item.name || '未命名问卷')}</span>
+            <span class="questionnaire-name-main">${escapeHtml(questionnaireDisplayName(item))}</span>
             <span class="admin-inline-chip${item.is_disabled ? ' admin-inline-chip--danger' : ' admin-inline-chip--ok'}">
               ${item.is_disabled ? '已停用' : '启用中'}
             </span>
           </div>
-          ${item.title ? `<div class="questionnaire-name-sub">${escapeHtml(item.title)}</div>` : ''}
         </td>
         <td><span class="questionnaire-row-muted">${escapeHtml(formatDateTime(item.created_at))}</span></td>
         <td>${escapeHtml(String(item.submission_count || 0))}</td>
@@ -350,6 +374,15 @@
             </button>
             <button type="button" class="admin-button admin-button--ghost" data-action="share">分享</button>
             <button type="button" class="admin-button admin-button--ghost" data-action="export">下载数据</button>
+            <button
+              type="button"
+              class="admin-button admin-button--ghost"
+              data-action="delete"
+              ${item.is_disabled ? '' : 'disabled'}
+              title="${item.is_disabled ? '删除后不可恢复' : '请先停用后删除'}"
+            >
+              删除
+            </button>
           </div>
         </td>
       </tr>
@@ -387,6 +420,15 @@
     showToast(item.is_disabled ? '问卷已启用' : '问卷已停用');
   }
 
+  async function deleteQuestionnaire(questionnaireId) {
+    const item = state.questionnaires.find((entry) => Number(entry.id) === Number(questionnaireId));
+    if (!item) return;
+    if (!window.confirm('删除后不可恢复，确认删除该问卷吗？')) return;
+    await fetchJson(`/api/admin/questionnaires/${item.id}`, { method: 'DELETE' });
+    showToast('问卷已删除');
+    await reloadList();
+  }
+
   searchEl.addEventListener('input', (event) => {
     state.query = event.target.value || '';
     renderTable();
@@ -419,6 +461,10 @@
       copyText(item.public_url).then((copied) => {
         if (copied) showToast('分享链接已复制');
       });
+      return;
+    }
+    if (button.dataset.action === 'delete') {
+      deleteQuestionnaire(questionnaireId).catch((error) => showToast(error.message || '删除失败，请稍后重试', true));
       return;
     }
     if (button.dataset.action === 'export') {
