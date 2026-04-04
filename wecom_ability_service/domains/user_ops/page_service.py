@@ -167,6 +167,10 @@ def _build_placeholders(count: int) -> str:
     return ", ".join(["?"] * count)
 
 
+def _has_class_term_marker_sql(alias: str = "current") -> str:
+    return f"({alias}.class_term_no IS NOT NULL OR TRIM(COALESCE({alias}.class_term_label, '')) <> '')"
+
+
 def _query_base_rows(
     normalized_filters: dict[str, str],
     *,
@@ -207,6 +211,7 @@ def _query_base_rows(
           ON activation_source.mobile = current.mobile
          AND activation_source.is_active = ?
         WHERE 1 = 1
+          AND """ + _has_class_term_marker_sql("current") + """
     """
     params: list[Any] = [db_bool(True)]
 
@@ -385,10 +390,10 @@ def _list_query_items(
 
 def _list_class_term_options() -> list[dict[str, Any]]:
     rows = get_db().execute(
-        """
+        f"""
         SELECT DISTINCT class_term_no, class_term_label
         FROM user_ops_pool_current
-        WHERE class_term_no IS NOT NULL
+        WHERE {_has_class_term_marker_sql("user_ops_pool_current")}
         ORDER BY class_term_no ASC
         """
     ).fetchall()
@@ -398,6 +403,7 @@ def _list_class_term_options() -> list[dict[str, Any]]:
             "class_term_label": _normalize_str(row.get("class_term_label")) or f"{int(row['class_term_no'])}期",
         }
         for row in rows
+        if row.get("class_term_no") not in (None, "")
     ]
 
 
@@ -619,7 +625,10 @@ def set_user_ops_do_not_disturb(payload: dict[str, Any]) -> dict[str, Any]:
         db.execute(sql, tuple(params))
 
     db.commit()
-    item = _list_query_items(_normalize_filter_payload(), pool_ids=[int(target["id"])], apply_segment_filters=False)[0]
+    item_rows = _list_query_items(_normalize_filter_payload(), pool_ids=[int(target["id"])], apply_segment_filters=False)
+    if not item_rows:
+        raise LookupError("target is not in current user_ops page pool")
+    item = item_rows[0]
     return {
         "target": {
             "id": item["id"],

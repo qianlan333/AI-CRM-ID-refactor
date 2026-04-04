@@ -4,7 +4,7 @@ import base64
 import imghdr
 import json
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, jsonify, request
 
 from ..domains.routing_config import DEFAULT_SALES_ROUTE_OWNER_USERID
 from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
@@ -25,6 +25,7 @@ from ..services import (
     set_user_ops_do_not_disturb,
 )
 from ..wecom_client import WeComClientError
+from .admin_console import render_admin_user_ops_shell
 from .common import _build_excel_xml, _coerce_request_bool, _wecom_error_response
 
 MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
@@ -329,7 +330,7 @@ def admin_user_ops_send_record_refresh(record_id: int):
 
 
 def admin_user_ops_ui():
-    return render_template("admin_user_ops.html")
+    return render_admin_user_ops_shell()
 
 
 
