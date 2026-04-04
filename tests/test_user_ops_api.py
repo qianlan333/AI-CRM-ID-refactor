@@ -794,6 +794,7 @@ def _seed_user_ops_page_action_data(app) -> None:
             (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
             (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
             (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
             (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
@@ -841,6 +842,17 @@ def _seed_user_ops_page_action_data(app) -> None:
                 9,
                 "9期",
                 "student_import",
+                "13800138115",
+                "wm_send_no_class_term",
+                "无班期用户",
+                "sales_02",
+                "lead_trial",
+                True,
+                "activated",
+                "已激活",
+                None,
+                "",
+                "student_import",
             ),
         )
         db.execute(
@@ -849,6 +861,7 @@ def _seed_user_ops_page_action_data(app) -> None:
                 mobile, activation_status, activation_remark, created_by, is_active, created_at, updated_at
             )
             VALUES
+            (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
             (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
             (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
             (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -869,6 +882,11 @@ def _seed_user_ops_page_action_data(app) -> None:
                 "已激活",
                 "test",
                 True,
+                "13800138115",
+                "activated",
+                "已激活",
+                "test",
+                True,
             ),
         )
         db.commit()
@@ -881,13 +899,13 @@ def test_user_ops_overview_counts_are_correct(client, app):
     payload = response.get_json()
 
     assert response.status_code == 200
-    assert payload["lead_pool_total_count"] == 4
+    assert payload["lead_pool_total_count"] == 3
     assert payload["wecom_added_count"] == 2
-    assert payload["wecom_not_added_count"] == 2
+    assert payload["wecom_not_added_count"] == 1
     assert payload["mobile_bound_count"] == 1
-    assert payload["mobile_unbound_count"] == 3
+    assert payload["mobile_unbound_count"] == 2
     assert payload["huangxiaocan_activated_count"] == 1
-    assert payload["huangxiaocan_not_activated_count"] == 3
+    assert payload["huangxiaocan_not_activated_count"] == 2
     assert "huangxiaocan_unknown_count" not in payload
     assert "signed_999_count" not in payload
     assert "signed_3999_count" not in payload
@@ -901,13 +919,13 @@ def test_user_ops_overview_counts_phone_centric_union_without_double_count(clien
 
     assert response.status_code == 200
     cards = {item["key"]: item["value"] for item in payload["cards"]}
-    assert cards["lead_pool_total_count"] == 4
+    assert cards["lead_pool_total_count"] == 3
     assert cards["wecom_added_count"] == 2
-    assert cards["wecom_not_added_count"] == 2
+    assert cards["wecom_not_added_count"] == 1
     assert cards["mobile_bound_count"] == 1
-    assert cards["mobile_unbound_count"] == 3
+    assert cards["mobile_unbound_count"] == 2
     assert cards["huangxiaocan_activated_count"] == 1
-    assert cards["huangxiaocan_not_activated_count"] == 3
+    assert cards["huangxiaocan_not_activated_count"] == 2
     assert "huangxiaocan_unknown_count" not in cards
     assert "signed_999_count" not in cards
     assert "signed_3999_count" not in cards
@@ -919,7 +937,7 @@ def test_user_ops_list_ignores_legacy_current_status_filter(client, app):
     payload = response.get_json()
 
     assert response.status_code == 200
-    assert payload["total"] == 4
+    assert payload["total"] == 3
     assert "current_status" not in payload["items"][0]
 
 
@@ -958,10 +976,25 @@ def test_user_ops_export_returns_current_pool_rows(client, app):
     assert response.status_code == 200
     assert response.mimetype == "application/vnd.ms-excel"
     assert "已绑定引流用户" in content
+    assert "13800138062" not in content
     assert "黄小璨激活状态" in content
     assert "是否已绑手机号" in content
     assert "当前状态" not in content
     assert "高意向备注" not in content
+
+
+def test_user_ops_base_pool_excludes_records_without_class_term_marker(client, app):
+    _seed_user_ops_lead_pool_read_model(app)
+
+    overview_payload = client.get("/api/admin/user-ops/overview").get_json()
+    list_payload = client.get("/api/admin/user-ops/list").get_json()
+    export_response = client.get("/api/admin/user-ops/export")
+    export_content = export_response.get_data(as_text=True)
+
+    assert overview_payload["lead_pool_total_count"] == 3
+    assert {item["mobile"] for item in list_payload["items"]} == {"13800138002", "13800138061", ""}
+    assert all(item["class_term_no"] is not None or item["class_term_label"] for item in list_payload["items"])
+    assert "13800138062" not in export_content
 
 
 def test_user_ops_overview_accepts_new_filters_and_keeps_total_view_for_cards(client, app):
@@ -1171,6 +1204,62 @@ def test_user_ops_batch_send_preview_supports_manual_selected_items(client, app)
     assert payload["skipped_count"] == 2
     assert payload["skipped_by_reason"] == {"do_not_disturb": 1, "missing_external_userid": 1}
     assert [item["external_userid"] for item in payload["final_targets"]] == ["wm_send_eligible"]
+
+
+def test_user_ops_batch_send_preview_and_execute_exclude_manual_selected_rows_without_class_term(client, app, monkeypatch):
+    _seed_user_ops_page_action_data(app)
+
+    with app.app_context():
+        db = get_db()
+        no_class_term_id = db.execute(
+            "SELECT id FROM user_ops_pool_current WHERE external_userid = ?",
+            ("wm_send_no_class_term",),
+        ).fetchone()["id"]
+        eligible_id = db.execute(
+            "SELECT id FROM user_ops_pool_current WHERE external_userid = ?",
+            ("wm_send_eligible",),
+        ).fetchone()["id"]
+
+    preview_response = client.post(
+        "/api/admin/user-ops/batch-send/preview",
+        json={
+            "selection_mode": "manual",
+            "selected_ids": [int(eligible_id), int(no_class_term_id)],
+            "content": "只测有班期基础池",
+        },
+    )
+    preview_payload = preview_response.get_json()
+
+    assert preview_response.status_code == 200
+    assert preview_payload["selected_count"] == 1
+    assert preview_payload["eligible_count"] == 1
+    assert [item["external_userid"] for item in preview_payload["final_targets"]] == ["wm_send_eligible"]
+
+    calls: list[dict[str, object]] = []
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        calls.append({"task_type": task_type, "fn_name": fn_name, "payload": payload})
+        return {"task_id": 980 + len(calls), "wecom_result": {"msgid": f"page-task-class-{len(calls)}"}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.user_ops.page_service.dispatch_wecom_task", fake_dispatch)
+
+    execute_response = client.post(
+        "/api/admin/user-ops/batch-send/execute",
+        json={
+            "selection_mode": "manual",
+            "selected_ids": [int(eligible_id), int(no_class_term_id)],
+            "content": "只测有班期基础池",
+            "confirm": True,
+        },
+    )
+    execute_payload = execute_response.get_json()
+
+    assert execute_response.status_code == 200
+    assert execute_payload["selected_count"] == 1
+    assert execute_payload["eligible_count"] == 1
+    assert execute_payload["sent_count"] == 1
+    assert len(calls) == 1
+    assert calls[0]["payload"]["external_userid"] == ["wm_send_eligible"]
 
 
 def test_user_ops_batch_send_preview_supports_emoji_and_images(client, app):
@@ -1501,6 +1590,7 @@ def test_user_ops_ui_route_renders_conversion_page(client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
+    assert 'class="admin-sidebar"' in html
     assert "运营管理" in html
     assert "转化链路运营页" in html
     assert "用户运营明细表" in html
@@ -1517,12 +1607,16 @@ def test_user_ops_shell_page_exists(client):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
+    assert 'class="admin-sidebar"' in html
     assert "运营管理" in html
     assert "转化链路运营页" in html
     assert "用户运营明细表" in html
     assert "发送记录" in html
     assert "批量群发" in html
     assert "待处理作业" not in html
+    assert "运营名单历史" not in html
+    assert "班级状态" not in html
+    assert "导入" not in html
 
 
 def test_user_ops_legacy_ui_hides_legacy_fields_and_buttons(client):
@@ -1530,6 +1624,7 @@ def test_user_ops_legacy_ui_hides_legacy_fields_and_buttons(client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
+    assert 'class="admin-sidebar"' in html
     assert "发送记录" in html
     assert "免打扰" in html
     assert "批量群发" in html

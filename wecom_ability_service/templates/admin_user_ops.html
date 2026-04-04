@@ -1,10 +1,4 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>运营管理</title>
-  <style>
+<style>
     :root {
       --bg: #f4efe7;
       --panel: rgba(255, 252, 247, 0.96);
@@ -582,14 +576,12 @@
       }
     }
   </style>
-</head>
-<body>
   <div class="shell">
     <section class="panel hero">
       <div class="hero-head">
         <div class="hero-copy">
           <h1>运营管理</h1>
-          <p class="subtle">转化链路运营页。当前页面只围绕 `user_ops_pool_current` 投影池做总览、筛人、客户详情复用、批量群发、免打扰和发送记录，不再承载后台维护入口。</p>
+          <p class="subtle">转化链路运营页。当前页面只围绕有班期标识的 `user_ops_pool_current` 基础池做总览、筛人、客户详情复用、批量群发、免打扰和发送记录，不再承载后台维护入口。</p>
         </div>
         <div class="hero-actions">
           <button id="export-current-btn" class="btn ghost" type="button">导出当前结果</button>
@@ -1640,5 +1632,3 @@
 
     boot().catch(handlePageError);
   </script>
-</body>
-</html>

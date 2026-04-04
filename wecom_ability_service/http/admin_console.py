@@ -39,6 +39,16 @@ def _render_admin_template(
     )
 
 
+def render_admin_user_ops_shell():
+    return _render_admin_template(
+        "user_ops.html",
+        active_nav="operations",
+        page_title="运营管理",
+        page_summary="转化链路运营页。当前页只针对有班期标识的引流品用户做筛选、客户详情复用、批量群发、免打扰和发送记录。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("运营", None)),
+    )
+
+
 def admin_console_home():
     quick_links = [
         {
@@ -109,7 +119,7 @@ def admin_console_system():
 
 
 def admin_console_legacy_user_ops():
-    return render_template("admin_user_ops.html")
+    return render_admin_user_ops_shell()
 
 
 def admin_console_legacy_questionnaires():
