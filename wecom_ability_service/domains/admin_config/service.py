@@ -789,6 +789,49 @@ def list_mcp_tool_settings(*, query: str, enabled_only: bool) -> dict[str, Any]:
     }
 
 
+def list_marketing_automation_segment_stats() -> list[dict[str, str | int]]:
+    counts = {"unknown": 0, "normal": 0, "core": 0, "top": 0}
+    for row in repo.list_marketing_automation_segment_counts():
+        segment = _normalized_text(row.get("segment")).lower()
+        if segment in counts:
+            counts[segment] = int(row.get("total") or 0)
+    return [
+        {"key": "unknown", "label": "unknown", "value": counts["unknown"], "description": "未命中有效问卷或尚未形成分层"},
+        {"key": "normal", "label": "normal", "value": counts["normal"], "description": "最近问卷命中数低于 core_threshold"},
+        {"key": "core", "label": "core", "value": counts["core"], "description": "当前可优先进入自动化转化的人群"},
+        {"key": "top", "label": "top", "value": counts["top"], "description": "当前最高优先级人群"},
+    ]
+
+
+def list_marketing_automation_dispatch_history(*, status: str = "", limit: int = 50) -> dict[str, Any]:
+    normalized_status = _normalized_text(status)
+    items: list[dict[str, Any]] = []
+    for row in repo.list_marketing_automation_dispatch_history(status=normalized_status, limit=int(limit)):
+        main_stage = _normalized_text(row.get("main_stage"))
+        sub_stage = _normalized_text(row.get("sub_stage"))
+        stage = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage or ""
+        items.append(
+            {
+                "batch_id": int(row.get("batch_id") or 0),
+                "external_userid": _normalized_text(row.get("external_userid")),
+                "owner_userid": _normalized_text(row.get("owner_userid")),
+                "segment": _normalized_text(row.get("segment")) or "unknown",
+                "main_stage": main_stage,
+                "sub_stage": sub_stage,
+                "stage": stage,
+                "dispatch_status": _normalized_text(row.get("dispatch_status")),
+                "created_at": _normalized_text(row.get("created_at")),
+                "acked_at": _normalized_text(row.get("acked_at")),
+            }
+        )
+    return {
+        "status": normalized_status,
+        "limit": int(limit),
+        "count": len(items),
+        "items": items,
+    }
+
+
 def save_mcp_tool_setting(payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
     tool_name = _normalized_text(payload.get("tool_name"))
     defaults = {item["name"]: item for item in _default_mcp_tool_defs() if _normalized_text(item.get("name"))}

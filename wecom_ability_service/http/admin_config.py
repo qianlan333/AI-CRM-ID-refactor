@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from flask import jsonify, redirect, render_template, request, url_for
 
-from ..db import get_db
 from ..domains.admin_config import (
     build_config_home_payload,
     config_tabs,
     list_admin_app_settings,
     list_class_term_tag_mappings,
+    list_marketing_automation_dispatch_history,
+    list_marketing_automation_segment_stats,
     list_mcp_tool_settings,
     list_owner_routing_settings,
     list_signup_tag_settings,
@@ -336,27 +337,6 @@ def admin_config_save_mcp_tool():
     return redirect(url_for("api.admin_config_mcp_tools", saved=1, edit_tool=saved.get("tool_name", "")), code=302)
 
 
-def _marketing_automation_segment_stats() -> list[dict[str, str | int]]:
-    counts = {"unknown": 0, "normal": 0, "core": 0, "top": 0}
-    rows = get_db().execute(
-        """
-        SELECT segment, COUNT(*) AS total
-        FROM customer_value_segment_current
-        GROUP BY segment
-        """
-    ).fetchall()
-    for row in rows:
-        segment = str(row.get("segment") or "").strip().lower()
-        if segment in counts:
-            counts[segment] = int(row.get("total") or 0)
-    return [
-        {"key": "unknown", "label": "unknown", "value": counts["unknown"], "description": "未命中有效问卷或尚未形成分层"},
-        {"key": "normal", "label": "normal", "value": counts["normal"], "description": "最近问卷命中数低于 core_threshold"},
-        {"key": "core", "label": "core", "value": counts["core"], "description": "当前可优先进入自动化转化的人群"},
-        {"key": "top", "label": "top", "value": counts["top"], "description": "当前最高优先级人群"},
-    ]
-
-
 def _marketing_automation_dispatch_status_options() -> list[dict[str, str]]:
     return [
         {"value": "", "label": "全部状态"},
@@ -367,97 +347,6 @@ def _marketing_automation_dispatch_status_options() -> list[dict[str, str]]:
     ]
 
 
-def _marketing_automation_dispatch_history(*, status: str = "", limit: int = 50) -> dict[str, object]:
-    normalized_status = str(status or "").strip()
-    filters: list[str] = []
-    params: list[object] = []
-    if normalized_status:
-        filters.append("log.dispatch_status = ?")
-        params.append(normalized_status)
-    where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
-    params.append(int(limit))
-    rows = get_db().execute(
-        f"""
-        SELECT
-            log.batch_id,
-            log.external_userid,
-            COALESCE(
-                (
-                    SELECT c.owner_userid
-                    FROM contacts c
-                    WHERE c.external_userid = log.external_userid
-                    ORDER BY c.updated_at DESC, c.id DESC
-                    LIMIT 1
-                ),
-                ''
-            ) AS owner_userid,
-            COALESCE(
-                (
-                    SELECT v.segment
-                    FROM customer_value_segment_current v
-                    WHERE v.external_userid = log.external_userid
-                    ORDER BY v.updated_at DESC, v.id DESC
-                    LIMIT 1
-                ),
-                'unknown'
-            ) AS segment,
-            COALESCE(
-                (
-                    SELECT s.main_stage
-                    FROM customer_marketing_state_current s
-                    WHERE s.external_userid = log.external_userid
-                    ORDER BY s.updated_at DESC, s.id DESC
-                    LIMIT 1
-                ),
-                ''
-            ) AS main_stage,
-            COALESCE(
-                (
-                    SELECT s.sub_stage
-                    FROM customer_marketing_state_current s
-                    WHERE s.external_userid = log.external_userid
-                    ORDER BY s.updated_at DESC, s.id DESC
-                    LIMIT 1
-                ),
-                ''
-            ) AS sub_stage,
-            log.dispatch_status,
-            log.created_at,
-            log.acked_at
-        FROM conversion_dispatch_log log
-        {where_sql}
-        ORDER BY log.created_at DESC, log.id DESC
-        LIMIT ?
-        """,
-        tuple(params),
-    ).fetchall()
-    items: list[dict[str, object]] = []
-    for row in rows:
-        main_stage = str(row.get("main_stage") or "").strip()
-        sub_stage = str(row.get("sub_stage") or "").strip()
-        stage = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage or ""
-        items.append(
-            {
-                "batch_id": int(row.get("batch_id") or 0),
-                "external_userid": str(row.get("external_userid") or "").strip(),
-                "owner_userid": str(row.get("owner_userid") or "").strip(),
-                "segment": str(row.get("segment") or "").strip() or "unknown",
-                "main_stage": main_stage,
-                "sub_stage": sub_stage,
-                "stage": stage,
-                "dispatch_status": str(row.get("dispatch_status") or "").strip(),
-                "created_at": str(row.get("created_at") or "").strip(),
-                "acked_at": str(row.get("acked_at") or "").strip(),
-            }
-        )
-    return {
-        "status": normalized_status,
-        "limit": int(limit),
-        "count": len(items),
-        "items": items,
-    }
-
-
 def admin_marketing_automation_ui():
     config = get_signup_conversion_config()
     questionnaires = list_questionnaires()
@@ -466,7 +355,7 @@ def admin_marketing_automation_ui():
     if questionnaire_id not in (None, ""):
         selected_questionnaire = get_questionnaire_detail(int(questionnaire_id))
     dispatch_status = _query_text("status")
-    dispatch_history = _marketing_automation_dispatch_history(status=dispatch_status, limit=50)
+    dispatch_history = list_marketing_automation_dispatch_history(status=dispatch_status, limit=50)
     return _render_config_template(
         "config_marketing_automation.html",
         active_tab="marketing_automation",
@@ -480,7 +369,7 @@ def admin_marketing_automation_ui():
         marketing_config=config,
         questionnaires=questionnaires,
         selected_questionnaire=selected_questionnaire,
-        segment_stats=_marketing_automation_segment_stats(),
+        segment_stats=list_marketing_automation_segment_stats(),
         dispatch_history=dispatch_history,
         dispatch_status_options=_marketing_automation_dispatch_status_options(),
         question_rule_slots=[1, 2, 3, 4, 5],
@@ -620,7 +509,7 @@ def api_admin_marketing_automation_dispatch_history():
     return jsonify(
         {
             "ok": True,
-            "dispatch_history": _marketing_automation_dispatch_history(
+            "dispatch_history": list_marketing_automation_dispatch_history(
                 status=_query_text("status"),
                 limit=_query_int("limit", default=50, minimum=1, maximum=200),
             ),
