@@ -11,6 +11,7 @@ ADMIN_NAV_ITEMS = (
     {"key": "workbench", "label": "工作台", "endpoint": "api.admin_console_home"},
     {"key": "customers", "label": "客户", "endpoint": "api.admin_console_customers"},
     {"key": "operations", "label": "运营", "endpoint": "api.admin_console_user_ops"},
+    {"key": "automation_conversion", "label": "自动化转化", "endpoint": "api.admin_automation_conversion"},
     {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
     {"key": "mcp", "label": "AI 工具", "endpoint": "api.admin_console_mcp"},
     {"key": "config", "label": "配置", "endpoint": "api.admin_config_home"},

@@ -307,84 +307,6 @@ def upsert_mcp_tool_setting(
     get_db().commit()
 
 
-def list_marketing_automation_segment_counts() -> list[dict[str, Any]]:
-    rows = get_db().execute(
-        """
-        SELECT segment, COUNT(*) AS total
-        FROM customer_value_segment_current
-        GROUP BY segment
-        """
-    ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def list_marketing_automation_dispatch_history(*, status: str = "", limit: int = 50) -> list[dict[str, Any]]:
-    normalized_status = str(status or "").strip()
-    filters: list[str] = []
-    params: list[Any] = []
-    if normalized_status:
-        filters.append("log.dispatch_status = ?")
-        params.append(normalized_status)
-    where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
-    params.append(int(limit))
-    rows = get_db().execute(
-        f"""
-        SELECT
-            log.batch_id,
-            log.external_userid,
-            COALESCE(
-                (
-                    SELECT c.owner_userid
-                    FROM contacts c
-                    WHERE c.external_userid = log.external_userid
-                    ORDER BY c.updated_at DESC, c.id DESC
-                    LIMIT 1
-                ),
-                ''
-            ) AS owner_userid,
-            COALESCE(
-                (
-                    SELECT v.segment
-                    FROM customer_value_segment_current v
-                    WHERE v.external_userid = log.external_userid
-                    ORDER BY v.updated_at DESC, v.id DESC
-                    LIMIT 1
-                ),
-                'unknown'
-            ) AS segment,
-            COALESCE(
-                (
-                    SELECT s.main_stage
-                    FROM customer_marketing_state_current s
-                    WHERE s.external_userid = log.external_userid
-                    ORDER BY s.updated_at DESC, s.id DESC
-                    LIMIT 1
-                ),
-                ''
-            ) AS main_stage,
-            COALESCE(
-                (
-                    SELECT s.sub_stage
-                    FROM customer_marketing_state_current s
-                    WHERE s.external_userid = log.external_userid
-                    ORDER BY s.updated_at DESC, s.id DESC
-                    LIMIT 1
-                ),
-                ''
-            ) AS sub_stage,
-            log.dispatch_status,
-            log.created_at,
-            log.acked_at
-        FROM conversion_dispatch_log log
-        {where_sql}
-        ORDER BY log.created_at DESC, log.id DESC
-        LIMIT ?
-        """,
-        tuple(params),
-    ).fetchall()
-    return [dict(row) for row in rows]
-
-
 def insert_admin_operation_log(
     *,
     operator: str,
@@ -456,3 +378,122 @@ def get_latest_audit_map(*, target_type: str, target_ids: list[str]) -> dict[str
             continue
         result[target_id] = dict(row)
     return result
+
+
+def get_automation_conversion_segment_counts() -> dict[str, int]:
+    counts = {"unknown": 0, "normal": 0, "core": 0, "top": 0}
+    rows = get_db().execute(
+        """
+        SELECT segment, COUNT(*) AS total
+        FROM customer_value_segment_current
+        GROUP BY segment
+        """
+    ).fetchall()
+    for row in rows:
+        segment = str(row.get("segment") or "").strip().lower()
+        if segment in counts:
+            counts[segment] = int(row.get("total") or 0)
+    return counts
+
+
+def get_automation_conversion_stage_counts() -> dict[str, int]:
+    rows = get_db().execute(
+        """
+        SELECT main_stage, sub_stage, COUNT(*) AS total
+        FROM customer_marketing_state_current
+        GROUP BY main_stage, sub_stage
+        """
+    ).fetchall()
+    result: dict[str, int] = {}
+    for row in rows:
+        main_stage = str(row.get("main_stage") or "").strip()
+        sub_stage = str(row.get("sub_stage") or "").strip()
+        key = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage
+        if not key:
+            continue
+        result[key] = int(row.get("total") or 0)
+    return result
+
+
+def list_automation_conversion_stage_snapshot_rows() -> list[dict[str, Any]]:
+    rows = get_db().execute(
+        """
+        SELECT
+            s.main_stage,
+            s.sub_stage,
+            COALESCE(v.segment, 'unknown') AS segment,
+            COALESCE(NULLIF(s.entered_at, ''), NULLIF(s.updated_at, ''), '') AS entered_at,
+            s.updated_at
+        FROM customer_marketing_state_current s
+        LEFT JOIN customer_value_segment_current v
+            ON s.external_userid <> '' AND v.external_userid = s.external_userid
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_automation_conversion_dispatch_history(*, status: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    normalized_status = str(status or "").strip()
+    filters: list[str] = []
+    params: list[Any] = []
+    if normalized_status:
+        filters.append("log.dispatch_status = ?")
+        params.append(normalized_status)
+    where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
+    params.append(max(1, min(int(limit), 200)))
+    rows = get_db().execute(
+        f"""
+        SELECT
+            log.batch_id,
+            log.external_userid,
+            COALESCE(
+                (
+                    SELECT c.owner_userid
+                    FROM contacts c
+                    WHERE c.external_userid = log.external_userid
+                    ORDER BY c.updated_at DESC, c.id DESC
+                    LIMIT 1
+                ),
+                ''
+            ) AS owner_userid,
+            COALESCE(
+                (
+                    SELECT v.segment
+                    FROM customer_value_segment_current v
+                    WHERE v.external_userid = log.external_userid
+                    ORDER BY v.updated_at DESC, v.id DESC
+                    LIMIT 1
+                ),
+                'unknown'
+            ) AS segment,
+            COALESCE(
+                (
+                    SELECT s.main_stage
+                    FROM customer_marketing_state_current s
+                    WHERE s.external_userid = log.external_userid
+                    ORDER BY s.updated_at DESC, s.id DESC
+                    LIMIT 1
+                ),
+                ''
+            ) AS main_stage,
+            COALESCE(
+                (
+                    SELECT s.sub_stage
+                    FROM customer_marketing_state_current s
+                    WHERE s.external_userid = log.external_userid
+                    ORDER BY s.updated_at DESC, s.id DESC
+                    LIMIT 1
+                ),
+                ''
+            ) AS sub_stage,
+            log.dispatch_status,
+            log.created_at,
+            log.acked_at
+        FROM conversion_dispatch_log log
+        {where_sql}
+        ORDER BY log.created_at DESC, log.id DESC
+        LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+    return [dict(row) for row in rows]

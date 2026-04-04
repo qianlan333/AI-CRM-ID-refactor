@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-from flask import jsonify, redirect, render_template, request, url_for
+from flask import jsonify, redirect, request, url_for
 
 from ..domains.admin_config import (
+    automation_conversion_dispatch_filter_options,
+    automation_conversion_recent_activity,
+    automation_conversion_segment_cards,
+    automation_conversion_stage_columns,
+    build_automation_conversion_stage_detail_payload,
     build_config_home_payload,
     config_tabs,
     list_admin_app_settings,
+    list_automation_conversion_dispatch_history,
     list_class_term_tag_mappings,
-    list_marketing_automation_dispatch_history,
-    list_marketing_automation_segment_stats,
     list_mcp_tool_settings,
     list_owner_routing_settings,
     list_signup_tag_settings,
+    normalize_automation_conversion_dispatch_filter,
     save_admin_app_settings,
     save_class_term_tag_mapping,
     save_mcp_tool_setting,
@@ -337,43 +342,129 @@ def admin_config_save_mcp_tool():
     return redirect(url_for("api.admin_config_mcp_tools", saved=1, edit_tool=saved.get("tool_name", "")), code=302)
 
 
-def _marketing_automation_dispatch_status_options() -> list[dict[str, str]]:
+def _automation_conversion_status_cards(config: dict[str, object], selected_questionnaire: dict[str, object] | None) -> list[dict[str, str]]:
+    questionnaire_name = "还没选择问卷"
+    if selected_questionnaire:
+        questionnaire_name = str(
+            selected_questionnaire.get("title")
+            or selected_questionnaire.get("name")
+            or questionnaire_name
+        ).strip() or questionnaire_name
     return [
-        {"value": "", "label": "全部状态"},
-        {"value": "pending", "label": "pending"},
-        {"value": "blocked_quiet_hours", "label": "blocked_quiet_hours"},
-        {"value": "acked", "label": "acked"},
-        {"value": "converted_before_dispatch", "label": "converted_before_dispatch"},
+        {
+            "label": "自动跟进开关",
+            "value": "已开启" if config.get("enabled") else "已暂停",
+            "description": "当前只处理“报名成功”这个场景。",
+        },
+        {
+            "label": "当前问卷",
+            "value": questionnaire_name,
+            "description": "运营只需要选定一份问卷，系统就按这份问卷判断客户意向。",
+        },
+        {
+            "label": "重点人群门槛",
+            "value": f"命中 {int(config.get('core_threshold') or 0)} 题",
+            "description": f"命中 {int(config.get('top_threshold') or 0)} 题及以上会进入“优先转化”。",
+        },
+        {
+            "label": "夜间暂停",
+            "value": f"{int(config.get('quiet_hour_start') or 23)}:00 后暂停启动",
+            "description": f"按 {str(config.get('timezone') or 'Asia/Shanghai').strip() or 'Asia/Shanghai'} 时区执行，夜间不会新启动自动跟进。",
+        },
     ]
 
 
-def admin_marketing_automation_ui():
+def admin_automation_conversion():
     config = get_signup_conversion_config()
     questionnaires = list_questionnaires()
     questionnaire_id = config.get("questionnaire_id")
     selected_questionnaire = None
     if questionnaire_id not in (None, ""):
         selected_questionnaire = get_questionnaire_detail(int(questionnaire_id))
-    dispatch_status = _query_text("status")
-    dispatch_history = list_marketing_automation_dispatch_history(status=dispatch_status, limit=50)
-    return _render_config_template(
-        "config_marketing_automation.html",
-        active_tab="marketing_automation",
-        page_title="营销自动化",
-        page_summary="在这里维护报名成功自动化配置，并对单个客户做预览校验。",
+    dispatch_filter = normalize_automation_conversion_dispatch_filter(_query_text("status"))
+    dispatch_history = automation_conversion_recent_activity(filter_value=dispatch_filter, limit=50)
+    return _render_admin_template(
+        "automation_conversion.html",
+        active_nav="automation_conversion",
+        page_title="自动化转化",
+        page_summary="用业务步骤维护“报名成功”自动跟进，查看客户所处阶段，并追踪最近交给 AI 的处理情况。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
-            ("配置中心", url_for("api.admin_config_home")),
-            ("营销自动化", None),
+            ("自动化转化", None),
         ),
+        current_status_cards=_automation_conversion_status_cards(config, selected_questionnaire),
         marketing_config=config,
         questionnaires=questionnaires,
         selected_questionnaire=selected_questionnaire,
-        segment_stats=list_marketing_automation_segment_stats(),
+        priority_distribution=automation_conversion_segment_cards(),
+        stage_columns=automation_conversion_stage_columns(),
         dispatch_history=dispatch_history,
-        dispatch_status_options=_marketing_automation_dispatch_status_options(),
+        dispatch_status_options=automation_conversion_dispatch_filter_options(),
         question_rule_slots=[1, 2, 3, 4, 5],
     )
+
+
+def admin_automation_conversion_stage_detail(stage_key: str):
+    try:
+        payload = build_automation_conversion_stage_detail_payload(
+            stage_key=stage_key,
+            keyword=_query_text("keyword"),
+            offset=_query_int("offset", default=0, minimum=0, maximum=100000),
+            limit=_query_int("limit", default=50, minimum=1, maximum=100),
+        )
+    except ValueError:
+        return _render_admin_template(
+            "placeholder.html",
+            active_nav="automation_conversion",
+            page_title="阶段不存在",
+            page_summary="当前阶段没有对应页面，请返回自动化转化首页重新选择。",
+            breadcrumbs=_breadcrumb_items(
+                ("客户管理后台", url_for("api.admin_console_home")),
+                ("自动化转化", url_for("api.admin_automation_conversion")),
+                ("阶段不存在", None),
+            ),
+            actions=[{"label": "返回自动化转化首页", "href": url_for("api.admin_automation_conversion"), "variant": "secondary"}],
+            state_title="阶段不存在",
+            state_body="请检查链接是否正确，或重新点击阶段看板进入。",
+            state_items=["支持的阶段包括：待转化、已开始使用、已报名成功"],
+            page_error="未找到对应阶段",
+        ), 404
+
+    stage = payload["stage"]
+    return _render_admin_template(
+        "automation_conversion_stage.html",
+        active_nav="automation_conversion",
+        page_title=f"{stage['label']}客户",
+        page_summary="按阶段查看客户名单，支持继续按姓名、手机号或客户编号缩小范围。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            (stage["label"], None),
+        ),
+        stage_payload=payload,
+    )
+
+
+def admin_automation_conversion_preview_page():
+    return _render_admin_template(
+        "automation_conversion_preview.html",
+        active_nav="automation_conversion",
+        page_title="客户试运行",
+        page_summary="输入手机号、客户姓名或客户编号，查看系统当前会不会把这位客户放进自动化转化。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("客户试运行", None),
+        ),
+    )
+
+
+def admin_marketing_automation_ui():
+    target = url_for("api.admin_automation_conversion")
+    query_string = request.query_string.decode("utf-8").strip()
+    if query_string:
+        target = f"{target}?{query_string}"
+    return redirect(target, code=302)
 
 
 def api_admin_config_overview():
@@ -509,7 +600,7 @@ def api_admin_marketing_automation_dispatch_history():
     return jsonify(
         {
             "ok": True,
-            "dispatch_history": list_marketing_automation_dispatch_history(
+            "dispatch_history": list_automation_conversion_dispatch_history(
                 status=_query_text("status"),
                 limit=_query_int("limit", default=50, minimum=1, maximum=200),
             ),
@@ -534,6 +625,9 @@ def register_routes(bp):
     bp.route("/admin/config/signup-tags/save", methods=["POST"])(admin_config_save_signup_tag)
     bp.route("/admin/config/class-term-tags", methods=["GET"])(admin_config_class_term_tags)
     bp.route("/admin/config/class-term-tags/save", methods=["POST"])(admin_config_save_class_term_tag)
+    bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
+    bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage_detail)
+    bp.route("/admin/automation-conversion/preview", methods=["GET"])(admin_automation_conversion_preview_page)
     bp.route("/admin/marketing-automation/ui", methods=["GET"])(admin_marketing_automation_ui)
     bp.route("/admin/config/app-settings", methods=["GET"])(admin_config_app_settings)
     bp.route("/admin/config/app-settings/save", methods=["POST"])(admin_config_save_app_settings)

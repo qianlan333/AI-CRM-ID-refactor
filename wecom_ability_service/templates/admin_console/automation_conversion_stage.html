@@ -1,0 +1,112 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>{{ stage_payload.stage.label }}</h2>
+      <p>{{ stage_payload.stage.description }}</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="/admin/automation-conversion">返回自动化转化首页</a>
+      <a class="admin-button admin-button--ghost" href="/admin/automation-conversion/preview">客户试运行</a>
+    </div>
+  </div>
+
+  <div class="admin-card-grid admin-card-grid--triple">
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">总人数</div>
+      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.total_count }}</div>
+      <p class="admin-card-copy">当前处在这一阶段的全部客户数量。</p>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">重点用户</div>
+      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.focus_count }}</div>
+      <p class="admin-card-copy">值得优先跟进、已经进入重点范围的客户。</p>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">最高优先</div>
+      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.highest_priority_count }}</div>
+      <p class="admin-card-copy">最值得优先推进转化的一批客户。</p>
+    </article>
+  </div>
+
+  <div class="admin-card-head automation-section-head">
+    <div>
+      <h2>今日新增</h2>
+      <p>今天新进入这一阶段的客户数量，方便运营判断节奏变化。</p>
+    </div>
+  </div>
+  <div class="admin-state admin-state--inline">
+    <strong>{{ stage_payload.stage.today_new_count }} 位</strong>
+    <span>这是今天新进入“{{ stage_payload.stage.label }}”的客户数量。</span>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>客户名单</h2>
+      <p>支持按姓名、手机号或客户编号缩小范围，方便运营快速定位。</p>
+    </div>
+  </div>
+
+  <form class="admin-form-grid admin-form-grid--filters" method="get" action="/admin/automation-conversion/stage/{{ stage_payload.stage.route_key }}">
+    <label>
+      <span>搜索客户</span>
+      <input type="text" name="keyword" value="{{ stage_payload.filters.keyword }}" placeholder="输入姓名、手机号或客户编号">
+    </label>
+    <button class="admin-button admin-button--secondary" type="submit">筛选</button>
+    <div class="admin-muted">当前显示 {{ stage_payload.pagination.total }} 位客户中的部分结果。</div>
+  </form>
+
+  {% if stage_payload.customers %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>客户</th>
+          <th>客户编号</th>
+          <th>负责人</th>
+          <th>手机号</th>
+          <th>最近更新时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in stage_payload.customers %}
+        <tr>
+          <td>{{ item.customer_name }}</td>
+          <td>{{ item.external_userid }}</td>
+          <td>{{ item.owner_display_name or item.owner_userid or "暂无" }}</td>
+          <td>{{ item.mobile or "暂无" }}</td>
+          <td>{{ item.last_touch_at or "暂无" }}</td>
+          <td><a class="admin-button admin-button--ghost" href="/admin/customers/{{ item.external_userid }}">查看详情</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-state admin-state--inline">
+    <strong>当前没有可展示的客户</strong>
+    <span>可以调整搜索条件，或者返回首页查看其他阶段。</span>
+  </div>
+  {% endif %}
+
+  <div class="admin-toolbar">
+    {% if stage_payload.pagination.has_prev %}
+    <a
+      class="admin-button admin-button--secondary"
+      href="/admin/automation-conversion/stage/{{ stage_payload.stage.route_key }}?keyword={{ stage_payload.filters.keyword|urlencode }}&offset={{ stage_payload.pagination.prev_offset }}&limit={{ stage_payload.pagination.limit }}"
+    >上一页</a>
+    {% endif %}
+    {% if stage_payload.pagination.has_next %}
+    <a
+      class="admin-button admin-button--secondary"
+      href="/admin/automation-conversion/stage/{{ stage_payload.stage.route_key }}?keyword={{ stage_payload.filters.keyword|urlencode }}&offset={{ stage_payload.pagination.next_offset }}&limit={{ stage_payload.pagination.limit }}"
+    >下一页</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

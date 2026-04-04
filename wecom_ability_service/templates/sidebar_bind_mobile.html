@@ -261,7 +261,7 @@
       <div class="automation-card-head">
         <div>
           <h2 class="section-title">营销自动化卡片</h2>
-          <p class="section-note">内部真相直接读取 TASK-07 的营销状态接口，手工标记报名成功也走同一套服务。</p>
+          <p class="section-note">这里展示客户当前阶段、当前分层和是否进入自动化，手工标记报名成功也走同一套判断。</p>
         </div>
         <div class="actions">
           <button id="mark-enrolled-button" type="button" class="danger-button">标记报名成功</button>
@@ -269,17 +269,17 @@
         </div>
       </div>
       <div class="badge-row">
-        <span id="marketing-stage-badge" class="badge warn">待识别</span>
-        <span id="marketing-segment-badge" class="badge">未知</span>
+        <span id="marketing-stage-badge" class="badge warn">待转化</span>
+        <span id="marketing-segment-badge" class="badge">暂未分层</span>
       </div>
       <div class="automation-grid automation-grid--triple">
         <div class="automation-item">
           <span>当前阶段</span>
-          <strong id="marketing-phase-value">待识别</strong>
+          <strong id="marketing-phase-value">待转化</strong>
         </div>
         <div class="automation-item">
-          <span>价值分层</span>
-          <strong id="marketing-segment-value">未知</strong>
+          <span>当前分层</span>
+          <strong id="marketing-segment-value">暂未分层</strong>
         </div>
         <div class="automation-item">
           <span>命中题数</span>
@@ -387,17 +387,6 @@
       showCard('bound');
     }
 
-    function stageDisplayLabel(marketingStatus) {
-      const stageKey = String((marketingStatus || {}).stage_key || '').trim();
-      const labelMap = {
-        'prospect/mobile_only': '手机号线索',
-        'prospect/wecom_connected': '已加微待激活',
-        'active/activated': '已激活',
-        'converted/enrolled': '已报名成功',
-      };
-      return labelMap[stageKey] || stageKey || '待识别';
-    }
-
     function applyMarketingBadge(el, text, tone) {
       el.textContent = text || '-';
       el.className = 'badge' + (tone ? ' ' + tone : '');
@@ -407,12 +396,14 @@
       const payload = marketingStatus || {};
       state.marketingStatus = payload;
       const stageKey = String(payload.stage_key || '').trim();
-      const stageLabel = stageDisplayLabel(payload);
+      const stageLabel = String(payload.stage_display || '').trim() || '待转化';
       const segment = String(payload.segment || '').trim() || 'unknown';
-      const segmentLabel = String(payload.segment_label || '').trim() || segment;
+      const segmentLabel = String(payload.segment_display || '').trim() || '暂未分层';
       const hitCount = Number(payload.hit_count || 0);
       const activated = Boolean(String(payload.last_activation_at || '').trim());
       const enrolled = stageKey === 'converted/enrolled';
+      const eligibilityLabel = String(payload.eligibility_display || '').trim() || (payload.eligible_for_conversion ? '会' : '不会');
+      const ineligibleReason = String(payload.ineligible_reason_display || '').trim();
       marketingPhaseValue.textContent = stageLabel;
       marketingSegmentValue.textContent = segmentLabel;
       marketingHitCountValue.textContent = String(hitCount);
@@ -426,8 +417,8 @@
       setStatus(
         marketingProfileStatus,
         payload.eligible_for_conversion
-          ? '当前客户符合自动化转化条件。'
-          : (payload.ineligible_reason ? ('当前不进入自动化：' + payload.ineligible_reason) : '当前客户不在自动化候选范围内。'),
+          ? ('是否进入自动化：' + eligibilityLabel)
+          : ('是否进入自动化：' + eligibilityLabel + (ineligibleReason ? '；未进入原因：' + ineligibleReason : '。')),
         enrolled ? 'success' : '',
       );
       marketingProfileCard.classList.remove('hidden');

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from flask import current_app
 
+from ...customer_center.service import list_customers
 from ...infra.constants import USER_OPS_CLASS_TERM_TAG_GROUP_NAME
 from ...infra.settings import get_setting, mask_value
 from ..routing_config import (
@@ -27,6 +30,59 @@ TARGET_SIGNUP_TAG_RULE = "signup_tag_rule"
 TARGET_CLASS_TERM_TAG_MAPPING = "class_term_tag_mapping"
 TARGET_APP_SETTING = "app_setting"
 TARGET_MCP_TOOL_SETTING = "mcp_tool_setting"
+
+AUTOMATION_CONVERSION_SEGMENT_DEFINITIONS = (
+    {
+        "segment": "normal",
+        "key": "regular_users",
+        "label": "普通用户",
+        "description": "已经有资料，但暂时不属于重点转化人群。",
+    },
+    {
+        "segment": "core",
+        "key": "priority_users",
+        "label": "重点用户",
+        "description": "值得优先关注，适合进入自动跟进范围。",
+    },
+    {
+        "segment": "top",
+        "key": "highest_priority_users",
+        "label": "最高优先用户",
+        "description": "当前最值得优先转化的一批客户。",
+    },
+)
+
+AUTOMATION_CONVERSION_STAGE_DEFINITIONS = (
+    {
+        "main_stage": "prospect",
+        "key": "waiting_conversion",
+        "route_key": "waiting-conversion",
+        "label": "待转化",
+        "description": "还在报名前判断阶段，运营可以先看谁最值得推进。",
+    },
+    {
+        "main_stage": "active",
+        "key": "started_using",
+        "route_key": "started-using",
+        "label": "已开始使用",
+        "description": "客户已经被激活使用，仍可继续观察报名机会。",
+    },
+    {
+        "main_stage": "converted",
+        "key": "enrolled",
+        "route_key": "enrolled",
+        "label": "已报名成功",
+        "description": "客户已经报名成功，会自动退出这条链路。",
+    },
+)
+
+AUTOMATION_CONVERSION_DISPATCH_FILTERS = (
+    {"value": "", "label": "全部处理结果", "raw_status": ""},
+    {"value": "waiting_ai", "label": "等待 AI 接手", "raw_status": "pending"},
+    {"value": "night_pause", "label": "夜间暂停", "raw_status": "blocked_quiet_hours"},
+    {"value": "ai_received", "label": "AI 已接收", "raw_status": "acked"},
+    {"value": "already_signed", "label": "客户已完成报名", "raw_status": "converted_before_dispatch"},
+)
 
 APP_SETTING_DEFINITIONS = (
     {
@@ -241,7 +297,7 @@ def config_tabs(active_key: str) -> list[dict[str, Any]]:
         {"key": "routing", "label": "负责人 / 分配规则", "href": "/admin/config/routing"},
         {"key": "signup_tags", "label": "报名标签规则", "href": "/admin/config/signup-tags"},
         {"key": "class_term_tags", "label": "班期标签规则", "href": "/admin/config/class-term-tags"},
-        {"key": "marketing_automation", "label": "营销自动化", "href": "/admin/marketing-automation/ui"},
+        {"key": "marketing_automation", "label": "自动化转化", "href": "/admin/automation-conversion"},
         {"key": "app_settings", "label": "系统设置", "href": "/admin/config/app-settings"},
         {"key": "mcp_tools", "label": "AI 工具设置", "href": "/admin/config/mcp-tools"},
     ]
@@ -277,6 +333,12 @@ def build_config_home_payload() -> dict[str, Any]:
                 "href": "/admin/config/class-term-tags",
             },
             {
+                "label": "自动化转化",
+                "value": "报名成功",
+                "description": "用业务语言维护自动跟进配置和最近处理情况",
+                "href": "/admin/automation-conversion",
+            },
+            {
                 "label": "系统设置",
                 "value": len(app_rows["rows"]),
                 "description": "区分可直接修改项和敏感项",
@@ -289,6 +351,277 @@ def build_config_home_payload() -> dict[str, Any]:
                 "href": "/admin/config/mcp-tools",
             },
         ]
+    }
+
+
+def _automation_stage_key(main_stage: str, sub_stage: str) -> str:
+    normalized_main_stage = _normalized_text(main_stage)
+    normalized_sub_stage = _normalized_text(sub_stage)
+    if normalized_main_stage and normalized_sub_stage:
+        return f"{normalized_main_stage}/{normalized_sub_stage}"
+    return normalized_main_stage or normalized_sub_stage
+
+
+def _automation_today_string() -> str:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+
+
+def automation_conversion_segment_cards() -> dict[str, Any]:
+    counts = repo.get_automation_conversion_segment_counts()
+    cards = [
+        {
+            "key": item["key"],
+            "label": item["label"],
+            "value": int(counts.get(item["segment"], 0) or 0),
+            "description": item["description"],
+            "ratio": 0,
+        }
+        for item in AUTOMATION_CONVERSION_SEGMENT_DEFINITIONS
+    ]
+    visible_total = sum(int(item["value"]) for item in cards)
+    for item in cards:
+        item["ratio"] = int(round((int(item["value"]) / visible_total) * 100)) if visible_total else 0
+    if cards and visible_total:
+        remainder = 100 - sum(int(item["ratio"]) for item in cards)
+        cards[-1]["ratio"] = max(0, int(cards[-1]["ratio"]) + remainder)
+    unclassified_count = int(counts.get("unknown", 0) or 0)
+    return {
+        "cards": cards,
+        "visible_total": visible_total,
+        "unclassified_count": unclassified_count,
+        "unclassified_hint": (
+            f"另有 {unclassified_count} 位客户资料还不够完整，暂时不放进重点用户分布。"
+            if unclassified_count
+            else ""
+        ),
+    }
+
+
+def automation_conversion_stage_columns() -> list[dict[str, Any]]:
+    rows = repo.list_automation_conversion_stage_snapshot_rows()
+    today_string = _automation_today_string()
+    columns_by_stage = {
+        item["main_stage"]: {
+            "key": item["key"],
+            "label": item["label"],
+            "description": item["description"],
+            "main_stage": item["main_stage"],
+            "total_count": 0,
+            "focus_count": 0,
+            "highest_priority_count": 0,
+            "today_new_count": 0,
+        }
+        for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS
+    }
+    for row in rows:
+        main_stage = _normalized_text(row.get("main_stage")).lower()
+        column = columns_by_stage.get(main_stage)
+        if not column:
+            continue
+        segment = _normalized_text(row.get("segment")).lower() or "unknown"
+        entered_at = _normalized_text(row.get("entered_at")) or _normalized_text(row.get("updated_at"))
+        column["total_count"] += 1
+        if segment in {"core", "top"}:
+            column["focus_count"] += 1
+        if segment == "top":
+            column["highest_priority_count"] += 1
+        if entered_at[:10] == today_string:
+            column["today_new_count"] += 1
+    return [
+        {
+            **columns_by_stage[item["main_stage"]],
+            "route_key": item["route_key"],
+            "value": int(columns_by_stage[item["main_stage"]]["total_count"] or 0),
+        }
+        for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS
+    ]
+
+
+def get_automation_conversion_stage_definition(stage_key: str) -> dict[str, Any] | None:
+    normalized_stage_key = _normalized_text(stage_key)
+    for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS:
+        if item["route_key"] == normalized_stage_key:
+            return dict(item)
+    return None
+
+
+def build_automation_conversion_stage_detail_payload(
+    *,
+    stage_key: str,
+    keyword: str = "",
+    offset: int = 0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    stage_definition = get_automation_conversion_stage_definition(stage_key)
+    if not stage_definition:
+        raise ValueError("stage not found")
+    stage_columns = automation_conversion_stage_columns()
+    current_stage = next(
+        (item for item in stage_columns if item["route_key"] == stage_definition["route_key"]),
+        {
+            "label": stage_definition["label"],
+            "description": stage_definition["description"],
+            "main_stage": stage_definition["main_stage"],
+            "route_key": stage_definition["route_key"],
+            "total_count": 0,
+            "focus_count": 0,
+            "highest_priority_count": 0,
+            "today_new_count": 0,
+        },
+    )
+    normalized_offset = max(0, int(offset or 0))
+    normalized_limit = max(1, min(int(limit or 50), 100))
+    payload = list_customers(
+        {
+            "keyword": _normalized_text(keyword),
+            "marketing_main_stage": stage_definition["main_stage"],
+            "limit": str(normalized_limit),
+            "offset": str(normalized_offset),
+        }
+    )
+    rows = payload.get("items") or payload.get("customers") or []
+    customers = [
+        {
+            "external_userid": _normalized_text(item.get("external_userid")),
+            "customer_name": _normalized_text(item.get("customer_name")) or _normalized_text(item.get("external_userid")) or "未命名客户",
+            "owner_userid": _normalized_text(item.get("owner_userid")),
+            "owner_display_name": _normalized_text(item.get("owner_display_name")) or _normalized_text(item.get("owner_userid")) or "暂无",
+            "mobile": _normalized_text(item.get("mobile")),
+            "last_touch_at": _normalized_text(item.get("last_touch_at")) or _normalized_text(item.get("updated_at")),
+        }
+        for item in rows
+    ]
+    total = int(payload.get("total") or payload.get("count") or len(customers))
+    return {
+        "stage": current_stage,
+        "filters": {
+            "keyword": _normalized_text(keyword),
+        },
+        "customers": customers,
+        "pagination": {
+            "total": total,
+            "offset": normalized_offset,
+            "limit": normalized_limit,
+            "has_prev": normalized_offset > 0,
+            "has_next": normalized_offset + normalized_limit < total,
+            "prev_offset": max(0, normalized_offset - normalized_limit),
+            "next_offset": normalized_offset + normalized_limit,
+        },
+    }
+
+
+def automation_conversion_dispatch_filter_options() -> list[dict[str, str]]:
+    return [{"value": item["value"], "label": item["label"]} for item in AUTOMATION_CONVERSION_DISPATCH_FILTERS]
+
+
+def normalize_automation_conversion_dispatch_filter(value: str) -> str:
+    normalized = _normalized_text(value)
+    if not normalized:
+        return ""
+    alias_map = {item["value"]: item["value"] for item in AUTOMATION_CONVERSION_DISPATCH_FILTERS if item["value"]}
+    raw_map = {
+        item["raw_status"]: item["value"]
+        for item in AUTOMATION_CONVERSION_DISPATCH_FILTERS
+        if item["value"] and item["raw_status"]
+    }
+    if normalized in alias_map:
+        return alias_map[normalized]
+    return raw_map.get(normalized, "")
+
+
+def _automation_segment_label(segment: str) -> str:
+    normalized_segment = _normalized_text(segment).lower()
+    for item in AUTOMATION_CONVERSION_SEGMENT_DEFINITIONS:
+        if item["segment"] == normalized_segment:
+            return item["label"]
+    return "待补资料"
+
+
+def _automation_stage_label(main_stage: str, sub_stage: str) -> str:
+    stage_key = _automation_stage_key(main_stage, sub_stage)
+    mapping = {
+        "prospect/mobile_only": "待转化",
+        "prospect/wecom_connected": "待转化",
+        "active/activated": "已开始使用",
+        "converted/enrolled": "已报名成功",
+    }
+    if stage_key in mapping:
+        return mapping[stage_key]
+    for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS:
+        if item["main_stage"] == _normalized_text(main_stage):
+            return item["label"]
+    return "暂无阶段"
+
+
+def _automation_dispatch_status_label(status: str) -> str:
+    normalized_status = _normalized_text(status)
+    mapping = {
+        "pending": "等待 AI 接手",
+        "blocked_quiet_hours": "夜间暂停",
+        "acked": "AI 已接收",
+        "converted_before_dispatch": "客户已完成报名",
+        "dispatched": "已交给 AI",
+        "cancelled": "已取消",
+    }
+    return mapping.get(normalized_status, normalized_status or "暂无结果")
+
+
+def list_automation_conversion_dispatch_history(*, status: str = "", limit: int = 50) -> dict[str, Any]:
+    normalized_status = _normalized_text(status)
+    rows = repo.list_automation_conversion_dispatch_history(status=normalized_status, limit=limit)
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        main_stage = _normalized_text(row.get("main_stage"))
+        sub_stage = _normalized_text(row.get("sub_stage"))
+        stage = _automation_stage_key(main_stage, sub_stage)
+        items.append(
+            {
+                "batch_id": int(row.get("batch_id") or 0),
+                "external_userid": _normalized_text(row.get("external_userid")),
+                "owner_userid": _normalized_text(row.get("owner_userid")),
+                "segment": _normalized_text(row.get("segment")).lower() or "unknown",
+                "main_stage": main_stage,
+                "sub_stage": sub_stage,
+                "stage": stage,
+                "dispatch_status": _normalized_text(row.get("dispatch_status")),
+                "created_at": _normalized_text(row.get("created_at")),
+                "acked_at": _normalized_text(row.get("acked_at")),
+            }
+        )
+    return {
+        "status": normalized_status,
+        "limit": int(limit),
+        "count": len(items),
+        "items": items,
+    }
+
+
+def automation_conversion_recent_activity(*, filter_value: str = "", limit: int = 50) -> dict[str, Any]:
+    normalized_filter = normalize_automation_conversion_dispatch_filter(filter_value)
+    raw_status = next(
+        (
+            item["raw_status"]
+            for item in AUTOMATION_CONVERSION_DISPATCH_FILTERS
+            if item["value"] == normalized_filter
+        ),
+        "",
+    )
+    history = list_automation_conversion_dispatch_history(status=raw_status, limit=limit)
+    items: list[dict[str, Any]] = []
+    for item in history["items"]:
+        items.append(
+            {
+                **item,
+                "segment_label": _automation_segment_label(item.get("segment", "")),
+                "stage_label": _automation_stage_label(item.get("main_stage", ""), item.get("sub_stage", "")),
+                "dispatch_status_label": _automation_dispatch_status_label(item.get("dispatch_status", "")),
+            }
+        )
+    return {
+        "filter_value": normalized_filter,
+        "limit": history["limit"],
+        "count": history["count"],
+        "items": items,
     }
 
 
@@ -786,49 +1119,6 @@ def list_mcp_tool_settings(*, query: str, enabled_only: bool) -> dict[str, Any]:
             {"label": "访问令牌", "value": "已配置" if auth_value else "未配置", "description": "AI 工具访问令牌状态"},
         ],
         "audit_entries": [{**item, "action_label": _audit_action_label(item.get("action_type"))} for item in _recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)],
-    }
-
-
-def list_marketing_automation_segment_stats() -> list[dict[str, str | int]]:
-    counts = {"unknown": 0, "normal": 0, "core": 0, "top": 0}
-    for row in repo.list_marketing_automation_segment_counts():
-        segment = _normalized_text(row.get("segment")).lower()
-        if segment in counts:
-            counts[segment] = int(row.get("total") or 0)
-    return [
-        {"key": "unknown", "label": "unknown", "value": counts["unknown"], "description": "未命中有效问卷或尚未形成分层"},
-        {"key": "normal", "label": "normal", "value": counts["normal"], "description": "最近问卷命中数低于 core_threshold"},
-        {"key": "core", "label": "core", "value": counts["core"], "description": "当前可优先进入自动化转化的人群"},
-        {"key": "top", "label": "top", "value": counts["top"], "description": "当前最高优先级人群"},
-    ]
-
-
-def list_marketing_automation_dispatch_history(*, status: str = "", limit: int = 50) -> dict[str, Any]:
-    normalized_status = _normalized_text(status)
-    items: list[dict[str, Any]] = []
-    for row in repo.list_marketing_automation_dispatch_history(status=normalized_status, limit=int(limit)):
-        main_stage = _normalized_text(row.get("main_stage"))
-        sub_stage = _normalized_text(row.get("sub_stage"))
-        stage = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage or ""
-        items.append(
-            {
-                "batch_id": int(row.get("batch_id") or 0),
-                "external_userid": _normalized_text(row.get("external_userid")),
-                "owner_userid": _normalized_text(row.get("owner_userid")),
-                "segment": _normalized_text(row.get("segment")) or "unknown",
-                "main_stage": main_stage,
-                "sub_stage": sub_stage,
-                "stage": stage,
-                "dispatch_status": _normalized_text(row.get("dispatch_status")),
-                "created_at": _normalized_text(row.get("created_at")),
-                "acked_at": _normalized_text(row.get("acked_at")),
-            }
-        )
-    return {
-        "status": normalized_status,
-        "limit": int(limit),
-        "count": len(items),
-        "items": items,
     }
 
 

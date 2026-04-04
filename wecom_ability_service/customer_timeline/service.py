@@ -4,6 +4,11 @@ import json
 from datetime import datetime
 from typing import Any
 
+from ..domains.marketing_automation.presenter import (
+    conversion_marked_summary as business_conversion_marked_summary,
+    marketing_state_change_summary as business_marketing_state_change_summary,
+    value_segment_change_summary as business_value_segment_change_summary,
+)
 from ..services import extract_roomid_from_raw_payload, format_message_row, get_group_chat_map
 from .dto import TimelineDTO, TimelineItemDTO
 from .repo import (
@@ -60,28 +65,15 @@ def _coalesce_text(*values: Any) -> str:
 
 
 def _marketing_state_summary(*, previous_stage: str, current_stage: str) -> str:
-    if previous_stage and previous_stage != current_stage:
-        return f"客户营销阶段从 {previous_stage} 变为 {current_stage}"
-    if current_stage:
-        return f"客户营销阶段更新为 {current_stage}"
-    return "客户营销阶段已更新"
+    return business_marketing_state_change_summary(previous_stage=previous_stage, current_stage=current_stage)
 
 
 def _value_segment_summary(*, previous_segment: str, current_segment: str) -> str:
-    if previous_segment and previous_segment != current_segment:
-        return f"客户分层从 {previous_segment} 变为 {current_segment}"
-    if current_segment:
-        return f"客户分层更新为 {current_segment}"
-    return "客户分层已更新"
+    return business_value_segment_change_summary(previous_segment=previous_segment, current_segment=current_segment)
 
 
 def _conversion_marked_summary(action: str, source: str) -> str:
-    source_prefix = "人工" if source.startswith("sidebar") or source == "manual" else source or "人工"
-    if action == "mark_enrolled":
-        return f"{source_prefix}标记报名成功，退出自动转化链路"
-    if action == "unmark_enrolled":
-        return f"{source_prefix}撤销报名成功标记，按事实重算营销阶段"
-    return "报名成功状态已更新"
+    return business_conversion_marked_summary(action=action, source=source)
 
 
 def _dispatch_summary(row: dict[str, Any]) -> str:

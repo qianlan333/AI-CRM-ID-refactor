@@ -16,6 +16,7 @@ from ..archive import repo as archive_repo
 from ..archive.service import extract_roomid_from_raw_payload, format_message_row, get_recent_messages_by_user
 from ..group_chats.repo import get_group_chat_map
 from ..questionnaire.service import get_questionnaire_detail
+from .presenter import business_marketing_display
 from . import repo
 
 DEFAULT_SCENARIO_KEY = "signup_conversion_v1"
@@ -472,6 +473,13 @@ def preview_signup_conversion_customer(
     matched_questions = _matched_question_rule_items(config, matched_question_ids=matched_question_ids)
     current_stage = _normalized_text(marketing_state.get("stage_key"))
     current_segment = _normalized_text(value_segment.get("segment")) or "unknown"
+    display = business_marketing_display(
+        main_stage=marketing_state.get("main_stage"),
+        sub_stage=marketing_state.get("sub_stage"),
+        segment=current_segment,
+        eligible_for_conversion=marketing_state.get("eligible_for_conversion"),
+        ineligible_reason=_preview_ineligible_reason(marketing_state),
+    )
     return {
         "automation_key": automation_key,
         "resolved_customer": {
@@ -493,14 +501,18 @@ def preview_signup_conversion_customer(
         "summary": {
             "current_stage": current_stage,
             "current_stage_label": _normalized_text(marketing_state.get("stage_label")),
+            "current_stage_display": display["stage_label"],
             "current_segment": current_segment,
             "current_segment_label": _normalized_text(value_segment.get("segment_label")) or _VALUE_SEGMENT_LABELS.get(current_segment, ""),
+            "current_segment_display": display["segment_label"],
             "matched_question_ids": matched_question_ids,
             "matched_questions": matched_questions,
             "hit_count": int(value_segment.get("hit_count") or 0),
             "eligible": bool(marketing_state.get("eligible_for_conversion")),
             "eligible_for_conversion": bool(marketing_state.get("eligible_for_conversion")),
+            "eligibility_display": display["eligibility_label"],
             "ineligible_reason": _preview_ineligible_reason(marketing_state),
+            "ineligible_reason_display": display["ineligible_reason_label"],
         },
         "marketing_state": marketing_state,
         "value_segment": value_segment,
@@ -1018,11 +1030,15 @@ def _latest_converted_signal(rows: list[dict[str, Any]]) -> dict[str, Any] | Non
         signup_status = _normalized_text(row.get("signup_status"))
         if not _is_signup_success(signup_status):
             continue
+        signal_at = _normalized_text(row.get("set_at")) or _latest_timestamp(
+            row.get("updated_at"),
+            row.get("created_at"),
+        )
         candidates.append(
             {
                 "external_userid": _normalized_text(row.get("external_userid")),
                 "signup_status": signup_status,
-                "signal_at": _latest_timestamp(row.get("set_at"), row.get("updated_at"), row.get("created_at")),
+                "signal_at": signal_at,
             }
         )
     if not candidates:

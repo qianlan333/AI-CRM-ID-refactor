@@ -1,0 +1,883 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>当前状态</h2>
+      <p>先看自动跟进有没有开启、当前用的是哪份问卷，以及客户优先级和夜间暂停设置是否符合预期。</p>
+    </div>
+  </div>
+  <div class="admin-card-grid">
+    {% for item in current_status_cards %}
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">{{ item.label }}</div>
+      <div
+        class="admin-card-value admin-card-value--compact"
+        {% if loop.index0 == 0 %}data-automation-enabled-summary{% endif %}
+        {% if loop.index0 == 1 %}data-automation-questionnaire-summary{% endif %}
+        {% if loop.index0 == 2 %}data-automation-threshold-summary{% endif %}
+        {% if loop.index0 == 3 %}data-automation-quiet-hour-summary{% endif %}
+      >
+        {{ item.value }}
+      </div>
+      <p class="admin-card-copy">{{ item.description }}</p>
+    </article>
+    {% endfor %}
+  </div>
+
+  <div class="admin-card-head automation-section-head">
+    <div>
+      <h2>重点用户分布</h2>
+      <p>这里用业务视角展示当前客户优先级结构，方便判断普通用户、重点用户和最高优先用户分别有多少。</p>
+    </div>
+  </div>
+  <div class="automation-priority-grid">
+    {% for item in priority_distribution.cards %}
+    <article
+      class="admin-mini-stat automation-priority-card"
+      data-priority-card="{{ item.key }}"
+      data-priority-count="{{ item.value }}"
+      data-priority-ratio="{{ item.ratio }}"
+    >
+      <div class="admin-card-label">{{ item.label }}</div>
+      <div class="automation-priority-card__row">
+        <div class="admin-mini-stat-value">{{ item.value }}</div>
+        <div class="automation-priority-card__ratio">{{ item.ratio }}%</div>
+      </div>
+      <div class="automation-priority-card__bar">
+        <span style="width: {{ item.ratio }}%;"></span>
+      </div>
+      <p class="admin-card-copy">{{ item.description }}</p>
+    </article>
+    {% endfor %}
+  </div>
+  {% if priority_distribution.unclassified_hint %}
+  <p class="admin-muted automation-priority-note">{{ priority_distribution.unclassified_hint }}</p>
+  {% endif %}
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>配置步骤</h2>
+      <p>按步骤完成问卷选择、关键信号题设置和单个客户试算。页面只改配置表达，不改底层转化逻辑。</p>
+    </div>
+  </div>
+
+  <div class="automation-step-grid">
+    <article class="admin-mini-stat automation-step-card">
+      <div class="admin-card-label">第 1 步</div>
+      <div class="admin-mini-stat-value">选问卷</div>
+      <p class="admin-card-copy">先确认系统应该参考哪一份问卷来判断客户意向。</p>
+    </article>
+    <article class="admin-mini-stat automation-step-card">
+      <div class="admin-card-label">第 2 步</div>
+      <div class="admin-mini-stat-value">选 5 道关键信号题</div>
+      <p class="admin-card-copy">每道题再勾选哪些答案代表客户更有可能报名。</p>
+    </article>
+    <article class="admin-mini-stat automation-step-card">
+      <div class="admin-card-label">第 3 步</div>
+      <div class="admin-mini-stat-value">设门槛</div>
+      <p class="admin-card-copy">决定命中多少题进入“重点跟进”和“优先转化”。</p>
+    </article>
+    <article class="admin-mini-stat automation-step-card">
+      <div class="admin-card-label">第 4 步</div>
+      <div class="admin-mini-stat-value">试算单个客户</div>
+      <p class="admin-card-copy">输入客户微信 ID，马上看当前阶段、优先级和是否会进入自动跟进。</p>
+    </article>
+  </div>
+
+  <div id="marketing-automation-page-alert" class="admin-alert" hidden></div>
+  <div class="admin-split-grid automation-config-layout">
+    <form id="marketing-automation-config-form" class="admin-form-grid admin-form-grid--stacked">
+      <div class="admin-grid-2">
+        <label class="admin-checkbox">
+          <input id="marketing-automation-enabled" type="checkbox" {% if marketing_config.enabled %}checked{% endif %}>
+          <span>开启“报名成功”自动跟进</span>
+        </label>
+        <div class="admin-state admin-state--inline">
+          <strong>夜间暂停说明</strong>
+          <span>每天 23:00 后不会新启动自动跟进，第二天会继续判断。</span>
+        </div>
+      </div>
+
+      <div class="admin-grid-2">
+        <label class="admin-field">
+          <span>选择问卷</span>
+          <select id="marketing-automation-questionnaire" required>
+            <option value="">请选择一份问卷</option>
+            {% for item in questionnaires %}
+            <option value="{{ item.id }}" {% if marketing_config.questionnaire_id == item.id %}selected{% endif %}>
+              {{ item.title or item.name or ("问卷 #" ~ item.id) }}{% if item.is_disabled %}（已停用）{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="admin-state admin-state--inline">
+          <strong>关键信号题要求</strong>
+          <span>固定选择 5 道题，只能从当前问卷里的单选题和多选题里挑。</span>
+        </div>
+      </div>
+
+      <div class="admin-grid-2">
+        <label class="admin-field">
+          <span>进入“重点跟进”的命中门槛</span>
+          <input id="marketing-automation-core-threshold" type="number" min="0" value="{{ marketing_config.core_threshold }}">
+        </label>
+        <label class="admin-field">
+          <span>进入“优先转化”的命中门槛</span>
+          <input id="marketing-automation-top-threshold" type="number" min="0" value="{{ marketing_config.top_threshold }}">
+        </label>
+      </div>
+
+      <input id="marketing-automation-quiet-hour-start" type="hidden" value="{{ marketing_config.quiet_hour_start }}">
+      <input id="marketing-automation-timezone" type="hidden" value="{{ marketing_config.timezone }}">
+
+      <div>
+        <div class="admin-card-head marketing-automation-card-head">
+          <div>
+            <h2>5 道关键信号题</h2>
+            <p>每一行先选题，再勾选哪些答案表示客户更有报名意愿。</p>
+          </div>
+        </div>
+        <div id="marketing-automation-rules" class="marketing-automation-rule-list">
+          <div class="admin-state admin-state--inline">
+            <strong>请先选择问卷</strong>
+            <span>问卷选定后，这里会展开 5 个配置位。</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-toolbar">
+        <button id="marketing-automation-save-button" class="admin-button admin-button--primary" type="submit">保存设置</button>
+      </div>
+    </form>
+
+    <div class="admin-card admin-stat-card--nested marketing-automation-preview-shell">
+      <div class="admin-card-head">
+        <div>
+          <h2>单个客户试算</h2>
+          <p>输入客户微信 ID，看系统此刻会怎么判断，不需要自己读数据库或接口字段。</p>
+        </div>
+      </div>
+      <form id="marketing-automation-preview-form" class="admin-form-grid admin-form-grid--stacked">
+        <label class="admin-field">
+          <span>客户微信 ID</span>
+          <input id="marketing-automation-preview-input" type="text" placeholder="例如：wm_admin_preview">
+        </label>
+        <div class="admin-toolbar">
+          <button id="marketing-automation-preview-button" class="admin-button admin-button--secondary" type="submit">查看当前结果</button>
+          <a class="admin-button admin-button--ghost" href="/admin/automation-conversion/preview">进入完整试运行页</a>
+        </div>
+      </form>
+
+      <div id="marketing-automation-preview-state" class="admin-state">
+        <strong>等待试算</strong>
+        <span>输入客户微信 ID 后，这里会显示当前阶段、客户优先级、命中题数和是否进入自动跟进。</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>阶段分栏</h2>
+      <p>把客户拆成 3 个阶段，看每个阶段里有多少人、重点人群占多少、今天新进入了多少。</p>
+    </div>
+  </div>
+  <div class="automation-stage-board automation-stage-board--three">
+    {% for item in stage_columns %}
+    <button
+      type="button"
+      class="admin-card admin-stat-card admin-stat-card--nested automation-stage-card automation-stage-card--button"
+      data-stage-board-open
+      data-stage-label="{{ item.label }}"
+      data-stage-main-stage="{{ item.main_stage }}"
+      data-total-count="{{ item.total_count }}"
+      data-focus-count="{{ item.focus_count }}"
+      data-highest-priority-count="{{ item.highest_priority_count }}"
+      data-today-new-count="{{ item.today_new_count }}"
+    >
+      <div class="automation-stage-card__head">
+        <div class="admin-card-label">{{ item.label }}</div>
+        <span class="automation-stage-card__action">查看名单</span>
+      </div>
+      <div class="admin-card-value admin-card-value--compact">{{ item.total_count }}</div>
+      <p class="admin-card-copy">{{ item.description }}</p>
+      <dl class="automation-stage-metrics">
+        <div>
+          <dt>总人数</dt>
+          <dd>{{ item.total_count }}</dd>
+        </div>
+        <div>
+          <dt>重点用户</dt>
+          <dd>{{ item.focus_count }}</dd>
+        </div>
+        <div>
+          <dt>最高优先</dt>
+          <dd>{{ item.highest_priority_count }}</dd>
+        </div>
+        <div>
+          <dt>今日新增</dt>
+          <dd>{{ item.today_new_count }}</dd>
+        </div>
+      </dl>
+    </button>
+    {% endfor %}
+  </div>
+  <div class="admin-toolbar">
+    {% for item in stage_columns %}
+    <a class="admin-button admin-button--ghost" href="/admin/automation-conversion/stage/{{ item.route_key }}">{{ item.label }}详情页</a>
+    {% endfor %}
+  </div>
+
+  <section id="automation-stage-detail-drawer" class="admin-drawer automation-stage-detail-drawer" hidden>
+    <div class="admin-card-head">
+      <div>
+        <h2 id="automation-stage-detail-title">阶段详情</h2>
+        <p id="automation-stage-detail-summary">点击上面的阶段栏后，这里会展开对应客户明细。</p>
+      </div>
+      <button type="button" class="admin-button admin-button--secondary" data-stage-detail-close>收起</button>
+    </div>
+    <div id="automation-stage-detail-state" class="admin-state">
+      <strong>等待查看</strong>
+      <span>点击任一阶段栏后，这里会展示该阶段的客户名单。</span>
+    </div>
+    <div id="automation-stage-detail-list" class="automation-stage-detail-list" hidden></div>
+  </section>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近处理情况</h2>
+      <p>这里只看最近已经进入自动跟进处理链路的客户，方便运营确认谁在等待、谁已被接手、谁已经退出。</p>
+    </div>
+  </div>
+
+  <form class="admin-form-grid admin-form-grid--filters" method="get" action="/admin/automation-conversion">
+    <label>
+      <span>处理结果筛选</span>
+      <select name="status">
+        {% for option in dispatch_status_options %}
+        <option value="{{ option.value }}" {% if dispatch_history['filter_value'] == option.value %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="admin-button admin-button--secondary" type="submit">筛选</button>
+    <div class="admin-muted">默认显示最近 {{ dispatch_history['limit'] }} 条。</div>
+  </form>
+
+  {% if dispatch_history['items'] %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>处理批次</th>
+          <th>客户微信 ID</th>
+          <th>负责人</th>
+          <th>客户优先级</th>
+          <th>当前阶段</th>
+          <th>最近处理结果</th>
+          <th>进入时间</th>
+          <th>AI 接收时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in dispatch_history['items'] %}
+        <tr>
+          <td>{{ item.batch_id }}</td>
+          <td>{{ item.external_userid }}</td>
+          <td>{{ item.owner_userid or "暂无" }}</td>
+          <td>{{ item.segment_label }}</td>
+          <td>{{ item.stage_label }}</td>
+          <td>{{ item.dispatch_status_label }}</td>
+          <td>{{ item.created_at or "暂无" }}</td>
+          <td>{{ item.acked_at or "暂无" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-state admin-state--inline">
+    <strong>当前还没有最近处理记录</strong>
+    <span>换一个筛选条件试试，或者先让客户进入自动跟进链路。</span>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  const initialMarketingConfig = {{ marketing_config|tojson }};
+  const initialQuestionnaires = {{ questionnaires|tojson }};
+  const initialSelectedQuestionnaire = {{ selected_questionnaire|tojson if selected_questionnaire else 'null' }};
+  const REQUIRED_QUESTION_RULE_COUNT = {{ question_rule_slots|length }};
+
+  const SEGMENT_LABELS = {
+    unknown: '待补资料',
+    normal: '继续观察',
+    core: '重点跟进',
+    top: '优先转化',
+  };
+
+  const STAGE_LABELS = {
+    'prospect/mobile_only': '仅留手机号',
+    'prospect/wecom_connected': '已加微信待转化',
+    'active/activated': '已开始使用',
+    'converted/enrolled': '已完成报名',
+  };
+
+  const state = {
+    config: initialMarketingConfig || {},
+    questionnaires: Array.isArray(initialQuestionnaires) ? initialQuestionnaires : [],
+    questionnaireCache: {},
+  };
+
+  if (initialSelectedQuestionnaire && initialSelectedQuestionnaire.id) {
+    state.questionnaireCache[String(initialSelectedQuestionnaire.id)] = initialSelectedQuestionnaire;
+  }
+
+  const pageAlertEl = document.getElementById('marketing-automation-page-alert');
+  const configFormEl = document.getElementById('marketing-automation-config-form');
+  const enabledEl = document.getElementById('marketing-automation-enabled');
+  const questionnaireEl = document.getElementById('marketing-automation-questionnaire');
+  const coreThresholdEl = document.getElementById('marketing-automation-core-threshold');
+  const topThresholdEl = document.getElementById('marketing-automation-top-threshold');
+  const quietHourEl = document.getElementById('marketing-automation-quiet-hour-start');
+  const timezoneEl = document.getElementById('marketing-automation-timezone');
+  const saveButtonEl = document.getElementById('marketing-automation-save-button');
+  const rulesEl = document.getElementById('marketing-automation-rules');
+  const previewFormEl = document.getElementById('marketing-automation-preview-form');
+  const previewInputEl = document.getElementById('marketing-automation-preview-input');
+  const previewButtonEl = document.getElementById('marketing-automation-preview-button');
+  const previewStateEl = document.getElementById('marketing-automation-preview-state');
+  const enabledSummaryEl = document.querySelector('[data-automation-enabled-summary]');
+  const questionnaireSummaryEl = document.querySelector('[data-automation-questionnaire-summary]');
+  const thresholdSummaryEl = document.querySelector('[data-automation-threshold-summary]');
+  const quietHourSummaryEl = document.querySelector('[data-automation-quiet-hour-summary]');
+  const stageBoardButtons = [...document.querySelectorAll('[data-stage-board-open]')];
+  const stageDetailDrawerEl = document.getElementById('automation-stage-detail-drawer');
+  const stageDetailTitleEl = document.getElementById('automation-stage-detail-title');
+  const stageDetailSummaryEl = document.getElementById('automation-stage-detail-summary');
+  const stageDetailStateEl = document.getElementById('automation-stage-detail-state');
+  const stageDetailListEl = document.getElementById('automation-stage-detail-list');
+  const stageDetailCloseButtons = [...document.querySelectorAll('[data-stage-detail-close]')];
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function questionnaireDisplayName(item) {
+    if (!item) return '还没选择问卷';
+    return String(item.title || item.name || `问卷 #${item.id || ''}`).trim() || '还没选择问卷';
+  }
+
+  function fetchJson(url, options = {}) {
+    return fetch(url, options)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) {
+          throw new Error(String(payload.error || payload.message || '请求失败，请稍后重试'));
+        }
+        return payload;
+      });
+  }
+
+  function showPageAlert(message, isError = false) {
+    if (!message) {
+      pageAlertEl.hidden = true;
+      pageAlertEl.textContent = '';
+      pageAlertEl.className = 'admin-alert';
+      return;
+    }
+    pageAlertEl.hidden = false;
+    pageAlertEl.textContent = message;
+    pageAlertEl.className = `admin-alert ${isError ? 'admin-alert--error' : 'admin-alert--success'}`;
+  }
+
+  function displayText(value, fallback = '暂无') {
+    const text = String(value ?? '').trim();
+    return text || fallback;
+  }
+
+  function stageLabelFromParts(mainStage, subStage) {
+    const key = [String(mainStage || '').trim(), String(subStage || '').trim()].filter(Boolean).join('/');
+    return STAGE_LABELS[key] || displayText(key);
+  }
+
+  function segmentLabel(value) {
+    const key = String(value || '').trim().toLowerCase();
+    return SEGMENT_LABELS[key] || '待补资料';
+  }
+
+  function customerDetailUrl(externalUserid) {
+    return `/admin/customers/${encodeURIComponent(String(externalUserid || '').trim())}`;
+  }
+
+  function questionTypeLabel(value) {
+    const mapping = {
+      single_choice: '单选题',
+      multi_choice: '多选题',
+    };
+    return mapping[String(value || '').trim()] || '可选题';
+  }
+
+  function supportedQuestions(detail) {
+    const questions = Array.isArray(detail?.questions) ? detail.questions : [];
+    return questions.filter((item) => ['single_choice', 'multi_choice'].includes(String(item.type || '').trim()));
+  }
+
+  function sortedRules(rules) {
+    return [...(Array.isArray(rules) ? rules : [])].sort((left, right) => {
+      const leftOrder = Number(left?.sort_order || 0);
+      const rightOrder = Number(right?.sort_order || 0);
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      return Number(left?.questionnaire_question_id || 0) - Number(right?.questionnaire_question_id || 0);
+    });
+  }
+
+  function normalizeRuleSlots(detail, rawRules) {
+    const questions = supportedQuestions(detail);
+    const questionsById = new Map(questions.map((item) => [Number(item.id), item]));
+    const nextRules = [];
+    const usedQuestionIds = new Set();
+
+    sortedRules(rawRules).forEach((rule) => {
+      const questionId = Number(rule?.questionnaire_question_id || 0);
+      const question = questionsById.get(questionId);
+      if (!question || usedQuestionIds.has(questionId)) {
+        return;
+      }
+      usedQuestionIds.add(questionId);
+      const validOptionIds = new Set((question.options || []).map((item) => Number(item.id)));
+      const selectedOptionIds = (Array.isArray(rule?.hit_option_ids_json) ? rule.hit_option_ids_json : [])
+        .map((item) => Number(item))
+        .filter((item) => validOptionIds.has(item));
+      nextRules.push({
+        questionnaire_question_id: questionId,
+        hit_option_ids_json: selectedOptionIds,
+        sort_order: nextRules.length + 1,
+      });
+    });
+
+    for (const question of questions) {
+      if (nextRules.length >= REQUIRED_QUESTION_RULE_COUNT) {
+        break;
+      }
+      const questionId = Number(question.id || 0);
+      if (!questionId || usedQuestionIds.has(questionId)) {
+        continue;
+      }
+      usedQuestionIds.add(questionId);
+      nextRules.push({
+        questionnaire_question_id: questionId,
+        hit_option_ids_json: [],
+        sort_order: nextRules.length + 1,
+      });
+    }
+
+    while (nextRules.length < REQUIRED_QUESTION_RULE_COUNT) {
+      nextRules.push({
+        questionnaire_question_id: '',
+        hit_option_ids_json: [],
+        sort_order: nextRules.length + 1,
+      });
+    }
+
+    return nextRules.slice(0, REQUIRED_QUESTION_RULE_COUNT);
+  }
+
+  async function ensureQuestionnaireDetail(questionnaireId) {
+    const key = String(questionnaireId || '').trim();
+    if (!key) return null;
+    if (state.questionnaireCache[key]) {
+      return state.questionnaireCache[key];
+    }
+    const payload = await fetchJson(`/api/admin/questionnaires/${key}`);
+    state.questionnaireCache[key] = payload.questionnaire || null;
+    return state.questionnaireCache[key];
+  }
+
+  function renderRulesLoading() {
+    rulesEl.innerHTML = `
+      <div class="admin-state admin-state--inline admin-state--loading">
+        <strong>正在读取问卷题目</strong>
+        <span>稍等片刻，系统会把可选题目和答案自动展开。</span>
+      </div>
+    `;
+  }
+
+  function renderRules() {
+    const questionnaireId = Number(questionnaireEl.value || state.config.questionnaire_id || 0);
+    if (!questionnaireId) {
+      rulesEl.innerHTML = `
+        <div class="admin-state admin-state--inline">
+          <strong>请先选择问卷</strong>
+          <span>选好问卷后，这里会展开 5 个配置位。</span>
+        </div>
+      `;
+      return;
+    }
+
+    const detail = state.questionnaireCache[String(questionnaireId)];
+    if (!detail) {
+      renderRulesLoading();
+      return;
+    }
+
+    const questions = supportedQuestions(detail);
+    state.config.question_rules = normalizeRuleSlots(detail, state.config.question_rules);
+    if (questions.length < REQUIRED_QUESTION_RULE_COUNT) {
+      rulesEl.innerHTML = `
+        <div class="admin-state admin-state--inline admin-state--error">
+          <strong>当前问卷可用题目不够</strong>
+          <span>可用于判断意向的单选题 / 多选题只有 ${questions.length} 道，至少需要 ${REQUIRED_QUESTION_RULE_COUNT} 道。</span>
+        </div>
+      `;
+      return;
+    }
+
+    const questionsById = new Map(questions.map((item) => [Number(item.id), item]));
+    rulesEl.innerHTML = state.config.question_rules.map((rule, index) => {
+      const questionId = Number(rule?.questionnaire_question_id || 0);
+      const currentQuestion = questionsById.get(questionId) || null;
+      const currentOptions = Array.isArray(currentQuestion?.options) ? currentQuestion.options : [];
+      return `
+        <article class="admin-card marketing-automation-rule-row" data-rule-index="${index}">
+          <div class="marketing-automation-rule-row__grid">
+            <label class="admin-field">
+              <span>关键信号题 ${index + 1}</span>
+              <select data-rule-question="${index}">
+                <option value="">请选择题目</option>
+                ${questions.map((item) => `
+                  <option value="${item.id}" ${Number(item.id) === questionId ? 'selected' : ''}>
+                    ${escapeHtml(String(item.title || `题目 #${item.id}`))}
+                  </option>
+                `).join('')}
+              </select>
+            </label>
+            <label class="admin-field">
+              <span>哪些答案代表更有报名意愿</span>
+              <select data-rule-options="${index}" multiple size="${Math.min(4, Math.max(2, currentOptions.length || 2))}">
+                ${currentOptions.map((option) => {
+                  const optionId = Number(option.id || 0);
+                  const selected = (rule.hit_option_ids_json || []).map((item) => Number(item)).includes(optionId);
+                  return `
+                    <option value="${optionId}" ${selected ? 'selected' : ''}>
+                      ${escapeHtml(String(option.option_text || `选项 #${optionId}`))}
+                    </option>
+                  `;
+                }).join('')}
+              </select>
+            </label>
+          </div>
+          <div class="marketing-automation-rule-row__meta admin-muted">
+            <span>${currentQuestion ? `题型：${escapeHtml(questionTypeLabel(currentQuestion.type))}` : '请选择题目'}</span>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  async function syncRulesForSelectedQuestionnaire() {
+    const questionnaireId = Number(questionnaireEl.value || 0);
+    state.config.questionnaire_id = questionnaireId || null;
+    state.config.question_rules = Array.isArray(state.config.question_rules) ? state.config.question_rules : [];
+    if (!questionnaireId) {
+      renderRules();
+      return;
+    }
+    renderRulesLoading();
+    try {
+      await ensureQuestionnaireDetail(questionnaireId);
+      renderRules();
+    } catch (error) {
+      rulesEl.innerHTML = `
+        <div class="admin-state admin-state--inline admin-state--error">
+          <strong>问卷题目读取失败</strong>
+          <span>${escapeHtml(error.message || '请稍后重试')}</span>
+        </div>
+      `;
+    }
+  }
+
+  function buildSavePayload() {
+    return {
+      enabled: Boolean(enabledEl.checked),
+      questionnaire_id: Number(questionnaireEl.value || 0),
+      core_threshold: Number(coreThresholdEl.value || 0),
+      top_threshold: Number(topThresholdEl.value || 0),
+      quiet_hour_start: Number(quietHourEl.value || 23),
+      timezone: String(timezoneEl.value || 'Asia/Shanghai').trim() || 'Asia/Shanghai',
+      question_rules: (Array.isArray(state.config.question_rules) ? state.config.question_rules : []).map((rule, index) => ({
+        questionnaire_question_id: Number(rule?.questionnaire_question_id || 0),
+        hit_option_ids_json: (Array.isArray(rule?.hit_option_ids_json) ? rule.hit_option_ids_json : []).map((item) => Number(item)).filter((item) => item > 0),
+        sort_order: index + 1,
+      })),
+    };
+  }
+
+  function updateSummaryCards() {
+    const questionnaireId = Number(state.config.questionnaire_id || questionnaireEl.value || 0);
+    const detail = state.questionnaireCache[String(questionnaireId)] || state.questionnaires.find((item) => Number(item.id) === questionnaireId) || null;
+    enabledSummaryEl.textContent = enabledEl.checked ? '已开启' : '已暂停';
+    questionnaireSummaryEl.textContent = questionnaireDisplayName(detail);
+    thresholdSummaryEl.textContent = `命中 ${coreThresholdEl.value || 0} 题进入重点跟进`;
+    quietHourSummaryEl.textContent = `${quietHourEl.value || 23}:00 后暂停启动`;
+  }
+
+  function renderPreview(preview) {
+    const summary = preview?.summary || {};
+    const marketingState = preview?.marketing_state || {};
+    const matchedQuestions = Array.isArray(summary.matched_questions) ? summary.matched_questions : [];
+    const stageLabel = String(summary.current_stage_display || '').trim() || stageLabelFromParts(marketingState.main_stage, marketingState.sub_stage);
+    const segmentText = String(summary.current_segment_display || '').trim() || segmentLabel(summary.current_segment || preview?.value_segment?.segment || '');
+    const eligibilityText = String(summary.eligibility_display || '').trim() || (summary.eligible ? '会' : '不会');
+    const ineligibleReasonText = String(summary.ineligible_reason_display || '').trim() || displayText(summary.ineligible_reason, '暂无');
+    previewStateEl.className = 'admin-state';
+    previewStateEl.innerHTML = `
+      <strong>${escapeHtml(stageLabel)} · ${escapeHtml(segmentText)}</strong>
+      <dl class="admin-definition-list automation-preview-definition-list">
+        <div>
+          <dt>命中题数</dt>
+          <dd>${escapeHtml(String(summary.hit_count || 0))} 题</dd>
+        </div>
+        <div>
+          <dt>是否进入自动跟进</dt>
+          <dd>${escapeHtml(eligibilityText)}</dd>
+        </div>
+        <div>
+          <dt>暂不进入原因</dt>
+          <dd>${escapeHtml(ineligibleReasonText)}</dd>
+        </div>
+        <div>
+          <dt>最近激活时间</dt>
+          <dd>${escapeHtml(displayText(marketingState.last_activation_at, '暂无'))}</dd>
+        </div>
+        <div>
+          <dt>最近报名标记时间</dt>
+          <dd>${escapeHtml(displayText(marketingState.last_conversion_marked_at, '暂无'))}</dd>
+        </div>
+      </dl>
+      <div class="marketing-automation-preview-tags">
+        ${(matchedQuestions.length ? matchedQuestions : [{ question_title: '当前没有命中题' }]).map((item) => `
+          <span class="admin-token">${escapeHtml(String(item.question_title || '当前没有命中题'))}</span>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderStageDetailState(title, message, className = 'admin-state') {
+    stageDetailStateEl.className = className;
+    stageDetailStateEl.innerHTML = `
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(message)}</span>
+    `;
+    stageDetailStateEl.hidden = false;
+    stageDetailListEl.hidden = true;
+    stageDetailListEl.innerHTML = '';
+  }
+
+  function renderStageDetailList(items) {
+    stageDetailListEl.innerHTML = items.map((item) => {
+      const customerName = displayText(item.customer_name, item.external_userid || '未命名客户');
+      const ownerName = displayText(item.owner_display_name || item.owner_userid, '暂无');
+      const mobile = displayText(item.mobile, '暂无');
+      const lastTouchAt = displayText(item.last_touch_at || item.updated_at, '暂无');
+      return `
+        <article class="admin-card admin-stat-card--nested automation-stage-detail-item">
+          <div class="automation-stage-detail-item__head">
+            <div>
+              <div class="admin-card-label">客户</div>
+              <div class="admin-mini-stat-value">${escapeHtml(customerName)}</div>
+            </div>
+            <a class="admin-button admin-button--secondary" href="${customerDetailUrl(item.external_userid)}">查看客户详情</a>
+          </div>
+          <dl class="automation-stage-detail-meta">
+            <div>
+              <dt>客户微信 ID</dt>
+              <dd>${escapeHtml(displayText(item.external_userid, '暂无'))}</dd>
+            </div>
+            <div>
+              <dt>负责人</dt>
+              <dd>${escapeHtml(ownerName)}</dd>
+            </div>
+            <div>
+              <dt>手机号</dt>
+              <dd>${escapeHtml(mobile)}</dd>
+            </div>
+            <div>
+              <dt>最近更新时间</dt>
+              <dd>${escapeHtml(lastTouchAt)}</dd>
+            </div>
+          </dl>
+        </article>
+      `;
+    }).join('');
+    stageDetailStateEl.hidden = true;
+    stageDetailListEl.hidden = false;
+  }
+
+  async function openStageDetail(buttonEl) {
+    const stageLabel = String(buttonEl?.dataset?.stageLabel || '').trim() || '阶段详情';
+    const mainStage = String(buttonEl?.dataset?.stageMainStage || '').trim();
+    const totalCount = Number(buttonEl?.dataset?.totalCount || 0);
+    const focusCount = Number(buttonEl?.dataset?.focusCount || 0);
+    const highestPriorityCount = Number(buttonEl?.dataset?.highestPriorityCount || 0);
+    const todayNewCount = Number(buttonEl?.dataset?.todayNewCount || 0);
+    stageDetailDrawerEl.hidden = false;
+    stageDetailTitleEl.textContent = `${stageLabel}客户名单`;
+    stageDetailSummaryEl.textContent = `当前共 ${totalCount} 人，其中重点用户 ${focusCount} 人，最高优先 ${highestPriorityCount} 人，今日新增 ${todayNewCount} 人。这里先展示最近 20 位。`;
+    renderStageDetailState('正在读取名单', '系统正在准备这一阶段的客户列表。', 'admin-state admin-state--loading');
+    stageDetailDrawerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const query = new URLSearchParams({
+        marketing_main_stage: mainStage,
+        limit: '20',
+        offset: '0',
+      });
+      const response = await fetchJson(`/api/customers?${query.toString()}`);
+      const items = Array.isArray(response.items) ? response.items : (Array.isArray(response.customers) ? response.customers : []);
+      if (!items.length) {
+        renderStageDetailState('当前没有客户', '这个阶段暂时还没有可展示的客户。');
+        return;
+      }
+      renderStageDetailList(items);
+    } catch (error) {
+      renderStageDetailState('名单读取失败', error.message || '请稍后重试。', 'admin-state admin-state--error');
+    }
+  }
+
+  function closeStageDetail() {
+    stageDetailDrawerEl.hidden = true;
+  }
+
+  questionnaireEl.addEventListener('change', async () => {
+    showPageAlert('');
+    await syncRulesForSelectedQuestionnaire();
+    updateSummaryCards();
+  });
+
+  rulesEl.addEventListener('change', (event) => {
+    const questionIndex = event.target?.getAttribute?.('data-rule-question');
+    if (questionIndex !== null && questionIndex !== undefined) {
+      const index = Number(questionIndex);
+      const nextQuestionId = Number(event.target.value || 0);
+      const duplicate = (state.config.question_rules || []).some((rule, currentIndex) => {
+        if (currentIndex === index) return false;
+        return Number(rule?.questionnaire_question_id || 0) === nextQuestionId && nextQuestionId > 0;
+      });
+      if (duplicate) {
+        showPageAlert('5 道关键信号题不能重复，请重新选择。', true);
+        renderRules();
+        return;
+      }
+      const detail = state.questionnaireCache[String(questionnaireEl.value || state.config.questionnaire_id || '')];
+      const question = supportedQuestions(detail).find((item) => Number(item.id) === nextQuestionId);
+      state.config.question_rules[index] = {
+        questionnaire_question_id: nextQuestionId || '',
+        hit_option_ids_json: [],
+        sort_order: index + 1,
+      };
+      if (question && Array.isArray(question.options) && question.options.length) {
+        state.config.question_rules[index].hit_option_ids_json = [Number(question.options[0].id)];
+      }
+      showPageAlert('');
+      renderRules();
+      return;
+    }
+
+    const optionIndex = event.target?.getAttribute?.('data-rule-options');
+    if (optionIndex !== null && optionIndex !== undefined) {
+      const index = Number(optionIndex);
+      const selectedOptionIds = [...event.target.selectedOptions].map((item) => Number(item.value)).filter((item) => item > 0);
+      state.config.question_rules[index] = {
+        ...(state.config.question_rules[index] || {}),
+        hit_option_ids_json: selectedOptionIds,
+        sort_order: index + 1,
+      };
+    }
+  });
+
+  configFormEl.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showPageAlert('');
+    saveButtonEl.disabled = true;
+    try {
+      const payload = buildSavePayload();
+      const response = await fetchJson('/api/admin/marketing-automation/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      state.config = response.config || payload;
+      enabledEl.checked = Boolean(state.config.enabled);
+      questionnaireEl.value = state.config.questionnaire_id || '';
+      coreThresholdEl.value = state.config.core_threshold || 0;
+      topThresholdEl.value = state.config.top_threshold || 0;
+      quietHourEl.value = state.config.quiet_hour_start || 23;
+      timezoneEl.value = state.config.timezone || 'Asia/Shanghai';
+      await syncRulesForSelectedQuestionnaire();
+      updateSummaryCards();
+      showPageAlert('自动化转化设置已保存。');
+    } catch (error) {
+      showPageAlert(error.message || '保存失败，请稍后重试。', true);
+    } finally {
+      saveButtonEl.disabled = false;
+    }
+  });
+
+  previewFormEl.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const externalUserid = String(previewInputEl.value || '').trim();
+    if (!externalUserid) {
+      previewStateEl.className = 'admin-state admin-state--error';
+      previewStateEl.innerHTML = '<strong>还没输入客户微信 ID</strong><span>请输入后再查看当前结果。</span>';
+      return;
+    }
+    previewButtonEl.disabled = true;
+    previewStateEl.className = 'admin-state admin-state--loading';
+    previewStateEl.innerHTML = '<strong>正在试算</strong><span>系统正在读取当前阶段和优先级。</span>';
+    try {
+      const response = await fetchJson('/api/admin/marketing-automation/config/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ external_userid: externalUserid }),
+      });
+      renderPreview(response.preview || {});
+    } catch (error) {
+      previewStateEl.className = 'admin-state admin-state--error';
+      previewStateEl.innerHTML = `
+        <strong>试算失败</strong>
+        <span>${escapeHtml(error.message || '请稍后重试')}</span>
+      `;
+    } finally {
+      previewButtonEl.disabled = false;
+    }
+  });
+
+  stageBoardButtons.forEach((buttonEl) => {
+    buttonEl.addEventListener('click', () => {
+      openStageDetail(buttonEl);
+    });
+  });
+
+  stageDetailCloseButtons.forEach((buttonEl) => {
+    buttonEl.addEventListener('click', closeStageDetail);
+  });
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    await syncRulesForSelectedQuestionnaire();
+    updateSummaryCards();
+  });
+</script>
+{% endblock %}
