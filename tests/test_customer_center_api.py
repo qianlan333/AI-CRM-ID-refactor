@@ -198,6 +198,57 @@ def seed_customer_fixture(app):
                 "{}",
             ),
         )
+        db.execute(
+            """
+            INSERT INTO customer_marketing_state_current (
+                person_id, external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                eligible_for_conversion, lifecycle_status, last_activation_at, last_conversion_marked_at,
+                last_message_at, last_batch_id, last_batch_status, last_batch_window_start, last_batch_window_end,
+                last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
+            )
+            VALUES (?, ?, 'signup_conversion_v1', 'active', 'activated', 1, 0, 1, 'active', ?, '', ?, NULL, '', '', '', ?, ?, '', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                person_id,
+                "wm_customer_001",
+                "2026-03-24 09:30:00",
+                "2026-03-24 11:00:00",
+                "2026-03-24 11:00:00",
+                "2026-03-24 09:30:00",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_value_segment_current (
+                external_userid, segment, segment_rank, score, scoring_version, computed_reason, submission_id,
+                matched_question_ids_json, source_payload_json, evaluated_at, computed_at, created_at, updated_at
+            )
+            VALUES (?, 'core', 2, 3, 'signup_conversion_question_hits_v1', 'seed', NULL, '[]', '{}', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "wm_customer_001",
+                "2026-03-24 10:30:00",
+                "2026-03-24 10:30:00",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO message_batches (
+                id, batch_key, window_start, window_end, status, message_count, created_at
+            )
+            VALUES (9001, 'seed-batch-9001', '2026-03-24 10:35:00', '2026-03-24 10:45:00', 'acked', 1, CURRENT_TIMESTAMP)
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO conversion_dispatch_log (
+                automation_key, batch_id, external_userid, dispatch_status, dispatch_channel,
+                dispatch_payload_json, dispatch_note, dispatched_at, acked_at, created_at, updated_at
+            )
+            VALUES ('signup_conversion_v1', 9001, ?, 'sent', 'text_message', '{}', 'seed dispatch', ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("wm_customer_001", "2026-03-24 10:40:00"),
+        )
         db.commit()
 
 
@@ -216,6 +267,10 @@ def test_customers_list_returns_aggregated_results(client, app):
         "tag": "",
         "status": "",
         "is_bound": "",
+        "marketing_segment": "",
+        "marketing_main_stage": "",
+        "marketing_sub_stage": "",
+        "eligible_for_conversion": "",
         "mobile": "",
         "keyword": "",
         "limit": "10",
@@ -247,6 +302,54 @@ def test_customers_list_filters_by_is_bound(client, app):
     assert payload["customers"][0]["is_bound"] is False
 
 
+def test_customers_list_filters_by_marketing_segment_stage_and_eligibility(client, app):
+    seed_customer_fixture(app)
+
+    response = client.get(
+        "/api/customers",
+        query_string={
+            "marketing_segment": "core",
+            "marketing_main_stage": "active",
+            "marketing_sub_stage": "activated",
+            "eligible_for_conversion": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["count"] == 1
+    assert payload["customers"][0]["external_userid"] == "wm_customer_001"
+    assert payload["filters"]["marketing_segment"] == "core"
+    assert payload["filters"]["marketing_main_stage"] == "active"
+    assert payload["filters"]["marketing_sub_stage"] == "activated"
+    assert payload["filters"]["eligible_for_conversion"] == "true"
+
+
+def test_customers_list_filters_by_marketing_unknown_and_ineligible(client, app):
+    seed_customer_fixture(app)
+
+    response = client.get(
+        "/api/customers",
+        query_string={"marketing_segment": "unknown", "eligible_for_conversion": "false"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["count"] == 1
+    assert payload["customers"][0]["external_userid"] == "wm_customer_002"
+
+
+def test_customers_list_rejects_invalid_eligible_for_conversion_filter(client, app):
+    seed_customer_fixture(app)
+
+    response = client.get("/api/customers", query_string={"eligible_for_conversion": "maybe"})
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["ok"] is False
+    assert payload["error"] == "eligible_for_conversion must be one of true/false/1/0"
+
+
 def test_customer_detail_returns_unified_dto(client, app):
     seed_customer_fixture(app)
 
@@ -263,8 +366,39 @@ def test_customer_detail_returns_unified_dto(client, app):
     assert customer["binding_status"] == "bound"
     assert customer["follow_user_userids"] == ["sales_01"]
     assert customer["class_user_status"]["signup_status"] == "signed_999"
+    assert customer["marketing_profile"]["marketing_state"]["marketing_phase"] == "exited_signup_success"
+    assert customer["marketing_summary"] == {
+        "main_stage": "active",
+        "sub_stage": "activated",
+        "segment": "core",
+        "hit_count": 3,
+        "eligible_for_conversion": True,
+        "last_activation_at": "2026-03-24 09:30:00",
+        "last_conversion_marked_at": "",
+        "last_dispatch_at": "2026-03-24 10:40:00",
+    }
     assert customer["last_message_at"] == "2026-03-24 11:00:00"
     assert customer["last_touch_at"] == "2026-03-24 11:00:00"
+
+
+def test_customer_detail_returns_stable_empty_marketing_summary_when_current_rows_missing(client, app):
+    seed_customer_fixture(app)
+
+    response = client.get("/api/customers/wm_customer_002")
+
+    assert response.status_code == 200
+    customer = response.get_json()["customer"]
+    assert customer["external_userid"] == "wm_customer_002"
+    assert customer["marketing_summary"] == {
+        "main_stage": "",
+        "sub_stage": "",
+        "segment": "unknown",
+        "hit_count": 0,
+        "eligible_for_conversion": False,
+        "last_activation_at": "",
+        "last_conversion_marked_at": "",
+        "last_dispatch_at": "",
+    }
 
 
 def test_legacy_contacts_api_smoke_still_works(client, app):

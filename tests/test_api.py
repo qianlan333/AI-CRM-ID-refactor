@@ -3417,6 +3417,13 @@ def test_sidebar_page_contains_jssdk_debug_chain(client):
     assert "/api/sidebar/jssdk-config" in body
     assert "客户档案绑定" in body
     assert "debugWrap.classList.toggle('hidden', !debugEnabled);" in body
+    assert "营销自动化卡片" in body
+    assert "标记报名成功" in body
+    assert "撤销报名成功" in body
+    assert "/api/sidebar/marketing-status" in body
+    assert "/api/sidebar/marketing-status/mark-enrolled" in body
+    assert "/api/sidebar/marketing-status/unmark-enrolled" in body
+    assert "renderMarketingStatus(result.marketing_status || {});" in body
 
 
 def test_sidebar_page_hides_debug_and_uses_customer_display_name(client, app):

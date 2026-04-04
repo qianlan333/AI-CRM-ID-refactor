@@ -59,6 +59,33 @@ def append_class_user_status_history(**kwargs: Any) -> None:
     repo.append_class_user_status_history(**kwargs)
 
 
+def clear_class_user_status_current(
+    *,
+    external_userid: str,
+    set_by_userid: str,
+    customer_name_snapshot: str,
+    owner_userid_snapshot: str,
+    mobile_snapshot: str,
+) -> None:
+    existing = get_class_user_status_current(external_userid) or {}
+    if not existing:
+        return
+    append_class_user_status_history(
+        external_userid=external_userid,
+        old_signup_status=str(existing.get("signup_status") or "").strip(),
+        new_signup_status="",
+        old_label_name=str(existing.get("signup_label_name") or "").strip(),
+        new_label_name="",
+        customer_name_snapshot=customer_name_snapshot,
+        owner_userid_snapshot=owner_userid_snapshot,
+        mobile_snapshot=mobile_snapshot,
+        set_by_userid=set_by_userid,
+        wecom_tag_sync_status="pending",
+        wecom_tag_sync_error="",
+    )
+    repo.delete_class_user_status_current(external_userid)
+
+
 def update_class_user_status_sync_result(
     external_userid: str,
     *,

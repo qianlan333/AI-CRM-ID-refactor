@@ -217,6 +217,18 @@ def upsert_class_user_status_current(
     db.commit()
 
 
+def delete_class_user_status_current(external_userid: str) -> None:
+    db = get_db()
+    db.execute(
+        """
+        DELETE FROM class_user_status_current
+        WHERE external_userid = ?
+        """,
+        (external_userid,),
+    )
+    db.commit()
+
+
 def append_class_user_status_history(
     *,
     external_userid: str,

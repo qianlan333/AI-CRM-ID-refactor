@@ -8,6 +8,7 @@ from typing import Any
 class TimelineItemDTO:
     event_id: str = ""
     event_type: str = ""
+    type: str = ""
     event_time: str = ""
     occurred_at: str = ""
     title: str = ""
@@ -16,10 +17,16 @@ class TimelineItemDTO:
     source_id: str = ""
     operator_userid: str = ""
     external_userid: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data["type"] = data["type"] or data["event_type"]
+        effective_payload = data["payload"] or data["metadata"]
+        data["payload"] = effective_payload
+        data["metadata"] = effective_payload
+        return data
 
 
 @dataclass

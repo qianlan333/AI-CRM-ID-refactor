@@ -21,6 +21,7 @@ from .archive import register_routes as register_archive_routes
 from .callbacks import register_routes as register_callback_routes
 from .contacts import register_routes as register_contacts_routes
 from .customer_center import register_routes as register_customer_center_routes
+from .customer_automation import register_routes as register_customer_automation_routes
 from .customer_timeline import register_routes as register_customer_timeline_routes
 from .group_chats import register_routes as register_group_chat_routes
 from .identity import register_routes as register_identity_routes
@@ -44,6 +45,7 @@ HTTP_ROUTE_MODULES = {
     "ops": "wecom_ability_service.http.ops",
     "settings": "wecom_ability_service.http.settings_ops",
     "customer_center": "wecom_ability_service.http.customer_center",
+    "customer_automation": "wecom_ability_service.http.customer_automation",
     "customer_timeline": "wecom_ability_service.http.customer_timeline",
     "archive": "wecom_ability_service.http.archive",
     "contacts": "wecom_ability_service.http.contacts",
@@ -69,6 +71,7 @@ HTTP_ROUTE_MODULES = {
 HTTP_ROUTE_PLACEMENT = {
     "customer": (
         "customer_center.py for /api/customers* list/detail",
+        "customer_automation.py for /api/customers/automation/signup-conversion/batches*",
         "customer_timeline.py for /api/customers/<external_userid>/timeline",
         "contacts.py and identity.py for contact binding / identity resolution",
     ),
@@ -115,6 +118,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_questionnaires", register_admin_questionnaires_routes),
     ("customer_center", register_customer_center_routes),
+    ("customer_automation", register_customer_automation_routes),
     ("customer_timeline", register_customer_timeline_routes),
     ("public_questionnaires", register_public_questionnaire_routes),
     ("archive", register_archive_routes),

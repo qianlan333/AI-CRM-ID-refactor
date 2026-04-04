@@ -45,6 +45,218 @@ def client(app):
     return app.test_client()
 
 
+def _seed_signup_conversion_questionnaire(app, *, questionnaire_id: int = 71) -> dict[str, object]:
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO questionnaires (
+                id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                questionnaire_id,
+                f"marketing-automation-{questionnaire_id}",
+                "报名成功自动化问卷",
+                "报名成功自动化问卷",
+            ),
+        )
+        question_ids: list[int] = []
+        option_ids_by_question: dict[int, list[int]] = {}
+        for index in range(1, 6):
+            question_id = questionnaire_id * 100 + index
+            db.execute(
+                """
+                INSERT INTO questionnaire_questions (
+                    id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+                )
+                VALUES (?, ?, 'single_choice', ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (question_id, questionnaire_id, f"关键问题{index}", index),
+            )
+            option_ids: list[int] = []
+            for option_index in range(1, 3):
+                option_id = question_id * 10 + option_index
+                option_ids.append(option_id)
+                db.execute(
+                    """
+                    INSERT INTO questionnaire_options (
+                        id, question_id, option_text, score, tag_codes, sort_order, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, '[]', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        option_id,
+                        question_id,
+                        f"问题{index}-选项{option_index}",
+                        option_index * 10,
+                        option_index,
+                    ),
+                )
+            question_ids.append(question_id)
+            option_ids_by_question[question_id] = option_ids
+        db.commit()
+    return {
+        "questionnaire_id": questionnaire_id,
+        "question_ids": question_ids,
+        "option_ids_by_question": option_ids_by_question,
+    }
+
+
+def _signup_conversion_config_payload(
+    questionnaire_seed: dict[str, object],
+    *,
+    enabled: bool = True,
+    core_threshold: int = 3,
+    top_threshold: int = 4,
+    quiet_hour_start: int = 23,
+    timezone: str = "Asia/Shanghai",
+) -> dict[str, object]:
+    question_ids = list(questionnaire_seed["question_ids"])
+    option_ids_by_question = dict(questionnaire_seed["option_ids_by_question"])
+    return {
+        "enabled": enabled,
+        "questionnaire_id": int(questionnaire_seed["questionnaire_id"]),
+        "core_threshold": core_threshold,
+        "top_threshold": top_threshold,
+        "quiet_hour_start": quiet_hour_start,
+        "timezone": timezone,
+        "question_rules": [
+            {
+                "questionnaire_question_id": question_id,
+                "hit_option_ids_json": [option_ids_by_question[question_id][0]],
+                "sort_order": index,
+            }
+            for index, question_id in enumerate(question_ids, start=1)
+        ],
+    }
+
+
+def _seed_marketing_dispatch_history(app) -> None:
+    with app.app_context():
+        db = get_db()
+        rows = [
+            {
+                "batch_id": 9101,
+                "external_userid": "wm_dispatch_pending",
+                "owner_userid": "sales_dispatch_01",
+                "segment": "core",
+                "main_stage": "prospect",
+                "sub_stage": "wecom_connected",
+                "dispatch_status": "pending",
+                "created_at": "2026-04-04 10:01:00",
+                "acked_at": "",
+            },
+            {
+                "batch_id": 9102,
+                "external_userid": "wm_dispatch_blocked",
+                "owner_userid": "sales_dispatch_02",
+                "segment": "top",
+                "main_stage": "active",
+                "sub_stage": "activated",
+                "dispatch_status": "blocked_quiet_hours",
+                "created_at": "2026-04-04 10:02:00",
+                "acked_at": "",
+            },
+            {
+                "batch_id": 9103,
+                "external_userid": "wm_dispatch_acked",
+                "owner_userid": "sales_dispatch_03",
+                "segment": "top",
+                "main_stage": "prospect",
+                "sub_stage": "wecom_connected",
+                "dispatch_status": "acked",
+                "created_at": "2026-04-04 10:03:00",
+                "acked_at": "2026-04-04 10:05:00",
+            },
+            {
+                "batch_id": 9104,
+                "external_userid": "wm_dispatch_converted",
+                "owner_userid": "sales_dispatch_04",
+                "segment": "core",
+                "main_stage": "converted",
+                "sub_stage": "enrolled",
+                "dispatch_status": "converted_before_dispatch",
+                "created_at": "2026-04-04 10:04:00",
+                "acked_at": "",
+            },
+        ]
+        for item in rows:
+            db.execute(
+                """
+                INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+                VALUES (?, ?, ?, '', '', CURRENT_TIMESTAMP)
+                """,
+                (item["external_userid"], item["external_userid"], item["owner_userid"]),
+            )
+            db.execute(
+                """
+                INSERT INTO message_batches (
+                    id, batch_key, window_start, window_end, status, message_count, created_at
+                )
+                VALUES (?, ?, '2026-04-04 10:00:00', '2026-04-04 10:10:00', 'pending', 1, CURRENT_TIMESTAMP)
+                """,
+                (item["batch_id"], f"dispatch-batch-{item['batch_id']}"),
+            )
+            db.execute(
+                """
+                INSERT INTO customer_marketing_state_current (
+                    external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                    eligible_for_conversion, lifecycle_status, last_activation_at, last_conversion_marked_at,
+                    last_message_at, last_batch_id, last_batch_status, last_batch_window_start, last_batch_window_end,
+                    last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
+                )
+                VALUES (?, 'signup_conversion_v1', ?, ?, 0, ?, 0, ?, '', '', '', ?, ?, '', '', '', ?, '', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    item["external_userid"],
+                    item["main_stage"],
+                    item["sub_stage"],
+                    1 if item["main_stage"] == "converted" else 0,
+                    item["main_stage"],
+                    item["batch_id"],
+                    item["dispatch_status"],
+                    item["created_at"],
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO customer_value_segment_current (
+                    external_userid, segment, segment_rank, score, scoring_version, computed_reason, submission_id,
+                    matched_question_ids_json, source_payload_json, evaluated_at, computed_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 'signup_conversion_question_hits_v1', 'seed', NULL, '[]', '{}', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    item["external_userid"],
+                    item["segment"],
+                    3 if item["segment"] == "top" else 2,
+                    4 if item["segment"] == "top" else 3,
+                    item["created_at"],
+                    item["created_at"],
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO conversion_dispatch_log (
+                    automation_key, batch_id, external_userid, dispatch_status, dispatch_channel,
+                    dispatch_payload_json, dispatch_note, dispatched_at, acked_at, created_at, updated_at
+                )
+                VALUES ('signup_conversion_v1', ?, ?, ?, 'text_message', '{}', 'seed', ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    item["batch_id"],
+                    item["external_userid"],
+                    item["dispatch_status"],
+                    item["created_at"],
+                    item["acked_at"] or None,
+                    item["created_at"],
+                ),
+            )
+        db.commit()
+
+
 def _mcp_list_tools(client, token: str = "mcp-token"):
     response = client.post(
         "/mcp",
@@ -60,6 +272,7 @@ def test_admin_config_pages_render(client):
         "/admin/config/routing": "负责人 / 分配规则",
         "/admin/config/signup-tags": "报名标签规则",
         "/admin/config/class-term-tags": "班期标签规则",
+        "/admin/marketing-automation/ui": "营销自动化",
         "/admin/config/app-settings": "系统设置",
         "/admin/config/mcp-tools": "AI 工具设置",
     }
@@ -228,3 +441,68 @@ def test_admin_config_class_term_and_signup_pages_have_seeded_config(client):
     assert class_term_response.status_code == 200
     assert signup_payload["config"]["tag_group_name"] == "AI 产品报名情况"
     assert len(class_term_payload["config"]["rows"]) >= 1
+
+
+def test_admin_marketing_automation_ui_renders_saved_config_and_preview_panel(app, client):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=81)
+    _seed_marketing_dispatch_history(app)
+    save_response = client.put(
+        "/api/admin/marketing-automation/config",
+        json=_signup_conversion_config_payload(seed, core_threshold=2, top_threshold=5),
+    )
+    assert save_response.status_code == 200
+
+    response = client.get("/admin/marketing-automation/ui")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "营销自动化" in html
+    assert "单客户预览" in html
+    assert "最近候选 / 分发记录" in html
+    assert "wm_dispatch_pending" in html
+    assert "blocked_quiet_hours" in html
+    assert "converted_before_dispatch" in html
+    assert "23:00 后不启动" in html
+    assert "报名成功自动化问卷" in html
+    assert 'value="2"' in html
+    assert 'value="5"' in html
+    assert "const initialMarketingConfig" in html
+    assert '"questionnaire_id": 81' in html or '"questionnaire_id":81' in html
+
+
+def test_admin_marketing_automation_dispatch_history_api_supports_status_filter(app, client):
+    _seed_marketing_dispatch_history(app)
+
+    response = client.get("/api/admin/marketing-automation/dispatch-history")
+    blocked_response = client.get(
+        "/api/admin/marketing-automation/dispatch-history",
+        query_string={"status": "blocked_quiet_hours"},
+    )
+
+    payload = response.get_json()
+    blocked_payload = blocked_response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["dispatch_history"]["count"] == 4
+    statuses = {item["dispatch_status"] for item in payload["dispatch_history"]["items"]}
+    assert {"pending", "blocked_quiet_hours", "acked", "converted_before_dispatch"} <= statuses
+
+    assert blocked_response.status_code == 200
+    assert blocked_payload["dispatch_history"]["status"] == "blocked_quiet_hours"
+    assert blocked_payload["dispatch_history"]["count"] == 1
+    assert blocked_payload["dispatch_history"]["items"][0]["external_userid"] == "wm_dispatch_blocked"
+    assert blocked_payload["dispatch_history"]["items"][0]["stage"] == "active/activated"
+
+
+def test_admin_marketing_automation_ui_dispatch_history_filter_renders_selected_status(app, client):
+    _seed_marketing_dispatch_history(app)
+
+    response = client.get("/admin/marketing-automation/ui", query_string={"status": "blocked_quiet_hours"})
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "最近候选 / 分发记录" in html
+    assert "wm_dispatch_blocked" in html
+    assert "blocked_quiet_hours" in html
+    assert "wm_dispatch_pending" not in html

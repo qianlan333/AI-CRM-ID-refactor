@@ -175,11 +175,280 @@ def _ensure_sqlite_user_ops_page_tables(db) -> None:
         db.execute("ALTER TABLE user_ops_send_records ADD COLUMN last_status_sync_at TEXT")
 
 
+def _ensure_sqlite_customer_value_segment_tables(db) -> None:
+    current_columns = _sqlite_table_columns(db, "customer_value_segment_current")
+    if current_columns:
+        if "submission_id" not in current_columns:
+            db.execute("ALTER TABLE customer_value_segment_current ADD COLUMN submission_id INTEGER")
+        if "matched_question_ids_json" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_value_segment_current ADD COLUMN matched_question_ids_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "evaluated_at" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_value_segment_current ADD COLUMN evaluated_at TEXT NOT NULL DEFAULT ''"
+            )
+
+    history_columns = _sqlite_table_columns(db, "customer_value_segment_history")
+    if history_columns:
+        if "submission_id" not in history_columns:
+            db.execute("ALTER TABLE customer_value_segment_history ADD COLUMN submission_id INTEGER")
+        if "matched_question_ids_json" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_value_segment_history ADD COLUMN matched_question_ids_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "evaluated_at" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_value_segment_history ADD COLUMN evaluated_at TEXT NOT NULL DEFAULT ''"
+            )
+
+
+def _rebuild_sqlite_customer_marketing_state_current_table(db) -> None:
+    current_columns = _sqlite_table_columns(db, "customer_marketing_state_current")
+    if not current_columns:
+        return
+    db.execute("DROP TABLE IF EXISTS customer_marketing_state_current__new")
+    db.execute(
+        """
+        CREATE TABLE customer_marketing_state_current__new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+            external_userid TEXT NOT NULL DEFAULT '',
+            automation_key TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+            main_stage TEXT NOT NULL DEFAULT 'pending',
+            sub_stage TEXT NOT NULL DEFAULT '',
+            activated INTEGER NOT NULL DEFAULT 0,
+            converted INTEGER NOT NULL DEFAULT 0,
+            eligible_for_conversion INTEGER NOT NULL DEFAULT 0,
+            lifecycle_status TEXT NOT NULL DEFAULT 'idle',
+            last_activation_at TEXT NOT NULL DEFAULT '',
+            last_conversion_marked_at TEXT NOT NULL DEFAULT '',
+            last_message_at TEXT NOT NULL DEFAULT '',
+            last_batch_id INTEGER REFERENCES message_batches(id) ON DELETE SET NULL,
+            last_batch_status TEXT NOT NULL DEFAULT '',
+            last_batch_window_start TEXT NOT NULL DEFAULT '',
+            last_batch_window_end TEXT NOT NULL DEFAULT '',
+            last_trigger_message_at TEXT NOT NULL DEFAULT '',
+            entered_at TEXT,
+            exited_at TEXT,
+            exit_reason TEXT NOT NULL DEFAULT '',
+            state_payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        f"""
+        INSERT INTO customer_marketing_state_current__new (
+            id,
+            person_id,
+            external_userid,
+            automation_key,
+            main_stage,
+            sub_stage,
+            activated,
+            converted,
+            eligible_for_conversion,
+            lifecycle_status,
+            last_activation_at,
+            last_conversion_marked_at,
+            last_message_at,
+            last_batch_id,
+            last_batch_status,
+            last_batch_window_start,
+            last_batch_window_end,
+            last_trigger_message_at,
+            entered_at,
+            exited_at,
+            exit_reason,
+            state_payload_json,
+            created_at,
+            updated_at
+        )
+        SELECT
+            id,
+            {"person_id" if "person_id" in current_columns else "NULL"} AS person_id,
+            CASE
+                WHEN COALESCE(external_userid, '') LIKE 'person:%' THEN ''
+                ELSE COALESCE(external_userid, '')
+            END AS external_userid,
+            {"automation_key" if "automation_key" in current_columns else "'signup_conversion_v1'"} AS automation_key,
+            {"main_stage" if "main_stage" in current_columns else "'pending'"} AS main_stage,
+            {"sub_stage" if "sub_stage" in current_columns else "''"} AS sub_stage,
+            {"activated" if "activated" in current_columns else "0"} AS activated,
+            {"converted" if "converted" in current_columns else "0"} AS converted,
+            {"eligible_for_conversion" if "eligible_for_conversion" in current_columns else "0"} AS eligible_for_conversion,
+            {"lifecycle_status" if "lifecycle_status" in current_columns else "'idle'"} AS lifecycle_status,
+            {"last_activation_at" if "last_activation_at" in current_columns else "''"} AS last_activation_at,
+            {"last_conversion_marked_at" if "last_conversion_marked_at" in current_columns else "''"} AS last_conversion_marked_at,
+            {"last_message_at" if "last_message_at" in current_columns else "''"} AS last_message_at,
+            {"last_batch_id" if "last_batch_id" in current_columns else "NULL"} AS last_batch_id,
+            {"last_batch_status" if "last_batch_status" in current_columns else "''"} AS last_batch_status,
+            {"last_batch_window_start" if "last_batch_window_start" in current_columns else "''"} AS last_batch_window_start,
+            {"last_batch_window_end" if "last_batch_window_end" in current_columns else "''"} AS last_batch_window_end,
+            {"last_trigger_message_at" if "last_trigger_message_at" in current_columns else "''"} AS last_trigger_message_at,
+            {"entered_at" if "entered_at" in current_columns else "NULL"} AS entered_at,
+            {"exited_at" if "exited_at" in current_columns else "NULL"} AS exited_at,
+            {"exit_reason" if "exit_reason" in current_columns else "''"} AS exit_reason,
+            {"state_payload_json" if "state_payload_json" in current_columns else "'{}'"} AS state_payload_json,
+            {"created_at" if "created_at" in current_columns else "CURRENT_TIMESTAMP"} AS created_at,
+            {"updated_at" if "updated_at" in current_columns else "CURRENT_TIMESTAMP"} AS updated_at
+        FROM customer_marketing_state_current
+        """
+    )
+    db.execute(
+        """
+        DELETE FROM customer_marketing_state_current__new
+        WHERE id IN (
+            SELECT id
+            FROM (
+                SELECT
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY person_id
+                        ORDER BY updated_at DESC, id DESC
+                    ) AS row_number
+                FROM customer_marketing_state_current__new
+                WHERE person_id IS NOT NULL
+            ) AS ranked
+            WHERE row_number > 1
+        )
+        """
+    )
+    db.execute("DROP TABLE customer_marketing_state_current")
+    db.execute("ALTER TABLE customer_marketing_state_current__new RENAME TO customer_marketing_state_current")
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_external_userid
+        ON customer_marketing_state_current (external_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_marketing_state_current_person_id_non_null
+        ON customer_marketing_state_current (person_id)
+        WHERE person_id IS NOT NULL
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_main_stage
+        ON customer_marketing_state_current (main_stage)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_sub_stage
+        ON customer_marketing_state_current (sub_stage)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_eligible_for_conversion
+        ON customer_marketing_state_current (eligible_for_conversion)
+        """
+    )
+
+
+def _ensure_sqlite_customer_marketing_state_tables(db) -> None:
+    current_columns = _sqlite_table_columns(db, "customer_marketing_state_current")
+    if current_columns:
+        create_sql = _sqlite_table_sql(db, "customer_marketing_state_current").upper()
+        if "EXTERNAL_USERID TEXT NOT NULL UNIQUE" in create_sql:
+            _rebuild_sqlite_customer_marketing_state_current_table(db)
+            current_columns = _sqlite_table_columns(db, "customer_marketing_state_current")
+        if "person_id" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_current ADD COLUMN person_id INTEGER REFERENCES people(id) ON DELETE SET NULL"
+            )
+        if "activated" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_current ADD COLUMN activated INTEGER NOT NULL DEFAULT 0"
+            )
+        if "converted" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_current ADD COLUMN converted INTEGER NOT NULL DEFAULT 0"
+            )
+        if "last_activation_at" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_current ADD COLUMN last_activation_at TEXT NOT NULL DEFAULT ''"
+            )
+        if "last_conversion_marked_at" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_current ADD COLUMN last_conversion_marked_at TEXT NOT NULL DEFAULT ''"
+            )
+        if "last_message_at" not in current_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_current ADD COLUMN last_message_at TEXT NOT NULL DEFAULT ''"
+            )
+        db.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_marketing_state_current_person_id_non_null
+            ON customer_marketing_state_current (person_id)
+            WHERE person_id IS NOT NULL
+            """
+        )
+        db.execute(
+            """
+            UPDATE customer_marketing_state_current
+            SET external_userid = ''
+            WHERE external_userid LIKE 'person:%'
+            """
+        )
+
+    history_columns = _sqlite_table_columns(db, "customer_marketing_state_history")
+    if history_columns:
+        if "person_id" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_history ADD COLUMN person_id INTEGER REFERENCES people(id) ON DELETE SET NULL"
+            )
+        if "activated" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_history ADD COLUMN activated INTEGER NOT NULL DEFAULT 0"
+            )
+        if "converted" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_history ADD COLUMN converted INTEGER NOT NULL DEFAULT 0"
+            )
+        if "exit_reason" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_history ADD COLUMN exit_reason TEXT NOT NULL DEFAULT ''"
+            )
+        if "last_activation_at" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_history ADD COLUMN last_activation_at TEXT NOT NULL DEFAULT ''"
+            )
+        if "last_conversion_marked_at" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_history ADD COLUMN last_conversion_marked_at TEXT NOT NULL DEFAULT ''"
+            )
+        if "last_message_at" not in history_columns:
+            db.execute(
+                "ALTER TABLE customer_marketing_state_history ADD COLUMN last_message_at TEXT NOT NULL DEFAULT ''"
+            )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_history_person_id
+            ON customer_marketing_state_history (person_id, recorded_at DESC)
+            """
+        )
+        db.execute(
+            """
+            UPDATE customer_marketing_state_history
+            SET external_userid = ''
+            WHERE external_userid LIKE 'person:%'
+            """
+        )
+
+
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
     _ensure_sqlite_questionnaire_mobile_type(db)
     _ensure_sqlite_user_ops_page_tables(db)
+    _ensure_sqlite_customer_value_segment_tables(db)
+    _ensure_sqlite_customer_marketing_state_tables(db)
     columns = _sqlite_table_columns(db, "archived_messages")
     if "chat_type" not in columns:
         db.execute("ALTER TABLE archived_messages ADD COLUMN chat_type TEXT NOT NULL DEFAULT 'private'")
@@ -252,6 +521,171 @@ def _ensure_postgres_user_ops_page_tables(db) -> None:
     )
 
 
+def _ensure_postgres_customer_value_segment_tables(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_value_segment_current
+        ADD COLUMN IF NOT EXISTS submission_id BIGINT REFERENCES questionnaire_submissions(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_value_segment_current
+        ADD COLUMN IF NOT EXISTS matched_question_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_value_segment_current
+        ADD COLUMN IF NOT EXISTS evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_value_segment_history
+        ADD COLUMN IF NOT EXISTS submission_id BIGINT REFERENCES questionnaire_submissions(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_value_segment_history
+        ADD COLUMN IF NOT EXISTS matched_question_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_value_segment_history
+        ADD COLUMN IF NOT EXISTS evaluated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        """
+    )
+
+
+def _ensure_postgres_customer_marketing_state_tables(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        ALTER COLUMN external_userid SET DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ALTER COLUMN external_userid SET DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        DROP CONSTRAINT IF EXISTS customer_marketing_state_current_external_userid_key
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        ADD COLUMN IF NOT EXISTS person_id BIGINT REFERENCES people(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        ADD COLUMN IF NOT EXISTS activated BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        ADD COLUMN IF NOT EXISTS converted BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        ADD COLUMN IF NOT EXISTS last_activation_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        ADD COLUMN IF NOT EXISTS last_conversion_marked_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_current
+        ADD COLUMN IF NOT EXISTS last_message_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_marketing_state_current_person_id_non_null
+        ON customer_marketing_state_current (person_id)
+        WHERE person_id IS NOT NULL
+        """
+    )
+    db.execute(
+        """
+        UPDATE customer_marketing_state_current
+        SET external_userid = ''
+        WHERE external_userid LIKE 'person:%'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ADD COLUMN IF NOT EXISTS person_id BIGINT REFERENCES people(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ADD COLUMN IF NOT EXISTS activated BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ADD COLUMN IF NOT EXISTS converted BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ADD COLUMN IF NOT EXISTS exit_reason TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ADD COLUMN IF NOT EXISTS last_activation_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ADD COLUMN IF NOT EXISTS last_conversion_marked_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_marketing_state_history
+        ADD COLUMN IF NOT EXISTS last_message_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_history_person_id
+        ON customer_marketing_state_history (person_id, recorded_at DESC)
+        """
+    )
+    db.execute(
+        """
+        UPDATE customer_marketing_state_history
+        SET external_userid = ''
+        WHERE external_userid LIKE 'person:%'
+        """
+    )
+
+
 def _init_postgres(db) -> None:
     db.execute(
         """
@@ -274,6 +708,8 @@ def _init_postgres(db) -> None:
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
     _ensure_postgres_user_ops_page_tables(db)
+    _ensure_postgres_customer_value_segment_tables(db)
+    _ensure_postgres_customer_marketing_state_tables(db)
     db.execute("ALTER TABLE questionnaire_questions DROP CONSTRAINT IF EXISTS questionnaire_questions_type_check")
     db.execute(
         """

@@ -102,6 +102,165 @@ def seed_timeline_fixture(app) -> None:
         db.commit()
 
 
+def seed_marketing_timeline_fixture(app) -> None:
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO customer_value_segment_history (
+                external_userid, segment, segment_rank, score, scoring_version, change_reason,
+                submission_id, matched_question_ids_json, source_payload_json, evaluated_at, recorded_at, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "wm_timeline_001",
+                "normal",
+                1,
+                2,
+                "signup_conversion_v1",
+                "initial_compute",
+                None,
+                json.dumps([101, 102], ensure_ascii=False),
+                json.dumps({"core_threshold": 3, "top_threshold": 4}, ensure_ascii=False),
+                "2026-03-21 09:00:00",
+                "2026-03-21 09:00:00",
+                "2026-03-21 09:00:01",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_value_segment_history (
+                external_userid, segment, segment_rank, score, scoring_version, change_reason,
+                submission_id, matched_question_ids_json, source_payload_json, evaluated_at, recorded_at, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "wm_timeline_001",
+                "top",
+                3,
+                4,
+                "signup_conversion_v1",
+                "segment_changed",
+                None,
+                json.dumps([101, 102, 103, 104], ensure_ascii=False),
+                json.dumps({"core_threshold": 3, "top_threshold": 4}, ensure_ascii=False),
+                "2026-03-22 09:00:00",
+                "2026-03-22 09:00:00",
+                "2026-03-22 09:00:01",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO message_batches (
+                id, batch_key, window_start, window_end, status, message_count, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                778,
+                "timeline-batch-778",
+                "2026-03-24 09:30:00",
+                "2026-03-24 09:45:00",
+                "pending",
+                1,
+                "2026-03-24 09:30:00",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_marketing_state_history (
+                person_id, external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                eligible_for_conversion, batch_id, lifecycle_status, exit_reason, last_activation_at,
+                last_conversion_marked_at, last_message_at, change_reason, state_payload_json, recorded_at, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                None,
+                "wm_timeline_001",
+                "signup_conversion_v1",
+                "active",
+                "activated",
+                1,
+                0,
+                1,
+                None,
+                "active",
+                "",
+                "2026-03-23 08:00:00",
+                "",
+                "2026-03-20 10:00:00",
+                "initial_compute",
+                json.dumps({"bound_external_userids": ["wm_timeline_001"]}, ensure_ascii=False),
+                "2026-03-23 08:00:00",
+                "2026-03-23 08:00:01",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_marketing_state_history (
+                person_id, external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                eligible_for_conversion, batch_id, lifecycle_status, exit_reason, last_activation_at,
+                last_conversion_marked_at, last_message_at, change_reason, state_payload_json, recorded_at, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                None,
+                "wm_timeline_001",
+                "signup_conversion_v1",
+                "converted",
+                "enrolled",
+                1,
+                1,
+                0,
+                778,
+                "converted",
+                "enrolled",
+                "2026-03-23 08:00:00",
+                "2026-03-24 09:00:00",
+                "2026-03-20 10:00:00",
+                "mark_enrolled",
+                json.dumps(
+                    {
+                        "bound_external_userids": ["wm_timeline_001"],
+                        "manual_conversion_action": "mark_enrolled",
+                        "manual_conversion_operator": "sales_01",
+                        "manual_conversion_source": "sidebar_manual",
+                    },
+                    ensure_ascii=False,
+                ),
+                "2026-03-24 09:00:00",
+                "2026-03-24 09:00:01",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO conversion_dispatch_log (
+                automation_key, batch_id, external_userid, dispatch_status, dispatch_channel,
+                dispatch_payload_json, dispatch_note, dispatched_at, acked_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "signup_conversion_v1",
+                778,
+                "wm_timeline_001",
+                "dispatched",
+                "text_message",
+                json.dumps({"operator": "openclaw", "source": "openclaw"}, ensure_ascii=False),
+                "dispatched to openclaw",
+                "2026-03-24 10:00:00",
+                "",
+                "2026-03-24 10:00:00",
+                "2026-03-24 10:00:01",
+            ),
+        )
+        db.commit()
+
+
 def test_timeline_returns_ok_and_external_userid(client, app):
     seed_timeline_fixture(app)
 
@@ -164,3 +323,59 @@ def test_timeline_returns_404_for_missing_customer(client):
 
     assert response.status_code == 404
     assert payload["ok"] is False
+
+
+def test_timeline_includes_marketing_events_with_human_summaries(client, app):
+    seed_timeline_fixture(app)
+    seed_marketing_timeline_fixture(app)
+
+    response = client.get("/api/customers/wm_timeline_001/timeline")
+    payload = response.get_json()["timeline"]
+    items = payload["items"]
+    event_types = [item["event_type"] for item in items]
+
+    assert response.status_code == 200
+    assert {"message", "status_change", "marketing_state_change", "value_segment_change", "conversion_marked", "openclaw_dispatch"} <= set(
+        event_types
+    )
+
+    segment_item = next(item for item in items if item["event_type"] == "value_segment_change" and item["payload"]["current_segment"] == "top")
+    assert segment_item["summary"] == "客户分层从 normal 变为 top"
+    assert segment_item["type"] == "value_segment_change"
+    assert segment_item["payload"]["matched_question_ids_json"] == [101, 102, 103, 104]
+
+    state_item = next(
+        item
+        for item in items
+        if item["event_type"] == "marketing_state_change" and item["payload"]["current_stage"] == "converted/enrolled"
+    )
+    assert state_item["summary"] == "客户营销阶段从 active/activated 变为 converted/enrolled"
+    assert state_item["payload"]["previous_stage"] == "active/activated"
+
+    conversion_item = next(item for item in items if item["event_type"] == "conversion_marked")
+    assert conversion_item["summary"] == "人工标记报名成功，退出自动转化链路"
+    assert conversion_item["payload"]["conversion_action"] == "mark_enrolled"
+
+    dispatch_item = next(item for item in items if item["event_type"] == "openclaw_dispatch")
+    assert dispatch_item["summary"] == "OpenClaw 已下发转化候选 批次 #778"
+    assert dispatch_item["payload"]["dispatch_payload_json"] == {"operator": "openclaw", "source": "openclaw"}
+
+
+def test_timeline_marketing_event_filter_and_desc_order_keep_legacy_events(client, app):
+    seed_timeline_fixture(app)
+    seed_marketing_timeline_fixture(app)
+
+    response = client.get("/api/customers/wm_timeline_001/timeline")
+    items = response.get_json()["timeline"]["items"]
+
+    assert items[0]["event_type"] == "openclaw_dispatch"
+    assert "message" in [item["event_type"] for item in items]
+    assert "status_change" in [item["event_type"] for item in items]
+
+    filtered_response = client.get("/api/customers/wm_timeline_001/timeline?event_type=conversion_marked")
+    filtered_items = filtered_response.get_json()["timeline"]["items"]
+
+    assert filtered_response.status_code == 200
+    assert len(filtered_items) == 1
+    assert filtered_items[0]["event_type"] == "conversion_marked"
+    assert filtered_items[0]["summary"] == "人工标记报名成功，退出自动转化链路"

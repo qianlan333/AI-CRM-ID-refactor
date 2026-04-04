@@ -912,6 +912,46 @@ code {
   gap: 18px;
 }
 
+.marketing-automation-card-head {
+  margin-bottom: 12px;
+}
+
+.marketing-automation-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.marketing-automation-rule-row {
+  padding: 18px;
+}
+
+.marketing-automation-rule-row__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.marketing-automation-rule-row__meta {
+  margin-top: 10px;
+}
+
+.marketing-automation-rule-row select[multiple] {
+  min-height: 112px;
+}
+
+.marketing-automation-preview-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.marketing-automation-preview-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .admin-split {
   display: grid;
   gap: 18px;
@@ -1127,6 +1167,7 @@ code {
   .admin-filter-grid,
   .admin-stat-inline-grid,
   .admin-grid-2,
+  .marketing-automation-rule-row__grid,
   .admin-quick-links,
   .admin-split-grid,
   .admin-todo-grid,
@@ -1169,6 +1210,7 @@ code {
   .admin-filter-grid,
   .admin-stat-inline-grid,
   .admin-grid-2,
+  .marketing-automation-rule-row__grid,
   .admin-quick-links,
   .admin-split-grid,
   .admin-todo-grid,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import jsonify, redirect, render_template, request, url_for
 
+from ..db import get_db
 from ..domains.admin_config import (
     build_config_home_payload,
     config_tabs,
@@ -16,6 +17,14 @@ from ..domains.admin_config import (
     save_owner_role_setting,
     save_routing_rule_setting,
     save_signup_tag_setting,
+)
+from ..services import (
+    get_signup_conversion_config,
+    get_questionnaire_detail,
+    list_questionnaires,
+    preview_signup_conversion_customer,
+    recompute_signup_conversion_customers,
+    save_signup_conversion_config,
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
 
@@ -36,6 +45,14 @@ def _query_text(name: str) -> str:
 
 def _query_bool(name: str) -> bool:
     return str(request.args.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _query_int(name: str, *, default: int, minimum: int = 1, maximum: int = 200) -> int:
+    try:
+        value = int(request.args.get(name) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(value, maximum))
 
 
 def _request_confirmed() -> bool:
@@ -319,6 +336,157 @@ def admin_config_save_mcp_tool():
     return redirect(url_for("api.admin_config_mcp_tools", saved=1, edit_tool=saved.get("tool_name", "")), code=302)
 
 
+def _marketing_automation_segment_stats() -> list[dict[str, str | int]]:
+    counts = {"unknown": 0, "normal": 0, "core": 0, "top": 0}
+    rows = get_db().execute(
+        """
+        SELECT segment, COUNT(*) AS total
+        FROM customer_value_segment_current
+        GROUP BY segment
+        """
+    ).fetchall()
+    for row in rows:
+        segment = str(row.get("segment") or "").strip().lower()
+        if segment in counts:
+            counts[segment] = int(row.get("total") or 0)
+    return [
+        {"key": "unknown", "label": "unknown", "value": counts["unknown"], "description": "未命中有效问卷或尚未形成分层"},
+        {"key": "normal", "label": "normal", "value": counts["normal"], "description": "最近问卷命中数低于 core_threshold"},
+        {"key": "core", "label": "core", "value": counts["core"], "description": "当前可优先进入自动化转化的人群"},
+        {"key": "top", "label": "top", "value": counts["top"], "description": "当前最高优先级人群"},
+    ]
+
+
+def _marketing_automation_dispatch_status_options() -> list[dict[str, str]]:
+    return [
+        {"value": "", "label": "全部状态"},
+        {"value": "pending", "label": "pending"},
+        {"value": "blocked_quiet_hours", "label": "blocked_quiet_hours"},
+        {"value": "acked", "label": "acked"},
+        {"value": "converted_before_dispatch", "label": "converted_before_dispatch"},
+    ]
+
+
+def _marketing_automation_dispatch_history(*, status: str = "", limit: int = 50) -> dict[str, object]:
+    normalized_status = str(status or "").strip()
+    filters: list[str] = []
+    params: list[object] = []
+    if normalized_status:
+        filters.append("log.dispatch_status = ?")
+        params.append(normalized_status)
+    where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
+    params.append(int(limit))
+    rows = get_db().execute(
+        f"""
+        SELECT
+            log.batch_id,
+            log.external_userid,
+            COALESCE(
+                (
+                    SELECT c.owner_userid
+                    FROM contacts c
+                    WHERE c.external_userid = log.external_userid
+                    ORDER BY c.updated_at DESC, c.id DESC
+                    LIMIT 1
+                ),
+                ''
+            ) AS owner_userid,
+            COALESCE(
+                (
+                    SELECT v.segment
+                    FROM customer_value_segment_current v
+                    WHERE v.external_userid = log.external_userid
+                    ORDER BY v.updated_at DESC, v.id DESC
+                    LIMIT 1
+                ),
+                'unknown'
+            ) AS segment,
+            COALESCE(
+                (
+                    SELECT s.main_stage
+                    FROM customer_marketing_state_current s
+                    WHERE s.external_userid = log.external_userid
+                    ORDER BY s.updated_at DESC, s.id DESC
+                    LIMIT 1
+                ),
+                ''
+            ) AS main_stage,
+            COALESCE(
+                (
+                    SELECT s.sub_stage
+                    FROM customer_marketing_state_current s
+                    WHERE s.external_userid = log.external_userid
+                    ORDER BY s.updated_at DESC, s.id DESC
+                    LIMIT 1
+                ),
+                ''
+            ) AS sub_stage,
+            log.dispatch_status,
+            log.created_at,
+            log.acked_at
+        FROM conversion_dispatch_log log
+        {where_sql}
+        ORDER BY log.created_at DESC, log.id DESC
+        LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+    items: list[dict[str, object]] = []
+    for row in rows:
+        main_stage = str(row.get("main_stage") or "").strip()
+        sub_stage = str(row.get("sub_stage") or "").strip()
+        stage = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage or ""
+        items.append(
+            {
+                "batch_id": int(row.get("batch_id") or 0),
+                "external_userid": str(row.get("external_userid") or "").strip(),
+                "owner_userid": str(row.get("owner_userid") or "").strip(),
+                "segment": str(row.get("segment") or "").strip() or "unknown",
+                "main_stage": main_stage,
+                "sub_stage": sub_stage,
+                "stage": stage,
+                "dispatch_status": str(row.get("dispatch_status") or "").strip(),
+                "created_at": str(row.get("created_at") or "").strip(),
+                "acked_at": str(row.get("acked_at") or "").strip(),
+            }
+        )
+    return {
+        "status": normalized_status,
+        "limit": int(limit),
+        "count": len(items),
+        "items": items,
+    }
+
+
+def admin_marketing_automation_ui():
+    config = get_signup_conversion_config()
+    questionnaires = list_questionnaires()
+    questionnaire_id = config.get("questionnaire_id")
+    selected_questionnaire = None
+    if questionnaire_id not in (None, ""):
+        selected_questionnaire = get_questionnaire_detail(int(questionnaire_id))
+    dispatch_status = _query_text("status")
+    dispatch_history = _marketing_automation_dispatch_history(status=dispatch_status, limit=50)
+    return _render_config_template(
+        "config_marketing_automation.html",
+        active_tab="marketing_automation",
+        page_title="营销自动化",
+        page_summary="在这里维护报名成功自动化配置，并对单个客户做预览校验。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("配置中心", url_for("api.admin_config_home")),
+            ("营销自动化", None),
+        ),
+        marketing_config=config,
+        questionnaires=questionnaires,
+        selected_questionnaire=selected_questionnaire,
+        segment_stats=_marketing_automation_segment_stats(),
+        dispatch_history=dispatch_history,
+        dispatch_status_options=_marketing_automation_dispatch_status_options(),
+        question_rule_slots=[1, 2, 3, 4, 5],
+    )
+
+
 def api_admin_config_overview():
     return jsonify({"ok": True, "overview": build_config_home_payload()})
 
@@ -402,6 +570,72 @@ def api_admin_config_save_mcp_tool():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+def api_admin_marketing_automation_config():
+    try:
+        return jsonify({"ok": True, "config": get_signup_conversion_config()})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def api_admin_marketing_automation_save_config():
+    payload = request.get_json(silent=True) or {}
+    try:
+        saved = save_signup_conversion_config(payload)
+        return jsonify({"ok": True, "config": saved})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def api_admin_marketing_automation_preview():
+    payload = request.get_json(silent=True) or {}
+    try:
+        preview = preview_signup_conversion_customer(
+            external_userid=payload.get("external_userid", ""),
+            person_id=payload.get("person_id"),
+        )
+        return jsonify({"ok": True, "preview": preview})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+
+
+def api_admin_marketing_automation_recompute():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = recompute_signup_conversion_customers(
+            external_userid=payload.get("external_userid", ""),
+            person_id=payload.get("person_id"),
+            external_userids=payload.get("external_userids"),
+            person_ids=payload.get("person_ids"),
+        )
+        return jsonify({"ok": True, "recompute": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+
+
+def api_admin_marketing_automation_dispatch_history():
+    return jsonify(
+        {
+            "ok": True,
+            "dispatch_history": _marketing_automation_dispatch_history(
+                status=_query_text("status"),
+                limit=_query_int("limit", default=50, minimum=1, maximum=200),
+            ),
+        }
+    )
+
+
+def api_admin_config_signup_conversion():
+    return api_admin_marketing_automation_config()
+
+
+def api_admin_config_save_signup_conversion():
+    return api_admin_marketing_automation_save_config()
+
+
 def register_routes(bp):
     bp.route("/admin/config", methods=["GET"])(admin_config_home)
     bp.route("/admin/config/routing", methods=["GET"])(admin_config_routing)
@@ -411,6 +645,7 @@ def register_routes(bp):
     bp.route("/admin/config/signup-tags/save", methods=["POST"])(admin_config_save_signup_tag)
     bp.route("/admin/config/class-term-tags", methods=["GET"])(admin_config_class_term_tags)
     bp.route("/admin/config/class-term-tags/save", methods=["POST"])(admin_config_save_class_term_tag)
+    bp.route("/admin/marketing-automation/ui", methods=["GET"])(admin_marketing_automation_ui)
     bp.route("/admin/config/app-settings", methods=["GET"])(admin_config_app_settings)
     bp.route("/admin/config/app-settings/save", methods=["POST"])(admin_config_save_app_settings)
     bp.route("/admin/config/mcp-tools", methods=["GET"])(admin_config_mcp_tools)
@@ -428,3 +663,10 @@ def register_routes(bp):
     bp.route("/api/admin/config/app-settings", methods=["PUT"])(api_admin_config_save_app_settings)
     bp.route("/api/admin/config/mcp-tools", methods=["GET"])(api_admin_config_mcp_tools)
     bp.route("/api/admin/config/mcp-tools", methods=["POST"])(api_admin_config_save_mcp_tool)
+    bp.route("/api/admin/marketing-automation/config", methods=["GET"])(api_admin_marketing_automation_config)
+    bp.route("/api/admin/marketing-automation/config", methods=["PUT"])(api_admin_marketing_automation_save_config)
+    bp.route("/api/admin/marketing-automation/config/preview", methods=["POST"])(api_admin_marketing_automation_preview)
+    bp.route("/api/admin/marketing-automation/dispatch-history", methods=["GET"])(api_admin_marketing_automation_dispatch_history)
+    bp.route("/api/admin/marketing-automation/recompute", methods=["POST"])(api_admin_marketing_automation_recompute)
+    bp.route("/api/admin/config/marketing-automation/signup-conversion", methods=["GET"])(api_admin_config_signup_conversion)
+    bp.route("/api/admin/config/marketing-automation/signup-conversion", methods=["PUT"])(api_admin_config_save_signup_conversion)

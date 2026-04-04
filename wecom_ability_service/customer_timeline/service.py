@@ -8,8 +8,11 @@ from ..services import extract_roomid_from_raw_payload, format_message_row, get_
 from .dto import TimelineDTO, TimelineItemDTO
 from .repo import (
     fetch_archived_messages,
+    fetch_conversion_dispatch_logs,
+    fetch_marketing_state_changes,
     fetch_questionnaire_submissions,
     fetch_status_changes,
+    fetch_value_segment_changes,
     fetch_wecom_events,
     has_customer_timeline_scope,
 )
@@ -40,6 +43,62 @@ def _format_unix_timestamp(value: Any) -> str:
         return ""
 
 
+def _stage_key(main_stage: Any, sub_stage: Any) -> str:
+    main = _stringify(main_stage)
+    sub = _stringify(sub_stage)
+    if main and sub:
+        return f"{main}/{sub}"
+    return main or sub
+
+
+def _coalesce_text(*values: Any) -> str:
+    for value in values:
+        text = _stringify(value)
+        if text:
+            return text
+    return ""
+
+
+def _marketing_state_summary(*, previous_stage: str, current_stage: str) -> str:
+    if previous_stage and previous_stage != current_stage:
+        return f"客户营销阶段从 {previous_stage} 变为 {current_stage}"
+    if current_stage:
+        return f"客户营销阶段更新为 {current_stage}"
+    return "客户营销阶段已更新"
+
+
+def _value_segment_summary(*, previous_segment: str, current_segment: str) -> str:
+    if previous_segment and previous_segment != current_segment:
+        return f"客户分层从 {previous_segment} 变为 {current_segment}"
+    if current_segment:
+        return f"客户分层更新为 {current_segment}"
+    return "客户分层已更新"
+
+
+def _conversion_marked_summary(action: str, source: str) -> str:
+    source_prefix = "人工" if source.startswith("sidebar") or source == "manual" else source or "人工"
+    if action == "mark_enrolled":
+        return f"{source_prefix}标记报名成功，退出自动转化链路"
+    if action == "unmark_enrolled":
+        return f"{source_prefix}撤销报名成功标记，按事实重算营销阶段"
+    return "报名成功状态已更新"
+
+
+def _dispatch_summary(row: dict[str, Any]) -> str:
+    batch_id = row.get("batch_id")
+    batch_label = f"批次 #{batch_id}" if batch_id not in (None, "") else "候选批次"
+    dispatch_status = _stringify(row.get("dispatch_status"))
+    if dispatch_status in {"converted_before_dispatch", "cancelled"}:
+        return f"OpenClaw 转化候选 {batch_label} 已取消，状态={dispatch_status}"
+    if dispatch_status == "acked":
+        return f"OpenClaw 转化候选 {batch_label} 已确认接收"
+    if _stringify(row.get("dispatched_at")):
+        return f"OpenClaw 已下发转化候选 {batch_label}"
+    if dispatch_status:
+        return f"OpenClaw 转化候选 {batch_label} 状态更新为 {dispatch_status}"
+    return f"OpenClaw 转化候选 {batch_label} 已记录"
+
+
 def _message_items(external_userid: str) -> list[TimelineItemDTO]:
     rows = fetch_archived_messages(external_userid)
     group_map = get_group_chat_map([extract_roomid_from_raw_payload(row.get("raw_payload")) for row in rows])
@@ -59,6 +118,7 @@ def _message_items(external_userid: str) -> list[TimelineItemDTO]:
                 source_id=str(row["id"]),
                 operator_userid=_stringify(message.get("from") or row.get("sender") or row.get("owner_userid")),
                 external_userid=external_userid,
+                payload=message,
                 metadata=message,
             )
         )
@@ -82,6 +142,7 @@ def _status_change_items(external_userid: str) -> list[TimelineItemDTO]:
                 source_id=str(row["id"]),
                 operator_userid=_stringify(row.get("set_by_userid") or row.get("owner_userid_snapshot")),
                 external_userid=external_userid,
+                payload=dict(row),
                 metadata=dict(row),
             )
         )
@@ -109,6 +170,7 @@ def _questionnaire_items(external_userid: str) -> list[TimelineItemDTO]:
                 source_id=str(row["id"]),
                 operator_userid=_stringify(row.get("follow_user_userid") or row.get("staff_id")),
                 external_userid=external_userid,
+                payload=metadata,
                 metadata=metadata,
             )
         )
@@ -136,6 +198,164 @@ def _wecom_event_items(external_userid: str) -> list[TimelineItemDTO]:
                 source_id=str(row["id"]),
                 operator_userid=_stringify(row.get("user_id")),
                 external_userid=external_userid,
+                payload=metadata,
+                metadata=metadata,
+            )
+        )
+    return items
+
+
+def _marketing_state_change_items(
+    external_userid: str,
+    rows: list[dict[str, Any]],
+) -> list[TimelineItemDTO]:
+    items: list[TimelineItemDTO] = []
+    for index, row in enumerate(rows):
+        payload_json = _json_loads(row.get("state_payload_json"), default={})
+        if not isinstance(payload_json, dict):
+            payload_json = {}
+        current_stage = _stage_key(row.get("main_stage"), row.get("sub_stage"))
+        previous_row = rows[index + 1] if index + 1 < len(rows) else {}
+        previous_stage = _stage_key(previous_row.get("main_stage"), previous_row.get("sub_stage"))
+        event_time = _coalesce_text(row.get("recorded_at"), row.get("created_at"), row.get("last_conversion_marked_at"))
+        metadata = dict(row)
+        metadata["state_payload_json"] = payload_json
+        metadata["current_stage"] = current_stage
+        metadata["previous_stage"] = previous_stage
+        items.append(
+            TimelineItemDTO(
+                event_id=f"marketing_state_change:{row['id']}",
+                event_type="marketing_state_change",
+                type="marketing_state_change",
+                event_time=event_time,
+                occurred_at=event_time,
+                title="营销阶段变更",
+                summary=_marketing_state_summary(previous_stage=previous_stage, current_stage=current_stage),
+                source_table="customer_marketing_state_history",
+                source_id=str(row["id"]),
+                operator_userid=_coalesce_text(
+                    payload_json.get("manual_conversion_operator"),
+                    payload_json.get("manual_conversion_source"),
+                ),
+                external_userid=external_userid,
+                payload=metadata,
+                metadata=metadata,
+            )
+        )
+    return items
+
+
+def _conversion_marked_items(
+    external_userid: str,
+    rows: list[dict[str, Any]],
+) -> list[TimelineItemDTO]:
+    items: list[TimelineItemDTO] = []
+    for row in rows:
+        payload_json = _json_loads(row.get("state_payload_json"), default={})
+        if not isinstance(payload_json, dict):
+            payload_json = {}
+        action = _coalesce_text(payload_json.get("manual_conversion_action"), row.get("change_reason"))
+        if action not in {"mark_enrolled", "unmark_enrolled"}:
+            continue
+        event_time = _coalesce_text(row.get("recorded_at"), row.get("created_at"), row.get("last_conversion_marked_at"))
+        current_stage = _stage_key(row.get("main_stage"), row.get("sub_stage"))
+        metadata = dict(row)
+        metadata["state_payload_json"] = payload_json
+        metadata["current_stage"] = current_stage
+        metadata["conversion_action"] = action
+        items.append(
+            TimelineItemDTO(
+                event_id=f"conversion_marked:{row['id']}",
+                event_type="conversion_marked",
+                type="conversion_marked",
+                event_time=event_time,
+                occurred_at=event_time,
+                title="报名成功标记",
+                summary=_conversion_marked_summary(
+                    action=action,
+                    source=_coalesce_text(payload_json.get("manual_conversion_source")),
+                ),
+                source_table="customer_marketing_state_history",
+                source_id=str(row["id"]),
+                operator_userid=_coalesce_text(
+                    payload_json.get("manual_conversion_operator"),
+                    payload_json.get("manual_conversion_source"),
+                ),
+                external_userid=external_userid,
+                payload=metadata,
+                metadata=metadata,
+            )
+        )
+    return items
+
+
+def _value_segment_change_items(
+    external_userid: str,
+    rows: list[dict[str, Any]],
+) -> list[TimelineItemDTO]:
+    items: list[TimelineItemDTO] = []
+    for index, row in enumerate(rows):
+        matched_question_ids = _json_loads(row.get("matched_question_ids_json"), default=[])
+        if not isinstance(matched_question_ids, list):
+            matched_question_ids = []
+        source_payload = _json_loads(row.get("source_payload_json"), default={})
+        if not isinstance(source_payload, dict):
+            source_payload = {}
+        current_segment = _stringify(row.get("segment"))
+        previous_segment = _stringify((rows[index + 1] if index + 1 < len(rows) else {}).get("segment"))
+        event_time = _coalesce_text(row.get("recorded_at"), row.get("evaluated_at"), row.get("created_at"))
+        metadata = dict(row)
+        metadata["matched_question_ids_json"] = matched_question_ids
+        metadata["source_payload_json"] = source_payload
+        metadata["current_segment"] = current_segment
+        metadata["previous_segment"] = previous_segment
+        items.append(
+            TimelineItemDTO(
+                event_id=f"value_segment_change:{row['id']}",
+                event_type="value_segment_change",
+                type="value_segment_change",
+                event_time=event_time,
+                occurred_at=event_time,
+                title="客户分层变更",
+                summary=_value_segment_summary(previous_segment=previous_segment, current_segment=current_segment),
+                source_table="customer_value_segment_history",
+                source_id=str(row["id"]),
+                operator_userid="",
+                external_userid=external_userid,
+                payload=metadata,
+                metadata=metadata,
+            )
+        )
+    return items
+
+
+def _openclaw_dispatch_items(external_userid: str) -> list[TimelineItemDTO]:
+    rows = fetch_conversion_dispatch_logs(external_userid)
+    items: list[TimelineItemDTO] = []
+    for row in rows:
+        dispatch_payload = _json_loads(row.get("dispatch_payload_json"), default={})
+        if not isinstance(dispatch_payload, dict):
+            dispatch_payload = {}
+        event_time = _coalesce_text(row.get("dispatched_at"), row.get("acked_at"), row.get("updated_at"), row.get("created_at"))
+        metadata = dict(row)
+        metadata["dispatch_payload_json"] = dispatch_payload
+        items.append(
+            TimelineItemDTO(
+                event_id=f"openclaw_dispatch:{row['id']}",
+                event_type="openclaw_dispatch",
+                type="openclaw_dispatch",
+                event_time=event_time,
+                occurred_at=event_time,
+                title="OpenClaw 派发",
+                summary=_dispatch_summary(row),
+                source_table="conversion_dispatch_log",
+                source_id=str(row["id"]),
+                operator_userid=_coalesce_text(
+                    dispatch_payload.get("operator"),
+                    dispatch_payload.get("source"),
+                ),
+                external_userid=external_userid,
+                payload=metadata,
                 metadata=metadata,
             )
         )
@@ -149,11 +369,17 @@ def get_customer_timeline(external_userid: str, filters: dict[str, Any]) -> dict
     if not has_customer_timeline_scope(normalized_external_userid):
         return None
 
+    marketing_state_rows = fetch_marketing_state_changes(normalized_external_userid)
+    value_segment_rows = fetch_value_segment_changes(normalized_external_userid)
     items = (
         _message_items(normalized_external_userid)
         + _status_change_items(normalized_external_userid)
         + _questionnaire_items(normalized_external_userid)
         + _wecom_event_items(normalized_external_userid)
+        + _marketing_state_change_items(normalized_external_userid, marketing_state_rows)
+        + _conversion_marked_items(normalized_external_userid, marketing_state_rows)
+        + _value_segment_change_items(normalized_external_userid, value_segment_rows)
+        + _openclaw_dispatch_items(normalized_external_userid)
     )
 
     event_type = _stringify(filters.get("event_type"))

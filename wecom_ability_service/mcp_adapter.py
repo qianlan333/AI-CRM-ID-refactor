@@ -14,18 +14,25 @@ from .db import get_db
 from .domains.admin_config import list_mcp_runtime_tools, mcp_tool_enabled
 from .infra.settings import get_setting
 from .services import (
+    ack_conversion_batch,
     ack_message_batch,
     extract_roomid_from_raw_payload,
     format_message_row,
     get_contact_by_external_userid,
+    get_conversion_batch,
     get_group_chat_map,
     get_message_batch,
     get_messages_by_user,
+    get_openclaw_customer_marketing_profile,
+    get_pending_conversion_batches,
+    get_signup_conversion_batch,
     get_recent_messages_by_user,
     get_group_chat_by_chat_id,
     get_routing_config,
+    list_signup_conversion_batches,
     list_message_batches,
     list_owner_role_map,
+    mark_enrolled,
     get_signup_tag_rules_config,
     materialize_message_batches,
     record_conversion_feedback,
@@ -34,6 +41,7 @@ from .services import (
     save_tag_snapshot,
     remove_tag_snapshot,
     search_messages,
+    unmark_enrolled,
 )
 from .wecom_client import WeComClient
 
@@ -293,7 +301,7 @@ TOOL_DEFS = [
     },
     {
         "name": "record_conversion_feedback",
-        "description": "Persist conversion feedback from OpenClaw without applying sales logic.",
+        "description": "Persist conversion feedback from OpenClaw; mark_enrolled/unmark_enrolled feedback types also sync unified conversion truth.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -370,6 +378,108 @@ TOOL_DEFS = [
                 "acked_by": {"type": "string"},
             },
             "required": ["batch_id"],
+        },
+    },
+    {
+        "name": "get_signup_conversion_batches",
+        "description": "List pending message batches that remain eligible for signup-conversion automation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                "cursor": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "get_customer_marketing_profile",
+        "description": "Read one CRM-organized marketing profile for OpenClaw without combining customer detail manually.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_userid": {"type": "string"},
+                "person_id": {"type": "integer"},
+                "recent_message_limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+        },
+    },
+    {
+        "name": "get_pending_conversion_batches",
+        "description": "List only the pending conversion batches that have router-approved candidates for OpenClaw.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                "cursor": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "get_conversion_batch",
+        "description": "Fetch one OpenClaw-ready conversion batch with CRM-organized marketing profiles.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "batch_id": {"type": "integer"},
+                "recent_message_limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            "required": ["batch_id"],
+        },
+    },
+    {
+        "name": "ack_conversion_batch",
+        "description": "Acknowledge a conversion batch after OpenClaw has consumed it and stamp acked_at in dispatch logs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "batch_id": {"type": "integer"},
+                "ack_note": {"type": "string"},
+                "acked_by": {"type": "string"},
+            },
+            "required": ["batch_id"],
+        },
+    },
+    {
+        "name": "get_signup_conversion_batch",
+        "description": "Fetch one filtered signup-conversion batch with CRM-organized customer profiles for OpenClaw.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "batch_id": {"type": "integer"},
+                "recent_message_limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                "timeline_limit": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+            "required": ["batch_id"],
+        },
+    },
+    {
+        "name": "mark_enrolled",
+        "description": "Mark one customer as enrolled through the unified CRM conversion service.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_userid": {"type": "string"},
+                "owner_userid": {"type": "string"},
+                "operator": {"type": "string"},
+                "source": {"type": "string"},
+                "signup_status": {"type": "string"},
+            },
+            "required": ["external_userid"],
+        },
+    },
+    {
+        "name": "unmark_enrolled",
+        "description": "Undo one enrolled mark and recompute the customer's stage from CRM facts.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_userid": {"type": "string"},
+                "owner_userid": {"type": "string"},
+                "operator": {"type": "string"},
+                "source": {"type": "string"},
+                "restore_signup_status": {"type": "string"},
+            },
+            "required": ["external_userid"],
         },
     },
     {
@@ -1318,14 +1428,14 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return _call_business_task(name, arguments)
     if name == "record_conversion_feedback":
         locator = _resolve_customer_locator(arguments, required=False)
-        feedback_id = record_conversion_feedback(
+        feedback_result = record_conversion_feedback(
             feedback_type=(arguments.get("feedback_type") or "").strip(),
             external_userid=locator["external_userid"],
             chat_id=(arguments.get("chat_id") or "").strip(),
             actor=(arguments.get("actor") or "").strip(),
             feedback_payload=arguments.get("feedback_payload") or {},
         )
-        return _tool_result({"ok": True, "feedback_id": feedback_id})
+        return _tool_result(feedback_result)
     if name == "get_owner_role_map":
         return _tool_result(
             {
@@ -1365,6 +1475,88 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if not batch:
             raise ValueError("batch not found")
         return _tool_result(batch)
+    if name == "get_signup_conversion_batches":
+        return _tool_result(
+            list_signup_conversion_batches(
+                limit=int(arguments.get("limit", 20)),
+                cursor=str(arguments.get("cursor", "") or ""),
+            )
+        )
+    if name == "get_customer_marketing_profile":
+        return _tool_result(
+            get_openclaw_customer_marketing_profile(
+                external_userid=str(arguments.get("external_userid") or "").strip(),
+                person_id=arguments.get("person_id"),
+                recent_message_limit=_normalize_limit(arguments.get("recent_message_limit"), default=3, minimum=1, maximum=50),
+            )
+        )
+    if name == "get_pending_conversion_batches":
+        return _tool_result(
+            get_pending_conversion_batches(
+                limit=int(arguments.get("limit", 20)),
+                cursor=str(arguments.get("cursor", "") or ""),
+            )
+        )
+    if name == "get_conversion_batch":
+        batch = get_conversion_batch(
+            int(arguments.get("batch_id", 0)),
+            recent_message_limit=_normalize_limit(arguments.get("recent_message_limit"), default=3, minimum=1, maximum=50),
+        )
+        if not batch:
+            raise ValueError("batch not found")
+        return _tool_result(batch)
+    if name == "ack_conversion_batch":
+        batch = ack_conversion_batch(
+            int(arguments.get("batch_id", 0)),
+            ack_note=(arguments.get("ack_note") or ""),
+            acked_by=(arguments.get("acked_by") or ""),
+        )
+        if not batch:
+            raise ValueError("batch not found")
+        return _tool_result(batch)
+    if name == "get_signup_conversion_batch":
+        batch = get_signup_conversion_batch(int(arguments.get("batch_id", 0)))
+        if not batch:
+            raise ValueError("batch not found")
+        recent_message_limit = _normalize_limit(arguments.get("recent_message_limit"), default=20, minimum=1, maximum=200)
+        timeline_limit = _normalize_limit(arguments.get("timeline_limit"), default=20, minimum=1, maximum=200)
+        candidates: list[dict[str, Any]] = []
+        for item in batch.get("candidates") or []:
+            candidate = dict(item)
+            external_userid = str(candidate.get("external_userid") or "").strip()
+            if external_userid:
+                candidate["customer_context"] = _build_customer_context_payload(
+                    {
+                        "external_userid": external_userid,
+                        "recent_message_limit": recent_message_limit,
+                        "timeline_limit": timeline_limit,
+                    }
+                )
+            else:
+                candidate["customer_context"] = {}
+            candidates.append(candidate)
+        batch["candidates"] = candidates
+        return _tool_result(batch)
+    if name == "mark_enrolled":
+        return _tool_result(
+            mark_enrolled(
+                external_userid=str(arguments.get("external_userid") or "").strip(),
+                owner_userid=str(arguments.get("owner_userid") or "").strip(),
+                operator=str(arguments.get("operator") or "").strip(),
+                source=str(arguments.get("source") or "").strip() or "mcp",
+                signup_status=str(arguments.get("signup_status") or "").strip(),
+            )
+        )
+    if name == "unmark_enrolled":
+        return _tool_result(
+            unmark_enrolled(
+                external_userid=str(arguments.get("external_userid") or "").strip(),
+                owner_userid=str(arguments.get("owner_userid") or "").strip(),
+                operator=str(arguments.get("operator") or "").strip(),
+                source=str(arguments.get("source") or "").strip() or "mcp",
+                restore_signup_status=str(arguments.get("restore_signup_status") or "").strip(),
+            )
+        )
     if name == "get_hourly_followup_candidates":
         return _tool_result(_build_followup_candidates(arguments))
     raise ValueError(f"unknown tool: {name}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..services import refresh_contact_tags_for_external_userid
+from ..domains.marketing_automation.service import get_customer_marketing_profile
 from .dto import (
     CustomerBindingDTO,
     CustomerClassStatusDTO,
@@ -10,12 +11,18 @@ from .dto import (
     CustomerFollowUserDTO,
     CustomerIdentityDTO,
     CustomerListItemDTO,
+    CustomerMarketingSummaryDTO,
     CustomerTagDTO,
 )
 from .repo import (
     fetch_binding_map,
     fetch_class_status_map,
     fetch_contact_map,
+    fetch_customer_last_dispatch_at,
+    fetch_customer_marketing_state_current,
+    fetch_customer_marketing_state_current_map,
+    fetch_customer_value_segment_current,
+    fetch_customer_value_segment_current_map,
     fetch_follow_users_map,
     fetch_identity_map,
     fetch_last_message_map,
@@ -34,6 +41,17 @@ def _normalize_bool_filter(value: str | None) -> bool | None:
     if normalized in {"0", "false", "no"}:
         return False
     raise ValueError("is_bound must be one of true/false/1/0")
+
+
+def _normalize_optional_bool_filter(value: str | None, *, field_name: str) -> bool | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"", "all"}:
+        return None
+    if normalized in {"1", "true", "yes"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    raise ValueError(f"{field_name} must be one of true/false/1/0")
 
 
 def _normalize_limit(value: str | int | None) -> int:
@@ -115,6 +133,8 @@ def _build_context(external_userids: list[str]) -> dict[str, Any]:
     tag_map = fetch_tag_map(external_userids)
     class_status_map = fetch_class_status_map(external_userids)
     last_message_map = fetch_last_message_map(external_userids)
+    marketing_state_map = fetch_customer_marketing_state_current_map(external_userids)
+    marketing_value_segment_map = fetch_customer_value_segment_current_map(external_userids)
 
     owner_candidates: list[str] = []
     for external_userid in external_userids:
@@ -143,6 +163,8 @@ def _build_context(external_userids: list[str]) -> dict[str, Any]:
         "tags": tag_map,
         "class_statuses": class_status_map,
         "last_messages": last_message_map,
+        "marketing_states": marketing_state_map,
+        "marketing_value_segments": marketing_value_segment_map,
         "owner_roles": owner_role_map,
     }
 
@@ -188,13 +210,50 @@ def _build_customer_list_item(external_userid: str, context: dict[str, Any]) -> 
     )
 
 
-def _matches_filters(item: CustomerListItemDTO, filters: dict[str, Any]) -> bool:
+def _build_marketing_summary(external_userid: str) -> CustomerMarketingSummaryDTO:
+    state_row = fetch_customer_marketing_state_current(external_userid) or {}
+    value_segment_row = fetch_customer_value_segment_current(external_userid) or {}
+    return CustomerMarketingSummaryDTO(
+        main_stage=str(state_row.get("main_stage") or "").strip(),
+        sub_stage=str(state_row.get("sub_stage") or "").strip(),
+        segment=str(value_segment_row.get("segment") or "").strip() or "unknown",
+        hit_count=int(value_segment_row.get("score") or 0),
+        eligible_for_conversion=bool(state_row.get("eligible_for_conversion")),
+        last_activation_at=str(state_row.get("last_activation_at") or "").strip(),
+        last_conversion_marked_at=str(state_row.get("last_conversion_marked_at") or "").strip(),
+        last_dispatch_at=fetch_customer_last_dispatch_at(external_userid),
+    )
+
+
+def _build_marketing_summary_from_context(external_userid: str, context: dict[str, Any]) -> CustomerMarketingSummaryDTO:
+    state_row = context["marketing_states"].get(external_userid, {})
+    value_segment_row = context["marketing_value_segments"].get(external_userid, {})
+    return CustomerMarketingSummaryDTO(
+        main_stage=str(state_row.get("main_stage") or "").strip(),
+        sub_stage=str(state_row.get("sub_stage") or "").strip(),
+        segment=str(value_segment_row.get("segment") or "").strip() or "unknown",
+        hit_count=int(value_segment_row.get("score") or 0),
+        eligible_for_conversion=bool(state_row.get("eligible_for_conversion")),
+        last_activation_at=str(state_row.get("last_activation_at") or "").strip(),
+        last_conversion_marked_at=str(state_row.get("last_conversion_marked_at") or "").strip(),
+        last_dispatch_at="",
+    )
+
+
+def _matches_filters(item: CustomerListItemDTO, filters: dict[str, Any], marketing_summary: CustomerMarketingSummaryDTO) -> bool:
     owner_userid = str(filters.get("owner_userid") or "").strip()
     tag = str(filters.get("tag") or "").strip()
     status = str(filters.get("status") or "").strip()
     mobile = str(filters.get("mobile") or "").strip()
     keyword = str(filters.get("keyword") or "").strip().lower()
     is_bound = _normalize_bool_filter(filters.get("is_bound"))
+    marketing_segment = str(filters.get("marketing_segment") or "").strip().lower()
+    marketing_main_stage = str(filters.get("marketing_main_stage") or "").strip().lower()
+    marketing_sub_stage = str(filters.get("marketing_sub_stage") or "").strip().lower()
+    eligible_for_conversion = _normalize_optional_bool_filter(
+        filters.get("eligible_for_conversion"),
+        field_name="eligible_for_conversion",
+    )
 
     if owner_userid and owner_userid not in {item.owner_userid, item.owner_display_name}:
         return False
@@ -207,6 +266,14 @@ def _matches_filters(item: CustomerListItemDTO, filters: dict[str, Any]) -> bool
     if status and item.class_user_status.signup_status != status:
         return False
     if is_bound is not None and item.is_bound != is_bound:
+        return False
+    if marketing_segment and marketing_summary.segment.lower() != marketing_segment:
+        return False
+    if marketing_main_stage and marketing_summary.main_stage.lower() != marketing_main_stage:
+        return False
+    if marketing_sub_stage and marketing_summary.sub_stage.lower() != marketing_sub_stage:
+        return False
+    if eligible_for_conversion is not None and marketing_summary.eligible_for_conversion != eligible_for_conversion:
         return False
     if mobile and mobile not in item.mobile:
         return False
@@ -239,7 +306,8 @@ def list_customers(filters: dict[str, Any] | None = None) -> dict[str, Any]:
     items: list[CustomerListItemDTO] = []
     for external_userid in external_userids:
         item = _build_customer_list_item(external_userid, context)
-        if _matches_filters(item, normalized_filters):
+        marketing_summary = _build_marketing_summary_from_context(external_userid, context)
+        if _matches_filters(item, normalized_filters, marketing_summary):
             items.append(item)
 
     items.sort(key=lambda item: (item.updated_at, item.external_userid), reverse=True)
@@ -256,6 +324,10 @@ def list_customers(filters: dict[str, Any] | None = None) -> dict[str, Any]:
             "tag": normalized_filters.get("tag", ""),
             "status": normalized_filters.get("status", ""),
             "is_bound": normalized_filters.get("is_bound", ""),
+            "marketing_segment": normalized_filters.get("marketing_segment", ""),
+            "marketing_main_stage": normalized_filters.get("marketing_main_stage", ""),
+            "marketing_sub_stage": normalized_filters.get("marketing_sub_stage", ""),
+            "eligible_for_conversion": normalized_filters.get("eligible_for_conversion", ""),
             "mobile": normalized_filters.get("mobile", ""),
             "keyword": normalized_filters.get("keyword", ""),
             "limit": str(limit),
@@ -281,6 +353,8 @@ def get_customer_detail(external_userid: str, *, refresh_tags: bool = False) -> 
     identity = context["identities"].get(normalized_external_userid, {})
     follow_users_raw = context["follow_users"].get(normalized_external_userid, [])
     owner_role = context["owner_roles"].get(list_item.owner_userid, {})
+    marketing_profile = get_customer_marketing_profile(normalized_external_userid)
+    marketing_summary = _build_marketing_summary(normalized_external_userid)
 
     detail = CustomerDetailDTO(
         external_userid=list_item.external_userid,
@@ -319,6 +393,8 @@ def get_customer_detail(external_userid: str, *, refresh_tags: bool = False) -> 
             updated_at=str(identity.get("updated_at") or "").strip(),
         ),
         follow_users=[CustomerFollowUserDTO(**item) for item in follow_users_raw],
+        marketing_summary=marketing_summary,
+        marketing_profile=marketing_profile,
         contact={
             "external_userid": normalized_external_userid,
             "customer_name": str(context["contacts"].get(normalized_external_userid, {}).get("customer_name") or "").strip(),
@@ -338,6 +414,7 @@ def get_customer_detail(external_userid: str, *, refresh_tags: bool = False) -> 
                 "wecom_tag_sync_status": list_item.class_user_status.wecom_tag_sync_status,
                 "wecom_tag_sync_error": list_item.class_user_status.wecom_tag_sync_error,
             },
+            "marketing_profile": marketing_profile,
         },
     )
     return detail.to_dict()

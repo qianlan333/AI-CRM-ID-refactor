@@ -562,6 +562,234 @@ CREATE TABLE IF NOT EXISTS conversion_feedback (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS marketing_state_current (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario_key TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+    external_userid TEXT NOT NULL,
+    marketing_phase TEXT NOT NULL DEFAULT 'awaiting_trigger',
+    phase_label TEXT NOT NULL DEFAULT '',
+    phase_reason TEXT NOT NULL DEFAULT '',
+    lifecycle_status TEXT NOT NULL DEFAULT 'idle',
+    last_batch_id INTEGER,
+    last_batch_status TEXT NOT NULL DEFAULT '',
+    last_batch_window_start TEXT NOT NULL DEFAULT '',
+    last_batch_window_end TEXT NOT NULL DEFAULT '',
+    last_trigger_message_at TEXT NOT NULL DEFAULT '',
+    entered_at TEXT,
+    exited_at TEXT,
+    exit_reason TEXT NOT NULL DEFAULT '',
+    source_payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (scenario_key, external_userid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_state_current_phase
+ON marketing_state_current (scenario_key, marketing_phase, lifecycle_status);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_state_current_external
+ON marketing_state_current (external_userid, scenario_key);
+
+CREATE TABLE IF NOT EXISTS marketing_value_segment_current (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario_key TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+    external_userid TEXT NOT NULL,
+    value_segment TEXT NOT NULL DEFAULT 'normal',
+    segment_label TEXT NOT NULL DEFAULT '',
+    score INTEGER NOT NULL DEFAULT 0,
+    score_breakdown_json TEXT NOT NULL DEFAULT '{}',
+    source_payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (scenario_key, external_userid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_value_segment_current_segment
+ON marketing_value_segment_current (scenario_key, value_segment, score DESC);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_value_segment_current_external
+ON marketing_value_segment_current (external_userid, scenario_key);
+
+CREATE TABLE IF NOT EXISTS marketing_automation_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    automation_key TEXT NOT NULL UNIQUE,
+    automation_name TEXT NOT NULL DEFAULT '',
+    target_event TEXT NOT NULL DEFAULT 'signup_success',
+    channel_type TEXT NOT NULL DEFAULT 'text_message',
+    status TEXT NOT NULL DEFAULT 'active',
+    do_not_start_after_hour INTEGER NOT NULL DEFAULT 23,
+    config_payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_automation_configs_status
+ON marketing_automation_configs (status);
+
+CREATE TABLE IF NOT EXISTS marketing_automation_question_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    automation_config_id INTEGER NOT NULL REFERENCES marketing_automation_configs(id) ON DELETE CASCADE,
+    questionnaire_id INTEGER,
+    question_id INTEGER,
+    rule_code TEXT NOT NULL DEFAULT '',
+    rule_name TEXT NOT NULL DEFAULT '',
+    answer_match_type TEXT NOT NULL DEFAULT 'any_of',
+    answer_match_value_json TEXT NOT NULL DEFAULT '[]',
+    score_delta INTEGER NOT NULL DEFAULT 0,
+    segment_hint TEXT NOT NULL DEFAULT '',
+    stage_hint TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    rule_payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (automation_config_id, question_id, rule_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_automation_question_rules_config
+ON marketing_automation_question_rules (automation_config_id, is_active, sort_order, id);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_automation_question_rules_question
+ON marketing_automation_question_rules (question_id);
+
+CREATE TABLE IF NOT EXISTS customer_value_segment_current (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_userid TEXT NOT NULL UNIQUE,
+    segment TEXT NOT NULL DEFAULT 'normal',
+    segment_rank INTEGER NOT NULL DEFAULT 0,
+    score INTEGER NOT NULL DEFAULT 0,
+    scoring_version TEXT NOT NULL DEFAULT '',
+    computed_reason TEXT NOT NULL DEFAULT '',
+    submission_id INTEGER REFERENCES questionnaire_submissions(id) ON DELETE SET NULL,
+    matched_question_ids_json TEXT NOT NULL DEFAULT '[]',
+    source_payload_json TEXT NOT NULL DEFAULT '{}',
+    evaluated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    computed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_value_segment_current_external_userid
+ON customer_value_segment_current (external_userid);
+
+CREATE INDEX IF NOT EXISTS idx_customer_value_segment_current_segment
+ON customer_value_segment_current (segment);
+
+CREATE TABLE IF NOT EXISTS customer_value_segment_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_userid TEXT NOT NULL,
+    segment TEXT NOT NULL DEFAULT 'normal',
+    segment_rank INTEGER NOT NULL DEFAULT 0,
+    score INTEGER NOT NULL DEFAULT 0,
+    scoring_version TEXT NOT NULL DEFAULT '',
+    change_reason TEXT NOT NULL DEFAULT '',
+    submission_id INTEGER REFERENCES questionnaire_submissions(id) ON DELETE SET NULL,
+    matched_question_ids_json TEXT NOT NULL DEFAULT '[]',
+    source_payload_json TEXT NOT NULL DEFAULT '{}',
+    evaluated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_value_segment_history_external_userid
+ON customer_value_segment_history (external_userid, recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS customer_marketing_state_current (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+    external_userid TEXT NOT NULL DEFAULT '',
+    automation_key TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+    main_stage TEXT NOT NULL DEFAULT 'pending',
+    sub_stage TEXT NOT NULL DEFAULT '',
+    activated INTEGER NOT NULL DEFAULT 0,
+    converted INTEGER NOT NULL DEFAULT 0,
+    eligible_for_conversion INTEGER NOT NULL DEFAULT 0,
+    lifecycle_status TEXT NOT NULL DEFAULT 'idle',
+    last_activation_at TEXT NOT NULL DEFAULT '',
+    last_conversion_marked_at TEXT NOT NULL DEFAULT '',
+    last_message_at TEXT NOT NULL DEFAULT '',
+    last_batch_id INTEGER REFERENCES message_batches(id) ON DELETE SET NULL,
+    last_batch_status TEXT NOT NULL DEFAULT '',
+    last_batch_window_start TEXT NOT NULL DEFAULT '',
+    last_batch_window_end TEXT NOT NULL DEFAULT '',
+    last_trigger_message_at TEXT NOT NULL DEFAULT '',
+    entered_at TEXT,
+    exited_at TEXT,
+    exit_reason TEXT NOT NULL DEFAULT '',
+    state_payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_external_userid
+ON customer_marketing_state_current (external_userid);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_marketing_state_current_person_id_non_null
+ON customer_marketing_state_current (person_id)
+WHERE person_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_main_stage
+ON customer_marketing_state_current (main_stage);
+
+CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_sub_stage
+ON customer_marketing_state_current (sub_stage);
+
+CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_current_eligible_for_conversion
+ON customer_marketing_state_current (eligible_for_conversion);
+
+CREATE TABLE IF NOT EXISTS customer_marketing_state_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+    external_userid TEXT NOT NULL DEFAULT '',
+    automation_key TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+    main_stage TEXT NOT NULL DEFAULT 'pending',
+    sub_stage TEXT NOT NULL DEFAULT '',
+    activated INTEGER NOT NULL DEFAULT 0,
+    converted INTEGER NOT NULL DEFAULT 0,
+    eligible_for_conversion INTEGER NOT NULL DEFAULT 0,
+    batch_id INTEGER REFERENCES message_batches(id) ON DELETE SET NULL,
+    lifecycle_status TEXT NOT NULL DEFAULT 'idle',
+    exit_reason TEXT NOT NULL DEFAULT '',
+    last_activation_at TEXT NOT NULL DEFAULT '',
+    last_conversion_marked_at TEXT NOT NULL DEFAULT '',
+    last_message_at TEXT NOT NULL DEFAULT '',
+    change_reason TEXT NOT NULL DEFAULT '',
+    state_payload_json TEXT NOT NULL DEFAULT '{}',
+    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_history_external_userid
+ON customer_marketing_state_history (external_userid, recorded_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_history_person_id
+ON customer_marketing_state_history (person_id, recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS conversion_dispatch_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    automation_key TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+    batch_id INTEGER NOT NULL REFERENCES message_batches(id) ON DELETE CASCADE,
+    external_userid TEXT NOT NULL,
+    dispatch_status TEXT NOT NULL DEFAULT 'pending',
+    dispatch_channel TEXT NOT NULL DEFAULT 'text_message',
+    dispatch_payload_json TEXT NOT NULL DEFAULT '{}',
+    dispatch_note TEXT NOT NULL DEFAULT '',
+    dispatched_at TEXT,
+    acked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (batch_id, external_userid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversion_dispatch_log_batch_id
+ON conversion_dispatch_log (batch_id);
+
+CREATE INDEX IF NOT EXISTS idx_conversion_dispatch_log_external_userid
+ON conversion_dispatch_log (external_userid);
+
+CREATE INDEX IF NOT EXISTS idx_conversion_dispatch_log_dispatch_status
+ON conversion_dispatch_log (dispatch_status);
+
 CREATE TABLE IF NOT EXISTS wecom_external_contact_identity_map (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     corp_id TEXT NOT NULL,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -256,6 +257,217 @@ def test_contract_customer_aggregation_reads(client):
     assert {"event_id", "event_type", "event_time", "title", "summary", "source_table", "source_id", "metadata"} <= set(
         timeline_payload["timeline"]["items"][0].keys()
     )
+
+
+def _mcp_call(client, name: str, arguments: dict[str, object]):
+    response = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+    )
+    assert response.status_code == 200
+    return response.get_json()["result"]["structuredContent"]
+
+
+def test_contract_openclaw_conversion_mcp_reads(client, app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT OR IGNORE INTO owner_role_map (userid, display_name, role, active)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("sales_01", "销售一", "sales", 1),
+        )
+        db.execute(
+            """
+            UPDATE class_user_status_current
+            SET signup_status = ?, signup_label_name = ?, set_by_userid = ?, set_at = CURRENT_TIMESTAMP
+            WHERE external_userid = ?
+            """,
+            ("lead", "报名引流品", "sales_01", "wm_ext_001"),
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaires (
+                id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (901, "contract-signup-conv", "合同转化问卷", "合同转化问卷", ""),
+        )
+        question_rules: list[dict[str, object]] = []
+        for index in range(5):
+            question_id = 90100 + index + 1
+            hit_option_id = question_id * 10 + 1
+            db.execute(
+                """
+                INSERT INTO questionnaire_questions (
+                    id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+                )
+                VALUES (?, ?, 'single_choice', ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (question_id, 901, f"关键题 {index + 1}", index + 1),
+            )
+            db.execute(
+                """
+                INSERT INTO questionnaire_options (
+                    id, question_id, option_text, score, tag_codes, sort_order, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, '[]', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (hit_option_id, question_id, "命中", 10, 1),
+            )
+            db.execute(
+                """
+                INSERT INTO questionnaire_options (
+                    id, question_id, option_text, score, tag_codes, sort_order, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, '[]', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (question_id * 10 + 2, question_id, "未命中", 0, 2),
+            )
+            question_rules.append(
+                {
+                    "questionnaire_question_id": int(question_id),
+                    "hit_option_ids_json": [int(hit_option_id)],
+                    "sort_order": index + 1,
+                }
+            )
+        db.execute(
+            """
+            INSERT INTO archived_messages
+            (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                22,
+                "contract-msg-002",
+                "private",
+                "wm_ext_001",
+                "sales_01",
+                "wm_ext_001",
+                "sales_01",
+                "text",
+                "我想继续了解报名",
+                "2026-04-04 10:03:00",
+                '{"decrypted_message":{"from":"wm_ext_001","tolist":["sales_01"],"roomid":"","msgtype":"text"}}',
+            ),
+        )
+        db.commit()
+
+    config_response = client.put(
+        "/api/admin/marketing-automation/config",
+        json={
+            "enabled": True,
+            "questionnaire_id": 901,
+            "core_threshold": 3,
+            "top_threshold": 4,
+            "quiet_hour_start": 23,
+            "timezone": "Asia/Shanghai",
+            "question_rules": question_rules,
+        },
+    )
+    assert config_response.status_code == 200
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                id, questionnaire_id, respondent_key, openid, unionid, external_userid, follow_user_userid,
+                matched_by, mobile_snapshot, total_score, final_tags, redirect_url_snapshot, submitted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                90101,
+                901,
+                "resp-contract-001",
+                "openid-contract-001",
+                "union-contract-001",
+                "wm_ext_001",
+                "sales_01",
+                "external_userid",
+                "13800138000",
+                88,
+                "[]",
+                "",
+                "2026-04-04 10:04:00",
+            ),
+        )
+        for item in question_rules[:4]:
+            db.execute(
+                """
+                INSERT INTO questionnaire_submission_answers (
+                    submission_id, question_id, question_type, question_title_snapshot,
+                    selected_option_ids, selected_option_texts_snapshot, selected_option_scores_snapshot,
+                    selected_option_tags_snapshot, text_value, score_contribution, created_at
+                )
+                VALUES (?, ?, 'single_choice', ?, ?, '[]', '[]', '[]', '', ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    90101,
+                    item["questionnaire_question_id"],
+                    "关键题",
+                    json.dumps(item["hit_option_ids_json"], ensure_ascii=False),
+                    10,
+                ),
+            )
+        db.commit()
+
+    batches = _mcp_call(client, "get_pending_conversion_batches", {"limit": 10})
+    assert batches["count"] >= 1
+    batch_id = batches["items"][0]["batch_id"]
+
+    detail = _mcp_call(client, "get_conversion_batch", {"batch_id": batch_id})
+    profile = _mcp_call(client, "get_customer_marketing_profile", {"external_userid": "wm_ext_001"})
+    acked = _mcp_call(client, "ack_conversion_batch", {"batch_id": batch_id, "acked_by": "openclaw"})
+
+    assert detail["candidate_count"] == 1
+    assert detail["candidates"][0]["external_userid"] == "wm_ext_001"
+    assert detail["candidates"][0]["marketing_profile"]["value_segment"]["segment"] == "top"
+    assert profile["customer"]["external_userid"] == "wm_ext_001"
+    assert profile["routing"]["reason"] == "eligible_by_router"
+    assert profile["recent_text_summary"]["latest_customer_message_summary"] == "我想继续了解报名"
+    assert "items" not in profile["recent_text_summary"]
+    assert acked["acknowledged_count"] == 1
+    assert acked["dispatch_logs"][0]["dispatch_status"] == "acked"
+    assert acked["dispatch_logs"][0]["acked_at"] != ""
+
+
+def test_contract_record_conversion_feedback_syncs_enrolled_truth(client, app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            UPDATE class_user_status_current
+            SET signup_status = ?, signup_label_name = ?, set_by_userid = ?, set_at = CURRENT_TIMESTAMP
+            WHERE external_userid = ?
+            """,
+            ("lead", "报名引流品", "sales_01", "wm_ext_001"),
+        )
+        db.commit()
+
+    feedback = _mcp_call(
+        client,
+        "record_conversion_feedback",
+        {
+            "feedback_type": "mark_enrolled",
+            "external_userid": "wm_ext_001",
+            "actor": "openclaw",
+            "feedback_payload": {"owner_userid": "sales_01"},
+        },
+    )
+
+    assert feedback["ok"] is True
+    assert feedback["feedback_id"] > 0
+    assert feedback["conversion_result"]["marketing_state"]["stage_key"] == "converted/enrolled"
+    assert feedback["conversion_result"]["class_user_status"]["signup_status"] == "signed_999"
 
 
 def test_contract_tags_and_tasks(client, monkeypatch):

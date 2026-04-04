@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...customer_center.service import list_customers
+from ...customer_center.service import get_customer_detail as get_unified_customer_detail, list_customers
+from ...domains.marketing_automation.service import get_customer_marketing_profile
 from ...services import extract_roomid_from_raw_payload, format_message_row, get_group_chat_map
 from ...infra.wecom_runtime import get_contact_runtime_client
 from . import customer_profile_repo as repo
@@ -39,6 +40,19 @@ def _normalize_bool(value: Any) -> bool:
 
 def _customer_profile_contact_client():
     return get_contact_runtime_client()
+
+
+def _empty_marketing_summary() -> dict[str, Any]:
+    return {
+        "main_stage": "",
+        "sub_stage": "",
+        "segment": "unknown",
+        "hit_count": 0,
+        "eligible_for_conversion": False,
+        "last_activation_at": "",
+        "last_conversion_marked_at": "",
+        "last_dispatch_at": "",
+    }
 
 
 def _legacy_tab_to_section(tab: str) -> str:
@@ -143,6 +157,7 @@ def get_customer_profile_payload(
             "user_id": _normalized_text(profile.get("external_userid")),
             "external_userid": _normalized_text(profile.get("external_userid")),
             "unionid": _normalized_text(profile.get("unionid")),
+            "marketing_profile": get_customer_marketing_profile(_normalized_text(profile.get("external_userid"))),
         },
         "lookup": profile.get("lookup") or {},
     }
@@ -152,6 +167,8 @@ def build_customer_detail_payload(external_userid: str, *, legacy_tab: str = "")
     payload = get_customer_profile_payload(external_userid=external_userid)
     if not payload:
         return None
+    detail = get_unified_customer_detail(_normalized_text(payload["profile"].get("external_userid"))) or {}
+    payload["profile"]["marketing_summary"] = dict(detail.get("marketing_summary") or _empty_marketing_summary())
     return {
         "customer": payload["profile"],
         "lookup": payload.get("lookup") or {},

@@ -98,6 +98,14 @@
       font-weight: 600;
     }
     .tag-quick-card { margin-top: 14px; }
+    .automation-card { margin-top: 14px; }
+    .automation-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
     .section-title {
       margin: 0 0 6px;
       font-size: 16px;
@@ -128,10 +136,75 @@
       color: #fff;
       border-color: transparent;
     }
+    .automation-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .automation-grid--triple {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .automation-item {
+      border: 1px solid rgba(81, 63, 34, 0.1);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fffdf8;
+    }
+    .automation-item span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .automation-item strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1.4;
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      background: var(--soft);
+      color: var(--primary-strong);
+    }
+    .badge.ok {
+      background: rgba(47, 125, 87, 0.16);
+      color: var(--ok);
+    }
+    .badge.warn {
+      background: rgba(145, 100, 59, 0.14);
+      color: var(--primary-strong);
+    }
+    .badge.danger {
+      background: rgba(178, 78, 55, 0.14);
+      color: var(--danger);
+    }
+    .ghost-button {
+      border: 1px solid rgba(81, 63, 34, 0.14);
+      background: #fffdf8;
+      color: var(--text);
+    }
+    .danger-button {
+      background: linear-gradient(135deg, #c26649, #a94934);
+      color: #fff;
+    }
     .tag-quick-btn[disabled] { opacity: 0.58; cursor: not-allowed; }
     @media (max-width: 560px) {
       .kv { grid-template-columns: 1fr; gap: 6px; }
       .tag-quick-grid { grid-template-columns: 1fr; }
+      .automation-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -184,6 +257,50 @@
       <div id="lead-pool-class-term-status" class="status"></div>
     </section>
 
+    <section id="marketing-profile-card" class="card automation-card hidden">
+      <div class="automation-card-head">
+        <div>
+          <h2 class="section-title">营销自动化卡片</h2>
+          <p class="section-note">内部真相直接读取 TASK-07 的营销状态接口，手工标记报名成功也走同一套服务。</p>
+        </div>
+        <div class="actions">
+          <button id="mark-enrolled-button" type="button" class="danger-button">标记报名成功</button>
+          <button id="unmark-enrolled-button" type="button" class="ghost-button">撤销报名成功</button>
+        </div>
+      </div>
+      <div class="badge-row">
+        <span id="marketing-stage-badge" class="badge warn">待识别</span>
+        <span id="marketing-segment-badge" class="badge">未知</span>
+      </div>
+      <div class="automation-grid automation-grid--triple">
+        <div class="automation-item">
+          <span>当前阶段</span>
+          <strong id="marketing-phase-value">待识别</strong>
+        </div>
+        <div class="automation-item">
+          <span>价值分层</span>
+          <strong id="marketing-segment-value">未知</strong>
+        </div>
+        <div class="automation-item">
+          <span>命中题数</span>
+          <strong id="marketing-hit-count-value">0</strong>
+        </div>
+        <div class="automation-item">
+          <span>是否已激活</span>
+          <strong id="marketing-activated-value">否</strong>
+        </div>
+        <div class="automation-item">
+          <span>是否已报名成功</span>
+          <strong id="marketing-enrolled-value">否</strong>
+        </div>
+        <div class="automation-item">
+          <span>最近标记时间</span>
+          <strong id="marketing-last-conversion-value">-</strong>
+        </div>
+      </div>
+      <div id="marketing-profile-status" class="status"></div>
+    </section>
+
     <div id="debug-wrap" class="hidden"></div>
   </div>
 
@@ -210,10 +327,23 @@
     const leadPoolClassTermCard = document.getElementById('lead-pool-class-term-card');
     const leadPoolClassTermGrid = document.getElementById('lead-pool-class-term-grid');
     const leadPoolClassTermStatus = document.getElementById('lead-pool-class-term-status');
+    const marketingProfileCard = document.getElementById('marketing-profile-card');
+    const markEnrolledButton = document.getElementById('mark-enrolled-button');
+    const unmarkEnrolledButton = document.getElementById('unmark-enrolled-button');
+    const marketingStageBadge = document.getElementById('marketing-stage-badge');
+    const marketingSegmentBadge = document.getElementById('marketing-segment-badge');
+    const marketingPhaseValue = document.getElementById('marketing-phase-value');
+    const marketingSegmentValue = document.getElementById('marketing-segment-value');
+    const marketingHitCountValue = document.getElementById('marketing-hit-count-value');
+    const marketingActivatedValue = document.getElementById('marketing-activated-value');
+    const marketingEnrolledValue = document.getElementById('marketing-enrolled-value');
+    const marketingLastConversionValue = document.getElementById('marketing-last-conversion-value');
+    const marketingProfileStatus = document.getElementById('marketing-profile-status');
     const debugWrap = document.getElementById('debug-wrap');
     const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1' || {{ debug_enabled|tojson }};
     state.currentClassTermNo = null;
     state.classTermOptions = [];
+    state.marketingStatus = null;
     debugWrap.classList.toggle('hidden', !debugEnabled);
 
     function writeDebug(label, payload) {
@@ -257,6 +387,52 @@
       showCard('bound');
     }
 
+    function stageDisplayLabel(marketingStatus) {
+      const stageKey = String((marketingStatus || {}).stage_key || '').trim();
+      const labelMap = {
+        'prospect/mobile_only': '手机号线索',
+        'prospect/wecom_connected': '已加微待激活',
+        'active/activated': '已激活',
+        'converted/enrolled': '已报名成功',
+      };
+      return labelMap[stageKey] || stageKey || '待识别';
+    }
+
+    function applyMarketingBadge(el, text, tone) {
+      el.textContent = text || '-';
+      el.className = 'badge' + (tone ? ' ' + tone : '');
+    }
+
+    function renderMarketingStatus(marketingStatus) {
+      const payload = marketingStatus || {};
+      state.marketingStatus = payload;
+      const stageKey = String(payload.stage_key || '').trim();
+      const stageLabel = stageDisplayLabel(payload);
+      const segment = String(payload.segment || '').trim() || 'unknown';
+      const segmentLabel = String(payload.segment_label || '').trim() || segment;
+      const hitCount = Number(payload.hit_count || 0);
+      const activated = Boolean(String(payload.last_activation_at || '').trim());
+      const enrolled = stageKey === 'converted/enrolled';
+      marketingPhaseValue.textContent = stageLabel;
+      marketingSegmentValue.textContent = segmentLabel;
+      marketingHitCountValue.textContent = String(hitCount);
+      marketingActivatedValue.textContent = activated ? '是' : '否';
+      marketingEnrolledValue.textContent = enrolled ? '是' : '否';
+      marketingLastConversionValue.textContent = String(payload.last_conversion_marked_at || '').trim() || '-';
+      applyMarketingBadge(marketingStageBadge, stageLabel, enrolled ? 'danger' : (activated ? 'ok' : 'warn'));
+      applyMarketingBadge(marketingSegmentBadge, segmentLabel, segment === 'top' ? 'danger' : (segment === 'core' ? 'ok' : 'warn'));
+      markEnrolledButton.disabled = enrolled;
+      unmarkEnrolledButton.disabled = !enrolled;
+      setStatus(
+        marketingProfileStatus,
+        payload.eligible_for_conversion
+          ? '当前客户符合自动化转化条件。'
+          : (payload.ineligible_reason ? ('当前不进入自动化：' + payload.ineligible_reason) : '当前客户不在自动化候选范围内。'),
+        enrolled ? 'success' : '',
+      );
+      marketingProfileCard.classList.remove('hidden');
+    }
+
     async function fetchJson(url, options) {
       const response = await fetch(url, options);
       const payload = await response.json().catch(() => ({}));
@@ -282,6 +458,44 @@
       updateCustomerTitle(result);
       setStatus(bindStatus, '', '');
       showCard('unbind');
+    }
+
+    async function loadMarketingStatus() {
+      const params = new URLSearchParams({
+        external_userid: state.external_userid,
+      });
+      const result = await fetchJson('/api/sidebar/marketing-status?' + params.toString());
+      renderMarketingStatus(result.marketing_status || {});
+    }
+
+    async function applyMarketingAction(action) {
+      const targetUrl = action === 'mark'
+        ? '/api/sidebar/marketing-status/mark-enrolled'
+        : '/api/sidebar/marketing-status/unmark-enrolled';
+      markEnrolledButton.disabled = true;
+      unmarkEnrolledButton.disabled = true;
+      setStatus(marketingProfileStatus, action === 'mark' ? '正在标记报名成功…' : '正在撤销报名成功…', '');
+      try {
+        const result = await fetchJson(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            external_userid: state.external_userid,
+            owner_userid: state.owner_userid,
+            operator: state.bind_by_userid || state.owner_userid,
+          }),
+        });
+        renderMarketingStatus(result.marketing_status || {});
+      } catch (error) {
+        setStatus(
+          marketingProfileStatus,
+          userMessage(error, action === 'mark' ? '标记报名成功失败，请稍后重试。' : '撤销报名成功失败，请稍后重试。'),
+          'error',
+        );
+        const enrolled = Boolean(state.marketingStatus && state.marketingStatus.stage_key === 'converted/enrolled');
+        markEnrolledButton.disabled = enrolled;
+        unmarkEnrolledButton.disabled = !enrolled;
+      }
     }
 
     function renderLeadPoolClassTermButtons() {
@@ -444,6 +658,7 @@
       }
       try {
         await loadStatus();
+        await loadMarketingStatus();
         await loadLeadPoolClassTermStatus();
       } catch (error) {
         setStatus(loadingCard.querySelector('.status'), userMessage(error, '客户状态读取失败，请稍后重试。'), 'error');
@@ -465,6 +680,7 @@
           }),
         });
         renderBound(result.binding || result);
+        await loadMarketingStatus();
         await loadLeadPoolClassTermStatus();
       } catch (error) {
         setStatus(bindStatus, userMessage(error, '绑定失败，请检查手机号后重试。'), 'error');
@@ -494,12 +710,21 @@
           }),
         });
         renderBound(result.binding || result);
+        await loadMarketingStatus();
         await loadLeadPoolClassTermStatus();
       } catch (error) {
         setStatus(boundStatus, userMessage(error, '更换手机号失败，请检查后重试。'), 'error');
       } finally {
         confirmRebindButton.disabled = false;
       }
+    });
+
+    markEnrolledButton.addEventListener('click', async () => {
+      await applyMarketingAction('mark');
+    });
+
+    unmarkEnrolledButton.addEventListener('click', async () => {
+      await applyMarketingAction('unmark');
     });
 
     boot();
