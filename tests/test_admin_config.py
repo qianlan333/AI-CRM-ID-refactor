@@ -138,6 +138,7 @@ def _signup_conversion_config_payload(
 def _seed_marketing_dispatch_history(app) -> None:
     with app.app_context():
         db = get_db()
+        today = datetime.now().date().isoformat()
         rows = [
             {
                 "batch_id": 9101,
@@ -147,7 +148,7 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "main_stage": "prospect",
                 "sub_stage": "wecom_connected",
                 "dispatch_status": "pending",
-                "created_at": "2026-04-04 10:01:00",
+                "created_at": f"{today} 10:01:00",
                 "acked_at": "",
             },
             {
@@ -158,7 +159,7 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "main_stage": "active",
                 "sub_stage": "activated",
                 "dispatch_status": "blocked_quiet_hours",
-                "created_at": "2026-04-04 10:02:00",
+                "created_at": f"{today} 10:02:00",
                 "acked_at": "",
             },
             {
@@ -169,8 +170,8 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "main_stage": "prospect",
                 "sub_stage": "wecom_connected",
                 "dispatch_status": "acked",
-                "created_at": "2026-04-04 10:03:00",
-                "acked_at": "2026-04-04 10:05:00",
+                "created_at": f"{today} 10:03:00",
+                "acked_at": f"{today} 10:05:00",
             },
             {
                 "batch_id": 9104,
@@ -180,7 +181,7 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "main_stage": "converted",
                 "sub_stage": "enrolled",
                 "dispatch_status": "converted_before_dispatch",
-                "created_at": "2026-04-04 10:04:00",
+                "created_at": f"{today} 10:04:00",
                 "acked_at": "",
             },
         ]
@@ -197,9 +198,14 @@ def _seed_marketing_dispatch_history(app) -> None:
                 INSERT INTO message_batches (
                     id, batch_key, window_start, window_end, status, message_count, created_at
                 )
-                VALUES (?, ?, '2026-04-04 10:00:00', '2026-04-04 10:10:00', 'pending', 1, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, 'pending', 1, CURRENT_TIMESTAMP)
                 """,
-                (item["batch_id"], f"dispatch-batch-{item['batch_id']}"),
+                (
+                    item["batch_id"],
+                    f"dispatch-batch-{item['batch_id']}",
+                    f"{today} 10:00:00",
+                    f"{today} 10:10:00",
+                ),
             )
             db.execute(
                 """
