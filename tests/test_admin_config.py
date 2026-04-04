@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
 from wecom_ability_service.services import get_routing_config, resolve_contact_routing_context
+
+
+def _asia_shanghai_today() -> datetime.date:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
 
 
 @pytest.fixture()
@@ -138,7 +143,7 @@ def _signup_conversion_config_payload(
 def _seed_marketing_dispatch_history(app) -> None:
     with app.app_context():
         db = get_db()
-        today = datetime.now().date().isoformat()
+        today = _asia_shanghai_today().isoformat()
         rows = [
             {
                 "batch_id": 9101,
@@ -266,8 +271,9 @@ def _seed_marketing_dispatch_history(app) -> None:
 
 
 def _seed_automation_conversion_stage_board(app) -> None:
-    today = datetime.now().date().isoformat()
-    yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
+    today_date = _asia_shanghai_today()
+    today = today_date.isoformat()
+    yesterday = (today_date - timedelta(days=1)).isoformat()
     rows = [
         {
             "external_userid": "wm_stage_wait_001",
