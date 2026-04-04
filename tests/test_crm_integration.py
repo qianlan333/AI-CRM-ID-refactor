@@ -178,3 +178,73 @@ def test_batches_adapter_uses_mcp_transport() -> None:
     assert batch.status == "pending"
     assert batch.items == [{"msgid": "m-1"}]
     assert session.calls[0]["headers"]["Authorization"] == "Bearer mcp-token"
+
+
+def test_batches_adapter_reads_signup_conversion_payloads() -> None:
+    client, _ = make_client(
+        FakeResponse(
+            200,
+            {
+                "result": {
+                    "structuredContent": {
+                        "items": [{"batch_id": 11, "candidate_count": 1}],
+                        "count": 1,
+                    }
+                }
+            },
+            {"Content-Type": "application/json"},
+        ),
+        FakeResponse(
+            200,
+            {
+                "result": {
+                    "structuredContent": {
+                        "batch": {"batch_id": 11},
+                        "candidate_count": 1,
+                        "candidates": [{"external_userid": "wm_ext_001", "marketing_profile": {"routing": {"reason": "pending_text_message_batch"}}}],
+                    }
+                }
+            },
+            {"Content-Type": "application/json"},
+        ),
+        FakeResponse(
+            200,
+            {
+                "result": {
+                    "structuredContent": {
+                        "customer": {"external_userid": "wm_ext_001"},
+                        "routing": {"reason": "eligible_by_router"},
+                    }
+                }
+            },
+            {"Content-Type": "application/json"},
+        ),
+        FakeResponse(
+            200,
+            {
+                "result": {
+                    "structuredContent": {
+                        "batch_id": 11,
+                        "acknowledged_count": 1,
+                        "dispatch_logs": [{"external_userid": "wm_ext_001", "dispatch_status": "acked"}],
+                    }
+                }
+            },
+            {"Content-Type": "application/json"},
+        ),
+    )
+
+    adapter = BatchesAdapter(client)
+    batches = adapter.get_pending_conversion_batches(limit=10)
+    detail = adapter.get_conversion_batch(11)
+    profile = adapter.get_customer_marketing_profile(external_userid="wm_ext_001")
+    acked = adapter.ack_conversion_batch(11, acked_by="openclaw")
+
+    assert batches["count"] == 1
+    assert batches["items"][0]["batch_id"] == 11
+    assert detail["candidate_count"] == 1
+    assert detail["candidates"][0]["external_userid"] == "wm_ext_001"
+    assert detail["candidates"][0]["marketing_profile"]["routing"]["reason"] == "pending_text_message_batch"
+    assert profile["customer"]["external_userid"] == "wm_ext_001"
+    assert acked["acknowledged_count"] == 1
+    assert acked["dispatch_logs"][0]["dispatch_status"] == "acked"

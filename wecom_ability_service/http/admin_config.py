@@ -7,6 +7,8 @@ from ..domains.admin_config import (
     config_tabs,
     list_admin_app_settings,
     list_class_term_tag_mappings,
+    list_marketing_automation_dispatch_history,
+    list_marketing_automation_segment_stats,
     list_mcp_tool_settings,
     list_owner_routing_settings,
     list_signup_tag_settings,
@@ -16,6 +18,14 @@ from ..domains.admin_config import (
     save_owner_role_setting,
     save_routing_rule_setting,
     save_signup_tag_setting,
+)
+from ..services import (
+    get_signup_conversion_config,
+    get_questionnaire_detail,
+    list_questionnaires,
+    preview_signup_conversion_customer,
+    recompute_signup_conversion_customers,
+    save_signup_conversion_config,
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
 
@@ -36,6 +46,14 @@ def _query_text(name: str) -> str:
 
 def _query_bool(name: str) -> bool:
     return str(request.args.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _query_int(name: str, *, default: int, minimum: int = 1, maximum: int = 200) -> int:
+    try:
+        value = int(request.args.get(name) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(value, maximum))
 
 
 def _request_confirmed() -> bool:
@@ -319,6 +337,45 @@ def admin_config_save_mcp_tool():
     return redirect(url_for("api.admin_config_mcp_tools", saved=1, edit_tool=saved.get("tool_name", "")), code=302)
 
 
+def _marketing_automation_dispatch_status_options() -> list[dict[str, str]]:
+    return [
+        {"value": "", "label": "全部状态"},
+        {"value": "pending", "label": "pending"},
+        {"value": "blocked_quiet_hours", "label": "blocked_quiet_hours"},
+        {"value": "acked", "label": "acked"},
+        {"value": "converted_before_dispatch", "label": "converted_before_dispatch"},
+    ]
+
+
+def admin_marketing_automation_ui():
+    config = get_signup_conversion_config()
+    questionnaires = list_questionnaires()
+    questionnaire_id = config.get("questionnaire_id")
+    selected_questionnaire = None
+    if questionnaire_id not in (None, ""):
+        selected_questionnaire = get_questionnaire_detail(int(questionnaire_id))
+    dispatch_status = _query_text("status")
+    dispatch_history = list_marketing_automation_dispatch_history(status=dispatch_status, limit=50)
+    return _render_config_template(
+        "config_marketing_automation.html",
+        active_tab="marketing_automation",
+        page_title="营销自动化",
+        page_summary="在这里维护报名成功自动化配置，并对单个客户做预览校验。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("配置中心", url_for("api.admin_config_home")),
+            ("营销自动化", None),
+        ),
+        marketing_config=config,
+        questionnaires=questionnaires,
+        selected_questionnaire=selected_questionnaire,
+        segment_stats=list_marketing_automation_segment_stats(),
+        dispatch_history=dispatch_history,
+        dispatch_status_options=_marketing_automation_dispatch_status_options(),
+        question_rule_slots=[1, 2, 3, 4, 5],
+    )
+
+
 def api_admin_config_overview():
     return jsonify({"ok": True, "overview": build_config_home_payload()})
 
@@ -402,6 +459,72 @@ def api_admin_config_save_mcp_tool():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+def api_admin_marketing_automation_config():
+    try:
+        return jsonify({"ok": True, "config": get_signup_conversion_config()})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def api_admin_marketing_automation_save_config():
+    payload = request.get_json(silent=True) or {}
+    try:
+        saved = save_signup_conversion_config(payload)
+        return jsonify({"ok": True, "config": saved})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def api_admin_marketing_automation_preview():
+    payload = request.get_json(silent=True) or {}
+    try:
+        preview = preview_signup_conversion_customer(
+            external_userid=payload.get("external_userid", ""),
+            person_id=payload.get("person_id"),
+        )
+        return jsonify({"ok": True, "preview": preview})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+
+
+def api_admin_marketing_automation_recompute():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = recompute_signup_conversion_customers(
+            external_userid=payload.get("external_userid", ""),
+            person_id=payload.get("person_id"),
+            external_userids=payload.get("external_userids"),
+            person_ids=payload.get("person_ids"),
+        )
+        return jsonify({"ok": True, "recompute": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+
+
+def api_admin_marketing_automation_dispatch_history():
+    return jsonify(
+        {
+            "ok": True,
+            "dispatch_history": list_marketing_automation_dispatch_history(
+                status=_query_text("status"),
+                limit=_query_int("limit", default=50, minimum=1, maximum=200),
+            ),
+        }
+    )
+
+
+def api_admin_config_signup_conversion():
+    return api_admin_marketing_automation_config()
+
+
+def api_admin_config_save_signup_conversion():
+    return api_admin_marketing_automation_save_config()
+
+
 def register_routes(bp):
     bp.route("/admin/config", methods=["GET"])(admin_config_home)
     bp.route("/admin/config/routing", methods=["GET"])(admin_config_routing)
@@ -411,6 +534,7 @@ def register_routes(bp):
     bp.route("/admin/config/signup-tags/save", methods=["POST"])(admin_config_save_signup_tag)
     bp.route("/admin/config/class-term-tags", methods=["GET"])(admin_config_class_term_tags)
     bp.route("/admin/config/class-term-tags/save", methods=["POST"])(admin_config_save_class_term_tag)
+    bp.route("/admin/marketing-automation/ui", methods=["GET"])(admin_marketing_automation_ui)
     bp.route("/admin/config/app-settings", methods=["GET"])(admin_config_app_settings)
     bp.route("/admin/config/app-settings/save", methods=["POST"])(admin_config_save_app_settings)
     bp.route("/admin/config/mcp-tools", methods=["GET"])(admin_config_mcp_tools)
@@ -428,3 +552,10 @@ def register_routes(bp):
     bp.route("/api/admin/config/app-settings", methods=["PUT"])(api_admin_config_save_app_settings)
     bp.route("/api/admin/config/mcp-tools", methods=["GET"])(api_admin_config_mcp_tools)
     bp.route("/api/admin/config/mcp-tools", methods=["POST"])(api_admin_config_save_mcp_tool)
+    bp.route("/api/admin/marketing-automation/config", methods=["GET"])(api_admin_marketing_automation_config)
+    bp.route("/api/admin/marketing-automation/config", methods=["PUT"])(api_admin_marketing_automation_save_config)
+    bp.route("/api/admin/marketing-automation/config/preview", methods=["POST"])(api_admin_marketing_automation_preview)
+    bp.route("/api/admin/marketing-automation/dispatch-history", methods=["GET"])(api_admin_marketing_automation_dispatch_history)
+    bp.route("/api/admin/marketing-automation/recompute", methods=["POST"])(api_admin_marketing_automation_recompute)
+    bp.route("/api/admin/config/marketing-automation/signup-conversion", methods=["GET"])(api_admin_config_signup_conversion)
+    bp.route("/api/admin/config/marketing-automation/signup-conversion", methods=["PUT"])(api_admin_config_save_signup_conversion)

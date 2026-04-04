@@ -98,6 +98,13 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         persistence_modules=("repo.py",),
         notes="People, bindings, external contact identity map, resolve flow.",
     ),
+    "marketing_automation": DomainLayoutSpec(
+        name="marketing_automation",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Signup-conversion automation state, value segments, and pending-batch candidate filtering.",
+    ),
     "questionnaire": DomainLayoutSpec(
         name="questionnaire",
         mode="simple",

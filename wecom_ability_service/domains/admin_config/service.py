@@ -241,6 +241,7 @@ def config_tabs(active_key: str) -> list[dict[str, Any]]:
         {"key": "routing", "label": "负责人 / 分配规则", "href": "/admin/config/routing"},
         {"key": "signup_tags", "label": "报名标签规则", "href": "/admin/config/signup-tags"},
         {"key": "class_term_tags", "label": "班期标签规则", "href": "/admin/config/class-term-tags"},
+        {"key": "marketing_automation", "label": "营销自动化", "href": "/admin/marketing-automation/ui"},
         {"key": "app_settings", "label": "系统设置", "href": "/admin/config/app-settings"},
         {"key": "mcp_tools", "label": "AI 工具设置", "href": "/admin/config/mcp-tools"},
     ]
@@ -670,6 +671,12 @@ def _default_display_name(tool_name: str) -> str:
         "get_pending_message_batches": "查看待确认消息批次",
         "get_message_batch": "查看消息批次详情",
         "ack_message_batch": "确认消息批次",
+        "get_customer_marketing_profile": "查看营销画像",
+        "get_pending_conversion_batches": "查看待转化批次",
+        "get_conversion_batch": "查看转化批次详情",
+        "ack_conversion_batch": "确认转化批次",
+        "get_signup_conversion_batches": "查看转化自动化批次",
+        "get_signup_conversion_batch": "查看转化自动化详情",
         "get_owner_recent_chat_dump": "查看负责人最近聊天",
         "get_hourly_followup_candidates": "查看跟进候选",
     }
@@ -691,13 +698,19 @@ def _default_tool_description(tool_name: str, fallback: str = "") -> str:
         "create_private_message_task": "创建单聊触达任务。",
         "create_group_message_task": "创建群发触达任务。",
         "create_moment_task": "创建朋友圈触达任务。",
-        "record_conversion_feedback": "记录转化反馈。",
+        "record_conversion_feedback": "记录转化反馈；当 feedback_type 为 mark_enrolled/unmark_enrolled 时同步统一转化真相。",
         "get_owner_role_map": "查看负责人角色配置。",
         "get_signup_tag_rules": "查看报名标签规则。",
         "get_routing_config": "查看当前分配规则。",
         "get_pending_message_batches": "查看待确认的消息批次。",
         "get_message_batch": "查看单个消息批次详情。",
         "ack_message_batch": "确认消息批次已处理。",
+        "get_customer_marketing_profile": "查看 CRM 整理好的营销画像。",
+        "get_pending_conversion_batches": "查看已经通过 CRM 路由筛选的待转化批次。",
+        "get_conversion_batch": "查看单个待转化批次及其营销画像。",
+        "ack_conversion_batch": "确认 OpenClaw 已消费转化批次。",
+        "get_signup_conversion_batches": "查看经过 CRM 转化规则筛选后的自动化批次。",
+        "get_signup_conversion_batch": "查看单个自动化批次及其客户画像。",
         "get_owner_recent_chat_dump": "查看某位负责人的最近聊天记录。",
         "get_hourly_followup_candidates": "查看建议优先跟进的客户。",
     }
@@ -773,6 +786,49 @@ def list_mcp_tool_settings(*, query: str, enabled_only: bool) -> dict[str, Any]:
             {"label": "访问令牌", "value": "已配置" if auth_value else "未配置", "description": "AI 工具访问令牌状态"},
         ],
         "audit_entries": [{**item, "action_label": _audit_action_label(item.get("action_type"))} for item in _recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)],
+    }
+
+
+def list_marketing_automation_segment_stats() -> list[dict[str, str | int]]:
+    counts = {"unknown": 0, "normal": 0, "core": 0, "top": 0}
+    for row in repo.list_marketing_automation_segment_counts():
+        segment = _normalized_text(row.get("segment")).lower()
+        if segment in counts:
+            counts[segment] = int(row.get("total") or 0)
+    return [
+        {"key": "unknown", "label": "unknown", "value": counts["unknown"], "description": "未命中有效问卷或尚未形成分层"},
+        {"key": "normal", "label": "normal", "value": counts["normal"], "description": "最近问卷命中数低于 core_threshold"},
+        {"key": "core", "label": "core", "value": counts["core"], "description": "当前可优先进入自动化转化的人群"},
+        {"key": "top", "label": "top", "value": counts["top"], "description": "当前最高优先级人群"},
+    ]
+
+
+def list_marketing_automation_dispatch_history(*, status: str = "", limit: int = 50) -> dict[str, Any]:
+    normalized_status = _normalized_text(status)
+    items: list[dict[str, Any]] = []
+    for row in repo.list_marketing_automation_dispatch_history(status=normalized_status, limit=int(limit)):
+        main_stage = _normalized_text(row.get("main_stage"))
+        sub_stage = _normalized_text(row.get("sub_stage"))
+        stage = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage or ""
+        items.append(
+            {
+                "batch_id": int(row.get("batch_id") or 0),
+                "external_userid": _normalized_text(row.get("external_userid")),
+                "owner_userid": _normalized_text(row.get("owner_userid")),
+                "segment": _normalized_text(row.get("segment")) or "unknown",
+                "main_stage": main_stage,
+                "sub_stage": sub_stage,
+                "stage": stage,
+                "dispatch_status": _normalized_text(row.get("dispatch_status")),
+                "created_at": _normalized_text(row.get("created_at")),
+                "acked_at": _normalized_text(row.get("acked_at")),
+            }
+        )
+    return {
+        "status": normalized_status,
+        "limit": int(limit),
+        "count": len(items),
+        "items": items,
     }
 
 

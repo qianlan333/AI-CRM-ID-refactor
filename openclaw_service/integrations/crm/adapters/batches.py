@@ -29,6 +29,57 @@ class BatchesAdapter:
         )
         return self._map_batch(payload)
 
+    def get_customer_marketing_profile(
+        self,
+        *,
+        external_userid: str = "",
+        person_id: int | None = None,
+        recent_message_limit: int = 3,
+    ) -> dict[str, Any]:
+        return self._call_mcp_tool(
+            "get_customer_marketing_profile",
+            {
+                "external_userid": external_userid,
+                "person_id": person_id,
+                "recent_message_limit": recent_message_limit,
+            },
+        )
+
+    def get_pending_conversion_batches(self, *, limit: int = 20, cursor: str = "") -> dict[str, Any]:
+        return self._call_mcp_tool("get_pending_conversion_batches", {"limit": limit, "cursor": cursor})
+
+    def get_conversion_batch(
+        self,
+        batch_id: int | str,
+        *,
+        recent_message_limit: int = 3,
+    ) -> dict[str, Any]:
+        return self._call_mcp_tool(
+            "get_conversion_batch",
+            {
+                "batch_id": int(batch_id),
+                "recent_message_limit": recent_message_limit,
+            },
+        )
+
+    def ack_conversion_batch(self, batch_id: int | str, *, acked_by: str = "", ack_note: str = "") -> dict[str, Any]:
+        return self._call_mcp_tool(
+            "ack_conversion_batch",
+            {"batch_id": int(batch_id), "acked_by": acked_by, "ack_note": ack_note},
+        )
+
+    def get_signup_conversion_batches(self, *, limit: int = 20, cursor: str = "") -> dict[str, Any]:
+        return self.get_pending_conversion_batches(limit=limit, cursor=cursor)
+
+    def get_signup_conversion_batch(
+        self,
+        batch_id: int | str,
+        *,
+        recent_message_limit: int = 20,
+        timeline_limit: int = 20,
+    ) -> dict[str, Any]:
+        return self.get_conversion_batch(batch_id, recent_message_limit=recent_message_limit)
+
     def _call_mcp_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         payload = self.client.post(
             "/mcp",

@@ -238,3 +238,122 @@ def fetch_owner_role_map(userids: list[str]) -> dict[str, dict[str, Any]]:
         tuple(normalized),
     )
     return {str(row.get("userid") or "").strip(): row for row in rows}
+
+
+def fetch_customer_marketing_state_current(external_userid: str) -> dict[str, Any] | None:
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_external_userid:
+        return None
+    row = get_db().execute(
+        """
+        SELECT
+            external_userid,
+            main_stage,
+            sub_stage,
+            eligible_for_conversion,
+            last_activation_at,
+            last_conversion_marked_at,
+            updated_at
+        FROM customer_marketing_state_current
+        WHERE external_userid = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (normalized_external_userid,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_customer_marketing_state_current_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
+    normalized = [str(item or "").strip() for item in external_userids if str(item or "").strip()]
+    if not normalized:
+        return {}
+    placeholders = ",".join(["?"] * len(normalized))
+    rows = _fetchall_dict(
+        f"""
+        SELECT
+            external_userid,
+            main_stage,
+            sub_stage,
+            eligible_for_conversion,
+            last_activation_at,
+            last_conversion_marked_at,
+            updated_at,
+            id
+        FROM customer_marketing_state_current
+        WHERE external_userid IN ({placeholders})
+        ORDER BY external_userid ASC, updated_at DESC, id DESC
+        """,
+        tuple(normalized),
+    )
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        external_userid = str(row.get("external_userid") or "").strip()
+        if external_userid and external_userid not in result:
+            result[external_userid] = row
+    return result
+
+
+def fetch_customer_value_segment_current(external_userid: str) -> dict[str, Any] | None:
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_external_userid:
+        return None
+    row = get_db().execute(
+        """
+        SELECT
+            external_userid,
+            segment,
+            score,
+            updated_at
+        FROM customer_value_segment_current
+        WHERE external_userid = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (normalized_external_userid,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_customer_value_segment_current_map(external_userids: list[str]) -> dict[str, dict[str, Any]]:
+    normalized = [str(item or "").strip() for item in external_userids if str(item or "").strip()]
+    if not normalized:
+        return {}
+    placeholders = ",".join(["?"] * len(normalized))
+    rows = _fetchall_dict(
+        f"""
+        SELECT
+            external_userid,
+            segment,
+            score,
+            updated_at,
+            id
+        FROM customer_value_segment_current
+        WHERE external_userid IN ({placeholders})
+        ORDER BY external_userid ASC, updated_at DESC, id DESC
+        """,
+        tuple(normalized),
+    )
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        external_userid = str(row.get("external_userid") or "").strip()
+        if external_userid and external_userid not in result:
+            result[external_userid] = row
+    return result
+
+
+def fetch_customer_last_dispatch_at(external_userid: str) -> str:
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_external_userid:
+        return ""
+    row = get_db().execute(
+        """
+        SELECT MAX(dispatched_at) AS last_dispatch_at
+        FROM conversion_dispatch_log
+        WHERE external_userid = ?
+          AND dispatched_at IS NOT NULL
+          AND dispatched_at <> ''
+        """,
+        (normalized_external_userid,),
+    ).fetchone()
+    return str((row or {}).get("last_dispatch_at") or "").strip()

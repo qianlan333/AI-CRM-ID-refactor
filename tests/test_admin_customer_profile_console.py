@@ -165,6 +165,53 @@ def _seed_customer_profile_fixture(app) -> None:
             (2, 2, 'single_choice', '你当前在哪个阶段？', '[1]', '[\"已报名999\"]', '[10]', '[\"tag-999\"]', '', 10, CURRENT_TIMESTAMP)
             """
         )
+        db.execute(
+            """
+            INSERT INTO customer_marketing_state_current (
+                person_id, external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                eligible_for_conversion, lifecycle_status, last_activation_at, last_conversion_marked_at,
+                last_message_at, last_batch_id, last_batch_status, last_batch_window_start, last_batch_window_end,
+                last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
+            )
+            VALUES (
+                1, 'ext-1', 'signup_conversion_v1', 'active', 'activated', 1, 0, 1, 'active',
+                '2026-04-03 09:30:00', '', '2026-04-03 09:35:00', NULL, '', '', '',
+                '2026-04-03 09:35:00', '2026-04-03 09:30:00', '', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO customer_value_segment_current (
+                external_userid, segment, segment_rank, score, scoring_version, computed_reason, submission_id,
+                matched_question_ids_json, source_payload_json, evaluated_at, computed_at, created_at, updated_at
+            )
+            VALUES (
+                'ext-1', 'top', 3, 4, 'signup_conversion_question_hits_v1', 'seed', 2,
+                '[1,2,3,4]', '{}', '2026-04-03 09:32:00', '2026-04-03 09:32:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO message_batches (
+                id, batch_key, window_start, window_end, status, message_count, created_at
+            )
+            VALUES (9001, 'seed-batch-9001', '2026-04-03 09:35:00', '2026-04-03 09:45:00', 'acked', 1, CURRENT_TIMESTAMP)
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO conversion_dispatch_log (
+                automation_key, batch_id, external_userid, dispatch_status, dispatch_channel,
+                dispatch_payload_json, dispatch_note, dispatched_at, acked_at, created_at, updated_at
+            )
+            VALUES (
+                'signup_conversion_v1', 9001, 'ext-1', 'sent', 'text_message', '{}',
+                'seed dispatch', '2026-04-03 09:40:00', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            """
+        )
 
         started_at = datetime(2026, 4, 3, 8, 0, 0)
         for index in range(1, 36):
@@ -223,13 +270,51 @@ def test_admin_customer_profile_page_renders_profile_sections_without_tabs(app, 
     assert "问卷记录" in html
     assert "聊天记录" in html
     assert "获取全部聊天记录" in html
+    assert "营销状态 / 自动化转化" in html
+    assert "当前阶段" in html
+    assert "active/activated" in html
+    assert "当前分层" in html
+    assert "top" in html
+    assert "命中题数" in html
+    assert "4 题" in html
+    assert "符合自动化转化条件" in html
+    assert "最近激活时间" in html
+    assert "2026-04-03 09:30:00" in html
+    assert "最近 dispatch 时间" in html
+    assert "2026-04-03 09:40:00" in html
     assert "用户 ID" in html
     assert "unionid" in html
+    assert "自动化阶段" in html
+    assert "价值分层" in html
     assert "互动记录" not in html
     assert "关键身份信息" not in html
     assert "高级信息" not in html
     assert "最近互动时间" not in html
     assert "当前是否有企微客户关系" not in html
+
+
+def test_admin_customer_profile_page_renders_marketing_summary_placeholders(app, client, fake_contact_client):
+    _seed_customer_profile_fixture(app)
+
+    with app.app_context():
+        db = get_db()
+        db.execute("DELETE FROM customer_marketing_state_current WHERE external_userid = 'ext-1'")
+        db.execute("DELETE FROM customer_value_segment_current WHERE external_userid = 'ext-1'")
+        db.execute("DELETE FROM conversion_dispatch_log WHERE external_userid = 'ext-1'")
+        db.commit()
+
+    response = client.get("/admin/customers/ext-1")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "营销状态 / 自动化转化" in html
+    assert "当前阶段" in html
+    assert "unknown" in html
+    assert "0 题" in html
+    assert "最近激活时间" in html
+    assert "最近报名标记时间" in html
+    assert "最近 dispatch 时间" in html
+    assert html.count("暂无") >= 3
 
 
 def test_customer_profile_tags_failure_does_not_break_page(app, client, monkeypatch):
@@ -311,6 +396,7 @@ def test_customer_profile_api_supports_external_userid_mobile_and_reserved_user_
     assert by_external_userid.status_code == 200
     assert external_payload["profile"]["user_id"] == "ext-1"
     assert external_payload["lookup"]["resolved_by"] == "external_userid"
+    assert external_payload["profile"]["marketing_profile"]["marketing_state"]["marketing_phase"] == "exited_signup_success"
 
     assert by_mobile.status_code == 200
     assert mobile_payload["profile"]["external_userid"] == "ext-1"

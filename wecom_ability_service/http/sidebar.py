@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from flask import current_app, jsonify, render_template, request
 
+from ..domains.marketing_automation.service import get_customer_marketing_profile
 from ..infra.wecom_runtime import build_jsapi_payload
 from ..services import (
     ContactBindingConflictError,
     ThirdPartyUserSyncError,
     bind_mobile_to_external_contact,
+    get_contact_by_external_userid,
     get_class_user_status_current,
     get_contact_binding_status,
+    get_primary_follow_user_userid,
     get_sidebar_lead_pool_status,
+    mark_enrolled,
+    preview_signup_conversion_customer,
+    unmark_enrolled,
     upsert_sidebar_lead_pool_class_term,
 )
 from ..wecom_client import WeComClientError
@@ -20,6 +26,49 @@ from .admin_support import (
     _sidebar_person_detail_url,
 )
 from .common import _corp_id, _wecom_error_response
+
+
+def _sidebar_marketing_status_payload(preview: dict[str, object]) -> dict[str, object]:
+    marketing_state = dict(preview.get("marketing_state") or {})
+    value_segment = dict(preview.get("value_segment") or {})
+    summary = dict(preview.get("summary") or {})
+    resolved_customer = dict(preview.get("resolved_customer") or {})
+    return {
+        "person_id": resolved_customer.get("person_id"),
+        "external_userid": str(resolved_customer.get("external_userid") or "").strip(),
+        "mobile": str(resolved_customer.get("mobile") or "").strip(),
+        "main_stage": str(marketing_state.get("main_stage") or "").strip(),
+        "sub_stage": str(marketing_state.get("sub_stage") or "").strip(),
+        "stage_key": str(marketing_state.get("stage_key") or "").strip(),
+        "segment": str(value_segment.get("segment") or "").strip() or str(summary.get("current_segment") or "").strip(),
+        "segment_label": str(value_segment.get("segment_label") or "").strip() or str(summary.get("current_segment_label") or "").strip(),
+        "hit_count": int(value_segment.get("hit_count") or summary.get("hit_count") or 0),
+        "matched_question_ids": [
+            int(question_id)
+            for question_id in summary.get("matched_question_ids") or value_segment.get("matched_question_ids_json") or []
+            if str(question_id).strip()
+        ],
+        "matched_questions": list(summary.get("matched_questions") or []),
+        "eligible_for_conversion": bool(marketing_state.get("eligible_for_conversion")),
+        "ineligible_reason": str(summary.get("ineligible_reason") or "").strip(),
+        "last_activation_at": str(marketing_state.get("last_activation_at") or "").strip(),
+        "last_conversion_marked_at": str(marketing_state.get("last_conversion_marked_at") or "").strip(),
+        "updated_at": str(marketing_state.get("updated_at") or value_segment.get("updated_at") or "").strip(),
+    }
+
+
+def _sidebar_marketing_target_exists(external_userid: str) -> bool:
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_external_userid:
+        return False
+    if get_contact_by_external_userid(normalized_external_userid) is not None:
+        return True
+    if get_class_user_status_current(normalized_external_userid):
+        return True
+    if get_primary_follow_user_userid(normalized_external_userid):
+        return True
+    binding_status = get_contact_binding_status(normalized_external_userid)
+    return bool(binding_status.get("is_bound"))
 
 
 def sidebar_bind_mobile_page():
@@ -36,6 +85,11 @@ def sidebar_contact_binding_status():
         return jsonify({"ok": False, "error": "external_userid is required"}), 400
     status = get_contact_binding_status(external_userid, owner_userid)
     status["ok"] = True
+    if _sidebar_marketing_target_exists(external_userid):
+        try:
+            status["marketing_profile"] = get_customer_marketing_profile(external_userid)
+        except Exception:
+            status["marketing_profile"] = {}
     if status.get("is_bound"):
         status["detail_url"] = _sidebar_person_detail_url(status)
     return jsonify(status)
@@ -126,6 +180,7 @@ def sidebar_signup_tag_status():
             "current_tag": str(current_status.get("signup_label_name") or "").strip(),
             "wecom_tag_sync_status": str(current_status.get("wecom_tag_sync_status") or "").strip(),
             "wecom_tag_sync_error": str(current_status.get("wecom_tag_sync_error") or "").strip(),
+            "marketing_profile": get_customer_marketing_profile(external_userid),
         }
     )
 
@@ -145,6 +200,67 @@ def sidebar_signup_tag_mark():
     return jsonify({"ok": True, **result})
 
 
+def sidebar_marketing_status():
+    external_userid = request.args.get("external_userid", "").strip()
+    if not external_userid:
+        return jsonify({"ok": False, "error": "external_userid is required"}), 400
+    if not _sidebar_marketing_target_exists(external_userid):
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    try:
+        preview = preview_signup_conversion_customer(external_userid=external_userid)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError:
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    return jsonify({"ok": True, "marketing_status": _sidebar_marketing_status_payload(preview)})
+
+
+def sidebar_marketing_status_mark_enrolled():
+    payload = request.get_json(silent=True) or {}
+    external_userid = str(payload.get("external_userid") or "").strip()
+    if not external_userid:
+        return jsonify({"ok": False, "error": "external_userid is required"}), 400
+    if not _sidebar_marketing_target_exists(external_userid):
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    try:
+        conversion = mark_enrolled(
+            external_userid=external_userid,
+            owner_userid=str(payload.get("owner_userid") or "").strip(),
+            operator=str(payload.get("operator") or "").strip(),
+            source="sidebar_manual",
+            signup_status=str(payload.get("signup_status") or "").strip() or "signed_999",
+        )
+        preview = preview_signup_conversion_customer(external_userid=external_userid)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError:
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    return jsonify({"ok": True, "marketing_status": _sidebar_marketing_status_payload(preview), "conversion": conversion})
+
+
+def sidebar_marketing_status_unmark_enrolled():
+    payload = request.get_json(silent=True) or {}
+    external_userid = str(payload.get("external_userid") or "").strip()
+    if not external_userid:
+        return jsonify({"ok": False, "error": "external_userid is required"}), 400
+    if not _sidebar_marketing_target_exists(external_userid):
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    try:
+        conversion = unmark_enrolled(
+            external_userid=external_userid,
+            owner_userid=str(payload.get("owner_userid") or "").strip(),
+            operator=str(payload.get("operator") or "").strip(),
+            source="sidebar_manual",
+            restore_signup_status=str(payload.get("restore_signup_status") or "").strip(),
+        )
+        preview = preview_signup_conversion_customer(external_userid=external_userid)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError:
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    return jsonify({"ok": True, "marketing_status": _sidebar_marketing_status_payload(preview), "conversion": conversion})
+
+
 
 def register_routes(bp):
     bp.route('/sidebar/bind-mobile', methods=['GET'])(sidebar_bind_mobile_page)
@@ -155,3 +271,6 @@ def register_routes(bp):
     bp.route('/api/sidebar/lead-pool/upsert-class-term', methods=['POST'])(sidebar_lead_pool_upsert_class_term)
     bp.route('/api/sidebar/signup-tags/status', methods=['GET'])(sidebar_signup_tag_status)
     bp.route('/api/sidebar/signup-tags/mark', methods=['POST'])(sidebar_signup_tag_mark)
+    bp.route('/api/sidebar/marketing-status', methods=['GET'])(sidebar_marketing_status)
+    bp.route('/api/sidebar/marketing-status/mark-enrolled', methods=['POST'])(sidebar_marketing_status_mark_enrolled)
+    bp.route('/api/sidebar/marketing-status/unmark-enrolled', methods=['POST'])(sidebar_marketing_status_unmark_enrolled)

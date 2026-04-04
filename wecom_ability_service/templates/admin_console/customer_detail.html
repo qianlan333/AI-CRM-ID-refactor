@@ -1,6 +1,16 @@
 {% extends "admin_console/base.html" %}
 
 {% block content %}
+{% macro render_or_placeholder(value, placeholder="暂无") -%}
+  {{ value if value else placeholder }}
+{%- endmacro %}
+{% set marketing_summary = customer_payload.customer.marketing_summary or {} %}
+{% set marketing_stage = "" %}
+{% if marketing_summary.main_stage and marketing_summary.sub_stage %}
+  {% set marketing_stage = marketing_summary.main_stage ~ "/" ~ marketing_summary.sub_stage %}
+{% elif marketing_summary.main_stage or marketing_summary.sub_stage %}
+  {% set marketing_stage = marketing_summary.main_stage or marketing_summary.sub_stage %}
+{% endif %}
 <section
   class="admin-card admin-module-banner"
   data-customer-profile-root
@@ -38,6 +48,58 @@
     <div class="admin-profile-field">
       <span>unionid</span>
       <strong>{{ customer_payload.customer.unionid or "未绑定" }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>自动化阶段</span>
+      <strong>{{ customer_payload.customer.marketing_profile.marketing_state.phase_label or "待触发" }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>价值分层</span>
+      <strong>
+        {{ customer_payload.customer.marketing_profile.value_segment.segment_label or "普通" }}
+        {% if customer_payload.customer.marketing_profile.value_segment.score %}
+        · {{ customer_payload.customer.marketing_profile.value_segment.score }} 分
+        {% endif %}
+      </strong>
+    </div>
+  </div>
+</section>
+
+<section class="admin-card" id="customer-marketing-summary">
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>营销状态 / 自动化转化</h2>
+      <p>直接复用客户详情里的 marketing_summary，不单独维护第二套状态。</p>
+    </div>
+  </div>
+  <div class="admin-profile-grid">
+    <div class="admin-profile-field">
+      <span>当前阶段</span>
+      <strong>{{ render_or_placeholder(marketing_stage) }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>当前分层</span>
+      <strong>{{ render_or_placeholder(marketing_summary.segment) }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>命中题数</span>
+      <strong>{{ marketing_summary.hit_count or 0 }} 题</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>符合自动化转化条件</span>
+      <strong>{{ "是" if marketing_summary.eligible_for_conversion else "否" }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>最近激活时间</span>
+      <strong>{{ render_or_placeholder(marketing_summary.last_activation_at) }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>最近报名标记时间</span>
+      <strong>{{ render_or_placeholder(marketing_summary.last_conversion_marked_at) }}</strong>
+    </div>
+    <div class="admin-profile-field">
+      <span>最近 dispatch 时间</span>
+      <strong>{{ render_or_placeholder(marketing_summary.last_dispatch_at) }}</strong>
     </div>
   </div>
 </section>

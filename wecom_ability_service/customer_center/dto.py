@@ -77,6 +77,21 @@ class CustomerClassStatusDTO:
 
 
 @dataclass
+class CustomerMarketingSummaryDTO:
+    main_stage: str = ""
+    sub_stage: str = ""
+    segment: str = "unknown"
+    hit_count: int = 0
+    eligible_for_conversion: bool = False
+    last_activation_at: str = ""
+    last_conversion_marked_at: str = ""
+    last_dispatch_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class CustomerListItemDTO:
     external_userid: str = ""
     customer_name: str = ""
@@ -123,6 +138,8 @@ class CustomerDetailDTO:
     follow_users: list[CustomerFollowUserDTO] = field(default_factory=list)
     binding: CustomerBindingDTO = field(default_factory=CustomerBindingDTO)
     identity: CustomerIdentityDTO = field(default_factory=CustomerIdentityDTO)
+    marketing_summary: CustomerMarketingSummaryDTO = field(default_factory=CustomerMarketingSummaryDTO)
+    marketing_profile: dict[str, Any] = field(default_factory=dict)
     sidebar_context: dict[str, Any] = field(default_factory=dict)
     contact: dict[str, Any] = field(default_factory=dict)
 
@@ -133,5 +150,6 @@ class CustomerDetailDTO:
         data["binding"] = self.binding.to_dict()
         data["identity"] = self.identity.to_dict()
         data["class_user_status"] = self.class_user_status.to_dict()
+        data["marketing_summary"] = self.marketing_summary.to_dict()
         data["class_status"] = self.class_user_status.to_dict()
         return data

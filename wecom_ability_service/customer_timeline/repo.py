@@ -14,6 +14,9 @@ def has_customer_timeline_scope(external_userid: str) -> bool:
         "contacts",
         "archived_messages",
         "class_user_status_history",
+        "customer_marketing_state_history",
+        "customer_value_segment_history",
+        "conversion_dispatch_log",
         "questionnaire_submissions",
         "wecom_external_contact_event_logs",
     ]:
@@ -87,6 +90,86 @@ def fetch_wecom_events(external_userid: str) -> list[dict[str, Any]]:
                payload_xml, payload_json, process_status, retry_count, error_message, created_at, updated_at
         FROM wecom_external_contact_event_logs
         WHERE external_userid = ?
+        """,
+        (external_userid,),
+    )
+
+
+def fetch_marketing_state_changes(external_userid: str) -> list[dict[str, Any]]:
+    return _fetchall_dict(
+        """
+        SELECT
+            id,
+            person_id,
+            external_userid,
+            automation_key,
+            main_stage,
+            sub_stage,
+            activated,
+            converted,
+            eligible_for_conversion,
+            batch_id,
+            lifecycle_status,
+            exit_reason,
+            last_activation_at,
+            last_conversion_marked_at,
+            last_message_at,
+            change_reason,
+            state_payload_json,
+            recorded_at,
+            created_at
+        FROM customer_marketing_state_history
+        WHERE external_userid = ?
+        ORDER BY recorded_at DESC, id DESC
+        """,
+        (external_userid,),
+    )
+
+
+def fetch_value_segment_changes(external_userid: str) -> list[dict[str, Any]]:
+    return _fetchall_dict(
+        """
+        SELECT
+            id,
+            external_userid,
+            segment,
+            segment_rank,
+            score,
+            scoring_version,
+            change_reason,
+            submission_id,
+            matched_question_ids_json,
+            source_payload_json,
+            evaluated_at,
+            recorded_at,
+            created_at
+        FROM customer_value_segment_history
+        WHERE external_userid = ?
+        ORDER BY recorded_at DESC, id DESC
+        """,
+        (external_userid,),
+    )
+
+
+def fetch_conversion_dispatch_logs(external_userid: str) -> list[dict[str, Any]]:
+    return _fetchall_dict(
+        """
+        SELECT
+            id,
+            automation_key,
+            batch_id,
+            external_userid,
+            dispatch_status,
+            dispatch_channel,
+            dispatch_payload_json,
+            dispatch_note,
+            dispatched_at,
+            acked_at,
+            created_at,
+            updated_at
+        FROM conversion_dispatch_log
+        WHERE external_userid = ?
+        ORDER BY COALESCE(dispatched_at, acked_at, updated_at, created_at) DESC, id DESC
         """,
         (external_userid,),
     )

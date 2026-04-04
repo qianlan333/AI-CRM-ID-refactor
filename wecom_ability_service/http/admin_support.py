@@ -11,12 +11,14 @@ from ..services import (
     apply_class_user_status_change,
     build_class_user_tag_view,
     get_class_user_snapshot,
+    get_class_user_status_current,
     get_primary_follow_user_userid,
     get_signup_status_definition,
     get_signup_status_definitions,
     list_available_wecom_tags,
     list_signup_tag_rules,
     normalize_contact_record,
+    mark_enrolled,
     normalize_external_contact_identity,
     refresh_external_contact_identity_owner,
     remove_tag_snapshot,
@@ -24,6 +26,7 @@ from ..services import (
     replace_external_contact_follow_users,
     save_tag_snapshot,
     update_class_user_status_sync_result,
+    unmark_enrolled,
     upsert_contacts,
     upsert_external_contact_identity,
     upsert_signup_tag_rule,
@@ -387,15 +390,35 @@ def _apply_signup_sidebar_tag(external_userid: str, owner_userid: str, signup_st
     target_rule = next((item for item in rules if item.get("signup_status") == normalized_status), None)
     if not target_rule:
         raise ValueError("signup tags are not initialized, please initialize them in admin first")
-    snapshot = get_class_user_snapshot(normalized_external_userid, normalized_owner_userid)
-    current_record = apply_class_user_status_change(
-        external_userid=normalized_external_userid,
-        signup_status=normalized_status,
-        set_by_userid=normalized_owner_userid,
-        customer_name_snapshot=str(snapshot.get("customer_name_snapshot") or "").strip(),
-        owner_userid_snapshot=str(snapshot.get("owner_userid_snapshot") or "").strip() or normalized_owner_userid,
-        mobile_snapshot=str(snapshot.get("mobile_snapshot") or "").strip(),
-    )
+    current_signup_status = str((get_class_user_status_current(normalized_external_userid) or {}).get("signup_status") or "").strip()
+    if normalized_status.startswith("signed_"):
+        conversion_payload = mark_enrolled(
+            external_userid=normalized_external_userid,
+            owner_userid=normalized_owner_userid,
+            operator=normalized_owner_userid,
+            source="sidebar_manual",
+            signup_status=normalized_status,
+        )
+        current_record = dict(conversion_payload.get("class_user_status") or {})
+    elif current_signup_status.startswith("signed_"):
+        conversion_payload = unmark_enrolled(
+            external_userid=normalized_external_userid,
+            owner_userid=normalized_owner_userid,
+            operator=normalized_owner_userid,
+            source="sidebar_manual",
+            restore_signup_status=normalized_status,
+        )
+        current_record = dict(conversion_payload.get("class_user_status") or {})
+    else:
+        snapshot = get_class_user_snapshot(normalized_external_userid, normalized_owner_userid)
+        current_record = apply_class_user_status_change(
+            external_userid=normalized_external_userid,
+            signup_status=normalized_status,
+            set_by_userid=normalized_owner_userid,
+            customer_name_snapshot=str(snapshot.get("customer_name_snapshot") or "").strip(),
+            owner_userid_snapshot=str(snapshot.get("owner_userid_snapshot") or "").strip() or normalized_owner_userid,
+            mobile_snapshot=str(snapshot.get("mobile_snapshot") or "").strip(),
+        )
     remove_tag_ids = sorted(
         {
             str(item.get("tag_id") or "").strip()
