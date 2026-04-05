@@ -1,117 +1,100 @@
 # Deploy Runbook
 
-这份文档描述当前项目最常用的本地与生产运行信息，方便 GPT / LLM 在回答部署和验收问题时有统一口径。
+这份文档描述当前最常用的本地开发和生产发布口径。
 
-## 本地工作目录
+## 本地仓库约定
 
-- 本地主目录：
-  - `/Users/qianlan/Downloads/极简 crm`
+- 当前 Git clone 就是本地唯一正式工作目录
+- 新任务统一从最新 `main` 开分支
+- 不再通过复制多个项目目录来并行开发
+
+建议开始开发前先做：
+
+```bash
+git switch main
+git pull --ff-only origin main
+git switch -c <feature-branch>
+```
 
 ## 生产环境
 
-当前主要生产实例：
-
-- 服务名：`openclaw-wecom-postgres.service`
-- 本机地址：`http://127.0.0.1:5001`
 - 外网入口：`https://www.youcangogogo.com`
+- systemd 服务：`openclaw-wecom-postgres.service`
+- Nginx 上游：`http://127.0.0.1:5001`
+- 生产代码目录：`/home/ubuntu/极简 crm`
+- 环境变量文件：`/home/ubuntu/.openclaw-wecom-pg.env`
+- 生产虚拟环境：`/home/ubuntu/venvs/openclaw/bin/activate`
 
-常用页面：
+当前线上正式流量只走 `5001`。
 
-- 用户运营看板：
-  - `https://www.youcangogogo.com/admin/user-ops/ui`
-- 旧班期后台：
-  - `https://www.youcangogogo.com/admin/class-user-backoffice/ui`
-  - `https://www.youcangogogo.com/admin/class-user-management/ui`
-- 问卷后台：
-  - `https://www.youcangogogo.com/admin/questionnaires/ui`
+不要再默认假设：
 
-## 生产代码目录
-
-- `/home/ubuntu/极简 crm`
-
-## 生产环境变量
-
-- `/home/ubuntu/.openclaw-wecom-pg.env`
-
-## 生产虚拟环境
-
-- `/home/ubuntu/venvs/openclaw/bin/activate`
+- 存在长期运行的 `5000` 冷备实例
+- 服务器上存在多份并行有效的发布目录
 
 ## 常用只读检查
 
-服务健康：
+```bash
+curl -sS http://127.0.0.1:5001/health
+sudo systemctl status openclaw-wecom-postgres.service --no-pager
+sudo journalctl -u openclaw-wecom-postgres.service -n 100 --no-pager
+```
 
-- `curl -sS http://127.0.0.1:5001/health`
+常用页面：
 
-用户运营看板：
+- `/admin`
+- `/admin/customers`
+- `/admin/questionnaires`
+- `/admin/automation-conversion`
+- `/admin/jobs`
 
-- `GET /api/admin/user-ops/overview`
-- `GET /api/admin/user-ops/list`
-- `GET /api/admin/user-ops/history`
+## 发布口径
 
-MCP：
+当前生产发布仍是手工同步，但源码基线统一来自 GitHub `main`。
 
-- `/mcp`
+推荐顺序：
 
-## 发布常见步骤
+1. 在本地最新 `main` 上开发和测试
+2. 提交分支并合并到 GitHub `main`
+3. 服务器部署时只同步已经合入 `main` 的代码
+4. 同步到 `/home/ubuntu/极简 crm`
+5. 必要时安装依赖并执行数据库初始化
+6. 重启 `openclaw-wecom-postgres.service`
+7. 做只读验收
 
-最常见的发布方式是：
+## 典型发布步骤
 
-1. 在本地改好代码
-2. 本地做最小校验
-3. 同步文件到 `/home/ubuntu/极简 crm`
-4. 必要时执行数据库初始化 / 兼容迁移
-5. 重启：
-   - `openclaw-wecom-postgres.service`
-6. 再做只读确认：
-   - `/health`
-   - 页面能打开
-   - 关键 API 返回正常
+```bash
+cd /home/ubuntu/极简\ crm
+source /home/ubuntu/venvs/openclaw/bin/activate
+python3 -m pip install -r requirements.txt
+python3 app.py init-db
+sudo systemctl restart openclaw-wecom-postgres.service
+curl -sS http://127.0.0.1:5001/health
+```
 
-## 当前发布口径
+## 日志与备份
 
-当前不再使用 GitHub 自动发布。
+- service 日志：
+  - `sudo journalctl -u openclaw-wecom-postgres.service -f`
+- Nginx 日志：
+  - `/var/log/nginx/access.log`
+  - `/var/log/nginx/error.log`
+- archive sync / backup 日志：
+  - `/home/ubuntu/openclaw-cron.log`
+  - `/home/ubuntu/openclaw-pg-backup.log`
+- PostgreSQL 备份目录：
+  - `/home/ubuntu/backups/openclaw-postgres/`
 
-生产发布统一按手工方式执行：
+## 仓库与服务器清洁约定
 
-1. 本地确认要发布的提交已经合到 `main`
-2. 手工同步代码到 `/home/ubuntu/极简 crm`
-3. 在服务器执行：
-   - `python3 -m pip install -r requirements.txt`
-   - `python app.py init-db`
-   - `sudo systemctl restart openclaw-wecom-postgres.service`
-4. 验证：
-   - `curl -sS http://127.0.0.1:5001/health`
-   - 关键页面和接口返回正常
+- 服务器生产目录只保留一份正式代码
+- smoke 目录、手工同步副本、历史发布包和 macOS 元数据不要长期堆在服务器
+- 本地主仓不提交 `dist/`、`exports/`、顶层归档包、旧静态草稿页面
 
-## 数据库后端
+## 真实环境验收顺序
 
-当前项目支持：
-
-- SQLite
-- PostgreSQL
-
-真实生产主线当前按 PostgreSQL 运行。
-
-相关 schema 文件：
-
-- [`wecom_ability_service/schema.sql`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/schema.sql)
-- [`wecom_ability_service/schema_postgres.sql`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/schema_postgres.sql)
-
-## 发布时最容易踩坑的地方
-
-- PostgreSQL 和 SQLite 的 SQL 兼容差异
-- 老库增量迁移顺序
-- 页面缓存导致“线上明明已发布，本地浏览器仍看到旧模板”
-- 企业微信真实标签和本地 `contact_tags` 快照不一致
-
-## 如果模型要做真实环境验收
-
-建议按这个顺序：
-
-1. 先只读检查服务健康
-2. 再检查页面 / API 是否在线
-3. 再检查数据库表结构和当前池数据
-4. 最后才做真实业务验收
-
-不要一上来就对生产做写入动作。
+1. 先看服务和日志
+2. 再看 `/health`
+3. 再看关键页面和接口是否在线
+4. 最后才做业务验收或写操作

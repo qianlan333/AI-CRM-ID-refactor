@@ -5,4 +5,9 @@ __pycache__/
 .tmp/
 .remote_crm_fix/
 data.sqlite3
-dist/openclaw-crm-mcp-proxy-v2.0.0/.venv/
+dist/
+exports/
+/*.tar.gz
+/questionnaire_ui_live.html
+/questionnaire_ui_live.js
+.venv/

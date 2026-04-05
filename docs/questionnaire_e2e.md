@@ -42,7 +42,7 @@ your-domain.com
 ## 3. 启动服务
 
 ```bash
-cd /Users/qianlan/Downloads/极简\ crm
+cd <repo-root>
 python3 app.py init-db
 python3 app.py run
 ```
@@ -155,7 +155,7 @@ export ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API=1
 提交问卷后查询：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select id, identity_map_id, respondent_key, openid, unionid, external_userid, follow_user_userid, matched_by
 from questionnaire_submissions
 order by id desc
@@ -173,7 +173,7 @@ limit 5;"
 如果最初是用 `unionid` 命中，而历史 `identity_map.openid` 为空，则提交后会自动回填。
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select id, external_userid, unionid, openid, follow_user_userid
 from wecom_external_contact_identity_map
 where unionid='union-001';"
@@ -186,7 +186,7 @@ where unionid='union-001';"
 先看问卷提交计算出来的最终标签：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select id, final_tags
 from questionnaire_submissions
 order by id desc
@@ -196,7 +196,7 @@ limit 5;"
 再看本地标签快照：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select external_userid, userid, tag_id, created_at
 from contact_tags
 order by id desc
@@ -206,7 +206,7 @@ limit 20;"
 最后看 SCRM 写回审计表：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select submission_id, external_userid, follow_user_userid, final_tags, status, error_message, created_at
 from questionnaire_scrm_apply_logs
 order by id desc

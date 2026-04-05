@@ -1,6 +1,6 @@
 # Project Map
 
-这份文档是项目代码地图，目标是让新模型或新同事快速定位主模块。
+这份文档的目标是让新模型或新同事快速定位主模块，而不是把所有实现细节重复一遍。
 
 ## 顶层结构
 
@@ -9,121 +9,124 @@ AI-CRM/
 ├── app.py
 ├── README.md
 ├── requirements.txt
+├── deploy/
 ├── docs/
+├── openclaw_service/
 ├── scripts/
 ├── tests/
-├── deploy/
-├── openclaw_service/
 └── wecom_ability_service/
 ```
 
-## 入口
+## 入口链路
 
-- [`app.py`](/Users/qianlan/Downloads/极简%20crm/app.py)
-  - Flask 应用入口
-- [`wecom_ability_service/__init__.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/__init__.py)
-  - 应用初始化、蓝图注册、配置接线
+- [`app.py`](../app.py)
+  - CLI 入口
+  - 支持 `python3 app.py init-db`
+  - 支持 `python3 app.py run`
+- [`wecom_ability_service/__init__.py`](../wecom_ability_service/__init__.py)
+  - 创建 Flask app
+  - 装载配置、日志、数据库和蓝图
+- [`wecom_ability_service/routes.py`](../wecom_ability_service/routes.py)
+  - 当前 HTTP 蓝图装配入口
+  - 向下接到 `wecom_ability_service/http/`
+- [`wecom_ability_service/http/__init__.py`](../wecom_ability_service/http/__init__.py)
+  - 注册所有 HTTP route 模块
 
 ## `wecom_ability_service/`
 
-这是当前项目最核心的业务服务目录，负责企业微信、用户运营、问卷、客户中心、MCP 暴露。
+这是当前项目最核心的服务目录。
 
-关键文件：
+主要结构：
 
-- [`wecom_ability_service/routes.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/routes.py)
-  - 主 HTTP 路由
-  - 包括 admin UI、API、回调入口
-- [`wecom_ability_service/services.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/services.py)
-  - 主要业务逻辑
-  - 用户运营看板、标签刷新、班期逻辑、导入、投影池重建等都在这里
-- [`wecom_ability_service/db.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/db.py)
-  - SQLite / PostgreSQL 双后端适配
-  - 初始化和增量 schema 兼容逻辑
-- [`wecom_ability_service/wecom_client.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/wecom_client.py)
-  - 企业微信 API 客户端
-- [`wecom_ability_service/mcp_adapter.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/mcp_adapter.py)
+- [`wecom_ability_service/http/`](../wecom_ability_service/http)
+  - 控制器层
+  - 负责解析请求、调用服务、返回响应
+- [`wecom_ability_service/domains/`](../wecom_ability_service/domains)
+  - 业务层
+  - 主要模块包括：
+    - `admin_config`
+    - `admin_console`
+    - `admin_dashboard`
+    - `admin_jobs`
+    - `archive`
+    - `callbacks`
+    - `class_user`
+    - `contacts`
+    - `identity`
+    - `marketing_automation`
+    - `questionnaire`
+    - `tasks`
+    - `user_ops`
+- [`wecom_ability_service/templates/admin_console/`](../wecom_ability_service/templates/admin_console)
+  - 当前后台控制台页面
+- [`wecom_ability_service/static/admin_console/`](../wecom_ability_service/static/admin_console)
+  - 后台控制台静态资源
+- [`wecom_ability_service/customer_center/`](../wecom_ability_service/customer_center)
+  - 客户中心聚合读逻辑
+- [`wecom_ability_service/customer_timeline/`](../wecom_ability_service/customer_timeline)
+  - 客户时间线聚合读逻辑
+- [`wecom_ability_service/mcp_adapter.py`](../wecom_ability_service/mcp_adapter.py)
   - MCP 工具入口
-
-子模块：
-
-- [`wecom_ability_service/customer_center`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/customer_center)
-  - 客户中心聚合读接口
-- [`wecom_ability_service/customer_timeline`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/customer_timeline)
-  - 客户时间线聚合
-- [`wecom_ability_service/templates`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates)
-  - 后台页面模板
-  - 当前已拆出的主要页面包括：
-    - [`wecom_ability_service/templates/admin_questionnaires.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_questionnaires.html)
-    - [`wecom_ability_service/templates/admin_class_user_management.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_class_user_management.html)
-    - [`wecom_ability_service/templates/admin_class_user_backoffice.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_class_user_backoffice.html)
-    - [`wecom_ability_service/templates/sidebar_bind_mobile.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/sidebar_bind_mobile.html)
-    - [`wecom_ability_service/templates/questionnaire_h5_page.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/questionnaire_h5_page.html)
-    - [`wecom_ability_service/templates/questionnaire_h5_submitted.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/questionnaire_h5_submitted.html)
-  - 当前用户运营看板页面在：
-    - [`wecom_ability_service/templates/admin_user_ops.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_user_ops.html)
+- [`wecom_ability_service/db.py`](../wecom_ability_service/db.py)
+  - SQLite / PostgreSQL 适配与初始化
 
 ## `openclaw_service/`
 
-这是 OpenClaw 相关适配层，重点在 Feishu、CRM 工具、聊天上下文和工具注册。
+这是 OpenClaw 相关的适配层。
 
-关键目录：
+重点目录：
 
-- [`openclaw_service/feishu`](/Users/qianlan/Downloads/极简%20crm/openclaw_service/feishu)
-  - 飞书 bot、命令、长连接
-- [`openclaw_service/integrations/crm`](/Users/qianlan/Downloads/极简%20crm/openclaw_service/integrations/crm)
-  - CRM 适配器、模型、认证、读写逻辑
-- [`openclaw_service/tools`](/Users/qianlan/Downloads/极简%20crm/openclaw_service/tools)
-  - OpenClaw 工具注册和业务工具
-- [`openclaw_service/services`](/Users/qianlan/Downloads/极简%20crm/openclaw_service/services)
+- [`openclaw_service/integrations/crm/`](../openclaw_service/integrations/crm)
+  - CRM 适配器与数据模型
+- [`openclaw_service/tools/`](../openclaw_service/tools)
+  - OpenClaw 工具注册
+- [`openclaw_service/services/`](../openclaw_service/services)
   - CRM operator、聊天上下文等服务
+- [`openclaw_service/feishu/`](../openclaw_service/feishu)
+  - 飞书相关适配
 
 ## `tests/`
 
-按能力分布的测试集合。
+测试按能力拆分。
 
-当前和用户运营看板 / MCP 最相关的：
+高频会看的文件：
 
-- [`tests/test_user_ops_api.py`](/Users/qianlan/Downloads/极简%20crm/tests/test_user_ops_api.py)
-- [`tests/test_mcp_business_tools.py`](/Users/qianlan/Downloads/极简%20crm/tests/test_mcp_business_tools.py)
-- [`tests/test_api.py`](/Users/qianlan/Downloads/极简%20crm/tests/test_api.py)
-
-## `docs/`
-
-当前项目文档比较多，但模型最值得先读的是：
-
-- [`docs/llm_handoff.md`](/Users/qianlan/Downloads/极简%20crm/docs/llm_handoff.md)
-- [`docs/project_map.md`](/Users/qianlan/Downloads/极简%20crm/docs/project_map.md)
-- [`docs/user_ops_v2.md`](/Users/qianlan/Downloads/极简%20crm/docs/user_ops_v2.md)
-- [`docs/deploy_runbook.md`](/Users/qianlan/Downloads/极简%20crm/docs/deploy_runbook.md)
-- [`docs/mcp_usage.md`](/Users/qianlan/Downloads/极简%20crm/docs/mcp_usage.md)
-
-## `deploy/`
-
-- [`deploy/openclaw-wecom-postgres.service`](/Users/qianlan/Downloads/极简%20crm/deploy/openclaw-wecom-postgres.service)
-  - 生产 service 配置参考
+- [`tests/test_api.py`](../tests/test_api.py)
+- [`tests/test_user_ops_api.py`](../tests/test_user_ops_api.py)
+- [`tests/test_marketing_automation.py`](../tests/test_marketing_automation.py)
+- [`tests/test_admin_config.py`](../tests/test_admin_config.py)
+- [`tests/contract/test_crm_contract.py`](../tests/contract/test_crm_contract.py)
 
 ## `scripts/`
 
-用于迁移、备份、验证和批处理。
+常用脚本包括：
 
-关键脚本：
+- [`scripts/migrate_sqlite_to_postgres.py`](../scripts/migrate_sqlite_to_postgres.py)
+- [`scripts/backup_postgres.sh`](../scripts/backup_postgres.sh)
+- [`scripts/run_incremental_archive_sync.py`](../scripts/run_incremental_archive_sync.py)
+- [`scripts/run_marketing_automation_backfill.py`](../scripts/run_marketing_automation_backfill.py)
 
-- [`scripts/migrate_sqlite_to_postgres.py`](/Users/qianlan/Downloads/极简%20crm/scripts/migrate_sqlite_to_postgres.py)
-- [`scripts/backup_postgres.sh`](/Users/qianlan/Downloads/极简%20crm/scripts/backup_postgres.sh)
-- [`scripts/openclaw_mcp_validation.mjs`](/Users/qianlan/Downloads/极简%20crm/scripts/openclaw_mcp_validation.mjs)
+## `deploy/`
 
-## 模型阅读建议
+- [`deploy/openclaw-wecom-postgres.service`](../deploy/openclaw-wecom-postgres.service)
+  - 生产服务配置参考
+
+## 建议阅读顺序
 
 如果任务是：
 
-- 理解后台页面和 API
-  - 先看 [`wecom_ability_service/routes.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/routes.py)
-  - 再看 [`wecom_ability_service/services.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/services.py)
-- 理解 user ops v2
-  - 先看 [`docs/user_ops_v2.md`](/Users/qianlan/Downloads/极简%20crm/docs/user_ops_v2.md)
-  - 重点按“转化链路运营页”口径理解，不要再按旧后台工具页口径理解
-  - 再看 [`tests/test_user_ops_api.py`](/Users/qianlan/Downloads/极简%20crm/tests/test_user_ops_api.py)
+- 理解后台页面和 HTTP 注册
+  - 先看 [`wecom_ability_service/http/__init__.py`](../wecom_ability_service/http/__init__.py)
+  - 再看对应 `http/*.py`
+  - 最后看对应 `domains/*`
+- 理解用户运营或自动化转化
+  - 先看 [user_ops_v2.md](user_ops_v2.md)
+  - 再看 `domains/user_ops` 和 `domains/marketing_automation`
+  - 最后看对应模板和测试
+- 理解部署和线上环境
+  - 先看 [deploy_runbook.md](deploy_runbook.md)
+  - 再看 `deploy/` 和 `scripts/`
 - 理解 MCP / OpenClaw
-  - 先看 [`docs/mcp_usage.md`](/Users/qianlan/Downloads/极简%20crm/docs/mcp_usage.md)
-  - 再看 [`wecom_ability_service/mcp_adapter.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/mcp_adapter.py)
-  - 再看 [`openclaw_service/tools`](/Users/qianlan/Downloads/极简%20crm/openclaw_service/tools)
+  - 先看 [mcp_usage.md](mcp_usage.md)
+  - 再看 [`wecom_ability_service/mcp_adapter.py`](../wecom_ability_service/mcp_adapter.py)
+  - 再看 [`openclaw_service/integrations/crm/`](../openclaw_service/integrations/crm)

@@ -20,14 +20,14 @@
    通过 `create_app({...}).url_map.iter_rules()` 导出当前 Flask 已注册路由，确认 method + path + endpoint。
 
 2. 源码校验  
-   通过静态扫描 [routes.py](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/routes.py) 中 `@bp.route(...)` 装饰器，补充 handler 函数名与行号。
+   通过静态扫描 [routes.py](../wecom_ability_service/routes.py) 中 `@bp.route(...)` 装饰器，补充 handler 函数名与行号。
 
 说明：
 
 - “来源证据”列统一写成：`routes.py:行号 handler；url_map endpoint=...`
 - 少数 customer_center / customer_timeline 路由的真正实现逻辑位于：
-  - [customer_center/__init__.py](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/customer_center/__init__.py)
-  - [customer_timeline/__init__.py](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/customer_timeline/__init__.py)
+  - [customer_center/__init__.py](../wecom_ability_service/customer_center/__init__.py)
+  - [customer_timeline/__init__.py](../wecom_ability_service/customer_timeline/__init__.py)
 
 ## Current Implemented Routes
 

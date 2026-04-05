@@ -38,7 +38,7 @@ https://youcangogogo.com/api/h5/wechat/oauth/callback
 ## 3. 启动服务并确认已读到配置
 
 ```bash
-cd /Users/qianlan/Downloads/极简\ crm
+cd <repo-root>
 python3 app.py init-db
 python3 app.py run
 ```
@@ -158,7 +158,7 @@ export ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API=1
 提交后执行：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select id, questionnaire_id, identity_map_id, respondent_key, openid, unionid, external_userid, follow_user_userid, matched_by, total_score, final_tags
 from questionnaire_submissions
 order by id desc
@@ -177,7 +177,7 @@ limit 5;"
 如果这次是通过 `unionid` 命中，且历史 `openid` 为空，再查：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select id, external_userid, unionid, openid, follow_user_userid
 from wecom_external_contact_identity_map
 order by id desc
@@ -191,7 +191,7 @@ limit 20;"
 先查问卷提交结果：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select id, final_tags, submitted_at
 from questionnaire_submissions
 order by id desc
@@ -201,7 +201,7 @@ limit 5;"
 再查 SCRM 写回审计：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select submission_id, external_userid, follow_user_userid, final_tags, status, error_message, created_at
 from questionnaire_scrm_apply_logs
 order by id desc
@@ -211,7 +211,7 @@ limit 20;"
 最后查本地标签快照：
 
 ```bash
-sqlite3 /Users/qianlan/Downloads/极简\ crm/data.sqlite3 "
+sqlite3 <repo-root>/data.sqlite3 "
 select external_userid, userid, tag_id, created_at
 from contact_tags
 order by id desc

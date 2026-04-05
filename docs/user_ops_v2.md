@@ -208,8 +208,8 @@
 
 建议先读：
 
-1. [`wecom_ability_service/templates/admin_user_ops.html`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/templates/admin_user_ops.html)
-2. [`wecom_ability_service/http/admin_user_ops.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/http/admin_user_ops.py)
-3. [`wecom_ability_service/domains/user_ops/page_service.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/domains/user_ops/page_service.py)
-4. [`wecom_ability_service/services.py`](/Users/qianlan/Downloads/极简%20crm/wecom_ability_service/services.py)
-5. [`tests/test_user_ops_api.py`](/Users/qianlan/Downloads/极简%20crm/tests/test_user_ops_api.py)
+1. [`wecom_ability_service/templates/admin_user_ops.html`](../wecom_ability_service/templates/admin_user_ops.html)
+2. [`wecom_ability_service/http/admin_user_ops.py`](../wecom_ability_service/http/admin_user_ops.py)
+3. [`wecom_ability_service/domains/user_ops/page_service.py`](../wecom_ability_service/domains/user_ops/page_service.py)
+4. [`wecom_ability_service/services.py`](../wecom_ability_service/services.py)
+5. [`tests/test_user_ops_api.py`](../tests/test_user_ops_api.py)

@@ -1,9 +1,0 @@
-{
-  "name": "openclaw-crm",
-  "version": "2.0.1",
-  "transport": "http",
-  "cwd": "/root/.openclaw/workspace/packages/current/openclaw-crm",
-  "start_command": "bash -lc 'set -a && source ./.env && set +a && ./.venv/bin/python openclaw_crm_proxy_server.py'",
-  "mcp_url": "http://127.0.0.1:5001/mcp",
-  "health_url": "http://127.0.0.1:5001/health"
-}

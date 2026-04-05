@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 
 const workspaceRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const openclawRoot = "/Users/qianlan/Downloads/open claw 本地版";
+const openclawRoot = process.env.OPENCLAW_ROOT;
+if (!openclawRoot) {
+  throw new Error("OPENCLAW_ROOT is required");
+}
 const { s: runCliAgent } = await import(`${openclawRoot}/dist/send-policy-BmMecujf.js`);
 
 const tmpRoot = path.join(workspaceRoot, ".tmp", "openclaw-mcp-validation");
@@ -17,7 +20,10 @@ const pluginRoot = path.join(tempHome, ".openclaw", "extensions", "wecom-mcp");
 const workspaceDir = path.join(tmpRoot, "workspace");
 
 const mcpUrl = process.env.OPENCLAW_MCP_URL ?? "http://127.0.0.1:5001/mcp";
-const mcpToken = process.env.OPENCLAW_MCP_BEARER_TOKEN ?? "mcp_20260321_6WYF5q4rK9VZC2sJ";
+const mcpToken = process.env.OPENCLAW_MCP_BEARER_TOKEN;
+if (!mcpToken) {
+  throw new Error("OPENCLAW_MCP_BEARER_TOKEN is required");
+}
 
 async function writeFile(filePath, content, mode = 0o644) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
