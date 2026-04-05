@@ -319,6 +319,7 @@
       display: grid;
       gap: 14px;
       max-height: calc(100vh - 104px);
+      min-height: 0;
       align-content: start;
     }
     .tag-status,
@@ -518,8 +519,10 @@
     }
     .inspector-card {
       padding: 16px;
-      min-height: calc(100vh - 104px);
-      overflow: auto;
+      min-height: 0;
+      height: calc(100vh - 104px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .config-group {
       padding: 14px;
@@ -843,7 +846,11 @@
         max-height: none;
         grid-column: 1 / -1;
       }
-      .inspector-card { min-height: auto; }
+      .inspector-card {
+        min-height: auto;
+        height: auto;
+        overflow: visible;
+      }
       .tag-modal-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 980px) {

@@ -1191,6 +1191,18 @@ def test_admin_questionnaire_editor_page_script_has_valid_javascript(client):
     assert completed.returncode == 0, completed.stderr
 
 
+def test_admin_questionnaire_editor_page_uses_scrollable_sticky_inspector(client):
+    response = client.get("/admin/questionnaires/new")
+    text = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "max-height: calc(100vh - 104px);" in text
+    assert "min-height: 0;" in text
+    assert "height: calc(100vh - 104px);" in text
+    assert "overflow-y: auto;" in text
+    assert "overscroll-behavior: contain;" in text
+
+
 def test_class_user_backoffice_ui_redirects_to_shell(client):
     response = client.get("/admin/class-user-backoffice/ui", follow_redirects=False)
 
