@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.domains.marketing_automation import service as marketing_automation_service
 
 
 class FakeResponse:
@@ -273,7 +275,17 @@ def _mcp_call(client, name: str, arguments: dict[str, object]):
     return response.get_json()["result"]["structuredContent"]
 
 
-def test_contract_openclaw_conversion_mcp_reads(client, app):
+def _freeze_router_time(monkeypatch, *, timestamp: str) -> None:
+    fixed_now = datetime.fromisoformat(timestamp)
+    monkeypatch.setattr(
+        marketing_automation_service,
+        "_router_now",
+        lambda *, timezone: fixed_now,
+    )
+
+
+def test_contract_openclaw_conversion_mcp_reads(client, app, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     with app.app_context():
         db = get_db()
         db.execute(

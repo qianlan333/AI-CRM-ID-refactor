@@ -272,20 +272,23 @@ def test_admin_customer_profile_page_renders_profile_sections_without_tabs(app, 
     assert "获取全部聊天记录" in html
     assert "营销状态 / 自动化转化" in html
     assert "当前阶段" in html
-    assert "active/activated" in html
+    assert "已开始使用" in html
     assert "当前分层" in html
-    assert "top" in html
+    assert "最高优先用户" in html
     assert "命中题数" in html
     assert "4 题" in html
-    assert "符合自动化转化条件" in html
+    assert "是否进入自动化" in html
+    assert "会" in html
     assert "最近激活时间" in html
     assert "2026-04-03 09:30:00" in html
-    assert "最近 dispatch 时间" in html
+    assert "最近处理时间" in html
     assert "2026-04-03 09:40:00" in html
     assert "用户 ID" in html
     assert "unionid" in html
     assert "自动化阶段" in html
     assert "价值分层" in html
+    assert "active/activated" not in html
+    assert ">top<" not in html
     assert "互动记录" not in html
     assert "关键身份信息" not in html
     assert "高级信息" not in html
@@ -309,11 +312,12 @@ def test_admin_customer_profile_page_renders_marketing_summary_placeholders(app,
     assert response.status_code == 200
     assert "营销状态 / 自动化转化" in html
     assert "当前阶段" in html
-    assert "unknown" in html
+    assert "暂无阶段" in html
+    assert "暂未分层" in html
     assert "0 题" in html
     assert "最近激活时间" in html
     assert "最近报名标记时间" in html
-    assert "最近 dispatch 时间" in html
+    assert "最近处理时间" in html
     assert html.count("暂无") >= 3
 
 

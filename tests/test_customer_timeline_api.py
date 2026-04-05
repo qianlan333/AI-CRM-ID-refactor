@@ -340,7 +340,7 @@ def test_timeline_includes_marketing_events_with_human_summaries(client, app):
     )
 
     segment_item = next(item for item in items if item["event_type"] == "value_segment_change" and item["payload"]["current_segment"] == "top")
-    assert segment_item["summary"] == "客户分层从 normal 变为 top"
+    assert segment_item["summary"] == "客户分层从普通用户变为最高优先用户"
     assert segment_item["type"] == "value_segment_change"
     assert segment_item["payload"]["matched_question_ids_json"] == [101, 102, 103, 104]
 
@@ -349,11 +349,11 @@ def test_timeline_includes_marketing_events_with_human_summaries(client, app):
         for item in items
         if item["event_type"] == "marketing_state_change" and item["payload"]["current_stage"] == "converted/enrolled"
     )
-    assert state_item["summary"] == "客户营销阶段从 active/activated 变为 converted/enrolled"
+    assert state_item["summary"] == "客户阶段从已开始使用变为已报名成功"
     assert state_item["payload"]["previous_stage"] == "active/activated"
 
     conversion_item = next(item for item in items if item["event_type"] == "conversion_marked")
-    assert conversion_item["summary"] == "人工标记报名成功，退出自动转化链路"
+    assert conversion_item["summary"] == "人工确认客户已报名成功，自动化已停止。"
     assert conversion_item["payload"]["conversion_action"] == "mark_enrolled"
 
     dispatch_item = next(item for item in items if item["event_type"] == "openclaw_dispatch")
@@ -378,4 +378,4 @@ def test_timeline_marketing_event_filter_and_desc_order_keep_legacy_events(clien
     assert filtered_response.status_code == 200
     assert len(filtered_items) == 1
     assert filtered_items[0]["event_type"] == "conversion_marked"
-    assert filtered_items[0]["summary"] == "人工标记报名成功，退出自动转化链路"
+    assert filtered_items[0]["summary"] == "人工确认客户已报名成功，自动化已停止。"

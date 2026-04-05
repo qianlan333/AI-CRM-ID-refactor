@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...customer_center.service import get_customer_detail as get_unified_customer_detail, list_customers
+from ...domains.marketing_automation.presenter import business_marketing_display
 from ...domains.marketing_automation.service import get_customer_marketing_profile
 from ...services import extract_roomid_from_raw_payload, format_message_row, get_group_chat_map
 from ...infra.wecom_runtime import get_contact_runtime_client
@@ -168,7 +169,14 @@ def build_customer_detail_payload(external_userid: str, *, legacy_tab: str = "")
     if not payload:
         return None
     detail = get_unified_customer_detail(_normalized_text(payload["profile"].get("external_userid"))) or {}
-    payload["profile"]["marketing_summary"] = dict(detail.get("marketing_summary") or _empty_marketing_summary())
+    marketing_summary = dict(detail.get("marketing_summary") or _empty_marketing_summary())
+    payload["profile"]["marketing_summary"] = marketing_summary
+    payload["profile"]["marketing_display"] = business_marketing_display(
+        main_stage=marketing_summary.get("main_stage"),
+        sub_stage=marketing_summary.get("sub_stage"),
+        segment=marketing_summary.get("segment"),
+        eligible_for_conversion=marketing_summary.get("eligible_for_conversion"),
+    )
     return {
         "customer": payload["profile"],
         "lookup": payload.get("lookup") or {},

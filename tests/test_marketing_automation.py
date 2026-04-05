@@ -829,6 +829,9 @@ def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app
     assert initial_payload["main_stage"] == "active"
     assert initial_payload["sub_stage"] == "activated"
     assert initial_payload["segment"] == "top"
+    assert initial_payload["stage_display"] == "已开始使用"
+    assert initial_payload["segment_display"] == "最高优先用户"
+    assert initial_payload["eligibility_display"] == "会"
     assert initial_payload["hit_count"] == 4
     assert initial_payload["matched_question_ids"] == seed["question_ids"][:4]
     assert initial_payload["eligible_for_conversion"] is True
@@ -845,6 +848,9 @@ def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app
     assert mark_payload["conversion"]["source"] == "sidebar_manual"
     assert mark_payload["marketing_status"]["main_stage"] == "converted"
     assert mark_payload["marketing_status"]["sub_stage"] == "enrolled"
+    assert mark_payload["marketing_status"]["stage_display"] == "已报名成功"
+    assert mark_payload["marketing_status"]["eligibility_display"] == "不会"
+    assert "已退出自动化" in mark_payload["marketing_status"]["ineligible_reason_display"]
     assert mark_payload["marketing_status"]["eligible_for_conversion"] is False
     assert mark_payload["marketing_status"]["last_conversion_marked_at"] != ""
 
@@ -867,6 +873,7 @@ def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app
     assert unmark_payload["conversion"]["source"] == "sidebar_manual"
     assert unmark_payload["marketing_status"]["main_stage"] == "active"
     assert unmark_payload["marketing_status"]["sub_stage"] == "activated"
+    assert unmark_payload["marketing_status"]["stage_display"] == "已开始使用"
     assert unmark_payload["marketing_status"]["eligible_for_conversion"] is True
 
     unmarked_status_response = client.get(

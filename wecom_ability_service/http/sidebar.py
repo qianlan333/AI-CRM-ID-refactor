@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import current_app, jsonify, render_template, request
 
+from ..domains.marketing_automation.presenter import business_marketing_display
 from ..domains.marketing_automation.service import get_customer_marketing_profile
 from ..infra.wecom_runtime import build_jsapi_payload
 from ..services import (
@@ -33,6 +34,13 @@ def _sidebar_marketing_status_payload(preview: dict[str, object]) -> dict[str, o
     value_segment = dict(preview.get("value_segment") or {})
     summary = dict(preview.get("summary") or {})
     resolved_customer = dict(preview.get("resolved_customer") or {})
+    display = business_marketing_display(
+        main_stage=marketing_state.get("main_stage"),
+        sub_stage=marketing_state.get("sub_stage"),
+        segment=value_segment.get("segment") or summary.get("current_segment"),
+        eligible_for_conversion=marketing_state.get("eligible_for_conversion"),
+        ineligible_reason=summary.get("ineligible_reason"),
+    )
     return {
         "person_id": resolved_customer.get("person_id"),
         "external_userid": str(resolved_customer.get("external_userid") or "").strip(),
@@ -42,6 +50,10 @@ def _sidebar_marketing_status_payload(preview: dict[str, object]) -> dict[str, o
         "stage_key": str(marketing_state.get("stage_key") or "").strip(),
         "segment": str(value_segment.get("segment") or "").strip() or str(summary.get("current_segment") or "").strip(),
         "segment_label": str(value_segment.get("segment_label") or "").strip() or str(summary.get("current_segment_label") or "").strip(),
+        "stage_display": display["stage_label"],
+        "segment_display": display["segment_label"],
+        "eligibility_display": display["eligibility_label"],
+        "ineligible_reason_display": display["ineligible_reason_label"],
         "hit_count": int(value_segment.get("hit_count") or summary.get("hit_count") or 0),
         "matched_question_ids": [
             int(question_id)

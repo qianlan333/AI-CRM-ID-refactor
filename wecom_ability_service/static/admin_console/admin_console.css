@@ -952,6 +952,128 @@ code {
   gap: 8px;
 }
 
+.automation-section-head {
+  margin-top: 18px;
+}
+
+.automation-step-grid,
+.automation-stage-board {
+  display: grid;
+  gap: 16px;
+}
+
+.automation-step-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.automation-stage-board {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.automation-step-card,
+.automation-stage-card {
+  min-height: 150px;
+}
+
+.automation-stage-card--button {
+  width: 100%;
+  border: 1px solid var(--line);
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-stage-card__head,
+.automation-priority-card__row,
+.automation-stage-detail-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.automation-stage-card__action,
+.automation-priority-card__ratio {
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.automation-stage-metrics,
+.automation-stage-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 14px 0 0;
+}
+
+.automation-stage-metrics div,
+.automation-stage-detail-meta div {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.automation-stage-metrics dt,
+.automation-stage-detail-meta dt {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.automation-stage-metrics dd,
+.automation-stage-detail-meta dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.automation-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.automation-priority-card__bar {
+  height: 10px;
+  margin: 10px 0 12px;
+  border-radius: 999px;
+  background: rgba(180, 130, 75, 0.12);
+  overflow: hidden;
+}
+
+.automation-priority-card__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ddbc8f 0%, #b57038 100%);
+}
+
+.automation-priority-note {
+  margin-top: 12px;
+}
+
+.automation-config-layout {
+  align-items: start;
+}
+
+.automation-preview-definition-list {
+  margin: 4px 0 0;
+}
+
+.automation-stage-detail-drawer {
+  margin-top: 18px;
+}
+
+.automation-stage-detail-list {
+  display: grid;
+  gap: 14px;
+}
+
+.automation-stage-detail-item {
+  min-height: auto;
+}
+
 .admin-split {
   display: grid;
   gap: 18px;
@@ -1164,6 +1286,9 @@ code {
 @media (max-width: 1240px) {
   .admin-card-grid,
   .admin-card-grid--triple,
+  .automation-step-grid,
+  .automation-stage-board,
+  .automation-priority-grid,
   .admin-filter-grid,
   .admin-stat-inline-grid,
   .admin-grid-2,
@@ -1207,6 +1332,9 @@ code {
 
   .admin-card-grid,
   .admin-card-grid--triple,
+  .automation-step-grid,
+  .automation-stage-board,
+  .automation-priority-grid,
   .admin-filter-grid,
   .admin-stat-inline-grid,
   .admin-grid-2,
