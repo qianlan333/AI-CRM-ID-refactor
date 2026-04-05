@@ -83,3 +83,44 @@ python3 app.py run
 - 业务改动优先补测试，再提 PR。
 - 部署时只以已经合入 `main` 的提交为准。
 - `dist/`、`exports/`、顶层归档包、临时页面和本机调试产物不要再进主仓。
+
+## Worktree 工作流
+
+如果你要并行推进多个分支项目，建议直接用仓库自带脚本管理 worktree，不依赖 Codex 当前的创建工作树 UI。
+
+先同步主线：
+
+```bash
+git switch main
+git pull --ff-only
+```
+
+创建一个新的分支 worktree：
+
+```bash
+scripts/worktree-new.sh feature/customer-timeline
+```
+
+默认会在当前仓库旁边创建一个目录，命名规则类似：
+
+```text
+/Users/qianlan/Downloads/aicrm-new-feature-customer-timeline
+```
+
+如果你要指定基线或目录，也可以这样：
+
+```bash
+scripts/worktree-new.sh feature/customer-timeline origin/main /tmp/aicrm-customer-timeline
+```
+
+开发完成并合并后，移除 worktree：
+
+```bash
+scripts/worktree-remove.sh feature/customer-timeline
+```
+
+如果分支已经合并，也可以顺便删掉本地分支：
+
+```bash
+scripts/worktree-remove.sh feature/customer-timeline --delete-branch
+```
