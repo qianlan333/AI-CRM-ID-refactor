@@ -33,17 +33,20 @@ from .questionnaire_support import (
 
 
 def questionnaire_h5_page(slug: str):
-    wechat_gate = _require_wechat_browser_page()
-    if wechat_gate is not None:
-        return wechat_gate
     questionnaire = get_public_questionnaire_by_slug(slug)
     if not questionnaire:
         abort(404)
+    wechat_gate = _require_wechat_browser_page()
     source_params = _questionnaire_source_params()
     session_identity = _questionnaire_session_identity()
     request_identity = _questionnaire_request_identity()
     if has_questionnaire_submission(int(questionnaire["id"]), request_identity):
-        return redirect(_questionnaire_submitted_path(slug))
+        redirect_url = str(questionnaire.get("redirect_url") or "").strip()
+        if redirect_url:
+            return redirect(redirect_url, code=302)
+        return redirect(_questionnaire_submitted_path(slug), code=302)
+    if wechat_gate is not None:
+        return wechat_gate
     is_wechat_browser = _is_wechat_browser()
     oauth_query = {"slug": slug, **source_params}
     oauth_start_url = f"{url_for('api.h5_wechat_oauth_start')}?{urlencode(oauth_query)}"
@@ -89,7 +92,14 @@ def public_get_questionnaire(slug: str):
     if not questionnaire:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404
     if has_questionnaire_submission(int(questionnaire["id"]), _questionnaire_request_identity()):
-        return jsonify({"ok": False, "error": "already_submitted", "message": "已经提交"}), 409
+        return jsonify(
+            {
+                "ok": False,
+                "error": "already_submitted",
+                "message": "已经提交",
+                "redirect_url": str(questionnaire.get("redirect_url") or "").strip(),
+            }
+        ), 409
     return jsonify({"ok": True, "questionnaire": questionnaire})
 
 
@@ -97,6 +107,9 @@ def public_submit_questionnaire(slug: str):
     wechat_gate = _require_wechat_browser_api()
     if wechat_gate is not None:
         return wechat_gate
+    questionnaire = get_public_questionnaire_by_slug(slug)
+    if not questionnaire:
+        return jsonify({"success": False, "error": "questionnaire not found"}), 404
     payload = request.get_json(silent=True) or {}
     request_meta = {
         "ip": (request.headers.get("X-Forwarded-For", "").split(",")[0] or request.remote_addr or "").strip(),
@@ -108,7 +121,17 @@ def public_submit_questionnaire(slug: str):
     except LookupError as exc:
         return jsonify({"success": False, "error": str(exc)}), 404
     except QuestionnaireAlreadySubmittedError as exc:
-        return jsonify({"success": False, "error": "already_submitted", "message": str(exc) or "已经提交"}), 409
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "already_submitted",
+                    "message": str(exc) or "已经提交",
+                    "redirect_url": str(questionnaire.get("redirect_url") or "").strip(),
+                }
+            ),
+            409,
+        )
     except ValueError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
 

@@ -17,6 +17,7 @@ from .admin_dashboard import register_routes as register_admin_dashboard_routes
 from .admin_class_user import register_routes as register_admin_class_user_routes
 from .admin_questionnaires import register_routes as register_admin_questionnaires_routes
 from .admin_user_ops import register_routes as register_admin_user_ops_routes
+from .automation_conversion import register_routes as register_automation_conversion_routes
 from .archive import register_routes as register_archive_routes
 from .callbacks import register_routes as register_callback_routes
 from .contacts import register_routes as register_contacts_routes
@@ -46,6 +47,7 @@ HTTP_ROUTE_MODULES = {
     "settings": "wecom_ability_service.http.settings_ops",
     "customer_center": "wecom_ability_service.http.customer_center",
     "customer_automation": "wecom_ability_service.http.customer_automation",
+    "automation_conversion": "wecom_ability_service.http.automation_conversion",
     "customer_timeline": "wecom_ability_service.http.customer_timeline",
     "archive": "wecom_ability_service.http.archive",
     "contacts": "wecom_ability_service.http.contacts",
@@ -84,6 +86,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_operations.py for /admin/user-ops, /admin/class-users, and confirmed operations actions",
         "admin_questionnaire_console.py for /admin/questionnaires* shell pages",
         "admin_config.py for /admin/config* pages and /api/admin/config* controllers",
+        "automation_conversion.py for /admin/automation-conversion* and /api/admin/automation-conversion*",
         "admin_dashboard.py for /api/admin/dashboard/* shell status",
         "admin_user_ops.py for /api/admin/user-ops* and /admin/user-ops/ui",
         "admin_class_user.py for /api/admin/class-user-management* and /admin/class-user-backoffice/ui",
@@ -117,6 +120,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_user_ops", register_admin_user_ops_routes),
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_questionnaires", register_admin_questionnaires_routes),
+    ("automation_conversion", register_automation_conversion_routes),
     ("customer_center", register_customer_center_routes),
     ("customer_automation", register_customer_automation_routes),
     ("customer_timeline", register_customer_timeline_routes),

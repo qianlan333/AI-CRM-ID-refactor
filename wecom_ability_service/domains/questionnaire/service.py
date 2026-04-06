@@ -843,6 +843,73 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     return detail
 
 
+def delete_questionnaire_submissions_by_slug(slug: str) -> dict[str, Any]:
+    normalized_slug = str(slug or "").strip()
+    if not normalized_slug:
+        raise ValueError("slug is required")
+    db = get_db()
+    questionnaire = db.execute(
+        """
+        SELECT id, slug, title, name
+        FROM questionnaires
+        WHERE slug = ?
+        LIMIT 1
+        """,
+        (normalized_slug,),
+    ).fetchone()
+    if not questionnaire:
+        raise LookupError("questionnaire not found")
+
+    questionnaire_id = int(questionnaire["id"])
+    counts = db.execute(
+        """
+        SELECT
+            COUNT(*) AS submission_count,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM questionnaire_submission_answers
+                WHERE submission_id IN (
+                    SELECT id FROM questionnaire_submissions WHERE questionnaire_id = ?
+                )
+            ), 0) AS answer_count,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM questionnaire_scrm_apply_logs
+                WHERE submission_id IN (
+                    SELECT id FROM questionnaire_submissions WHERE questionnaire_id = ?
+                )
+            ), 0) AS scrm_apply_log_count,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM questionnaire_external_push_logs
+                WHERE submission_record_id IN (
+                    SELECT id FROM questionnaire_submissions WHERE questionnaire_id = ?
+                )
+            ), 0) AS external_push_log_count
+        FROM questionnaire_submissions
+        WHERE questionnaire_id = ?
+        """,
+        (questionnaire_id, questionnaire_id, questionnaire_id, questionnaire_id),
+    ).fetchone()
+    db.execute(
+        """
+        DELETE FROM questionnaire_submissions
+        WHERE questionnaire_id = ?
+        """,
+        (questionnaire_id,),
+    )
+    db.commit()
+    return {
+        "questionnaire_id": questionnaire_id,
+        "slug": str(questionnaire["slug"] or ""),
+        "questionnaire_title": str(questionnaire["title"] or questionnaire["name"] or ""),
+        "deleted_submission_count": int((counts or {}).get("submission_count") or 0),
+        "deleted_answer_count": int((counts or {}).get("answer_count") or 0),
+        "deleted_scrm_apply_log_count": int((counts or {}).get("scrm_apply_log_count") or 0),
+        "deleted_external_push_log_count": int((counts or {}).get("external_push_log_count") or 0),
+    }
+
+
 def _normalize_answer_payload(answers: Any) -> dict[str, Any]:
     if isinstance(answers, dict):
         return {str(key): value for key, value in answers.items()}
@@ -1848,6 +1915,19 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     )
     apply_questionnaire_mobile_binding(submission)
     apply_questionnaire_result_to_scrm(submission["id"])
+    try:
+        from ..automation_conversion.service import sync_member_from_questionnaire_submission
+
+        sync_member_from_questionnaire_submission(
+            external_contact_id=str(submission.get("external_userid") or "").strip(),
+            phone=str(submission.get("mobile_snapshot") or "").strip(),
+            operator_id="questionnaire_submit",
+        )
+    except Exception:
+        questionnaire_logger.exception(
+            "automation conversion sync failed after questionnaire submit submission_id=%s",
+            submission.get("id"),
+        )
     _fire_questionnaire_submit_webhook(submission)
     _deliver_questionnaire_external_push(questionnaire, submission, computed_result)
     return {

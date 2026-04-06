@@ -269,32 +269,36 @@ def test_admin_customer_profile_page_renders_profile_sections_without_tabs(app, 
     assert response.status_code == 200
     assert "客户档案" in html
     assert "实时标签" in html
-    assert "问卷记录" in html
+    assert "已填写问卷及答案" in html
     assert "聊天记录" in html
     assert "获取全部聊天记录" in html
-    assert "营销状态 / 自动化转化" in html
+    assert "自动化转化" in html
+    assert "这里专门处理当前客户的自动化状态与快捷动作" in html
+    assert "是否在自动化池" in html
     assert "当前池子" in html
-    assert "新用户池" in html
-    assert "当前跟进类型" in html
-    assert "未完成初判" in html
-    assert "命中题数" in html
-    assert "0 题" in html
-    assert "是否进入自动化" in html
-    assert "不会" in html
-    assert "最近激活时间" in html
-    assert "最近处理时间" in html
-    assert "2026-04-03 09:40:00" in html
-    assert "用户 ID" in html
+    assert "当前阶段" in html
+    assert "当前目标" in html
+    assert "问卷状态" in html
+    assert "最近人工操作" in html
+    assert "最近 AI 推送时间" in html
+    assert "冷却状态" in html
+    assert "放入自动化转化池" in html
+    assert "移除自动化转化池" in html
+    assert "转化为重点跟进" in html
+    assert "转化为普通跟进" in html
+    assert "确认已成交" in html
+    assert "移除已成交" in html
+    assert "一键自动化写话术" in html
+    assert "外部联系人 ID" in html
     assert "unionid" in html
-    assert "问卷初判" in html
-    assert "最近确认成交时间" in html
-    assert "active/activated" not in html
-    assert ">top<" not in html
-    assert "互动记录" not in html
-    assert "关键身份信息" not in html
-    assert "高级信息" not in html
-    assert "最近互动时间" not in html
-    assert "当前是否有企微客户关系" not in html
+    assert "营销状态 / 自动化转化" not in html
+    assert "当前跟进类型" not in html
+    assert "命中题数" not in html
+    assert "是否进入自动化" not in html
+    assert "最近激活时间" not in html
+    assert "最近确认成交时间" not in html
+    assert "release-test-sha" not in html
+    assert "运行正常" not in html
 
 
 def test_admin_customer_profile_page_renders_marketing_summary_placeholders(app, client, fake_contact_client):
@@ -311,15 +315,16 @@ def test_admin_customer_profile_page_renders_marketing_summary_placeholders(app,
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "营销状态 / 自动化转化" in html
+    assert "自动化转化" in html
+    assert "是否在自动化池" in html
     assert "当前池子" in html
-    assert "新用户池" in html
-    assert "未完成初判" in html
-    assert "0 题" in html
-    assert "最近激活时间" in html
-    assert "最近确认成交时间" in html
-    assert "最近处理时间" in html
-    assert html.count("暂无") >= 3
+    assert "当前阶段" in html
+    assert "当前目标" in html
+    assert "最近人工操作" in html
+    assert "最近 AI 推送时间" in html
+    assert "营销状态 / 自动化转化" not in html
+    assert "当前跟进类型" not in html
+    assert "命中题数" not in html
 
 
 def test_customer_profile_tags_failure_does_not_break_page(app, client, monkeypatch):

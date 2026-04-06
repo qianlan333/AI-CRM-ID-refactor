@@ -261,6 +261,9 @@ class WeComClient:
     def update_contact_description(self, payload: dict) -> dict:
         return self.post("/cgi-bin/externalcontact/remark", payload)
 
+    def create_contact_way(self, payload: dict) -> dict:
+        return self.post("/cgi-bin/externalcontact/add_contact_way", payload)
+
     def list_group_chats(self, payload: dict) -> dict:
         return self.post("/cgi-bin/externalcontact/groupchat/list", payload)
 

@@ -360,6 +360,8 @@
     const marketingProfileStatus = document.getElementById('marketing-profile-status');
     const debugWrap = document.getElementById('debug-wrap');
     const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1' || {{ debug_enabled|tojson }};
+    const legacyLeadPoolClassTermEnabled = false;
+    const legacyMarketingProfileEnabled = false;
     state.currentClassTermNo = null;
     state.classTermOptions = [];
     state.marketingStatus = null;
@@ -438,6 +440,10 @@
     }
 
     function renderMarketingStatus(marketingStatus) {
+      if (!legacyMarketingProfileEnabled) {
+        marketingProfileCard.classList.add('hidden');
+        return;
+      }
       const payload = marketingStatus || {};
       state.marketingStatus = payload;
       const stageKey = String(payload.stage_key || '').trim();
@@ -500,6 +506,7 @@
     }
 
     async function loadMarketingStatus() {
+      if (!legacyMarketingProfileEnabled) return;
       const params = new URLSearchParams({
         external_userid: state.external_userid,
       });
@@ -508,6 +515,7 @@
     }
 
     async function applyMarketingAction(action) {
+      if (!legacyMarketingProfileEnabled) return;
       const targetUrl = action === 'mark'
         ? '/api/sidebar/marketing-status/mark-enrolled'
         : '/api/sidebar/marketing-status/unmark-enrolled';
@@ -538,6 +546,7 @@
     }
 
     async function applyFollowupSwitch(targetSegment) {
+      if (!legacyMarketingProfileEnabled) return;
       const targetLabel = targetSegment === 'focus' ? '重点跟进' : '普通跟进';
       switchFocusButton.disabled = true;
       switchNormalButton.disabled = true;
@@ -563,6 +572,10 @@
     }
 
     function renderLeadPoolClassTermButtons() {
+      if (!legacyLeadPoolClassTermEnabled) {
+        leadPoolClassTermCard.classList.add('hidden');
+        return;
+      }
       leadPoolClassTermGrid.innerHTML = state.classTermOptions.map((item) => {
         const activeClass = Number(item.class_term_no) === Number(state.currentClassTermNo) ? ' active' : '';
         return '<button type="button" class="tag-quick-btn' + activeClass + '" data-class-term-no="' + item.class_term_no + '">' + item.class_term_label + '</button>';
@@ -573,6 +586,7 @@
     }
 
     async function loadLeadPoolClassTermStatus() {
+      if (!legacyLeadPoolClassTermEnabled) return;
       const params = new URLSearchParams({
         external_userid: state.external_userid,
       });
@@ -592,6 +606,7 @@
     }
 
     async function applyLeadPoolClassTerm(classTermNo) {
+      if (!legacyLeadPoolClassTermEnabled) return;
       if (!classTermNo) return;
       Array.from(leadPoolClassTermGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
         button.disabled = true;

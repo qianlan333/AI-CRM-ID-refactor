@@ -32,6 +32,7 @@ from ..services import (
     upsert_external_contact_identity,
     upsert_group_chats,
 )
+from ..domains.automation_conversion.service import handle_qrcode_enter_from_callback
 from .common import (
     _contact_sync_retry_limit,
     _default_owner_userid,
@@ -202,6 +203,18 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                 preferred_userid=user_id,
             )
             refresh_external_contact_identity_owner(corp_id, external_userid)
+            try:
+                handle_qrcode_enter_from_callback(
+                    external_contact_id=external_userid,
+                    phone=str(normalized_contact.get("mobile") or "").strip(),
+                    payload_json=event_log.get("payload_json") or {},
+                    operator_id=user_id or "wecom_callback",
+                )
+            except Exception:
+                callback_logger.exception(
+                    "automation conversion qrcode enter handling failed external_userid=%s",
+                    external_userid,
+                )
             if change_type in {"add_external_contact", "add_half_external_contact"}:
                 scheduled_auto_assign_job = schedule_user_ops_auto_assign_class_term_job(
                     external_userid=external_userid,
