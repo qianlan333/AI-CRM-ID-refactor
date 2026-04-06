@@ -303,50 +303,86 @@ def _seed_automation_conversion_stage_board(app) -> None:
         {
             "external_userid": "wm_stage_new_001",
             "owner_userid": "sales_stage_01",
-            "segment": "unknown",
-            "main_stage": "pool",
-            "sub_stage": "new_user",
-            "entered_at": f"{today} 09:00:00",
+            "phone": "13800000001",
+            "follow_type": "",
+            "current_pool": "new_user",
+            "in_pool": 1,
+            "activation_status": "unknown",
+            "questionnaire_status": "pending",
+            "questionnaire_result": "unknown",
+            "joined_at": f"{today} 09:00:00",
         },
         {
             "external_userid": "wm_stage_inactive_normal_001",
             "owner_userid": "sales_stage_02",
-            "segment": "normal",
-            "main_stage": "pool",
-            "sub_stage": "inactive_normal",
-            "entered_at": f"{today} 10:00:00",
+            "phone": "13800000002",
+            "follow_type": "normal",
+            "current_pool": "inactive_normal",
+            "in_pool": 1,
+            "activation_status": "inactive",
+            "questionnaire_status": "submitted",
+            "questionnaire_result": "normal",
+            "joined_at": f"{today} 10:00:00",
         },
         {
             "external_userid": "wm_stage_inactive_focus_001",
             "owner_userid": "sales_stage_03",
-            "segment": "focus",
-            "main_stage": "pool",
-            "sub_stage": "inactive_focus",
-            "entered_at": f"{yesterday} 11:00:00",
+            "phone": "13800000003",
+            "follow_type": "focus",
+            "current_pool": "inactive_focus",
+            "in_pool": 1,
+            "activation_status": "inactive",
+            "questionnaire_status": "submitted",
+            "questionnaire_result": "focus",
+            "joined_at": f"{yesterday} 11:00:00",
         },
         {
             "external_userid": "wm_stage_active_normal_001",
             "owner_userid": "sales_stage_04",
-            "segment": "normal",
-            "main_stage": "pool",
-            "sub_stage": "active_normal",
-            "entered_at": f"{today} 12:00:00",
+            "phone": "13800000004",
+            "follow_type": "normal",
+            "current_pool": "active_normal",
+            "in_pool": 1,
+            "activation_status": "active",
+            "questionnaire_status": "submitted",
+            "questionnaire_result": "normal",
+            "joined_at": f"{today} 12:00:00",
         },
         {
             "external_userid": "wm_stage_active_focus_001",
             "owner_userid": "sales_stage_05",
-            "segment": "focus",
-            "main_stage": "pool",
-            "sub_stage": "active_focus",
-            "entered_at": f"{yesterday} 13:00:00",
+            "phone": "13800000005",
+            "follow_type": "focus",
+            "current_pool": "active_focus",
+            "in_pool": 1,
+            "activation_status": "active",
+            "questionnaire_status": "submitted",
+            "questionnaire_result": "focus",
+            "joined_at": f"{yesterday} 13:00:00",
         },
         {
-            "external_userid": "wm_stage_converted_001",
+            "external_userid": "wm_stage_silent_001",
             "owner_userid": "sales_stage_06",
-            "segment": "focus",
-            "main_stage": "converted",
-            "sub_stage": "enrolled",
-            "entered_at": f"{today} 14:00:00",
+            "phone": "13800000006",
+            "follow_type": "normal",
+            "current_pool": "silent",
+            "in_pool": 1,
+            "activation_status": "inactive",
+            "questionnaire_status": "submitted",
+            "questionnaire_result": "normal",
+            "joined_at": f"{yesterday} 14:00:00",
+        },
+        {
+            "external_userid": "wm_stage_won_001",
+            "owner_userid": "sales_stage_07",
+            "phone": "13800000007",
+            "follow_type": "focus",
+            "current_pool": "won",
+            "in_pool": 0,
+            "activation_status": "active",
+            "questionnaire_status": "submitted",
+            "questionnaire_result": "focus",
+            "joined_at": f"{today} 15:00:00",
         },
     ]
     with app.app_context():
@@ -361,33 +397,24 @@ def _seed_automation_conversion_stage_board(app) -> None:
             )
             db.execute(
                 """
-                INSERT INTO customer_marketing_state_current (
-                    external_userid, automation_key, main_stage, sub_stage, activated, converted,
-                    eligible_for_conversion, lifecycle_status, last_activation_at, last_conversion_marked_at,
-                    last_message_at, last_batch_id, last_batch_status, last_batch_window_start, last_batch_window_end,
-                    last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
+                    activation_status, questionnaire_status, questionnaire_result, decision_source,
+                    source_type, joined_at, created_at, updated_at
                 )
-                VALUES (?, 'signup_conversion_v1', ?, ?, ?, ?, 0, ?, '', '', '', NULL, '', '', '', '', ?, '', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (
                     item["external_userid"],
-                    item["main_stage"],
-                    item["sub_stage"],
-                    1 if item["sub_stage"].startswith("active_") else 0,
-                    1 if item["main_stage"] == "converted" else 0,
-                    item["main_stage"],
-                    item["entered_at"],
-                ),
-            )
-            db.execute(
-                """
-                UPDATE customer_marketing_state_current
-                SET state_payload_json = ?
-                WHERE external_userid = ?
-                """,
-                (
-                    json.dumps({"followup_segment": item["segment"]}, ensure_ascii=False),
-                    item["external_userid"],
+                    item["phone"],
+                    item["owner_userid"],
+                    item["in_pool"],
+                    item["current_pool"],
+                    item["follow_type"],
+                    item["activation_status"],
+                    item["questionnaire_status"],
+                    item["questionnaire_result"],
+                    item["joined_at"],
                 ),
             )
         db.commit()
@@ -599,7 +626,6 @@ def test_admin_config_class_term_and_signup_pages_have_seeded_config(client):
 
 def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=81)
-    _seed_marketing_dispatch_history(app)
     _seed_automation_conversion_stage_board(app)
     save_response = client.put(
         "/api/admin/marketing-automation/config",
@@ -624,56 +650,24 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
 
     assert response.status_code == 200
     assert "自动化转化" in visible_text
-    assert "当前状态" in visible_text
-    assert "配置步骤" in visible_text
-    assert "阶段分栏" in visible_text
-    assert "初判分布" in visible_text
-    assert "未完成初判" in visible_text
+    assert "概览" in visible_text
+    assert "在池总人数" in visible_text
+    assert "今日入池" in visible_text
+    assert "待问卷" in visible_text
     assert "普通跟进" in visible_text
     assert "重点跟进" in visible_text
+    assert "沉默池" in visible_text
+    assert "已成交" in visible_text
+    assert "阶段分栏" in visible_text
     assert "新用户池" in visible_text
-    assert "最近处理情况" in visible_text
-    assert "wm_dispatch_pending" in visible_text
-    assert "等待 AI 接手" in visible_text
-    assert "夜间暂停" in visible_text
-    assert "客户已确认成交" in visible_text
-    assert "23:00 后暂停启动" in visible_text
-    assert "自动化转化初判问卷" in visible_text
-    assert "开启自动化转化问卷初判" in visible_text
-    assert "关键题与命中答案" in visible_text
-    assert "新增关键题" in visible_text
-    assert "沉默池规则" in visible_text
-    assert "沉默池第一版只做留存记录，不做主动营销" in visible_text
-    assert "问卷初判只做普通跟进" in visible_text
-    assert 'value="2"' in html
-    assert "const initialMarketingConfig" in html
-    assert '"questionnaire_id": 81' in html or '"questionnaire_id":81' in html
-    assert '/admin/automation-conversion/preview' in html
+    assert "进入设置页" in visible_text
+    assert "进入调试页" in visible_text
     assert '/admin/automation-conversion/stage/new-user' in html
     assert '/admin/automation-conversion/stage/inactive-focus' in html
-    assert 'id="marketing-automation-add-rule-button"' in html
-    assert 'id="marketing-automation-silent-threshold-new-user"' in html
-    assert 'id="marketing-automation-silent-threshold-inactive-focus"' in html
-    assert 'value="3"' in html
-    assert 'value="5"' in html
-    assert 'data-stage-main-stage="pool"' in html
-    assert 'data-stage-sub-stage="inactive_focus"' in html
-    assert 'data-stage-main-stage="converted"' in html
-    assert 'id="automation-stage-detail-drawer"' in html
-    assert "固定选择 5 道题" not in visible_text
-    assert "选 5 道关键信号题" not in visible_text
-    assert "开启“报名成功”自动跟进" not in visible_text
-    assert "REQUIRED_QUESTION_RULE_COUNT" not in html
-    assert "[Number(question.options[0].id)]" not in html
-    assert not _contains_standalone_token(visible_text, "core")
-    assert not _contains_standalone_token(visible_text, "top")
-    assert not _contains_standalone_token(visible_text, "unknown")
-    assert not _contains_standalone_token(visible_text, "normal")
-    assert not _contains_standalone_token(visible_text, "pending")
-    assert not _contains_standalone_token(visible_text, "acked")
-    assert not _contains_standalone_token(visible_text, "blocked_quiet_hours")
-    assert not _contains_standalone_token(visible_text, "converted_before_dispatch")
-    assert "conversion dispatch log" not in visible_text
+    assert "配置步骤" not in visible_text
+    assert "最近处理情况" not in visible_text
+    assert "关键题与命中答案" not in visible_text
+    assert "沉默池规则" not in visible_text
     assert "JSON" not in visible_text
 
 
@@ -695,15 +689,14 @@ def test_admin_automation_conversion_page_survives_missing_configured_questionna
         db.execute("DELETE FROM questionnaires WHERE id = ?", (82,))
         db.commit()
 
-    response = client.get("/admin/automation-conversion")
+    response = client.get("/admin/automation-conversion/settings")
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
-    assert "自动化转化" in visible_text
-    assert "已失效的问卷 #82" in visible_text
-    assert '"questionnaire_missing": true' in html or '"questionnaire_missing":true' in html
-    assert '"missing_questionnaire_id": 82' in html or '"missing_questionnaire_id":82' in html
+    assert "自动化转化设置" in visible_text
+    assert "当前问卷已失效" in visible_text
+    assert "已配置的问卷 #82 不存在" in visible_text
 
 
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):
@@ -733,23 +726,9 @@ def test_admin_automation_conversion_stage_detail_page_renders_filtered_customer
 
 def test_admin_automation_conversion_preview_page_renders_runtime_search_shell(client):
     response = client.get("/admin/automation-conversion/preview")
-    html = response.get_data(as_text=True)
-    visible_text = _visible_text(html)
 
-    assert response.status_code == 200
-    assert "客户试运行" in visible_text
-    assert "手机号、客户姓名或客户编号" in visible_text
-    assert "当前阶段" in visible_text
-    assert "当前跟进类型" in visible_text
-    assert "命中题数" in visible_text
-    assert "是否进入自动化" in visible_text
-    assert "未进入原因" in visible_text
-    assert "高级信息" in visible_text
-    assert "试用已开通" in visible_text
-    assert "试用开通时间" in visible_text
-    assert "/api/admin/customers/profile" in html
-    assert "/api/customers?keyword=" in html
-    assert "/api/admin/marketing-automation/config/preview" in html
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/automation-conversion/debug")
 
 
 def test_admin_marketing_automation_dispatch_history_api_supports_status_filter(app, client):
@@ -777,15 +756,13 @@ def test_admin_marketing_automation_dispatch_history_api_supports_status_filter(
     assert blocked_payload["dispatch_history"]["items"][0]["stage"] == "pool/active_focus"
 
 
-def test_admin_automation_conversion_page_dispatch_history_filter_renders_selected_status(app, client):
-    _seed_marketing_dispatch_history(app)
-
-    response = client.get("/admin/automation-conversion", query_string={"status": "night_pause"})
+def test_admin_automation_conversion_debug_page_renders_search_shell(client):
+    response = client.get("/admin/automation-conversion/debug")
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
-    assert "最近处理情况" in visible_text
-    assert "wm_dispatch_blocked" in visible_text
-    assert "夜间暂停" in visible_text
-    assert "wm_dispatch_pending" not in visible_text
+    assert "单客调试" in visible_text
+    assert "external_contact_id" in visible_text
+    assert "手机号" in visible_text
+    assert "人工改判优先" not in visible_text

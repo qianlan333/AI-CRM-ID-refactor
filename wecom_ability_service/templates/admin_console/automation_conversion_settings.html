@@ -1,0 +1,145 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>自动化转化设置</h2>
+      <p>这里统一维护问卷、关键题、沉默规则、夜间暂停和默认渠道二维码。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion') }}">返回概览</a>
+    </div>
+  </div>
+
+  {% if settings_payload.questionnaire_missing %}
+  <div class="admin-state admin-state--inline admin-state--error">
+    <strong>当前问卷已失效</strong>
+    <span>已配置的问卷 #{{ settings_payload.missing_questionnaire_id }} 不存在，请重新选择有效问卷后保存。</span>
+  </div>
+  {% endif %}
+
+  <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ url_for('api.admin_automation_conversion_save_settings') }}">
+    <div class="admin-grid-2">
+      <label class="admin-checkbox">
+        <input type="checkbox" name="enabled" value="1" {% if settings_payload.config.enabled %}checked{% endif %}>
+        <span>开启自动化转化</span>
+      </label>
+      <label class="admin-field">
+        <span>当前问卷</span>
+        <select name="questionnaire_id" required>
+          <option value="">请选择问卷</option>
+          {% for item in settings_payload.questionnaires %}
+          <option value="{{ item.id }}" {% if settings_payload.config.questionnaire_id == item.id %}selected{% endif %}>
+            {{ item.title or item.name or ("问卷 #" ~ item.id) }}{% if item.is_disabled %}（已停用）{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="admin-grid-2">
+      <label class="admin-field">
+        <span>重点跟进门槛</span>
+        <input type="number" name="core_threshold" min="0" value="{{ settings_payload.config.core_threshold }}">
+      </label>
+      <label class="admin-field">
+        <span>Top 门槛</span>
+        <input type="number" name="top_threshold" min="0" value="{{ settings_payload.config.top_threshold }}">
+      </label>
+      <label class="admin-field">
+        <span>夜间暂停开始小时</span>
+        <input type="number" name="quiet_hour_start" min="0" max="23" value="{{ settings_payload.config.quiet_hour_start }}">
+      </label>
+      <label class="admin-field">
+        <span>时区</span>
+        <input type="text" name="timezone" value="{{ settings_payload.config.timezone }}">
+      </label>
+    </div>
+
+    <div>
+      <div class="admin-card-head admin-card-head--tight">
+        <div>
+          <h2>沉默池规则</h2>
+          <p>按当前池子停留天数判断是否进入沉默池。</p>
+        </div>
+      </div>
+      <div class="admin-grid-2">
+        <label class="admin-field">
+          <span>新用户池天数</span>
+          <input type="number" name="silent_threshold_new_user" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('new_user', 7) }}">
+        </label>
+        <label class="admin-field">
+          <span>未激活普通池天数</span>
+          <input type="number" name="silent_threshold_inactive_normal" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('inactive_normal', 7) }}">
+        </label>
+        <label class="admin-field">
+          <span>未激活重点池天数</span>
+          <input type="number" name="silent_threshold_inactive_focus" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('inactive_focus', 7) }}">
+        </label>
+        <label class="admin-field">
+          <span>激活普通池天数</span>
+          <input type="number" name="silent_threshold_active_normal" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('active_normal', 7) }}">
+        </label>
+        <label class="admin-field">
+          <span>激活重点池天数</span>
+          <input type="number" name="silent_threshold_active_focus" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('active_focus', 7) }}">
+        </label>
+      </div>
+    </div>
+
+    <label class="admin-field">
+      <span>关键题规则 JSON</span>
+      <textarea name="question_rules_json" rows="12">{{ question_rules_json }}</textarea>
+    </label>
+
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" type="submit">保存设置</button>
+    </div>
+  </form>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>默认渠道二维码</h2>
+      <p>默认归属客服固定为 {{ settings_payload.default_owner_staff_id }}。只有加微成功后的回调才会真正触发入池。</p>
+    </div>
+    <form method="post" action="{{ url_for('api.admin_automation_conversion_generate_default_channel') }}">
+      <button class="admin-button admin-button--secondary" type="submit">生成默认渠道二维码</button>
+    </form>
+  </div>
+  <dl class="admin-definition-list">
+    <div>
+      <dt>渠道编码</dt>
+      <dd>{{ settings_payload.default_channel.channel_code }}</dd>
+    </div>
+    <div>
+      <dt>渠道名称</dt>
+      <dd>{{ settings_payload.default_channel.channel_name }}</dd>
+    </div>
+    <div>
+      <dt>二维码地址</dt>
+      <dd>{{ settings_payload.default_channel.qr_url or "未生成" }}</dd>
+    </div>
+    <div>
+      <dt>scene_value</dt>
+      <dd>{{ settings_payload.default_channel.scene_value or "未生成" }}</dd>
+    </div>
+    <div>
+      <dt>状态</dt>
+      <dd>{{ settings_payload.default_channel.status }}</dd>
+    </div>
+    <div>
+      <dt>默认归属客服</dt>
+      <dd>{{ settings_payload.default_channel.owner_staff_id }}</dd>
+    </div>
+  </dl>
+  {% if not settings_payload.provider_available %}
+  <div class="admin-state admin-state--inline">
+    <strong>当前没有真实二维码 provider</strong>
+    <span>数据库、设置页和入池逻辑已接好，但仓库内缺少企微渠道二维码接入实现，所以暂时不能生成真实二维码。</span>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

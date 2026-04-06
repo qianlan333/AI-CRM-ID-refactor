@@ -52,6 +52,7 @@
           </div>
         </div>
 
+        {% if show_shell_meta %}
         <div class="admin-topbar-meta">
           <div class="admin-chip admin-chip--{{ shell_status.environment.tone }}" data-shell-env>
             {{ shell_status.environment.label }}
@@ -66,6 +67,7 @@
             {{ shell_status.health.detail }}
           </div>
         </div>
+        {% endif %}
       </header>
 
       <main class="admin-page">

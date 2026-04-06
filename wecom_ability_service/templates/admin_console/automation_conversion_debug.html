@@ -1,0 +1,99 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>单客调试</h2>
+      <p>从主页面迁出的管理员调试页，支持按外部联系人 ID 或手机号查看当前自动化状态。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion') }}">返回概览</a>
+    </div>
+  </div>
+  <form class="admin-form-grid admin-form-grid--filters" method="get" action="{{ url_for('api.admin_automation_conversion_debug') }}">
+    <label>
+      <span>external_contact_id</span>
+      <input type="text" name="external_contact_id" value="{{ (debug_payload or {}).get('lookup', {}).get('external_contact_id', '') }}" placeholder="例如：wm_ext_001">
+    </label>
+    <label>
+      <span>手机号</span>
+      <input type="text" name="phone" value="{{ (debug_payload or {}).get('lookup', {}).get('phone', '') }}" placeholder="例如：13800138000">
+    </label>
+    <button class="admin-button admin-button--primary" type="submit">查看状态</button>
+  </form>
+</section>
+
+{% if debug_payload %}
+<section class="admin-card">
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>调试结果</h2>
+    </div>
+  </div>
+  <dl class="admin-definition-list">
+    <div>
+      <dt>成员是否存在</dt>
+      <dd>{{ "是" if debug_payload.member_exists else "否" }}</dd>
+    </div>
+    <div>
+      <dt>当前池子</dt>
+      <dd>{{ debug_payload.member.current_pool_label or debug_payload.current_pool }}</dd>
+    </div>
+    <div>
+      <dt>当前阶段</dt>
+      <dd>{{ debug_payload.member.current_stage_label or debug_payload.current_stage }}</dd>
+    </div>
+    <div>
+      <dt>当前目标</dt>
+      <dd>{{ debug_payload.member.current_target_label or debug_payload.current_target }}</dd>
+    </div>
+    <div>
+      <dt>人工改判优先</dt>
+      <dd>{{ "是" if debug_payload.manual_override_preferred else "否" }}</dd>
+    </div>
+    <div>
+      <dt>问卷状态</dt>
+      <dd>{{ debug_payload.questionnaire.status_label }} / {{ debug_payload.questionnaire.result_label }}</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head admin-card-head--tight">
+    <div>
+      <h2>最近 10 条 automation_event</h2>
+    </div>
+  </div>
+  {% if debug_payload.recent_events %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>动作</th>
+          <th>操作者</th>
+          <th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in debug_payload.recent_events %}
+        <tr>
+          <td>{{ item.created_at }}</td>
+          <td>{{ item.action }}</td>
+          <td>{{ item.operator_type }} / {{ item.operator_id }}</td>
+          <td>{{ item.remark or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-state admin-state--inline">
+    <strong>暂无事件</strong>
+    <span>当前还没有写入 automation_event。</span>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

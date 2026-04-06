@@ -386,6 +386,10 @@
           });
           const result = await response.json();
           if (result && result.error === 'already_submitted') {
+            if (result.redirect_url) {
+              window.location.href = result.redirect_url;
+              return;
+            }
             window.location.href = submittedUrl;
             return;
           }
@@ -409,6 +413,10 @@
         .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
         .then(({ ok, data }) => {
           if (data && data.error === 'already_submitted') {
+            if (data.redirect_url) {
+              window.location.href = data.redirect_url;
+              return;
+            }
             window.location.href = submittedUrl;
             return;
           }

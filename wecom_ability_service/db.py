@@ -508,6 +508,100 @@ def _ensure_sqlite_customer_marketing_state_tables(db) -> None:
         )
 
 
+def _ensure_sqlite_automation_conversion_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_channel (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_code TEXT NOT NULL UNIQUE,
+            channel_name TEXT NOT NULL DEFAULT '',
+            qr_url TEXT NOT NULL DEFAULT '',
+            qr_ticket TEXT NOT NULL DEFAULT '',
+            scene_value TEXT NOT NULL DEFAULT '',
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'inactive',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_member (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            master_customer_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            in_pool INTEGER NOT NULL DEFAULT 0,
+            current_pool TEXT NOT NULL DEFAULT 'removed',
+            follow_type TEXT NOT NULL DEFAULT '',
+            activation_status TEXT NOT NULL DEFAULT 'unknown',
+            questionnaire_status TEXT NOT NULL DEFAULT 'pending',
+            questionnaire_result TEXT NOT NULL DEFAULT 'unknown',
+            decision_source TEXT NOT NULL DEFAULT 'system',
+            source_type TEXT NOT NULL DEFAULT 'system',
+            source_channel_id INTEGER REFERENCES automation_channel(id) ON DELETE SET NULL,
+            last_active_pool TEXT NOT NULL DEFAULT '',
+            joined_at TEXT NOT NULL DEFAULT '',
+            last_ai_push_at TEXT NOT NULL DEFAULT '',
+            ai_cooldown_until TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_event (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
+            action TEXT NOT NULL DEFAULT '',
+            operator_type TEXT NOT NULL DEFAULT 'system',
+            operator_id TEXT NOT NULL DEFAULT '',
+            before_snapshot TEXT NOT NULL DEFAULT '{}',
+            after_snapshot TEXT NOT NULL DEFAULT '{}',
+            remark TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_ai_push_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
+            scene TEXT NOT NULL DEFAULT 'sidebar_script',
+            request_payload TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'accepted',
+            request_id TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            pushed_at TEXT NOT NULL DEFAULT '',
+            cooldown_until TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_member_external_non_empty
+        ON automation_member (external_contact_id)
+        WHERE external_contact_id <> ''
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_phone ON automation_member (phone)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_pool ON automation_member (current_pool, in_pool)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_owner ON automation_member (owner_staff_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_channel ON automation_member (source_channel_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_event_member_created ON automation_event (member_id, created_at DESC, id DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_event_action_created ON automation_event (action, created_at DESC, id DESC)")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_ai_push_log_member_pushed ON automation_ai_push_log (member_id, pushed_at DESC, id DESC)"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_ai_push_log_status ON automation_ai_push_log (status, pushed_at DESC, id DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_status ON automation_channel (status, updated_at DESC, id DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_scene ON automation_channel (scene_value)")
+
+
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
@@ -516,6 +610,7 @@ def _init_sqlite(db) -> None:
     _ensure_sqlite_user_ops_page_tables(db)
     _ensure_sqlite_customer_value_segment_tables(db)
     _ensure_sqlite_customer_marketing_state_tables(db)
+    _ensure_sqlite_automation_conversion_tables(db)
     columns = _sqlite_table_columns(db, "archived_messages")
     if "chat_type" not in columns:
         db.execute("ALTER TABLE archived_messages ADD COLUMN chat_type TEXT NOT NULL DEFAULT 'private'")

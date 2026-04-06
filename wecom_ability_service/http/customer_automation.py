@@ -4,6 +4,7 @@ from flask import jsonify, request
 
 from ..customer_center.service import get_customer_detail
 from ..customer_timeline.service import get_customer_timeline
+from ..domains.automation_conversion.service import sync_member_activation
 from ..services import (
     apply_activation_webhook,
     get_recent_messages_by_user,
@@ -89,6 +90,11 @@ def activation_webhook():
             activated_at=activated_at,
             operator=operator,
             source=source,
+        )
+        sync_member_activation(
+            external_contact_id=str((result.get("customer") or {}).get("external_userid") or "").strip(),
+            phone=mobile,
+            operator_id=operator,
         )
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404

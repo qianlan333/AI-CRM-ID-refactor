@@ -66,6 +66,9 @@ class ContactWeComRuntimeClient:
     def update_contact_description(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._client.update_contact_description(payload)
 
+    def create_contact_way(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._client.create_contact_way(payload)
+
     def list_external_contact_tags(self) -> dict[str, Any]:
         return self._client.list_external_contact_tags()
 

@@ -63,6 +63,13 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         persistence_modules=("repo.py",),
         notes="Archived messages, sync runs, and message batches.",
     ),
+    "automation_conversion": DomainLayoutSpec(
+        name="automation_conversion",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Automation conversion settings, member pool transitions, and provider-backed QR generation.",
+    ),
     "callbacks": DomainLayoutSpec(
         name="callbacks",
         mode="simple",

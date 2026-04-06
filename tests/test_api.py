@@ -21,6 +21,7 @@ from wecom_ability_service.infra.settings import set_settings
 from wecom_ability_service.services import (
     ThirdPartyUserSyncError,
     bind_openid_to_external_contact,
+    delete_questionnaire_submissions_by_slug,
     resolve_external_contact_identity,
 )
 
@@ -3118,11 +3119,52 @@ def test_questionnaire_submitted_page_and_repeat_open_redirect(client, app):
 
     page_response = client.get(f"/s/{questionnaire['slug']}", headers=WECHAT_BROWSER_HEADERS, follow_redirects=False)
     assert page_response.status_code == 302
-    assert page_response.headers["Location"] == f"/s/{questionnaire['slug']}/submitted"
+    assert page_response.headers["Location"] == "https://example.com/next"
 
     submitted_response = client.get(f"/s/{questionnaire['slug']}/submitted")
     assert submitted_response.status_code == 200
     assert "已经提交" in submitted_response.get_data(as_text=True)
+
+
+def test_questionnaire_repeat_open_without_redirect_url_falls_back_to_submitted_page(client, app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("ww-test", "wm_ext_repeat_no_redirect_001", "union-repeat-no-redirect-001", "openid-repeat-no-redirect-001", "sales_01", "重复客户无跳转", "active", "{}"),
+        )
+        db.commit()
+
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(redirect_url=""),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+
+    with client.session_transaction() as sess:
+        sess["questionnaire_h5_identity"] = {
+            "openid": "openid-repeat-no-redirect-001",
+            "unionid": "union-repeat-no-redirect-001",
+            "respondent_key": "respondent-repeat-no-redirect-001",
+        }
+
+    first_submit = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={"answers": {str(q1["id"]): q1["options"][0]["id"]}},
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert first_submit.status_code == 200
+
+    page_response = client.get(f"/s/{questionnaire['slug']}", headers=WECHAT_BROWSER_HEADERS, follow_redirects=False)
+    assert page_response.status_code == 302
+    assert page_response.headers["Location"] == f"/s/{questionnaire['slug']}/submitted"
 
 
 def test_public_questionnaire_get_returns_already_submitted(client, app):
@@ -3162,6 +3204,7 @@ def test_public_questionnaire_get_returns_already_submitted(client, app):
     assert response.status_code == 409
     assert response.get_json()["error"] == "already_submitted"
     assert response.get_json()["message"] == "已经提交"
+    assert response.get_json()["redirect_url"] == "https://example.com/next"
 
 
 def test_questionnaire_submit_rejects_duplicate_submission(client, app):
@@ -3207,7 +3250,67 @@ def test_questionnaire_submit_rejects_duplicate_submission(client, app):
         "success": False,
         "error": "already_submitted",
         "message": "已经提交",
+        "redirect_url": "https://example.com/next",
     }
+
+
+def test_delete_questionnaire_submissions_by_slug_removes_existing_records(client, app):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload(slug="ai"))
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+
+    first_submit = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={"answers": {str(q1["id"]): q1["options"][0]["id"]}},
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert first_submit.status_code == 200
+
+    with app.app_context():
+        db = get_db()
+        submission_id = db.execute(
+            """
+            SELECT id
+            FROM questionnaire_submissions
+            WHERE questionnaire_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (int(questionnaire["id"]),),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO questionnaire_external_push_logs (
+                questionnaire_id, questionnaire_title_snapshot, submission_record_id,
+                user_id, target_url, request_payload, status, failure_reason, created_at, updated_at
+            )
+            VALUES (?, ?, ?, '', 'https://example.com/webhook', '{}', 'failed', 'seed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (int(questionnaire["id"]), questionnaire["title"], int(submission_id)),
+        )
+        db.commit()
+
+        result = delete_questionnaire_submissions_by_slug("ai")
+        assert result["slug"] == "ai"
+        assert result["deleted_submission_count"] == 1
+        assert result["deleted_answer_count"] == 3
+        assert result["deleted_scrm_apply_log_count"] >= 1
+        assert result["deleted_external_push_log_count"] == 1
+
+        remaining = db.execute(
+            "SELECT COUNT(*) AS total FROM questionnaire_submissions WHERE questionnaire_id = ?",
+            (int(questionnaire["id"]),),
+        ).fetchone()["total"]
+        remaining_answers = db.execute(
+            "SELECT COUNT(*) AS total FROM questionnaire_submission_answers"
+        ).fetchone()["total"]
+        remaining_logs = db.execute(
+            "SELECT COUNT(*) AS total FROM questionnaire_external_push_logs"
+        ).fetchone()["total"]
+        assert remaining == 0
+        assert remaining_answers == 0
+        assert remaining_logs == 0
 
 
 def test_questionnaire_mobile_answer_is_saved_to_submission_snapshot(client, app):

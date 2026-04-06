@@ -80,6 +80,7 @@ def _render_customer_detail_page(
         customer_payload=payload,
         page_notice=page_notice,
         page_error=page_error,
+        show_shell_meta=False,
         action_result=action_result or {},
         customer_profile_urls={
             "profile": url_for("api.admin_customer_profile_api", external_userid=external_userid),
@@ -89,6 +90,14 @@ def _render_customer_detail_page(
                 external_userid=external_userid,
             ),
             "messages": url_for("api.admin_customer_profile_messages_api", external_userid=external_userid),
+            "automation_member": url_for("api.api_admin_automation_conversion_member", external_contact_id=external_userid),
+            "automation_put_in_pool": url_for("api.api_admin_automation_conversion_put_in_pool"),
+            "automation_remove_from_pool": url_for("api.api_admin_automation_conversion_remove_from_pool"),
+            "automation_set_focus": url_for("api.api_admin_automation_conversion_set_focus"),
+            "automation_set_normal": url_for("api.api_admin_automation_conversion_set_normal"),
+            "automation_mark_won": url_for("api.api_admin_automation_conversion_mark_won"),
+            "automation_unmark_won": url_for("api.api_admin_automation_conversion_unmark_won"),
+            "automation_push_openclaw": url_for("api.api_admin_automation_conversion_push_openclaw"),
         },
     )
 

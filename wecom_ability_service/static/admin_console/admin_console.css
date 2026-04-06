@@ -1273,6 +1273,43 @@ code {
   white-space: pre-wrap;
 }
 
+.admin-customer-detail-layout {
+  align-items: start;
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
+}
+
+.admin-customer-detail-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.admin-automation-sidebar {
+  position: sticky;
+  top: 24px;
+}
+
+.admin-automation-definition-list {
+  margin-top: 16px;
+}
+
+.admin-automation-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.admin-automation-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-automation-action-row:last-child {
+  grid-template-columns: 1fr;
+}
+
 .admin-code-block {
   margin: 0;
   padding: 14px 16px;
@@ -1296,7 +1333,9 @@ code {
   .admin-quick-links,
   .admin-split-grid,
   .admin-todo-grid,
-  .admin-profile-grid {
+  .admin-profile-grid,
+  .admin-customer-detail-layout,
+  .admin-automation-action-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1342,7 +1381,9 @@ code {
   .admin-quick-links,
   .admin-split-grid,
   .admin-todo-grid,
-  .admin-profile-grid {
+  .admin-profile-grid,
+  .admin-customer-detail-layout,
+  .admin-automation-action-row {
     grid-template-columns: 1fr;
   }
 
