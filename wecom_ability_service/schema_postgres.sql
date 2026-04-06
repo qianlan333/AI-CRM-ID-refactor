@@ -105,6 +105,36 @@ CREATE TABLE IF NOT EXISTS outbound_tasks (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS outbound_webhook_deliveries (
+    id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    source_key TEXT NOT NULL DEFAULT '',
+    source_id TEXT NOT NULL DEFAULT '',
+    target_url TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    payload_summary TEXT NOT NULL DEFAULT '',
+    token_configured BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    response_status_code INTEGER,
+    response_body_summary TEXT NOT NULL DEFAULT '',
+    last_error TEXT NOT NULL DEFAULT '',
+    last_attempted_at TEXT NOT NULL DEFAULT '',
+    next_retry_at TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbound_webhook_deliveries_event_created
+ON outbound_webhook_deliveries (event_type, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_outbound_webhook_deliveries_status_created
+ON outbound_webhook_deliveries (status, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_outbound_webhook_deliveries_next_retry
+ON outbound_webhook_deliveries (next_retry_at, status);
+
 CREATE TABLE IF NOT EXISTS contact_tags (
     id BIGSERIAL PRIMARY KEY,
     external_userid TEXT NOT NULL,
@@ -885,6 +915,8 @@ CREATE TABLE IF NOT EXISTS questionnaires (
     description TEXT NOT NULL DEFAULT '',
     is_disabled BOOLEAN NOT NULL DEFAULT FALSE,
     redirect_url TEXT NOT NULL DEFAULT '',
+    external_push_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    external_push_url TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -894,6 +926,9 @@ ON questionnaires (slug);
 
 CREATE INDEX IF NOT EXISTS idx_questionnaires_disabled
 ON questionnaires (is_disabled);
+
+CREATE INDEX IF NOT EXISTS idx_questionnaires_external_push_enabled
+ON questionnaires (external_push_enabled);
 
 CREATE TABLE IF NOT EXISTS questionnaire_questions (
     id BIGSERIAL PRIMARY KEY,
@@ -1003,3 +1038,33 @@ ON questionnaire_scrm_apply_logs (submission_id, id);
 
 CREATE INDEX IF NOT EXISTS idx_questionnaire_scrm_apply_logs_status
 ON questionnaire_scrm_apply_logs (status, created_at);
+
+CREATE TABLE IF NOT EXISTS questionnaire_external_push_logs (
+    id BIGSERIAL PRIMARY KEY,
+    questionnaire_id BIGINT NOT NULL REFERENCES questionnaires(id) ON DELETE CASCADE,
+    questionnaire_title_snapshot TEXT NOT NULL DEFAULT '',
+    submission_record_id BIGINT NOT NULL REFERENCES questionnaire_submissions(id) ON DELETE CASCADE,
+    retry_from_log_id BIGINT REFERENCES questionnaire_external_push_logs(id) ON DELETE SET NULL,
+    retry_attempt INTEGER NOT NULL DEFAULT 0,
+    user_id TEXT NOT NULL DEFAULT '',
+    target_url TEXT NOT NULL DEFAULT '',
+    request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_status_code INTEGER,
+    response_body TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'failed',
+    failure_reason TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_questionnaire
+ON questionnaire_external_push_logs (questionnaire_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_status
+ON questionnaire_external_push_logs (status, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_submission
+ON questionnaire_external_push_logs (submission_record_id);
+
+CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_retry_from
+ON questionnaire_external_push_logs (retry_from_log_id, created_at DESC, id DESC);

@@ -6,6 +6,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import re
+import requests
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -16,6 +17,7 @@ from wecom_ability_service import create_app
 from wecom_ability_service.archive_sdk import extract_text_record, normalize_timestamp
 from wecom_ability_service.wecom_callback import compute_signature, encrypt_message
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.infra.settings import set_settings
 from wecom_ability_service.services import (
     ThirdPartyUserSyncError,
     bind_openid_to_external_contact,
@@ -27,6 +29,7 @@ class FakeResponse:
     def __init__(self, payload: dict, status_code: int = 200):
         self._payload = payload
         self.status_code = status_code
+        self.text = json.dumps(payload, ensure_ascii=False)
 
     def json(self):
         return self._payload
@@ -826,6 +829,109 @@ def test_create_private_message_task_supports_text_with_three_images(client, mon
 
     assert response.status_code == 200
     assert payload["wecom_result"]["msgid"] == "task-msg-001"
+
+
+def test_create_private_message_task_supports_pure_attachment_and_text_with_attachment(client, app, monkeypatch):
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/add_msg_template"):
+            captured_payloads.append(json or {})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    pure_attachment_response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "attachments": [{"msgtype": "file", "file": {"media_id": "file-media-001"}}],
+        },
+    )
+    text_with_attachment_response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "text": {"content": "文本 + 附件"},
+            "attachments": [{"msgtype": "file", "file": {"media_id": "file-media-002"}}],
+        },
+    )
+
+    assert pure_attachment_response.status_code == 200
+    assert pure_attachment_response.get_json()["wecom_result"]["msgid"] == "task-msg-001"
+    assert text_with_attachment_response.status_code == 200
+    assert text_with_attachment_response.get_json()["wecom_result"]["msgid"] == "task-msg-001"
+    assert captured_payloads[0]["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-001"}}]
+    assert captured_payloads[1]["text"]["content"] == "文本 + 附件"
+    assert captured_payloads[1]["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-002"}}]
+
+    with app.app_context():
+        rows = get_db().execute(
+            "SELECT request_payload FROM outbound_tasks ORDER BY id DESC LIMIT 2"
+        ).fetchall()
+        latest_rows = list(reversed(rows))
+        pure_saved_payload = json.loads(latest_rows[0]["request_payload"])
+        text_saved_payload = json.loads(latest_rows[1]["request_payload"])
+        assert pure_saved_payload["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-001"}}]
+        assert "text" not in pure_saved_payload
+        assert text_saved_payload["text"]["content"] == "文本 + 附件"
+        assert text_saved_payload["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-002"}}]
+
+
+def test_create_private_message_task_supports_text_image_and_attachment(client, monkeypatch):
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/add_msg_template"):
+            captured_payloads.append(json or {})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "text": {"content": "文本 + 图片 + 附件"},
+            "images": [{"file_name": "combo.png", "data_url": _test_image_data_url("combo")}],
+            "attachments": [{"msgtype": "file", "file": {"media_id": "file-media-003"}}],
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["wecom_result"]["msgid"] == "task-msg-001"
+    assert captured_payloads[0]["text"]["content"] == "文本 + 图片 + 附件"
+    assert captured_payloads[0]["attachments"] == [
+        {"msgtype": "file", "file": {"media_id": "file-media-003"}},
+        {"msgtype": "image", "image": {"media_id": "media-combo.png"}},
+    ]
+
+
+def test_create_private_message_task_rejects_invalid_attachment_payload(client, monkeypatch):
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+    monkeypatch.setattr("requests.post", fake_wecom_post)
+
+    response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "attachments": [{"msgtype": "file", "file": {"name": "missing-media-id"}}],
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "file attachments must include media_id"
 
 
 def test_create_moment_task(client, monkeypatch):
@@ -1805,6 +1911,14 @@ def test_mcp_tools_and_message_batches(client, app, monkeypatch):
     unauthorized = client.post("/mcp", json={"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}})
     assert unauthorized.status_code == 401
 
+    wrong_token = client.post(
+        "/mcp",
+        headers={"Authorization": "Bearer wrong-token"},
+        json={"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}},
+    )
+    assert wrong_token.status_code == 401
+    assert wrong_token.get_json() == {"ok": False, "error": "invalid internal token"}
+
     init_resp = client.post("/mcp", headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     assert init_resp.status_code == 200
     assert init_resp.get_json()["result"]["serverInfo"]["name"] == "openclaw-wecom-mcp"
@@ -2318,12 +2432,14 @@ def test_normalize_timestamp():
     assert normalize_timestamp(1761950405000).startswith("2025-")
 
 
-def _build_questionnaire_payload() -> dict:
-    return {
+def _build_questionnaire_payload(**overrides) -> dict:
+    payload = {
         "name": "线索打标问卷",
         "title": "来访测评",
         "description": "请根据你的实际情况填写。",
         "redirect_url": "https://example.com/next",
+        "external_push_enabled": False,
+        "external_push_url": "",
         "questions": [
             {
                 "type": "single_choice",
@@ -2356,10 +2472,12 @@ def _build_questionnaire_payload() -> dict:
             {"min_score": 4, "max_score": 99, "tag_codes": ["score_high"], "sort_order": 1},
         ],
     }
+    payload.update(overrides)
+    return payload
 
 
-def _build_questionnaire_payload_with_mobile() -> dict:
-    payload = _build_questionnaire_payload()
+def _build_questionnaire_payload_with_mobile(**overrides) -> dict:
+    payload = _build_questionnaire_payload(**overrides)
     payload["questions"].append(
         {
             "type": "mobile",
@@ -3133,6 +3251,926 @@ def test_questionnaire_mobile_answer_is_saved_to_submission_snapshot(client, app
         assert answer["text_value"] == "13800138000"
 
 
+def test_questionnaire_required_mobile_question_rejects_empty_answer(client):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload_with_mobile())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "",
+            }
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"success": False, "error": "question '手机号' is required"}
+
+
+def test_questionnaire_submit_without_external_push_does_not_send_or_write_push_log(client, app, monkeypatch):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload_with_mobile())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+    push_calls: list[dict[str, object]] = []
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        push_calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return FakeResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-disabled-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "13800138011",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert push_calls == []
+
+    with app.app_context():
+        row = get_db().execute("SELECT COUNT(*) AS total FROM questionnaire_external_push_logs").fetchone()
+        assert int(row["total"] or 0) == 0
+
+
+def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_success(client, app, monkeypatch):
+    with app.app_context():
+        set_settings({"QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED": "true"})
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1, q2, q3, mobile_question = detail["questions"]
+    push_calls: list[dict[str, object]] = []
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        push_calls.append({"url": url, "json": json, "headers": dict(headers or {}), "timeout": timeout})
+        return FakeResponse({"success": False, "message": "ignored"}, status_code=200)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-success-001",
+            "answers": {
+                str(q1["id"]): q1["options"][1]["id"],
+                str(q2["id"]): [q2["options"][0]["id"]],
+                str(q3["id"]): "",
+                str(mobile_question["id"]): "13800138012",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert len(push_calls) == 1
+    assert push_calls[0]["url"] == "https://hooks.example.com/questionnaire/apply"
+    assert push_calls[0]["headers"]["Content-Type"] == "application/json"
+    assert push_calls[0]["timeout"] == 3
+    assert push_calls[0]["json"] == {
+        "user_id": "union-external-push-success-001",
+        "questionnaire_title": "来访测评",
+        "submitted_at": push_calls[0]["json"]["submitted_at"],
+        "answers": [
+            {"title": "你的预算", "answer": "10-30万"},
+            {"title": "你的关注点", "answer": ["效果"]},
+            {"title": "补充说明", "answer": ""},
+            {"title": "手机号", "answer": "13800138012"},
+        ],
+    }
+    assert push_calls[0]["json"]["submitted_at"].endswith("+08:00")
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT questionnaire_id, user_id, target_url, response_status_code, status, failure_reason, request_payload, response_body
+            FROM questionnaire_external_push_logs
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert int(row["questionnaire_id"]) == int(questionnaire["id"])
+        assert row["user_id"] == "union-external-push-success-001"
+        assert row["target_url"] == "https://hooks.example.com/questionnaire/apply"
+        assert int(row["response_status_code"]) == 200
+        assert row["status"] == "success"
+        assert row["failure_reason"] == ""
+        assert json.loads(row["request_payload"])["answers"][1]["answer"] == ["效果"]
+        assert json.loads(row["request_payload"])["answers"][2]["answer"] == ""
+        assert '"success": false' in row["response_body"]
+
+
+def test_questionnaire_submit_external_push_global_switch_off_skips_without_breaking_submit(client, app, monkeypatch):
+    with app.app_context():
+        set_settings({"QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED": "false"})
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+    push_calls: list[dict[str, object]] = []
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        push_calls.append({"url": url, "json": json, "headers": dict(headers or {}), "timeout": timeout})
+        return FakeResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-global-off-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "13800138020",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert push_calls == []
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT status, failure_reason, target_url, request_payload, response_status_code
+            FROM questionnaire_external_push_logs
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert row["status"] == "skipped"
+        assert row["failure_reason"] == "skipped by global external push switch"
+        assert row["target_url"] == "https://hooks.example.com/questionnaire/apply"
+        assert row["response_status_code"] is None
+        assert json.loads(row["request_payload"])["user_id"] == "union-external-push-global-off-001"
+
+
+def test_questionnaire_submit_external_push_non_200_records_failed_without_breaking_submit(client, app, monkeypatch):
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        return FakeResponse({"error": "server exploded"}, status_code=500)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-failed-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "13800138013",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT response_status_code, response_body, status, failure_reason
+            FROM questionnaire_external_push_logs
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert int(row["response_status_code"]) == 500
+        assert row["status"] == "failed"
+        assert row["failure_reason"] == "HTTP 500"
+        assert '"server exploded"' in row["response_body"]
+
+
+def test_questionnaire_submit_external_push_timeout_records_failed_without_breaking_submit(client, app, monkeypatch):
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        raise requests.Timeout("push timed out")
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-timeout-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "13800138014",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT status, failure_reason
+            FROM questionnaire_external_push_logs
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert row["status"] == "failed"
+        assert row["failure_reason"] == "request timeout"
+
+
+def test_questionnaire_external_push_requires_url_when_enabled(client):
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(external_push_enabled=True, external_push_url=""),
+    )
+    assert create_response.status_code == 400
+    assert create_response.get_json() == {
+        "ok": False,
+        "error": "external_push_url is required when external_push_enabled is enabled",
+    }
+
+    valid_create = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    questionnaire_id = valid_create.get_json()["questionnaire"]["id"]
+    update_response = client.put(
+        f"/api/admin/questionnaires/{questionnaire_id}",
+        json=_build_questionnaire_payload(external_push_enabled=True, external_push_url=""),
+    )
+    assert update_response.status_code == 400
+    assert update_response.get_json() == {
+        "ok": False,
+        "error": "external_push_url is required when external_push_enabled is enabled",
+    }
+
+
+def test_questionnaire_external_push_failed_log_can_be_retried_and_reuses_original_payload(client, app, monkeypatch):
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+    push_calls: list[dict[str, object]] = []
+    responses = [
+        FakeResponse({"error": "server exploded"}, status_code=500),
+        FakeResponse({"ok": True}, status_code=200),
+    ]
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        push_calls.append({"url": url, "json": json, "headers": dict(headers or {}), "timeout": timeout})
+        return responses.pop(0)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    submit_response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-retry-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "13800138015",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert submit_response.status_code == 200
+
+    with app.app_context():
+        original = get_db().execute(
+            """
+            SELECT id, retry_from_log_id, retry_attempt, status, target_url, request_payload
+            FROM questionnaire_external_push_logs
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        original_id = int(original["id"])
+        original_payload = json.loads(original["request_payload"])
+        assert original["status"] == "failed"
+        assert original["retry_from_log_id"] is None
+        assert int(original["retry_attempt"] or 0) == 0
+
+    retry_response = client.post(
+        f"/admin/questionnaires/{questionnaire['id']}/external-push-logs/{original_id}/retry",
+        data={"status": "failed", "limit": "10"},
+        follow_redirects=True,
+    )
+
+    assert retry_response.status_code == 200
+    retry_html = retry_response.get_data(as_text=True)
+    assert "补发已执行，请查看最近结果。" in retry_html
+    assert "补发成功" in retry_html
+    assert len(push_calls) == 2
+    assert push_calls[0]["json"] == push_calls[1]["json"]
+
+    with app.app_context():
+        rows = get_db().execute(
+            """
+            SELECT id, retry_from_log_id, retry_attempt, status, response_status_code, target_url, request_payload
+            FROM questionnaire_external_push_logs
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        assert len(rows) == 2
+        assert rows[1]["retry_from_log_id"] == original_id
+        assert int(rows[1]["retry_attempt"] or 0) == 1
+        assert rows[1]["status"] == "success"
+        assert int(rows[1]["response_status_code"]) == 200
+        assert rows[1]["target_url"] == rows[0]["target_url"]
+        assert json.loads(rows[1]["request_payload"]) == original_payload
+
+
+def test_questionnaire_external_push_failed_log_retry_can_fail_again(client, app, monkeypatch):
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+    responses = [
+        FakeResponse({"error": "server exploded"}, status_code=500),
+        FakeResponse({"error": "still broken"}, status_code=502),
+    ]
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        return responses.pop(0)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    submit_response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-retry-002",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "13800138016",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert submit_response.status_code == 200
+
+    with app.app_context():
+        original = get_db().execute(
+            "SELECT id FROM questionnaire_external_push_logs ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        original_id = int(original["id"])
+
+    retry_response = client.post(
+        f"/admin/questionnaires/{questionnaire['id']}/external-push-logs/{original_id}/retry",
+        data={"status": "failed", "limit": "10"},
+        follow_redirects=True,
+    )
+    assert retry_response.status_code == 200
+    retry_html = retry_response.get_data(as_text=True)
+    assert "补发仍失败" in retry_html
+    assert "HTTP 502" in retry_html
+
+    with app.app_context():
+        rows = get_db().execute(
+            """
+            SELECT retry_from_log_id, retry_attempt, status, response_status_code, failure_reason
+            FROM questionnaire_external_push_logs
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        assert len(rows) == 2
+        assert rows[1]["retry_from_log_id"] == original_id
+        assert int(rows[1]["retry_attempt"] or 0) == 1
+        assert rows[1]["status"] == "failed"
+        assert int(rows[1]["response_status_code"]) == 502
+        assert rows[1]["failure_reason"] == "HTTP 502"
+
+
+def test_questionnaire_external_push_success_log_cannot_be_retried(client, app, monkeypatch):
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.questionnaire.service.requests.post",
+        lambda url, json=None, headers=None, timeout=None: FakeResponse({"ok": True}, status_code=200),
+    )
+
+    submit_response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-retry-003",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "13800138017",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert submit_response.status_code == 200
+
+    with app.app_context():
+        row = get_db().execute(
+            "SELECT id FROM questionnaire_external_push_logs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        log_id = int(row["id"])
+
+    retry_response = client.post(
+        f"/admin/questionnaires/{questionnaire['id']}/external-push-logs/{log_id}/retry",
+        data={"status": "", "limit": "10"},
+        follow_redirects=True,
+    )
+
+    assert retry_response.status_code == 200
+    retry_html = retry_response.get_data(as_text=True)
+    assert "only failed external push logs can be retried" in retry_html
+
+    with app.app_context():
+        total = get_db().execute("SELECT COUNT(*) AS total FROM questionnaire_external_push_logs").fetchone()
+        assert int(total["total"] or 0) == 1
+
+
+def test_questionnaire_external_push_failed_logs_can_be_retried_in_batch_with_summary(client, app, monkeypatch):
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload_with_mobile(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+    responses = [
+        FakeResponse({"error": "fail-1"}, status_code=500),
+        FakeResponse({"error": "fail-2"}, status_code=502),
+        FakeResponse({"ok": True}, status_code=200),
+        FakeResponse({"error": "still broken"}, status_code=503),
+    ]
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        return responses.pop(0)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    for unionid, mobile in [
+        ("union-external-push-batch-001", "13800138018"),
+        ("union-external-push-batch-002", "13800138019"),
+    ]:
+        response = client.post(
+            f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+            json={
+                "unionid": unionid,
+                "answers": {
+                    str(q1["id"]): q1["options"][0]["id"],
+                    str(mobile_question["id"]): mobile,
+                },
+            },
+            headers=WECHAT_BROWSER_HEADERS,
+        )
+        assert response.status_code == 200
+
+    with app.app_context():
+        rows = get_db().execute(
+            """
+            SELECT id, status
+            FROM questionnaire_external_push_logs
+            WHERE retry_from_log_id IS NULL
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        failed_ids = [str(row["id"]) for row in rows]
+        assert [row["status"] for row in rows] == ["failed", "failed"]
+
+    retry_response = client.post(
+        f"/admin/questionnaires/{questionnaire['id']}/external-push-logs/retry-batch",
+        data={"status": "failed_current", "limit": "20", "push_log_ids": failed_ids},
+        follow_redirects=True,
+    )
+    retry_html = retry_response.get_data(as_text=True)
+
+    assert retry_response.status_code == 200
+    assert "批量补发已执行：选中 2 条，实际补发 2 条，成功 1 条，失败 1 条。" in retry_html
+    assert "补发成功" in retry_html
+    assert "补发仍失败（待补发）" in retry_html
+
+    with app.app_context():
+        rows = get_db().execute(
+            """
+            SELECT retry_from_log_id, retry_attempt, status, response_status_code, failure_reason
+            FROM questionnaire_external_push_logs
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        assert len(rows) == 4
+        assert rows[2]["retry_from_log_id"] is not None
+        assert rows[3]["retry_from_log_id"] is not None
+        assert int(rows[2]["retry_attempt"] or 0) == 1
+        assert int(rows[3]["retry_attempt"] or 0) == 1
+        assert rows[2]["status"] == "success"
+        assert int(rows[2]["response_status_code"]) == 200
+        assert rows[3]["status"] == "failed"
+        assert int(rows[3]["response_status_code"]) == 503
+        assert rows[3]["failure_reason"] == "HTTP 503"
+
+
+def test_questionnaire_submit_success_sends_identity_webhook(client, app, monkeypatch):
+    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            ("wm_ext_questionnaire_webhook_001", "问卷 webhook 客户", "sales_88", "问卷线索", "wm_ext_questionnaire_webhook_001"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "ww-test",
+                "wm_ext_questionnaire_webhook_001",
+                "union-questionnaire-webhook-001",
+                "openid-questionnaire-webhook-001",
+                "sales_88",
+                "问卷 webhook 客户",
+                "active",
+                "{}",
+            ),
+        )
+        db.commit()
+
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_URL"] = "https://hooks.local/questionnaire-submit"
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN"] = "questionnaire-token"
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS"] = 6
+    webhook_calls: list[dict[str, object]] = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        webhook_calls.append(
+            {
+                "url": url,
+                "json": dict(json or {}),
+                "headers": dict(headers or {}),
+                "timeout": timeout,
+            }
+        )
+        return FakeResponse({"ok": True}, status_code=202)
+
+    monkeypatch.setattr("wecom_ability_service.domains.outbound_webhook.service.requests.post", fake_post)
+
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload_with_mobile())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-questionnaire-webhook-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "176 4005 0003",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert len(webhook_calls) == 1
+    assert webhook_calls[0]["url"] == "https://hooks.local/questionnaire-submit"
+    assert webhook_calls[0]["headers"]["Authorization"] == "Bearer questionnaire-token"
+    assert webhook_calls[0]["timeout"] == 6
+    assert webhook_calls[0]["json"] == {
+        "mobile": "17640050003",
+        "userid": "sales_88",
+        "unionid": "union-questionnaire-webhook-001",
+    }
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT event_type, status, attempt_count, response_status_code, source_key
+            FROM outbound_webhook_deliveries
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert row["event_type"] == "questionnaire_submit"
+        assert row["status"] == "success"
+        assert int(row["attempt_count"]) == 1
+        assert int(row["response_status_code"]) == 202
+        assert row["source_key"] == "submission_id"
+
+
+def test_questionnaire_submit_webhook_failure_does_not_break_submit(client, app, monkeypatch):
+    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            ("wm_ext_questionnaire_webhook_002", "问卷 webhook 失败客户", "sales_89", "问卷线索", "wm_ext_questionnaire_webhook_002"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "ww-test",
+                "wm_ext_questionnaire_webhook_002",
+                "union-questionnaire-webhook-002",
+                "openid-questionnaire-webhook-002",
+                "sales_89",
+                "问卷 webhook 失败客户",
+                "active",
+                "{}",
+            ),
+        )
+        db.commit()
+
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_URL"] = "https://hooks.local/questionnaire-submit"
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS"] = 6
+    app.config["OUTBOUND_WEBHOOK_RETRY_ENABLED"] = True
+    app.config["OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS"] = 3
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        raise requests.RequestException("webhook boom")
+
+    monkeypatch.setattr("wecom_ability_service.domains.outbound_webhook.service.requests.post", fake_post)
+
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload_with_mobile())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-questionnaire-webhook-002",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "17640050004",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+
+    with app.app_context():
+        submission = get_db().execute(
+            """
+            SELECT mobile_snapshot, unionid, follow_user_userid
+            FROM questionnaire_submissions
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert submission["mobile_snapshot"] == "17640050004"
+        assert submission["unionid"] == "union-questionnaire-webhook-002"
+        assert submission["follow_user_userid"] == "sales_89"
+        delivery = get_db().execute(
+            """
+            SELECT event_type, status, attempt_count, next_retry_at, last_error
+            FROM outbound_webhook_deliveries
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert delivery["event_type"] == "questionnaire_submit"
+        assert delivery["status"] == "retry_scheduled"
+        assert int(delivery["attempt_count"]) == 1
+        assert delivery["next_retry_at"] != ""
+        assert delivery["last_error"] == "webhook boom"
+
+
+def test_questionnaire_submit_webhook_retry_due_succeeds(client, app, monkeypatch):
+    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            ("wm_ext_questionnaire_webhook_003", "问卷 webhook 重试客户", "sales_90", "问卷线索", "wm_ext_questionnaire_webhook_003"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "ww-test",
+                "wm_ext_questionnaire_webhook_003",
+                "union-questionnaire-webhook-003",
+                "openid-questionnaire-webhook-003",
+                "sales_90",
+                "问卷 webhook 重试客户",
+                "active",
+                "{}",
+            ),
+        )
+        db.commit()
+
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_URL"] = "https://hooks.local/questionnaire-submit"
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS"] = 6
+    app.config["OUTBOUND_WEBHOOK_RETRY_ENABLED"] = True
+    app.config["OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS"] = 3
+    call_count = {"value": 0}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        call_count["value"] += 1
+        if call_count["value"] == 1:
+            raise requests.RequestException("retry later")
+        return FakeResponse({"ok": True}, status_code=202)
+
+    monkeypatch.setattr("wecom_ability_service.domains.outbound_webhook.service.requests.post", fake_post)
+
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload_with_mobile())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-questionnaire-webhook-003",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "17640050005",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        db = get_db()
+        delivery = db.execute(
+            "SELECT id, status, attempt_count FROM outbound_webhook_deliveries ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert delivery["status"] == "retry_scheduled"
+        delivery_id = int(delivery["id"])
+        db.execute(
+            "UPDATE outbound_webhook_deliveries SET next_retry_at = '2000-01-01 00:00:00' WHERE id = ?",
+            (delivery_id,),
+        )
+        db.commit()
+
+    retry_response = client.post(
+        "/api/customers/automation/webhook-deliveries/retry-due",
+        headers={"Authorization": "Bearer internal-token"},
+        json={"limit": 5},
+    )
+    assert retry_response.status_code == 200
+    assert retry_response.get_json()["count"] >= 1
+
+    with app.app_context():
+        delivery = get_db().execute(
+            "SELECT status, attempt_count, response_status_code FROM outbound_webhook_deliveries WHERE id = ?",
+            (delivery_id,),
+        ).fetchone()
+        assert delivery["status"] == "success"
+        assert int(delivery["attempt_count"]) == 2
+        assert int(delivery["response_status_code"]) == 202
+
+
+def test_questionnaire_submit_webhook_retry_due_rejects_invalid_internal_token(client, app):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    response = client.post(
+        "/api/customers/automation/webhook-deliveries/retry-due",
+        headers={"Authorization": "Bearer wrong-token"},
+        json={"limit": 5},
+    )
+
+    assert response.status_code == 401
+    assert response.get_json() == {"ok": False, "error": "invalid internal token"}
+
+
+def test_questionnaire_submit_webhook_without_url_records_unconfigured_delivery(client, app, monkeypatch):
+    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload_with_mobile())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+    mobile_question = detail["questions"][-1]
+    app.config["QUESTIONNAIRE_SUBMIT_WEBHOOK_URL"] = ""
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(mobile_question["id"]): "17640050006",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        delivery = get_db().execute(
+            """
+            SELECT event_type, status, attempt_count, last_error, target_url
+            FROM outbound_webhook_deliveries
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert delivery["event_type"] == "questionnaire_submit"
+        assert delivery["status"] == "failed"
+        assert int(delivery["attempt_count"]) == 0
+        assert delivery["last_error"] == "webhook_not_configured"
+        assert delivery["target_url"] == ""
+
+
 def test_questionnaire_without_mobile_question_does_not_fill_mobile_snapshot(client, app):
     create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
     questionnaire = create_response.get_json()["questionnaire"]
@@ -3429,10 +4467,13 @@ def test_sidebar_page_contains_jssdk_debug_chain(client):
     assert "/api/sidebar/jssdk-config" in body
     assert "客户档案绑定" in body
     assert "debugWrap.classList.toggle('hidden', !debugEnabled);" in body
-    assert "营销自动化卡片" in body
-    assert "标记报名成功" in body
-    assert "撤销报名成功" in body
+    assert "自动化转化卡片" in body
+    assert "转为重点跟进" in body
+    assert "转为普通跟进" in body
+    assert "确认已成交" in body
+    assert "撤销成交确认" in body
     assert "/api/sidebar/marketing-status" in body
+    assert "/api/sidebar/marketing-status/set-followup-segment" in body
     assert "/api/sidebar/marketing-status/mark-enrolled" in body
     assert "/api/sidebar/marketing-status/unmark-enrolled" in body
     assert "renderMarketingStatus(result.marketing_status || {});" in body

@@ -12,7 +12,7 @@ from .customer_center import get_customer_detail
 from .customer_timeline.service import get_customer_timeline
 from .db import get_db
 from .domains.admin_config import list_mcp_runtime_tools, mcp_tool_enabled
-from .infra.settings import get_setting
+from .http.internal_auth import require_internal_api_token
 from .services import (
     ack_conversion_batch,
     ack_message_batch,
@@ -39,6 +39,7 @@ from .services import (
     resolve_person_identity,
     save_outbound_task,
     save_tag_snapshot,
+    send_pool_private_message,
     remove_tag_snapshot,
     search_messages,
     unmark_enrolled,
@@ -52,17 +53,13 @@ mcp_logger = logging.getLogger("mcp")
 def _check_mcp_auth() -> Response | None:
     expected = str(request.environ.get("mcp_bearer_token_override") or "").strip()
     if not expected:
-        from flask import current_app
-
-        expected = str(get_setting("MCP_BEARER_TOKEN") or current_app.config.get("MCP_BEARER_TOKEN", "") or "").strip()
-    if not expected:
-        return None
+        return require_internal_api_token(token_keys=("MCP_BEARER_TOKEN",))
     auth_header = (request.headers.get("Authorization") or "").strip()
     if not auth_header.startswith("Bearer "):
-        return jsonify({"ok": False, "error": "missing bearer token"}), 401
+        return jsonify({"ok": False, "error": "missing internal token"}), 401
     token = auth_header[7:].strip()
     if token != expected:
-        return jsonify({"ok": False, "error": "invalid bearer token"}), 401
+        return jsonify({"ok": False, "error": "invalid internal token"}), 401
     return None
 
 
@@ -297,6 +294,57 @@ TOOL_DEFS = [
                 "dry_run": {"type": "boolean"},
                 "confirm": {"type": "boolean"},
             },
+        },
+    },
+    {
+        "name": "send_pool_private_message",
+        "description": "Send one private-message batch directly to one CRM pool. Supports text, images, attachments, or mixed combinations; CRM filters the pool, sends, and writes send records.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "owner_userid": {"type": "string"},
+                "pool_key": {
+                    "type": "string",
+                    "enum": ["new_user", "inactive_normal", "inactive_focus", "active_normal", "active_focus", "silent"],
+                },
+                "content": {"type": "string"},
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "file_name": {"type": "string"},
+                                    "content_type": {"type": "string"},
+                                    "data_url": {"type": "string"},
+                                    "data_base64": {"type": "string"},
+                                    "media_id": {"type": "string"},
+                                },
+                            },
+                        ]
+                    },
+                },
+                "image_media_ids": {"type": "array", "items": {"type": "string"}},
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "msgtype": {
+                                "type": "string",
+                                "enum": ["file"],
+                            },
+                            "file": {"type": "object"},
+                        },
+                        "required": ["msgtype"],
+                    },
+                },
+                "confirm": {"type": "boolean"},
+                "operator": {"type": "string"},
+            },
+            "required": ["owner_userid", "pool_key", "confirm"],
         },
     },
     {
@@ -1364,6 +1412,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             "create_private_message_task",
             "create_group_message_task",
             "create_moment_task",
+            "send_pool_private_message",
         ]
         return _tool_result(payload)
     if name == "get_contact":
@@ -1426,6 +1475,19 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return _call_business_task(name, arguments)
     if name == "create_group_message_task":
         return _call_business_task(name, arguments)
+    if name == "send_pool_private_message":
+        return _tool_result(
+            send_pool_private_message(
+                owner_userid=str(arguments.get("owner_userid") or "").strip(),
+                pool_key=str(arguments.get("pool_key") or "").strip(),
+                content=str(arguments.get("content") or "").strip(),
+                images=list(arguments.get("images") or []),
+                image_media_ids=list(arguments.get("image_media_ids") or []),
+                attachments=list(arguments.get("attachments") or []),
+                confirm=bool(arguments.get("confirm")),
+                operator=str(arguments.get("operator") or "").strip(),
+            )
+        )
     if name == "record_conversion_feedback":
         locator = _resolve_customer_locator(arguments, required=False)
         feedback_result = record_conversion_feedback(

@@ -1330,7 +1330,7 @@ def test_user_ops_batch_send_preview_rejects_empty_content_and_images(client, ap
 
     assert response.status_code == 400
     assert payload["ok"] is False
-    assert payload["error"] == "content or images is required"
+    assert payload["error"] == "content, images, or attachments is required"
 
 
 def test_user_ops_batch_send_execute_requires_confirm_and_writes_send_record(client, app, monkeypatch):

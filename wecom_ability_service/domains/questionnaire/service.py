@@ -3,23 +3,44 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
+import requests
 from flask import current_app, has_request_context, session
 
 from ...db import get_db
+from ...infra.settings import get_setting
+from ..outbound_webhook.service import EVENT_QUESTIONNAIRE_SUBMIT, send_outbound_webhook
 from ..tags import repo as tags_repo
 
 questionnaire_logger = logging.getLogger("questionnaire")
 QUESTIONNAIRE_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
+QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SUCCESS = "success"
+QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED = "failed"
+QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SKIPPED = "skipped"
+QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED_KEY = "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED"
+QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_DISABLED_REASON = "skipped by global external push switch"
 
 
 class QuestionnaireAlreadySubmittedError(ValueError):
     pass
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def _json_loads(value: Any, *, default: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return default
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+    return parsed
 
 
 def _json_array(value: Any) -> list[Any]:
@@ -146,6 +167,10 @@ def _normalize_questionnaire_payload(
     title = str(payload.get("title") or "").strip()
     description = str(payload.get("description") or "").strip()
     redirect_url = str(payload.get("redirect_url") or "").strip()
+    external_push_enabled = _normalize_bool(
+        payload.get("external_push_enabled", (existing or {}).get("external_push_enabled"))
+    )
+    external_push_url = str(payload.get("external_push_url") or "").strip()
     slug_source = str(payload.get("slug") or (existing or {}).get("slug") or name or title).strip()
     slug = _slugify_questionnaire(slug_source)
 
@@ -153,6 +178,8 @@ def _normalize_questionnaire_payload(
         raise ValueError("name is required")
     if not title:
         raise ValueError("title is required")
+    if external_push_enabled and not external_push_url:
+        raise ValueError("external_push_url is required when external_push_enabled is enabled")
     if _questionnaire_exists_by_slug(slug, exclude_id=questionnaire_id):
         raise ValueError("slug already exists")
 
@@ -236,6 +263,8 @@ def _normalize_questionnaire_payload(
         "description": description,
         "is_disabled": _normalize_bool(payload.get("is_disabled", (existing or {}).get("is_disabled"))),
         "redirect_url": redirect_url,
+        "external_push_enabled": external_push_enabled,
+        "external_push_url": external_push_url,
         "questions": normalized_questions,
         "score_rules": normalized_score_rules,
     }
@@ -244,7 +273,8 @@ def _normalize_questionnaire_payload(
 def _get_questionnaire_row(questionnaire_id: int) -> dict[str, Any] | None:
     return get_db().execute(
         """
-        SELECT id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+        SELECT id, slug, name, title, description, is_disabled, redirect_url,
+               external_push_enabled, external_push_url, created_at, updated_at
         FROM questionnaires
         WHERE id = ?
         """,
@@ -261,6 +291,8 @@ def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
         "description": row.get("description", "") or "",
         "is_disabled": _normalize_bool(row.get("is_disabled")),
         "redirect_url": row.get("redirect_url", "") or "",
+        "external_push_enabled": _normalize_bool(row.get("external_push_enabled")),
+        "external_push_url": row.get("external_push_url", "") or "",
         "created_at": row.get("created_at", ""),
         "updated_at": row.get("updated_at", ""),
     }
@@ -438,11 +470,13 @@ def _sync_questionnaire_score_rules(questionnaire_id: int, score_rules: list[dic
 def list_questionnaires() -> list[dict[str, Any]]:
     rows = get_db().execute(
         """
-        SELECT q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url, q.created_at, q.updated_at,
+        SELECT q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
+               q.external_push_enabled, q.external_push_url, q.created_at, q.updated_at,
                COUNT(s.id) AS submission_count, MAX(s.submitted_at) AS last_submitted_at
         FROM questionnaires q
         LEFT JOIN questionnaire_submissions s ON s.questionnaire_id = q.id
-        GROUP BY q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url, q.created_at, q.updated_at
+        GROUP BY q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
+                 q.external_push_enabled, q.external_push_url, q.created_at, q.updated_at
         ORDER BY q.updated_at DESC, q.id DESC
         """
     ).fetchall()
@@ -530,9 +564,10 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
         row = db.execute(
             """
             INSERT INTO questionnaires (
-                slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+                slug, name, title, description, is_disabled, redirect_url,
+                external_push_enabled, external_push_url, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (
@@ -542,6 +577,8 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
                 normalized["description"],
                 normalized["is_disabled"],
                 normalized["redirect_url"],
+                normalized["external_push_enabled"],
+                normalized["external_push_url"],
             ),
         ).fetchone()
         questionnaire_id = int(row["id"])
@@ -574,7 +611,8 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
         db.execute(
             """
             UPDATE questionnaires
-            SET slug = ?, name = ?, title = ?, description = ?, is_disabled = ?, redirect_url = ?, updated_at = CURRENT_TIMESTAMP
+            SET slug = ?, name = ?, title = ?, description = ?, is_disabled = ?, redirect_url = ?,
+                external_push_enabled = ?, external_push_url = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
             (
@@ -584,6 +622,8 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
                 normalized["description"],
                 normalized["is_disabled"],
                 normalized["redirect_url"],
+                normalized["external_push_enabled"],
+                normalized["external_push_url"],
                 int(questionnaire_id),
             ),
         )
@@ -766,7 +806,8 @@ def export_questionnaire_submissions(questionnaire_id: int) -> dict[str, Any]:
 def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     row = get_db().execute(
         """
-        SELECT id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+        SELECT id, slug, name, title, description, is_disabled, redirect_url,
+               external_push_enabled, external_push_url, created_at, updated_at
         FROM questionnaires
         WHERE slug = ? AND is_disabled = ?
         LIMIT 1
@@ -797,6 +838,8 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     detail.pop("score_rules", None)
     detail.pop("submission_count", None)
     detail.pop("last_submitted_at", None)
+    detail.pop("external_push_enabled", None)
+    detail.pop("external_push_url", None)
     return detail
 
 
@@ -1135,6 +1178,433 @@ def save_questionnaire_submission(
     }
 
 
+def _questionnaire_submit_webhook_payload(submission: dict[str, Any]) -> dict[str, str]:
+    return {
+        "mobile": str((submission or {}).get("mobile_snapshot") or "").strip(),
+        "userid": str((submission or {}).get("follow_user_userid") or "").strip(),
+        "unionid": str((submission or {}).get("unionid") or "").strip(),
+    }
+
+
+def _questionnaire_external_push_timeout_seconds() -> float:
+    raw_value = get_setting("QUESTIONNAIRE_EXTERNAL_PUSH_TIMEOUT_SECONDS")
+    if raw_value in (None, ""):
+        raw_value = current_app.config.get("QUESTIONNAIRE_EXTERNAL_PUSH_TIMEOUT_SECONDS", 3)
+    try:
+        timeout_seconds = float(raw_value or 3)
+    except (TypeError, ValueError):
+        timeout_seconds = 3.0
+    return max(0.5, min(timeout_seconds, 10.0))
+
+
+def is_questionnaire_external_push_global_enabled() -> bool:
+    raw_value = get_setting(QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED_KEY)
+    if raw_value in (None, ""):
+        raw_value = current_app.config.get(QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED_KEY, True)
+    if raw_value in (None, ""):
+        return True
+    return _normalize_bool(raw_value)
+
+
+def _format_iso_datetime(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = text.replace(" ", "T")
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return text
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+    return dt.isoformat()
+
+
+def _questionnaire_external_push_user_id(submission: dict[str, Any]) -> str:
+    for field in ["respondent_key", "external_userid", "unionid", "openid"]:
+        value = str((submission or {}).get(field) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _serialize_questionnaire_external_push_answers(answer_snapshots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    serialized: list[dict[str, Any]] = []
+    for item in answer_snapshots or []:
+        question_type = str(item.get("question_type") or "").strip()
+        title = str(item.get("question_title_snapshot") or "").strip()
+        if question_type == "multi_choice":
+            answer_value: str | list[str] = _dedupe_strings(item.get("selected_option_texts_snapshot") or [])
+        elif question_type in {"single_choice", "textarea", "mobile"}:
+            if question_type == "single_choice":
+                answer_value = str((_dedupe_strings(item.get("selected_option_texts_snapshot") or []) or [""])[0] or "")
+            else:
+                answer_value = str(item.get("text_value") or "").strip()
+        else:
+            continue
+        serialized.append({"title": title, "answer": answer_value})
+    return serialized
+
+
+def _build_questionnaire_external_push_payload(
+    questionnaire: dict[str, Any],
+    submission: dict[str, Any],
+    computed_result: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "user_id": _questionnaire_external_push_user_id(submission),
+        "questionnaire_title": str(questionnaire.get("title") or questionnaire.get("name") or "").strip(),
+        "submitted_at": _format_iso_datetime(submission.get("submitted_at")),
+        "answers": _serialize_questionnaire_external_push_answers(computed_result.get("answer_snapshots") or []),
+    }
+
+
+def _create_questionnaire_external_push_log(
+    *,
+    questionnaire_id: int,
+    questionnaire_title_snapshot: str,
+    submission_record_id: int,
+    retry_from_log_id: int | None = None,
+    retry_attempt: int = 0,
+    user_id: str,
+    target_url: str,
+    request_payload: dict[str, Any],
+    response_status_code: int | None = None,
+    response_body: str = "",
+    status: str,
+    failure_reason: str = "",
+) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO questionnaire_external_push_logs (
+            questionnaire_id, questionnaire_title_snapshot, submission_record_id, retry_from_log_id, retry_attempt,
+            user_id, target_url, request_payload, response_status_code, response_body, status, failure_reason,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id, questionnaire_id, questionnaire_title_snapshot, submission_record_id, retry_from_log_id,
+                  retry_attempt, user_id, target_url, request_payload, response_status_code, response_body, status,
+                  failure_reason, created_at, updated_at
+        """,
+        (
+            int(questionnaire_id),
+            str(questionnaire_title_snapshot or "").strip(),
+            int(submission_record_id),
+            int(retry_from_log_id) if retry_from_log_id else None,
+            max(0, int(retry_attempt or 0)),
+            str(user_id or "").strip(),
+            str(target_url or "").strip(),
+            _json_dumps(request_payload),
+            response_status_code,
+            str(response_body or ""),
+            str(status or QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED).strip(),
+            str(failure_reason or "").strip(),
+        ),
+    ).fetchone()
+    get_db().commit()
+    result = dict(row or {})
+    result["request_payload"] = _json_loads(result.get("request_payload"), default={})
+    return result
+
+
+def _safe_create_questionnaire_external_push_log(**kwargs: Any) -> dict[str, Any]:
+    try:
+        return _create_questionnaire_external_push_log(**kwargs)
+    except Exception:
+        questionnaire_logger.exception(
+            "questionnaire external push log write failed questionnaire_id=%s submission_record_id=%s",
+            kwargs.get("questionnaire_id"),
+            kwargs.get("submission_record_id"),
+        )
+        return {}
+
+
+def _get_questionnaire_external_push_log(log_id: int) -> dict[str, Any] | None:
+    row = get_db().execute(
+        """
+        SELECT
+            id,
+            questionnaire_id,
+            questionnaire_title_snapshot,
+            submission_record_id,
+            retry_from_log_id,
+            retry_attempt,
+            user_id,
+            target_url,
+            request_payload,
+            response_status_code,
+            response_body,
+            status,
+            failure_reason,
+            created_at,
+            updated_at
+        FROM questionnaire_external_push_logs
+        WHERE id = ?
+        """,
+        (int(log_id),),
+    ).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    result["request_payload"] = _json_loads(result.get("request_payload"), default={})
+    return result
+
+
+def _count_questionnaire_external_push_retry_logs(root_log_id: int) -> int:
+    row = get_db().execute(
+        "SELECT COUNT(*) AS total FROM questionnaire_external_push_logs WHERE retry_from_log_id = ?",
+        (int(root_log_id),),
+    ).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def _execute_questionnaire_external_push_request(
+    *,
+    target_url: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_target_url = str(target_url or "").strip()
+    if not normalized_target_url:
+        return {
+            "ok": False,
+            "attempted": False,
+            "response_status_code": None,
+            "response_body": "",
+            "failure_reason": "external push url is empty",
+        }
+    try:
+        response = requests.post(
+            normalized_target_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=_questionnaire_external_push_timeout_seconds(),
+        )
+        response_body = (response.text or "")[:5000]
+        if int(response.status_code) == 200:
+            return {
+                "ok": True,
+                "attempted": True,
+                "response_status_code": int(response.status_code),
+                "response_body": response_body,
+                "failure_reason": "",
+            }
+        return {
+            "ok": False,
+            "attempted": True,
+            "response_status_code": int(response.status_code),
+            "response_body": response_body,
+            "failure_reason": f"HTTP {int(response.status_code)}",
+        }
+    except requests.Timeout:
+        return {
+            "ok": False,
+            "attempted": True,
+            "response_status_code": None,
+            "response_body": "",
+            "failure_reason": "request timeout",
+        }
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "attempted": True,
+            "response_status_code": None,
+            "response_body": "",
+            "failure_reason": f"network error: {str(exc).strip() or exc.__class__.__name__}",
+        }
+    except Exception as exc:
+        questionnaire_logger.exception("questionnaire external push internal failure")
+        return {
+            "ok": False,
+            "attempted": True,
+            "response_status_code": None,
+            "response_body": "",
+            "failure_reason": f"internal error: {str(exc).strip() or exc.__class__.__name__}",
+        }
+
+
+def _deliver_questionnaire_external_push(
+    questionnaire: dict[str, Any],
+    submission: dict[str, Any],
+    computed_result: dict[str, Any],
+) -> dict[str, Any]:
+    if not _normalize_bool(questionnaire.get("external_push_enabled")):
+        return {"enabled": False, "attempted": False, "reason": "external_push_disabled"}
+
+    target_url = str(questionnaire.get("external_push_url") or "").strip()
+    payload = _build_questionnaire_external_push_payload(questionnaire, submission, computed_result)
+    questionnaire_id = int(questionnaire["id"])
+    submission_record_id = int(submission["id"])
+    questionnaire_title_snapshot = str(questionnaire.get("title") or questionnaire.get("name") or "").strip()
+    user_id = str(payload.get("user_id") or "").strip()
+    if not is_questionnaire_external_push_global_enabled():
+        log_row = _safe_create_questionnaire_external_push_log(
+            questionnaire_id=questionnaire_id,
+            questionnaire_title_snapshot=questionnaire_title_snapshot,
+            submission_record_id=submission_record_id,
+            user_id=user_id,
+            target_url=target_url,
+            request_payload=payload,
+            response_status_code=None,
+            response_body="",
+            status=QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SKIPPED,
+            failure_reason=QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_DISABLED_REASON,
+        )
+        questionnaire_logger.warning(
+            "questionnaire external push skipped by global switch submission_id=%s questionnaire_id=%s",
+            submission_record_id,
+            questionnaire_id,
+        )
+        return {
+            "enabled": True,
+            "attempted": False,
+            "ok": False,
+            "reason": "global_switch_disabled",
+            "log": log_row,
+            "skipped": True,
+        }
+    result = _execute_questionnaire_external_push_request(target_url=target_url, payload=payload)
+    log_row = _safe_create_questionnaire_external_push_log(
+        questionnaire_id=questionnaire_id,
+        questionnaire_title_snapshot=questionnaire_title_snapshot,
+        submission_record_id=submission_record_id,
+        user_id=user_id,
+        target_url=target_url,
+        request_payload=payload,
+        response_status_code=result.get("response_status_code"),
+        response_body=str(result.get("response_body") or ""),
+        status=QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SUCCESS if result.get("ok") else QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED,
+        failure_reason=str(result.get("failure_reason") or ""),
+    )
+    if result.get("ok"):
+        questionnaire_logger.info(
+            "questionnaire external push success submission_id=%s questionnaire_id=%s status_code=%s",
+            submission_record_id,
+            questionnaire_id,
+            result.get("response_status_code"),
+        )
+    elif not result.get("attempted"):
+        questionnaire_logger.warning(
+            "questionnaire external push skipped submission_id=%s questionnaire_id=%s reason=empty_url",
+            submission_record_id,
+            questionnaire_id,
+        )
+    else:
+        questionnaire_logger.warning(
+            "questionnaire external push failed submission_id=%s questionnaire_id=%s reason=%s",
+            submission_record_id,
+            questionnaire_id,
+            result.get("failure_reason"),
+        )
+    return {
+        "enabled": True,
+        "attempted": bool(result.get("attempted")),
+        "ok": bool(result.get("ok")),
+        "reason": str(result.get("failure_reason") or ("empty_url" if not result.get("attempted") else "")).strip(),
+        "log": log_row,
+    }
+
+
+def retry_questionnaire_external_push_log(push_log_id: int) -> dict[str, Any]:
+    source_log = _get_questionnaire_external_push_log(int(push_log_id))
+    if not source_log:
+        raise LookupError("questionnaire external push log not found")
+    if str(source_log.get("status") or "").strip() != QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED:
+        raise ValueError("only failed external push logs can be retried")
+
+    payload = _json_loads(source_log.get("request_payload"), default={})
+    if not isinstance(payload, dict):
+        payload = {}
+    root_log_id = int(source_log.get("retry_from_log_id") or source_log.get("id") or 0)
+    retry_attempt = _count_questionnaire_external_push_retry_logs(root_log_id) + 1
+    result = _execute_questionnaire_external_push_request(
+        target_url=str(source_log.get("target_url") or "").strip(),
+        payload=payload,
+    )
+    log_row = _safe_create_questionnaire_external_push_log(
+        questionnaire_id=int(source_log.get("questionnaire_id") or 0),
+        questionnaire_title_snapshot=str(source_log.get("questionnaire_title_snapshot") or "").strip(),
+        submission_record_id=int(source_log.get("submission_record_id") or 0),
+        retry_from_log_id=root_log_id,
+        retry_attempt=retry_attempt,
+        user_id=str(source_log.get("user_id") or "").strip(),
+        target_url=str(source_log.get("target_url") or "").strip(),
+        request_payload=payload,
+        response_status_code=result.get("response_status_code"),
+        response_body=str(result.get("response_body") or ""),
+        status=QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SUCCESS if result.get("ok") else QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED,
+        failure_reason=str(result.get("failure_reason") or ""),
+    )
+    return {
+        "ok": bool(result.get("ok")),
+        "attempted": bool(result.get("attempted")),
+        "reason": str(result.get("failure_reason") or "").strip(),
+        "source_log": source_log,
+        "log": log_row,
+    }
+
+
+def retry_questionnaire_external_push_logs(push_log_ids: list[int]) -> dict[str, Any]:
+    normalized_ids: list[int] = []
+    seen: set[int] = set()
+    for value in push_log_ids or []:
+        try:
+            normalized_value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if normalized_value <= 0 or normalized_value in seen:
+            continue
+        seen.add(normalized_value)
+        normalized_ids.append(normalized_value)
+    result = {
+        "selected_count": len(normalized_ids),
+        "retried_count": 0,
+        "success_count": 0,
+        "failed_count": 0,
+        "skipped_count": 0,
+        "items": [],
+    }
+    for push_log_id in normalized_ids:
+        try:
+            item = retry_questionnaire_external_push_log(push_log_id)
+            result["retried_count"] += 1
+            if item.get("ok"):
+                result["success_count"] += 1
+            else:
+                result["failed_count"] += 1
+            result["items"].append({"push_log_id": push_log_id, **item, "skipped": False})
+        except Exception as exc:
+            result["skipped_count"] += 1
+            result["items"].append(
+                {
+                    "push_log_id": push_log_id,
+                    "ok": False,
+                    "attempted": False,
+                    "reason": str(exc).strip() or exc.__class__.__name__,
+                    "skipped": True,
+                }
+            )
+    return result
+
+
+def _fire_questionnaire_submit_webhook(submission: dict[str, Any]) -> dict[str, Any]:
+    payload = _questionnaire_submit_webhook_payload(submission)
+    result = send_outbound_webhook(
+        event_type=EVENT_QUESTIONNAIRE_SUBMIT,
+        payload=payload,
+        source_key="submission_id",
+        source_id=str(submission.get("id") or ""),
+    )
+    delivery = dict(result.get("delivery") or {})
+    return {
+        "sent": bool(result.get("sent")),
+        "ok": bool(result.get("ok")),
+        "reason": str(result.get("reason") or "").strip(),
+        "status_code": delivery.get("response_status_code"),
+        "delivery": delivery,
+        "payload": payload,
+    }
+
+
 def apply_questionnaire_mobile_binding(submission: dict[str, Any]) -> dict[str, Any]:
     mobile_snapshot = str((submission or {}).get("mobile_snapshot") or "").strip()
     external_userid = str((submission or {}).get("external_userid") or "").strip()
@@ -1295,7 +1765,8 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     slug_value = str(slug or "").strip()
     row = get_db().execute(
         """
-        SELECT id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+        SELECT id, slug, name, title, description, is_disabled, redirect_url,
+               external_push_enabled, external_push_url, created_at, updated_at
         FROM questionnaires
         WHERE slug = ? AND is_disabled = ?
         LIMIT 1
@@ -1377,6 +1848,8 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     )
     apply_questionnaire_mobile_binding(submission)
     apply_questionnaire_result_to_scrm(submission["id"])
+    _fire_questionnaire_submit_webhook(submission)
+    _deliver_questionnaire_external_push(questionnaire, submission, computed_result)
     return {
         "success": True,
         "redirect_url": computed_result.get("redirect_url", "") or "",

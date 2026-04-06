@@ -10,9 +10,11 @@ from ..domains.admin_jobs import (
     build_jobs_message_batches_payload,
     build_jobs_payload,
     build_jobs_summary_payload,
+    build_jobs_webhook_deliveries_payload,
     execute_jobs_action,
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
+from .internal_auth import ensure_admin_console_action_token, require_internal_api_token, validate_admin_console_action_token
 
 
 def _operator_from_request() -> str:
@@ -65,6 +67,7 @@ def _jobs_page(
         page_notice=page_notice,
         page_error=page_error,
         action_result=action_result or {},
+        admin_action_token=ensure_admin_console_action_token(),
     )
 
 
@@ -78,7 +81,17 @@ def admin_console_jobs_action():
         "batch_id": str(request.form.get("batch_id") or "").strip(),
         "batch_status": str(request.form.get("batch_status") or "").strip(),
         "batch_limit": str(request.form.get("batch_limit") or "").strip(),
+        "webhook_event_type": str(request.form.get("webhook_event_type") or "").strip(),
+        "webhook_status": str(request.form.get("webhook_status") or "").strip(),
+        "webhook_limit": str(request.form.get("webhook_limit") or "").strip(),
     }
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _jobs_page(
+            tab=active_tab,
+            page_error=action_token_error,
+            query_overrides=query_overrides,
+        )
     try:
         payload = execute_jobs_action(
             action=str(request.form.get("action") or "").strip(),
@@ -122,6 +135,9 @@ def api_admin_jobs_archive_sync():
 
 
 def api_admin_jobs_archive_sync_run():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
     payload = _request_payload()
     params = {
         "start_time": str(payload.get("start_time") or request.values.get("start_time") or "").strip(),
@@ -154,6 +170,9 @@ def api_admin_jobs_message_batch_detail(batch_id: int):
 
 
 def api_admin_jobs_message_batch_ack(batch_id: int):
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
     payload = _request_payload()
     params = {
         "batch_id": batch_id,
@@ -174,6 +193,9 @@ def api_admin_jobs_deferred_jobs():
 
 
 def api_admin_jobs_deferred_jobs_run():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
     payload = _request_payload()
     params = {
         "limit": payload.get("limit") if "limit" in payload else request.values.get("limit"),
@@ -185,6 +207,45 @@ def api_admin_jobs_deferred_jobs_run():
         return jsonify({"ok": False, "error": str(exc)}), 400
     status_code = 200 if result.get("ok", False) else 502
     return jsonify(result), status_code
+
+
+def api_admin_jobs_webhook_deliveries():
+    return jsonify({"ok": True, "webhook_deliveries": build_jobs_webhook_deliveries_payload(_api_args())})
+
+
+def api_admin_jobs_webhook_deliveries_run():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = _request_payload()
+    params = {
+        "limit": payload.get("limit") if "limit" in payload else request.values.get("limit"),
+        "confirm": _request_confirmed(),
+    }
+    try:
+        result = execute_jobs_action(action="run-webhook-retries", form=params, operator=_operator_from_request())
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    status_code = 200 if result.get("ok", False) else 502
+    return jsonify(result), status_code
+
+
+def api_admin_jobs_webhook_delivery_retry(delivery_id: int):
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = _request_payload()
+    params = {
+        "delivery_id": delivery_id,
+        "confirm": _request_confirmed(),
+    }
+    try:
+        result = execute_jobs_action(action="retry-webhook-delivery", form=params, operator=_operator_from_request())
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify(result)
 
 
 def register_routes(bp):
@@ -199,3 +260,6 @@ def register_routes(bp):
     bp.route("/api/admin/jobs/message-batches/<int:batch_id>/ack", methods=["POST"])(api_admin_jobs_message_batch_ack)
     bp.route("/api/admin/jobs/deferred-jobs", methods=["GET"])(api_admin_jobs_deferred_jobs)
     bp.route("/api/admin/jobs/deferred-jobs/run", methods=["POST"])(api_admin_jobs_deferred_jobs_run)
+    bp.route("/api/admin/jobs/webhook-deliveries", methods=["GET"])(api_admin_jobs_webhook_deliveries)
+    bp.route("/api/admin/jobs/webhook-deliveries/run", methods=["POST"])(api_admin_jobs_webhook_deliveries_run)
+    bp.route("/api/admin/jobs/webhook-deliveries/<int:delivery_id>/retry", methods=["POST"])(api_admin_jobs_webhook_delivery_retry)

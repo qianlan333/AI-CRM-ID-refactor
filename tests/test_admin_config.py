@@ -52,7 +52,12 @@ def client(app):
     return app.test_client()
 
 
-def _seed_signup_conversion_questionnaire(app, *, questionnaire_id: int = 71) -> dict[str, object]:
+def _seed_signup_conversion_questionnaire(
+    app,
+    *,
+    questionnaire_id: int = 71,
+    question_count: int = 5,
+) -> dict[str, object]:
     with app.app_context():
         db = get_db()
         db.execute(
@@ -65,13 +70,13 @@ def _seed_signup_conversion_questionnaire(app, *, questionnaire_id: int = 71) ->
             (
                 questionnaire_id,
                 f"marketing-automation-{questionnaire_id}",
-                "报名成功自动化问卷",
-                "报名成功自动化问卷",
+                "自动化转化初判问卷",
+                "自动化转化初判问卷",
             ),
         )
         question_ids: list[int] = []
         option_ids_by_question: dict[int, list[int]] = {}
-        for index in range(1, 6):
+        for index in range(1, question_count + 1):
             question_id = questionnaire_id * 100 + index
             db.execute(
                 """
@@ -103,11 +108,22 @@ def _seed_signup_conversion_questionnaire(app, *, questionnaire_id: int = 71) ->
                 )
             question_ids.append(question_id)
             option_ids_by_question[question_id] = option_ids
+        mobile_question_id = questionnaire_id * 100 + question_count + 1
+        db.execute(
+            """
+            INSERT INTO questionnaire_questions (
+                id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, 'mobile', '手机号', 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (mobile_question_id, questionnaire_id, question_count + 1),
+        )
         db.commit()
     return {
         "questionnaire_id": questionnaire_id,
         "question_ids": question_ids,
         "option_ids_by_question": option_ids_by_question,
+        "mobile_question_id": mobile_question_id,
     }
 
 
@@ -119,8 +135,11 @@ def _signup_conversion_config_payload(
     top_threshold: int = 4,
     quiet_hour_start: int = 23,
     timezone: str = "Asia/Shanghai",
+    question_ids: list[int] | None = None,
+    hit_option_ids_by_question: dict[int, list[int]] | None = None,
+    silent_threshold_days_by_pool: dict[str, int] | None = None,
 ) -> dict[str, object]:
-    question_ids = list(questionnaire_seed["question_ids"])
+    selected_question_ids = list(question_ids or questionnaire_seed["question_ids"])
     option_ids_by_question = dict(questionnaire_seed["option_ids_by_question"])
     return {
         "enabled": enabled,
@@ -129,13 +148,25 @@ def _signup_conversion_config_payload(
         "top_threshold": top_threshold,
         "quiet_hour_start": quiet_hour_start,
         "timezone": timezone,
+        "silent_threshold_days_by_pool": silent_threshold_days_by_pool
+        or {
+            "new_user": 7,
+            "inactive_normal": 7,
+            "inactive_focus": 7,
+            "active_normal": 7,
+            "active_focus": 7,
+        },
         "question_rules": [
             {
                 "questionnaire_question_id": question_id,
-                "hit_option_ids_json": [option_ids_by_question[question_id][0]],
+                "hit_option_ids_json": list(
+                    hit_option_ids_by_question.get(question_id, [option_ids_by_question[question_id][0]])
+                    if hit_option_ids_by_question
+                    else [option_ids_by_question[question_id][0]]
+                ),
                 "sort_order": index,
             }
-            for index, question_id in enumerate(question_ids, start=1)
+            for index, question_id in enumerate(selected_question_ids, start=1)
         ],
     }
 
@@ -149,9 +180,9 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "batch_id": 9101,
                 "external_userid": "wm_dispatch_pending",
                 "owner_userid": "sales_dispatch_01",
-                "segment": "core",
-                "main_stage": "prospect",
-                "sub_stage": "wecom_connected",
+                "segment": "focus",
+                "main_stage": "pool",
+                "sub_stage": "inactive_focus",
                 "dispatch_status": "pending",
                 "created_at": f"{today} 10:01:00",
                 "acked_at": "",
@@ -160,9 +191,9 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "batch_id": 9102,
                 "external_userid": "wm_dispatch_blocked",
                 "owner_userid": "sales_dispatch_02",
-                "segment": "top",
-                "main_stage": "active",
-                "sub_stage": "activated",
+                "segment": "focus",
+                "main_stage": "pool",
+                "sub_stage": "active_focus",
                 "dispatch_status": "blocked_quiet_hours",
                 "created_at": f"{today} 10:02:00",
                 "acked_at": "",
@@ -171,9 +202,9 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "batch_id": 9103,
                 "external_userid": "wm_dispatch_acked",
                 "owner_userid": "sales_dispatch_03",
-                "segment": "top",
-                "main_stage": "prospect",
-                "sub_stage": "wecom_connected",
+                "segment": "normal",
+                "main_stage": "pool",
+                "sub_stage": "active_normal",
                 "dispatch_status": "acked",
                 "created_at": f"{today} 10:03:00",
                 "acked_at": f"{today} 10:05:00",
@@ -182,7 +213,7 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "batch_id": 9104,
                 "external_userid": "wm_dispatch_converted",
                 "owner_userid": "sales_dispatch_04",
-                "segment": "core",
+                "segment": "focus",
                 "main_stage": "converted",
                 "sub_stage": "enrolled",
                 "dispatch_status": "converted_before_dispatch",
@@ -235,19 +266,13 @@ def _seed_marketing_dispatch_history(app) -> None:
             )
             db.execute(
                 """
-                INSERT INTO customer_value_segment_current (
-                    external_userid, segment, segment_rank, score, scoring_version, computed_reason, submission_id,
-                    matched_question_ids_json, source_payload_json, evaluated_at, computed_at, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, 'signup_conversion_question_hits_v1', 'seed', NULL, '[]', '{}', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                UPDATE customer_marketing_state_current
+                SET state_payload_json = ?
+                WHERE external_userid = ?
                 """,
                 (
+                    json.dumps({"followup_segment": item["segment"]}, ensure_ascii=False),
                     item["external_userid"],
-                    item["segment"],
-                    3 if item["segment"] == "top" else 2,
-                    4 if item["segment"] == "top" else 3,
-                    item["created_at"],
-                    item["created_at"],
                 ),
             )
             db.execute(
@@ -276,49 +301,49 @@ def _seed_automation_conversion_stage_board(app) -> None:
     yesterday = (today_date - timedelta(days=1)).isoformat()
     rows = [
         {
-            "external_userid": "wm_stage_wait_001",
+            "external_userid": "wm_stage_new_001",
             "owner_userid": "sales_stage_01",
-            "segment": "normal",
-            "main_stage": "prospect",
-            "sub_stage": "wecom_connected",
+            "segment": "unknown",
+            "main_stage": "pool",
+            "sub_stage": "new_user",
             "entered_at": f"{today} 09:00:00",
         },
         {
-            "external_userid": "wm_stage_wait_002",
+            "external_userid": "wm_stage_inactive_normal_001",
             "owner_userid": "sales_stage_02",
-            "segment": "core",
-            "main_stage": "prospect",
-            "sub_stage": "wecom_connected",
+            "segment": "normal",
+            "main_stage": "pool",
+            "sub_stage": "inactive_normal",
             "entered_at": f"{today} 10:00:00",
         },
         {
-            "external_userid": "wm_stage_wait_003",
+            "external_userid": "wm_stage_inactive_focus_001",
             "owner_userid": "sales_stage_03",
-            "segment": "top",
-            "main_stage": "prospect",
-            "sub_stage": "wecom_connected",
+            "segment": "focus",
+            "main_stage": "pool",
+            "sub_stage": "inactive_focus",
             "entered_at": f"{yesterday} 11:00:00",
         },
         {
-            "external_userid": "wm_stage_active_001",
+            "external_userid": "wm_stage_active_normal_001",
             "owner_userid": "sales_stage_04",
-            "segment": "core",
-            "main_stage": "active",
-            "sub_stage": "activated",
+            "segment": "normal",
+            "main_stage": "pool",
+            "sub_stage": "active_normal",
             "entered_at": f"{today} 12:00:00",
         },
         {
-            "external_userid": "wm_stage_active_002",
+            "external_userid": "wm_stage_active_focus_001",
             "owner_userid": "sales_stage_05",
-            "segment": "top",
-            "main_stage": "active",
-            "sub_stage": "activated",
+            "segment": "focus",
+            "main_stage": "pool",
+            "sub_stage": "active_focus",
             "entered_at": f"{yesterday} 13:00:00",
         },
         {
             "external_userid": "wm_stage_converted_001",
             "owner_userid": "sales_stage_06",
-            "segment": "core",
+            "segment": "focus",
             "main_stage": "converted",
             "sub_stage": "enrolled",
             "entered_at": f"{today} 14:00:00",
@@ -348,7 +373,7 @@ def _seed_automation_conversion_stage_board(app) -> None:
                     item["external_userid"],
                     item["main_stage"],
                     item["sub_stage"],
-                    1 if item["main_stage"] == "active" else 0,
+                    1 if item["sub_stage"].startswith("active_") else 0,
                     1 if item["main_stage"] == "converted" else 0,
                     item["main_stage"],
                     item["entered_at"],
@@ -356,19 +381,13 @@ def _seed_automation_conversion_stage_board(app) -> None:
             )
             db.execute(
                 """
-                INSERT INTO customer_value_segment_current (
-                    external_userid, segment, segment_rank, score, scoring_version, computed_reason, submission_id,
-                    matched_question_ids_json, source_payload_json, evaluated_at, computed_at, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, 'signup_conversion_question_hits_v1', 'seed', NULL, '[]', '{}', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                UPDATE customer_marketing_state_current
+                SET state_payload_json = ?
+                WHERE external_userid = ?
                 """,
                 (
+                    json.dumps({"followup_segment": item["segment"]}, ensure_ascii=False),
                     item["external_userid"],
-                    item["segment"],
-                    3 if item["segment"] == "top" else (2 if item["segment"] == "core" else 1),
-                    4 if item["segment"] == "top" else (3 if item["segment"] == "core" else 2),
-                    item["entered_at"],
-                    item["entered_at"],
                 ),
             )
         db.commit()
@@ -584,7 +603,18 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
     _seed_automation_conversion_stage_board(app)
     save_response = client.put(
         "/api/admin/marketing-automation/config",
-        json=_signup_conversion_config_payload(seed, core_threshold=2, top_threshold=5),
+        json=_signup_conversion_config_payload(
+            seed,
+            core_threshold=2,
+            top_threshold=5,
+            silent_threshold_days_by_pool={
+                "new_user": 3,
+                "inactive_normal": 4,
+                "inactive_focus": 5,
+                "active_normal": 6,
+                "active_focus": 7,
+            },
+        ),
     )
     assert save_response.status_code == 200
 
@@ -597,40 +627,44 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
     assert "当前状态" in visible_text
     assert "配置步骤" in visible_text
     assert "阶段分栏" in visible_text
-    assert "重点用户分布" in visible_text
-    assert "普通用户" in visible_text
-    assert "重点用户" in visible_text
-    assert "最高优先用户" in visible_text
-    assert "待转化" in visible_text
+    assert "初判分布" in visible_text
+    assert "未完成初判" in visible_text
+    assert "普通跟进" in visible_text
+    assert "重点跟进" in visible_text
+    assert "新用户池" in visible_text
     assert "最近处理情况" in visible_text
     assert "wm_dispatch_pending" in visible_text
     assert "等待 AI 接手" in visible_text
     assert "夜间暂停" in visible_text
-    assert "客户已完成报名" in visible_text
+    assert "客户已确认成交" in visible_text
     assert "23:00 后暂停启动" in visible_text
-    assert "报名成功自动化问卷" in visible_text
+    assert "自动化转化初判问卷" in visible_text
+    assert "开启自动化转化问卷初判" in visible_text
+    assert "关键题与命中答案" in visible_text
+    assert "新增关键题" in visible_text
+    assert "沉默池规则" in visible_text
+    assert "沉默池第一版只做留存记录，不做主动营销" in visible_text
+    assert "问卷初判只做普通跟进" in visible_text
     assert 'value="2"' in html
-    assert 'value="5"' in html
     assert "const initialMarketingConfig" in html
     assert '"questionnaire_id": 81' in html or '"questionnaire_id":81' in html
     assert '/admin/automation-conversion/preview' in html
-    assert '/admin/automation-conversion/stage/waiting-conversion' in html
-    assert 'data-priority-card="regular_users"' in html
-    assert 'data-priority-count="1"' in html
-    assert 'data-priority-card="priority_users"' in html
-    assert 'data-priority-count="5"' in html
-    assert 'data-priority-card="highest_priority_users"' in html
-    assert 'data-priority-count="4"' in html
-    assert 'data-stage-main-stage="prospect"' in html
-    assert 'data-total-count="5"' in html
-    assert 'data-focus-count="4"' in html
-    assert 'data-highest-priority-count="2"' in html
-    assert 'data-today-new-count="4"' in html
-    assert 'data-stage-main-stage="active"' in html
-    assert 'data-total-count="3"' in html
+    assert '/admin/automation-conversion/stage/new-user' in html
+    assert '/admin/automation-conversion/stage/inactive-focus' in html
+    assert 'id="marketing-automation-add-rule-button"' in html
+    assert 'id="marketing-automation-silent-threshold-new-user"' in html
+    assert 'id="marketing-automation-silent-threshold-inactive-focus"' in html
+    assert 'value="3"' in html
+    assert 'value="5"' in html
+    assert 'data-stage-main-stage="pool"' in html
+    assert 'data-stage-sub-stage="inactive_focus"' in html
     assert 'data-stage-main-stage="converted"' in html
-    assert 'data-total-count="2"' in html
     assert 'id="automation-stage-detail-drawer"' in html
+    assert "固定选择 5 道题" not in visible_text
+    assert "选 5 道关键信号题" not in visible_text
+    assert "开启“报名成功”自动跟进" not in visible_text
+    assert "REQUIRED_QUESTION_RULE_COUNT" not in html
+    assert "[Number(question.options[0].id)]" not in html
     assert not _contains_standalone_token(visible_text, "core")
     assert not _contains_standalone_token(visible_text, "top")
     assert not _contains_standalone_token(visible_text, "unknown")
@@ -646,26 +680,26 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):
     _seed_automation_conversion_stage_board(app)
 
-    response = client.get("/admin/automation-conversion/stage/waiting-conversion")
+    response = client.get("/admin/automation-conversion/stage/inactive-focus")
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
-    assert "待转化客户" in visible_text
-    assert "wm_stage_wait_001" in visible_text
-    assert "wm_stage_wait_002" in visible_text
-    assert "wm_stage_wait_003" in visible_text
-    assert "wm_stage_active_001" not in visible_text
+    assert "未激活重点跟进池" in visible_text
+    assert "重点跟进" in visible_text
+    assert "普通跟进" in visible_text
+    assert "wm_stage_inactive_focus_001" in visible_text
+    assert "wm_stage_active_focus_001" not in visible_text
     assert "手机号或客户编号" in visible_text
 
     filtered_response = client.get(
-        "/admin/automation-conversion/stage/waiting-conversion",
-        query_string={"keyword": "003"},
+        "/admin/automation-conversion/stage/inactive-focus",
+        query_string={"keyword": "focus_001"},
     )
     filtered_text = _visible_text(filtered_response.get_data(as_text=True))
     assert filtered_response.status_code == 200
-    assert "wm_stage_wait_003" in filtered_text
-    assert "wm_stage_wait_001" not in filtered_text
+    assert "wm_stage_inactive_focus_001" in filtered_text
+    assert "wm_stage_inactive_normal_001" not in filtered_text
 
 
 def test_admin_automation_conversion_preview_page_renders_runtime_search_shell(client):
@@ -677,11 +711,13 @@ def test_admin_automation_conversion_preview_page_renders_runtime_search_shell(c
     assert "客户试运行" in visible_text
     assert "手机号、客户姓名或客户编号" in visible_text
     assert "当前阶段" in visible_text
-    assert "当前分层" in visible_text
+    assert "当前跟进类型" in visible_text
     assert "命中题数" in visible_text
     assert "是否进入自动化" in visible_text
     assert "未进入原因" in visible_text
     assert "高级信息" in visible_text
+    assert "试用已开通" in visible_text
+    assert "试用开通时间" in visible_text
     assert "/api/admin/customers/profile" in html
     assert "/api/customers?keyword=" in html
     assert "/api/admin/marketing-automation/config/preview" in html
@@ -709,7 +745,7 @@ def test_admin_marketing_automation_dispatch_history_api_supports_status_filter(
     assert blocked_payload["dispatch_history"]["status"] == "blocked_quiet_hours"
     assert blocked_payload["dispatch_history"]["count"] == 1
     assert blocked_payload["dispatch_history"]["items"][0]["external_userid"] == "wm_dispatch_blocked"
-    assert blocked_payload["dispatch_history"]["items"][0]["stage"] == "active/activated"
+    assert blocked_payload["dispatch_history"]["items"][0]["stage"] == "pool/active_focus"
 
 
 def test_admin_automation_conversion_page_dispatch_history_filter_renders_selected_status(app, client):

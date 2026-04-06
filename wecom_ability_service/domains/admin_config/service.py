@@ -33,46 +33,81 @@ TARGET_MCP_TOOL_SETTING = "mcp_tool_setting"
 
 AUTOMATION_CONVERSION_SEGMENT_DEFINITIONS = (
     {
+        "segment": "unknown",
+        "key": "awaiting_questionnaire",
+        "label": "未完成初判",
+        "description": "还没提交问卷，暂时留在新用户池。",
+    },
+    {
         "segment": "normal",
-        "key": "regular_users",
-        "label": "普通用户",
-        "description": "已经有资料，但暂时不属于重点转化人群。",
+        "key": "normal_followup",
+        "label": "普通跟进",
+        "description": "当前在普通跟进池，走标准转化动作。",
     },
     {
-        "segment": "core",
-        "key": "priority_users",
-        "label": "重点用户",
-        "description": "值得优先关注，适合进入自动跟进范围。",
-    },
-    {
-        "segment": "top",
-        "key": "highest_priority_users",
-        "label": "最高优先用户",
-        "description": "当前最值得优先转化的一批客户。",
+        "segment": "focus",
+        "key": "focus_followup",
+        "label": "重点跟进",
+        "description": "当前在重点跟进池，优先交给 OpenClaw。",
     },
 )
 
 AUTOMATION_CONVERSION_STAGE_DEFINITIONS = (
     {
-        "main_stage": "prospect",
-        "key": "waiting_conversion",
-        "route_key": "waiting-conversion",
-        "label": "待转化",
-        "description": "还在报名前判断阶段，运营可以先看谁最值得推进。",
+        "main_stage": "pool",
+        "sub_stage": "new_user",
+        "key": "new_user_pool",
+        "route_key": "new-user",
+        "label": "新用户池",
+        "description": "刚加好友、还没提交问卷的客户。",
     },
     {
-        "main_stage": "active",
-        "key": "started_using",
-        "route_key": "started-using",
-        "label": "已开始使用",
-        "description": "客户已经被激活使用，仍可继续观察报名机会。",
+        "main_stage": "pool",
+        "sub_stage": "inactive_normal",
+        "key": "inactive_normal_pool",
+        "route_key": "inactive-normal",
+        "label": "未激活普通池",
+        "description": "问卷已提交、试用已开通、未激活、普通跟进。",
+    },
+    {
+        "main_stage": "pool",
+        "sub_stage": "inactive_focus",
+        "key": "inactive_focus_pool",
+        "route_key": "inactive-focus",
+        "label": "未激活重点跟进池",
+        "description": "问卷已提交、试用已开通、未激活、重点跟进。",
+    },
+    {
+        "main_stage": "pool",
+        "sub_stage": "active_normal",
+        "key": "active_normal_pool",
+        "route_key": "active-normal",
+        "label": "激活普通池",
+        "description": "已激活、普通跟进。",
+    },
+    {
+        "main_stage": "pool",
+        "sub_stage": "active_focus",
+        "key": "active_focus_pool",
+        "route_key": "active-focus",
+        "label": "激活重点跟进池",
+        "description": "已激活、重点跟进。",
+    },
+    {
+        "main_stage": "pool",
+        "sub_stage": "silent",
+        "key": "silent_pool",
+        "route_key": "silent",
+        "label": "沉默池",
+        "description": "停留超时后自动进入，当前只做留存记录。",
     },
     {
         "main_stage": "converted",
-        "key": "enrolled",
-        "route_key": "enrolled",
-        "label": "已报名成功",
-        "description": "客户已经报名成功，会自动退出这条链路。",
+        "sub_stage": "enrolled",
+        "key": "converted",
+        "route_key": "converted",
+        "label": "已确认成交",
+        "description": "人工确认成交后退出全部营销。",
     },
 )
 
@@ -81,7 +116,7 @@ AUTOMATION_CONVERSION_DISPATCH_FILTERS = (
     {"value": "waiting_ai", "label": "等待 AI 接手", "raw_status": "pending"},
     {"value": "night_pause", "label": "夜间暂停", "raw_status": "blocked_quiet_hours"},
     {"value": "ai_received", "label": "AI 已接收", "raw_status": "acked"},
-    {"value": "already_signed", "label": "客户已完成报名", "raw_status": "converted_before_dispatch"},
+    {"value": "already_converted", "label": "客户已确认成交", "raw_status": "converted_before_dispatch"},
 )
 
 APP_SETTING_DEFINITIONS = (
@@ -191,11 +226,102 @@ APP_SETTING_DEFINITIONS = (
         "description": "微信授权密钥。页面不会显示完整内容；留空表示保持原值。",
     },
     {
+        "key": "AUTOMATION_INTERNAL_API_TOKEN",
+        "label": "自动化内部接口令牌",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "统一保护自动化内部动作接口的 Bearer Token。页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
         "key": "MCP_BEARER_TOKEN",
         "label": "AI 工具访问令牌",
         "mode": "masked",
         "input_type": "password",
-        "description": "AI 工具访问令牌。页面不会显示完整内容；留空表示保持原值。",
+        "description": "AI 工具访问令牌。已兼容统一内部接口令牌；页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
+        "key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",
+        "label": "重点跟进消息 Webhook 地址",
+        "mode": "editable",
+        "input_type": "url",
+        "description": "重点跟进池客户有新消息时，CRM 自动推送到 OpenClaw 的 webhook 地址。",
+    },
+    {
+        "key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
+        "label": "重点跟进消息 Webhook 超时",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "重点跟进消息 webhook 请求超时时间（秒）。",
+    },
+    {
+        "key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN",
+        "label": "重点跟进消息 Webhook Token",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "重点跟进消息 webhook Bearer Token。页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
+        "key": "OUTBOUND_WEBHOOK_RETRY_ENABLED",
+        "label": "启用出站 Webhook 自动重试",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。只影响 OpenClaw 焦点消息 webhook 和问卷提交外发 webhook。",
+    },
+    {
+        "key": "OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS",
+        "label": "出站 Webhook 最大重试次数",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "出站 webhook 首次失败后的最大尝试次数，默认 3。",
+    },
+    {
+        "key": "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
+        "label": "出站 Webhook 重试间隔（秒）",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "出站 webhook 失败后进入 retry_scheduled 的间隔秒数，默认 60。",
+    },
+    {
+        "key": "AUTOMATION_ACTIVATION_WEBHOOK_TOKEN",
+        "label": "激活回写 Webhook Token",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "外部系统按手机号回写激活状态时使用的校验 Token。已兼容统一内部接口令牌；页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
+        "key": "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
+        "label": "问卷提交外发 Webhook 地址",
+        "mode": "editable",
+        "input_type": "url",
+        "description": "问卷提交成功后，按固定格式外发 mobile / userid / unionid 的 webhook 地址。",
+    },
+    {
+        "key": "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
+        "label": "问卷提交 Webhook 超时",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "问卷提交外发 webhook 请求超时时间（秒）。",
+    },
+    {
+        "key": "QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN",
+        "label": "问卷提交 Webhook Token",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "问卷提交外发 webhook Bearer Token。页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
+        "key": "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED",
+        "label": "问卷外推全局总开关",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。关闭后，已开启问卷外推的问卷提交会直接记录“全局关闭跳过”，不再发起外推请求。",
+    },
+    {
+        "key": "QUESTIONNAIRE_EXTERNAL_PUSH_TIMEOUT_SECONDS",
+        "label": "问卷外推请求超时",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "问卷外推请求超时时间（秒），默认 3，最大按 10 秒截断。",
     },
 )
 
@@ -334,8 +460,8 @@ def build_config_home_payload() -> dict[str, Any]:
             },
             {
                 "label": "自动化转化",
-                "value": "报名成功",
-                "description": "用业务语言维护自动跟进配置和最近处理情况",
+                "value": "问卷初判 + 6 池子",
+                "description": "维护自动化转化问卷初判、沉默池规则和最近处理情况",
                 "href": "/admin/automation-conversion",
             },
             {
@@ -390,7 +516,7 @@ def automation_conversion_segment_cards() -> dict[str, Any]:
         "visible_total": visible_total,
         "unclassified_count": unclassified_count,
         "unclassified_hint": (
-            f"另有 {unclassified_count} 位客户资料还不够完整，暂时不放进重点用户分布。"
+            f"另有 {unclassified_count} 位客户还没完成问卷初判。"
             if unclassified_count
             else ""
         ),
@@ -401,37 +527,38 @@ def automation_conversion_stage_columns() -> list[dict[str, Any]]:
     rows = repo.list_automation_conversion_stage_snapshot_rows()
     today_string = _automation_today_string()
     columns_by_stage = {
-        item["main_stage"]: {
+        _automation_stage_key(item["main_stage"], item.get("sub_stage", "")): {
             "key": item["key"],
             "label": item["label"],
             "description": item["description"],
             "main_stage": item["main_stage"],
+            "sub_stage": item.get("sub_stage", ""),
             "total_count": 0,
             "focus_count": 0,
-            "highest_priority_count": 0,
+            "normal_count": 0,
             "today_new_count": 0,
         }
         for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS
     }
     for row in rows:
-        main_stage = _normalized_text(row.get("main_stage")).lower()
-        column = columns_by_stage.get(main_stage)
+        stage_key = _automation_stage_key(row.get("main_stage"), row.get("sub_stage"))
+        column = columns_by_stage.get(stage_key)
         if not column:
             continue
         segment = _normalized_text(row.get("segment")).lower() or "unknown"
         entered_at = _normalized_text(row.get("entered_at")) or _normalized_text(row.get("updated_at"))
         column["total_count"] += 1
-        if segment in {"core", "top"}:
+        if segment == "focus":
             column["focus_count"] += 1
-        if segment == "top":
-            column["highest_priority_count"] += 1
+        if segment == "normal":
+            column["normal_count"] += 1
         if entered_at[:10] == today_string:
             column["today_new_count"] += 1
     return [
         {
-            **columns_by_stage[item["main_stage"]],
+            **columns_by_stage[_automation_stage_key(item["main_stage"], item.get("sub_stage", ""))],
             "route_key": item["route_key"],
-            "value": int(columns_by_stage[item["main_stage"]]["total_count"] or 0),
+            "value": int(columns_by_stage[_automation_stage_key(item["main_stage"], item.get("sub_stage", ""))]["total_count"] or 0),
         }
         for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS
     ]
@@ -462,10 +589,11 @@ def build_automation_conversion_stage_detail_payload(
             "label": stage_definition["label"],
             "description": stage_definition["description"],
             "main_stage": stage_definition["main_stage"],
+            "sub_stage": stage_definition.get("sub_stage", ""),
             "route_key": stage_definition["route_key"],
             "total_count": 0,
             "focus_count": 0,
-            "highest_priority_count": 0,
+            "normal_count": 0,
             "today_new_count": 0,
         },
     )
@@ -475,6 +603,7 @@ def build_automation_conversion_stage_detail_payload(
         {
             "keyword": _normalized_text(keyword),
             "marketing_main_stage": stage_definition["main_stage"],
+            "marketing_sub_stage": stage_definition.get("sub_stage", ""),
             "limit": str(normalized_limit),
             "offset": str(normalized_offset),
         }
@@ -534,21 +663,24 @@ def _automation_segment_label(segment: str) -> str:
     for item in AUTOMATION_CONVERSION_SEGMENT_DEFINITIONS:
         if item["segment"] == normalized_segment:
             return item["label"]
-    return "待补资料"
+    return "未完成初判"
 
 
 def _automation_stage_label(main_stage: str, sub_stage: str) -> str:
     stage_key = _automation_stage_key(main_stage, sub_stage)
     mapping = {
-        "prospect/mobile_only": "待转化",
-        "prospect/wecom_connected": "待转化",
-        "active/activated": "已开始使用",
-        "converted/enrolled": "已报名成功",
+        "pool/new_user": "新用户池",
+        "pool/inactive_normal": "未激活普通池",
+        "pool/inactive_focus": "未激活重点跟进池",
+        "pool/active_normal": "激活普通池",
+        "pool/active_focus": "激活重点跟进池",
+        "pool/silent": "沉默池",
+        "converted/enrolled": "已确认成交",
     }
     if stage_key in mapping:
         return mapping[stage_key]
     for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS:
-        if item["main_stage"] == _normalized_text(main_stage):
+        if _automation_stage_key(item["main_stage"], item.get("sub_stage", "")) == stage_key:
             return item["label"]
     return "暂无阶段"
 
@@ -559,7 +691,7 @@ def _automation_dispatch_status_label(status: str) -> str:
         "pending": "等待 AI 接手",
         "blocked_quiet_hours": "夜间暂停",
         "acked": "AI 已接收",
-        "converted_before_dispatch": "客户已完成报名",
+        "converted_before_dispatch": "客户已确认成交",
         "dispatched": "已交给 AI",
         "cancelled": "已取消",
     }
@@ -862,10 +994,22 @@ def _setting_value_source(key: str) -> tuple[str, str]:
 
 def _validate_known_setting(key: str, value: str) -> str:
     normalized = _normalized_text(value)
-    if key == "WECOM_ARCHIVE_TIMEOUT":
+    if key in {
+        "WECOM_ARCHIVE_TIMEOUT",
+        "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
+        "OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS",
+        "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
+        "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
+    }:
         return str(_normalize_int(normalized or "0", field_name=key, minimum=1))
-    if key == "WECOM_API_BASE" and normalized and not normalized.startswith(("http://", "https://")):
-        raise ValueError("企业微信接口地址必须以 http:// 或 https:// 开头")
+    if key == "OUTBOUND_WEBHOOK_RETRY_ENABLED":
+        return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
+    if key in {
+        "WECOM_API_BASE",
+        "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",
+        "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
+    } and normalized and not normalized.startswith(("http://", "https://")):
+        raise ValueError(f"{key} 必须以 http:// 或 https:// 开头")
     return normalized
 
 
@@ -955,7 +1099,7 @@ def _default_mcp_tool_defs() -> list[dict[str, Any]]:
 
 
 def _default_tool_group(tool_name: str) -> str:
-    if tool_name.startswith("create_") or tool_name.startswith("record_"):
+    if tool_name.startswith("create_") or tool_name.startswith("record_") or tool_name.startswith("send_"):
         return "tasks"
     if "message_batch" in tool_name:
         return "ops"
@@ -1012,6 +1156,7 @@ def _default_display_name(tool_name: str) -> str:
         "get_signup_conversion_batch": "查看转化自动化详情",
         "get_owner_recent_chat_dump": "查看负责人最近聊天",
         "get_hourly_followup_candidates": "查看跟进候选",
+        "send_pool_private_message": "按池子群发",
     }
     return mapping.get(tool_name, _legacy_default_display_name(tool_name))
 
@@ -1046,6 +1191,7 @@ def _default_tool_description(tool_name: str, fallback: str = "") -> str:
         "get_signup_conversion_batch": "查看单个自动化批次及其客户画像。",
         "get_owner_recent_chat_dump": "查看某位负责人的最近聊天记录。",
         "get_hourly_followup_candidates": "查看建议优先跟进的客户。",
+        "send_pool_private_message": "按当前池子直接调用 CRM 群发能力，并记录发送记录。",
     }
     return mapping.get(tool_name, fallback)
 

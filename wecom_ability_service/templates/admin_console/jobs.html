@@ -5,7 +5,7 @@
   <div class="admin-card-head">
     <div>
       <h2>同步与任务总览</h2>
-      <p>这里集中展示聊天同步、回调状态、消息批次和待处理作业。</p>
+      <p>这里集中展示聊天同步、回调状态、消息批次、待处理作业和出站 Webhook 投递状态。</p>
     </div>
   </div>
   <section class="admin-card-grid">
@@ -207,6 +207,7 @@
       </div>
     </div>
     <form method="post" action="{{ url_for('api.admin_console_jobs_action') }}" class="admin-form-stack" data-jobs-form>
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
       <input type="hidden" name="return_tab" value="archive">
       <input type="hidden" name="action" value="run-archive-sync">
       <label class="admin-field"><span>开始时间</span><input type="text" name="start_time" value="{{ jobs_payload.archive_runtime.sync_form.start_time }}"></label>
@@ -393,6 +394,7 @@
     {% if jobs_payload.selected_batch.status != "acked" %}
     <hr class="admin-divider">
     <form method="post" action="{{ url_for('api.admin_console_jobs_action') }}" class="admin-form-stack" data-jobs-form>
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
       <input type="hidden" name="return_tab" value="batches">
       <input type="hidden" name="action" value="ack-message-batch">
       <input type="hidden" name="batch_id" value="{{ jobs_payload.selected_batch.id }}">
@@ -517,6 +519,7 @@
       </div>
     </div>
     <form method="post" action="{{ url_for('api.admin_console_jobs_action') }}" class="admin-form-stack" data-jobs-form>
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
       <input type="hidden" name="return_tab" value="deferred">
       <input type="hidden" name="action" value="run-deferred-jobs">
       <label class="admin-field"><span>执行数量上限</span><input type="number" name="limit" min="1" max="200" value="20"></label>
@@ -570,6 +573,144 @@
         </tr>
         {% else %}
         <tr><td colspan="6">暂无待处理作业</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if jobs_payload.active_tab == "webhooks" %}
+<section class="admin-grid-2">
+  <article class="admin-card">
+    <div class="admin-card-head">
+      <div>
+        <h2>Webhook 投递状态</h2>
+        <p>查看最近投递结果、失败原因和自动重试状态。</p>
+      </div>
+    </div>
+    <section class="admin-stat-inline-grid">
+      <article class="admin-mini-stat"><div class="admin-card-label">总记录</div><div class="admin-mini-stat-value">{{ jobs_payload.webhook_runtime.counts.total_count }}</div></article>
+      <article class="admin-mini-stat"><div class="admin-card-label">成功</div><div class="admin-mini-stat-value">{{ jobs_payload.webhook_runtime.counts.success_count }}</div></article>
+      <article class="admin-mini-stat"><div class="admin-card-label">待自动重试</div><div class="admin-mini-stat-value">{{ jobs_payload.webhook_runtime.counts.retry_scheduled_count }}</div></article>
+      <article class="admin-mini-stat"><div class="admin-card-label">已耗尽</div><div class="admin-mini-stat-value">{{ jobs_payload.webhook_runtime.counts.exhausted_count }}</div></article>
+    </section>
+  </article>
+
+  <article class="admin-card">
+    <div class="admin-card-head">
+      <div>
+        <h2>执行到期重试</h2>
+        <p>按当前重试配置扫描 `retry_scheduled` 且已到时间的记录并执行重试。</p>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('api.admin_console_jobs_action') }}" class="admin-form-stack" data-jobs-form>
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <input type="hidden" name="return_tab" value="webhooks">
+      <input type="hidden" name="action" value="run-webhook-retries">
+      <input type="hidden" name="webhook_event_type" value="{{ jobs_payload.webhook_filters.event_type }}">
+      <input type="hidden" name="webhook_status" value="{{ jobs_payload.webhook_filters.status }}">
+      <input type="hidden" name="webhook_limit" value="{{ jobs_payload.webhook_filters.limit }}">
+      <label class="admin-field"><span>执行数量上限</span><input type="number" name="limit" min="1" max="200" value="20"></label>
+      <label class="admin-field"><span>操作人</span><input type="text" name="operator" placeholder="填写本次执行人"></label>
+      <label class="admin-check-line"><input type="checkbox" name="confirm" value="1"><span>我确认执行到期 Webhook 重试</span></label>
+      <button class="admin-button admin-button--primary" type="submit" data-jobs-submit data-loading-label="执行重试中...">执行到期重试</button>
+    </form>
+  </article>
+</section>
+
+<section class="admin-card">
+  <div class="admin-card-head"><h2>最近 Webhook 投递记录</h2></div>
+  <form class="admin-filter-grid" method="get" action="{{ url_for('api.admin_console_jobs') }}">
+    <input type="hidden" name="tab" value="webhooks">
+    <label class="admin-field">
+      <span>事件类型</span>
+      <select name="webhook_event_type">
+        {% for option in jobs_payload.webhook_event_type_options %}
+        <option value="{{ option.value }}" {% if jobs_payload.webhook_filters.event_type == option.value %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="admin-field">
+      <span>状态</span>
+      <select name="webhook_status">
+        {% for option in jobs_payload.webhook_status_options %}
+        <option value="{{ option }}" {% if jobs_payload.webhook_filters.status == option %}selected{% endif %}>
+          {% if not option %}全部{% elif option == "retry_scheduled" %}待自动重试{% elif option == "exhausted" %}已耗尽{% elif option == "success" %}成功{% elif option == "failed" %}失败{% elif option == "pending" %}待处理{% else %}{{ option }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="admin-field"><span>显示数量</span><input type="number" name="webhook_limit" min="1" max="100" value="{{ jobs_payload.webhook_filters.limit }}"></label>
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" type="submit">应用筛选</button>
+    </div>
+  </form>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>事件</th>
+          <th>来源</th>
+          <th>目标地址</th>
+          <th>投递状态</th>
+          <th>尝试次数</th>
+          <th>Token</th>
+          <th>响应码</th>
+          <th>最近错误</th>
+          <th>下次重试</th>
+          <th>时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in jobs_payload.webhook_deliveries %}
+        <tr>
+          <td>#{{ item.id }}</td>
+          <td>
+            <strong>{{ item.event_label }}</strong>
+            <div class="admin-mono">{{ item.event_type }}</div>
+          </td>
+          <td><span>{{ item.source_label }}</span></td>
+          <td><span title="{{ item.target_url or '-' }}">{{ item.target_url_masked }}</span></td>
+          <td><span class="admin-inline-chip admin-inline-chip--{{ item.delivery_state_tone }}">{{ item.delivery_state_label }}</span></td>
+          <td>{{ item.attempt_count }} / {{ item.max_attempts }}</td>
+          <td>{{ "已配置" if item.token_configured else "未配置" }}</td>
+          <td>{{ item.response_status_code or "-" }}</td>
+          <td>{{ item.last_error or "-" }}</td>
+          <td>{{ item.next_retry_at or "-" }}</td>
+          <td>{{ item.created_at }}<br>{{ item.updated_at }}</td>
+          <td>
+            {% if item.can_retry %}
+            <form method="post" action="{{ url_for('api.admin_console_jobs_action') }}" class="admin-form-inline" data-jobs-form>
+              <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+              <input type="hidden" name="return_tab" value="webhooks">
+              <input type="hidden" name="action" value="retry-webhook-delivery">
+              <input type="hidden" name="delivery_id" value="{{ item.id }}">
+              <input type="hidden" name="webhook_event_type" value="{{ jobs_payload.webhook_filters.event_type }}">
+              <input type="hidden" name="webhook_status" value="{{ jobs_payload.webhook_filters.status }}">
+              <input type="hidden" name="webhook_limit" value="{{ jobs_payload.webhook_filters.limit }}">
+              <input type="hidden" name="confirm" value="1">
+              <input type="hidden" name="operator" value="crm_console">
+              <button class="admin-button admin-button--secondary" type="submit" data-jobs-submit data-loading-label="重试中...">重试</button>
+            </form>
+            {% else %}
+            <span class="admin-muted">-</span>
+            {% endif %}
+            <details class="admin-details-block">
+              <summary>详情</summary>
+              <dl class="admin-definition-list">
+                <div><dt>Payload 摘要</dt><dd>{{ item.payload_summary or "-" }}</dd></div>
+                <div><dt>响应摘要</dt><dd>{{ item.response_body_summary or "-" }}</dd></div>
+                <div><dt>最近错误</dt><dd>{{ item.last_error or "-" }}</dd></div>
+                <div><dt>来源字段</dt><dd>{{ item.source_key or "-" }} / {{ item.source_id or "-" }}</dd></div>
+              </dl>
+            </details>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="12">暂无 Webhook 投递记录</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Callable
 
 MAX_PRIVATE_MESSAGE_IMAGES = 3
+SUPPORTED_PRIVATE_MESSAGE_ATTACHMENT_TYPES = {"file"}
 
 
 def _normalize_str(value: Any) -> str:
@@ -112,11 +113,32 @@ def normalize_private_message_images(payload: dict[str, Any]) -> list[dict[str, 
     return images
 
 
+def normalize_private_message_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    attachments: list[dict[str, Any]] = []
+    for item in _normalize_image_list(payload.get("attachments")):
+        if not isinstance(item, dict):
+            raise ValueError("attachments entries must be objects")
+        normalized = deepcopy(item)
+        msgtype = str(normalized.get("msgtype") or "").strip().lower()
+        if not msgtype:
+            raise ValueError("attachments entries must include msgtype")
+        if msgtype not in SUPPORTED_PRIVATE_MESSAGE_ATTACHMENT_TYPES:
+            raise ValueError("attachments msgtype is not supported")
+        attachment_payload = normalized.get(msgtype)
+        if not isinstance(attachment_payload, dict) or not attachment_payload:
+            raise ValueError(f"attachments entries must include a non-empty '{msgtype}' object")
+        if msgtype == "file":
+            media_id = str(attachment_payload.get("media_id") or "").strip()
+            if not media_id:
+                raise ValueError("file attachments must include media_id")
+        normalized["msgtype"] = msgtype
+        attachments.append(normalized)
+    return attachments
+
+
 def count_private_message_images(payload: dict[str, Any]) -> int:
     image_count = len(normalize_private_message_images(payload))
-    for attachment in _normalize_image_list(payload.get("attachments")):
-        if not isinstance(attachment, dict):
-            continue
+    for attachment in normalize_private_message_attachments(payload):
         if str(attachment.get("msgtype") or "").strip().lower() == "image":
             image_count += 1
     if image_count > MAX_PRIVATE_MESSAGE_IMAGES:
@@ -125,7 +147,11 @@ def count_private_message_images(payload: dict[str, Any]) -> int:
 
 
 def has_private_message_body(payload: dict[str, Any]) -> bool:
-    return bool(extract_private_message_text(payload).strip() or count_private_message_images(payload))
+    return bool(
+        extract_private_message_text(payload).strip()
+        or normalize_private_message_attachments(payload)
+        or count_private_message_images(payload)
+    )
 
 
 def build_private_message_request_payload(
@@ -135,7 +161,7 @@ def build_private_message_request_payload(
 ) -> tuple[dict[str, Any], int]:
     normalized_payload = deepcopy(payload)
     content = extract_private_message_text(normalized_payload)
-    attachments = [deepcopy(item) for item in _normalize_image_list(normalized_payload.get("attachments")) if isinstance(item, dict)]
+    attachments = normalize_private_message_attachments(normalized_payload)
 
     image_specs = normalize_private_message_images(normalized_payload)
     image_count = 0
@@ -177,6 +203,6 @@ def build_private_message_request_payload(
         normalized_payload.pop("attachments", None)
 
     if not normalized_payload.get("text") and not normalized_payload.get("attachments"):
-        raise ValueError("content or images is required")
+        raise ValueError("content, images, or attachments is required")
 
     return normalized_payload, image_count

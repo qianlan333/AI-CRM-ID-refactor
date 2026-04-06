@@ -260,12 +260,14 @@
     <section id="marketing-profile-card" class="card automation-card hidden">
       <div class="automation-card-head">
         <div>
-          <h2 class="section-title">营销自动化卡片</h2>
-          <p class="section-note">这里展示客户当前阶段、当前分层和是否进入自动化，手工标记报名成功也走同一套判断。</p>
+          <h2 class="section-title">自动化转化卡片</h2>
+          <p class="section-note">这里展示客户当前池子、是否激活、当前跟进类型。问卷只做第一次分流，人工改判永远优先。</p>
         </div>
         <div class="actions">
-          <button id="mark-enrolled-button" type="button" class="danger-button">标记报名成功</button>
-          <button id="unmark-enrolled-button" type="button" class="ghost-button">撤销报名成功</button>
+          <button id="switch-focus-button" type="button">转为重点跟进</button>
+          <button id="switch-normal-button" type="button" class="ghost-button">转为普通跟进</button>
+          <button id="mark-enrolled-button" type="button" class="danger-button">确认已成交</button>
+          <button id="unmark-enrolled-button" type="button" class="ghost-button">撤销成交确认</button>
         </div>
       </div>
       <div class="badge-row">
@@ -274,12 +276,24 @@
       </div>
       <div class="automation-grid automation-grid--triple">
         <div class="automation-item">
-          <span>当前阶段</span>
+          <span>当前池子</span>
           <strong id="marketing-phase-value">待转化</strong>
         </div>
         <div class="automation-item">
-          <span>当前分层</span>
+          <span>当前跟进类型</span>
           <strong id="marketing-segment-value">暂未分层</strong>
+        </div>
+        <div class="automation-item">
+          <span>问卷初判</span>
+          <strong id="marketing-initial-segment-value">未完成初判</strong>
+        </div>
+        <div class="automation-item">
+          <span>当前跟进来源</span>
+          <strong id="marketing-followup-source-value">待问卷提交</strong>
+        </div>
+        <div class="automation-item">
+          <span>最近人工改判</span>
+          <strong id="marketing-manual-override-value">当前仍按问卷初判执行</strong>
         </div>
         <div class="automation-item">
           <span>命中题数</span>
@@ -290,11 +304,11 @@
           <strong id="marketing-activated-value">否</strong>
         </div>
         <div class="automation-item">
-          <span>是否已报名成功</span>
+          <span>是否已确认成交</span>
           <strong id="marketing-enrolled-value">否</strong>
         </div>
         <div class="automation-item">
-          <span>最近标记时间</span>
+          <span>最近确认时间</span>
           <strong id="marketing-last-conversion-value">-</strong>
         </div>
       </div>
@@ -328,12 +342,17 @@
     const leadPoolClassTermGrid = document.getElementById('lead-pool-class-term-grid');
     const leadPoolClassTermStatus = document.getElementById('lead-pool-class-term-status');
     const marketingProfileCard = document.getElementById('marketing-profile-card');
+    const switchFocusButton = document.getElementById('switch-focus-button');
+    const switchNormalButton = document.getElementById('switch-normal-button');
     const markEnrolledButton = document.getElementById('mark-enrolled-button');
     const unmarkEnrolledButton = document.getElementById('unmark-enrolled-button');
     const marketingStageBadge = document.getElementById('marketing-stage-badge');
     const marketingSegmentBadge = document.getElementById('marketing-segment-badge');
     const marketingPhaseValue = document.getElementById('marketing-phase-value');
     const marketingSegmentValue = document.getElementById('marketing-segment-value');
+    const marketingInitialSegmentValue = document.getElementById('marketing-initial-segment-value');
+    const marketingFollowupSourceValue = document.getElementById('marketing-followup-source-value');
+    const marketingManualOverrideValue = document.getElementById('marketing-manual-override-value');
     const marketingHitCountValue = document.getElementById('marketing-hit-count-value');
     const marketingActivatedValue = document.getElementById('marketing-activated-value');
     const marketingEnrolledValue = document.getElementById('marketing-enrolled-value');
@@ -392,32 +411,61 @@
       el.className = 'badge' + (tone ? ' ' + tone : '');
     }
 
+    function syncMarketingButtons(payload) {
+      const currentFollowupType = String((payload || {}).current_followup_type || (payload || {}).segment || '').trim() || 'unknown';
+      const stageKey = String((payload || {}).stage_key || '').trim();
+      const enrolled = stageKey === 'converted/enrolled';
+      const switchable = Boolean((payload || {}).can_switch_followup_segment) && !enrolled;
+      switchFocusButton.disabled = !switchable || currentFollowupType === 'focus';
+      switchNormalButton.disabled = !switchable || currentFollowupType === 'normal';
+      markEnrolledButton.disabled = enrolled;
+      unmarkEnrolledButton.disabled = !enrolled;
+    }
+
+    function manualOverrideSummary(payload) {
+      if (!payload || !payload.manual_override_active) {
+        return '当前仍按问卷初判执行';
+      }
+      const targetLabel = String(payload.manual_override_segment_display || '').trim() || '当前跟进';
+      const operator = String(payload.manual_override_operator || '').trim();
+      const changedAt = String(payload.manual_override_at || '').trim();
+      const prefix = [operator, changedAt].filter(Boolean).join(' ');
+      if (prefix) {
+        return prefix + ' 转为' + targetLabel;
+      }
+      const sourceLabel = String(payload.manual_override_source_display || '').trim() || '人工改判';
+      return sourceLabel + '：转为' + targetLabel;
+    }
+
     function renderMarketingStatus(marketingStatus) {
       const payload = marketingStatus || {};
       state.marketingStatus = payload;
       const stageKey = String(payload.stage_key || '').trim();
-      const stageLabel = String(payload.stage_display || '').trim() || '待转化';
-      const segment = String(payload.segment || '').trim() || 'unknown';
-      const segmentLabel = String(payload.segment_display || '').trim() || '暂未分层';
+      const stageLabel = String(payload.pool_display || payload.stage_display || '').trim() || '待转化';
+      const segment = String(payload.current_followup_type || payload.segment || '').trim() || 'unknown';
+      const segmentLabel = String(payload.current_followup_type_display || payload.segment_display || '').trim() || '暂未分层';
       const hitCount = Number(payload.hit_count || 0);
-      const activated = Boolean(String(payload.last_activation_at || '').trim());
+      const activated = Boolean(payload.activated || String(payload.last_activation_at || '').trim());
       const enrolled = stageKey === 'converted/enrolled';
       const eligibilityLabel = String(payload.eligibility_display || '').trim() || (payload.eligible_for_conversion ? '会' : '不会');
       const ineligibleReason = String(payload.ineligible_reason_display || '').trim();
+      const switchable = Boolean(payload.can_switch_followup_segment) && !enrolled;
       marketingPhaseValue.textContent = stageLabel;
       marketingSegmentValue.textContent = segmentLabel;
+      marketingInitialSegmentValue.textContent = String(payload.questionnaire_segment_display || '').trim() || '未完成初判';
+      marketingFollowupSourceValue.textContent = String(payload.followup_segment_source_display || '').trim() || '待问卷提交';
+      marketingManualOverrideValue.textContent = manualOverrideSummary(payload);
       marketingHitCountValue.textContent = String(hitCount);
       marketingActivatedValue.textContent = activated ? '是' : '否';
       marketingEnrolledValue.textContent = enrolled ? '是' : '否';
       marketingLastConversionValue.textContent = String(payload.last_conversion_marked_at || '').trim() || '-';
       applyMarketingBadge(marketingStageBadge, stageLabel, enrolled ? 'danger' : (activated ? 'ok' : 'warn'));
-      applyMarketingBadge(marketingSegmentBadge, segmentLabel, segment === 'top' ? 'danger' : (segment === 'core' ? 'ok' : 'warn'));
-      markEnrolledButton.disabled = enrolled;
-      unmarkEnrolledButton.disabled = !enrolled;
+      applyMarketingBadge(marketingSegmentBadge, segmentLabel, segment === 'focus' ? 'danger' : (segment === 'normal' ? 'ok' : 'warn'));
+      syncMarketingButtons(payload);
       setStatus(
         marketingProfileStatus,
         payload.eligible_for_conversion
-          ? ('是否进入自动化：' + eligibilityLabel)
+          ? ('是否进入自动化：' + eligibilityLabel + (switchable ? '' : '；当前池子暂不支持普通/重点人工改判。'))
           : ('是否进入自动化：' + eligibilityLabel + (ineligibleReason ? '；未进入原因：' + ineligibleReason : '。')),
         enrolled ? 'success' : '',
       );
@@ -463,9 +511,11 @@
       const targetUrl = action === 'mark'
         ? '/api/sidebar/marketing-status/mark-enrolled'
         : '/api/sidebar/marketing-status/unmark-enrolled';
+      switchFocusButton.disabled = true;
+      switchNormalButton.disabled = true;
       markEnrolledButton.disabled = true;
       unmarkEnrolledButton.disabled = true;
-      setStatus(marketingProfileStatus, action === 'mark' ? '正在标记报名成功…' : '正在撤销报名成功…', '');
+      setStatus(marketingProfileStatus, action === 'mark' ? '正在确认已成交…' : '正在撤销成交确认…', '');
       try {
         const result = await fetchJson(targetUrl, {
           method: 'POST',
@@ -480,12 +530,35 @@
       } catch (error) {
         setStatus(
           marketingProfileStatus,
-          userMessage(error, action === 'mark' ? '标记报名成功失败，请稍后重试。' : '撤销报名成功失败，请稍后重试。'),
+          userMessage(error, action === 'mark' ? '确认成交失败，请稍后重试。' : '撤销成交确认失败，请稍后重试。'),
           'error',
         );
-        const enrolled = Boolean(state.marketingStatus && state.marketingStatus.stage_key === 'converted/enrolled');
-        markEnrolledButton.disabled = enrolled;
-        unmarkEnrolledButton.disabled = !enrolled;
+        syncMarketingButtons(state.marketingStatus || {});
+      }
+    }
+
+    async function applyFollowupSwitch(targetSegment) {
+      const targetLabel = targetSegment === 'focus' ? '重点跟进' : '普通跟进';
+      switchFocusButton.disabled = true;
+      switchNormalButton.disabled = true;
+      markEnrolledButton.disabled = true;
+      unmarkEnrolledButton.disabled = true;
+      setStatus(marketingProfileStatus, '正在转为' + targetLabel + '…', '');
+      try {
+        const result = await fetchJson('/api/sidebar/marketing-status/set-followup-segment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            external_userid: state.external_userid,
+            owner_userid: state.owner_userid,
+            operator: state.bind_by_userid || state.owner_userid,
+            followup_segment: targetSegment,
+          }),
+        });
+        renderMarketingStatus(result.marketing_status || {});
+      } catch (error) {
+        setStatus(marketingProfileStatus, userMessage(error, '人工改判失败，请稍后重试。'), 'error');
+        syncMarketingButtons(state.marketingStatus || {});
       }
     }
 
@@ -708,6 +781,14 @@
       } finally {
         confirmRebindButton.disabled = false;
       }
+    });
+
+    switchFocusButton.addEventListener('click', async () => {
+      await applyFollowupSwitch('focus');
+    });
+
+    switchNormalButton.addEventListener('click', async () => {
+      await applyFollowupSwitch('normal');
     });
 
     markEnrolledButton.addEventListener('click', async () => {

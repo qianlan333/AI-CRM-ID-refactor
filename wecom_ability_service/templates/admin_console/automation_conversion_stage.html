@@ -20,14 +20,14 @@
       <p class="admin-card-copy">当前处在这一阶段的全部客户数量。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">重点用户</div>
+      <div class="admin-card-label">重点跟进</div>
       <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.focus_count }}</div>
-      <p class="admin-card-copy">值得优先跟进、已经进入重点范围的客户。</p>
+      <p class="admin-card-copy">当前处在这个池子里，并按重点跟进节奏推进的客户数量。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">最高优先</div>
-      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.highest_priority_count }}</div>
-      <p class="admin-card-copy">最值得优先推进转化的一批客户。</p>
+      <div class="admin-card-label">普通跟进</div>
+      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.normal_count }}</div>
+      <p class="admin-card-copy">当前处在这个池子里，并按标准话术推进的客户数量。</p>
     </article>
   </div>
 

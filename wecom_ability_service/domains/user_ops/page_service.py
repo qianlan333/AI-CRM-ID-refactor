@@ -733,7 +733,7 @@ def _build_private_message_payload(payload: dict[str, Any]) -> tuple[dict[str, A
     content_preview = extract_private_message_text(payload)
     image_count = count_private_message_images(payload)
     if not has_private_message_body(payload):
-        raise ValueError("content or images is required")
+        raise ValueError("content, images, or attachments is required")
     task_payload: dict[str, Any] = {}
     if content_preview.strip():
         task_payload["text"] = {"content": content_preview}

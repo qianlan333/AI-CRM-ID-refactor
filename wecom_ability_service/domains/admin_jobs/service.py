@@ -7,7 +7,13 @@ from flask import current_app
 
 from ...http.sync_jobs import run_archive_health_check, run_manual_archive_sync
 from ...infra.settings import get_setting
-from ...services import get_message_batch
+from ...services import (
+    get_message_batch,
+    get_outbound_webhook_delivery_counts,
+    list_outbound_webhook_deliveries,
+    retry_outbound_webhook_delivery,
+    run_due_outbound_webhook_retries,
+)
 from ...wecom_callback import get_callback_config
 from ..admin_config import repo as admin_config_repo
 from ..archive.service import ack_message_batch, get_last_sync_run
@@ -22,6 +28,7 @@ JOB_TABS = (
     {"key": "callbacks", "label": "回调状态"},
     {"key": "batches", "label": "消息批次"},
     {"key": "deferred", "label": "待处理作业"},
+    {"key": "webhooks", "label": "Webhook 投递"},
 )
 
 
@@ -72,6 +79,8 @@ def _status_label(status: Any) -> str:
         "disabled": "未开启",
         "healthy": "正常",
         "never": "暂无记录",
+        "retry_scheduled": "待自动重试",
+        "exhausted": "已耗尽",
     }
     normalized = _normalized_text(status).lower()
     return mapping.get(normalized, _normalized_text(status) or "-")
@@ -83,6 +92,18 @@ def _batch_status_options() -> list[str]:
 
 def _deferred_status_options() -> list[str]:
     return ["", "pending", "running", "success", "conflict", "skipped", "failed"]
+
+
+def _webhook_status_options() -> list[str]:
+    return ["", "pending", "success", "failed", "retry_scheduled", "exhausted"]
+
+
+def _webhook_event_type_options() -> list[dict[str, str]]:
+    return [
+        {"value": "", "label": "全部事件"},
+        {"value": "openclaw_focus_message", "label": "OpenClaw 焦点消息"},
+        {"value": "questionnaire_submit", "label": "问卷提交外发"},
+    ]
 
 
 def jobs_tabs(active_key: str) -> list[dict[str, Any]]:
@@ -181,6 +202,73 @@ def _deferred_row_view(row: dict[str, Any]) -> dict[str, Any]:
         **row,
         "status_label": _status_label(status),
         "status_tone": _status_tone(status),
+    }
+
+
+def _mask_target_url(value: Any) -> str:
+    text = _normalized_text(value)
+    if not text:
+        return "-"
+    if "://" not in text:
+        return text[:80]
+    scheme, rest = text.split("://", 1)
+    host, _, path = rest.partition("/")
+    path_prefix = f"/{path[:32]}" if path else ""
+    return f"{scheme}://{host}{path_prefix}"
+
+
+def _webhook_event_label(event_type: Any) -> str:
+    mapping = {
+        "openclaw_focus_message": "OpenClaw 焦点消息",
+        "questionnaire_submit": "问卷提交外发",
+    }
+    return mapping.get(_normalized_text(event_type), _normalized_text(event_type) or "-")
+
+
+def _webhook_delivery_state_label(row: dict[str, Any]) -> str:
+    status = _normalized_text(row.get("status"))
+    last_error = _normalized_text(row.get("last_error"))
+    if last_error == "webhook_not_configured":
+        return "未配置"
+    if status == "retry_scheduled":
+        return "待自动重试"
+    if status == "exhausted":
+        return "已耗尽"
+    if status == "success":
+        return "已成功"
+    if status == "failed":
+        return "发送失败"
+    return _status_label(status)
+
+
+def _webhook_delivery_state_tone(row: dict[str, Any]) -> str:
+    status = _normalized_text(row.get("status"))
+    last_error = _normalized_text(row.get("last_error"))
+    if last_error == "webhook_not_configured":
+        return "warn"
+    if status in {"retry_scheduled"}:
+        return "warn"
+    if status in {"failed", "exhausted"}:
+        return "danger"
+    if status == "success":
+        return "ok"
+    return "neutral"
+
+
+def _webhook_row_view(row: dict[str, Any]) -> dict[str, Any]:
+    status = _normalized_text(row.get("status"))
+    source_key = _normalized_text(row.get("source_key"))
+    source_id = _normalized_text(row.get("source_id"))
+    return {
+        **row,
+        "status_label": _status_label(status),
+        "status_tone": _status_tone(status),
+        "event_label": _webhook_event_label(row.get("event_type")),
+        "target_url_masked": _mask_target_url(row.get("target_url")),
+        "delivery_state_label": _webhook_delivery_state_label(row),
+        "delivery_state_tone": _webhook_delivery_state_tone(row),
+        "source_label": f"{source_key}:{source_id}" if source_key or source_id else "-",
+        "can_retry": status in {"failed", "retry_scheduled", "exhausted"},
     }
 
 
@@ -291,6 +379,7 @@ def build_jobs_runtime_snapshot(*, include_archive_health: bool = False) -> dict
         "callback_counts": repo.get_callback_counts(),
         "batch_counts": repo.get_message_batch_counts(),
         "deferred_counts": get_user_ops_deferred_job_counts(),
+        "webhook_counts": get_outbound_webhook_delivery_counts(),
     }
     if include_archive_health:
         try:
@@ -340,6 +429,11 @@ def build_jobs_payload(args: Any) -> dict[str, Any]:
         "external_userid": _normalized_text(args.get("external_userid")),
         "limit": _normalized_int(args.get("job_limit"), default=20),
     }
+    webhook_filters = {
+        "event_type": _normalized_text(args.get("webhook_event_type")),
+        "status": _normalized_text(args.get("webhook_status")),
+        "limit": _normalized_int(args.get("webhook_limit"), default=20),
+    }
 
     runtime_snapshot = build_jobs_runtime_snapshot(include_archive_health=active_tab in {"overview", "archive"})
     last_sync_run = dict(runtime_snapshot.get("last_sync_run") or {})
@@ -347,6 +441,7 @@ def build_jobs_payload(args: Any) -> dict[str, Any]:
     callback_counts = runtime_snapshot["callback_counts"]
     batch_counts = runtime_snapshot["batch_counts"]
     deferred_counts = runtime_snapshot["deferred_counts"]
+    webhook_counts = runtime_snapshot["webhook_counts"]
 
     sync_runs = [_sync_row_view(item) for item in repo.list_sync_runs(status=archive_filters["status"], limit=archive_filters["limit"])]
     callback_logs = [
@@ -366,6 +461,14 @@ def build_jobs_payload(args: Any) -> dict[str, Any]:
             external_userid=deferred_filters["external_userid"],
             limit=deferred_filters["limit"],
         )
+    ]
+    webhook_deliveries = [
+        _webhook_row_view(item)
+        for item in list_outbound_webhook_deliveries(
+            event_type=webhook_filters["event_type"],
+            status=webhook_filters["status"],
+            limit=webhook_filters["limit"],
+        ).get("items", [])
     ]
 
     selected_batch = {}
@@ -408,6 +511,12 @@ def build_jobs_payload(args: Any) -> dict[str, Any]:
             "description": f"待处理 · 失败 {int(deferred_counts.get('failed_count') or 0)}",
             "tone": "danger" if int(deferred_counts.get("failed_count") or 0) else ("warn" if int(deferred_counts.get("pending_count") or 0) else "ok"),
         },
+        {
+            "label": "Webhook 投递",
+            "value": int(webhook_counts.get("retry_scheduled_count") or 0) + int(webhook_counts.get("exhausted_count") or 0),
+            "description": f"待重试 {int(webhook_counts.get('retry_scheduled_count') or 0)} · 已耗尽 {int(webhook_counts.get('exhausted_count') or 0)}",
+            "tone": "danger" if int(webhook_counts.get("exhausted_count") or 0) else ("warn" if int(webhook_counts.get("retry_scheduled_count") or 0) else "ok"),
+        },
     ]
 
     return {
@@ -433,20 +542,27 @@ def build_jobs_payload(args: Any) -> dict[str, Any]:
             "counts": deferred_counts,
             "mcp_auth_configured": _mcp_auth_configured(),
         },
+        "webhook_runtime": {
+            "counts": webhook_counts,
+        },
         "archive_filters": archive_filters,
         "callback_filters": callback_filters,
         "batch_filters": batch_filters,
         "deferred_filters": deferred_filters,
+        "webhook_filters": webhook_filters,
         "archive_status_options": ["", "success", "failed"],
         "callback_status_options": ["", "pending", "processing", "success", "failed"],
         "batch_status_options": _batch_status_options(),
         "deferred_status_options": _deferred_status_options(),
+        "webhook_status_options": _webhook_status_options(),
+        "webhook_event_type_options": _webhook_event_type_options(),
         "sync_runs": sync_runs,
         "callback_logs": callback_logs,
         "batch_rows": batch_rows,
         "selected_batch": selected_batch,
         "selected_batch_messages": selected_batch_messages,
         "deferred_jobs": deferred_jobs,
+        "webhook_deliveries": webhook_deliveries,
     }
 
 
@@ -458,6 +574,7 @@ def build_jobs_summary_payload(args: Any) -> dict[str, Any]:
         "callback_runtime": payload["callback_runtime"],
         "batches_runtime": payload["batches_runtime"],
         "deferred_runtime": payload["deferred_runtime"],
+        "webhook_runtime": payload["webhook_runtime"],
     }
 
 
@@ -522,6 +639,19 @@ def build_jobs_deferred_jobs_payload(args: Any) -> dict[str, Any]:
     }
 
 
+def build_jobs_webhook_deliveries_payload(args: Any) -> dict[str, Any]:
+    raw_args = dict(args or {})
+    raw_args["tab"] = "webhooks"
+    payload = build_jobs_payload(raw_args)
+    return {
+        "runtime": payload["webhook_runtime"],
+        "filters": payload["webhook_filters"],
+        "items": payload["webhook_deliveries"],
+        "status_options": payload["webhook_status_options"],
+        "event_type_options": payload["webhook_event_type_options"],
+    }
+
+
 def execute_jobs_action(*, action: str, form: Any, operator: str) -> dict[str, Any]:
     normalized_action = _normalized_text(action)
     operator_value = _operator(operator)
@@ -581,6 +711,34 @@ def execute_jobs_action(*, action: str, form: Any, operator: str) -> dict[str, A
         _audit_log(
             operator=operator_value,
             action_type="run_deferred_jobs",
+            target_id=f"limit:{limit}",
+            before={"limit": limit},
+            after=payload,
+        )
+        return payload
+
+    if normalized_action == "retry-webhook-delivery":
+        if not _normalized_bool(form.get("confirm")):
+            raise ValueError("重试 webhook 投递前请先勾选确认")
+        delivery_id = _normalized_int(form.get("delivery_id"), default=0, minimum=1, maximum=10**9)
+        payload = retry_outbound_webhook_delivery(delivery_id)
+        _audit_log(
+            operator=operator_value,
+            action_type="retry_webhook_delivery",
+            target_id=str(delivery_id),
+            before={"delivery_id": delivery_id},
+            after=payload,
+        )
+        return payload
+
+    if normalized_action == "run-webhook-retries":
+        if not _normalized_bool(form.get("confirm")):
+            raise ValueError("执行 webhook 自动重试前请先勾选确认")
+        limit = _normalized_int(form.get("limit"), default=20)
+        payload = run_due_outbound_webhook_retries(limit=limit)
+        _audit_log(
+            operator=operator_value,
+            action_type="run_webhook_retries",
             target_id=f"limit:{limit}",
             before={"limit": limit},
             after=payload,

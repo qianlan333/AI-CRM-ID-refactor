@@ -45,11 +45,11 @@
       <strong>{{ customer_payload.customer.unionid or "未绑定" }}</strong>
     </div>
     <div class="admin-profile-field">
-      <span>自动化阶段</span>
+      <span>当前池子</span>
       <strong>{{ render_or_placeholder(marketing_display.stage_label) }}</strong>
     </div>
     <div class="admin-profile-field">
-      <span>价值分层</span>
+      <span>问卷初判</span>
       <strong>
         {{ render_or_placeholder(marketing_display.segment_label) }}
       </strong>
@@ -66,11 +66,11 @@
   </div>
   <div class="admin-profile-grid">
     <div class="admin-profile-field">
-      <span>当前阶段</span>
+      <span>当前池子</span>
       <strong>{{ render_or_placeholder(marketing_display.stage_label) }}</strong>
     </div>
     <div class="admin-profile-field">
-      <span>当前分层</span>
+      <span>当前跟进类型</span>
       <strong>{{ render_or_placeholder(marketing_display.segment_label) }}</strong>
     </div>
     <div class="admin-profile-field">
@@ -86,7 +86,7 @@
       <strong>{{ render_or_placeholder(marketing_summary.last_activation_at) }}</strong>
     </div>
     <div class="admin-profile-field">
-      <span>最近报名标记时间</span>
+      <span>最近确认成交时间</span>
       <strong>{{ render_or_placeholder(marketing_summary.last_conversion_marked_at) }}</strong>
     </div>
     <div class="admin-profile-field">

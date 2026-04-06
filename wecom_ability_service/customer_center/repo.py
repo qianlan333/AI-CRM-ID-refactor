@@ -253,6 +253,7 @@ def fetch_customer_marketing_state_current(external_userid: str) -> dict[str, An
             eligible_for_conversion,
             last_activation_at,
             last_conversion_marked_at,
+            state_payload_json,
             updated_at
         FROM customer_marketing_state_current
         WHERE external_userid = ?
@@ -278,6 +279,7 @@ def fetch_customer_marketing_state_current_map(external_userids: list[str]) -> d
             eligible_for_conversion,
             last_activation_at,
             last_conversion_marked_at,
+            state_payload_json,
             updated_at,
             id
         FROM customer_marketing_state_current

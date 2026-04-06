@@ -181,19 +181,26 @@ def seed_marketing_timeline_fixture(app) -> None:
                 None,
                 "wm_timeline_001",
                 "signup_conversion_v1",
-                "active",
-                "activated",
+                "pool",
+                "active_focus",
                 1,
                 0,
                 1,
                 None,
-                "active",
+                "pool",
                 "",
                 "2026-03-23 08:00:00",
                 "",
                 "2026-03-20 10:00:00",
                 "initial_compute",
-                json.dumps({"bound_external_userids": ["wm_timeline_001"]}, ensure_ascii=False),
+                json.dumps(
+                    {
+                        "bound_external_userids": ["wm_timeline_001"],
+                        "followup_segment": "focus",
+                        "questionnaire_segment": "top",
+                    },
+                    ensure_ascii=False,
+                ),
                 "2026-03-23 08:00:00",
                 "2026-03-23 08:00:01",
             ),
@@ -340,7 +347,7 @@ def test_timeline_includes_marketing_events_with_human_summaries(client, app):
     )
 
     segment_item = next(item for item in items if item["event_type"] == "value_segment_change" and item["payload"]["current_segment"] == "top")
-    assert segment_item["summary"] == "客户分层从普通用户变为最高优先用户"
+    assert segment_item["summary"] == "客户初判从普通跟进变为重点跟进"
     assert segment_item["type"] == "value_segment_change"
     assert segment_item["payload"]["matched_question_ids_json"] == [101, 102, 103, 104]
 
@@ -349,11 +356,11 @@ def test_timeline_includes_marketing_events_with_human_summaries(client, app):
         for item in items
         if item["event_type"] == "marketing_state_change" and item["payload"]["current_stage"] == "converted/enrolled"
     )
-    assert state_item["summary"] == "客户阶段从已开始使用变为已报名成功"
-    assert state_item["payload"]["previous_stage"] == "active/activated"
+    assert state_item["summary"] == "客户池子从激活重点跟进池变为已确认成交"
+    assert state_item["payload"]["previous_stage"] == "pool/active_focus"
 
     conversion_item = next(item for item in items if item["event_type"] == "conversion_marked")
-    assert conversion_item["summary"] == "人工确认客户已报名成功，自动化已停止。"
+    assert conversion_item["summary"] == "人工确认客户已成交，系统已退出全部营销。"
     assert conversion_item["payload"]["conversion_action"] == "mark_enrolled"
 
     dispatch_item = next(item for item in items if item["event_type"] == "openclaw_dispatch")
@@ -378,4 +385,4 @@ def test_timeline_marketing_event_filter_and_desc_order_keep_legacy_events(clien
     assert filtered_response.status_code == 200
     assert len(filtered_items) == 1
     assert filtered_items[0]["event_type"] == "conversion_marked"
-    assert filtered_items[0]["summary"] == "人工确认客户已报名成功，自动化已停止。"
+    assert filtered_items[0]["summary"] == "人工确认客户已成交，系统已退出全部营销。"

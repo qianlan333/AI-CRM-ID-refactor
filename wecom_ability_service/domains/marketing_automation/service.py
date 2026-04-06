@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import requests
+from flask import current_app
+
 from ...db import get_db
+from ...infra.settings import get_setting
+from ...wecom_client import WeComClientError
 from ..class_user.service import (
     apply_class_user_status_change,
     clear_class_user_status_current,
@@ -15,12 +21,15 @@ from ..class_user.service import (
 from ..archive import repo as archive_repo
 from ..archive.service import extract_roomid_from_raw_payload, format_message_row, get_recent_messages_by_user
 from ..group_chats.repo import get_group_chat_map
+from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail
+from ..tasks.service import dispatch_wecom_task
+from ..user_ops import page_service as user_ops_page_service
 from .presenter import business_marketing_display
 from . import repo
 
 DEFAULT_SCENARIO_KEY = "signup_conversion_v1"
-DEFAULT_AUTOMATION_NAME = "报名成功自动化"
+DEFAULT_AUTOMATION_NAME = "自动化转化问卷初判"
 DEFAULT_TARGET_EVENT = "signup_success"
 DEFAULT_CHANNEL_TYPE = "text_message"
 DEFAULT_CORE_THRESHOLD = 3
@@ -28,9 +37,50 @@ DEFAULT_TOP_THRESHOLD = 4
 DEFAULT_QUIET_HOUR_START = 23
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_ENROLLED_SIGNUP_STATUS = "signed_999"
-REQUIRED_QUESTION_RULE_COUNT = 5
 VALUE_SEGMENT_SCORING_VERSION = "signup_conversion_question_hits_v1"
 _VALUE_SEGMENT_RANKS = {"unknown": 0, "normal": 1, "core": 2, "top": 3}
+DEFAULT_AUTOMATION_OWNER_USERID = "QianLan"
+
+FOLLOWUP_SEGMENT_UNKNOWN = "unknown"
+FOLLOWUP_SEGMENT_NORMAL = "normal"
+FOLLOWUP_SEGMENT_FOCUS = "focus"
+
+POOL_STAGE = "pool"
+POOL_NEW_USER = "new_user"
+POOL_INACTIVE_NORMAL = "inactive_normal"
+POOL_INACTIVE_FOCUS = "inactive_focus"
+POOL_ACTIVE_NORMAL = "active_normal"
+POOL_ACTIVE_FOCUS = "active_focus"
+POOL_SILENT = "silent"
+
+DEFAULT_SILENT_THRESHOLD_DAYS = 7
+DEFAULT_SILENT_THRESHOLD_DAYS_BY_POOL = {
+    POOL_NEW_USER: DEFAULT_SILENT_THRESHOLD_DAYS,
+    POOL_INACTIVE_NORMAL: DEFAULT_SILENT_THRESHOLD_DAYS,
+    POOL_INACTIVE_FOCUS: DEFAULT_SILENT_THRESHOLD_DAYS,
+    POOL_ACTIVE_NORMAL: DEFAULT_SILENT_THRESHOLD_DAYS,
+    POOL_ACTIVE_FOCUS: DEFAULT_SILENT_THRESHOLD_DAYS,
+}
+
+_FOLLOWUP_SEGMENT_LABELS = {
+    FOLLOWUP_SEGMENT_UNKNOWN: "未完成初判",
+    FOLLOWUP_SEGMENT_NORMAL: "普通跟进",
+    FOLLOWUP_SEGMENT_FOCUS: "重点跟进",
+}
+_POOL_LABELS = {
+    POOL_NEW_USER: "新用户池",
+    POOL_INACTIVE_NORMAL: "未激活普通池",
+    POOL_INACTIVE_FOCUS: "未激活重点跟进池",
+    POOL_ACTIVE_NORMAL: "激活普通池",
+    POOL_ACTIVE_FOCUS: "激活重点跟进池",
+    POOL_SILENT: "沉默池",
+}
+_POOL_STAGE_KEYS = {f"{POOL_STAGE}/{pool_key}" for pool_key in _POOL_LABELS}
+_ACTIONABLE_POOL_STAGE_KEYS = {
+    f"{POOL_STAGE}/{POOL_INACTIVE_FOCUS}",
+    f"{POOL_STAGE}/{POOL_ACTIVE_FOCUS}",
+}
+_SILENT_ELIGIBLE_POOL_KEYS = set(DEFAULT_SILENT_THRESHOLD_DAYS_BY_POOL)
 
 _EXIT_SIGNUP_PREFIXES = ("signed_",)
 _HIGH_INTENT_TAG_KEYWORDS = ("高意向", "待跟进", "已报价", "课程安排", "想报名")
@@ -39,24 +89,43 @@ _PHASE_LABELS = {
     "awaiting_trigger": "待触发",
     "waiting_openclaw": "待 OpenClaw 处理",
     "blocked_after_2300": "23:00 后不启动",
-    "exited_signup_success": "已报名成功，退出自动化",
+    "exited_signup_success": "已确认成交，退出全部营销",
 }
 _CUSTOMER_MARKETING_STATE_LABELS = {
-    ("prospect", "mobile_only"): "手机号线索",
-    ("prospect", "wecom_connected"): "已加微待激活",
-    ("active", "activated"): "已激活",
-    ("converted", "enrolled"): "已报名成功",
+    (POOL_STAGE, POOL_NEW_USER): _POOL_LABELS[POOL_NEW_USER],
+    (POOL_STAGE, POOL_INACTIVE_NORMAL): _POOL_LABELS[POOL_INACTIVE_NORMAL],
+    (POOL_STAGE, POOL_INACTIVE_FOCUS): _POOL_LABELS[POOL_INACTIVE_FOCUS],
+    (POOL_STAGE, POOL_ACTIVE_NORMAL): _POOL_LABELS[POOL_ACTIVE_NORMAL],
+    (POOL_STAGE, POOL_ACTIVE_FOCUS): _POOL_LABELS[POOL_ACTIVE_FOCUS],
+    (POOL_STAGE, POOL_SILENT): _POOL_LABELS[POOL_SILENT],
+    ("converted", "enrolled"): "已确认成交",
 }
-_ROUTER_ALLOWED_STAGE_KEYS = {"prospect/wecom_connected", "active/activated"}
-_ROUTER_ALLOWED_SEGMENTS = {"core", "top"}
+_ROUTER_ALLOWED_STAGE_KEYS = set(_ACTIONABLE_POOL_STAGE_KEYS)
 _ROUTER_TERMINAL_DISPATCH_STATUSES = {"dispatched", "acked", "cancelled", "converted_before_dispatch"}
 _ROUTER_BLOCKED_DISPATCH_STATUS = "blocked_quiet_hours"
 _ROUTER_PENDING_DISPATCH_STATUS = "pending"
 _OPENCLAW_ACKABLE_DISPATCH_STATUSES = {"pending", "dispatched", "acked"}
+_POOL_SENDABLE_POOL_KEYS = {
+    POOL_NEW_USER,
+    POOL_INACTIVE_NORMAL,
+    POOL_INACTIVE_FOCUS,
+    POOL_ACTIVE_NORMAL,
+    POOL_ACTIVE_FOCUS,
+}
+_FOCUS_POOL_KEYS = {POOL_INACTIVE_FOCUS, POOL_ACTIVE_FOCUS}
+
+automation_webhook_logger = logging.getLogger("automation_webhook")
 
 
 def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _get_active_owner_role(userid: str) -> dict[str, Any]:
+    owner_role = dict(repo.get_owner_role_item(_normalized_text(userid)) or {})
+    if not owner_role or not bool(owner_role.get("active")):
+        return {}
+    return owner_role
 
 
 def _json_loads(value: Any, *, default: Any) -> Any:
@@ -153,6 +222,154 @@ def _iso_now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _default_silent_threshold_days_by_pool() -> dict[str, int]:
+    return {key: int(value) for key, value in DEFAULT_SILENT_THRESHOLD_DAYS_BY_POOL.items()}
+
+
+def _normalize_silent_threshold_days_by_pool(value: Any) -> dict[str, int]:
+    result = _default_silent_threshold_days_by_pool()
+    raw_value = _json_loads(value, default={})
+    if not isinstance(raw_value, dict):
+        return result
+    for pool_key in DEFAULT_SILENT_THRESHOLD_DAYS_BY_POOL:
+        if pool_key not in raw_value:
+            continue
+        threshold = _normalize_int(
+            raw_value.get(pool_key),
+            f"silent_threshold_days_by_pool.{pool_key}",
+            minimum=1,
+        )
+        assert threshold is not None
+        result[pool_key] = int(threshold)
+    return result
+
+
+def _normalize_followup_segment(
+    value: Any,
+    *,
+    allow_unknown: bool = True,
+) -> str:
+    normalized = _normalized_text(value).lower()
+    alias_map = {
+        "unknown": FOLLOWUP_SEGMENT_UNKNOWN,
+        "unclassified": FOLLOWUP_SEGMENT_UNKNOWN,
+        "normal": FOLLOWUP_SEGMENT_NORMAL,
+        "普通": FOLLOWUP_SEGMENT_NORMAL,
+        "普通跟进": FOLLOWUP_SEGMENT_NORMAL,
+        "focus": FOLLOWUP_SEGMENT_FOCUS,
+        "core": FOLLOWUP_SEGMENT_FOCUS,
+        "top": FOLLOWUP_SEGMENT_FOCUS,
+        "高意向": FOLLOWUP_SEGMENT_FOCUS,
+        "重点": FOLLOWUP_SEGMENT_FOCUS,
+        "重点跟进": FOLLOWUP_SEGMENT_FOCUS,
+    }
+    if not normalized:
+        return FOLLOWUP_SEGMENT_UNKNOWN if allow_unknown else FOLLOWUP_SEGMENT_NORMAL
+    mapped = alias_map.get(normalized, normalized if normalized in _FOLLOWUP_SEGMENT_LABELS else "")
+    if mapped:
+        return mapped
+    return FOLLOWUP_SEGMENT_UNKNOWN if allow_unknown else FOLLOWUP_SEGMENT_NORMAL
+
+
+def _followup_segment_label(segment: Any) -> str:
+    normalized = _normalize_followup_segment(segment)
+    return _FOLLOWUP_SEGMENT_LABELS.get(normalized, _FOLLOWUP_SEGMENT_LABELS[FOLLOWUP_SEGMENT_UNKNOWN])
+
+
+def _followup_segment_from_value_segment(value_segment: Any) -> str:
+    normalized = _normalized_text(value_segment).lower()
+    if normalized in {"core", "top"}:
+        return FOLLOWUP_SEGMENT_FOCUS
+    if normalized == "normal":
+        return FOLLOWUP_SEGMENT_NORMAL
+    return FOLLOWUP_SEGMENT_UNKNOWN
+
+
+def _pool_label(pool_key: Any) -> str:
+    return _POOL_LABELS.get(_normalized_text(pool_key), "")
+
+
+def _pool_stage_key(pool_key: Any) -> str:
+    normalized_pool_key = _normalized_text(pool_key)
+    if not normalized_pool_key:
+        return ""
+    return f"{POOL_STAGE}/{normalized_pool_key}"
+
+
+def _pool_segment_from_pool_key(pool_key: Any) -> str:
+    normalized_pool_key = _normalized_text(pool_key)
+    if normalized_pool_key in {POOL_INACTIVE_FOCUS, POOL_ACTIVE_FOCUS}:
+        return FOLLOWUP_SEGMENT_FOCUS
+    if normalized_pool_key in {POOL_INACTIVE_NORMAL, POOL_ACTIVE_NORMAL}:
+        return FOLLOWUP_SEGMENT_NORMAL
+    return FOLLOWUP_SEGMENT_UNKNOWN
+
+
+def _resolve_pool_key_for_customer(
+    *,
+    has_questionnaire_submission: bool,
+    trial_opened: bool,
+    activated: bool,
+    followup_segment: str,
+) -> str:
+    if not has_questionnaire_submission:
+        return POOL_NEW_USER
+    normalized_segment = _normalize_followup_segment(followup_segment, allow_unknown=False)
+    if activated:
+        return POOL_ACTIVE_FOCUS if normalized_segment == FOLLOWUP_SEGMENT_FOCUS else POOL_ACTIVE_NORMAL
+    if not trial_opened:
+        return POOL_NEW_USER
+    return POOL_INACTIVE_FOCUS if normalized_segment == FOLLOWUP_SEGMENT_FOCUS else POOL_INACTIVE_NORMAL
+
+
+def _resolve_silent_threshold_days(config: dict[str, Any], *, pool_key: str) -> int:
+    thresholds = _normalize_silent_threshold_days_by_pool(config.get("silent_threshold_days_by_pool"))
+    return int(thresholds.get(_normalized_text(pool_key)) or DEFAULT_SILENT_THRESHOLD_DAYS)
+
+
+def _resolve_manual_followup_segment(
+    *,
+    existing_state: dict[str, Any] | None,
+    state_payload_overrides: dict[str, Any] | None,
+) -> str:
+    override_payload = dict(state_payload_overrides or {})
+    override_value = override_payload.get("manual_followup_segment")
+    if override_value is None:
+        override_value = override_payload.get("manual_followup_judgement")
+    if override_value is not None:
+        normalized = _normalize_followup_segment(override_value)
+        return "" if normalized == FOLLOWUP_SEGMENT_UNKNOWN else normalized
+    existing_payload = dict((existing_state or {}).get("state_payload") or {})
+    normalized = _normalize_followup_segment(
+        existing_payload.get("manual_followup_segment") or existing_payload.get("manual_followup_judgement")
+    )
+    return "" if normalized == FOLLOWUP_SEGMENT_UNKNOWN else normalized
+
+
+def _should_enter_silent_pool(*, entered_at: str, threshold_days: int, now_text: str) -> bool:
+    entered_dt = _parse_timestamp(entered_at)
+    now_dt = _parse_timestamp(now_text)
+    if entered_dt is None or now_dt is None:
+        return False
+    return now_dt >= entered_dt + timedelta(days=int(threshold_days))
+
+
+def _resolve_pool_reference_at(
+    *,
+    pool_key: str,
+    trial_opened_at: str,
+    submission_at: str,
+    activation_at: str,
+    message_at: str,
+    fallback_now: str,
+) -> str:
+    if pool_key in {POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}:
+        return activation_at or trial_opened_at or submission_at or message_at or fallback_now
+    if pool_key in {POOL_INACTIVE_NORMAL, POOL_INACTIVE_FOCUS}:
+        return trial_opened_at or submission_at or message_at or fallback_now
+    return message_at or submission_at or trial_opened_at or activation_at or fallback_now
+
+
 def _default_config_payload(*, automation_key: str = DEFAULT_SCENARIO_KEY) -> dict[str, Any]:
     return {
         "automation_key": automation_key,
@@ -165,6 +382,7 @@ def _default_config_payload(*, automation_key: str = DEFAULT_SCENARIO_KEY) -> di
         "top_threshold": DEFAULT_TOP_THRESHOLD,
         "quiet_hour_start": DEFAULT_QUIET_HOUR_START,
         "timezone": DEFAULT_TIMEZONE,
+        "silent_threshold_days_by_pool": _default_silent_threshold_days_by_pool(),
         "question_rules": [],
         "configured": False,
         "created_at": "",
@@ -187,6 +405,15 @@ def _questionnaire_lookup(questionnaire_id: int) -> tuple[dict[str, Any], dict[i
         question_map[question_id] = dict(question)
         option_map[question_id] = {int(option["id"]): dict(option) for option in question.get("options") or []}
     return questionnaire, question_map, option_map
+
+
+def _questionnaire_has_required_mobile_question(questionnaire: dict[str, Any]) -> bool:
+    for question in questionnaire.get("questions") or []:
+        if _normalized_text(question.get("type")) != "mobile":
+            continue
+        if _normalize_bool(question.get("required"), default=False):
+            return True
+    return False
 
 
 def _serialize_question_rule(
@@ -257,6 +484,7 @@ def get_signup_conversion_config(*, automation_key: str = DEFAULT_SCENARIO_KEY) 
             maximum=23,
         ),
         "timezone": _validate_timezone(payload.get("timezone") or DEFAULT_TIMEZONE),
+        "silent_threshold_days_by_pool": _normalize_silent_threshold_days_by_pool(payload.get("silent_threshold_days_by_pool")),
         "question_rules": list_signup_conversion_question_rules(automation_key=automation_key),
         "configured": True,
         "created_at": _normalized_text(row.get("created_at")),
@@ -274,8 +502,8 @@ def _normalize_question_rules(
 ) -> list[dict[str, Any]]:
     if not isinstance(rules, list):
         raise ValueError("question_rules must be an array")
-    if len(rules) != REQUIRED_QUESTION_RULE_COUNT:
-        raise ValueError(f"question_rules must contain exactly {REQUIRED_QUESTION_RULE_COUNT} items")
+    if not rules:
+        raise ValueError("question_rules must contain at least one item")
     normalized_rules: list[dict[str, Any]] = []
     seen_question_ids: set[int] = set()
     for index, item in enumerate(rules, start=1):
@@ -350,8 +578,13 @@ def save_signup_conversion_config(
     )
     assert quiet_hour_start is not None
     timezone = _validate_timezone(raw_payload.get("timezone", existing.get("timezone")))
+    silent_threshold_days_by_pool = _normalize_silent_threshold_days_by_pool(
+        raw_payload.get("silent_threshold_days_by_pool", existing.get("silent_threshold_days_by_pool"))
+    )
     enabled = _normalize_bool(raw_payload.get("enabled", existing.get("enabled")), default=True)
-    _, question_map, option_map = _questionnaire_lookup(int(questionnaire_id))
+    questionnaire, question_map, option_map = _questionnaire_lookup(int(questionnaire_id))
+    if not _questionnaire_has_required_mobile_question(questionnaire):
+        raise ValueError("selected questionnaire must contain a required mobile question")
     question_rules = _normalize_question_rules(
         raw_payload.get("question_rules", existing.get("question_rules")),
         questionnaire_id=int(questionnaire_id),
@@ -372,6 +605,7 @@ def save_signup_conversion_config(
                 "core_threshold": int(core_threshold),
                 "top_threshold": int(top_threshold),
                 "timezone": timezone,
+                "silent_threshold_days_by_pool": silent_threshold_days_by_pool,
             },
         )
         repo.replace_marketing_automation_question_rules(
@@ -429,6 +663,491 @@ def _preview_ineligible_reason(marketing_state: dict[str, Any]) -> str:
     )
 
 
+def _setting_text(key: str, *, default: str = "") -> str:
+    return _normalized_text(get_setting(key) or current_app.config.get(key, "") or default)
+
+
+def _setting_int(key: str, *, default: int) -> int:
+    raw_value = get_setting(key)
+    if raw_value is None:
+        raw_value = current_app.config.get(key, default)
+    value = _normalize_int(raw_value, key, default=default, minimum=1)
+    assert value is not None
+    return int(value)
+
+
+def _bearer_headers(token: str) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    normalized_token = _normalized_text(token)
+    if normalized_token:
+        headers["Authorization"] = f"Bearer {normalized_token}"
+    return headers
+
+
+def _match_active_dnd_reasons(
+    item: dict[str, Any],
+    *,
+    dnd_rows: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    external_userid = _normalized_text(item.get("external_userid"))
+    mobile = _normalized_text(item.get("mobile"))
+    reasons: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in dnd_rows:
+        row_external_userid = _normalized_text(row.get("external_userid"))
+        row_mobile = _normalized_text(row.get("mobile"))
+        if external_userid and row_external_userid == external_userid:
+            pass
+        elif mobile and row_mobile == mobile:
+            pass
+        else:
+            continue
+        reason_key = (
+            _normalized_text(row.get("source_type")),
+            _normalized_text(row.get("reason_code")),
+            _normalized_text(row.get("reason_text")),
+        )
+        if reason_key in seen:
+            continue
+        seen.add(reason_key)
+        reasons.append(
+            {
+                "source_type": reason_key[0],
+                "reason_code": reason_key[1],
+                "reason_text": reason_key[2],
+            }
+        )
+    return reasons
+
+
+def _pool_send_selection(*, owner_userid: str, pool_key: str) -> list[dict[str, Any]]:
+    normalized_owner_userid = _normalized_text(owner_userid) or DEFAULT_AUTOMATION_OWNER_USERID
+    rows = repo.list_pool_batch_send_candidates(pool_key)
+    dnd_rows = repo.list_active_do_not_disturb_rows(
+        external_userids=[_normalized_text(item.get("external_userid")) for item in rows],
+        mobiles=[_normalized_text(item.get("person_mobile")) for item in rows],
+    )
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        state_payload = _json_loads(row.get("state_payload_json"), default={})
+        if not isinstance(state_payload, dict):
+            state_payload = {}
+        final_owner_userid = (
+            _normalized_text(row.get("contact_owner_userid"))
+            or _normalized_text(state_payload.get("pool_owner_userid"))
+            or DEFAULT_AUTOMATION_OWNER_USERID
+        )
+        if final_owner_userid != normalized_owner_userid:
+            continue
+        item = {
+            "id": int(row.get("marketing_state_id") or 0),
+            "person_id": _normalize_int(row.get("person_id"), "person_id", allow_none=True),
+            "external_userid": _normalized_text(row.get("external_userid")),
+            "customer_name": _normalized_text(row.get("customer_name")) or _normalized_text(row.get("external_userid")),
+            "owner_userid": final_owner_userid,
+            "owner_display_name": _normalized_text(row.get("owner_display_name")) or final_owner_userid,
+            "mobile": _normalized_text(row.get("person_mobile")) or _normalized_text(state_payload.get("mobile")),
+            "entered_at": _normalized_text(row.get("entered_at")),
+            "last_activation_at": _normalized_text(row.get("last_activation_at")),
+            "pool_key": _normalized_text(state_payload.get("pool_key")) or _normalized_text(pool_key),
+            "pool_label": _normalized_text(state_payload.get("pool_label")) or _pool_label(pool_key),
+        }
+        dnd_reasons = _match_active_dnd_reasons(item, dnd_rows=dnd_rows)
+        item["do_not_disturb"] = bool(dnd_reasons)
+        item["do_not_disturb_reasons"] = dnd_reasons
+        items.append(item)
+    return items
+
+
+def _validate_send_owner_userid(owner_userid: str) -> tuple[str, dict[str, Any]]:
+    normalized_owner_userid = _normalized_text(owner_userid) or DEFAULT_AUTOMATION_OWNER_USERID
+    owner_role = _get_active_owner_role(normalized_owner_userid)
+    if not owner_role:
+        raise ValueError("owner_userid is invalid")
+    return normalized_owner_userid, owner_role
+
+
+def _build_pool_send_plan(*, owner_userid: str, pool_key: str) -> dict[str, Any]:
+    matched_items = _pool_send_selection(owner_userid=owner_userid, pool_key=pool_key)
+    skipped_by_reason: dict[str, int] = {}
+    eligible_items: list[dict[str, Any]] = []
+    for item in matched_items:
+        skip_reason = ""
+        if not _normalized_text(item.get("external_userid")):
+            skip_reason = "missing_external_userid"
+        elif not _normalized_text(item.get("owner_userid")):
+            skip_reason = "missing_owner_userid"
+        elif bool(item.get("do_not_disturb")):
+            skip_reason = "do_not_disturb"
+        if skip_reason:
+            skipped_by_reason[skip_reason] = skipped_by_reason.get(skip_reason, 0) + 1
+            continue
+        eligible_items.append(item)
+    owner_buckets = []
+    if eligible_items:
+        owner_buckets.append(
+            {
+                "owner_userid": _normalized_text(owner_userid),
+                "owner_display_name": eligible_items[0].get("owner_display_name") or _normalized_text(owner_userid),
+                "count": len(eligible_items),
+            }
+        )
+    return {
+        "matched_items": matched_items,
+        "eligible_items": eligible_items,
+        "matched_count": len(matched_items),
+        "eligible_count": len(eligible_items),
+        "skipped_count": len(matched_items) - len(eligible_items),
+        "skipped_by_reason": skipped_by_reason,
+        "owner_buckets": owner_buckets,
+    }
+
+
+def _build_openclaw_focus_message_webhook_payload(
+    *,
+    external_userid: str,
+    recent_message_limit: int = 10,
+) -> dict[str, Any]:
+    from ..admin_console.customer_profile_service import (
+        get_customer_messages_payload,
+        get_customer_profile_payload,
+        get_customer_profile_tags_payload,
+        get_customer_questionnaire_answers_payload,
+    )
+
+    marketing_profile = get_openclaw_customer_marketing_profile(
+        external_userid=external_userid,
+        recent_message_limit=max(1, min(int(recent_message_limit), 20)),
+    )
+    profile_payload = get_customer_profile_payload(external_userid=external_userid) or {}
+    tags_payload = get_customer_profile_tags_payload(external_userid=external_userid)
+    questionnaire_payload = get_customer_questionnaire_answers_payload(external_userid=external_userid)
+    messages_payload = get_customer_messages_payload(external_userid=external_userid, limit=recent_message_limit)
+    profile = dict(profile_payload.get("profile") or {})
+    marketing_state = dict(marketing_profile.get("marketing_state") or {})
+    return {
+        "external_userid": _normalized_text(external_userid),
+        "owner_userid": _normalized_text((marketing_profile.get("owner") or {}).get("owner_userid")) or DEFAULT_AUTOMATION_OWNER_USERID,
+        "current_pool": _normalized_text(marketing_state.get("pool_key")),
+        "current_pool_label": _normalized_text(marketing_state.get("pool_label")),
+        "current_stage": _normalized_text(marketing_state.get("stage_key")),
+        "activated": bool(marketing_state.get("activated")),
+        "last_activation_at": _normalized_text(marketing_state.get("last_activation_at")),
+        "customer_profile": {
+            "customer_name": _normalized_text(profile.get("customer_name")),
+            "mobile": _normalized_text(profile.get("mobile")),
+            "unionid": _normalized_text(profile.get("unionid")),
+        },
+        "questionnaire_summary": {
+            "count": int(questionnaire_payload.get("count") or 0),
+            "answers": list(questionnaire_payload.get("answers") or []),
+        },
+        "tags": list(tags_payload.get("tags") or []),
+        "recent_messages": list(messages_payload.get("messages") or []),
+        "marketing_profile": marketing_profile,
+    }
+
+
+def _post_json_webhook(
+    *,
+    url: str,
+    token: str = "",
+    payload: dict[str, Any],
+    timeout: int = 10,
+) -> requests.Response:
+    return requests.post(
+        url,
+        json=payload,
+        headers=_bearer_headers(token),
+        timeout=max(int(timeout), 1),
+    )
+
+
+def get_customer_trial_opening_fact(
+    *,
+    external_userid: str = "",
+    person_id: int | None = None,
+) -> dict[str, Any]:
+    target = _resolve_customer_marketing_state_target(external_userid=external_userid, person_id=person_id)
+    fact = repo.get_explicit_trial_opening_fact(
+        external_userids=target.get("external_userids") or [],
+        mobile=_normalized_text(target.get("mobile")),
+    )
+    if not fact:
+        return {
+            "trial_opened": False,
+            "mobile": _normalized_text(target.get("mobile")),
+            "external_userid": _normalized_text(target.get("external_userid")),
+            "opened_at": "",
+            "source": "",
+            "owner_userid": "",
+        }
+    return {
+        "trial_opened": True,
+        "mobile": _normalized_text(fact.get("mobile")),
+        "external_userid": _normalized_text(fact.get("external_userid")),
+        "opened_at": _normalized_text(fact.get("updated_at")) or _normalized_text(fact.get("created_at")),
+        "source": _normalized_text(fact.get("source_type")),
+        "owner_userid": _normalized_text(fact.get("owner_userid")),
+        "customer_name": _normalized_text(fact.get("customer_name")),
+        "current_status": _normalized_text(fact.get("current_status")) or "lead_trial",
+    }
+
+
+def upsert_customer_trial_opening_fact(
+    *,
+    mobile: str = "",
+    external_userid: str = "",
+    person_id: int | None = None,
+    customer_name: str = "",
+    owner_userid: str = "",
+    source: str = "automation_conversion",
+    opened_at: str = "",
+) -> dict[str, Any]:
+    target = {}
+    if _normalized_text(external_userid) or person_id is not None:
+        target = _resolve_customer_marketing_state_target(external_userid=external_userid, person_id=person_id)
+    final_mobile = _normalized_text(mobile) or _normalized_text(target.get("mobile"))
+    final_external_userid = _normalized_text(external_userid) or _normalized_text(target.get("external_userid"))
+    if not final_mobile and not final_external_userid:
+        raise ValueError("mobile or external_userid is required")
+    base = repo.load_customer_marketing_base(final_external_userid) if final_external_userid else {}
+    saved = repo.upsert_explicit_trial_opening_fact(
+        mobile=final_mobile,
+        external_userid=final_external_userid,
+        customer_name=_normalized_text(customer_name) or _normalized_text(base.get("customer_name")),
+        owner_userid=_normalized_text(owner_userid) or _normalized_text(base.get("owner_userid")) or DEFAULT_AUTOMATION_OWNER_USERID,
+        source_type=_normalized_text(source) or "automation_conversion",
+        opened_at=_normalized_text(opened_at),
+    )
+    return {
+        "trial_opened": True,
+        "mobile": _normalized_text(saved.get("mobile")),
+        "external_userid": _normalized_text(saved.get("external_userid")),
+        "opened_at": _normalized_text(saved.get("updated_at")) or _normalized_text(saved.get("created_at")),
+        "source": _normalized_text(saved.get("source_type")),
+        "owner_userid": _normalized_text(saved.get("owner_userid")),
+        "customer_name": _normalized_text(saved.get("customer_name")),
+        "current_status": _normalized_text(saved.get("current_status")) or "lead_trial",
+    }
+
+
+def send_pool_private_message(
+    *,
+    owner_userid: str,
+    pool_key: str,
+    content: str = "",
+    confirm: bool = False,
+    operator: str = "",
+    images: list[dict[str, Any]] | None = None,
+    image_media_ids: list[str] | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    normalized_owner_userid, owner_role = _validate_send_owner_userid(owner_userid)
+    normalized_pool_key = _normalized_text(pool_key)
+    if normalized_pool_key not in _POOL_SENDABLE_POOL_KEYS:
+        if normalized_pool_key == POOL_SILENT:
+            raise ValueError("silent pool is record-only and does not support batch send")
+        raise ValueError("pool_key is invalid")
+
+    payload = {
+        "content": _normalized_text(content),
+        "images": list(images or []),
+        "image_media_ids": list(image_media_ids or []),
+        "attachments": list(attachments or []),
+    }
+    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(payload)
+    plan = _build_pool_send_plan(owner_userid=normalized_owner_userid, pool_key=normalized_pool_key)
+    result = {
+        "pool_key": normalized_pool_key,
+        "pool_label": _pool_label(normalized_pool_key),
+        "owner_userid": normalized_owner_userid,
+        "owner_display_name": _normalized_text(owner_role.get("display_name")) or normalized_owner_userid,
+        "matched_count": int(plan["matched_count"]),
+        "sendable_count": int(plan["eligible_count"]),
+        "skipped_count": int(plan["skipped_count"]),
+        "skipped_by_reason": dict(plan["skipped_by_reason"]),
+        "content_preview": content_preview,
+        "image_count": image_count,
+        "record_id": None,
+        "confirmed": bool(confirm),
+        "executed": False,
+    }
+    if not confirm:
+        return result
+    if not plan["matched_count"]:
+        result.update({"status": "empty", "empty_reason": "no_customers_in_pool_for_owner"})
+        return result
+    if not plan["eligible_items"]:
+        result.update({"status": "empty", "empty_reason": "no_sendable_customers_in_pool_for_owner"})
+        return result
+
+    task_results: list[dict[str, Any]] = []
+    outbound_task_ids: list[int] = []
+    sender_userids: list[str] = []
+    eligible_items = list(plan["eligible_items"])
+    grouped_targets: dict[str, list[dict[str, Any]]] = {}
+    for item in eligible_items:
+        grouped_targets.setdefault(_normalized_text(item.get("owner_userid")), []).append(item)
+
+    for sender_userid, items in sorted(grouped_targets.items()):
+        if not sender_userid:
+            continue
+        sender_userids.append(sender_userid)
+        request_payload = {
+            "sender": [sender_userid],
+            "external_userid": [_normalized_text(item.get("external_userid")) for item in items if _normalized_text(item.get("external_userid"))],
+            **task_payload,
+        }
+        try:
+            wecom_result = dispatch_wecom_task("private_message", "create_private_message_task", request_payload)
+            outbound_task_ids.append(int(wecom_result["task_id"]))
+            task_results.append(user_ops_page_service._build_sender_success_result(sender_userid, items, wecom_result))
+        except (WeComClientError, AttributeError) as exc:
+            task_results.append(user_ops_page_service._build_sender_failure_result(sender_userid, items, exc))
+
+    sent_count = sum(int(item.get("target_count") or 0) for item in task_results if _normalized_text(item.get("status")) != "failed")
+    status = user_ops_page_service._derive_record_status(task_results, eligible_count=int(plan["eligible_count"]))
+    record_id = user_ops_page_service._insert_send_record(
+        outbound_task_ids=outbound_task_ids,
+        task_results=task_results,
+        selected_count=int(plan["matched_count"]),
+        eligible_count=int(plan["eligible_count"]),
+        sent_count=sent_count,
+        skipped_count=int(plan["skipped_count"]),
+        skipped_reasons=dict(plan["skipped_by_reason"]),
+        include_do_not_disturb=False,
+        content_preview=content_preview,
+        image_count=image_count,
+        sender_userids=sender_userids,
+        filter_snapshot={
+            "selection_mode": "marketing_pool",
+            "pool_key": normalized_pool_key,
+            "pool_label": _pool_label(normalized_pool_key),
+            "owner_userid": normalized_owner_userid,
+        },
+        operator=_normalized_text(operator) or "openclaw_pool_send",
+        status=status,
+    )
+    result.update(
+        {
+            "record_id": int(record_id),
+            "sent_count": int(sent_count),
+            "executed": True,
+            "task_results": task_results,
+            "status": status,
+        }
+    )
+    return result
+
+
+def trigger_openclaw_focus_message_webhook(
+    *,
+    external_userid: str,
+    recent_message_limit: int = 10,
+) -> dict[str, Any]:
+    normalized_external_userid = _normalized_text(external_userid)
+    if not normalized_external_userid:
+        return {"ok": False, "sent": False, "reason": "missing_external_userid"}
+    marketing_profile = get_openclaw_customer_marketing_profile(
+        external_userid=normalized_external_userid,
+        recent_message_limit=max(1, min(int(recent_message_limit), 20)),
+    )
+    marketing_state = dict(marketing_profile.get("marketing_state") or {})
+    owner_userid = _normalized_text((marketing_profile.get("owner") or {}).get("owner_userid")) or DEFAULT_AUTOMATION_OWNER_USERID
+    pool_key = _normalized_text(marketing_state.get("pool_key"))
+    if pool_key not in _FOCUS_POOL_KEYS:
+        return {"ok": False, "sent": False, "reason": "pool_not_focus_followup", "pool_key": pool_key}
+    payload = _build_openclaw_focus_message_webhook_payload(
+        external_userid=normalized_external_userid,
+        recent_message_limit=recent_message_limit,
+    )
+    delivery_result = send_outbound_webhook(
+        event_type=EVENT_OPENCLAW_FOCUS_MESSAGE,
+        payload=payload,
+        source_key="external_userid",
+        source_id=normalized_external_userid,
+    )
+    delivery = dict(delivery_result.get("delivery") or {})
+    return {
+        "ok": bool(delivery_result.get("ok")),
+        "sent": bool(delivery_result.get("sent")),
+        "external_userid": normalized_external_userid,
+        "pool_key": pool_key,
+        "owner_userid": owner_userid,
+        "status_code": delivery.get("response_status_code"),
+        "reason": _normalized_text(delivery_result.get("reason")),
+        "error": _normalized_text(delivery_result.get("reason")),
+        "delivery": delivery,
+        "payload": payload,
+    }
+
+
+def process_inbound_messages_for_openclaw(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    latest_by_external_userid: dict[str, dict[str, Any]] = {}
+    for item in messages:
+        normalized_external_userid = _normalized_text(item.get("external_userid"))
+        if not normalized_external_userid:
+            continue
+        if _normalized_text(item.get("chat_type")) != "private":
+            continue
+        if _normalized_text(item.get("sender")) != normalized_external_userid:
+            continue
+        previous = latest_by_external_userid.get(normalized_external_userid)
+        if previous and _normalized_text(previous.get("send_time")) >= _normalized_text(item.get("send_time")):
+            continue
+        latest_by_external_userid[normalized_external_userid] = dict(item)
+    results = [
+        trigger_openclaw_focus_message_webhook(external_userid=external_userid)
+        for external_userid in sorted(latest_by_external_userid.keys())
+    ]
+    return {
+        "processed_count": len(latest_by_external_userid),
+        "sent_count": sum(1 for item in results if item.get("sent")),
+        "results": results,
+    }
+
+
+def apply_activation_webhook(
+    *,
+    mobile: str,
+    activated_at: str = "",
+    operator: str = "",
+    source: str = "activation_webhook",
+) -> dict[str, Any]:
+    normalized_mobile = _normalized_text(mobile)
+    if not normalized_mobile:
+        raise ValueError("mobile is required")
+    identity = repo.resolve_customer_identity_by_mobile(normalized_mobile) or {}
+    normalized_external_userid = _normalized_text(identity.get("external_userid"))
+    if not normalized_external_userid:
+        raise LookupError("customer not found by mobile")
+    signal_at = _normalized_text(activated_at) or _iso_now()
+    source_row = repo.upsert_activation_webhook_source(
+        mobile=normalized_mobile,
+        signal_at=signal_at,
+        import_batch_id=_normalized_text(source) or "activation_webhook",
+        created_by=_normalized_text(operator) or "activation_webhook",
+    )
+    marketing_state = evaluate_customer_marketing_state(external_userid=normalized_external_userid)
+    automation_webhook_logger.info(
+        "activation webhook applied mobile=%s external_userid=%s stage_key=%s signal_at=%s",
+        normalized_mobile,
+        normalized_external_userid,
+        _normalized_text(marketing_state.get("stage_key")),
+        signal_at,
+    )
+    return {
+        "ok": True,
+        "mobile": normalized_mobile,
+        "external_userid": normalized_external_userid,
+        "owner_userid": _normalized_text(identity.get("owner_userid")),
+        "activated_at": signal_at,
+        "activation_source": source_row,
+        "marketing_state": marketing_state,
+    }
+
+
 def preview_signup_conversion_customer(
     *,
     external_userid: str = "",
@@ -472,7 +1191,7 @@ def preview_signup_conversion_customer(
     ]
     matched_questions = _matched_question_rule_items(config, matched_question_ids=matched_question_ids)
     current_stage = _normalized_text(marketing_state.get("stage_key"))
-    current_segment = _normalized_text(value_segment.get("segment")) or "unknown"
+    current_segment = _normalize_followup_segment(marketing_state.get("current_segment"))
     display = business_marketing_display(
         main_stage=marketing_state.get("main_stage"),
         sub_stage=marketing_state.get("sub_stage"),
@@ -497,13 +1216,18 @@ def preview_signup_conversion_customer(
             "top_threshold": int(config.get("top_threshold") or DEFAULT_TOP_THRESHOLD),
             "quiet_hour_start": int(config.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START),
             "timezone": _normalized_text(config.get("timezone")) or DEFAULT_TIMEZONE,
+            "silent_threshold_days_by_pool": _normalize_silent_threshold_days_by_pool(
+                config.get("silent_threshold_days_by_pool")
+            ),
         },
         "summary": {
             "current_stage": current_stage,
             "current_stage_label": _normalized_text(marketing_state.get("stage_label")),
             "current_stage_display": display["stage_label"],
+            "current_pool": _normalized_text(marketing_state.get("pool_key")),
+            "current_pool_label": _normalized_text(marketing_state.get("pool_label")),
             "current_segment": current_segment,
-            "current_segment_label": _normalized_text(value_segment.get("segment_label")) or _VALUE_SEGMENT_LABELS.get(current_segment, ""),
+            "current_segment_label": _followup_segment_label(current_segment),
             "current_segment_display": display["segment_label"],
             "matched_question_ids": matched_question_ids,
             "matched_questions": matched_questions,
@@ -606,7 +1330,7 @@ def _value_segment_config_ready(config: dict[str, Any]) -> bool:
         config.get("configured")
         and config.get("enabled")
         and config.get("questionnaire_id")
-        and len(config.get("question_rules") or []) == REQUIRED_QUESTION_RULE_COUNT
+        and len(config.get("question_rules") or []) > 0
     )
 
 
@@ -920,6 +1644,11 @@ def _serialize_current_customer_marketing_state(row: dict[str, Any] | None) -> d
     )
     main_stage = _normalized_text(row.get("main_stage"))
     sub_stage = _normalized_text(row.get("sub_stage"))
+    stage_key = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage
+    pool_key = sub_stage if main_stage == POOL_STAGE else _normalized_text(payload.get("pool_key"))
+    current_segment = _normalize_followup_segment(
+        payload.get("followup_segment") or payload.get("current_segment") or _pool_segment_from_pool_key(pool_key)
+    )
     return {
         "id": int(row.get("id") or 0),
         "person_id": person_id,
@@ -928,8 +1657,15 @@ def _serialize_current_customer_marketing_state(row: dict[str, Any] | None) -> d
         "bound_external_userids": bound_external_userids,
         "main_stage": main_stage,
         "sub_stage": sub_stage,
-        "stage_key": f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage,
+        "stage_key": stage_key,
         "stage_label": _CUSTOMER_MARKETING_STATE_LABELS.get((main_stage, sub_stage), ""),
+        "pool_key": pool_key,
+        "pool_label": _pool_label(pool_key) if pool_key else "",
+        "current_segment": current_segment,
+        "current_segment_label": _followup_segment_label(current_segment),
+        "openclaw_eligible": bool(payload.get("openclaw_eligible"))
+        if "openclaw_eligible" in payload
+        else stage_key in _ACTIONABLE_POOL_STAGE_KEYS,
         "activated": _normalize_bool(row.get("activated")),
         "converted": _normalize_bool(row.get("converted")),
         "eligible_for_conversion": _normalize_bool(row.get("eligible_for_conversion")),
@@ -1113,9 +1849,31 @@ def evaluate_customer_marketing_state(
             person_id=target.get("person_id"),
         )
     )
+    config = get_signup_conversion_config(automation_key=automation_key)
+    value_segment = evaluate_customer_value_segment(
+        external_userid=stored_external_userid,
+        person_id=target.get("person_id"),
+        automation_key=automation_key,
+        persist=False,
+    )
+    submission_id = _normalize_int(value_segment.get("submission_id"), "submission_id", allow_none=True)
+    submission_at = _normalized_text(((value_segment.get("source_payload") or {}).get("latest_submission_submitted_at")))
+    hit_count = int(value_segment.get("hit_count") or 0)
+    questionnaire_segment = _normalized_text(value_segment.get("segment")) or "unknown"
+    questionnaire_followup_segment = _followup_segment_from_value_segment(questionnaire_segment)
+    manual_followup_segment = _resolve_manual_followup_segment(
+        existing_state=existing,
+        state_payload_overrides=state_payload_overrides,
+    )
+    has_questionnaire_submission = submission_id is not None
+
     class_status_rows = repo.list_class_status_rows(target.get("external_userids") or [])
     converted_signal = _latest_converted_signal(class_status_rows)
     lead_pool_rows = repo.list_user_ops_lead_pool_rows_for_marketing_state(
+        external_userids=target.get("external_userids") or [],
+        mobile=_normalized_text(target.get("mobile")),
+    )
+    trial_opening_fact = repo.get_explicit_trial_opening_fact(
         external_userids=target.get("external_userids") or [],
         mobile=_normalized_text(target.get("mobile")),
     )
@@ -1130,7 +1888,70 @@ def evaluate_customer_marketing_state(
     last_conversion_marked_at = _normalized_text((converted_signal or {}).get("signal_at"))
     last_message_at = repo.get_latest_message_at_for_external_userids(target.get("external_userids") or [])
     has_external_userid = bool(target.get("external_userids"))
-    has_mobile = bool(_normalized_text(target.get("mobile")))
+    trial_opened = trial_opening_fact is not None
+    trial_opened_at = _normalized_text((trial_opening_fact or {}).get("updated_at")) or _normalized_text((trial_opening_fact or {}).get("created_at"))
+    trial_opened_source = _normalized_text((trial_opening_fact or {}).get("source_type"))
+    trial_opened_external_userid = _normalized_text((trial_opening_fact or {}).get("external_userid"))
+    now_text = _iso_now()
+    if manual_followup_segment:
+        followup_segment = manual_followup_segment
+        followup_segment_source = "manual_override"
+    elif has_questionnaire_submission:
+        followup_segment = (
+            questionnaire_followup_segment
+            if questionnaire_followup_segment != FOLLOWUP_SEGMENT_UNKNOWN
+            else FOLLOWUP_SEGMENT_NORMAL
+        )
+        followup_segment_source = "questionnaire"
+    else:
+        followup_segment = FOLLOWUP_SEGMENT_UNKNOWN
+        followup_segment_source = "awaiting_questionnaire"
+
+    base_pool_key = _resolve_pool_key_for_customer(
+        has_questionnaire_submission=has_questionnaire_submission,
+        trial_opened=trial_opened,
+        activated=activated,
+        followup_segment=followup_segment,
+    )
+    base_stage_key = _pool_stage_key(base_pool_key)
+    base_reference_at = _resolve_pool_reference_at(
+        pool_key=base_pool_key,
+        trial_opened_at=trial_opened_at,
+        submission_at=submission_at,
+        activation_at=last_activation_at,
+        message_at=last_message_at,
+        fallback_now=now_text,
+    )
+    existing_stage_key = _normalized_text((existing or {}).get("stage_key"))
+    existing_payload = dict((existing or {}).get("state_payload") or {})
+    base_entered_at = base_reference_at or now_text
+    if existing_stage_key == base_stage_key and _normalized_text((existing or {}).get("entered_at")):
+        base_entered_at = _normalized_text((existing or {}).get("entered_at"))
+    elif (
+        existing_stage_key == _pool_stage_key(POOL_SILENT)
+        and _normalized_text(existing_payload.get("silent_base_pool_key")) == base_pool_key
+    ):
+        base_entered_at = (
+            _normalized_text(existing_payload.get("silent_base_pool_entered_at"))
+            or _normalized_text(existing_payload.get("base_pool_entered_at"))
+            or base_reference_at
+            or now_text
+        )
+
+    silent_threshold_days = _resolve_silent_threshold_days(config, pool_key=base_pool_key)
+    final_pool_key = base_pool_key
+    if not converted and base_pool_key in _SILENT_ELIGIBLE_POOL_KEYS:
+        if (
+            existing_stage_key == _pool_stage_key(POOL_SILENT)
+            and _normalized_text(existing_payload.get("silent_base_pool_key")) == base_pool_key
+        ):
+            final_pool_key = POOL_SILENT
+        elif _should_enter_silent_pool(
+            entered_at=base_entered_at,
+            threshold_days=silent_threshold_days,
+            now_text=now_text,
+        ):
+            final_pool_key = POOL_SILENT
 
     if converted:
         main_stage = "converted"
@@ -1138,39 +1959,33 @@ def evaluate_customer_marketing_state(
         lifecycle_status = "converted"
         eligible_for_conversion = False
         exit_reason = "enrolled"
-    elif has_mobile and not has_external_userid:
-        main_stage = "prospect"
-        sub_stage = "mobile_only"
-        lifecycle_status = "prospect"
-        eligible_for_conversion = False
-        exit_reason = "missing_external_userid"
-    elif activated:
-        main_stage = "active"
-        sub_stage = "activated"
-        lifecycle_status = "active"
-        eligible_for_conversion = True
-        exit_reason = ""
-    elif has_external_userid:
-        main_stage = "prospect"
-        sub_stage = "wecom_connected"
-        lifecycle_status = "prospect"
-        eligible_for_conversion = True
-        exit_reason = ""
+        stage_key = "converted/enrolled"
+        entered_at = _normalized_text((existing or {}).get("entered_at"))
+        if existing_stage_key != stage_key:
+            entered_at = last_conversion_marked_at or now_text
+        exited_at = last_conversion_marked_at or now_text
     else:
-        raise LookupError("customer marketing state target has neither mobile nor external_userid")
+        main_stage = POOL_STAGE
+        sub_stage = final_pool_key
+        lifecycle_status = "silent" if final_pool_key == POOL_SILENT else "pool"
+        eligible_for_conversion = bool((trial_opened or activated) and has_questionnaire_submission and final_pool_key != POOL_SILENT)
+        if final_pool_key == POOL_SILENT:
+            exit_reason = "silent_timeout"
+        elif not has_questionnaire_submission:
+            exit_reason = "awaiting_questionnaire"
+        elif not trial_opened and not activated:
+            exit_reason = "trial_not_opened"
+        else:
+            exit_reason = ""
+        stage_key = _pool_stage_key(final_pool_key)
+        entered_at = _normalized_text((existing or {}).get("entered_at"))
+        if existing_stage_key != stage_key:
+            entered_at = now_text if final_pool_key == POOL_SILENT else (base_reference_at or now_text)
+        exited_at = ""
 
-    stage_key = f"{main_stage}/{sub_stage}"
-    signal_reference_at = (
-        last_conversion_marked_at
-        if converted
-        else last_activation_at
-        if main_stage == "active"
-        else last_message_at
+    openclaw_eligible = bool(
+        stage_key in _ACTIONABLE_POOL_STAGE_KEYS and has_external_userid and not converted and final_pool_key != POOL_SILENT
     )
-    entered_at = _normalized_text((existing or {}).get("entered_at"))
-    if _normalized_text((existing or {}).get("stage_key")) != stage_key:
-        entered_at = signal_reference_at or _iso_now()
-    exited_at = last_conversion_marked_at if main_stage == "converted" else ""
     state_payload = {
         "person_id": target.get("person_id"),
         "mobile": _normalized_text(target.get("mobile")),
@@ -1180,7 +1995,41 @@ def evaluate_customer_marketing_state(
         "activated_signal_external_userid": _normalized_text((activation_signal or {}).get("external_userid")),
         "converted_external_userid": _normalized_text((converted_signal or {}).get("external_userid")),
         "converted_signup_status": _normalized_text((converted_signal or {}).get("signup_status")),
+        "trial_opened": trial_opened,
+        "trial_opened_at": trial_opened_at,
+        "trial_opened_source": trial_opened_source,
+        "trial_opened_external_userid": trial_opened_external_userid,
+        "pool_key": final_pool_key,
+        "pool_label": _pool_label(final_pool_key),
+        "followup_segment": followup_segment,
+        "followup_segment_label": _followup_segment_label(followup_segment),
+        "followup_segment_source": followup_segment_source,
+        "manual_followup_segment": manual_followup_segment,
+        "manual_followup_segment_label": _normalized_text(existing_payload.get("manual_followup_segment_label")),
+        "manual_followup_segment_source": _normalized_text(existing_payload.get("manual_followup_segment_source")),
+        "manual_followup_segment_operator": _normalized_text(existing_payload.get("manual_followup_segment_operator")),
+        "manual_followup_segment_at": _normalized_text(existing_payload.get("manual_followup_segment_at")),
+        "questionnaire_submission_id": submission_id,
+        "questionnaire_submitted_at": submission_at,
+        "questionnaire_hit_count": hit_count,
+        "questionnaire_segment": questionnaire_segment,
+        "questionnaire_matched_question_ids": list(value_segment.get("matched_question_ids_json") or []),
+        "pool_owner_userid": _normalized_text(existing_payload.get("pool_owner_userid")) or DEFAULT_AUTOMATION_OWNER_USERID,
+        "openclaw_eligible": openclaw_eligible,
+        "silent_threshold_days": int(silent_threshold_days),
+        "base_pool_key": base_pool_key,
+        "base_pool_label": _pool_label(base_pool_key),
+        "base_pool_entered_at": base_entered_at,
     }
+    if final_pool_key == POOL_SILENT:
+        state_payload.update(
+            {
+                "silent_base_pool_key": base_pool_key,
+                "silent_base_pool_label": _pool_label(base_pool_key),
+                "silent_base_pool_entered_at": base_entered_at,
+                "silent_triggered_at": entered_at,
+            }
+        )
     if state_payload_overrides:
         state_payload.update(dict(state_payload_overrides))
     result = {
@@ -1192,6 +2041,11 @@ def evaluate_customer_marketing_state(
         "sub_stage": sub_stage,
         "stage_key": stage_key,
         "stage_label": _CUSTOMER_MARKETING_STATE_LABELS.get((main_stage, sub_stage), ""),
+        "pool_key": final_pool_key if main_stage == POOL_STAGE else "",
+        "pool_label": _pool_label(final_pool_key) if main_stage == POOL_STAGE else "",
+        "current_segment": _normalize_followup_segment(followup_segment),
+        "current_segment_label": _followup_segment_label(followup_segment),
+        "openclaw_eligible": openclaw_eligible,
         "activated": activated,
         "converted": converted,
         "eligible_for_conversion": eligible_for_conversion,
@@ -1218,6 +2072,7 @@ def evaluate_customer_marketing_state(
     result_snapshot = _customer_marketing_state_snapshot(result)
     history_written = False
     db = get_db()
+    dispatch_external_userid = _normalized_text((existing or {}).get("storage_external_userid")) or stored_external_userid
     try:
         if existing_snapshot != result_snapshot:
             repo.insert_customer_marketing_state_history(
@@ -1262,6 +2117,18 @@ def evaluate_customer_marketing_state(
             exit_reason=exit_reason,
             state_payload=state_payload,
         )
+        if (
+            existing_stage_key
+            and existing_stage_key != stage_key
+            and dispatch_external_userid
+            and not (stage_key == "converted/enrolled" and _normalized_text(history_change_reason) == "mark_enrolled")
+        ):
+            _cancel_dispatches_for_pool_change(
+                external_userid=dispatch_external_userid,
+                previous_stage_key=existing_stage_key,
+                current_stage_key=stage_key,
+                automation_key=automation_key,
+            )
         db.commit()
     except Exception:
         db.rollback()
@@ -1397,6 +2264,52 @@ def _cancel_pending_conversion_dispatches(
         )
         if row:
             results.append(row)
+    return results
+
+
+def _cancel_dispatches_for_pool_change(
+    *,
+    external_userid: str,
+    previous_stage_key: str,
+    current_stage_key: str,
+    automation_key: str,
+) -> list[dict[str, Any]]:
+    normalized_external_userid = _normalized_text(external_userid)
+    if not normalized_external_userid or previous_stage_key == current_stage_key:
+        return []
+    if previous_stage_key not in _ACTIONABLE_POOL_STAGE_KEYS:
+        return []
+    results: list[dict[str, Any]] = []
+    for row in repo.list_conversion_dispatch_logs(external_userid=normalized_external_userid):
+        batch_id = _normalize_int(row.get("batch_id"), "batch_id", allow_none=True)
+        if batch_id is None:
+            continue
+        existing_status = _normalized_text(row.get("dispatch_status"))
+        if existing_status not in {_ROUTER_PENDING_DISPATCH_STATUS, _ROUTER_BLOCKED_DISPATCH_STATUS}:
+            continue
+        payload = _json_loads(row.get("dispatch_payload_json"), default={})
+        if not isinstance(payload, dict):
+            payload = {}
+        payload.update(
+            {
+                "action": "pool_changed",
+                "previous_stage_key": previous_stage_key,
+                "current_stage_key": current_stage_key,
+            }
+        )
+        updated = repo.upsert_conversion_dispatch_log(
+            automation_key=automation_key,
+            batch_id=int(batch_id),
+            external_userid=normalized_external_userid,
+            dispatch_status="cancelled",
+            dispatch_channel=_normalized_text(row.get("dispatch_channel")) or DEFAULT_CHANNEL_TYPE,
+            dispatch_payload=payload,
+            dispatch_note=f"pool changed: {previous_stage_key} -> {current_stage_key}",
+            dispatched_at=_normalized_text(row.get("dispatched_at")),
+            acked_at=_normalized_text(row.get("acked_at")),
+        )
+        if updated:
+            results.append(updated)
     return results
 
 
@@ -1538,6 +2451,70 @@ def unmark_enrolled(
         "external_userid": normalized_external_userid,
         "signup_status": target_signup_status,
         "class_user_status": current_class_status,
+        "marketing_state": marketing_state,
+        "operator": normalized_operator,
+        "source": normalized_source,
+    }
+
+
+def set_manual_followup_segment(
+    *,
+    external_userid: str,
+    followup_segment: str,
+    owner_userid: str = "",
+    operator: str = "",
+    source: str = "manual",
+    automation_key: str = DEFAULT_SCENARIO_KEY,
+) -> dict[str, Any]:
+    normalized_external_userid = _normalized_text(external_userid)
+    if not normalized_external_userid:
+        raise ValueError("external_userid is required")
+    normalized_segment = _normalize_followup_segment(followup_segment)
+    if normalized_segment not in {FOLLOWUP_SEGMENT_NORMAL, FOLLOWUP_SEGMENT_FOCUS}:
+        raise ValueError("followup_segment must be normal or focus")
+    normalized_source = _normalize_conversion_source(source, default="manual")
+    snapshot = _build_class_user_snapshot_for_conversion(
+        normalized_external_userid,
+        owner_userid=owner_userid,
+    )
+    normalized_operator = _normalized_text(operator) or _normalized_text(snapshot.get("owner_userid_snapshot")) or normalized_source
+    existing_state = repo.get_customer_marketing_state_current(external_userid=normalized_external_userid)
+    if not existing_state:
+        evaluate_customer_marketing_state(
+            external_userid=normalized_external_userid,
+            automation_key=automation_key,
+        )
+    preview = preview_signup_conversion_customer(
+        external_userid=normalized_external_userid,
+        automation_key=automation_key,
+        persist=False,
+    )
+    current_stage_key = _normalized_text(((preview.get("marketing_state") or {}).get("stage_key")))
+    if current_stage_key == "converted/enrolled":
+        raise ValueError("converted customer cannot switch followup segment")
+    if current_stage_key not in {
+        _pool_stage_key(POOL_INACTIVE_NORMAL),
+        _pool_stage_key(POOL_INACTIVE_FOCUS),
+        _pool_stage_key(POOL_ACTIVE_NORMAL),
+        _pool_stage_key(POOL_ACTIVE_FOCUS),
+    }:
+        raise ValueError("current pool does not support manual followup switching")
+    marketing_state = evaluate_customer_marketing_state(
+        external_userid=normalized_external_userid,
+        automation_key=automation_key,
+        state_payload_overrides={
+            "manual_followup_segment": normalized_segment,
+            "manual_followup_segment_label": _followup_segment_label(normalized_segment),
+            "manual_followup_segment_source": normalized_source,
+            "manual_followup_segment_operator": normalized_operator,
+            "manual_followup_segment_at": _iso_now(),
+        },
+        history_change_reason="manual_followup_segment_changed",
+    )
+    return {
+        "external_userid": normalized_external_userid,
+        "followup_segment": normalized_segment,
+        "followup_segment_label": _followup_segment_label(normalized_segment),
         "marketing_state": marketing_state,
         "operator": normalized_operator,
         "source": normalized_source,
@@ -1809,37 +2786,66 @@ def get_customer_marketing_profile(
     base = repo.load_customer_marketing_base(normalized_external_userid)
     if not _normalized_text(base.get("external_userid")):
         raise LookupError("customer not found")
-    config = get_signup_conversion_config(automation_key=scenario_key)
-    marketing_state = _persist_marketing_state(base, scenario_key=scenario_key, batch_context=batch_context)
-    value_segment = _persist_value_segment(base, scenario_key=scenario_key, config=config)
+    preview = preview_signup_conversion_customer(
+        external_userid=normalized_external_userid,
+        automation_key=scenario_key,
+    )
+    marketing_state = dict(preview.get("marketing_state") or {})
+    summary = dict(preview.get("summary") or {})
+    value_segment = dict(preview.get("value_segment") or {})
+    current_stage = _normalized_text(marketing_state.get("stage_key"))
+    if current_stage == "converted/enrolled":
+        marketing_phase = "exited_signup_success"
+        phase_reason = "manual_or_status_conversion"
+        lifecycle_status = "exited"
+    elif current_stage == _pool_stage_key(POOL_SILENT):
+        marketing_phase = "silent_record"
+        phase_reason = "silent_pool"
+        lifecycle_status = "silent"
+    elif batch_context and bool(marketing_state.get("openclaw_eligible")):
+        if bool(batch_context.get("blocked_after_quiet_hour")):
+            marketing_phase = "blocked_after_2300"
+            phase_reason = "window_start_after_quiet_hour"
+            lifecycle_status = "blocked"
+        else:
+            marketing_phase = "waiting_openclaw"
+            phase_reason = "pending_text_message_batch"
+            lifecycle_status = "active"
+    else:
+        marketing_phase = "awaiting_trigger"
+        phase_reason = "pool_waiting_followup"
+        lifecycle_status = "idle"
     return {
         "scenario_key": scenario_key,
         "external_userid": normalized_external_userid,
         "marketing_state": {
-            "marketing_phase": _normalized_text(marketing_state.get("marketing_phase")),
-            "phase_label": _normalized_text(marketing_state.get("phase_label"))
-            or _PHASE_LABELS.get(_normalized_text(marketing_state.get("marketing_phase")), ""),
-            "phase_reason": _normalized_text(marketing_state.get("phase_reason")),
-            "lifecycle_status": _normalized_text(marketing_state.get("lifecycle_status")),
-            "last_batch_id": marketing_state.get("last_batch_id"),
-            "last_batch_status": _normalized_text(marketing_state.get("last_batch_status")),
-            "last_batch_window_start": _normalized_text(marketing_state.get("last_batch_window_start")),
-            "last_batch_window_end": _normalized_text(marketing_state.get("last_batch_window_end")),
-            "last_trigger_message_at": _normalized_text(marketing_state.get("last_trigger_message_at")),
+            "marketing_phase": marketing_phase,
+            "phase_label": _PHASE_LABELS.get(marketing_phase, marketing_phase),
+            "phase_reason": phase_reason,
+            "lifecycle_status": lifecycle_status,
+            "last_batch_id": _normalize_int((batch_context or {}).get("batch_id"), "batch_id", allow_none=True),
+            "last_batch_status": _normalized_text((batch_context or {}).get("batch_status")),
+            "last_batch_window_start": _normalized_text((batch_context or {}).get("window_start")),
+            "last_batch_window_end": _normalized_text((batch_context or {}).get("window_end")),
+            "last_trigger_message_at": _normalized_text((batch_context or {}).get("latest_customer_message_at"))
+            or _normalized_text(marketing_state.get("last_message_at")),
             "entered_at": _normalized_text(marketing_state.get("entered_at")),
             "exited_at": _normalized_text(marketing_state.get("exited_at")),
             "exit_reason": _normalized_text(marketing_state.get("exit_reason")),
-            "updated_at": _normalized_text(marketing_state.get("updated_at")),
+            "updated_at": _normalized_text(marketing_state.get("updated_at")) or _iso_now(),
         },
         "value_segment": {
-            "value_segment": _normalized_text(value_segment.get("value_segment")),
-            "segment_label": _normalized_text(value_segment.get("segment_label"))
-            or _VALUE_SEGMENT_LABELS.get(_normalized_text(value_segment.get("value_segment")), ""),
-            "score": int(value_segment.get("score") or 0),
-            "score_breakdown": value_segment.get("score_breakdown") or {},
-            "is_core": bool(value_segment.get("is_core")),
-            "is_top": bool(value_segment.get("is_top")),
-            "updated_at": _normalized_text(value_segment.get("updated_at")),
+            "value_segment": _normalize_followup_segment(summary.get("current_segment")),
+            "segment_label": _followup_segment_label(summary.get("current_segment")),
+            "score": int(summary.get("hit_count") or 0),
+            "score_breakdown": {
+                "question_hit_count": int(summary.get("hit_count") or 0),
+                "matched_question_ids": list(summary.get("matched_question_ids") or []),
+                "submission_id": value_segment.get("submission_id"),
+            },
+            "is_core": _normalize_followup_segment(summary.get("current_segment")) == FOLLOWUP_SEGMENT_FOCUS,
+            "is_top": False,
+            "updated_at": _normalized_text(value_segment.get("evaluated_at")) or _normalized_text(value_segment.get("updated_at")),
         },
     }
 
@@ -1930,10 +2936,16 @@ def _routing_reason_from_preview(
         return "automation_disabled"
     if not bool(summary.get("eligible_for_conversion")):
         return _normalized_text(summary.get("ineligible_reason")) or "not_eligible"
+    if current_stage == "converted/enrolled":
+        return "enrolled"
+    if current_stage == _pool_stage_key(POOL_NEW_USER):
+        return "awaiting_questionnaire"
+    if current_stage == _pool_stage_key(POOL_SILENT):
+        return "silent_pool"
     if current_stage not in _ROUTER_ALLOWED_STAGE_KEYS:
-        return "stage_not_conversion_target"
-    if current_segment not in _ROUTER_ALLOWED_SEGMENTS:
-        return "segment_not_core_top"
+        return "pool_not_openclaw_target"
+    if current_segment != FOLLOWUP_SEGMENT_FOCUS:
+        return "pool_not_focus_followup"
     return "eligible_by_router"
 
 
@@ -2056,7 +3068,11 @@ def _build_openclaw_customer_marketing_profile(
     marketing_state = dict(preview.get("marketing_state") or {})
     value_segment = dict(preview.get("value_segment") or {})
     summary = dict(preview.get("summary") or {})
-    owner_userid = _normalized_text(base.get("owner_userid")) or _normalized_text(((marketing_state.get("state_payload") or {}).get("owner_userid")))
+    owner_userid = (
+        _normalized_text(base.get("owner_userid"))
+        or _normalized_text(((marketing_state.get("state_payload") or {}).get("pool_owner_userid")))
+        or DEFAULT_AUTOMATION_OWNER_USERID
+    )
     routing = {
         "reason": _routing_reason_from_preview(
             preview,
@@ -2066,7 +3082,7 @@ def _build_openclaw_customer_marketing_profile(
         "dispatch_status": _normalized_text(dispatch_status),
         "batch_id": _normalize_int(batch_id, "batch_id", allow_none=True),
         "stage_key": _normalized_text(summary.get("current_stage")),
-        "segment": _normalized_text(summary.get("current_segment")) or "unknown",
+        "segment": _normalize_followup_segment(summary.get("current_segment")),
         "hit_count": int(summary.get("hit_count") or 0),
         "eligible_for_conversion": bool(summary.get("eligible_for_conversion")),
         "ineligible_reason": _normalized_text(summary.get("ineligible_reason")),
@@ -2093,6 +3109,8 @@ def _build_openclaw_customer_marketing_profile(
             "sub_stage": _normalized_text(marketing_state.get("sub_stage")),
             "stage_key": _normalized_text(marketing_state.get("stage_key")),
             "stage_label": _normalized_text(marketing_state.get("stage_label")),
+            "pool_key": _normalized_text(marketing_state.get("pool_key")),
+            "pool_label": _normalized_text(marketing_state.get("pool_label")),
             "eligible_for_conversion": bool(marketing_state.get("eligible_for_conversion")),
             "exit_reason": _normalized_text(marketing_state.get("exit_reason")),
             "activated": bool(marketing_state.get("activated")),
@@ -2102,18 +3120,15 @@ def _build_openclaw_customer_marketing_profile(
             "last_message_at": _normalized_text(marketing_state.get("last_message_at")),
         },
         "value_segment": {
-            "segment": _normalized_text(value_segment.get("segment")) or "unknown",
-            "segment_label": _normalized_text(value_segment.get("segment_label")) or _VALUE_SEGMENT_LABELS.get(
-                _normalized_text(value_segment.get("segment")) or "unknown",
-                "",
-            ),
+            "segment": _normalize_followup_segment(summary.get("current_segment")),
+            "segment_label": _followup_segment_label(summary.get("current_segment")),
             "hit_count": int(value_segment.get("hit_count") or 0),
             "matched_question_ids": list(summary.get("matched_question_ids") or []),
             "matched_questions": list(summary.get("matched_questions") or []),
             "submission_id": _normalize_int(value_segment.get("submission_id"), "submission_id", allow_none=True),
             "evaluated_at": _normalized_text(value_segment.get("evaluated_at")),
-            "is_core": bool(value_segment.get("is_core")),
-            "is_top": bool(value_segment.get("is_top")),
+            "is_core": _normalize_followup_segment(summary.get("current_segment")) == FOLLOWUP_SEGMENT_FOCUS,
+            "is_top": False,
         },
         "routing": routing,
         "recent_text_summary": _build_recent_text_message_summary(
@@ -2403,7 +3418,7 @@ def _candidate_preview_stage(preview: dict[str, Any]) -> str:
 
 
 def _candidate_preview_segment(preview: dict[str, Any]) -> str:
-    return _normalized_text(((preview.get("summary") or {}).get("current_segment"))) or "unknown"
+    return _normalize_followup_segment(((preview.get("summary") or {}).get("current_segment")))
 
 
 def _build_disabled_batch_result(
@@ -2486,11 +3501,12 @@ def route_signup_conversion_batch_candidates(
         current_stage = _candidate_preview_stage(preview)
         current_segment = _candidate_preview_segment(preview)
         ineligible_reason = _normalized_text(((preview.get("summary") or {}).get("ineligible_reason")))
+        routing_reason = _routing_reason_from_preview(preview)
         if current_stage not in _ROUTER_ALLOWED_STAGE_KEYS:
-            skipped_customers.append(_candidate_skip_entry(external_userid, ineligible_reason or "stage_not_conversion_target"))
+            skipped_customers.append(_candidate_skip_entry(external_userid, ineligible_reason or routing_reason))
             continue
-        if current_segment not in _ROUTER_ALLOWED_SEGMENTS:
-            skipped_customers.append(_candidate_skip_entry(external_userid, "segment_not_core_top"))
+        if current_segment != FOLLOWUP_SEGMENT_FOCUS:
+            skipped_customers.append(_candidate_skip_entry(external_userid, routing_reason))
             continue
         if not bool(((preview.get("summary") or {}).get("eligible_for_conversion"))):
             skipped_customers.append(_candidate_skip_entry(external_userid, ineligible_reason or "not_eligible"))
