@@ -629,9 +629,57 @@ def refresh_expired_silent_members() -> dict[str, Any]:
     return {"refreshed_count": refreshed}
 
 
+def _questionnaire_rule_editor_question(question: dict[str, Any]) -> dict[str, Any] | None:
+    question_type = _normalized_text(question.get("type"))
+    if question_type not in {"single_choice", "multi_choice"}:
+        return None
+    options = [
+        {
+            "id": int(option.get("id") or 0),
+            "option_text": _normalized_text(option.get("option_text")) or f"选项 {int(option.get('id') or 0)}",
+        }
+        for option in question.get("options") or []
+        if int(option.get("id") or 0) > 0
+    ]
+    return {
+        "id": int(question.get("id") or 0),
+        "title": _normalized_text(question.get("title")) or f"问题 {int(question.get('id') or 0)}",
+        "type": question_type,
+        "options": options,
+    }
+
+
+def _build_questionnaire_rule_catalog(questionnaires: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    catalog: dict[str, dict[str, Any]] = {}
+    for item in questionnaires:
+        questionnaire_id = int(item.get("id") or 0)
+        if questionnaire_id <= 0:
+            continue
+        try:
+            detail = get_questionnaire_detail(questionnaire_id)
+        except Exception:
+            detail = None
+        if not detail:
+            continue
+        catalog[str(questionnaire_id)] = {
+            "id": questionnaire_id,
+            "title": _normalized_text(detail.get("title")) or _normalized_text(detail.get("name")) or f"问卷 #{questionnaire_id}",
+            "is_disabled": _normalize_bool(detail.get("is_disabled")),
+            "questions": [
+                editor_question
+                for question in detail.get("questions") or []
+                for editor_question in [_questionnaire_rule_editor_question(question)]
+                if editor_question
+            ],
+        }
+    return catalog
+
+
 def get_settings_payload() -> dict[str, Any]:
     config = get_signup_conversion_config()
     channel = repo.get_default_channel() or {}
+    questionnaires = list_questionnaires()
+    questionnaire_rule_catalog = _build_questionnaire_rule_catalog(questionnaires)
     questionnaire = None
     questionnaire_missing = bool(config.get("questionnaire_missing"))
     questionnaire_id = config.get("questionnaire_id") or config.get("missing_questionnaire_id")
@@ -644,12 +692,25 @@ def get_settings_payload() -> dict[str, Any]:
                 questionnaire_missing = True
             else:
                 questionnaire_missing = not bool(questionnaire)
+    rule_editor_questionnaire_id = (
+        _normalized_text(config.get("questionnaire_id"))
+        if not questionnaire_missing and config.get("questionnaire_id") not in (None, "")
+        else ""
+    )
+    selected_catalog_item = questionnaire_rule_catalog.get(rule_editor_questionnaire_id)
     return {
-        "questionnaires": list_questionnaires(),
+        "questionnaires": questionnaires,
         "selected_questionnaire": questionnaire,
         "questionnaire_missing": questionnaire_missing,
         "missing_questionnaire_id": int(questionnaire_id) if questionnaire_missing and questionnaire_id not in (None, "") else None,
         "config": config,
+        "questionnaire_rule_catalog": questionnaire_rule_catalog,
+        "rule_editor": {
+            "selected_questionnaire_id": rule_editor_questionnaire_id,
+            "selected_questionnaire": selected_catalog_item,
+            "rules": list(config.get("question_rules") or []) if not questionnaire_missing else [],
+            "rules_invalidated": questionnaire_missing,
+        },
         "default_channel": {
             "channel_code": _normalized_text(channel.get("channel_code")) or DEFAULT_CHANNEL_CODE,
             "channel_name": _normalized_text(channel.get("channel_name")) or DEFAULT_CHANNEL_NAME,
@@ -706,6 +767,29 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
         }
     try:
         channel_payload = provider.create_default_channel(owner_staff_id=DEFAULT_OWNER_STAFF_ID)
+    except ValueError as exc:
+        existing = repo.get_default_channel() or {}
+        saved = repo.save_channel(
+            {
+                "channel_code": _normalized_text(existing.get("channel_code")) or DEFAULT_CHANNEL_CODE,
+                "channel_name": _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME,
+                "qr_url": _normalized_text(existing.get("qr_url")),
+                "qr_ticket": _normalized_text(existing.get("qr_ticket")),
+                "scene_value": _normalized_text(existing.get("scene_value")),
+                "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
+                "status": "generation_failed",
+            }
+        )
+        get_db().commit()
+        return {
+            "generated": False,
+            "provider_available": True,
+            "channel": saved,
+            "error": str(exc),
+            "operator": _normalized_text(operator),
+            "status_code": 400,
+            "error_code": "invalid_state",
+        }
     except WeComClientError as exc:
         existing = repo.get_default_channel() or {}
         saved = repo.save_channel(
