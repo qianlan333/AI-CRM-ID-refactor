@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...db import get_db
+from ...db import get_db, get_db_backend
 
 
 def _normalized_text(value: Any) -> str:
@@ -14,16 +14,27 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def _db_bool(value: bool) -> bool | int:
+    return value if get_db_backend() == "postgres" else (1 if value else 0)
+
+
 def _serialize_delivery_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
     if not row:
         return None
+    payload_value = row.get("payload_json")
+    if isinstance(payload_value, (dict, list)):
+        payload_json = _json_dumps(payload_value)
+    elif _normalized_text(payload_value):
+        payload_json = _json_dumps(json.loads(payload_value))
+    else:
+        payload_json = "{}"
     return {
         "id": int(row["id"]),
         "event_type": _normalized_text(row.get("event_type")),
         "source_key": _normalized_text(row.get("source_key")),
         "source_id": _normalized_text(row.get("source_id")),
         "target_url": _normalized_text(row.get("target_url")),
-        "payload_json": _json_dumps(json.loads(row.get("payload_json") or "{}")) if _normalized_text(row.get("payload_json")) else "{}",
+        "payload_json": payload_json,
         "payload_summary": _normalized_text(row.get("payload_summary")),
         "token_configured": bool(row.get("token_configured")),
         "status": _normalized_text(row.get("status")),
@@ -82,7 +93,7 @@ def create_outbound_webhook_delivery(
             _normalized_text(target_url),
             _json_dumps(payload_json or {}),
             _normalized_text(payload_summary),
-            1 if token_configured else 0,
+            _db_bool(token_configured),
             int(max_attempts),
         ),
     ).fetchone()
@@ -122,7 +133,7 @@ def update_outbound_webhook_delivery(
         """,
         (
             _normalized_text(target_url),
-            1 if token_configured else 0,
+            _db_bool(token_configured),
             _normalized_text(status),
             int(attempt_count),
             response_status_code,
