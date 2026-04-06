@@ -107,8 +107,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _segment_from_item(item: dict[str, Any]) -> str:
+    value_segment = item.get("value_segment") or {}
+    if isinstance(value_segment, dict):
+        return _normalized_text(value_segment.get("segment")) or "unknown"
     summary = item.get("summary") or {}
     return _normalized_text(summary.get("current_segment")) or "unknown"
+
+
+def _normalize_item_for_backfill_output(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    summary = dict(normalized.get("summary") or {})
+    segment = _segment_from_item(normalized)
+    if summary:
+        summary["current_segment"] = segment
+        normalized["summary"] = summary
+    return normalized
 
 
 def _build_summary(*, successes: list[dict[str, Any]], failures: list[dict[str, Any]]) -> dict[str, Any]:
@@ -136,7 +149,7 @@ def _run_single_target(
     )
     item = dict(payload.get("item") or {})
     item["dry_run"] = bool(dry_run)
-    return item
+    return _normalize_item_for_backfill_output(item)
 
 
 def main(argv: list[str] | None = None) -> int:

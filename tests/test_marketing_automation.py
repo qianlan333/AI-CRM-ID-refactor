@@ -1809,13 +1809,14 @@ def test_signup_conversion_config_api_rejects_invalid_question_and_option(app, c
     assert "does not belong to question" in bad_option_response.get_json()["error"]
 
 
-def test_signup_conversion_config_api_requires_required_mobile_question(app, client):
+def test_signup_conversion_config_api_accepts_questionnaire_without_required_mobile_for_backward_compatibility(app, client):
     seed = _seed_signup_conversion_questionnaire_without_required_mobile(app)
 
     response = client.put("/api/admin/marketing-automation/config", json=_signup_conversion_config_payload(seed))
 
-    assert response.status_code == 400
-    assert response.get_json()["error"] == "selected questionnaire must contain a required mobile question"
+    assert response.status_code == 200
+    payload = response.get_json()["config"]
+    assert payload["questionnaire_id"] == seed["questionnaire_id"]
 
 
 def test_disabled_signup_conversion_config_blocks_candidate_batches(app, client):

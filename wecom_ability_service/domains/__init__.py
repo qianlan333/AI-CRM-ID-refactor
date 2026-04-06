@@ -105,6 +105,13 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         persistence_modules=("repo.py",),
         notes="Signup-conversion automation state, value segments, and pending-batch candidate filtering.",
     ),
+    "outbound_webhook": DomainLayoutSpec(
+        name="outbound_webhook",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="Outbound webhook delivery records, retries, and admin audit reads.",
+    ),
     "questionnaire": DomainLayoutSpec(
         name="questionnaire",
         mode="simple",

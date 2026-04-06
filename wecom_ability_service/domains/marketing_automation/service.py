@@ -544,6 +544,7 @@ def save_signup_conversion_config(
     payload: dict[str, Any],
     *,
     automation_key: str = DEFAULT_SCENARIO_KEY,
+    enforce_required_mobile_question: bool = False,
 ) -> dict[str, Any]:
     existing = get_signup_conversion_config(automation_key=automation_key)
     raw_payload = payload or {}
@@ -583,7 +584,7 @@ def save_signup_conversion_config(
     )
     enabled = _normalize_bool(raw_payload.get("enabled", existing.get("enabled")), default=True)
     questionnaire, question_map, option_map = _questionnaire_lookup(int(questionnaire_id))
-    if not _questionnaire_has_required_mobile_question(questionnaire):
+    if enforce_required_mobile_question and not _questionnaire_has_required_mobile_question(questionnaire):
         raise ValueError("selected questionnaire must contain a required mobile question")
     question_rules = _normalize_question_rules(
         raw_payload.get("question_rules", existing.get("question_rules")),
@@ -2789,6 +2790,7 @@ def get_customer_marketing_profile(
     preview = preview_signup_conversion_customer(
         external_userid=normalized_external_userid,
         automation_key=scenario_key,
+        persist=False,
     )
     marketing_state = dict(preview.get("marketing_state") or {})
     summary = dict(preview.get("summary") or {})
@@ -2833,6 +2835,26 @@ def get_customer_marketing_profile(
             "exited_at": _normalized_text(marketing_state.get("exited_at")),
             "exit_reason": _normalized_text(marketing_state.get("exit_reason")),
             "updated_at": _normalized_text(marketing_state.get("updated_at")) or _iso_now(),
+        },
+        "summary": {
+            "current_stage": _normalized_text(summary.get("current_stage")),
+            "current_stage_display": _normalized_text(summary.get("current_stage_display")),
+            "current_pool": _normalized_text(summary.get("current_pool")),
+            "current_pool_label": _normalized_text(summary.get("current_pool_label")),
+            "current_segment": _normalize_followup_segment(summary.get("current_segment")),
+            "current_segment_label": _normalized_text(summary.get("current_segment_label"))
+            or _followup_segment_label(summary.get("current_segment")),
+            "current_segment_display": _normalized_text(summary.get("current_segment_display"))
+            or _followup_segment_label(summary.get("current_segment")),
+            "matched_question_ids": list(summary.get("matched_question_ids") or []),
+            "matched_questions": list(summary.get("matched_questions") or []),
+            "hit_count": int(summary.get("hit_count") or 0),
+            "eligible": bool(summary.get("eligible")),
+            "eligible_for_conversion": bool(summary.get("eligible_for_conversion")),
+            "eligibility_display": _normalized_text(summary.get("eligibility_display"))
+            or ("会" if bool(summary.get("eligible")) else "不会"),
+            "ineligible_reason": _normalized_text(summary.get("ineligible_reason")),
+            "ineligible_reason_display": _normalized_text(summary.get("ineligible_reason_display")),
         },
         "value_segment": {
             "value_segment": _normalize_followup_segment(summary.get("current_segment")),
