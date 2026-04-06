@@ -13,6 +13,7 @@ from wecom_ability_service.services import (
     mark_enrolled,
     save_signup_conversion_config,
     unmark_enrolled,
+    upsert_customer_trial_opening_fact,
 )
 
 
@@ -139,6 +140,16 @@ def _seed_signup_conversion_questionnaire(app, *, questionnaire_id: int = 51) ->
                 )
             question_ids.append(question_id)
             option_ids_by_question[question_id] = option_ids
+        mobile_question_id = questionnaire_id * 100 + 6
+        db.execute(
+            """
+            INSERT INTO questionnaire_questions (
+                id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, 'mobile', '手机号', 1, 6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (mobile_question_id, questionnaire_id),
+        )
         db.commit()
     return {
         "questionnaire_id": questionnaire_id,
@@ -310,6 +321,27 @@ def _seed_activation_source(app, *, mobile: str, updated_at: str = "2026-04-04 0
         db.commit()
 
 
+def _seed_trial_opening_fact(
+    app,
+    *,
+    mobile: str,
+    external_userid: str,
+    customer_name: str,
+    owner_userid: str = "sales_01",
+    opened_at: str = "2026-04-04 09:00:00",
+):
+    with app.app_context():
+        upsert_customer_trial_opening_fact(
+            mobile=mobile,
+            external_userid=external_userid,
+            customer_name=customer_name,
+            owner_userid=owner_userid,
+            source="test_seed",
+            opened_at=opened_at,
+        )
+        get_db().commit()
+
+
 def _remove_live_external_facts(app, *, external_userid: str):
     with app.app_context():
         db = get_db()
@@ -330,6 +362,13 @@ def test_mark_enrolled_cancels_pending_candidate_and_unmark_recomputes_to_activa
         external_userid="wm_conv_task05",
         mobile="13800139001",
         customer_name="转化候选客户",
+    )
+    _seed_trial_opening_fact(
+        app,
+        mobile="13800139001",
+        external_userid="wm_conv_task05",
+        customer_name="转化候选客户",
+        opened_at="2026-04-04 10:02:00",
     )
     _seed_activation_source(app, mobile="13800139001")
     _create_questionnaire_submission(
@@ -390,7 +429,7 @@ def test_mark_enrolled_cancels_pending_candidate_and_unmark_recomputes_to_activa
             source="sidebar_manual",
         )
         assert unmarked["class_user_status"]["signup_status"] == "lead"
-        assert unmarked["marketing_state"]["stage_key"] == "active/activated"
+        assert unmarked["marketing_state"]["stage_key"] == "pool/active_focus"
         assert unmarked["marketing_state"]["converted"] is False
 
 
@@ -418,7 +457,7 @@ def test_unmark_enrolled_recomputes_to_wecom_connected_without_activation(app):
             source="sidebar_manual",
         )
         assert unmarked["class_user_status"]["signup_status"] == "lead"
-        assert unmarked["marketing_state"]["stage_key"] == "prospect/wecom_connected"
+        assert unmarked["marketing_state"]["stage_key"] == "pool/new_user"
 
 
 def test_unmark_enrolled_recomputes_to_mobile_only_without_live_external_facts(app):
@@ -448,7 +487,7 @@ def test_unmark_enrolled_recomputes_to_mobile_only_without_live_external_facts(a
             source="sidebar_manual",
         )
         assert unmarked["class_user_status"]["signup_status"] == "lead"
-        assert unmarked["marketing_state"]["stage_key"] == "prospect/mobile_only"
+        assert unmarked["marketing_state"]["stage_key"] == "pool/new_user"
         assert unmarked["marketing_state"]["external_userid"] == ""
 
 
@@ -471,7 +510,7 @@ def test_unmark_enrolled_without_restore_status_does_not_default_class_user_to_l
         )
         assert unmarked["class_user_status"] == {}
         assert unmarked["signup_status"] == ""
-        assert unmarked["marketing_state"]["stage_key"] == "prospect/wecom_connected"
+        assert unmarked["marketing_state"]["stage_key"] == "pool/new_user"
 
 
 def test_mcp_mark_and_unmark_enrolled_tools_use_unified_conversion_service(app, client):
@@ -508,7 +547,7 @@ def test_mcp_mark_and_unmark_enrolled_tools_use_unified_conversion_service(app, 
     ).get_json()["result"]["structuredContent"]
     assert unmarked["source"] == "mcp"
     assert unmarked["class_user_status"]["signup_status"] == "lead"
-    assert unmarked["marketing_state"]["stage_key"] == "active/activated"
+    assert unmarked["marketing_state"]["stage_key"] == "pool/new_user"
 
 
 def test_mcp_record_conversion_feedback_mark_enrolled_matches_manual_mark(app, client, monkeypatch):
@@ -526,6 +565,20 @@ def test_mcp_record_conversion_feedback_mark_enrolled_matches_manual_mark(app, c
         external_userid="wm_conv_feedback_mcp",
         mobile="13800139012",
         customer_name="MCP回写客户",
+    )
+    _seed_trial_opening_fact(
+        app,
+        mobile="13800139011",
+        external_userid="wm_conv_feedback_manual",
+        customer_name="手工回写客户",
+        opened_at="2026-04-04 10:02:00",
+    )
+    _seed_trial_opening_fact(
+        app,
+        mobile="13800139012",
+        external_userid="wm_conv_feedback_mcp",
+        customer_name="MCP回写客户",
+        opened_at="2026-04-04 10:03:00",
     )
     _create_questionnaire_submission(
         app,

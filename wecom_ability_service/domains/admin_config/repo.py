@@ -10,6 +10,17 @@ def _db_bool(value: bool) -> bool | int:
     return value if get_db_backend() == "postgres" else (1 if value else 0)
 
 
+def _json_loads(value: Any, *, default: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    if value in (None, ""):
+        return default
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+
+
 def list_class_term_tag_mappings(active_only: bool = False) -> list[dict[str, Any]]:
     sql = """
         SELECT
@@ -381,18 +392,29 @@ def get_latest_audit_map(*, target_type: str, target_ids: list[str]) -> dict[str
 
 
 def get_automation_conversion_segment_counts() -> dict[str, int]:
-    counts = {"unknown": 0, "normal": 0, "core": 0, "top": 0}
+    counts = {"unknown": 0, "normal": 0, "focus": 0}
     rows = get_db().execute(
         """
-        SELECT segment, COUNT(*) AS total
-        FROM customer_value_segment_current
-        GROUP BY segment
+        SELECT main_stage, sub_stage, state_payload_json
+        FROM customer_marketing_state_current
         """
     ).fetchall()
     for row in rows:
-        segment = str(row.get("segment") or "").strip().lower()
+        payload = _json_loads(row.get("state_payload_json"), default={})
+        if not isinstance(payload, dict):
+            payload = {}
+        segment = str(payload.get("followup_segment") or payload.get("current_segment") or "").strip().lower()
+        if not segment:
+            main_stage = str(row.get("main_stage") or "").strip().lower()
+            sub_stage = str(row.get("sub_stage") or "").strip().lower()
+            if main_stage == "pool" and sub_stage in {"inactive_focus", "active_focus"}:
+                segment = "focus"
+            elif main_stage == "pool" and sub_stage in {"inactive_normal", "active_normal"}:
+                segment = "normal"
+            else:
+                segment = "unknown"
         if segment in counts:
-            counts[segment] = int(row.get("total") or 0)
+            counts[segment] += 1
     return counts
 
 
@@ -421,15 +443,21 @@ def list_automation_conversion_stage_snapshot_rows() -> list[dict[str, Any]]:
         SELECT
             s.main_stage,
             s.sub_stage,
-            COALESCE(v.segment, 'unknown') AS segment,
             COALESCE(NULLIF(s.entered_at, ''), NULLIF(s.updated_at, ''), '') AS entered_at,
-            s.updated_at
+            s.updated_at,
+            s.state_payload_json
         FROM customer_marketing_state_current s
-        LEFT JOIN customer_value_segment_current v
-            ON s.external_userid <> '' AND v.external_userid = s.external_userid
         """
     ).fetchall()
-    return [dict(row) for row in rows]
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        payload = _json_loads(row.get("state_payload_json"), default={})
+        if not isinstance(payload, dict):
+            payload = {}
+        item["segment"] = str(payload.get("followup_segment") or payload.get("current_segment") or "").strip().lower() or "unknown"
+        result.append(item)
+    return result
 
 
 def list_automation_conversion_dispatch_history(*, status: str = "", limit: int = 50) -> list[dict[str, Any]]:
@@ -458,13 +486,13 @@ def list_automation_conversion_dispatch_history(*, status: str = "", limit: int 
             ) AS owner_userid,
             COALESCE(
                 (
-                    SELECT v.segment
-                    FROM customer_value_segment_current v
-                    WHERE v.external_userid = log.external_userid
-                    ORDER BY v.updated_at DESC, v.id DESC
+                    SELECT s.state_payload_json
+                    FROM customer_marketing_state_current s
+                    WHERE s.external_userid = log.external_userid
+                    ORDER BY s.updated_at DESC, s.id DESC
                     LIMIT 1
                 ),
-                'unknown'
+                '{{}}'
             ) AS segment,
             COALESCE(
                 (
@@ -496,4 +524,12 @@ def list_automation_conversion_dispatch_history(*, status: str = "", limit: int 
         """,
         tuple(params),
     ).fetchall()
-    return [dict(row) for row in rows]
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        payload = _json_loads(row.get("segment"), default={})
+        if not isinstance(payload, dict):
+            payload = {}
+        item["segment"] = str(payload.get("followup_segment") or payload.get("current_segment") or "").strip().lower() or "unknown"
+        result.append(item)
+    return result

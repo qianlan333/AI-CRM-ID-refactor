@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from ...customer_center.repo import (
@@ -14,6 +15,10 @@ from ...customer_center.repo import (
     fetch_tag_map,
 )
 from ...db import get_db, get_db_backend
+
+
+def _db_bool(value: bool) -> bool | int:
+    return value if get_db_backend() == "postgres" else (1 if value else 0)
 
 
 def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
@@ -32,6 +37,13 @@ def _normalized_text(value: Any) -> str:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps({} if value is None else value, ensure_ascii=False)
+
+
+def get_owner_role_item(userid: str) -> dict[str, Any]:
+    normalized_userid = _normalized_text(userid)
+    if not normalized_userid:
+        return {}
+    return fetch_owner_role_map([normalized_userid]).get(normalized_userid, {})
 
 
 def get_marketing_automation_config(automation_key: str) -> dict[str, Any] | None:
@@ -586,6 +598,186 @@ def list_user_ops_lead_pool_rows_for_marketing_state(
     )
 
 
+def get_explicit_trial_opening_fact(
+    *,
+    external_userids: list[str] | None = None,
+    mobile: str = "",
+) -> dict[str, Any] | None:
+    normalized_external_userids = [_normalized_text(item) for item in external_userids or [] if _normalized_text(item)]
+    normalized_mobile = _normalized_text(mobile)
+    filters: list[str] = []
+    params: list[Any] = []
+    if normalized_external_userids:
+        placeholders = ",".join("?" for _ in normalized_external_userids)
+        filters.append(f"external_userid IN ({placeholders})")
+        params.extend(normalized_external_userids)
+    if normalized_mobile:
+        filters.append("mobile = ?")
+        params.append(normalized_mobile)
+    if not filters:
+        return None
+    return _fetchone_dict(
+        f"""
+        SELECT
+            id,
+            mobile,
+            external_userid,
+            customer_name,
+            owner_userid,
+            current_status,
+            is_wecom_bound,
+            activation_status,
+            activation_remark,
+            class_term_no,
+            class_term_label,
+            source_type,
+            created_at,
+            updated_at
+        FROM user_ops_pool_current
+        WHERE current_status = 'lead_trial' AND ({' OR '.join(filters)})
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        tuple(params),
+    )
+
+
+def upsert_explicit_trial_opening_fact(
+    *,
+    mobile: str,
+    external_userid: str = "",
+    customer_name: str = "",
+    owner_userid: str = "",
+    source_type: str = "automation_conversion",
+    opened_at: str = "",
+) -> dict[str, Any]:
+    normalized_mobile = _normalized_text(mobile)
+    normalized_external_userid = _normalized_text(external_userid)
+    if not normalized_mobile and not normalized_external_userid:
+        raise ValueError("mobile or external_userid is required")
+
+    existing = get_explicit_trial_opening_fact(
+        external_userids=[normalized_external_userid] if normalized_external_userid else [],
+        mobile=normalized_mobile,
+    )
+    if existing is None:
+        existing = _fetchone_dict(
+            """
+            SELECT
+                id,
+                mobile,
+                external_userid,
+                customer_name,
+                owner_userid,
+                current_status,
+                is_wecom_bound,
+                activation_status,
+                activation_remark,
+                class_term_no,
+                class_term_label,
+                source_type,
+                created_at,
+                updated_at
+            FROM user_ops_pool_current
+            WHERE (? <> '' AND external_userid = ?) OR (? <> '' AND mobile = ?)
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (
+                normalized_external_userid,
+                normalized_external_userid,
+                normalized_mobile,
+                normalized_mobile,
+            ),
+        )
+
+    final_mobile = normalized_mobile or _normalized_text((existing or {}).get("mobile"))
+    final_external_userid = normalized_external_userid or _normalized_text((existing or {}).get("external_userid"))
+    final_customer_name = _normalized_text(customer_name) or _normalized_text((existing or {}).get("customer_name"))
+    final_owner_userid = _normalized_text(owner_userid) or _normalized_text((existing or {}).get("owner_userid"))
+    final_source_type = _normalized_text(source_type) or _normalized_text((existing or {}).get("source_type")) or "automation_conversion"
+    timestamp = (
+        _normalized_text(opened_at)
+        or _normalized_text((existing or {}).get("updated_at"))
+        or _normalized_text((existing or {}).get("created_at"))
+        or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+    created_at = _normalized_text((existing or {}).get("created_at")) or timestamp
+
+    db = get_db()
+    if existing:
+        db.execute(
+            """
+            UPDATE user_ops_pool_current
+            SET mobile = ?,
+                external_userid = ?,
+                customer_name = ?,
+                owner_userid = ?,
+                current_status = 'lead_trial',
+                is_wecom_bound = ?,
+                activation_status = ?,
+                activation_remark = ?,
+                class_term_no = ?,
+                class_term_label = ?,
+                source_type = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                final_mobile,
+                final_external_userid,
+                final_customer_name,
+                final_owner_userid,
+                1 if final_external_userid else int(bool(existing.get("is_wecom_bound"))),
+                _normalized_text(existing.get("activation_status")) or "not_activated",
+                _normalized_text(existing.get("activation_remark")),
+                existing.get("class_term_no"),
+                _normalized_text(existing.get("class_term_label")),
+                final_source_type,
+                timestamp,
+                int(existing["id"]),
+            ),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_current (
+                mobile,
+                external_userid,
+                customer_name,
+                owner_userid,
+                current_status,
+                is_wecom_bound,
+                activation_status,
+                activation_remark,
+                class_term_no,
+                class_term_label,
+                source_type,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, 'lead_trial', ?, 'not_activated', '', NULL, '', ?, ?, ?)
+            """,
+            (
+                final_mobile,
+                final_external_userid,
+                final_customer_name,
+                final_owner_userid,
+                1 if final_external_userid else 0,
+                final_source_type,
+                created_at,
+                timestamp,
+            ),
+        )
+    return (
+        get_explicit_trial_opening_fact(
+            external_userids=[final_external_userid] if final_external_userid else [],
+            mobile=final_mobile,
+        )
+        or {}
+    )
+
+
 def get_huangxiaocan_activation_source_by_mobile(mobile: str) -> dict[str, Any] | None:
     normalized_mobile = _normalized_text(mobile)
     if not normalized_mobile:
@@ -615,6 +807,190 @@ def get_latest_message_at_for_external_userids(external_userids: list[str]) -> s
     timestamps = [_normalized_text(message_map.get(external_userid)) for external_userid in normalized_external_userids]
     timestamps = [item for item in timestamps if item]
     return max(timestamps) if timestamps else ""
+
+
+def list_pool_batch_send_candidates(pool_key: str) -> list[dict[str, Any]]:
+    normalized_pool_key = _normalized_text(pool_key)
+    if not normalized_pool_key:
+        return []
+    return _fetchall_dicts(
+        """
+        SELECT
+            current.id AS marketing_state_id,
+            current.person_id,
+            COALESCE(current.external_userid, '') AS external_userid,
+            COALESCE(current.entered_at, '') AS entered_at,
+            COALESCE(current.last_activation_at, '') AS last_activation_at,
+            COALESCE(current.state_payload_json, '{}') AS state_payload_json,
+            COALESCE(contact.customer_name, '') AS customer_name,
+            COALESCE(contact.owner_userid, '') AS contact_owner_userid,
+            COALESCE(owner_map.display_name, '') AS owner_display_name,
+            COALESCE(people.mobile, '') AS person_mobile
+        FROM customer_marketing_state_current current
+        LEFT JOIN contacts contact
+          ON contact.external_userid = current.external_userid
+        LEFT JOIN owner_role_map owner_map
+          ON owner_map.userid = contact.owner_userid
+        LEFT JOIN people people
+          ON people.id = current.person_id
+        WHERE current.main_stage = 'pool'
+          AND current.sub_stage = ?
+        ORDER BY current.updated_at DESC, current.id DESC
+        """,
+        (normalized_pool_key,),
+    )
+
+
+def list_active_do_not_disturb_rows(
+    *,
+    external_userids: list[str] | None = None,
+    mobiles: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    normalized_external_userids = [_normalized_text(item) for item in (external_userids or []) if _normalized_text(item)]
+    normalized_mobiles = [_normalized_text(item) for item in (mobiles or []) if _normalized_text(item)]
+    filters: list[str] = []
+    params: list[Any] = [_db_bool(True)]
+    if normalized_external_userids:
+        filters.append(f"external_userid IN ({', '.join(['?'] * len(normalized_external_userids))})")
+        params.extend(normalized_external_userids)
+    if normalized_mobiles:
+        filters.append(f"mobile IN ({', '.join(['?'] * len(normalized_mobiles))})")
+        params.extend(normalized_mobiles)
+    if not filters:
+        return []
+    return _fetchall_dicts(
+        f"""
+        SELECT
+            COALESCE(external_userid, '') AS external_userid,
+            COALESCE(mobile, '') AS mobile,
+            COALESCE(source_type, '') AS source_type,
+            COALESCE(reason_code, '') AS reason_code,
+            COALESCE(reason_text, '') AS reason_text,
+            is_active,
+            created_at,
+            updated_at
+        FROM user_ops_do_not_disturb
+        WHERE is_active = ?
+          AND ({' OR '.join(filters)})
+        ORDER BY updated_at DESC, id DESC
+        """,
+        tuple(params),
+    )
+
+
+def resolve_customer_identity_by_mobile(mobile: str) -> dict[str, Any] | None:
+    normalized_mobile = _normalized_text(mobile)
+    if not normalized_mobile:
+        return None
+    return _fetchone_dict(
+        """
+        SELECT
+            people.id AS person_id,
+            people.mobile,
+            COALESCE(bindings.external_userid, '') AS external_userid,
+            COALESCE(contact.customer_name, '') AS customer_name,
+            COALESCE(contact.owner_userid, '') AS owner_userid
+        FROM people people
+        LEFT JOIN external_contact_bindings bindings
+          ON bindings.person_id = people.id
+        LEFT JOIN contacts contact
+          ON contact.external_userid = bindings.external_userid
+        WHERE people.mobile = ?
+        ORDER BY COALESCE(bindings.updated_at, bindings.created_at) DESC, bindings.external_userid ASC
+        LIMIT 1
+        """,
+        (normalized_mobile,),
+    )
+
+
+def upsert_activation_webhook_source(
+    *,
+    mobile: str,
+    signal_at: str,
+    import_batch_id: str,
+    created_by: str,
+) -> dict[str, Any]:
+    normalized_mobile = _normalized_text(mobile)
+    normalized_signal_at = _normalized_text(signal_at) or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    normalized_import_batch_id = _normalized_text(import_batch_id) or "activation_webhook"
+    normalized_created_by = _normalized_text(created_by) or "activation_webhook"
+    db = get_db()
+    params = (
+        normalized_mobile,
+        "activated",
+        normalized_import_batch_id,
+        normalized_created_by,
+        _db_bool(True),
+        normalized_signal_at,
+        normalized_signal_at,
+    )
+    if get_db_backend() == "postgres":
+        db.execute(
+            """
+            INSERT INTO user_ops_huangxiaocan_activation_source (
+                mobile,
+                activation_state,
+                import_batch_id,
+                created_by,
+                is_active,
+                created_at,
+                updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (mobile) DO UPDATE SET
+                activation_state = EXCLUDED.activation_state,
+                import_batch_id = EXCLUDED.import_batch_id,
+                created_by = EXCLUDED.created_by,
+                is_active = EXCLUDED.is_active,
+                updated_at = EXCLUDED.updated_at
+            """,
+            params,
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO user_ops_huangxiaocan_activation_source (
+                mobile,
+                activation_state,
+                import_batch_id,
+                created_by,
+                is_active,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (mobile) DO UPDATE SET
+                activation_state = excluded.activation_state,
+                import_batch_id = excluded.import_batch_id,
+                created_by = excluded.created_by,
+                is_active = excluded.is_active,
+                updated_at = excluded.updated_at
+            """,
+            params,
+        )
+    db.execute(
+        """
+        UPDATE user_ops_pool_current
+        SET activation_status = 'activated',
+            activation_remark = ?,
+            updated_at = ?
+        WHERE mobile = ?
+        """,
+        ("activation webhook", normalized_signal_at, normalized_mobile),
+    )
+    db.commit()
+    return (
+        get_huangxiaocan_activation_source_by_mobile(normalized_mobile)
+        or {
+            "mobile": normalized_mobile,
+            "activation_state": "activated",
+            "import_batch_id": normalized_import_batch_id,
+            "created_by": normalized_created_by,
+            "is_active": True,
+            "created_at": normalized_signal_at,
+            "updated_at": normalized_signal_at,
+        }
+    )
 
 
 def _list_customer_marketing_state_current_candidates(

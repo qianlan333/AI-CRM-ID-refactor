@@ -44,7 +44,7 @@
         <dd id="automation-preview-result-stage">暂无</dd>
       </div>
       <div>
-        <dt>当前分层</dt>
+        <dt>当前跟进类型</dt>
         <dd id="automation-preview-result-segment">暂无</dd>
       </div>
       <div>
@@ -81,6 +81,14 @@
           <dd id="automation-preview-advanced-mobile">暂无</dd>
         </div>
         <div>
+          <dt>试用已开通</dt>
+          <dd id="automation-preview-advanced-trial-opened">暂无</dd>
+        </div>
+        <div>
+          <dt>试用开通时间</dt>
+          <dd id="automation-preview-advanced-trial-opened-at">暂无</dd>
+        </div>
+        <div>
           <dt>命中题目</dt>
           <dd id="automation-preview-advanced-matched-questions">暂无</dd>
         </div>
@@ -107,20 +115,26 @@
   const previewAdvancedExternalUseridEl = document.getElementById('automation-preview-advanced-external-userid');
   const previewAdvancedOwnerEl = document.getElementById('automation-preview-advanced-owner');
   const previewAdvancedMobileEl = document.getElementById('automation-preview-advanced-mobile');
+  const previewAdvancedTrialOpenedEl = document.getElementById('automation-preview-advanced-trial-opened');
+  const previewAdvancedTrialOpenedAtEl = document.getElementById('automation-preview-advanced-trial-opened-at');
   const previewAdvancedMatchedQuestionsEl = document.getElementById('automation-preview-advanced-matched-questions');
 
   const SEGMENT_LABELS = {
-    unknown: '待补资料',
-    normal: '普通用户',
-    core: '重点用户',
-    top: '最高优先用户',
+    unknown: '未完成初判',
+    normal: '普通跟进',
+    core: '重点跟进',
+    top: '重点跟进',
+    focus: '重点跟进',
   };
 
   const STAGE_LABELS = {
-    'prospect/mobile_only': '待转化',
-    'prospect/wecom_connected': '待转化',
-    'active/activated': '已开始使用',
-    'converted/enrolled': '已报名成功',
+    'pool/new_user': '新用户池',
+    'pool/inactive_normal': '未激活普通池',
+    'pool/inactive_focus': '未激活重点跟进池',
+    'pool/active_normal': '激活普通池',
+    'pool/active_focus': '激活重点跟进池',
+    'pool/silent': '沉默池',
+    'converted/enrolled': '已确认成交',
   };
 
   function escapeHtml(value) {
@@ -154,7 +168,7 @@
 
   function segmentLabel(segment) {
     const normalized = String(segment || '').trim().toLowerCase();
-    return SEGMENT_LABELS[normalized] || '待补资料';
+    return SEGMENT_LABELS[normalized] || '未完成初判';
   }
 
   function resetPreviewPanels() {
@@ -290,6 +304,8 @@
     previewAdvancedExternalUseridEl.textContent = displayText(customer.external_userid, '暂无');
     previewAdvancedOwnerEl.textContent = displayText(customer.owner_display_name, '暂无');
     previewAdvancedMobileEl.textContent = displayText(customer.mobile, '暂无');
+    previewAdvancedTrialOpenedEl.textContent = marketingState?.state_payload?.trial_opened ? '是' : '否';
+    previewAdvancedTrialOpenedAtEl.textContent = displayText(marketingState?.state_payload?.trial_opened_at, '暂无');
     previewAdvancedMatchedQuestionsEl.textContent = matchedQuestions.length
       ? matchedQuestions.map((item) => String(item.question_title || '').trim()).filter(Boolean).join(' / ')
       : '暂无';
@@ -299,7 +315,7 @@
 
   async function runPreviewForCandidate(candidate) {
     resetPreviewPanels();
-    setPreviewState('正在试运行', '系统正在读取当前阶段和优先级判断。', 'admin-state admin-state--loading');
+    setPreviewState('正在试运行', '系统正在读取当前池子、问卷初判和试用开通事实。', 'admin-state admin-state--loading');
     try {
       const payload = await fetchJson('/api/admin/marketing-automation/config/preview', {
         method: 'POST',

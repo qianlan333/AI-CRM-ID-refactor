@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Callable
 
 from . import repo
+
+archive_domain_logger = logging.getLogger("archive_sync")
 
 
 def normalize_archived_message(item: dict[str, Any]) -> dict[str, Any]:
@@ -100,7 +103,16 @@ def count_archived_messages() -> int:
 
 
 def insert_archived_messages(messages: list[dict[str, Any]]) -> int:
-    return repo.insert_archived_messages([normalize_archived_message(item) for item in messages])
+    normalized_messages = [normalize_archived_message(item) for item in messages]
+    inserted_rows = repo.insert_archived_messages_detailed(normalized_messages)
+    if inserted_rows:
+        try:
+            from ..marketing_automation.service import process_inbound_messages_for_openclaw
+
+            process_inbound_messages_for_openclaw(inserted_rows)
+        except Exception:
+            archive_domain_logger.exception("post-insert inbound message automation failed")
+    return len(inserted_rows)
 
 
 def get_messages_by_user(

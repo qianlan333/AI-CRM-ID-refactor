@@ -29,6 +29,12 @@ AI-CRM 是当前主线仓库，承载这套 Flask 服务的源码、文档、脚
 - [docs/mcp_usage.md](docs/mcp_usage.md)
 - [docs/openclaw_crm_read_contract.md](docs/openclaw_crm_read_contract.md)
 
+如果任务偏自动化转化业务验收，再补：
+
+- [docs/automation_conversion_acceptance_support_package.md](docs/automation_conversion_acceptance_support_package.md)
+- [docs/automation_conversion_business_acceptance.md](docs/automation_conversion_business_acceptance.md)
+- [docs/automation_conversion_local_runbook.md](docs/automation_conversion_local_runbook.md)
+
 ## 快速启动
 
 ```bash

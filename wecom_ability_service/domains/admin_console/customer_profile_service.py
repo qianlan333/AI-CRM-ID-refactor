@@ -56,6 +56,30 @@ def _empty_marketing_summary() -> dict[str, Any]:
     }
 
 
+def _build_customer_page_marketing_summary(
+    marketing_summary: dict[str, Any],
+    marketing_profile: dict[str, Any],
+) -> dict[str, Any]:
+    preview_summary = dict((marketing_profile or {}).get("summary") or {})
+    fallback_display = business_marketing_display(
+        main_stage=marketing_summary.get("main_stage"),
+        sub_stage=marketing_summary.get("sub_stage"),
+        segment=marketing_summary.get("segment"),
+        eligible_for_conversion=marketing_summary.get("eligible_for_conversion"),
+    )
+    return {
+        "stage_label": _normalized_text(preview_summary.get("current_stage_display")) or fallback_display["stage_label"],
+        "segment_label": _normalized_text(preview_summary.get("current_segment_display")) or fallback_display["segment_label"],
+        "hit_count": int(preview_summary.get("hit_count") or 0),
+        "eligibility_label": _normalized_text(preview_summary.get("eligibility_display")) or fallback_display["eligibility_label"],
+        "ineligible_reason_label": _normalized_text(preview_summary.get("ineligible_reason_display"))
+        or fallback_display["ineligible_reason_label"],
+        "last_activation_at": _normalized_text(marketing_summary.get("last_activation_at")),
+        "last_conversion_marked_at": _normalized_text(marketing_summary.get("last_conversion_marked_at")),
+        "last_dispatch_at": _normalized_text(marketing_summary.get("last_dispatch_at")),
+    }
+
+
 def _legacy_tab_to_section(tab: str) -> str:
     normalized_tab = _normalized_text(tab)
     mapping = {
@@ -170,13 +194,16 @@ def build_customer_detail_payload(external_userid: str, *, legacy_tab: str = "")
         return None
     detail = get_unified_customer_detail(_normalized_text(payload["profile"].get("external_userid"))) or {}
     marketing_summary = dict(detail.get("marketing_summary") or _empty_marketing_summary())
+    marketing_profile = dict(payload["profile"].get("marketing_profile") or {})
+    marketing_page_summary = _build_customer_page_marketing_summary(marketing_summary, marketing_profile)
     payload["profile"]["marketing_summary"] = marketing_summary
-    payload["profile"]["marketing_display"] = business_marketing_display(
-        main_stage=marketing_summary.get("main_stage"),
-        sub_stage=marketing_summary.get("sub_stage"),
-        segment=marketing_summary.get("segment"),
-        eligible_for_conversion=marketing_summary.get("eligible_for_conversion"),
-    )
+    payload["profile"]["marketing_page_summary"] = marketing_page_summary
+    payload["profile"]["marketing_display"] = {
+        "stage_label": marketing_page_summary["stage_label"],
+        "segment_label": marketing_page_summary["segment_label"],
+        "eligibility_label": marketing_page_summary["eligibility_label"],
+        "ineligible_reason_label": marketing_page_summary["ineligible_reason_label"],
+    }
     return {
         "customer": payload["profile"],
         "lookup": payload.get("lookup") or {},

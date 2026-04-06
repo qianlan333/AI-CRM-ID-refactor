@@ -129,7 +129,7 @@ def _seed_customer_profile_fixture(app) -> None:
                 mobile_snapshot, set_by_userid, set_at, wecom_tag_sync_status, wecom_tag_sync_error, status_flags_json
             )
             VALUES (
-                'ext-1', 'signed_999', '已报名999', '客户一', 'owner-a',
+                'ext-1', 'lead', '报名引流品', '客户一', 'owner-a',
                 '13800138000', 'owner-a', '2026-04-03 09:10:00', 'success', '', '{}'
             )
             """
@@ -174,9 +174,11 @@ def _seed_customer_profile_fixture(app) -> None:
                 last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
             )
             VALUES (
-                1, 'ext-1', 'signup_conversion_v1', 'active', 'activated', 1, 0, 1, 'active',
+                1, 'ext-1', 'signup_conversion_v1', 'pool', 'active_focus', 1, 0, 1, 'pool',
                 '2026-04-03 09:30:00', '', '2026-04-03 09:35:00', NULL, '', '', '',
-                '2026-04-03 09:35:00', '2026-04-03 09:30:00', '', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                '2026-04-03 09:35:00', '2026-04-03 09:30:00', '', '',
+                '{"followup_segment":"focus","questionnaire_segment":"top","trial_opened":true,"trial_opened_at":"2026-04-03 09:25:00"}',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             """
         )
@@ -271,22 +273,21 @@ def test_admin_customer_profile_page_renders_profile_sections_without_tabs(app, 
     assert "聊天记录" in html
     assert "获取全部聊天记录" in html
     assert "营销状态 / 自动化转化" in html
-    assert "当前阶段" in html
-    assert "已开始使用" in html
-    assert "当前分层" in html
-    assert "最高优先用户" in html
+    assert "当前池子" in html
+    assert "新用户池" in html
+    assert "当前跟进类型" in html
+    assert "未完成初判" in html
     assert "命中题数" in html
-    assert "4 题" in html
+    assert "0 题" in html
     assert "是否进入自动化" in html
-    assert "会" in html
+    assert "不会" in html
     assert "最近激活时间" in html
-    assert "2026-04-03 09:30:00" in html
     assert "最近处理时间" in html
     assert "2026-04-03 09:40:00" in html
     assert "用户 ID" in html
     assert "unionid" in html
-    assert "自动化阶段" in html
-    assert "价值分层" in html
+    assert "问卷初判" in html
+    assert "最近确认成交时间" in html
     assert "active/activated" not in html
     assert ">top<" not in html
     assert "互动记录" not in html
@@ -311,12 +312,12 @@ def test_admin_customer_profile_page_renders_marketing_summary_placeholders(app,
 
     assert response.status_code == 200
     assert "营销状态 / 自动化转化" in html
-    assert "当前阶段" in html
-    assert "暂无阶段" in html
-    assert "暂未分层" in html
+    assert "当前池子" in html
+    assert "新用户池" in html
+    assert "未完成初判" in html
     assert "0 题" in html
     assert "最近激活时间" in html
-    assert "最近报名标记时间" in html
+    assert "最近确认成交时间" in html
     assert "最近处理时间" in html
     assert html.count("暂无") >= 3
 
@@ -400,7 +401,7 @@ def test_customer_profile_api_supports_external_userid_mobile_and_reserved_user_
     assert by_external_userid.status_code == 200
     assert external_payload["profile"]["user_id"] == "ext-1"
     assert external_payload["lookup"]["resolved_by"] == "external_userid"
-    assert external_payload["profile"]["marketing_profile"]["marketing_state"]["marketing_phase"] == "exited_signup_success"
+    assert external_payload["profile"]["marketing_profile"]["marketing_state"]["marketing_phase"] == "awaiting_trigger"
 
     assert by_mobile.status_code == 200
     assert mobile_payload["profile"]["external_userid"] == "ext-1"

@@ -241,9 +241,9 @@ def test_marketing_backfill_script_recomputes_all_targets(tmp_path):
         ): item["summary"]["current_segment"]
         for item in payload["items"]
     }
-    assert stage_map[("wm_backfill_001", 6101)] == "prospect/wecom_connected"
+    assert stage_map[("wm_backfill_001", 6101)] == "pool/new_user"
     assert segment_map[("wm_backfill_001", 6101)] == "top"
-    assert stage_map[("", 6102)] == "prospect/mobile_only"
+    assert stage_map[("", 6102)] == "pool/new_user"
     assert segment_map[("", 6102)] == "unknown"
 
     with app.app_context():
@@ -273,10 +273,10 @@ def test_marketing_backfill_script_recomputes_all_targets(tmp_path):
             (6102,),
         ).fetchone()
 
-        assert f"{current_state['main_stage']}/{current_state['sub_stage']}" == "prospect/wecom_connected"
+        assert f"{current_state['main_stage']}/{current_state['sub_stage']}" == "pool/new_user"
         assert current_segment["segment"] == "top"
         assert int(current_segment["score"]) == 4
-        assert f"{mobile_only_state['main_stage']}/{mobile_only_state['sub_stage']}" == "prospect/mobile_only"
+        assert f"{mobile_only_state['main_stage']}/{mobile_only_state['sub_stage']}" == "pool/new_user"
         assert mobile_only_state["external_userid"] == ""
 
 

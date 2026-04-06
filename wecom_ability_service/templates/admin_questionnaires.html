@@ -1361,6 +1361,8 @@
         title: '',
         description: '',
         redirect_url: '',
+        external_push_enabled: false,
+        external_push_url: '',
         slug: '',
         is_disabled: false,
         questions: [],
@@ -1379,6 +1381,8 @@
         title: questionnaire.title || '',
         description: questionnaire.description || '',
         redirect_url: questionnaire.redirect_url || '',
+        external_push_enabled: Boolean(questionnaire.external_push_enabled),
+        external_push_url: questionnaire.external_push_url || '',
         slug: questionnaire.slug || '',
         is_disabled: Boolean(questionnaire.is_disabled),
         questions: (questionnaire.questions || []).map((question, index) => createQuestion(question.type || 'single_choice', question, index)),
@@ -1445,6 +1449,8 @@
         title: state.questionnaire.title,
         description: state.questionnaire.description,
         redirect_url: state.questionnaire.redirect_url,
+        external_push_enabled: Boolean(state.questionnaire.external_push_enabled),
+        external_push_url: state.questionnaire.external_push_url,
         slug: state.questionnaire.slug,
         is_disabled: state.questionnaire.is_disabled,
         questions: state.questionnaire.questions.map((question, index) => {
@@ -1700,21 +1706,29 @@
 
     function renderEditorSecondaryActions() {
       if (!editorSecondaryActionsEl) return;
-      if (!state.currentId) {
-        editorSecondaryActionsEl.innerHTML = '';
-        return;
-      }
       editorSecondaryActionsEl.innerHTML = `
-        <button id="editor-share-btn" type="button" class="btn ghost">分享</button>
-        <button id="editor-export-btn" type="button" class="btn ghost">下载数据</button>
+        <button id="editor-global-external-push-logs-btn" type="button" class="btn ghost">外推总览</button>
+        ${state.currentId ? `
+          <button id="editor-share-btn" type="button" class="btn ghost">分享</button>
+          <button id="editor-export-btn" type="button" class="btn ghost">下载数据</button>
+          <button id="editor-external-push-logs-btn" type="button" class="btn ghost">外推记录</button>
+        ` : ''}
       `;
+      const globalExternalPushLogsBtn = document.getElementById('editor-global-external-push-logs-btn');
       const shareBtn = document.getElementById('editor-share-btn');
       const exportBtn = document.getElementById('editor-export-btn');
+      const externalPushLogsBtn = document.getElementById('editor-external-push-logs-btn');
+      globalExternalPushLogsBtn?.addEventListener('click', () => {
+        window.location.assign('/admin/questionnaires/external-push-logs');
+      });
       shareBtn?.addEventListener('click', () => {
         copyText(buildPublicUrl(), '分享链接已复制');
       });
       exportBtn?.addEventListener('click', () => {
         window.open(`/api/admin/questionnaires/${state.currentId}/export`, '_blank');
+      });
+      externalPushLogsBtn?.addEventListener('click', () => {
+        window.location.assign(`/admin/questionnaires/${state.currentId}/external-push-logs`);
       });
     }
 
@@ -1833,6 +1847,20 @@
           <label class="field">提交后跳转地址
             <input id="field-redirect-url" type="text" value="${escapeHtml(state.questionnaire.redirect_url)}">
           </label>
+          <section class="config-group" style="margin:12px 0 0;">
+            <div class="config-head">
+              <div>
+                <h3>外部申请推送</h3>
+                <p>提交成功并落库后，按固定 JSON 向指定地址发送一次 POST。失败不会影响用户提交成功。</p>
+              </div>
+            </div>
+            <label class="field" style="margin-bottom:12px;font-weight:600;">
+              <input id="field-external-push-enabled" type="checkbox" ${state.questionnaire.external_push_enabled ? 'checked' : ''}> 开启问卷外部推送
+            </label>
+            <label class="field">外部推送地址
+              <input id="field-external-push-url" type="text" value="${escapeHtml(state.questionnaire.external_push_url)}" placeholder="https://hooks.example.com/questionnaire/apply">
+            </label>
+          </section>
           <div class="field-grid compact">
             <label class="field">分享标识
               <input id="field-slug" type="text" value="${escapeHtml(state.questionnaire.slug)}">
@@ -1861,6 +1889,14 @@
       });
       inspectorBodyEl.querySelector('#field-redirect-url').addEventListener('input', (event) => {
         state.questionnaire.redirect_url = event.target.value;
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#field-external-push-enabled').addEventListener('change', (event) => {
+        state.questionnaire.external_push_enabled = event.target.checked;
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#field-external-push-url').addEventListener('input', (event) => {
+        state.questionnaire.external_push_url = event.target.value;
         updateDraftIndicator();
       });
       inspectorBodyEl.querySelector('#field-slug').addEventListener('input', (event) => {

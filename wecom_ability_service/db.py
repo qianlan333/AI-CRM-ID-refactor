@@ -147,6 +147,72 @@ def _ensure_sqlite_questionnaire_mobile_type(db) -> None:
     db.execute("PRAGMA foreign_keys = ON")
 
 
+def _ensure_sqlite_questionnaire_external_push_tables(db) -> None:
+    questionnaire_columns = _sqlite_table_columns(db, "questionnaires")
+    if questionnaire_columns:
+        if "external_push_enabled" not in questionnaire_columns:
+            db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_enabled INTEGER NOT NULL DEFAULT 0")
+        if "external_push_url" not in questionnaire_columns:
+            db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_url TEXT NOT NULL DEFAULT ''")
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_questionnaires_external_push_enabled
+            ON questionnaires (external_push_enabled)
+            """
+        )
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS questionnaire_external_push_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            questionnaire_id INTEGER NOT NULL REFERENCES questionnaires(id) ON DELETE CASCADE,
+            questionnaire_title_snapshot TEXT NOT NULL DEFAULT '',
+            submission_record_id INTEGER NOT NULL REFERENCES questionnaire_submissions(id) ON DELETE CASCADE,
+            retry_from_log_id INTEGER REFERENCES questionnaire_external_push_logs(id) ON DELETE SET NULL,
+            retry_attempt INTEGER NOT NULL DEFAULT 0,
+            user_id TEXT NOT NULL DEFAULT '',
+            target_url TEXT NOT NULL DEFAULT '',
+            request_payload TEXT NOT NULL DEFAULT '{}',
+            response_status_code INTEGER,
+            response_body TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'failed',
+            failure_reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_questionnaire
+        ON questionnaire_external_push_logs (questionnaire_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_status
+        ON questionnaire_external_push_logs (status, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_submission
+        ON questionnaire_external_push_logs (submission_record_id)
+        """
+    )
+    push_log_columns = _sqlite_table_columns(db, "questionnaire_external_push_logs")
+    if push_log_columns and "retry_from_log_id" not in push_log_columns:
+        db.execute("ALTER TABLE questionnaire_external_push_logs ADD COLUMN retry_from_log_id INTEGER")
+    if push_log_columns and "retry_attempt" not in push_log_columns:
+        db.execute("ALTER TABLE questionnaire_external_push_logs ADD COLUMN retry_attempt INTEGER NOT NULL DEFAULT 0")
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_retry_from
+        ON questionnaire_external_push_logs (retry_from_log_id, created_at DESC, id DESC)
+        """
+    )
+
+
 def _ensure_sqlite_user_ops_page_tables(db) -> None:
     db.execute(
         """
@@ -446,6 +512,7 @@ def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
     _ensure_sqlite_questionnaire_mobile_type(db)
+    _ensure_sqlite_questionnaire_external_push_tables(db)
     _ensure_sqlite_user_ops_page_tables(db)
     _ensure_sqlite_customer_value_segment_tables(db)
     _ensure_sqlite_customer_marketing_state_tables(db)
@@ -487,6 +554,84 @@ def _ensure_postgres_user_ops_page_tables(db) -> None:
         """
         ALTER TABLE IF EXISTS user_ops_send_records
         ADD COLUMN IF NOT EXISTS image_count INTEGER NOT NULL DEFAULT 0
+        """
+    )
+
+
+def _ensure_postgres_questionnaire_external_push_tables(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_enabled BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_url TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaires_external_push_enabled
+        ON questionnaires (external_push_enabled)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS questionnaire_external_push_logs (
+            id BIGSERIAL PRIMARY KEY,
+            questionnaire_id BIGINT NOT NULL REFERENCES questionnaires(id) ON DELETE CASCADE,
+            questionnaire_title_snapshot TEXT NOT NULL DEFAULT '',
+            submission_record_id BIGINT NOT NULL REFERENCES questionnaire_submissions(id) ON DELETE CASCADE,
+            retry_from_log_id BIGINT REFERENCES questionnaire_external_push_logs(id) ON DELETE SET NULL,
+            retry_attempt INTEGER NOT NULL DEFAULT 0,
+            user_id TEXT NOT NULL DEFAULT '',
+            target_url TEXT NOT NULL DEFAULT '',
+            request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_status_code INTEGER,
+            response_body TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'failed',
+            failure_reason TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_questionnaire
+        ON questionnaire_external_push_logs (questionnaire_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_status
+        ON questionnaire_external_push_logs (status, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_submission
+        ON questionnaire_external_push_logs (submission_record_id)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaire_external_push_logs
+        ADD COLUMN IF NOT EXISTS retry_from_log_id BIGINT REFERENCES questionnaire_external_push_logs(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaire_external_push_logs
+        ADD COLUMN IF NOT EXISTS retry_attempt INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_external_push_logs_retry_from
+        ON questionnaire_external_push_logs (retry_from_log_id, created_at DESC, id DESC)
         """
     )
     db.execute(
@@ -707,6 +852,7 @@ def _init_postgres(db) -> None:
     )
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
+    _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)

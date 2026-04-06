@@ -262,7 +262,7 @@ def _conversion_marked_items(
                 type="conversion_marked",
                 event_time=event_time,
                 occurred_at=event_time,
-                title="报名成功标记",
+                title="成交确认",
                 summary=_conversion_marked_summary(
                     action=action,
                     source=_coalesce_text(payload_json.get("manual_conversion_source")),

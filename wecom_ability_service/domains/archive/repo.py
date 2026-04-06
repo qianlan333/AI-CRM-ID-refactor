@@ -13,9 +13,13 @@ def count_archived_messages() -> int:
 
 
 def insert_archived_messages(messages: list[dict[str, Any]]) -> int:
+    return len(insert_archived_messages_detailed(messages))
+
+
+def insert_archived_messages_detailed(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     db = get_db()
     backend = get_db_backend()
-    inserted = 0
+    inserted_rows: list[dict[str, Any]] = []
     for normalized in messages:
         sql = """
             INSERT INTO archived_messages (
@@ -43,9 +47,10 @@ def insert_archived_messages(messages: list[dict[str, Any]]) -> int:
                 normalized["raw_payload"],
             ),
         )
-        inserted += cursor.rowcount
+        if cursor.rowcount:
+            inserted_rows.append(dict(normalized))
     db.commit()
-    return inserted
+    return inserted_rows
 
 
 def create_sync_run(start_time: str, end_time: str, owner_userid: str, cursor: str) -> int:

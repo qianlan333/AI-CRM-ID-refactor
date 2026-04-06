@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import current_app, jsonify, render_template, request
 
-from ..domains.marketing_automation.presenter import business_marketing_display
+from ..domains.marketing_automation.presenter import business_marketing_display, business_segment_label
 from ..domains.marketing_automation.service import get_customer_marketing_profile
 from ..infra.wecom_runtime import build_jsapi_payload
 from ..services import (
@@ -16,6 +16,7 @@ from ..services import (
     get_sidebar_lead_pool_status,
     mark_enrolled,
     preview_signup_conversion_customer,
+    set_manual_followup_segment,
     unmark_enrolled,
     upsert_sidebar_lead_pool_class_term,
 )
@@ -29,15 +30,50 @@ from .admin_support import (
 from .common import _corp_id, _wecom_error_response
 
 
+_SIDEBAR_SWITCHABLE_POOL_STAGE_KEYS = {
+    "pool/inactive_normal",
+    "pool/inactive_focus",
+    "pool/active_normal",
+    "pool/active_focus",
+}
+
+
+def _sidebar_followup_source_label(source: str) -> str:
+    normalized = str(source or "").strip().lower()
+    return {
+        "manual_override": "人工改判",
+        "questionnaire": "问卷初判",
+        "awaiting_questionnaire": "待问卷提交",
+    }.get(normalized, "待问卷提交")
+
+
+def _sidebar_manual_override_source_label(source: str) -> str:
+    normalized = str(source or "").strip().lower()
+    if not normalized:
+        return ""
+    if normalized.startswith("sidebar"):
+        return "侧边栏人工改判"
+    if normalized == "manual":
+        return "人工改判"
+    return normalized
+
+
 def _sidebar_marketing_status_payload(preview: dict[str, object]) -> dict[str, object]:
     marketing_state = dict(preview.get("marketing_state") or {})
+    state_payload = dict(marketing_state.get("state_payload") or {})
     value_segment = dict(preview.get("value_segment") or {})
     summary = dict(preview.get("summary") or {})
     resolved_customer = dict(preview.get("resolved_customer") or {})
+    current_segment = str(summary.get("current_segment") or "").strip() or str(value_segment.get("segment") or "").strip()
+    questionnaire_segment = str(state_payload.get("questionnaire_segment") or "").strip() or "unknown"
+    manual_override_segment = str(state_payload.get("manual_followup_segment") or "").strip()
+    followup_segment_source = str(state_payload.get("followup_segment_source") or "").strip() or "awaiting_questionnaire"
+    stage_key = str(marketing_state.get("stage_key") or "").strip()
+    activated = bool(marketing_state.get("activated")) or bool(str(marketing_state.get("last_activation_at") or "").strip())
     display = business_marketing_display(
         main_stage=marketing_state.get("main_stage"),
         sub_stage=marketing_state.get("sub_stage"),
-        segment=value_segment.get("segment") or summary.get("current_segment"),
+        segment=current_segment,
         eligible_for_conversion=marketing_state.get("eligible_for_conversion"),
         ineligible_reason=summary.get("ineligible_reason"),
     )
@@ -47,9 +83,11 @@ def _sidebar_marketing_status_payload(preview: dict[str, object]) -> dict[str, o
         "mobile": str(resolved_customer.get("mobile") or "").strip(),
         "main_stage": str(marketing_state.get("main_stage") or "").strip(),
         "sub_stage": str(marketing_state.get("sub_stage") or "").strip(),
-        "stage_key": str(marketing_state.get("stage_key") or "").strip(),
-        "segment": str(value_segment.get("segment") or "").strip() or str(summary.get("current_segment") or "").strip(),
-        "segment_label": str(value_segment.get("segment_label") or "").strip() or str(summary.get("current_segment_label") or "").strip(),
+        "stage_key": stage_key,
+        "pool_key": str(marketing_state.get("pool_key") or "").strip(),
+        "pool_display": display["stage_label"],
+        "segment": current_segment,
+        "segment_label": str(summary.get("current_segment_label") or "").strip() or str(value_segment.get("segment_label") or "").strip(),
         "stage_display": display["stage_label"],
         "segment_display": display["segment_label"],
         "eligibility_display": display["eligibility_label"],
@@ -63,6 +101,23 @@ def _sidebar_marketing_status_payload(preview: dict[str, object]) -> dict[str, o
         "matched_questions": list(summary.get("matched_questions") or []),
         "eligible_for_conversion": bool(marketing_state.get("eligible_for_conversion")),
         "ineligible_reason": str(summary.get("ineligible_reason") or "").strip(),
+        "activated": activated,
+        "current_followup_type": current_segment,
+        "current_followup_type_display": display["segment_label"],
+        "followup_segment_source": followup_segment_source,
+        "followup_segment_source_display": _sidebar_followup_source_label(followup_segment_source),
+        "questionnaire_segment": questionnaire_segment,
+        "questionnaire_segment_display": business_segment_label(questionnaire_segment),
+        "manual_override_active": bool(manual_override_segment),
+        "manual_override_segment": manual_override_segment,
+        "manual_override_segment_display": business_segment_label(manual_override_segment) if manual_override_segment else "",
+        "manual_override_source": str(state_payload.get("manual_followup_segment_source") or "").strip(),
+        "manual_override_source_display": _sidebar_manual_override_source_label(
+            str(state_payload.get("manual_followup_segment_source") or "").strip()
+        ),
+        "manual_override_operator": str(state_payload.get("manual_followup_segment_operator") or "").strip(),
+        "manual_override_at": str(state_payload.get("manual_followup_segment_at") or "").strip(),
+        "can_switch_followup_segment": stage_key in _SIDEBAR_SWITCHABLE_POOL_STAGE_KEYS,
         "last_activation_at": str(marketing_state.get("last_activation_at") or "").strip(),
         "last_conversion_marked_at": str(marketing_state.get("last_conversion_marked_at") or "").strip(),
         "updated_at": str(marketing_state.get("updated_at") or value_segment.get("updated_at") or "").strip(),
@@ -273,6 +328,29 @@ def sidebar_marketing_status_unmark_enrolled():
     return jsonify({"ok": True, "marketing_status": _sidebar_marketing_status_payload(preview), "conversion": conversion})
 
 
+def sidebar_marketing_status_set_followup_segment():
+    payload = request.get_json(silent=True) or {}
+    external_userid = str(payload.get("external_userid") or "").strip()
+    if not external_userid:
+        return jsonify({"ok": False, "error": "external_userid is required"}), 400
+    if not _sidebar_marketing_target_exists(external_userid):
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    try:
+        override = set_manual_followup_segment(
+            external_userid=external_userid,
+            followup_segment=str(payload.get("followup_segment") or "").strip(),
+            owner_userid=str(payload.get("owner_userid") or "").strip(),
+            operator=str(payload.get("operator") or "").strip(),
+            source="sidebar_manual",
+        )
+        preview = preview_signup_conversion_customer(external_userid=external_userid)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError:
+        return jsonify({"ok": False, "error": "customer not found"}), 404
+    return jsonify({"ok": True, "marketing_status": _sidebar_marketing_status_payload(preview), "override": override})
+
+
 
 def register_routes(bp):
     bp.route('/sidebar/bind-mobile', methods=['GET'])(sidebar_bind_mobile_page)
@@ -284,5 +362,6 @@ def register_routes(bp):
     bp.route('/api/sidebar/signup-tags/status', methods=['GET'])(sidebar_signup_tag_status)
     bp.route('/api/sidebar/signup-tags/mark', methods=['POST'])(sidebar_signup_tag_mark)
     bp.route('/api/sidebar/marketing-status', methods=['GET'])(sidebar_marketing_status)
+    bp.route('/api/sidebar/marketing-status/set-followup-segment', methods=['POST'])(sidebar_marketing_status_set_followup_segment)
     bp.route('/api/sidebar/marketing-status/mark-enrolled', methods=['POST'])(sidebar_marketing_status_mark_enrolled)
     bp.route('/api/sidebar/marketing-status/unmark-enrolled', methods=['POST'])(sidebar_marketing_status_unmark_enrolled)

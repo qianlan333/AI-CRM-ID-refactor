@@ -350,26 +350,41 @@ def _automation_conversion_status_cards(config: dict[str, object], selected_ques
             or selected_questionnaire.get("name")
             or questionnaire_name
         ).strip() or questionnaire_name
+    thresholds = dict(config.get("silent_threshold_days_by_pool") or {})
+    silent_summary = " / ".join(
+        [
+            f"新{int(thresholds.get('new_user') or 7)}天",
+            f"未普{int(thresholds.get('inactive_normal') or 7)}天",
+            f"未重{int(thresholds.get('inactive_focus') or 7)}天",
+            f"激普{int(thresholds.get('active_normal') or 7)}天",
+            f"激重{int(thresholds.get('active_focus') or 7)}天",
+        ]
+    )
     return [
         {
-            "label": "自动跟进开关",
+            "label": "问卷初判开关",
             "value": "已开启" if config.get("enabled") else "已暂停",
-            "description": "当前只处理“报名成功”这个场景。",
+            "description": "当前页面只配置自动化转化的问卷初判和首次分流。",
         },
         {
             "label": "当前问卷",
             "value": questionnaire_name,
-            "description": "运营只需要选定一份问卷，系统就按这份问卷判断客户意向。",
+            "description": "系统会按这份问卷做首次分流，问卷里必须直接收集必填手机号。",
         },
         {
-            "label": "重点人群门槛",
+            "label": "重点跟进门槛",
             "value": f"命中 {int(config.get('core_threshold') or 0)} 题",
-            "description": f"命中 {int(config.get('top_threshold') or 0)} 题及以上会进入“优先转化”。",
+            "description": "问卷初判只输出普通跟进 / 重点跟进，更细的后续池子不在这里判断。",
+        },
+        {
+            "label": "沉默池规则",
+            "value": silent_summary,
+            "description": "新用户池、未激活普通/重点、激活普通/重点都可单独配置停留天数；超时自动进入沉默池，沉默池只做留存。",
         },
         {
             "label": "夜间暂停",
             "value": f"{int(config.get('quiet_hour_start') or 23)}:00 后暂停启动",
-            "description": f"按 {str(config.get('timezone') or 'Asia/Shanghai').strip() or 'Asia/Shanghai'} 时区执行，夜间不会新启动自动跟进。",
+            "description": f"按 {str(config.get('timezone') or 'Asia/Shanghai').strip() or 'Asia/Shanghai'} 时区执行，夜间不会新启动自动化转化。",
         },
     ]
 
@@ -387,7 +402,7 @@ def admin_automation_conversion():
         "automation_conversion.html",
         active_nav="automation_conversion",
         page_title="自动化转化",
-        page_summary="用业务步骤维护“报名成功”自动跟进，查看客户所处阶段，并追踪最近交给 AI 的处理情况。",
+        page_summary="用业务步骤维护自动化转化的问卷初判，查看客户所处阶段，并追踪最近交给 AI 的处理情况。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", None),
@@ -400,7 +415,6 @@ def admin_automation_conversion():
         stage_columns=automation_conversion_stage_columns(),
         dispatch_history=dispatch_history,
         dispatch_status_options=automation_conversion_dispatch_filter_options(),
-        question_rule_slots=[1, 2, 3, 4, 5],
     )
 
 
@@ -426,7 +440,7 @@ def admin_automation_conversion_stage_detail(stage_key: str):
             actions=[{"label": "返回自动化转化首页", "href": url_for("api.admin_automation_conversion"), "variant": "secondary"}],
             state_title="阶段不存在",
             state_body="请检查链接是否正确，或重新点击阶段看板进入。",
-            state_items=["支持的阶段包括：待转化、已开始使用、已报名成功"],
+            state_items=["支持的阶段包括：新用户池、未激活普通池、未激活重点跟进池、激活普通池、激活重点跟进池、沉默池、已确认成交"],
             page_error="未找到对应阶段",
         ), 404
 
