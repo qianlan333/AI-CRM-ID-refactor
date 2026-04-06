@@ -76,6 +76,77 @@ def _build_settings_form_payload() -> dict[str, object]:
     }
 
 
+def _settings_notice() -> str:
+    if _query_text("saved") == "1":
+        return "设置已保存"
+    if _query_text("channel_saved") == "1":
+        return "默认渠道二维码已更新"
+    return ""
+
+
+def _apply_settings_form_overrides(payload: dict[str, object]) -> dict[str, object]:
+    config = dict(payload.get("config") or {})
+    questionnaire_catalog = dict(payload.get("questionnaire_rule_catalog") or {})
+    existing_missing = bool(payload.get("questionnaire_missing"))
+    existing_missing_questionnaire_id = payload.get("missing_questionnaire_id")
+    questionnaire_id_text = str(request.form.get("questionnaire_id") or "").strip()
+    config.update(
+        {
+            "enabled": str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"},
+            "questionnaire_id": questionnaire_id_text or None,
+            "core_threshold": str(request.form.get("core_threshold") or "").strip(),
+            "top_threshold": str(request.form.get("top_threshold") or "").strip(),
+            "quiet_hour_start": str(request.form.get("quiet_hour_start") or "").strip(),
+            "timezone": str(request.form.get("timezone") or "").strip(),
+            "silent_threshold_days_by_pool": {
+                "new_user": str(request.form.get("silent_threshold_new_user") or "").strip(),
+                "inactive_normal": str(request.form.get("silent_threshold_inactive_normal") or "").strip(),
+                "inactive_focus": str(request.form.get("silent_threshold_inactive_focus") or "").strip(),
+                "active_normal": str(request.form.get("silent_threshold_active_normal") or "").strip(),
+                "active_focus": str(request.form.get("silent_threshold_active_focus") or "").strip(),
+            },
+        }
+    )
+    selected_catalog_item = questionnaire_catalog.get(questionnaire_id_text) if questionnaire_id_text else None
+    payload["config"] = config
+    payload["selected_questionnaire"] = selected_catalog_item
+    payload["questionnaire_missing"] = bool(questionnaire_id_text and selected_catalog_item is None) or (existing_missing and not questionnaire_id_text)
+    payload["missing_questionnaire_id"] = (
+        int(questionnaire_id_text)
+        if questionnaire_id_text and payload["questionnaire_missing"] and questionnaire_id_text.isdigit()
+        else existing_missing_questionnaire_id
+    )
+    payload["rule_editor"] = {
+        **dict(payload.get("rule_editor") or {}),
+        "selected_questionnaire_id": questionnaire_id_text,
+        "selected_questionnaire": selected_catalog_item,
+        "rules_invalidated": bool(payload["questionnaire_missing"]),
+    }
+    return payload
+
+
+def _render_settings_page(*, settings_payload: dict[str, object] | None = None, question_rules_json: str | None = None, page_error: str = ""):
+    payload = settings_payload or get_settings_payload()
+    return _render_admin_template(
+        "automation_conversion_settings.html",
+        active_nav="automation_conversion",
+        page_title="自动化转化设置",
+        page_summary="把问卷、关键题、沉默规则和默认二维码统一放到设置页维护。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("设置", None),
+        ),
+        settings_payload=payload,
+        question_rules_json=question_rules_json
+        if question_rules_json is not None
+        else json.dumps((payload.get("rule_editor") or {}).get("rules") or [], ensure_ascii=False, indent=2),
+        show_debug_json_editor=_query_text("debug") == "1",
+        page_notice=_settings_notice(),
+        page_error=page_error,
+    )
+
+
 def admin_automation_conversion():
     overview_payload = get_overview_payload()
     return _render_admin_template(
@@ -128,21 +199,7 @@ def admin_automation_conversion_stage_detail(stage_key: str):
 
 
 def admin_automation_conversion_settings():
-    payload = get_settings_payload()
-    return _render_admin_template(
-        "automation_conversion_settings.html",
-        active_nav="automation_conversion",
-        page_title="自动化转化设置",
-        page_summary="把问卷、关键题、沉默规则和默认二维码统一放到设置页维护。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("自动化转化", url_for("api.admin_automation_conversion")),
-            ("设置", None),
-        ),
-        settings_payload=payload,
-        question_rules_json=json.dumps(payload["config"].get("question_rules") or [], ensure_ascii=False, indent=2),
-        page_notice="设置已保存" if _query_text("saved") == "1" else ("默认渠道二维码已更新" if _query_text("channel_saved") == "1" else ""),
-    )
+    return _render_settings_page()
 
 
 def admin_automation_conversion_save_settings():
@@ -150,17 +207,8 @@ def admin_automation_conversion_save_settings():
         save_settings(_build_settings_form_payload())
         return redirect(url_for("api.admin_automation_conversion_settings", saved=1), code=302)
     except ValueError as exc:
-        payload = get_settings_payload()
-        return _render_admin_template(
-            "automation_conversion_settings.html",
-            active_nav="automation_conversion",
-            page_title="自动化转化设置",
-            page_summary="把问卷、关键题、沉默规则和默认二维码统一放到设置页维护。",
-            breadcrumbs=_breadcrumb_items(
-                ("客户管理后台", url_for("api.admin_console_home")),
-                ("自动化转化", url_for("api.admin_automation_conversion")),
-                ("设置", None),
-            ),
+        payload = _apply_settings_form_overrides(get_settings_payload())
+        return _render_settings_page(
             settings_payload=payload,
             question_rules_json=request.form.get("question_rules_json", ""),
             page_error=str(exc),
@@ -171,21 +219,7 @@ def admin_automation_conversion_generate_default_channel():
     result = generate_default_channel_qr(operator=_operator_from_request())
     if result.get("generated"):
         return redirect(url_for("api.admin_automation_conversion_settings", channel_saved=1), code=302)
-    payload = get_settings_payload()
-    return _render_admin_template(
-        "automation_conversion_settings.html",
-        active_nav="automation_conversion",
-        page_title="自动化转化设置",
-        page_summary="把问卷、关键题、沉默规则和默认二维码统一放到设置页维护。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("自动化转化", url_for("api.admin_automation_conversion")),
-            ("设置", None),
-        ),
-        settings_payload=payload,
-        question_rules_json=json.dumps(payload["config"].get("question_rules") or [], ensure_ascii=False, indent=2),
-        page_error=str(result.get("error") or "默认渠道二维码生成失败"),
-    )
+    return _render_settings_page(page_error=str(result.get("error") or "默认渠道二维码生成失败"))
 
 
 def admin_automation_conversion_debug():

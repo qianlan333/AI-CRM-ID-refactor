@@ -9,7 +9,11 @@ import pytest
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
-from wecom_ability_service.services import get_routing_config, resolve_contact_routing_context
+from wecom_ability_service.services import (
+    get_routing_config,
+    get_signup_conversion_config,
+    resolve_contact_routing_context,
+)
 
 
 def _asia_shanghai_today() -> datetime.date:
@@ -697,6 +701,90 @@ def test_admin_automation_conversion_page_survives_missing_configured_questionna
     assert "自动化转化设置" in visible_text
     assert "当前问卷已失效" in visible_text
     assert "已配置的问卷 #82 不存在" in visible_text
+    assert "旧规则已失效" in visible_text
+    assert "关键题规则 JSON" not in visible_text
+
+
+def test_admin_automation_conversion_settings_page_uses_visual_rule_editor(app, client):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=83, question_count=2)
+    save_response = client.put(
+        "/api/admin/marketing-automation/config",
+        json=_signup_conversion_config_payload(
+            seed,
+            question_ids=[seed["question_ids"][0]],
+            hit_option_ids_by_question={seed["question_ids"][0]: seed["option_ids_by_question"][seed["question_ids"][0]]},
+        ),
+    )
+    assert save_response.status_code == 200
+
+    response = client.get("/admin/automation-conversion/settings")
+    html = response.get_data(as_text=True)
+    visible_text = _visible_text(html)
+
+    assert response.status_code == 200
+    assert "关键题与命中答案" in visible_text
+    assert "新增关键题" in visible_text
+    assert "关键题规则 JSON" not in visible_text
+    assert 'id="question-rule-editor-root"' in html
+    assert 'type="hidden" name="question_rules_json"' in html
+    assert "关键问题1" in html
+    assert "问题1-选项1" in html
+    assert "问题1-选项2" in html
+
+
+def test_admin_automation_conversion_settings_save_form_persists_visual_rules(app, client):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=84, question_count=2)
+    question_id = seed["question_ids"][1]
+    option_ids = seed["option_ids_by_question"][question_id]
+
+    response = client.post(
+        "/admin/automation-conversion/settings/save",
+        data={
+            "enabled": "1",
+            "questionnaire_id": str(seed["questionnaire_id"]),
+            "core_threshold": "2",
+            "top_threshold": "3",
+            "quiet_hour_start": "22",
+            "timezone": "Asia/Shanghai",
+            "silent_threshold_new_user": "7",
+            "silent_threshold_inactive_normal": "8",
+            "silent_threshold_inactive_focus": "9",
+            "silent_threshold_active_normal": "10",
+            "silent_threshold_active_focus": "11",
+            "question_rules_json": json.dumps(
+                [
+                    {
+                        "questionnaire_question_id": question_id,
+                        "hit_option_ids_json": option_ids,
+                        "sort_order": 1,
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/automation-conversion/settings?saved=1")
+
+    with app.app_context():
+        config = get_signup_conversion_config()
+        assert config["questionnaire_id"] == seed["questionnaire_id"]
+        assert config["core_threshold"] == 2
+        assert config["top_threshold"] == 3
+        assert config["silent_threshold_days_by_pool"]["inactive_focus"] == 9
+        assert len(config["question_rules"]) == 1
+        rule = config["question_rules"][0]
+        assert rule["questionnaire_id"] == seed["questionnaire_id"]
+        assert rule["questionnaire_question_id"] == question_id
+        assert rule["question_title"] == "关键问题2"
+        assert rule["question_type"] == "single_choice"
+        assert rule["hit_option_ids_json"] == option_ids
+        assert rule["hit_options"] == [
+            {"id": option_ids[0], "option_text": "问题2-选项1"},
+            {"id": option_ids[1], "option_text": "问题2-选项2"},
+        ]
+        assert rule["sort_order"] == 1
 
 
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):

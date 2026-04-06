@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
+import re
 from typing import Any
 
 from flask import current_app
@@ -18,12 +19,32 @@ class AutomationChannelProvider:
         raise NotImplementedError
 
 
+STATE_TOKEN_MAX_LENGTH = 30
+STATE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,30}$")
+
+
+def build_default_channel_state_token(*, now: datetime | None = None) -> str:
+    timestamp = (now or datetime.now()).strftime("%y%m%d")
+    return f"aqr_{timestamp}_{secrets.token_hex(2)}"
+
+
+def validate_contact_way_state_token(value: str) -> str:
+    state_token = str(value or "").strip()
+    if not state_token:
+        raise ValueError("state 不能为空")
+    if len(state_token) > STATE_TOKEN_MAX_LENGTH:
+        raise ValueError(f"state 长度不能超过 {STATE_TOKEN_MAX_LENGTH} 个字符")
+    if not STATE_TOKEN_PATTERN.fullmatch(state_token):
+        raise ValueError("state 只能包含字母、数字、下划线")
+    return state_token
+
+
 @dataclass
 class WeComContactWayProvider(AutomationChannelProvider):
     provider_name: str = "wecom_contact_way"
 
     def create_default_channel(self, *, owner_staff_id: str) -> dict[str, Any]:
-        scene_value = f"automation_default_qrcode_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
+        scene_value = validate_contact_way_state_token(build_default_channel_state_token())
         payload = {
             "type": 1,
             "scene": 2,

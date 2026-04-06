@@ -558,13 +558,16 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
     assert payload["channel"]["qr_url"] == "https://wecom.example/qr/cfg-001"
     assert payload["channel"]["qr_ticket"] == "cfg-001"
     assert payload["channel"]["status"] == "active"
-    assert payload["channel"]["scene_value"].startswith("automation_default_qrcode_")
+    assert payload["channel"]["scene_value"].startswith("aqr_")
+    assert len(payload["channel"]["scene_value"]) <= 30
     assert captured["payload"]["type"] == 1
     assert captured["payload"]["scene"] == 2
     assert captured["payload"]["style"] == 1
     assert captured["payload"]["skip_verify"] is False
     assert captured["payload"]["user"] == ["QianLan"]
-    assert str(captured["payload"]["state"]).startswith("automation_default_qrcode_")
+    assert captured["payload"]["state"] == payload["channel"]["scene_value"]
+    assert len(str(captured["payload"]["state"])) <= 30
+    assert "_" in str(captured["payload"]["state"])
 
     with app.app_context():
         db = get_db()
@@ -580,7 +583,8 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
         assert row["owner_staff_id"] == "QianLan"
         assert row["qr_url"] == "https://wecom.example/qr/cfg-001"
         assert row["qr_ticket"] == "cfg-001"
-        assert str(row["scene_value"]).startswith("automation_default_qrcode_")
+        assert str(row["scene_value"]).startswith("aqr_")
+        assert len(str(row["scene_value"])) <= 30
         assert row["status"] == "active"
 
 
@@ -608,6 +612,37 @@ def test_generate_default_channel_reports_config_incomplete_when_wecom_config_mi
     assert payload["channel"]["status"] == "config_incomplete"
     assert payload["error_code"] == "config_incomplete"
     assert "WECOM_CORP_ID or WECOM_CONTACT_SECRET is not configured" in payload["error"]
+
+
+def test_generate_default_channel_blocks_invalid_state_before_calling_wecom(app, client, monkeypatch):
+    called = {"count": 0}
+
+    class _FakeRuntimeClient:
+        def create_contact_way(self, payload: dict) -> dict:
+            called["count"] += 1
+            return {
+                "config_id": "cfg-002",
+                "qr_code": "https://wecom.example/qr/cfg-002",
+            }
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.provider.get_contact_runtime_client",
+        lambda: _FakeRuntimeClient(),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.provider.build_default_channel_state_token",
+        lambda *, now=None: "aqr_invalid_state_token_length_more_than_30",
+    )
+
+    response = client.post("/api/admin/automation-conversion/settings/default-channel/generate")
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["generated"] is False
+    assert payload["error_code"] == "invalid_state"
+    assert "state 长度不能超过 30 个字符" in payload["error"]
+    assert called["count"] == 0
 
 
 def test_qrcode_callback_creates_member_and_event(app):
