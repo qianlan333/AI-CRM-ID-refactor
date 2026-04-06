@@ -1731,14 +1731,24 @@ def upsert_marketing_value_segment_current(
 
 
 def get_questionnaire_signal(external_userid: str) -> dict[str, Any]:
-    row = _fetchone_dict(
-        """
-        SELECT COUNT(*) AS submission_count, COALESCE(MAX(submitted_at), '') AS last_submitted_at
-        FROM questionnaire_submissions
-        WHERE external_userid = ?
-        """,
-        (external_userid,),
-    )
+    if get_db_backend() == "postgres":
+        row = _fetchone_dict(
+            """
+            SELECT COUNT(*) AS submission_count, COALESCE(MAX(submitted_at)::text, '') AS last_submitted_at
+            FROM questionnaire_submissions
+            WHERE external_userid = ?
+            """,
+            (external_userid,),
+        )
+    else:
+        row = _fetchone_dict(
+            """
+            SELECT COUNT(*) AS submission_count, COALESCE(MAX(submitted_at), '') AS last_submitted_at
+            FROM questionnaire_submissions
+            WHERE external_userid = ?
+            """,
+            (external_userid,),
+        )
     return row or {"submission_count": 0, "last_submitted_at": ""}
 
 
@@ -1749,7 +1759,12 @@ def get_customer_inbound_message_signal(external_userid: str) -> dict[str, Any]:
             """
             SELECT
                 COALESCE(MAX(send_time), '') AS last_customer_text_at,
-                SUM(CASE WHEN send_time >= NOW() - INTERVAL '72 hours' THEN 1 ELSE 0 END) AS customer_text_72h_count
+                SUM(
+                    CASE
+                        WHEN send_time >= TO_CHAR(NOW() - INTERVAL '72 hours', 'YYYY-MM-DD HH24:MI:SS') THEN 1
+                        ELSE 0
+                    END
+                ) AS customer_text_72h_count
             FROM archived_messages
             WHERE external_userid = %s AND sender = %s AND msgtype = 'text'
             """,

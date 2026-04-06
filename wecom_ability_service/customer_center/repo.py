@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..db import get_db
+from ..db import get_db, get_db_backend
 
 
 def _fetchall_dict(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -348,14 +348,25 @@ def fetch_customer_last_dispatch_at(external_userid: str) -> str:
     normalized_external_userid = str(external_userid or "").strip()
     if not normalized_external_userid:
         return ""
-    row = get_db().execute(
-        """
-        SELECT MAX(dispatched_at) AS last_dispatch_at
-        FROM conversion_dispatch_log
-        WHERE external_userid = ?
-          AND dispatched_at IS NOT NULL
-          AND dispatched_at <> ''
-        """,
-        (normalized_external_userid,),
-    ).fetchone()
+    if get_db_backend() == "postgres":
+        row = get_db().execute(
+            """
+            SELECT COALESCE(MAX(dispatched_at)::text, '') AS last_dispatch_at
+            FROM conversion_dispatch_log
+            WHERE external_userid = ?
+              AND dispatched_at IS NOT NULL
+            """,
+            (normalized_external_userid,),
+        ).fetchone()
+    else:
+        row = get_db().execute(
+            """
+            SELECT MAX(dispatched_at) AS last_dispatch_at
+            FROM conversion_dispatch_log
+            WHERE external_userid = ?
+              AND dispatched_at IS NOT NULL
+              AND dispatched_at <> ''
+            """,
+            (normalized_external_userid,),
+        ).fetchone()
     return str((row or {}).get("last_dispatch_at") or "").strip()

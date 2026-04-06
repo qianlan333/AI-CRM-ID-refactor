@@ -438,17 +438,30 @@ def get_automation_conversion_stage_counts() -> dict[str, int]:
 
 
 def list_automation_conversion_stage_snapshot_rows() -> list[dict[str, Any]]:
-    rows = get_db().execute(
-        """
-        SELECT
-            s.main_stage,
-            s.sub_stage,
-            COALESCE(NULLIF(s.entered_at, ''), NULLIF(s.updated_at, ''), '') AS entered_at,
-            s.updated_at,
-            s.state_payload_json
-        FROM customer_marketing_state_current s
-        """
-    ).fetchall()
+    if get_db_backend() == "postgres":
+        rows = get_db().execute(
+            """
+            SELECT
+                s.main_stage,
+                s.sub_stage,
+                COALESCE(s.entered_at::text, s.updated_at::text, '') AS entered_at,
+                s.updated_at,
+                s.state_payload_json
+            FROM customer_marketing_state_current s
+            """
+        ).fetchall()
+    else:
+        rows = get_db().execute(
+            """
+            SELECT
+                s.main_stage,
+                s.sub_stage,
+                COALESCE(NULLIF(s.entered_at, ''), NULLIF(s.updated_at, ''), '') AS entered_at,
+                s.updated_at,
+                s.state_payload_json
+            FROM customer_marketing_state_current s
+            """
+        ).fetchall()
     result: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)

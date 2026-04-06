@@ -55,6 +55,12 @@ def test_request_id_is_forwarded_from_request_header(client):
     assert response.headers["X-Request-Id"] == "custom-request-id-001"
 
 
+def test_favicon_route_returns_no_content(client):
+    response = client.get("/favicon.ico")
+
+    assert response.status_code == 204
+
+
 def test_log_records_expose_request_id_and_release_sha(client, app, caplog):
     with caplog.at_level(logging.INFO):
         with app.test_request_context("/health", headers={"X-Request-Id": "log-request-id-001"}):

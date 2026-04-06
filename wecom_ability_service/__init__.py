@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, Response
 
 from .db import close_db, init_app as init_db_app
 from .mcp_adapter import mcp_bp
@@ -134,6 +134,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     _configure_logging(app)
     _log_startup_config(app)
     register_request_observability(app)
+
+    @app.get("/favicon.ico")
+    def favicon() -> Response:
+        return Response(status=204)
+
     app.register_blueprint(bp)
     app.register_blueprint(mcp_bp)
 
