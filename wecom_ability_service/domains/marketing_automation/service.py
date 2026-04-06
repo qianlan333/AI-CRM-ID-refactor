@@ -378,6 +378,8 @@ def _default_config_payload(*, automation_key: str = DEFAULT_SCENARIO_KEY) -> di
         "channel_type": DEFAULT_CHANNEL_TYPE,
         "enabled": True,
         "questionnaire_id": None,
+        "questionnaire_missing": False,
+        "missing_questionnaire_id": None,
         "core_threshold": DEFAULT_CORE_THRESHOLD,
         "top_threshold": DEFAULT_TOP_THRESHOLD,
         "quiet_hour_start": DEFAULT_QUIET_HOUR_START,
@@ -394,10 +396,12 @@ def _segment_rank(segment: str) -> int:
     return _VALUE_SEGMENT_RANKS.get(_normalized_text(segment), 0)
 
 
-def _questionnaire_lookup(questionnaire_id: int) -> tuple[dict[str, Any], dict[int, dict[str, Any]], dict[int, dict[int, dict[str, Any]]]]:
+def _questionnaire_lookup_optional(
+    questionnaire_id: int,
+) -> tuple[dict[str, Any], dict[int, dict[str, Any]], dict[int, dict[int, dict[str, Any]]]] | None:
     questionnaire = get_questionnaire_detail(int(questionnaire_id))
     if not questionnaire:
-        raise ValueError("questionnaire not found")
+        return None
     question_map: dict[int, dict[str, Any]] = {}
     option_map: dict[int, dict[int, dict[str, Any]]] = {}
     for question in questionnaire.get("questions") or []:
@@ -405,6 +409,13 @@ def _questionnaire_lookup(questionnaire_id: int) -> tuple[dict[str, Any], dict[i
         question_map[question_id] = dict(question)
         option_map[question_id] = {int(option["id"]): dict(option) for option in question.get("options") or []}
     return questionnaire, question_map, option_map
+
+
+def _questionnaire_lookup(questionnaire_id: int) -> tuple[dict[str, Any], dict[int, dict[str, Any]], dict[int, dict[int, dict[str, Any]]]]:
+    lookup = _questionnaire_lookup_optional(int(questionnaire_id))
+    if not lookup:
+        raise ValueError("questionnaire not found")
+    return lookup
 
 
 def _questionnaire_has_required_mobile_question(questionnaire: dict[str, Any]) -> bool:
@@ -454,7 +465,10 @@ def list_signup_conversion_question_rules(*, automation_key: str = DEFAULT_SCENA
     question_map: dict[int, dict[str, Any]] = {}
     option_map: dict[int, dict[int, dict[str, Any]]] = {}
     if questionnaire_id:
-        _, question_map, option_map = _questionnaire_lookup(int(questionnaire_id))
+        lookup = _questionnaire_lookup_optional(int(questionnaire_id))
+        if not lookup:
+            return []
+        _, question_map, option_map = lookup
     return [
         _serialize_question_rule(item, question_map=question_map, option_map=option_map)
         for item in repo.list_marketing_automation_question_rules(int(config_row["id"]))
@@ -467,13 +481,18 @@ def get_signup_conversion_config(*, automation_key: str = DEFAULT_SCENARIO_KEY) 
     if not row:
         return defaults
     payload = _json_loads(row.get("config_payload_json"), default={})
+    questionnaire_id = _normalize_int(payload.get("questionnaire_id"), "questionnaire_id", allow_none=True)
+    questionnaire_lookup = _questionnaire_lookup_optional(int(questionnaire_id)) if questionnaire_id else None
+    questionnaire_missing = bool(questionnaire_id and questionnaire_lookup is None)
     result = {
         "automation_key": _normalized_text(row.get("automation_key")) or automation_key,
         "automation_name": _normalized_text(row.get("automation_name")) or DEFAULT_AUTOMATION_NAME,
         "target_event": _normalized_text(row.get("target_event")) or DEFAULT_TARGET_EVENT,
         "channel_type": _normalized_text(row.get("channel_type")) or DEFAULT_CHANNEL_TYPE,
         "enabled": _normalized_text(row.get("status")).lower() == "active",
-        "questionnaire_id": _normalize_int(payload.get("questionnaire_id"), "questionnaire_id", allow_none=True),
+        "questionnaire_id": None if questionnaire_missing else questionnaire_id,
+        "questionnaire_missing": questionnaire_missing,
+        "missing_questionnaire_id": questionnaire_id if questionnaire_missing else None,
         "core_threshold": _normalize_int(payload.get("core_threshold"), "core_threshold", default=DEFAULT_CORE_THRESHOLD),
         "top_threshold": _normalize_int(payload.get("top_threshold"), "top_threshold", default=DEFAULT_TOP_THRESHOLD),
         "quiet_hour_start": _normalize_int(

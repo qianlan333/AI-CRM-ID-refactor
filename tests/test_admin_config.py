@@ -677,6 +677,35 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
     assert "JSON" not in visible_text
 
 
+def test_admin_automation_conversion_page_survives_missing_configured_questionnaire(app, client):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=82)
+    save_response = client.put(
+        "/api/admin/marketing-automation/config",
+        json=_signup_conversion_config_payload(seed, core_threshold=2, top_threshold=5),
+    )
+    assert save_response.status_code == 200
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            "DELETE FROM questionnaire_options WHERE question_id IN (SELECT id FROM questionnaire_questions WHERE questionnaire_id = ?)",
+            (82,),
+        )
+        db.execute("DELETE FROM questionnaire_questions WHERE questionnaire_id = ?", (82,))
+        db.execute("DELETE FROM questionnaires WHERE id = ?", (82,))
+        db.commit()
+
+    response = client.get("/admin/automation-conversion")
+    html = response.get_data(as_text=True)
+    visible_text = _visible_text(html)
+
+    assert response.status_code == 200
+    assert "自动化转化" in visible_text
+    assert "已失效的问卷 #82" in visible_text
+    assert '"questionnaire_missing": true' in html or '"questionnaire_missing":true' in html
+    assert '"missing_questionnaire_id": 82' in html or '"missing_questionnaire_id":82' in html
+
+
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):
     _seed_automation_conversion_stage_board(app)
 

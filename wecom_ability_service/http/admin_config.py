@@ -350,6 +350,9 @@ def _automation_conversion_status_cards(config: dict[str, object], selected_ques
             or selected_questionnaire.get("name")
             or questionnaire_name
         ).strip() or questionnaire_name
+    elif config.get("questionnaire_missing"):
+        missing_id = int(config.get("missing_questionnaire_id") or 0)
+        questionnaire_name = f"已失效的问卷 #{missing_id}" if missing_id > 0 else "已失效的问卷"
     thresholds = dict(config.get("silent_threshold_days_by_pool") or {})
     silent_summary = " / ".join(
         [

@@ -427,7 +427,11 @@
       .replace(/'/g, '&#39;');
   }
 
-  function questionnaireDisplayName(item) {
+  function questionnaireDisplayName(item, options = {}) {
+    if (options.questionnaireMissing) {
+      const missingId = Number(options.missingQuestionnaireId || 0);
+      return missingId > 0 ? `已失效的问卷 #${missingId}` : '已失效的问卷';
+    }
     if (!item) return '还没选择问卷';
     return String(item.title || item.name || `问卷 #${item.id || ''}`).trim() || '还没选择问卷';
   }
@@ -610,6 +614,16 @@
     const questionnaireId = Number(questionnaireEl.value || state.config.questionnaire_id || 0);
     if (!questionnaireId) {
       addRuleButtonEl.disabled = true;
+      if (state.config.questionnaire_missing) {
+        const missingId = Number(state.config.missing_questionnaire_id || 0);
+        rulesEl.innerHTML = `
+          <div class="admin-state admin-state--inline admin-state--error">
+            <strong>当前配置引用的问卷已失效</strong>
+            <span>原问卷 ${missingId > 0 ? `#${missingId}` : ''} 已不存在，请重新选择一份问卷后再保存。</span>
+          </div>
+        `;
+        return;
+      }
       rulesEl.innerHTML = `
         <div class="admin-state admin-state--inline">
           <strong>请先选择问卷</strong>
@@ -710,6 +724,10 @@
     const questionnaireId = Number(questionnaireEl.value || 0);
     state.config.questionnaire_id = questionnaireId || null;
     state.config.question_rules = Array.isArray(state.config.question_rules) ? state.config.question_rules : [];
+    if (questionnaireId) {
+      state.config.questionnaire_missing = false;
+      state.config.missing_questionnaire_id = null;
+    }
     if (!questionnaireId) {
       renderRules();
       return;
@@ -769,7 +787,10 @@
     const questionnaireId = Number(state.config.questionnaire_id || questionnaireEl.value || 0);
     const detail = state.questionnaireCache[String(questionnaireId)] || state.questionnaires.find((item) => Number(item.id) === questionnaireId) || null;
     enabledSummaryEl.textContent = enabledEl.checked ? '已开启' : '已暂停';
-    questionnaireSummaryEl.textContent = questionnaireDisplayName(detail);
+    questionnaireSummaryEl.textContent = questionnaireDisplayName(detail, {
+      questionnaireMissing: Boolean(state.config.questionnaire_missing),
+      missingQuestionnaireId: Number(state.config.missing_questionnaire_id || 0),
+    });
     thresholdSummaryEl.textContent = `命中 ${coreThresholdEl.value || 0} 题进入重点跟进`;
     if (silentSummaryEl) {
       silentSummaryEl.textContent = silentThresholdSummaryText();
