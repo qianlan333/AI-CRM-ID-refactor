@@ -8,7 +8,7 @@ from typing import Any
 import requests
 from flask import current_app
 
-from ...infra.settings import get_setting
+from ...infra.settings import DEFAULT_OPENCLAW_WEBHOOK_URL, get_setting
 from . import repo
 
 
@@ -25,7 +25,9 @@ EVENT_QUESTIONNAIRE_SUBMIT = "questionnaire_submit"
 
 _EVENT_CONFIGS = {
     EVENT_OPENCLAW_FOCUS_MESSAGE: {
-        "url_key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",
+        "url_key": "OPENCLAW_WEBHOOK_URL",
+        "url_fallback_keys": ("OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",),
+        "default_url": DEFAULT_OPENCLAW_WEBHOOK_URL,
         "token_key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN",
         "timeout_key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
         "default_timeout": 10,
@@ -96,6 +98,35 @@ def _event_config(event_type: str) -> dict[str, Any]:
     return config
 
 
+def _event_webhook_url(config: dict[str, Any]) -> str:
+    primary_key = str(config["url_key"])
+    fallback_keys = [str(item) for item in (config.get("url_fallback_keys") or ()) if _normalized_text(item)]
+    default_url = _normalized_text(config.get("default_url"))
+
+    primary_setting = get_setting(primary_key)
+    if primary_setting is not None:
+        return _normalized_text(primary_setting)
+
+    primary_config = _normalized_text(current_app.config.get(primary_key, ""))
+    for fallback_key in fallback_keys:
+        fallback_setting = get_setting(fallback_key)
+        if fallback_setting is not None:
+            fallback_value = _normalized_text(fallback_setting)
+            if fallback_value:
+                return fallback_value
+            break
+
+    if primary_config and (not default_url or primary_config != default_url):
+        return primary_config
+
+    for fallback_key in fallback_keys:
+        fallback_config = _normalized_text(current_app.config.get(fallback_key, ""))
+        if fallback_config:
+            return fallback_config
+
+    return primary_config
+
+
 def _retry_enabled() -> bool:
     return _setting_bool("OUTBOUND_WEBHOOK_RETRY_ENABLED", default=True)
 
@@ -164,7 +195,7 @@ def _delivery_snapshot(delivery: dict[str, Any]) -> dict[str, Any]:
 def _attempt_delivery(delivery: dict[str, Any]) -> dict[str, Any]:
     snapshot = _delivery_snapshot(delivery)
     config = _event_config(snapshot["event_type"])
-    webhook_url = _setting_text(config["url_key"])
+    webhook_url = _event_webhook_url(config)
     webhook_token = _setting_text(config["token_key"])
     timeout = _setting_int(config["timeout_key"], default=int(config["default_timeout"]), minimum=1)
     now_text = _iso_now()
@@ -290,7 +321,7 @@ def send_outbound_webhook(
     source_id: str = "",
 ) -> dict[str, Any]:
     config = _event_config(event_type)
-    webhook_url = _setting_text(config["url_key"])
+    webhook_url = _event_webhook_url(config)
     webhook_token = _setting_text(config["token_key"])
     delivery = repo.create_outbound_webhook_delivery(
         event_type=_normalized_text(event_type),

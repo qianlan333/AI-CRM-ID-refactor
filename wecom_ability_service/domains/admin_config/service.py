@@ -240,11 +240,11 @@ APP_SETTING_DEFINITIONS = (
         "description": "AI 工具访问令牌。已兼容统一内部接口令牌；页面不会显示完整内容；留空表示保持原值。",
     },
     {
-        "key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",
-        "label": "重点跟进消息 Webhook 地址",
+        "key": "OPENCLAW_WEBHOOK_URL",
+        "label": "OpenClaw Webhook 地址",
         "mode": "editable",
         "input_type": "url",
-        "description": "重点跟进池客户有新消息时，CRM 自动推送到 OpenClaw 的 webhook 地址。",
+        "description": "一键自动化写话术推送到 OpenClaw 的 webhook 地址。",
     },
     {
         "key": "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
@@ -324,6 +324,10 @@ APP_SETTING_DEFINITIONS = (
         "description": "问卷外推请求超时时间（秒），默认 3，最大按 10 秒截断。",
     },
 )
+
+_SETTING_KEY_ALIASES = {
+    "OPENCLAW_WEBHOOK_URL": ("OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",),
+}
 
 
 def _normalize_bool(value: Any) -> bool:
@@ -989,7 +993,18 @@ def _setting_value_source(key: str) -> tuple[str, str]:
     stored = get_setting(key)
     if stored is not None:
         return stored, "app_settings"
-    return _normalized_text(current_app.config.get(key, "")), "config"
+    for alias_key in _SETTING_KEY_ALIASES.get(key, ()):
+        alias_stored = get_setting(alias_key)
+        if alias_stored is not None:
+            return alias_stored, "app_settings"
+    configured = _normalized_text(current_app.config.get(key, ""))
+    if configured:
+        return configured, "config"
+    for alias_key in _SETTING_KEY_ALIASES.get(key, ()):
+        alias_configured = _normalized_text(current_app.config.get(alias_key, ""))
+        if alias_configured:
+            return alias_configured, "config"
+    return "", "config"
 
 
 def _validate_known_setting(key: str, value: str) -> str:
@@ -1006,7 +1021,7 @@ def _validate_known_setting(key: str, value: str) -> str:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
     if key in {
         "WECOM_API_BASE",
-        "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",
+        "OPENCLAW_WEBHOOK_URL",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
     } and normalized and not normalized.startswith(("http://", "https://")):
         raise ValueError(f"{key} 必须以 http:// 或 https:// 开头")

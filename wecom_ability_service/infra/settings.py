@@ -5,6 +5,8 @@ from typing import Any
 from ..db import get_db
 
 
+DEFAULT_OPENCLAW_WEBHOOK_URL = "http://claw.youcangogogo.com/webhook"
+
 SENSITIVE_KEYS = {
     "AUTOMATION_INTERNAL_API_TOKEN",
     "AUTOMATION_ACTIVATION_WEBHOOK_TOKEN",
@@ -18,6 +20,10 @@ SENSITIVE_KEYS = {
     "WECOM_CALLBACK_TOKEN",
     "WECOM_CALLBACK_AES_KEY",
     "WECHAT_MP_APP_SECRET",
+}
+
+_SETTING_KEY_ALIASES = {
+    "OPENCLAW_WEBHOOK_URL": ("OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",),
 }
 
 
@@ -34,6 +40,24 @@ def mask_value(key: str, value: str) -> str:
 def get_setting(key: str) -> str | None:
     row = get_db().execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else None
+
+
+def _setting_with_alias(config: dict[str, Any], key: str) -> str:
+    value = get_setting(key)
+    if value is not None:
+        return value
+    for alias_key in _SETTING_KEY_ALIASES.get(key, ()):
+        alias_value = get_setting(alias_key)
+        if alias_value is not None:
+            return alias_value
+    configured = str(config.get(key, ""))
+    if configured:
+        return configured
+    for alias_key in _SETTING_KEY_ALIASES.get(key, ()):
+        alias_configured = str(config.get(alias_key, ""))
+        if alias_configured:
+            return alias_configured
+    return ""
 
 
 def set_settings(settings: dict[str, Any]) -> None:
@@ -70,7 +94,7 @@ def list_settings_snapshot(config: dict[str, Any]) -> dict[str, str]:
         "WECHAT_MP_APP_SECRET",
         "WECHAT_MP_OAUTH_SCOPE",
         "AUTOMATION_INTERNAL_API_TOKEN",
-        "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL",
+        "OPENCLAW_WEBHOOK_URL",
         "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN",
         "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
         "OUTBOUND_WEBHOOK_RETRY_ENABLED",
@@ -85,8 +109,6 @@ def list_settings_snapshot(config: dict[str, Any]) -> dict[str, str]:
     ]
     snapshot: dict[str, str] = {}
     for key in keys:
-        value = get_setting(key)
-        if value is None:
-            value = str(config.get(key, ""))
+        value = _setting_with_alias(config, key)
         snapshot[key] = mask_value(key, value)
     return snapshot

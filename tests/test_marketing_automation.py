@@ -2337,6 +2337,78 @@ def test_normal_pool_inbound_message_does_not_trigger_openclaw_webhook(app, clie
     assert webhook_calls == []
 
 
+def test_openclaw_webhook_prefers_unified_url_config(app):
+    app.config["OPENCLAW_WEBHOOK_URL"] = "https://openclaw.local/unified-message"
+    app.config["OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL"] = "https://openclaw.local/legacy-focus-message"
+    app.config["OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN"] = "focus-webhook-token"
+    app.config["OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS"] = 7
+
+    webhook_calls: list[dict[str, object]] = []
+
+    def fake_post(url: str, json: dict[str, object] | None = None, headers: dict[str, str] | None = None, timeout: int | None = None):
+        webhook_calls.append(
+            {
+                "url": url,
+                "json": dict(json or {}),
+                "headers": dict(headers or {}),
+                "timeout": timeout,
+            }
+        )
+        return _WebhookResponse(status_code=202, text='{"ok":true}')
+
+    with app.app_context():
+        from wecom_ability_service.domains.outbound_webhook import service as outbound_webhook_service
+
+        original_post = outbound_webhook_service.requests.post
+        outbound_webhook_service.requests.post = fake_post
+        try:
+            result = outbound_webhook_service.send_outbound_webhook(
+                event_type="openclaw_focus_message",
+                payload={"currentPool": "active_focus"},
+                source_key="automation_member",
+                source_id="member-001",
+            )
+        finally:
+            outbound_webhook_service.requests.post = original_post
+
+    assert result["ok"] is True
+    assert len(webhook_calls) == 1
+    assert webhook_calls[0]["url"] == "https://openclaw.local/unified-message"
+    assert webhook_calls[0]["headers"]["Authorization"] == "Bearer focus-webhook-token"
+    assert webhook_calls[0]["timeout"] == 7
+    assert result["delivery"]["target_url"] == "https://openclaw.local/unified-message"
+
+
+def test_openclaw_webhook_keeps_legacy_url_as_fallback(app):
+    app.config["OPENCLAW_WEBHOOK_URL"] = ""
+    app.config["OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL"] = "https://openclaw.local/focus-message"
+
+    webhook_calls: list[str] = []
+
+    def fake_post(url: str, json: dict[str, object] | None = None, headers: dict[str, str] | None = None, timeout: int | None = None):
+        webhook_calls.append(url)
+        return _WebhookResponse(status_code=202, text='{"ok":true}')
+
+    with app.app_context():
+        from wecom_ability_service.domains.outbound_webhook import service as outbound_webhook_service
+
+        original_post = outbound_webhook_service.requests.post
+        outbound_webhook_service.requests.post = fake_post
+        try:
+            result = outbound_webhook_service.send_outbound_webhook(
+                event_type="openclaw_focus_message",
+                payload={"currentPool": "inactive_focus"},
+                source_key="automation_member",
+                source_id="member-002",
+            )
+        finally:
+            outbound_webhook_service.requests.post = original_post
+
+    assert result["ok"] is True
+    assert webhook_calls == ["https://openclaw.local/focus-message"]
+    assert result["delivery"]["target_url"] == "https://openclaw.local/focus-message"
+
+
 def test_focus_pool_webhook_failure_schedules_retry_and_manual_retry_succeeds(app, client):
     seed = _save_default_signup_conversion_config(client, app, questionnaire_id=348)
     _seed_customer(
@@ -2554,6 +2626,7 @@ def test_focus_pool_webhook_missing_url_records_unconfigured_delivery(app, clien
         submitted_at="2026-04-05 16:20:00",
     )
     assert _persist_marketing_state(app, external_userid="wm_focus_missing_url")["stage_key"] == "pool/inactive_focus"
+    app.config["OPENCLAW_WEBHOOK_URL"] = ""
     app.config["OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL"] = ""
 
     with app.app_context():
