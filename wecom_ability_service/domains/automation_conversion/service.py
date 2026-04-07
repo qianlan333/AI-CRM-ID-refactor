@@ -729,15 +729,26 @@ def _serialize_message_activity_sync_run(row: dict[str, Any] | None) -> dict[str
 
 
 def _message_activity_sync_status_payload() -> dict[str, Any]:
+    db_status = get_message_activity_db_status()
     last_run_row = repo.get_latest_message_activity_sync_run()
     last_run = _serialize_message_activity_sync_run(last_run_row)
+    if (
+        not db_status["configured"]
+        and _normalized_text(last_run.get("error_message")) == "message activity db is not configured"
+    ):
+        last_run = {
+            **last_run,
+            "status": "not_configured",
+            "finished_at": "",
+            "error_message": "",
+        }
     recent_items = (
         [_serialize_message_activity_sync_item(item) for item in repo.list_message_activity_sync_items(run_id=int(last_run["id"]), limit=12)]
         if last_run
         else []
     )
     return {
-        "db_status": get_message_activity_db_status(),
+        "db_status": db_status,
         "scope_pools": [
             {"pool": pool, "label": _pool_label(pool)}
             for pool in MESSAGE_ACTIVITY_SYNC_POOLS
@@ -756,6 +767,15 @@ def run_message_activity_sync(
     current_pools: tuple[str, ...] = MESSAGE_ACTIVITY_SYNC_POOLS,
 ) -> dict[str, Any]:
     db = get_db()
+    db_status = get_message_activity_db_status()
+    if not db_status["configured"]:
+        return {
+            "ok": False,
+            "status": "not_configured",
+            "error": "message activity db is not configured",
+            "missing_keys": list(db_status.get("missing_keys") or []),
+            "run": {},
+        }
     started_at = _iso_now()
     normalized_trigger_source = _normalized_text(trigger_source) or MESSAGE_ACTIVITY_SYNC_SOURCE_SCHEDULED
     normalized_operator_type = _normalized_text(operator_type) or "system"

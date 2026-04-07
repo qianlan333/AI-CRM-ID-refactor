@@ -139,6 +139,14 @@ def _seed_automation_member(
         db.commit()
 
 
+def _configure_message_activity_db(app) -> None:
+    app.config["MESSAGE_ACTIVITY_DB_HOST"] = "127.0.0.1"
+    app.config["MESSAGE_ACTIVITY_DB_PORT"] = 3306
+    app.config["MESSAGE_ACTIVITY_DB_NAME"] = "lobster"
+    app.config["MESSAGE_ACTIVITY_DB_USER"] = "lobster_user"
+    app.config["MESSAGE_ACTIVITY_DB_PASS"] = "lobster_pass"
+
+
 def _patch_live_context(
     monkeypatch,
     *,
@@ -804,6 +812,7 @@ def test_generate_default_channel_blocks_invalid_state_before_calling_wecom(app,
 
 
 def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monkeypatch):
+    _configure_message_activity_db(app)
     members = [
         ("wm_msg_sync_001", "13800001231", "inactive_normal"),
         ("wm_msg_sync_002", "13800001232", "inactive_normal"),
@@ -898,6 +907,7 @@ def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monk
 
 
 def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
+    _configure_message_activity_db(app)
     _seed_contact(app, external_userid="wm_manual_sync_001", mobile="13800002221", owner_userid="sales_manual", customer_name="manual-1")
     _seed_contact(app, external_userid="wm_manual_sync_002", mobile="13800002222", owner_userid="sales_manual", customer_name="manual-2")
     _seed_automation_member(
@@ -970,6 +980,7 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
 
 
 def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkeypatch):
+    _configure_message_activity_db(app)
     rows = [
         ("wm_skip_sync_001", "13800003331"),
         ("wm_skip_sync_002", "13900003331"),
@@ -1060,6 +1071,7 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
 
 
 def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, client, monkeypatch):
+    _configure_message_activity_db(app)
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "sync-token"
     _seed_contact(app, external_userid="wm_sync_api_001", mobile="13800004441", owner_userid="sales_api", customer_name="sync-api")
     _seed_automation_member(
@@ -1101,6 +1113,87 @@ def test_automation_conversion_settings_page_renders_message_activity_sync_secti
     assert response.status_code == 200
     assert "消息活跃同步" in html
     assert "立即刷新一次" in html
+
+
+def test_message_activity_sync_returns_not_configured_without_creating_run(app):
+    with app.app_context():
+        payload = run_message_activity_sync(
+            operator_id="tester-message-sync",
+            operator_type="user",
+            trigger_source="manual",
+        )
+        run_count = get_db().execute("SELECT COUNT(*) AS count FROM automation_message_activity_sync_run").fetchone()["count"]
+
+    assert payload["ok"] is False
+    assert payload["status"] == "not_configured"
+    assert payload["error"] == "message activity db is not configured"
+    assert payload["missing_keys"] == [
+        "MESSAGE_ACTIVITY_DB_HOST",
+        "MESSAGE_ACTIVITY_DB_NAME",
+        "MESSAGE_ACTIVITY_DB_USER",
+        "MESSAGE_ACTIVITY_DB_PASS",
+    ]
+    assert payload["run"] == {}
+    assert run_count == 0
+
+
+def test_message_activity_sync_api_returns_400_when_db_not_configured(app, client):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "sync-token"
+
+    response = client.post(
+        "/api/admin/automation-conversion/message-activity-sync/run",
+        json={"trigger_source": "scheduled", "operator": "tester-sync-api"},
+        headers={"Authorization": "Bearer sync-token"},
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["ok"] is False
+    assert body["status"] == "not_configured"
+    assert body["missing_keys"] == [
+        "MESSAGE_ACTIVITY_DB_HOST",
+        "MESSAGE_ACTIVITY_DB_NAME",
+        "MESSAGE_ACTIVITY_DB_USER",
+        "MESSAGE_ACTIVITY_DB_PASS",
+    ]
+
+
+def test_automation_conversion_settings_page_shows_real_message_activity_env_names(app, client):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_message_activity_sync_run (
+                trigger_source, operator_type, operator_id, status, candidate_count, matched_count, updated_count,
+                skipped_ambiguous_count, skipped_unmatched_count, skipped_missing_phone_count, focus_count, normal_count,
+                error_message, summary_json, started_at, finished_at
+            )
+            VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, ?, '{}', ?, ?)
+            """,
+            (
+                "manual",
+                "user",
+                "tester",
+                "failed",
+                "message activity db is not configured",
+                "2026-04-07 19:16:56",
+                "2026-04-07 19:16:56",
+            ),
+        )
+        db.commit()
+
+    response = client.get("/admin/automation-conversion/settings")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "MESSAGE_ACTIVITY_DB_NAME" in html
+    assert "MESSAGE_ACTIVITY_DB_PASS" in html
+    assert "MESSAGE_ACTIVITY_DB_DATABASE" not in html
+    assert "MESSAGE_ACTIVITY_DB_PASSWORD" not in html
+    assert "最近一次状态" in html
+    assert "未配置" in html
+    assert "最近一次同步失败" not in html
+    assert ">failed<" not in html
 
 
 def test_qrcode_callback_creates_member_and_event(app):
