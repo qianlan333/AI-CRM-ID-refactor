@@ -4570,16 +4570,37 @@ def test_sidebar_page_contains_jssdk_debug_chain(client):
     assert "/api/sidebar/jssdk-config" in body
     assert "客户档案绑定" in body
     assert "debugWrap.classList.toggle('hidden', !debugEnabled);" in body
-    assert "自动化转化卡片" in body
-    assert "转为重点跟进" in body
-    assert "转为普通跟进" in body
+    assert "自动化转化操作区" in body
+    assert "是否在自动化转化池" in body
+    assert "当前池子" in body
+    assert "当前阶段" in body
+    assert "当前目标" in body
+    assert "最近 AI 推送时间" in body
+    assert "实时标签" in body
+    assert "已填写问卷及答案" in body
+    assert "放入自动化转化池" in body
+    assert "移除自动化转化池" in body
+    assert "转化为重点跟进" in body
+    assert "转化为普通跟进" in body
     assert "确认已成交" in body
-    assert "撤销成交确认" in body
-    assert "/api/sidebar/marketing-status" in body
-    assert "/api/sidebar/marketing-status/set-followup-segment" in body
-    assert "/api/sidebar/marketing-status/mark-enrolled" in body
-    assert "/api/sidebar/marketing-status/unmark-enrolled" in body
-    assert "renderMarketingStatus(result.marketing_status || {});" in body
+    assert "移除已成交" in body
+    assert "一键自动化写话术" in body
+    assert "/api/admin/automation-conversion/member" in body
+    assert "/api/admin/automation-conversion/member/put-in-pool" in body
+    assert "/api/admin/automation-conversion/member/remove-from-pool" in body
+    assert "/api/admin/automation-conversion/member/set-focus" in body
+    assert "/api/admin/automation-conversion/member/set-normal" in body
+    assert "/api/admin/automation-conversion/member/mark-won" in body
+    assert "/api/admin/automation-conversion/member/unmark-won" in body
+    assert "/api/admin/automation-conversion/member/push-openclaw" in body
+    assert "/api/admin/customers/profile/tags" in body
+    assert "/api/admin/customers/profile/questionnaire-answers" in body
+    assert "const singleCustomerAutomationEnabled = true;" in body
+    assert "const legacySidebarCardsEnabled = false;" in body
+    assert "自动化转化卡片" not in body
+    assert "班期快捷设置" not in body
+    assert "/api/sidebar/marketing-status" not in body
+    assert "/api/sidebar/lead-pool/status" not in body
 
 
 def test_sidebar_page_hides_debug_and_uses_customer_display_name(client, app):

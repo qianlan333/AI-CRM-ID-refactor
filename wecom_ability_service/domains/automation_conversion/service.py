@@ -51,6 +51,16 @@ SOURCE_TYPE_IMPORT = "import"
 SOURCE_TYPE_QUESTIONNAIRE = "questionnaire"
 SOURCE_TYPE_SYSTEM = "system"
 
+ACTION_LABELS = {
+    "put_in_pool": "放入自动化转化池",
+    "remove_from_pool": "移除自动化转化池",
+    "set_focus": "转化为重点跟进",
+    "set_normal": "转化为普通跟进",
+    "mark_won": "确认已成交",
+    "unmark_won": "移除已成交",
+    "push_openclaw": "一键自动化写话术",
+}
+
 POOL_LABELS = {
     POOL_NEW_USER: "新用户池",
     POOL_INACTIVE_NORMAL: "未激活普通池",
@@ -219,6 +229,11 @@ def _activation_status_label(value: str) -> str:
         ACTIVATION_INACTIVE: "未激活",
         ACTIVATION_ACTIVE: "已激活",
     }.get(normalized, "未知")
+
+
+def _automation_action_label(value: str) -> str:
+    normalized = _normalized_text(value)
+    return ACTION_LABELS.get(normalized, normalized or "未知操作")
 
 
 def _serialize_member(member: dict[str, Any]) -> dict[str, Any]:
@@ -883,6 +898,7 @@ def get_member_detail(*, external_contact_id: str = "", phone: str = "") -> dict
         "latest_manual_action": (
             {
                 "action": _normalized_text(latest_manual_event.get("action")),
+                "action_label": _automation_action_label(latest_manual_event.get("action")),
                 "operator_id": _normalized_text(latest_manual_event.get("operator_id")),
                 "remark": _normalized_text(latest_manual_event.get("remark")),
                 "created_at": _normalized_text(latest_manual_event.get("created_at")),
@@ -901,17 +917,18 @@ def _button_state(member: dict[str, Any]) -> dict[str, Any]:
     current_pool = _normalized_text(member.get("current_pool"))
     in_pool = bool(member.get("in_pool"))
     won = current_pool == POOL_WON
-    removed = current_pool == POOL_REMOVED or not in_pool
     ai_enabled = current_pool != POOL_REMOVED
-    return {
-        "put_in_pool": {"enabled": not in_pool},
+    states = {
+        "put_in_pool": {"enabled": (not in_pool) and (not won)},
         "remove_from_pool": {"enabled": in_pool and not won},
         "set_focus": {"enabled": in_pool and not won},
         "set_normal": {"enabled": in_pool and not won},
         "mark_won": {"enabled": in_pool and not won},
         "unmark_won": {"enabled": won},
+        "push_openclaw": {"enabled": ai_enabled},
         "ai_push": {"enabled": ai_enabled},
     }
+    return states
 
 
 def _mutate_member(
