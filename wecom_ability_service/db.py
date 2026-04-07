@@ -583,6 +583,47 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS automation_message_activity_sync_run (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_source TEXT NOT NULL DEFAULT 'manual',
+            operator_type TEXT NOT NULL DEFAULT 'system',
+            operator_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'success',
+            candidate_count INTEGER NOT NULL DEFAULT 0,
+            matched_count INTEGER NOT NULL DEFAULT 0,
+            updated_count INTEGER NOT NULL DEFAULT 0,
+            skipped_ambiguous_count INTEGER NOT NULL DEFAULT 0,
+            skipped_unmatched_count INTEGER NOT NULL DEFAULT 0,
+            skipped_missing_phone_count INTEGER NOT NULL DEFAULT 0,
+            focus_count INTEGER NOT NULL DEFAULT 0,
+            normal_count INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT NOT NULL DEFAULT '',
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_message_activity_sync_item (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL REFERENCES automation_message_activity_sync_run(id) ON DELETE CASCADE,
+            member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            phone_last4 TEXT NOT NULL DEFAULT '',
+            message_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'updated',
+            detail TEXT NOT NULL DEFAULT '',
+            before_snapshot TEXT NOT NULL DEFAULT '{}',
+            after_snapshot TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_member_external_non_empty
         ON automation_member (external_contact_id)
         WHERE external_contact_id <> ''
@@ -598,6 +639,21 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         "CREATE INDEX IF NOT EXISTS idx_automation_ai_push_log_member_pushed ON automation_ai_push_log (member_id, pushed_at DESC, id DESC)"
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_ai_push_log_status ON automation_ai_push_log (status, pushed_at DESC, id DESC)")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_run_finished ON automation_message_activity_sync_run (finished_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_run_status ON automation_message_activity_sync_run (status, finished_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_run ON automation_message_activity_sync_item (run_id, id ASC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_status ON automation_message_activity_sync_item (status, created_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_last4 ON automation_message_activity_sync_item (phone_last4, created_at DESC, id DESC)"
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_status ON automation_channel (status, updated_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_scene ON automation_channel (scene_value)")
 

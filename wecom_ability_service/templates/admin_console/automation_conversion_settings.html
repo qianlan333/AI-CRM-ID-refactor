@@ -270,6 +270,104 @@
   </div>
   {% endif %}
 </section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>消息活跃同步</h2>
+      <p>按外部消息库里的用户消息数，定时刷新四个活跃池成员的激活状态、跟进类型和池子。</p>
+    </div>
+    <form method="post" action="{{ url_for('api.admin_automation_conversion_run_message_activity_sync') }}">
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <button class="admin-button admin-button--secondary" type="submit">立即刷新一次</button>
+    </form>
+  </div>
+  <dl class="admin-definition-list">
+    <div>
+      <dt>消息库配置</dt>
+      <dd>
+        {% if settings_payload.message_activity_sync.db_status.configured %}
+        已配置（{{ settings_payload.message_activity_sync.db_status.host }}:{{ settings_payload.message_activity_sync.db_status.port }}/{{ settings_payload.message_activity_sync.db_status.database }}）
+        {% else %}
+        未配置
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>同步范围</dt>
+      <dd>
+        {% for item in settings_payload.message_activity_sync.scope_pools %}
+        {{ item.label }}{% if not loop.last %}、{% endif %}
+        {% endfor %}
+      </dd>
+    </div>
+    <div>
+      <dt>Cron 脚本</dt>
+      <dd>{{ settings_payload.message_activity_sync.cron_script_path or "未配置" }}</dd>
+    </div>
+    <div>
+      <dt>最近一次状态</dt>
+      <dd>{{ settings_payload.message_activity_sync.last_run.status or "暂无记录" }}</dd>
+    </div>
+    <div>
+      <dt>最近完成时间</dt>
+      <dd>{{ settings_payload.message_activity_sync.last_run.finished_at or "暂无记录" }}</dd>
+    </div>
+    <div>
+      <dt>最近一次摘要</dt>
+      <dd>
+        候选 {{ settings_payload.message_activity_sync.last_run.candidate_count or 0 }} 人，
+        成功匹配 {{ settings_payload.message_activity_sync.last_run.matched_count or 0 }} 人，
+        实际更新 {{ settings_payload.message_activity_sync.last_run.updated_count or 0 }} 人，
+        尾号冲突跳过 {{ settings_payload.message_activity_sync.last_run.skipped_ambiguous_count or 0 }} 人，
+        未匹配跳过 {{ settings_payload.message_activity_sync.last_run.skipped_unmatched_count or 0 }} 人。
+      </dd>
+    </div>
+  </dl>
+  {% if not settings_payload.message_activity_sync.db_status.configured %}
+  <div class="admin-state admin-state--inline admin-state--error">
+    <strong>消息库尚未配置</strong>
+    <span>请先补齐 {{ settings_payload.message_activity_sync.db_status.missing_keys|join('、') }}，再执行消息活跃同步。</span>
+  </div>
+  {% endif %}
+  {% if settings_payload.message_activity_sync.last_run.error_message %}
+  <div class="admin-state admin-state--inline admin-state--error">
+    <strong>最近一次同步失败</strong>
+    <span>{{ settings_payload.message_activity_sync.last_run.error_message }}</span>
+  </div>
+  {% endif %}
+  {% if settings_payload.message_activity_sync.recent_items %}
+  <details class="admin-debug-details">
+    <summary>最近一次同步明细</summary>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>状态</th>
+            <th>客户</th>
+            <th>手机号</th>
+            <th>后 4 位</th>
+            <th>消息数</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in settings_payload.message_activity_sync.recent_items %}
+          <tr>
+            <td>{{ item.status_label }}</td>
+            <td>{{ item.external_contact_id or ("member#" ~ item.member_id) }}</td>
+            <td>{{ item.phone or "-" }}</td>
+            <td>{{ item.phone_last4 or "-" }}</td>
+            <td>{{ item.message_count }}</td>
+            <td>{{ item.detail or "-" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</section>
 {% endblock %}
 
 {% block scripts_extra %}

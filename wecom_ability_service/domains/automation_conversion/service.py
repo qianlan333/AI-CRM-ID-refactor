@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timedelta
 from typing import Any
+
+from flask import current_app
 
 from ...db import get_db
 from ...wecom_client import WeComClientError
 from ..marketing_automation.service import get_customer_marketing_profile, get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail, list_questionnaires
+from .message_activity_client import get_message_activity_db_status, query_message_activity_counts
 from . import repo
 from .provider import load_channel_provider
 
@@ -17,6 +21,8 @@ DEFAULT_CHANNEL_CODE = "default_qrcode"
 DEFAULT_CHANNEL_NAME = "默认渠道二维码"
 AI_PUSH_SCENE_SIDEBAR_SCRIPT = "sidebar_script"
 AI_PUSH_COOLDOWN_SECONDS = 30
+MESSAGE_ACTIVITY_SYNC_SOURCE_MANUAL = "manual"
+MESSAGE_ACTIVITY_SYNC_SOURCE_SCHEDULED = "scheduled"
 
 POOL_NEW_USER = "new_user"
 POOL_INACTIVE_NORMAL = "inactive_normal"
@@ -59,6 +65,7 @@ ACTION_LABELS = {
     "mark_won": "确认已成交",
     "unmark_won": "移除已成交",
     "push_openclaw": "一键自动化写话术",
+    "message_activity_sync": "消息活跃同步",
 }
 
 POOL_LABELS = {
@@ -128,6 +135,12 @@ STAGE_DEFINITIONS = (
 
 ROUTE_KEY_TO_POOL = {item["route_key"]: item["pool"] for item in STAGE_DEFINITIONS}
 POOL_TO_STAGE_DEF = {item["pool"]: item for item in STAGE_DEFINITIONS}
+MESSAGE_ACTIVITY_SYNC_POOLS = (
+    POOL_INACTIVE_NORMAL,
+    POOL_INACTIVE_FOCUS,
+    POOL_ACTIVE_NORMAL,
+    POOL_ACTIVE_FOCUS,
+)
 
 
 def _normalized_text(value: Any) -> str:
@@ -168,6 +181,11 @@ def _parse_timestamp(value: Any) -> datetime | None:
 
 def _iso_now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _phone_last4(phone: Any) -> str:
+    text = _normalized_text(phone)
+    return text[-4:] if len(text) >= 4 else ""
 
 
 def default_owner_staff_id() -> str:
@@ -644,6 +662,349 @@ def refresh_expired_silent_members() -> dict[str, Any]:
     return {"refreshed_count": refreshed}
 
 
+def _message_activity_pool(*, activation_status: str, follow_type: str) -> str:
+    normalized_follow_type = _normalized_text(follow_type)
+    if normalized_follow_type not in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
+        normalized_follow_type = FOLLOWUP_NORMAL
+    normalized_activation_status = _normalized_text(activation_status)
+    if normalized_activation_status == ACTIVATION_ACTIVE:
+        return POOL_ACTIVE_FOCUS if normalized_follow_type == FOLLOWUP_FOCUS else POOL_ACTIVE_NORMAL
+    return POOL_INACTIVE_FOCUS if normalized_follow_type == FOLLOWUP_FOCUS else POOL_INACTIVE_NORMAL
+
+
+def _message_activity_item_status_label(value: str) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "updated": "已更新",
+        "unchanged": "无变化",
+        "skipped_ambiguous": "尾号冲突跳过",
+        "skipped_unmatched": "未匹配跳过",
+        "skipped_missing_phone": "手机号缺失跳过",
+    }.get(normalized, normalized or "未知")
+
+
+def _serialize_message_activity_sync_item(row: dict[str, Any]) -> dict[str, Any]:
+    deserialized = repo.deserialize_message_activity_sync_item_row(row)
+    return {
+        "id": int(deserialized.get("id") or 0),
+        "run_id": int(deserialized.get("run_id") or 0),
+        "member_id": int(deserialized.get("member_id") or 0) if deserialized.get("member_id") not in (None, "") else 0,
+        "external_contact_id": _normalized_text(deserialized.get("external_contact_id")),
+        "phone": _normalized_text(deserialized.get("phone")),
+        "phone_last4": _normalized_text(deserialized.get("phone_last4")),
+        "message_count": int(deserialized.get("message_count") or 0),
+        "status": _normalized_text(deserialized.get("status")),
+        "status_label": _message_activity_item_status_label(deserialized.get("status")),
+        "detail": _normalized_text(deserialized.get("detail")),
+        "before_snapshot": deserialized.get("before_snapshot") or {},
+        "after_snapshot": deserialized.get("after_snapshot") or {},
+        "created_at": _normalized_text(deserialized.get("created_at")),
+    }
+
+
+def _serialize_message_activity_sync_run(row: dict[str, Any] | None) -> dict[str, Any]:
+    if not row:
+        return {}
+    deserialized = repo.deserialize_message_activity_sync_run_row(row)
+    summary = dict(deserialized.get("summary_json") or {})
+    return {
+        "id": int(deserialized.get("id") or 0),
+        "trigger_source": _normalized_text(deserialized.get("trigger_source")),
+        "operator_type": _normalized_text(deserialized.get("operator_type")),
+        "operator_id": _normalized_text(deserialized.get("operator_id")),
+        "status": _normalized_text(deserialized.get("status")),
+        "candidate_count": int(deserialized.get("candidate_count") or 0),
+        "matched_count": int(deserialized.get("matched_count") or 0),
+        "updated_count": int(deserialized.get("updated_count") or 0),
+        "skipped_ambiguous_count": int(deserialized.get("skipped_ambiguous_count") or 0),
+        "skipped_unmatched_count": int(deserialized.get("skipped_unmatched_count") or 0),
+        "skipped_missing_phone_count": int(deserialized.get("skipped_missing_phone_count") or 0),
+        "focus_count": int(deserialized.get("focus_count") or 0),
+        "normal_count": int(deserialized.get("normal_count") or 0),
+        "error_message": _normalized_text(deserialized.get("error_message")),
+        "started_at": _normalized_text(deserialized.get("started_at")),
+        "finished_at": _normalized_text(deserialized.get("finished_at")),
+        "summary": summary,
+    }
+
+
+def _message_activity_sync_status_payload() -> dict[str, Any]:
+    last_run_row = repo.get_latest_message_activity_sync_run()
+    last_run = _serialize_message_activity_sync_run(last_run_row)
+    recent_items = (
+        [_serialize_message_activity_sync_item(item) for item in repo.list_message_activity_sync_items(run_id=int(last_run["id"]), limit=12)]
+        if last_run
+        else []
+    )
+    return {
+        "db_status": get_message_activity_db_status(),
+        "scope_pools": [
+            {"pool": pool, "label": _pool_label(pool)}
+            for pool in MESSAGE_ACTIVITY_SYNC_POOLS
+        ],
+        "cron_script_path": _normalized_text(current_app.config.get("MESSAGE_ACTIVITY_SYNC_CRON_SCRIPT_PATH")),
+        "last_run": last_run,
+        "recent_items": recent_items,
+    }
+
+
+def run_message_activity_sync(
+    *,
+    operator_id: str = "",
+    operator_type: str = "system",
+    trigger_source: str = MESSAGE_ACTIVITY_SYNC_SOURCE_SCHEDULED,
+    current_pools: tuple[str, ...] = MESSAGE_ACTIVITY_SYNC_POOLS,
+) -> dict[str, Any]:
+    db = get_db()
+    started_at = _iso_now()
+    normalized_trigger_source = _normalized_text(trigger_source) or MESSAGE_ACTIVITY_SYNC_SOURCE_SCHEDULED
+    normalized_operator_type = _normalized_text(operator_type) or "system"
+    normalized_operator_id = _normalized_text(operator_id) or ("cron" if normalized_operator_type == "system" else "crm_console")
+    base_run_payload = {
+        "trigger_source": normalized_trigger_source,
+        "operator_type": normalized_operator_type,
+        "operator_id": normalized_operator_id,
+        "status": "running",
+        "candidate_count": 0,
+        "matched_count": 0,
+        "updated_count": 0,
+        "skipped_ambiguous_count": 0,
+        "skipped_unmatched_count": 0,
+        "skipped_missing_phone_count": 0,
+        "focus_count": 0,
+        "normal_count": 0,
+        "error_message": "",
+        "summary_json": {},
+        "started_at": started_at,
+        "finished_at": started_at,
+    }
+    run_row = repo.insert_message_activity_sync_run(base_run_payload)
+    db.commit()
+    run_id = int(run_row.get("id") or 0)
+    counters = {
+        "candidate_count": 0,
+        "matched_count": 0,
+        "updated_count": 0,
+        "skipped_ambiguous_count": 0,
+        "skipped_unmatched_count": 0,
+        "skipped_missing_phone_count": 0,
+        "focus_count": 0,
+        "normal_count": 0,
+    }
+    summary: dict[str, Any] = {
+        "candidate_pools": list(current_pools),
+        "message_source_rows": 0,
+        "top_count": 0,
+        "ambiguous_phone_last4": [],
+    }
+    try:
+        eligible_members = [_serialize_member(row) for row in repo.list_members_for_message_activity_sync(current_pools=list(current_pools))]
+        counters["candidate_count"] = len(eligible_members)
+        message_counts = {
+            _normalized_text(row.get("phone_last4")): int(row.get("message_count") or 0)
+            for row in query_message_activity_counts()
+            if _normalized_text(row.get("phone_last4"))
+        }
+        summary["message_source_rows"] = len(message_counts)
+        members_by_last4: dict[str, list[dict[str, Any]]] = {}
+        for member in eligible_members:
+            match_key = _phone_last4(member.get("phone"))
+            if not match_key:
+                continue
+            members_by_last4.setdefault(match_key, []).append(member)
+        ambiguous_groups = {key: rows for key, rows in members_by_last4.items() if len(rows) > 1}
+        summary["ambiguous_phone_last4"] = sorted(ambiguous_groups.keys())
+
+        matched_members: list[dict[str, Any]] = []
+        for member in eligible_members:
+            match_key = _phone_last4(member.get("phone"))
+            member_id = int(member.get("id") or 0)
+            if not match_key:
+                counters["skipped_missing_phone_count"] += 1
+                repo.insert_message_activity_sync_item(
+                    {
+                        "run_id": run_id,
+                        "member_id": member_id,
+                        "external_contact_id": member.get("external_contact_id"),
+                        "phone": member.get("phone"),
+                        "phone_last4": "",
+                        "message_count": 0,
+                        "status": "skipped_missing_phone",
+                        "detail": "member phone is empty or shorter than 4 digits",
+                        "before_snapshot": _member_snapshot(member),
+                        "after_snapshot": _member_snapshot(member),
+                        "created_at": _iso_now(),
+                    }
+                )
+                continue
+            if match_key in ambiguous_groups:
+                counters["skipped_ambiguous_count"] += 1
+                conflict_members = ",".join(
+                    _normalized_text(item.get("external_contact_id")) or f"id:{int(item.get('id') or 0)}"
+                    for item in ambiguous_groups[match_key]
+                )
+                repo.insert_message_activity_sync_item(
+                    {
+                        "run_id": run_id,
+                        "member_id": member_id,
+                        "external_contact_id": member.get("external_contact_id"),
+                        "phone": member.get("phone"),
+                        "phone_last4": match_key,
+                        "message_count": 0,
+                        "status": "skipped_ambiguous",
+                        "detail": f"phone_last4={match_key} matched multiple automation members: {conflict_members}",
+                        "before_snapshot": _member_snapshot(member),
+                        "after_snapshot": _member_snapshot(member),
+                        "created_at": _iso_now(),
+                    }
+                )
+                continue
+            if match_key not in message_counts:
+                counters["skipped_unmatched_count"] += 1
+                repo.insert_message_activity_sync_item(
+                    {
+                        "run_id": run_id,
+                        "member_id": member_id,
+                        "external_contact_id": member.get("external_contact_id"),
+                        "phone": member.get("phone"),
+                        "phone_last4": match_key,
+                        "message_count": 0,
+                        "status": "skipped_unmatched",
+                        "detail": f"phone_last4={match_key} not found in message activity source",
+                        "before_snapshot": _member_snapshot(member),
+                        "after_snapshot": _member_snapshot(member),
+                        "created_at": _iso_now(),
+                    }
+                )
+                continue
+            matched_members.append(
+                {
+                    "member": member,
+                    "phone_last4": match_key,
+                    "message_count": int(message_counts.get(match_key) or 0),
+                }
+            )
+
+        counters["matched_count"] = len(matched_members)
+        ranked_members = sorted(
+            matched_members,
+            key=lambda item: (-int(item["message_count"]), int((item["member"].get("id") or 0))),
+        )
+        top_count = max(1, math.ceil(len(ranked_members) * 0.3)) if ranked_members else 0
+        summary["top_count"] = top_count
+
+        for index, item in enumerate(ranked_members):
+            before = item["member"]
+            message_count = int(item["message_count"])
+            next_activation_status = ACTIVATION_ACTIVE if message_count > 1 else ACTIVATION_INACTIVE
+            ranked_follow_type = FOLLOWUP_FOCUS if index < top_count else FOLLOWUP_NORMAL
+            manual_preserved = (
+                _normalized_text(before.get("decision_source")) == DECISION_SOURCE_MANUAL
+                and _normalized_text(before.get("follow_type")) in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}
+            )
+            next_follow_type = _normalized_text(before.get("follow_type")) if manual_preserved else ranked_follow_type
+            next_decision_source = _normalized_text(before.get("decision_source")) if manual_preserved else DECISION_SOURCE_SYSTEM
+            if next_follow_type not in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
+                next_follow_type = ranked_follow_type
+                next_decision_source = DECISION_SOURCE_SYSTEM
+            if next_follow_type == FOLLOWUP_FOCUS:
+                counters["focus_count"] += 1
+            else:
+                counters["normal_count"] += 1
+            next_payload = {
+                **before,
+                "activation_status": next_activation_status,
+                "follow_type": next_follow_type,
+                "decision_source": next_decision_source,
+                "current_pool": _message_activity_pool(
+                    activation_status=next_activation_status,
+                    follow_type=next_follow_type,
+                ),
+            }
+            changed = _substantive_member_changed(before, next_payload)
+            if changed:
+                saved = repo.update_member(int(before["id"]), next_payload)
+                after = _serialize_member(saved)
+                repo.insert_event(
+                    member_id=int(after["id"]),
+                    action="message_activity_sync",
+                    operator_type=normalized_operator_type,
+                    operator_id=normalized_operator_id,
+                    before_snapshot=_member_snapshot(before),
+                    after_snapshot=_member_snapshot(after),
+                    remark=(
+                        f"message_count={message_count}; phone_last4={item['phone_last4']}; "
+                        f"rank={index + 1}/{len(ranked_members)}; "
+                        f"follow_type={'manual_preserved' if manual_preserved else ranked_follow_type}"
+                    ),
+                )
+                counters["updated_count"] += 1
+            else:
+                after = before
+            repo.insert_message_activity_sync_item(
+                {
+                    "run_id": run_id,
+                    "member_id": int(before["id"]),
+                    "external_contact_id": before.get("external_contact_id"),
+                    "phone": before.get("phone"),
+                    "phone_last4": item["phone_last4"],
+                    "message_count": message_count,
+                    "status": "updated" if changed else "unchanged",
+                    "detail": (
+                        f"rank={index + 1}/{len(ranked_members)}; "
+                        f"ranked_follow_type={ranked_follow_type}; "
+                        f"effective_follow_type={next_follow_type}; "
+                        f"manual_preserved={'yes' if manual_preserved else 'no'}"
+                    ),
+                    "before_snapshot": _member_snapshot(before),
+                    "after_snapshot": _member_snapshot(after),
+                    "created_at": _iso_now(),
+                }
+            )
+
+        finished_at = _iso_now()
+        summary["processed_at"] = finished_at
+        final_run_row = repo.update_message_activity_sync_run(
+            run_id,
+            {
+                **base_run_payload,
+                **counters,
+                "status": "success",
+                "summary_json": summary,
+                "finished_at": finished_at,
+            },
+        )
+        db.commit()
+        return {
+            "ok": True,
+            "run": _serialize_message_activity_sync_run(final_run_row),
+            "items": [
+                _serialize_message_activity_sync_item(item)
+                for item in repo.list_message_activity_sync_items(run_id=run_id, limit=50)
+            ],
+        }
+    except Exception as exc:
+        db.rollback()
+        failed_at = _iso_now()
+        failed_run_row = repo.update_message_activity_sync_run(
+            run_id,
+            {
+                **base_run_payload,
+                **counters,
+                "status": "failed",
+                "error_message": str(exc),
+                "summary_json": {**summary, "processed_at": failed_at},
+                "finished_at": failed_at,
+            },
+        )
+        db.commit()
+        return {
+            "ok": False,
+            "error": str(exc),
+            "run": _serialize_message_activity_sync_run(failed_run_row),
+        }
+
+
 def _questionnaire_rule_editor_question(question: dict[str, Any]) -> dict[str, Any] | None:
     question_type = _normalized_text(question.get("type"))
     if question_type not in {"single_choice", "multi_choice"}:
@@ -737,6 +1098,7 @@ def get_settings_payload() -> dict[str, Any]:
         },
         "default_owner_staff_id": DEFAULT_OWNER_STAFF_ID,
         "provider_available": load_channel_provider() is not None,
+        "message_activity_sync": _message_activity_sync_status_payload(),
     }
 
 

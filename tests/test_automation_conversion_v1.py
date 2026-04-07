@@ -6,6 +6,11 @@ import pytest
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.domains.automation_conversion.service import (
+    get_member_detail,
+    run_message_activity_sync,
+    sync_member_activation,
+)
 
 
 @pytest.fixture()
@@ -195,6 +200,8 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "automation_member",
             "automation_event",
             "automation_ai_push_log",
+            "automation_message_activity_sync_run",
+            "automation_message_activity_sync_item",
         }.issubset(table_names)
         assert {
             "uq_automation_member_external_non_empty",
@@ -202,6 +209,8 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "idx_automation_member_pool",
             "idx_automation_event_member_created",
             "idx_automation_ai_push_log_status",
+            "idx_automation_message_activity_sync_run_finished",
+            "idx_automation_message_activity_sync_item_run",
         }.issubset(index_names)
 
 
@@ -683,6 +692,306 @@ def test_generate_default_channel_blocks_invalid_state_before_calling_wecom(app,
     assert payload["error_code"] == "invalid_state"
     assert "state 长度不能超过 30 个字符" in payload["error"]
     assert called["count"] == 0
+
+
+def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monkeypatch):
+    members = [
+        ("wm_msg_sync_001", "13800001231", "inactive_normal"),
+        ("wm_msg_sync_002", "13800001232", "inactive_normal"),
+        ("wm_msg_sync_003", "13800001233", "active_focus"),
+        ("wm_msg_sync_004", "13800001234", "active_normal"),
+    ]
+    for external_userid, mobile, current_pool in members:
+        _seed_contact(app, external_userid=external_userid, mobile=mobile, owner_userid="sales_msg", customer_name=external_userid)
+        _seed_automation_member(
+            app,
+            external_contact_id=external_userid,
+            phone=mobile,
+            owner_staff_id="sales_msg",
+            current_pool=current_pool,
+            follow_type="normal",
+            activation_status="inactive",
+            questionnaire_status="submitted",
+            questionnaire_result="normal",
+            decision_source="questionnaire",
+        )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_last4": "1231", "message_count": 10},
+            {"phone_last4": "1232", "message_count": 9},
+            {"phone_last4": "1233", "message_count": 1},
+            {"phone_last4": "1234", "message_count": 0},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(
+            operator_id="tester-message-sync",
+            operator_type="user",
+            trigger_source="manual",
+        )
+        rows = get_db().execute(
+            """
+            SELECT external_contact_id, activation_status, follow_type, decision_source, current_pool
+            FROM automation_member
+            WHERE external_contact_id LIKE 'wm_msg_sync_%'
+            ORDER BY external_contact_id ASC
+            """
+        ).fetchall()
+        event_actions = get_db().execute(
+            """
+            SELECT action
+            FROM automation_event
+            WHERE action = 'message_activity_sync'
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["run"]["candidate_count"] == 4
+    assert payload["run"]["matched_count"] == 4
+    assert payload["run"]["updated_count"] == 4
+    assert payload["run"]["focus_count"] == 2
+    assert payload["run"]["normal_count"] == 2
+    assert [dict(row) for row in rows] == [
+        {
+            "external_contact_id": "wm_msg_sync_001",
+            "activation_status": "active",
+            "follow_type": "focus",
+            "decision_source": "system",
+            "current_pool": "active_focus",
+        },
+        {
+            "external_contact_id": "wm_msg_sync_002",
+            "activation_status": "active",
+            "follow_type": "focus",
+            "decision_source": "system",
+            "current_pool": "active_focus",
+        },
+        {
+            "external_contact_id": "wm_msg_sync_003",
+            "activation_status": "inactive",
+            "follow_type": "normal",
+            "decision_source": "system",
+            "current_pool": "inactive_normal",
+        },
+        {
+            "external_contact_id": "wm_msg_sync_004",
+            "activation_status": "inactive",
+            "follow_type": "normal",
+            "decision_source": "system",
+            "current_pool": "inactive_normal",
+        },
+    ]
+    assert len(event_actions) == 4
+
+
+def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_sync_001", mobile="13800002221", owner_userid="sales_manual", customer_name="manual-1")
+    _seed_contact(app, external_userid="wm_manual_sync_002", mobile="13800002222", owner_userid="sales_manual", customer_name="manual-2")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_sync_001",
+        phone="13800002221",
+        owner_staff_id="sales_manual",
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="focus",
+        decision_source="manual",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_sync_002",
+        phone="13800002222",
+        owner_staff_id="sales_manual",
+        current_pool="active_focus",
+        follow_type="focus",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="manual",
+    )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_last4": "2221", "message_count": 20},
+            {"phone_last4": "2222", "message_count": 0},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(
+            operator_id="tester-message-sync",
+            operator_type="user",
+            trigger_source="manual",
+        )
+        rows = get_db().execute(
+            """
+            SELECT external_contact_id, activation_status, follow_type, decision_source, current_pool
+            FROM automation_member
+            WHERE external_contact_id LIKE 'wm_manual_sync_%'
+            ORDER BY external_contact_id ASC
+            """
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["run"]["candidate_count"] == 2
+    assert payload["run"]["matched_count"] == 2
+    assert [dict(row) for row in rows] == [
+        {
+            "external_contact_id": "wm_manual_sync_001",
+            "activation_status": "active",
+            "follow_type": "normal",
+            "decision_source": "manual",
+            "current_pool": "active_normal",
+        },
+        {
+            "external_contact_id": "wm_manual_sync_002",
+            "activation_status": "inactive",
+            "follow_type": "focus",
+            "decision_source": "manual",
+            "current_pool": "inactive_focus",
+        },
+    ]
+
+
+def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkeypatch):
+    rows = [
+        ("wm_skip_sync_001", "13800003331"),
+        ("wm_skip_sync_002", "13900003331"),
+        ("wm_skip_sync_003", "13800003332"),
+        ("wm_skip_sync_004", "13800003339"),
+    ]
+    for external_userid, mobile in rows:
+        _seed_contact(app, external_userid=external_userid, mobile=mobile, owner_userid="sales_skip", customer_name=external_userid)
+        _seed_automation_member(
+            app,
+            external_contact_id=external_userid,
+            phone=mobile,
+            owner_staff_id="sales_skip",
+            current_pool="inactive_normal",
+            follow_type="normal",
+            activation_status="inactive",
+            questionnaire_status="submitted",
+            questionnaire_result="normal",
+            decision_source="questionnaire",
+        )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_last4": "3331", "message_count": 9},
+            {"phone_last4": "3332", "message_count": 3},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(
+            operator_id="tester-message-sync",
+            operator_type="user",
+            trigger_source="manual",
+        )
+        items = get_db().execute(
+            """
+            SELECT external_contact_id, status, detail
+            FROM automation_message_activity_sync_item
+            WHERE run_id = ?
+            ORDER BY id ASC
+            """,
+            (payload["run"]["id"],),
+        ).fetchall()
+        members = get_db().execute(
+            """
+            SELECT external_contact_id, activation_status, current_pool
+            FROM automation_member
+            WHERE external_contact_id LIKE 'wm_skip_sync_%'
+            ORDER BY external_contact_id ASC
+            """
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["run"]["candidate_count"] == 4
+    assert payload["run"]["matched_count"] == 1
+    assert payload["run"]["updated_count"] == 1
+    assert payload["run"]["skipped_ambiguous_count"] == 2
+    assert payload["run"]["skipped_unmatched_count"] == 1
+    assert [dict(item) for item in items] == [
+        {
+            "external_contact_id": "wm_skip_sync_001",
+            "status": "skipped_ambiguous",
+            "detail": "phone_last4=3331 matched multiple automation members: wm_skip_sync_001,wm_skip_sync_002",
+        },
+        {
+            "external_contact_id": "wm_skip_sync_002",
+            "status": "skipped_ambiguous",
+            "detail": "phone_last4=3331 matched multiple automation members: wm_skip_sync_001,wm_skip_sync_002",
+        },
+        {
+            "external_contact_id": "wm_skip_sync_004",
+            "status": "skipped_unmatched",
+            "detail": "phone_last4=3339 not found in message activity source",
+        },
+        {
+            "external_contact_id": "wm_skip_sync_003",
+            "status": "updated",
+            "detail": "rank=1/1; ranked_follow_type=focus; effective_follow_type=focus; manual_preserved=no",
+        },
+    ]
+    assert [dict(item) for item in members] == [
+        {"external_contact_id": "wm_skip_sync_001", "activation_status": "inactive", "current_pool": "inactive_normal"},
+        {"external_contact_id": "wm_skip_sync_002", "activation_status": "inactive", "current_pool": "inactive_normal"},
+        {"external_contact_id": "wm_skip_sync_003", "activation_status": "active", "current_pool": "active_focus"},
+        {"external_contact_id": "wm_skip_sync_004", "activation_status": "inactive", "current_pool": "inactive_normal"},
+    ]
+
+
+def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, client, monkeypatch):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "sync-token"
+    _seed_contact(app, external_userid="wm_sync_api_001", mobile="13800004441", owner_userid="sales_api", customer_name="sync-api")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sync_api_001",
+        phone="13800004441",
+        owner_staff_id="sales_api",
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [{"phone_last4": "4441", "message_count": 5}],
+    )
+
+    unauthorized = client.post("/api/admin/automation-conversion/message-activity-sync/run", json={"trigger_source": "scheduled"})
+    authorized = client.post(
+        "/api/admin/automation-conversion/message-activity-sync/run",
+        json={"trigger_source": "scheduled", "operator": "tester-sync-api"},
+        headers={"Authorization": "Bearer sync-token"},
+    )
+
+    assert unauthorized.status_code == 401
+    assert unauthorized.get_json()["error"] == "missing internal token"
+    assert authorized.status_code == 200
+    assert authorized.get_json()["ok"] is True
+    assert authorized.get_json()["run"]["trigger_source"] == "scheduled"
+    assert authorized.get_json()["run"]["matched_count"] == 1
+
+
+def test_automation_conversion_settings_page_renders_message_activity_sync_section(app, client):
+    response = client.get("/admin/automation-conversion/settings")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "消息活跃同步" in html
+    assert "立即刷新一次" in html
 
 
 def test_qrcode_callback_creates_member_and_event(app):

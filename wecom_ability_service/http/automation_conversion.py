@@ -15,11 +15,13 @@ from ..domains.automation_conversion import (
     put_in_pool,
     push_openclaw,
     remove_from_pool,
+    run_message_activity_sync,
     save_settings,
     set_follow_type,
     unmark_won,
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
+from .internal_auth import ensure_admin_console_action_token, require_internal_api_token, validate_admin_console_action_token
 
 
 def _query_text(name: str) -> str:
@@ -81,6 +83,8 @@ def _settings_notice() -> str:
         return "设置已保存"
     if _query_text("channel_saved") == "1":
         return "默认渠道二维码已更新"
+    if _query_text("message_activity_sync") == "1":
+        return "消息活跃同步已完成"
     return ""
 
 
@@ -144,6 +148,7 @@ def _render_settings_page(*, settings_payload: dict[str, object] | None = None, 
         show_debug_json_editor=_query_text("debug") == "1",
         page_notice=_settings_notice(),
         page_error=page_error,
+        admin_action_token=ensure_admin_console_action_token(),
     )
 
 
@@ -220,6 +225,20 @@ def admin_automation_conversion_generate_default_channel():
     if result.get("generated"):
         return redirect(url_for("api.admin_automation_conversion_settings", channel_saved=1), code=302)
     return _render_settings_page(page_error=str(result.get("error") or "默认渠道二维码生成失败"))
+
+
+def admin_automation_conversion_run_message_activity_sync():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_settings_page(page_error=action_token_error)
+    result = run_message_activity_sync(
+        operator_id=_operator_from_request(),
+        operator_type="user",
+        trigger_source="manual",
+    )
+    if result.get("ok"):
+        return redirect(url_for("api.admin_automation_conversion_settings", message_activity_sync=1), code=302)
+    return _render_settings_page(page_error=str(result.get("error") or "消息活跃同步失败"))
 
 
 def admin_automation_conversion_debug():
@@ -339,6 +358,20 @@ def api_admin_automation_conversion_generate_default_channel():
     return jsonify({"ok": bool(result.get("generated")), **result}), status_code
 
 
+def api_admin_automation_conversion_run_message_activity_sync():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_message_activity_sync(
+        operator_id=_operator_from_request(),
+        operator_type="system",
+        trigger_source=str(payload.get("trigger_source") or request.values.get("trigger_source") or "scheduled").strip() or "scheduled",
+    )
+    status_code = 200 if result.get("ok") else 502
+    return jsonify(result), status_code
+
+
 def api_admin_automation_conversion_debug_member():
     external_contact_id = _query_text("external_contact_id")
     phone = _query_text("phone")
@@ -353,6 +386,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/settings", methods=["GET"])(admin_automation_conversion_settings)
     bp.route("/admin/automation-conversion/settings/save", methods=["POST"])(admin_automation_conversion_save_settings)
     bp.route("/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(admin_automation_conversion_generate_default_channel)
+    bp.route("/admin/automation-conversion/settings/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/debug", methods=["GET"])(admin_automation_conversion_debug)
     bp.route("/admin/automation-conversion/preview", methods=["GET"])(admin_automation_conversion_preview)
 
@@ -368,4 +402,5 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_save_settings)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_generate_default_channel)
+    bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
     bp.route("/api/admin/automation-conversion/debug/member", methods=["GET"])(api_admin_automation_conversion_debug_member)

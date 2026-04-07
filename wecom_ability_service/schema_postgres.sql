@@ -1162,3 +1162,53 @@ ON automation_ai_push_log (member_id, pushed_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_ai_push_log_status
 ON automation_ai_push_log (status, pushed_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_message_activity_sync_run (
+    id BIGSERIAL PRIMARY KEY,
+    trigger_source TEXT NOT NULL DEFAULT 'manual',
+    operator_type TEXT NOT NULL DEFAULT 'system',
+    operator_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'success',
+    candidate_count INTEGER NOT NULL DEFAULT 0,
+    matched_count INTEGER NOT NULL DEFAULT 0,
+    updated_count INTEGER NOT NULL DEFAULT 0,
+    skipped_ambiguous_count INTEGER NOT NULL DEFAULT 0,
+    skipped_unmatched_count INTEGER NOT NULL DEFAULT 0,
+    skipped_missing_phone_count INTEGER NOT NULL DEFAULT 0,
+    focus_count INTEGER NOT NULL DEFAULT 0,
+    normal_count INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT NOT NULL DEFAULT '',
+    summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_run_finished
+ON automation_message_activity_sync_run (finished_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_run_status
+ON automation_message_activity_sync_run (status, finished_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_message_activity_sync_item (
+    id BIGSERIAL PRIMARY KEY,
+    run_id BIGINT NOT NULL REFERENCES automation_message_activity_sync_run(id) ON DELETE CASCADE,
+    member_id BIGINT REFERENCES automation_member(id) ON DELETE CASCADE,
+    external_contact_id TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    phone_last4 TEXT NOT NULL DEFAULT '',
+    message_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'updated',
+    detail TEXT NOT NULL DEFAULT '',
+    before_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    after_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_run
+ON automation_message_activity_sync_item (run_id, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_status
+ON automation_message_activity_sync_item (status, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_last4
+ON automation_message_activity_sync_item (phone_last4, created_at DESC, id DESC);
