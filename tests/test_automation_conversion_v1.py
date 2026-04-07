@@ -431,6 +431,115 @@ def test_automation_member_detail_uses_sidebar_button_rules_for_won_members(app,
     assert detail["actions"]["mark_won"]["enabled"] is False
     assert detail["actions"]["unmark_won"]["enabled"] is True
     assert detail["actions"]["push_openclaw"]["enabled"] is True
+
+
+def test_sync_member_activation_recomputes_pool_from_inactive_focus_to_active_focus(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_sync_active_001", mobile="13800003101", owner_userid="sales_sync", customer_name="激活刷新客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sync_active_001",
+        phone="13800003101",
+        owner_staff_id="sales_sync",
+        in_pool=1,
+        current_pool="inactive_focus",
+        follow_type="focus",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="focus",
+        decision_source="questionnaire",
+        source_type="manual",
+        joined_at="2026-04-06 10:00:00",
+    )
+    _patch_live_context(
+        monkeypatch,
+        external_contact_id="wm_sync_active_001",
+        phone="13800003101",
+        owner_staff_id="sales_sync",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_result="focus",
+    )
+
+    with app.app_context():
+        payload = sync_member_activation(
+            external_contact_id="wm_sync_active_001",
+            operator_id="activation_webhook",
+        )
+        row = get_db().execute(
+            """
+            SELECT activation_status, current_pool
+            FROM automation_member
+            WHERE external_contact_id = ?
+            """,
+            ("wm_sync_active_001",),
+        ).fetchone()
+        event = get_db().execute(
+            """
+            SELECT action, operator_type, operator_id, before_snapshot, after_snapshot
+            FROM automation_event
+            WHERE member_id = (
+                SELECT id FROM automation_member WHERE external_contact_id = ?
+            )
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("wm_sync_active_001",),
+        ).fetchone()
+
+    assert payload["updated"] is True
+    assert payload["member"]["activation_status"] == "active"
+    assert payload["member"]["current_pool"] == "active_focus"
+    assert row["activation_status"] == "active"
+    assert row["current_pool"] == "active_focus"
+    assert event["action"] == "activation_refresh"
+    assert event["operator_type"] == "system"
+    assert event["operator_id"] == "activation_webhook"
+    assert json.loads(event["before_snapshot"])["current_pool"] == "inactive_focus"
+    assert json.loads(event["after_snapshot"])["current_pool"] == "active_focus"
+
+
+def test_get_member_detail_view_sync_updates_activation_status_and_pool(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_view_sync_001", mobile="13800003102", owner_userid="sales_view", customer_name="查看同步客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_view_sync_001",
+        phone="13800003102",
+        owner_staff_id="sales_view",
+        in_pool=1,
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+        source_type="manual",
+        joined_at="2026-04-06 10:00:00",
+    )
+    _patch_live_context(
+        monkeypatch,
+        external_contact_id="wm_view_sync_001",
+        phone="13800003102",
+        owner_staff_id="sales_view",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+    )
+
+    with app.app_context():
+        detail = get_member_detail(external_contact_id="wm_view_sync_001")
+        row = get_db().execute(
+            """
+            SELECT activation_status, current_pool
+            FROM automation_member
+            WHERE external_contact_id = ?
+            """,
+            ("wm_view_sync_001",),
+        ).fetchone()
+
+    assert detail["member"]["activation_status"] == "active"
+    assert detail["member"]["current_pool"] == "active_normal"
+    assert row["activation_status"] == "active"
+    assert row["current_pool"] == "active_normal"
     assert detail["actions"]["ai_push"]["enabled"] is True
 
 
