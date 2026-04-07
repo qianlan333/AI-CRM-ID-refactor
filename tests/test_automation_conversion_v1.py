@@ -355,6 +355,7 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
     assert captured["source_id"].isdigit()
     assert captured["event_type"] == "openclaw_focus_message"
     assert set(captured["payload"].keys()) == {
+        "externalContactId",
         "currentPool",
         "currentStage",
         "currentTarget",
@@ -362,6 +363,7 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
         "questionnaire",
         "recentChats",
     }
+    assert captured["payload"]["externalContactId"] == "wm_ai_001"
     assert captured["payload"]["tags"] == ["高潜客户"]
     assert captured["payload"]["questionnaire"]["answers"] == [{"question": "预算", "answer": "999"}]
     assert len(captured["payload"]["recentChats"]) == 2
@@ -379,6 +381,7 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
         ).fetchall()
         assert [row["status"] for row in logs] == ["accepted", "cooldown_blocked"]
         accepted_payload = json.loads(logs[0]["request_payload"])
+        assert accepted_payload["externalContactId"] == "wm_ai_001"
         assert accepted_payload["currentPool"] == captured["payload"]["currentPool"]
         assert accepted_payload["currentStage"] == captured["payload"]["currentStage"]
         assert accepted_payload["currentTarget"] == captured["payload"]["currentTarget"]

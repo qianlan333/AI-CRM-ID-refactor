@@ -1080,6 +1080,7 @@ def _build_openclaw_payload(member: dict[str, Any]) -> dict[str, Any]:
     questionnaire_payload = get_customer_questionnaire_answers_payload(external_userid=external_contact_id, mobile=phone)
     messages_payload = get_customer_messages_payload(external_userid=external_contact_id, mobile=phone, limit=20)
     return {
+        "externalContactId": external_contact_id,
         "currentPool": serialized["current_pool"],
         "currentStage": serialized["current_stage"],
         "currentTarget": serialized["current_target"],
