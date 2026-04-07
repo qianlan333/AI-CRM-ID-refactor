@@ -7,6 +7,7 @@ from pathlib import Path
 from flask import Flask, Response
 
 from .db import close_db, init_app as init_db_app
+from .infra.settings import DEFAULT_OPENCLAW_WEBHOOK_URL
 from .mcp_adapter import mcp_bp
 from .observability import attach_logging_filter, register_request_observability
 from .routes import bp
@@ -73,6 +74,7 @@ def _log_startup_config(app: Flask) -> None:
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=False)
     explicit_debug_session_api = os.getenv("ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API", "").strip()
+    openclaw_webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", DEFAULT_OPENCLAW_WEBHOOK_URL)
 
     default_db_path = Path(app.root_path).parent / "data.sqlite3"
     app.config.from_mapping(
@@ -116,6 +118,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "SIDEBAR_PERSON_DETAIL_URL_TEMPLATE",
             "https://www.youcangogogo.com/person/{person_id}",
         ),
+        OPENCLAW_WEBHOOK_URL=openclaw_webhook_url,
         MESSAGE_ACTIVITY_DB_HOST=os.getenv("MESSAGE_ACTIVITY_DB_HOST", ""),
         MESSAGE_ACTIVITY_DB_PORT=int(os.getenv("MESSAGE_ACTIVITY_DB_PORT", "3306")),
         MESSAGE_ACTIVITY_DB_NAME=os.getenv("MESSAGE_ACTIVITY_DB_NAME", ""),
