@@ -336,7 +336,7 @@ def _rebuild_sqlite_customer_marketing_state_current_table(db) -> None:
             id,
             {"person_id" if "person_id" in current_columns else "NULL"} AS person_id,
             CASE
-                WHEN COALESCE(external_userid, '') LIKE 'person:%' THEN ''
+                WHEN substr(COALESCE(external_userid, ''), 1, 7) = 'person:' THEN ''
                 ELSE COALESCE(external_userid, '')
             END AS external_userid,
             {"automation_key" if "automation_key" in current_columns else "'signup_conversion_v1'"} AS automation_key,
@@ -459,7 +459,7 @@ def _ensure_sqlite_customer_marketing_state_tables(db) -> None:
             """
             UPDATE customer_marketing_state_current
             SET external_userid = ''
-            WHERE external_userid LIKE 'person:%'
+            WHERE substr(COALESCE(external_userid, ''), 1, 7) = 'person:'
             """
         )
 
@@ -503,7 +503,7 @@ def _ensure_sqlite_customer_marketing_state_tables(db) -> None:
             """
             UPDATE customer_marketing_state_history
             SET external_userid = ''
-            WHERE external_userid LIKE 'person:%'
+            WHERE substr(COALESCE(external_userid, ''), 1, 7) = 'person:'
             """
         )
 
@@ -922,7 +922,7 @@ def _ensure_postgres_customer_marketing_state_tables(db) -> None:
         """
         UPDATE customer_marketing_state_current
         SET external_userid = ''
-        WHERE external_userid LIKE 'person:%'
+        WHERE substr(COALESCE(external_userid, ''), 1, 7) = 'person:'
         """
     )
     db.execute(
@@ -977,7 +977,7 @@ def _ensure_postgres_customer_marketing_state_tables(db) -> None:
         """
         UPDATE customer_marketing_state_history
         SET external_userid = ''
-        WHERE external_userid LIKE 'person:%'
+        WHERE substr(COALESCE(external_userid, ''), 1, 7) = 'person:'
         """
     )
 
