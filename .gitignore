@@ -12,3 +12,4 @@ exports/
 /questionnaire_ui_live.js
 .venv/
 .venv311-codex/
+*.swp
