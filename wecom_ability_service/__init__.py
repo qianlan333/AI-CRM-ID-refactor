@@ -116,10 +116,19 @@ def create_app(test_config: dict | None = None) -> Flask:
             "SIDEBAR_PERSON_DETAIL_URL_TEMPLATE",
             "https://www.youcangogogo.com/person/{person_id}",
         ),
+        MESSAGE_ACTIVITY_DB_HOST=os.getenv("MESSAGE_ACTIVITY_DB_HOST", ""),
+        MESSAGE_ACTIVITY_DB_PORT=int(os.getenv("MESSAGE_ACTIVITY_DB_PORT", "3306")),
+        MESSAGE_ACTIVITY_DB_NAME=os.getenv("MESSAGE_ACTIVITY_DB_NAME", ""),
+        MESSAGE_ACTIVITY_DB_USER=os.getenv("MESSAGE_ACTIVITY_DB_USER", ""),
+        MESSAGE_ACTIVITY_DB_PASS=os.getenv("MESSAGE_ACTIVITY_DB_PASS", ""),
         ENV_FILE_PATH=os.getenv("ENV_FILE_PATH", "/home/ubuntu/.openclaw-wecom.env"),
         CRON_SCRIPT_PATH=os.getenv(
             "CRON_SCRIPT_PATH",
             str(Path(app.root_path).parent / "scripts" / "run_incremental_archive_sync.py"),
+        ),
+        MESSAGE_ACTIVITY_SYNC_CRON_SCRIPT_PATH=os.getenv(
+            "MESSAGE_ACTIVITY_SYNC_CRON_SCRIPT_PATH",
+            str(Path(app.root_path).parent / "scripts" / "run_message_activity_sync.py"),
         ),
     )
 
