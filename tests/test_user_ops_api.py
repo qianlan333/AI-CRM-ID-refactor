@@ -1845,15 +1845,22 @@ def test_import_experience_leads_endpoint_is_deprecated_internal_only(client):
     assert payload["error"] == "deprecated_internal_only"
 
 
-def test_sidebar_bind_mobile_page_uses_lead_pool_class_term_quick_set(client):
+def test_sidebar_bind_mobile_page_uses_single_customer_automation_layout(client):
     response = client.get("/sidebar/bind-mobile")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "班期快捷设置" in html
-    assert "AI 产品报名情况" not in html
-    assert "/api/sidebar/lead-pool/status" in html
-    assert "/api/sidebar/lead-pool/upsert-class-term" in html
+    assert "自动化转化操作区" in html
+    assert "放入自动化转化池" in html
+    assert "移除自动化转化池" in html
+    assert "一键自动化写话术" in html
+    assert "实时标签" in html
+    assert "已填写问卷及答案" in html
+    assert "/api/admin/automation-conversion/member" in html
+    assert "/api/admin/customers/profile/tags" in html
+    assert "/api/admin/customers/profile/questionnaire-answers" in html
+    assert "班期快捷设置" not in html
+    assert "自动化转化卡片" not in html
     assert "/api/sidebar/signup-tags/status" not in html
     assert "/api/sidebar/signup-tags/mark" not in html
 

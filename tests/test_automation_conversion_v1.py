@@ -385,6 +385,43 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
         assert accepted_payload["questionnaire"]["answers"] == [{"question": "预算", "answer": "999"}]
 
 
+def test_automation_member_detail_uses_sidebar_button_rules_for_won_members(app, client):
+    _seed_contact(app, external_userid="wm_won_001", mobile="13800003099", owner_userid="sales_won", customer_name="已成交客户")
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_member (
+                external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
+                activation_status, questionnaire_status, questionnaire_result, decision_source,
+                source_type, last_active_pool, joined_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 0, 'won', 'focus', 'active', 'submitted', 'focus', 'manual', 'manual', 'active_focus', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("wm_won_001", "13800003099", "sales_won"),
+        )
+        db.commit()
+
+    response = client.get(
+        "/api/admin/automation-conversion/member",
+        query_string={"external_contact_id": "wm_won_001"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    detail = payload["detail"]
+    assert detail["member"]["current_pool"] == "won"
+    assert detail["actions"]["put_in_pool"]["enabled"] is False
+    assert detail["actions"]["remove_from_pool"]["enabled"] is False
+    assert detail["actions"]["set_focus"]["enabled"] is False
+    assert detail["actions"]["set_normal"]["enabled"] is False
+    assert detail["actions"]["mark_won"]["enabled"] is False
+    assert detail["actions"]["unmark_won"]["enabled"] is True
+    assert detail["actions"]["push_openclaw"]["enabled"] is True
+    assert detail["actions"]["ai_push"]["enabled"] is True
+
+
 def test_mark_won_and_unmark_restore_active_normal(app, client, monkeypatch):
     _seed_automation_member(
         app,

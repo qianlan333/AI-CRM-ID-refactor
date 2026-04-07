@@ -75,6 +75,7 @@
       min-height: 22px;
       font-size: 13px;
       color: var(--muted);
+      line-height: 1.6;
     }
     .status.error { color: var(--danger); }
     .status.success { color: var(--ok); }
@@ -97,18 +98,9 @@
       font-size: 14px;
       font-weight: 600;
     }
-    .tag-quick-card { margin-top: 14px; }
-    .automation-card { margin-top: 14px; }
-    .automation-card-head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
     .section-title {
       margin: 0 0 6px;
-      font-size: 16px;
+      font-size: 18px;
       font-weight: 700;
     }
     .section-note {
@@ -116,80 +108,6 @@
       color: var(--muted);
       font-size: 13px;
       line-height: 1.6;
-    }
-    .tag-quick-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-    }
-    .tag-quick-btn {
-      padding: 12px 10px;
-      border-radius: 14px;
-      border: 1px solid rgba(81, 63, 34, 0.14);
-      background: #fffdf8;
-      color: var(--text);
-      font-weight: 700;
-      font-size: 14px;
-    }
-    .tag-quick-btn.active {
-      background: linear-gradient(135deg, var(--primary), var(--primary-strong));
-      color: #fff;
-      border-color: transparent;
-    }
-    .automation-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-    }
-    .automation-grid--triple {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .automation-item {
-      border: 1px solid rgba(81, 63, 34, 0.1);
-      border-radius: 14px;
-      padding: 12px;
-      background: #fffdf8;
-    }
-    .automation-item span {
-      display: block;
-      margin-bottom: 6px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .automation-item strong {
-      display: block;
-      font-size: 15px;
-      line-height: 1.4;
-    }
-    .badge-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 4px;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 30px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 700;
-      background: var(--soft);
-      color: var(--primary-strong);
-    }
-    .badge.ok {
-      background: rgba(47, 125, 87, 0.16);
-      color: var(--ok);
-    }
-    .badge.warn {
-      background: rgba(145, 100, 59, 0.14);
-      color: var(--primary-strong);
-    }
-    .badge.danger {
-      background: rgba(178, 78, 55, 0.14);
-      color: var(--danger);
     }
     .ghost-button {
       border: 1px solid rgba(81, 63, 34, 0.14);
@@ -200,16 +118,164 @@
       background: linear-gradient(135deg, #c26649, #a94934);
       color: #fff;
     }
-    .tag-quick-btn[disabled] { opacity: 0.58; cursor: not-allowed; }
+    .panel-stack {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .field-item {
+      border: 1px solid rgba(81, 63, 34, 0.1);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fffdf8;
+    }
+    .field-item dt {
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .field-item dd {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.4;
+      font-weight: 700;
+    }
+    .action-groups {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .action-group {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(81, 63, 34, 0.1);
+      background: #fffdf8;
+    }
+    .action-group-title {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .action-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .action-row--single {
+      grid-template-columns: 1fr;
+    }
+    .info-callout {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(145, 100, 59, 0.1);
+      color: var(--primary-strong);
+      font-size: 13px;
+      line-height: 1.7;
+      border: 1px solid rgba(145, 100, 59, 0.14);
+    }
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--primary-strong);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .answer-stack {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .answer-card {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(81, 63, 34, 0.1);
+      background: #fffdf8;
+    }
+    .answer-card span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .answer-card strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .answer-card p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.7;
+      word-break: break-word;
+    }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%);
+      min-width: 220px;
+      max-width: min(88vw, 460px);
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: rgba(47, 36, 22, 0.92);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.5;
+      box-shadow: 0 18px 40px rgba(47, 36, 22, 0.18);
+      z-index: 20;
+    }
+    .toast.toast--error { background: rgba(178, 78, 55, 0.94); }
+    .legacy-hidden-marker { display: none; }
     @media (max-width: 560px) {
-      .kv { grid-template-columns: 1fr; gap: 6px; }
-      .tag-quick-grid { grid-template-columns: 1fr; }
-      .automation-grid { grid-template-columns: 1fr; }
+      .field-grid { grid-template-columns: 1fr; }
+      .action-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
+{% set legacy_sidebar_cards_enabled = false %}
+{% set single_customer_automation_enabled = true %}
 <body>
-  <div class="shell">
+  <div
+    class="shell"
+    id="sidebar-root"
+    data-automation-member-url="{{ url_for('api.api_admin_automation_conversion_member') }}"
+    data-automation-put-in-pool-url="{{ url_for('api.api_admin_automation_conversion_put_in_pool') }}"
+    data-automation-remove-from-pool-url="{{ url_for('api.api_admin_automation_conversion_remove_from_pool') }}"
+    data-automation-set-focus-url="{{ url_for('api.api_admin_automation_conversion_set_focus') }}"
+    data-automation-set-normal-url="{{ url_for('api.api_admin_automation_conversion_set_normal') }}"
+    data-automation-mark-won-url="{{ url_for('api.api_admin_automation_conversion_mark_won') }}"
+    data-automation-unmark-won-url="{{ url_for('api.api_admin_automation_conversion_unmark_won') }}"
+    data-automation-push-openclaw-url="{{ url_for('api.api_admin_automation_conversion_push_openclaw') }}"
+    data-profile-tags-url="{{ url_for('api.admin_customer_profile_tags_api') }}"
+    data-profile-questionnaire-url="{{ url_for('api.admin_customer_profile_questionnaire_answers_api') }}"
+  >
     <section class="hero">
       <h1>客户档案绑定</h1>
       <p>识别当前客户是否已绑定手机号，未绑定则补充手机号，已绑定则直接查看绑定信息。</p>
@@ -250,80 +316,138 @@
       </div>
     </section>
 
-    <section id="lead-pool-class-term-card" class="card tag-quick-card hidden">
+    {% if single_customer_automation_enabled %}
+    <div class="panel-stack">
+      <section id="single-customer-automation-card" class="card">
+        <div class="panel-head">
+          <div>
+            <h2 class="section-title">自动化转化操作区</h2>
+            <p class="section-note">这里只展示当前客户的自动化状态、可执行动作，以及给人工判断和 AI 写话术用的只读上下文。</p>
+          </div>
+        </div>
+        <div id="automation-state" class="status">正在加载自动化状态…</div>
+        <dl id="automation-detail" class="field-grid hidden">
+          <div class="field-item">
+            <dt>是否在自动化转化池</dt>
+            <dd id="automation-in-pool">否</dd>
+          </div>
+          <div class="field-item">
+            <dt>当前池子</dt>
+            <dd id="automation-current-pool">已移出</dd>
+          </div>
+          <div class="field-item">
+            <dt>当前阶段</dt>
+            <dd id="automation-current-stage">已移出</dd>
+          </div>
+          <div class="field-item">
+            <dt>当前目标</dt>
+            <dd id="automation-current-target">无</dd>
+          </div>
+          <div class="field-item">
+            <dt>问卷状态</dt>
+            <dd id="automation-questionnaire-status">待提交</dd>
+          </div>
+          <div class="field-item">
+            <dt>最近人工操作</dt>
+            <dd id="automation-latest-manual-action">暂无</dd>
+          </div>
+          <div class="field-item">
+            <dt>最近 AI 推送时间</dt>
+            <dd id="automation-last-ai-push-at">暂无</dd>
+          </div>
+          <div class="field-item">
+            <dt>冷却状态</dt>
+            <dd id="automation-ai-cooldown">未冷却</dd>
+          </div>
+        </dl>
+        <div id="automation-manual-note" class="info-callout hidden"></div>
+        <div id="automation-actions" class="action-groups hidden">
+          <section class="action-group">
+            <div class="action-group-title">池子操作</div>
+            <div class="action-row">
+              <button type="button" data-automation-action="put_in_pool">放入自动化转化池</button>
+              <button type="button" class="ghost-button" data-automation-action="remove_from_pool">移除自动化转化池</button>
+            </div>
+          </section>
+          <section class="action-group">
+            <div class="action-group-title">跟进类型操作</div>
+            <div class="action-row">
+              <button type="button" data-automation-action="set_focus">转化为重点跟进</button>
+              <button type="button" class="ghost-button" data-automation-action="set_normal">转化为普通跟进</button>
+            </div>
+          </section>
+          <section class="action-group">
+            <div class="action-group-title">成交状态操作</div>
+            <div class="action-row">
+              <button type="button" class="danger-button" data-automation-action="mark_won">确认已成交</button>
+              <button type="button" class="ghost-button" data-automation-action="unmark_won">移除已成交</button>
+            </div>
+          </section>
+          <section class="action-group">
+            <div class="action-group-title">AI 功能操作</div>
+            <div class="action-row action-row--single">
+              <button type="button" data-automation-action="push_openclaw">一键自动化写话术</button>
+            </div>
+          </section>
+        </div>
+        <div id="automation-feedback" class="status"></div>
+      </section>
+
+      <section id="automation-tags-card" class="card">
+        <h2 class="section-title">实时标签</h2>
+        <p class="section-note">这里保留当前客户的实时标签，给人工判断和 OpenClaw 生成话术提供上下文。</p>
+        <div id="automation-tags-state" class="status">正在读取实时标签…</div>
+        <div id="automation-tags-list" class="pill-list hidden"></div>
+      </section>
+
+      <section id="automation-questionnaire-card" class="card">
+        <h2 class="section-title">已填写问卷及答案</h2>
+        <p class="section-note">这里只读展示当前客户已提交的问卷问答，不展示配置项和其他营销卡片。</p>
+        <div id="automation-questionnaire-state" class="status">正在读取问卷答案…</div>
+        <div id="automation-questionnaire-list" class="answer-stack hidden"></div>
+      </section>
+    </div>
+    {% endif %}
+
+    {% if legacy_sidebar_cards_enabled %}
+    <section id="lead-pool-class-term-card" class="card legacy-hidden-marker">
       <h2 class="section-title">班期快捷设置</h2>
       <p class="section-note">点击即设置当前客户的班期，并同步对应企微班期标签。</p>
-      <div id="lead-pool-class-term-grid" class="tag-quick-grid"></div>
+      <div id="lead-pool-class-term-grid"></div>
       <div id="lead-pool-class-term-status" class="status"></div>
     </section>
 
-    <section id="marketing-profile-card" class="card automation-card hidden">
-      <div class="automation-card-head">
-        <div>
-          <h2 class="section-title">自动化转化卡片</h2>
-          <p class="section-note">这里展示客户当前池子、是否激活、当前跟进类型。问卷只做第一次分流，人工改判永远优先。</p>
-        </div>
-        <div class="actions">
-          <button id="switch-focus-button" type="button">转为重点跟进</button>
-          <button id="switch-normal-button" type="button" class="ghost-button">转为普通跟进</button>
-          <button id="mark-enrolled-button" type="button" class="danger-button">确认已成交</button>
-          <button id="unmark-enrolled-button" type="button" class="ghost-button">撤销成交确认</button>
-        </div>
-      </div>
-      <div class="badge-row">
-        <span id="marketing-stage-badge" class="badge warn">待转化</span>
-        <span id="marketing-segment-badge" class="badge">暂未分层</span>
-      </div>
-      <div class="automation-grid automation-grid--triple">
-        <div class="automation-item">
-          <span>当前池子</span>
-          <strong id="marketing-phase-value">待转化</strong>
-        </div>
-        <div class="automation-item">
-          <span>当前跟进类型</span>
-          <strong id="marketing-segment-value">暂未分层</strong>
-        </div>
-        <div class="automation-item">
-          <span>问卷初判</span>
-          <strong id="marketing-initial-segment-value">未完成初判</strong>
-        </div>
-        <div class="automation-item">
-          <span>当前跟进来源</span>
-          <strong id="marketing-followup-source-value">待问卷提交</strong>
-        </div>
-        <div class="automation-item">
-          <span>最近人工改判</span>
-          <strong id="marketing-manual-override-value">当前仍按问卷初判执行</strong>
-        </div>
-        <div class="automation-item">
-          <span>命中题数</span>
-          <strong id="marketing-hit-count-value">0</strong>
-        </div>
-        <div class="automation-item">
-          <span>是否已激活</span>
-          <strong id="marketing-activated-value">否</strong>
-        </div>
-        <div class="automation-item">
-          <span>是否已确认成交</span>
-          <strong id="marketing-enrolled-value">否</strong>
-        </div>
-        <div class="automation-item">
-          <span>最近确认时间</span>
-          <strong id="marketing-last-conversion-value">-</strong>
-        </div>
-      </div>
+    <section id="marketing-profile-card" class="card legacy-hidden-marker">
+      <h2 class="section-title">自动化转化卡片</h2>
       <div id="marketing-profile-status" class="status"></div>
     </section>
+    {% endif %}
 
     <div id="debug-wrap" class="hidden"></div>
   </div>
 
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
   <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
   <script>
+    const singleCustomerAutomationEnabled = {{ single_customer_automation_enabled|tojson }};
+    const legacySidebarCardsEnabled = {{ legacy_sidebar_cards_enabled|tojson }};
+    const root = document.getElementById('sidebar-root');
     const state = {
       external_userid: '',
       owner_userid: '',
       bind_by_userid: '',
+      automationDetail: null,
+    };
+
+    const ACTION_LABELS = {
+      put_in_pool: '放入自动化转化池',
+      remove_from_pool: '移除自动化转化池',
+      set_focus: '转化为重点跟进',
+      set_normal: '转化为普通跟进',
+      mark_won: '确认已成交',
+      unmark_won: '移除已成交',
+      push_openclaw: '一键自动化写话术',
     };
 
     const loadingCard = document.getElementById('loading-card');
@@ -338,33 +462,34 @@
     const rebindMobileInput = document.getElementById('rebind-mobile-input');
     const confirmRebindButton = document.getElementById('confirm-rebind-button');
     const customerTitle = document.getElementById('customer-title');
-    const leadPoolClassTermCard = document.getElementById('lead-pool-class-term-card');
-    const leadPoolClassTermGrid = document.getElementById('lead-pool-class-term-grid');
-    const leadPoolClassTermStatus = document.getElementById('lead-pool-class-term-status');
-    const marketingProfileCard = document.getElementById('marketing-profile-card');
-    const switchFocusButton = document.getElementById('switch-focus-button');
-    const switchNormalButton = document.getElementById('switch-normal-button');
-    const markEnrolledButton = document.getElementById('mark-enrolled-button');
-    const unmarkEnrolledButton = document.getElementById('unmark-enrolled-button');
-    const marketingStageBadge = document.getElementById('marketing-stage-badge');
-    const marketingSegmentBadge = document.getElementById('marketing-segment-badge');
-    const marketingPhaseValue = document.getElementById('marketing-phase-value');
-    const marketingSegmentValue = document.getElementById('marketing-segment-value');
-    const marketingInitialSegmentValue = document.getElementById('marketing-initial-segment-value');
-    const marketingFollowupSourceValue = document.getElementById('marketing-followup-source-value');
-    const marketingManualOverrideValue = document.getElementById('marketing-manual-override-value');
-    const marketingHitCountValue = document.getElementById('marketing-hit-count-value');
-    const marketingActivatedValue = document.getElementById('marketing-activated-value');
-    const marketingEnrolledValue = document.getElementById('marketing-enrolled-value');
-    const marketingLastConversionValue = document.getElementById('marketing-last-conversion-value');
-    const marketingProfileStatus = document.getElementById('marketing-profile-status');
     const debugWrap = document.getElementById('debug-wrap');
     const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1' || {{ debug_enabled|tojson }};
-    const legacyLeadPoolClassTermEnabled = false;
-    const legacyMarketingProfileEnabled = false;
-    state.currentClassTermNo = null;
-    state.classTermOptions = [];
-    state.marketingStatus = null;
+    const toast = document.getElementById('toast');
+
+    const automationElements = singleCustomerAutomationEnabled ? {
+      state: document.getElementById('automation-state'),
+      detail: document.getElementById('automation-detail'),
+      actions: document.getElementById('automation-actions'),
+      feedback: document.getElementById('automation-feedback'),
+      manualNote: document.getElementById('automation-manual-note'),
+      buttons: Array.from(document.querySelectorAll('[data-automation-action]')),
+      inPool: document.getElementById('automation-in-pool'),
+      currentPool: document.getElementById('automation-current-pool'),
+      currentStage: document.getElementById('automation-current-stage'),
+      currentTarget: document.getElementById('automation-current-target'),
+      questionnaireStatus: document.getElementById('automation-questionnaire-status'),
+      latestManualAction: document.getElementById('automation-latest-manual-action'),
+      lastAiPushAt: document.getElementById('automation-last-ai-push-at'),
+      cooldown: document.getElementById('automation-ai-cooldown'),
+    } : null;
+    const tagsState = singleCustomerAutomationEnabled ? document.getElementById('automation-tags-state') : null;
+    const tagsList = singleCustomerAutomationEnabled ? document.getElementById('automation-tags-list') : null;
+    const questionnaireState = singleCustomerAutomationEnabled ? document.getElementById('automation-questionnaire-state') : null;
+    const questionnaireList = singleCustomerAutomationEnabled ? document.getElementById('automation-questionnaire-list') : null;
+
+    let toastTimer = null;
+    let automationCooldownTimer = null;
+
     debugWrap.classList.toggle('hidden', !debugEnabled);
 
     function writeDebug(label, payload) {
@@ -375,7 +500,25 @@
       console.log(line);
     }
 
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function safeJsonParse(text) {
+      try {
+        return JSON.parse(text);
+      } catch (_error) {
+        return null;
+      }
+    }
+
     function setStatus(el, text, type) {
+      if (!el) return;
       el.textContent = text || '';
       el.className = 'status' + (type ? ' ' + type : '');
     }
@@ -390,7 +533,7 @@
       return new URLSearchParams(window.location.search).get(key) || '';
     }
 
-    function userMessage(error, fallbackText) {
+    function userMessage(_error, fallbackText) {
       return fallbackText;
     }
 
@@ -399,7 +542,18 @@
       customerTitle.textContent = '客户昵称：' + displayName;
     }
 
+    function normalizeOwnerContext(data) {
+      const payload = data || {};
+      if (!state.owner_userid) {
+        state.owner_userid = String(payload.owner_userid || '').trim();
+      }
+      if (!state.bind_by_userid) {
+        state.bind_by_userid = String(payload.bind_by_userid || state.owner_userid || '').trim();
+      }
+    }
+
     function renderBound(data) {
+      normalizeOwnerContext(data);
       updateCustomerTitle(data);
       document.getElementById('bound-mobile').textContent = '已绑定手机号：' + (data.mobile || '-');
       rebindForm.classList.add('hidden');
@@ -408,230 +562,291 @@
       showCard('bound');
     }
 
-    function applyMarketingBadge(el, text, tone) {
-      el.textContent = text || '-';
-      el.className = 'badge' + (tone ? ' ' + tone : '');
+    async function requestJson(url, options) {
+      const finalOptions = {
+        headers: {
+          Accept: 'application/json',
+          ...(options && options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...((options && options.headers) || {}),
+        },
+        ...(options || {}),
+      };
+      const response = await fetch(url, finalOptions);
+      const text = await response.text();
+      const payload = text ? safeJsonParse(text) : null;
+      if (!response.ok || (payload && payload.ok === false)) {
+        writeDebug('requestJson fail', { url, status: response.status, payload });
+        const error = new Error((payload && payload.error) || ('请求失败(' + response.status + ')'));
+        error.status = response.status;
+        error.payload = payload || {};
+        throw error;
+      }
+      return payload || { ok: true };
     }
 
-    function syncMarketingButtons(payload) {
-      const currentFollowupType = String((payload || {}).current_followup_type || (payload || {}).segment || '').trim() || 'unknown';
-      const stageKey = String((payload || {}).stage_key || '').trim();
-      const enrolled = stageKey === 'converted/enrolled';
-      const switchable = Boolean((payload || {}).can_switch_followup_segment) && !enrolled;
-      switchFocusButton.disabled = !switchable || currentFollowupType === 'focus';
-      switchNormalButton.disabled = !switchable || currentFollowupType === 'normal';
-      markEnrolledButton.disabled = enrolled;
-      unmarkEnrolledButton.disabled = !enrolled;
+    function buildQueryUrl(baseUrl, params) {
+      const url = new URL(baseUrl, window.location.origin);
+      Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          url.searchParams.set(key, String(value).trim());
+        }
+      });
+      return url.toString();
     }
 
-    function manualOverrideSummary(payload) {
-      if (!payload || !payload.manual_override_active) {
-        return '当前仍按问卷初判执行';
-      }
-      const targetLabel = String(payload.manual_override_segment_display || '').trim() || '当前跟进';
-      const operator = String(payload.manual_override_operator || '').trim();
-      const changedAt = String(payload.manual_override_at || '').trim();
-      const prefix = [operator, changedAt].filter(Boolean).join(' ');
-      if (prefix) {
-        return prefix + ' 转为' + targetLabel;
-      }
-      const sourceLabel = String(payload.manual_override_source_display || '').trim() || '人工改判';
-      return sourceLabel + '：转为' + targetLabel;
-    }
-
-    function renderMarketingStatus(marketingStatus) {
-      if (!legacyMarketingProfileEnabled) {
-        marketingProfileCard.classList.add('hidden');
-        return;
-      }
-      const payload = marketingStatus || {};
-      state.marketingStatus = payload;
-      const stageKey = String(payload.stage_key || '').trim();
-      const stageLabel = String(payload.pool_display || payload.stage_display || '').trim() || '待转化';
-      const segment = String(payload.current_followup_type || payload.segment || '').trim() || 'unknown';
-      const segmentLabel = String(payload.current_followup_type_display || payload.segment_display || '').trim() || '暂未分层';
-      const hitCount = Number(payload.hit_count || 0);
-      const activated = Boolean(payload.activated || String(payload.last_activation_at || '').trim());
-      const enrolled = stageKey === 'converted/enrolled';
-      const eligibilityLabel = String(payload.eligibility_display || '').trim() || (payload.eligible_for_conversion ? '会' : '不会');
-      const ineligibleReason = String(payload.ineligible_reason_display || '').trim();
-      const switchable = Boolean(payload.can_switch_followup_segment) && !enrolled;
-      marketingPhaseValue.textContent = stageLabel;
-      marketingSegmentValue.textContent = segmentLabel;
-      marketingInitialSegmentValue.textContent = String(payload.questionnaire_segment_display || '').trim() || '未完成初判';
-      marketingFollowupSourceValue.textContent = String(payload.followup_segment_source_display || '').trim() || '待问卷提交';
-      marketingManualOverrideValue.textContent = manualOverrideSummary(payload);
-      marketingHitCountValue.textContent = String(hitCount);
-      marketingActivatedValue.textContent = activated ? '是' : '否';
-      marketingEnrolledValue.textContent = enrolled ? '是' : '否';
-      marketingLastConversionValue.textContent = String(payload.last_conversion_marked_at || '').trim() || '-';
-      applyMarketingBadge(marketingStageBadge, stageLabel, enrolled ? 'danger' : (activated ? 'ok' : 'warn'));
-      applyMarketingBadge(marketingSegmentBadge, segmentLabel, segment === 'focus' ? 'danger' : (segment === 'normal' ? 'ok' : 'warn'));
-      syncMarketingButtons(payload);
-      setStatus(
-        marketingProfileStatus,
-        payload.eligible_for_conversion
-          ? ('是否进入自动化：' + eligibilityLabel + (switchable ? '' : '；当前池子暂不支持普通/重点人工改判。'))
-          : ('是否进入自动化：' + eligibilityLabel + (ineligibleReason ? '；未进入原因：' + ineligibleReason : '。')),
-        enrolled ? 'success' : '',
-      );
-      marketingProfileCard.classList.remove('hidden');
-    }
-
-    async function fetchJson(url, options) {
-      const response = await fetch(url, options);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        writeDebug('fetchJson fail', { url, status: response.status, payload });
-        throw new Error(payload.error || ('请求失败(' + response.status + ')'));
-      }
-      return payload;
+    function showToast(message, tone) {
+      if (!toast) return;
+      window.clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.className = 'toast' + (tone === 'error' ? ' toast--error' : '');
+      toast.classList.remove('hidden');
+      toastTimer = window.setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 2200);
     }
 
     async function loadStatus() {
-      const params = new URLSearchParams({
-        external_userid: state.external_userid,
-      });
+      const params = new URLSearchParams({ external_userid: state.external_userid });
       if (state.owner_userid) {
         params.set('owner_userid', state.owner_userid);
       }
-      const result = await fetchJson('/api/sidebar/contact-binding-status?' + params.toString());
+      const result = await requestJson('/api/sidebar/contact-binding-status?' + params.toString());
+      normalizeOwnerContext(result);
       if (result.is_bound) {
         renderBound(result);
+      } else {
+        updateCustomerTitle(result);
+        setStatus(bindStatus, '', '');
+        showCard('unbind');
+      }
+      return result;
+    }
+
+    function resetPanelState(stateNode, bodyNode) {
+      if (stateNode) {
+        setStatus(stateNode, '正在加载…', '');
+      }
+      if (bodyNode) {
+        bodyNode.classList.add('hidden');
+      }
+    }
+
+    function showEmptyState(stateNode, bodyNode, message) {
+      if (bodyNode) {
+        bodyNode.classList.add('hidden');
+      }
+      setStatus(stateNode, message, '');
+    }
+
+    function actionUrl(action) {
+      const mapping = {
+        put_in_pool: root.dataset.automationPutInPoolUrl,
+        remove_from_pool: root.dataset.automationRemoveFromPoolUrl,
+        set_focus: root.dataset.automationSetFocusUrl,
+        set_normal: root.dataset.automationSetNormalUrl,
+        mark_won: root.dataset.automationMarkWonUrl,
+        unmark_won: root.dataset.automationUnmarkWonUrl,
+        push_openclaw: root.dataset.automationPushOpenclawUrl,
+      };
+      return mapping[action] || '';
+    }
+
+    function latestManualActionText(detail) {
+      const action = (detail && detail.latest_manual_action) || {};
+      const actionLabel = String(action.action_label || ACTION_LABELS[action.action] || action.action || '').trim();
+      if (!actionLabel) return '暂无';
+      const meta = [action.operator_id, action.created_at].filter(Boolean).join(' · ');
+      return meta ? (actionLabel + ' · ' + meta) : actionLabel;
+    }
+
+    function renderAutomationCooldown(seconds) {
+      if (!automationElements || !automationElements.cooldown) return;
+      if (!seconds || seconds <= 0) {
+        automationElements.cooldown.textContent = '未冷却';
         return;
       }
-      updateCustomerTitle(result);
-      setStatus(bindStatus, '', '');
-      showCard('unbind');
+      automationElements.cooldown.textContent = '冷却中，还剩 ' + String(seconds) + ' 秒';
     }
 
-    async function loadMarketingStatus() {
-      if (!legacyMarketingProfileEnabled) return;
-      const params = new URLSearchParams({
-        external_userid: state.external_userid,
+    function startAutomationCooldown(seconds) {
+      window.clearInterval(automationCooldownTimer);
+      let remaining = Number(seconds || 0);
+      renderAutomationCooldown(remaining);
+      if (remaining <= 0) return;
+      automationCooldownTimer = window.setInterval(() => {
+        remaining -= 1;
+        renderAutomationCooldown(remaining);
+        if (remaining <= 0) {
+          window.clearInterval(automationCooldownTimer);
+          loadAutomationMember();
+        }
+      }, 1000);
+    }
+
+    function renderAutomationDetail(detail) {
+      if (!automationElements) return;
+      state.automationDetail = detail || {};
+      const member = (detail && detail.member) || {};
+      const questionnaire = (detail && detail.questionnaire) || {};
+      automationElements.state.classList.add('hidden');
+      automationElements.detail.classList.remove('hidden');
+      automationElements.actions.classList.remove('hidden');
+      automationElements.inPool.textContent = member.in_pool ? '是' : '否';
+      automationElements.currentPool.textContent = member.current_pool_label || member.current_pool || '已移出';
+      automationElements.currentStage.textContent = member.current_stage_label || member.current_stage || '已移出';
+      automationElements.currentTarget.textContent = member.current_target_label || member.current_target || '无';
+      automationElements.questionnaireStatus.textContent = questionnaire.status_label
+        ? (questionnaire.result_label ? (questionnaire.status_label + ' / ' + questionnaire.result_label) : questionnaire.status_label)
+        : '待提交';
+      automationElements.latestManualAction.textContent = latestManualActionText(detail);
+      automationElements.lastAiPushAt.textContent = detail.last_ai_push_at || '暂无';
+      const remainingSeconds = Number(detail.ai_cooldown_remaining_seconds || 0);
+      startAutomationCooldown(remainingSeconds);
+      if (member.decision_source === 'manual' && member.follow_type_label && member.follow_type_label !== '未定') {
+        automationElements.manualNote.textContent = '当前按人工改判执行：' + member.follow_type_label + '。问卷初判不会覆盖人工结果。';
+        automationElements.manualNote.classList.remove('hidden');
+      } else {
+        automationElements.manualNote.classList.add('hidden');
+      }
+      automationElements.buttons.forEach((button) => {
+        const action = button.dataset.automationAction;
+        const enabled = Boolean(detail.actions && detail.actions[action] && detail.actions[action].enabled);
+        button.disabled = action === 'push_openclaw' && remainingSeconds > 0 ? true : !enabled;
       });
-      const result = await fetchJson('/api/sidebar/marketing-status?' + params.toString());
-      renderMarketingStatus(result.marketing_status || {});
+      setStatus(automationElements.feedback, '', '');
     }
 
-    async function applyMarketingAction(action) {
-      if (!legacyMarketingProfileEnabled) return;
-      const targetUrl = action === 'mark'
-        ? '/api/sidebar/marketing-status/mark-enrolled'
-        : '/api/sidebar/marketing-status/unmark-enrolled';
-      switchFocusButton.disabled = true;
-      switchNormalButton.disabled = true;
-      markEnrolledButton.disabled = true;
-      unmarkEnrolledButton.disabled = true;
-      setStatus(marketingProfileStatus, action === 'mark' ? '正在确认已成交…' : '正在撤销成交确认…', '');
+    async function loadAutomationMember() {
+      if (!singleCustomerAutomationEnabled || !state.external_userid) return null;
+      resetPanelState(automationElements.state, automationElements.detail);
+      automationElements.actions.classList.add('hidden');
+      automationElements.manualNote.classList.add('hidden');
+      const url = buildQueryUrl(root.dataset.automationMemberUrl, {
+        external_contact_id: state.external_userid,
+      });
       try {
-        const result = await fetchJson(targetUrl, {
+        const payload = await requestJson(url);
+        renderAutomationDetail(payload.detail || {});
+        return payload.detail || {};
+      } catch (error) {
+        setStatus(automationElements.state, error.message || '当前无法加载自动化状态', 'error');
+        return null;
+      }
+    }
+
+    async function runAutomationAction(action) {
+      const url = actionUrl(action);
+      if (!url) return null;
+      setStatus(automationElements.feedback, '正在执行：' + (ACTION_LABELS[action] || '操作中') + '…', '');
+      try {
+        const payload = await requestJson(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            external_userid: state.external_userid,
-            owner_userid: state.owner_userid,
+            external_contact_id: state.external_userid,
             operator: state.bind_by_userid || state.owner_userid,
           }),
         });
-        renderMarketingStatus(result.marketing_status || {});
+        if (action === 'push_openclaw' && payload.accepted) {
+          setStatus(automationElements.feedback, '已推送给 OpenClaw', 'success');
+          showToast('已推送给 OpenClaw');
+        } else {
+          setStatus(automationElements.feedback, '操作已执行', 'success');
+          showToast('操作已执行');
+        }
+        return await loadAutomationMember();
       } catch (error) {
-        setStatus(
-          marketingProfileStatus,
-          userMessage(error, action === 'mark' ? '确认成交失败，请稍后重试。' : '撤销成交确认失败，请稍后重试。'),
-          'error',
-        );
-        syncMarketingButtons(state.marketingStatus || {});
+        const payload = error.payload || {};
+        if (payload.status === 'cooldown_blocked') {
+          const message = 'OpenClaw 冷却中，还剩 ' + String(payload.remaining_seconds || 0) + ' 秒';
+          setStatus(automationElements.feedback, message, 'error');
+          showToast(message, 'error');
+          await loadAutomationMember();
+          return null;
+        }
+        const message = error.message || '操作执行失败';
+        setStatus(automationElements.feedback, message, 'error');
+        showToast(message, 'error');
+        await loadAutomationMember();
+        return null;
       }
     }
 
-    async function applyFollowupSwitch(targetSegment) {
-      if (!legacyMarketingProfileEnabled) return;
-      const targetLabel = targetSegment === 'focus' ? '重点跟进' : '普通跟进';
-      switchFocusButton.disabled = true;
-      switchNormalButton.disabled = true;
-      markEnrolledButton.disabled = true;
-      unmarkEnrolledButton.disabled = true;
-      setStatus(marketingProfileStatus, '正在转为' + targetLabel + '…', '');
+    function wireAutomationActions() {
+      if (!automationElements) return;
+      automationElements.buttons.forEach((button) => {
+        button.addEventListener('click', async () => {
+          if (button.disabled) return;
+          const originalText = button.textContent;
+          button.disabled = true;
+          button.textContent = '处理中';
+          try {
+            await runAutomationAction(button.dataset.automationAction);
+          } finally {
+            button.textContent = originalText;
+          }
+        });
+      });
+    }
+
+    async function loadLiveTags() {
+      if (!singleCustomerAutomationEnabled || !state.external_userid) return null;
+      resetPanelState(tagsState, tagsList);
+      const url = buildQueryUrl(root.dataset.profileTagsUrl, { external_userid: state.external_userid });
       try {
-        const result = await fetchJson('/api/sidebar/marketing-status/set-followup-segment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            external_userid: state.external_userid,
-            owner_userid: state.owner_userid,
-            operator: state.bind_by_userid || state.owner_userid,
-            followup_segment: targetSegment,
-          }),
-        });
-        renderMarketingStatus(result.marketing_status || {});
+        const payload = await requestJson(url);
+        const tags = Array.isArray(payload.tags) ? payload.tags : [];
+        if (!tags.length) {
+          showEmptyState(tagsState, tagsList, '当前没有实时标签。');
+          return payload;
+        }
+        tagsList.innerHTML = tags
+          .map((item) => '<span class="pill">' + escapeHtml(item.tag_name || item.tag_id || '未命名标签') + '</span>')
+          .join('');
+        tagsList.classList.remove('hidden');
+        setStatus(tagsState, '已读取 ' + String(tags.length) + ' 个实时标签。', 'success');
+        return payload;
       } catch (error) {
-        setStatus(marketingProfileStatus, userMessage(error, '人工改判失败，请稍后重试。'), 'error');
-        syncMarketingButtons(state.marketingStatus || {});
+        setStatus(tagsState, error.message || '当前无法加载实时标签', 'error');
+        return null;
       }
     }
 
-    function renderLeadPoolClassTermButtons() {
-      if (!legacyLeadPoolClassTermEnabled) {
-        leadPoolClassTermCard.classList.add('hidden');
-        return;
-      }
-      leadPoolClassTermGrid.innerHTML = state.classTermOptions.map((item) => {
-        const activeClass = Number(item.class_term_no) === Number(state.currentClassTermNo) ? ' active' : '';
-        return '<button type="button" class="tag-quick-btn' + activeClass + '" data-class-term-no="' + item.class_term_no + '">' + item.class_term_label + '</button>';
-      }).join('');
-      Array.from(leadPoolClassTermGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
-        button.addEventListener('click', () => applyLeadPoolClassTerm(button.getAttribute('data-class-term-no') || ''));
-      });
-    }
-
-    async function loadLeadPoolClassTermStatus() {
-      if (!legacyLeadPoolClassTermEnabled) return;
-      const params = new URLSearchParams({
-        external_userid: state.external_userid,
-      });
-      if (state.owner_userid) {
-        params.set('owner_userid', state.owner_userid);
-      }
-      const result = await fetchJson('/api/sidebar/lead-pool/status?' + params.toString());
-      state.currentClassTermNo = result.current_class_term_no == null ? null : Number(result.current_class_term_no);
-      state.classTermOptions = Array.isArray(result.class_term_options) ? result.class_term_options : [];
-      renderLeadPoolClassTermButtons();
-      leadPoolClassTermCard.classList.remove('hidden');
-      setStatus(
-        leadPoolClassTermStatus,
-        result.current_class_term_label ? ('当前班期：' + result.current_class_term_label) : '当前未设置班期',
-        result.current_class_term_label ? 'success' : '',
-      );
-    }
-
-    async function applyLeadPoolClassTerm(classTermNo) {
-      if (!legacyLeadPoolClassTermEnabled) return;
-      if (!classTermNo) return;
-      Array.from(leadPoolClassTermGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
-        button.disabled = true;
-      });
-      setStatus(leadPoolClassTermStatus, '正在设置班期...', '');
+    async function loadQuestionnaireAnswers() {
+      if (!singleCustomerAutomationEnabled || !state.external_userid) return null;
+      resetPanelState(questionnaireState, questionnaireList);
+      const url = buildQueryUrl(root.dataset.profileQuestionnaireUrl, { external_userid: state.external_userid });
       try {
-        const result = await fetchJson('/api/sidebar/lead-pool/upsert-class-term', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            external_userid: state.external_userid,
-            owner_userid: state.owner_userid,
-            class_term_no: Number(classTermNo),
-          }),
-        });
-        state.currentClassTermNo = result.current_class_term_no == null ? null : Number(result.current_class_term_no);
-        renderLeadPoolClassTermButtons();
-        setStatus(leadPoolClassTermStatus, '当前班期：' + (result.current_class_term_label || '-'), 'success');
+        const payload = await requestJson(url);
+        const answers = Array.isArray(payload.answers) ? payload.answers : [];
+        if (!answers.length) {
+          showEmptyState(questionnaireState, questionnaireList, '当前没有问卷记录。');
+          return payload;
+        }
+        questionnaireList.innerHTML = answers
+          .map((item) => (
+            '<article class="answer-card">' +
+              '<span>问题</span>' +
+              '<strong>' + escapeHtml(item.question || '未命名问题') + '</strong>' +
+              '<p>' + escapeHtml(item.answer || '未填写') + '</p>' +
+            '</article>'
+          ))
+          .join('');
+        questionnaireList.classList.remove('hidden');
+        setStatus(questionnaireState, '已读取 ' + String(answers.length) + ' 条问卷答案。', 'success');
+        return payload;
       } catch (error) {
-        setStatus(leadPoolClassTermStatus, userMessage(error, '班期设置失败，请稍后重试。'), 'error');
-      } finally {
-        Array.from(leadPoolClassTermGrid.querySelectorAll('.tag-quick-btn')).forEach((button) => {
-          button.disabled = false;
-        });
+        setStatus(questionnaireState, error.message || '当前无法加载问卷记录', 'error');
+        return null;
       }
+    }
+
+    async function loadSidebarPanels() {
+      if (!singleCustomerAutomationEnabled) return;
+      await Promise.allSettled([
+        loadAutomationMember(),
+        loadLiveTags(),
+        loadQuestionnaireAnswers(),
+      ]);
     }
 
     async function resolveContextFromQuery() {
@@ -648,7 +863,7 @@
         return false;
       }
       const currentUrl = window.location.href.split('#')[0];
-      const configPayload = await fetchJson('/api/sidebar/jssdk-config?url=' + encodeURIComponent(currentUrl));
+      const configPayload = await requestJson('/api/sidebar/jssdk-config?url=' + encodeURIComponent(currentUrl));
       writeDebug('jssdk config payload', configPayload);
       return await new Promise((resolve) => {
         let resolved = false;
@@ -737,8 +952,7 @@
       }
       try {
         await loadStatus();
-        await loadMarketingStatus();
-        await loadLeadPoolClassTermStatus();
+        await loadSidebarPanels();
       } catch (error) {
         setStatus(loadingCard.querySelector('.status'), userMessage(error, '客户状态读取失败，请稍后重试。'), 'error');
       }
@@ -748,9 +962,8 @@
       bindButton.disabled = true;
       setStatus(bindStatus, '正在绑定手机号…', '');
       try {
-        const result = await fetchJson('/api/sidebar/bind-mobile', {
+        const result = await requestJson('/api/sidebar/bind-mobile', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             external_userid: state.external_userid,
             owner_userid: state.owner_userid,
@@ -759,10 +972,11 @@
           }),
         });
         renderBound(result.binding || result);
-        await loadMarketingStatus();
-        await loadLeadPoolClassTermStatus();
+        showToast('手机号已绑定');
+        await loadSidebarPanels();
       } catch (error) {
         setStatus(bindStatus, userMessage(error, '绑定失败，请检查手机号后重试。'), 'error');
+        showToast(userMessage(error, '绑定失败，请检查手机号后重试。'), 'error');
       } finally {
         bindButton.disabled = false;
       }
@@ -777,9 +991,8 @@
       confirmRebindButton.disabled = true;
       setStatus(boundStatus, '正在更换手机号…', '');
       try {
-        const result = await fetchJson('/api/sidebar/bind-mobile', {
+        const result = await requestJson('/api/sidebar/bind-mobile', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             external_userid: state.external_userid,
             owner_userid: state.owner_userid,
@@ -789,30 +1002,23 @@
           }),
         });
         renderBound(result.binding || result);
-        await loadMarketingStatus();
-        await loadLeadPoolClassTermStatus();
+        showToast('手机号已更新');
+        await loadSidebarPanels();
       } catch (error) {
         setStatus(boundStatus, userMessage(error, '更换手机号失败，请检查后重试。'), 'error');
+        showToast(userMessage(error, '更换手机号失败，请检查后重试。'), 'error');
       } finally {
         confirmRebindButton.disabled = false;
       }
     });
 
-    switchFocusButton.addEventListener('click', async () => {
-      await applyFollowupSwitch('focus');
-    });
+    if (singleCustomerAutomationEnabled) {
+      wireAutomationActions();
+    }
 
-    switchNormalButton.addEventListener('click', async () => {
-      await applyFollowupSwitch('normal');
-    });
-
-    markEnrolledButton.addEventListener('click', async () => {
-      await applyMarketingAction('mark');
-    });
-
-    unmarkEnrolledButton.addEventListener('click', async () => {
-      await applyMarketingAction('unmark');
-    });
+    if (legacySidebarCardsEnabled) {
+      writeDebug('legacy sidebar cards enabled');
+    }
 
     boot();
   </script>
