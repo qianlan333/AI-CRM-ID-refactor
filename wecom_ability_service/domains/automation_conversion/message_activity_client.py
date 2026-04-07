@@ -4,6 +4,13 @@ from typing import Any
 
 from flask import current_app
 
+_MISSING_KEY_LABELS = {
+    "host": "MESSAGE_ACTIVITY_DB_HOST",
+    "database": "MESSAGE_ACTIVITY_DB_NAME",
+    "user": "MESSAGE_ACTIVITY_DB_USER",
+    "password": "MESSAGE_ACTIVITY_DB_PASS",
+}
+
 
 MESSAGE_ACTIVITY_SQL = """
 SELECT
@@ -42,7 +49,7 @@ def get_message_activity_db_status() -> dict[str, Any]:
     missing = [key for key, value in config.items() if key != "port" and not value]
     return {
         "configured": not missing,
-        "missing_keys": [f"MESSAGE_ACTIVITY_DB_{key.upper()}" for key in missing],
+        "missing_keys": [_MISSING_KEY_LABELS.get(key, f"MESSAGE_ACTIVITY_DB_{key.upper()}") for key in missing],
         "host": config["host"],
         "port": config["port"],
         "database": config["database"],

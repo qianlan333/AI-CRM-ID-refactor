@@ -238,6 +238,9 @@ def admin_automation_conversion_run_message_activity_sync():
     )
     if result.get("ok"):
         return redirect(url_for("api.admin_automation_conversion_settings", message_activity_sync=1), code=302)
+    if result.get("status") == "not_configured":
+        missing_keys = "、".join(result.get("missing_keys") or [])
+        return _render_settings_page(page_error=f"消息库尚未配置，请先补齐 {missing_keys}")
     return _render_settings_page(page_error=str(result.get("error") or "消息活跃同步失败"))
 
 
@@ -368,7 +371,12 @@ def api_admin_automation_conversion_run_message_activity_sync():
         operator_type="system",
         trigger_source=str(payload.get("trigger_source") or request.values.get("trigger_source") or "scheduled").strip() or "scheduled",
     )
-    status_code = 200 if result.get("ok") else 502
+    if result.get("ok"):
+        status_code = 200
+    elif result.get("status") == "not_configured":
+        status_code = 400
+    else:
+        status_code = 502
     return jsonify(result), status_code
 
 
