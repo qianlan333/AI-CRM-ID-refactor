@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
+from io import BytesIO
 
 import pytest
 
@@ -12,6 +14,24 @@ from wecom_ability_service.domains.automation_conversion.service import (
     run_message_activity_sync,
     sync_member_activation,
 )
+
+
+def _test_png_bytes() -> bytes:
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+b5f0AAAAASUVORK5CYII="
+    )
+
+
+def _build_stage_send_form_data(
+    *,
+    content: str = "",
+    operator: str = "",
+    images: list[tuple[str, bytes, str]] | None = None,
+):
+    payload = {"content": content, "operator": operator}
+    if images:
+        payload["images"] = [(BytesIO(file_bytes), file_name, mime_type) for file_name, file_bytes, mime_type in images]
+    return payload
 
 
 @pytest.fixture()
@@ -1483,8 +1503,10 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
     assert normal_response.status_code == 200
     assert "官方群发" in normal_html
     assert "文本 + 图片" in normal_html
-    assert "image media_id" in normal_html
-    assert "attachment_media_ids" not in normal_html
+    assert 'id="stage-send-image-input"' in normal_html
+    assert "添加图片" in normal_html
+    assert "发送前预览" in normal_html
+    assert "/manual-send/preview" in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/manual-send" in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/focus-send-batches" not in normal_html
 
@@ -1795,6 +1817,53 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
         assert row["sent_count"] == 2
 
 
+def test_manual_send_preview_supports_local_images_and_uses_qianlan_sender(app, client):
+    _seed_contact(app, external_userid="wm_manual_preview_001", mobile="13800009291", owner_userid="WangWei", customer_name="预览客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_preview_001",
+        phone="13800009291",
+        owner_staff_id="WangWei",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/stage/new-user/manual-send/preview",
+        data=_build_stage_send_form_data(
+            content="图片预览🙂",
+            images=[("hello.png", _test_png_bytes(), "image/png")],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["content_preview"] == "图片预览🙂"
+    assert payload["image_count"] == 1
+    assert payload["eligible_count"] == 1
+    assert payload["final_targets"][0]["owner_userid"] == "QianLan"
+    assert payload["final_targets"][0]["owner_display_name"] == "QianLan"
+
+
+def test_manual_send_preview_rejects_fourth_local_image(app, client):
+    response = client.post(
+        "/api/admin/automation-conversion/stage/new-user/manual-send/preview",
+        data=_build_stage_send_form_data(
+            images=[(f"img-{index}.png", _test_png_bytes(), "image/png") for index in range(1, 5)],
+        ),
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["error"] == "at most 3 images are allowed"
+
+
 def test_manual_send_silent_stage_can_send(app, client, monkeypatch):
     _seed_contact(app, external_userid="wm_manual_silent_001", mobile="13800009211", owner_userid="sales_silent", customer_name="沉默客户")
     _seed_automation_member(
@@ -1925,13 +1994,19 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     )
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: {"task_id": 705, "wecom_result": {"msgid": "msg-705"}},
+        lambda task_type, fn_name, payload: captured_payloads.append(dict(payload)) or {"task_id": 705, "wecom_result": {"msgid": "msg-705"}},
     )
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+    captured_payloads: list[dict[str, object]] = []
 
     response = client.post(
         "/admin/automation-conversion/stage/new-user/send",
-        data={"content": "页面触达", "image_media_ids": "img-page-001\nimg-page-002", "operator": "tester"},
+        data=_build_stage_send_form_data(
+            content="页面触达",
+            operator="tester",
+            images=[("page.png", _test_png_bytes(), "image/png")],
+        ),
+        content_type="multipart/form-data",
     )
     html = response.get_data(as_text=True)
 
@@ -1939,7 +2014,11 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     assert "官方群发已创建" in html
     assert "本次执行结果" in html
     assert "发送记录 ID" in html
-    assert "image_media_ids" in html
+    assert 'id="stage-send-image-input"' in html
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0]["sender"] == ["QianLan"]
+    assert "images" in captured_payloads[0]
+    assert "image_media_ids" not in captured_payloads[0]
 
 
 def test_admin_stage_send_page_shows_focus_batch_summary(app, client, monkeypatch):

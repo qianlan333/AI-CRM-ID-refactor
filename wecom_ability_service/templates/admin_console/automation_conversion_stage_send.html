@@ -1,5 +1,127 @@
 {% extends "admin_console/base.html" %}
 
+{% block head_extra %}
+{{ super() }}
+<style>
+  .image-picker {
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    border-radius: 24px;
+    padding: 20px;
+    background: rgba(255, 251, 245, 0.72);
+  }
+  .image-picker-head,
+  .preview-topline {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .image-input-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .image-thumb-list {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .image-thumb-card {
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    border-radius: 18px;
+    padding: 12px;
+    background: #fff;
+    display: grid;
+    gap: 10px;
+  }
+  .image-thumb-card img {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    border-radius: 14px;
+    background: rgba(99, 77, 45, 0.08);
+  }
+  .image-thumb-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    color: rgba(72, 56, 33, 0.8);
+  }
+  .preview-panel {
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    border-radius: 24px;
+    padding: 20px;
+    background: rgba(255, 251, 245, 0.72);
+    display: grid;
+    gap: 16px;
+  }
+  .preview-copy {
+    display: grid;
+    gap: 6px;
+  }
+  .preview-hint {
+    color: rgba(72, 56, 33, 0.72);
+    font-size: 14px;
+  }
+  .inline-note {
+    color: rgba(72, 56, 33, 0.82);
+    font-size: 14px;
+  }
+  .tiny-metric {
+    min-width: 120px;
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    border-radius: 18px;
+    background: #fff;
+    padding: 14px 16px;
+    text-align: right;
+  }
+  .tiny-metric span {
+    display: block;
+    color: rgba(72, 56, 33, 0.68);
+    font-size: 13px;
+  }
+  .tiny-metric strong {
+    display: block;
+    margin-top: 4px;
+    font-size: 28px;
+    line-height: 1;
+  }
+  .preview-table-wrap {
+    overflow: auto;
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    border-radius: 18px;
+    background: #fff;
+  }
+  .preview-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .preview-table th,
+  .preview-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(99, 77, 45, 0.08);
+    text-align: left;
+    vertical-align: top;
+  }
+  .preview-table th {
+    color: rgba(72, 56, 33, 0.72);
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(252, 246, 237, 0.92);
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    word-break: break-all;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <section class="admin-card">
   <div class="admin-card-head">
@@ -159,31 +281,238 @@
   <div class="admin-card-head">
     <div>
       <h2>官方群发</h2>
-      <p>非重点阶段这轮只支持文本 + 图片。图片按 image media_id 填写，提交后直接按当前阶段全量名单执行。</p>
+      <p>直接复用运营管理的群发能力：支持文本、emoji 和最多 3 张本地图片。发送人固定为 QianLan，提交后直接按当前阶段全量名单执行。</p>
     </div>
   </div>
-  <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ send_payload.manual_send_form_action }}">
+  <form id="stage-manual-send-form" class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ send_payload.manual_send_form_action }}" enctype="multipart/form-data">
     <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
     <label class="admin-field">
       <span>群发文本</span>
-      <textarea name="content" rows="6" placeholder="输入本次官方群发的正文">{{ send_payload.form.content }}</textarea>
+      <textarea id="stage-send-text" name="content" rows="6" placeholder="输入本次官方群发的正文，支持 emoji">{{ send_payload.form.content }}</textarea>
     </label>
-    <label class="admin-field">
-      <span>图片 media_id</span>
-      <textarea name="image_media_ids" rows="4" placeholder="每行一个 image media_id">{{ send_payload.form.image_media_ids }}</textarea>
-    </label>
+    <section class="image-picker">
+      <div class="image-picker-head">
+        <div>
+          <strong>附加图片</strong>
+          <div class="preview-hint">最多 3 张。可纯文本、纯图片，或文本 + 图片一起发送。</div>
+        </div>
+        <div class="admin-toolbar">
+          <span id="stage-send-image-count" class="preview-hint">已选 0/3 张</span>
+          <button id="pick-stage-send-images-btn" class="admin-button admin-button--secondary" type="button">添加图片</button>
+        </div>
+      </div>
+      <input id="stage-send-image-input" class="image-input-hidden" type="file" name="images" accept="image/*" multiple>
+      <div id="stage-send-image-list" class="image-thumb-list">
+        <div class="admin-empty">暂未添加图片</div>
+      </div>
+    </section>
+    <section class="preview-panel">
+      <div class="preview-topline">
+        <div class="preview-copy">
+          <strong>最终可发送名单</strong>
+          <div id="stage-send-preview-skipped-summary" class="preview-hint">默认展示当前阶段内有 external_userid 的客户。</div>
+          <div id="stage-send-preview-message-summary" class="inline-note">当前未附加图片</div>
+        </div>
+        <div class="tiny-metric">
+          <span>可发人数</span>
+          <strong id="stage-send-preview-eligible-count">0</strong>
+        </div>
+      </div>
+      <div class="preview-table-wrap">
+        <table class="preview-table">
+          <thead>
+            <tr>
+              <th>客户昵称</th>
+              <th>手机号</th>
+              <th>发送人</th>
+              <th>消息</th>
+              <th>external_userid</th>
+            </tr>
+          </thead>
+          <tbody id="stage-send-preview-target-body">
+            <tr><td colspan="5" class="admin-empty">还没有预览结果</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
     <label class="admin-field">
       <span>操作人</span>
       <input type="text" name="operator" placeholder="填写本次发起人" value="{{ send_payload.form.operator }}">
     </label>
     <div class="admin-state admin-state--inline">
       <strong>当前为官方群发壳子</strong>
-      <span>实际执行接口是 {{ send_payload.manual_send_url }}，当前页面会直接展示本次发送结果摘要。</span>
+      <span>预览接口是 {{ send_payload.manual_send_preview_url }}，实际执行接口是 {{ send_payload.manual_send_url }}，发送人固定为 QianLan。</span>
     </div>
     <div class="admin-toolbar">
-      <button class="admin-button admin-button--primary" type="submit">创建官方群发</button>
+      <button id="stage-send-preview-btn" class="admin-button admin-button--ghost" type="button">发送前预览</button>
+      <button class="admin-button admin-button--primary" type="submit">确认群发</button>
     </div>
   </form>
 </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+{% if send_payload.mode != "focus_ai" %}
+<script>
+  const MAX_STAGE_SEND_IMAGES = 3;
+  const MAX_STAGE_SEND_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+  const state = { images: [] };
+  const els = {
+    form: document.getElementById('stage-manual-send-form'),
+    text: document.getElementById('stage-send-text'),
+    imageInput: document.getElementById('stage-send-image-input'),
+    pickImagesBtn: document.getElementById('pick-stage-send-images-btn'),
+    imageCount: document.getElementById('stage-send-image-count'),
+    imageList: document.getElementById('stage-send-image-list'),
+    previewBtn: document.getElementById('stage-send-preview-btn'),
+    previewEligibleCount: document.getElementById('stage-send-preview-eligible-count'),
+    previewSkippedSummary: document.getElementById('stage-send-preview-skipped-summary'),
+    previewMessageSummary: document.getElementById('stage-send-preview-message-summary'),
+    previewTargetBody: document.getElementById('stage-send-preview-target-body'),
+  };
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function buildMessageSummary(content, imageCount) {
+    const hasText = Boolean(String(content || '').trim());
+    const normalizedImageCount = Number(imageCount || 0);
+    if (hasText && normalizedImageCount > 0) return '文本 + 图片 ' + normalizedImageCount + ' 张';
+    if (normalizedImageCount > 0) return '图片 ' + normalizedImageCount + ' 张';
+    if (hasText) return '纯文本';
+    return '未配置发送内容';
+  }
+
+  function resetPreview() {
+    els.previewEligibleCount.textContent = '0';
+    els.previewSkippedSummary.textContent = '默认展示当前阶段内有 external_userid 的客户。';
+    els.previewMessageSummary.textContent = buildMessageSummary('', 0);
+    els.previewTargetBody.innerHTML = '<tr><td colspan="5" class="admin-empty">还没有预览结果</td></tr>';
+  }
+
+  function selectedImageCountText() {
+    return '已选 ' + state.images.length + '/' + MAX_STAGE_SEND_IMAGES + ' 张';
+  }
+
+  function renderImages() {
+    els.imageCount.textContent = selectedImageCountText();
+    if (!state.images.length) {
+      els.imageList.innerHTML = '<div class="admin-empty">暂未添加图片</div>';
+      return;
+    }
+    els.imageList.innerHTML = state.images.map((image, index) => (
+      '<article class="image-thumb-card">'
+      + '<img src="' + escapeHtml(image.previewUrl || '') + '" alt="已选图片 ' + (index + 1) + '">'
+      + '<div class="image-thumb-meta">'
+      + '<span>' + escapeHtml(image.file.name || ('图片 ' + (index + 1))) + '</span>'
+      + '<button class="admin-button admin-button--secondary" type="button" data-image-index="' + index + '">移除</button>'
+      + '</div>'
+      + '</article>'
+    )).join('');
+  }
+
+  function revokeImageUrls() {
+    state.images.forEach((image) => {
+      if (image.previewUrl) URL.revokeObjectURL(image.previewUrl);
+    });
+  }
+
+  function buildFormData() {
+    const formData = new FormData();
+    formData.append('content', String(els.text.value || ''));
+    formData.append('operator', String(els.form.querySelector('input[name="operator"]').value || ''));
+    state.images.forEach((image) => {
+      formData.append('images', image.file);
+    });
+    return formData;
+  }
+
+  async function fetchJson(url, options) {
+    const response = await fetch(url, options);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      throw new Error(String(payload.error || payload.message || '请求失败'));
+    }
+    return payload;
+  }
+
+  function renderPreview(payload) {
+    els.previewEligibleCount.textContent = String(payload.eligible_count || 0);
+    els.previewSkippedSummary.textContent = payload.skipped_summary || '本次预览没有跳过记录。';
+    els.previewMessageSummary.textContent = '本次消息：' + buildMessageSummary(payload.content_preview || '', payload.image_count || 0);
+    const targets = payload.final_targets || [];
+    els.previewTargetBody.innerHTML = targets.length
+      ? targets.map((item) => (
+        '<tr>'
+        + '<td>' + escapeHtml(item.customer_name || '-') + '</td>'
+        + '<td>' + escapeHtml(item.mobile || '-') + '</td>'
+        + '<td>' + escapeHtml(item.owner_display_name || item.owner_userid || '-') + '</td>'
+        + '<td>' + escapeHtml(buildMessageSummary(payload.content_preview || '', payload.image_count || 0)) + '</td>'
+        + '<td><div class="mono">' + escapeHtml(item.external_userid || '-') + '</div></td>'
+        + '</tr>'
+      )).join('')
+      : '<tr><td colspan="5" class="admin-empty">当前预览没有可发送目标</td></tr>';
+  }
+
+  els.pickImagesBtn.addEventListener('click', () => els.imageInput.click());
+  els.imageInput.addEventListener('change', (event) => {
+    const files = Array.from(event.target.files || []);
+    els.imageInput.value = '';
+    if (!files.length) return;
+    if (state.images.length + files.length > MAX_STAGE_SEND_IMAGES) {
+      window.alert('最多只能添加 3 张图片');
+      return;
+    }
+    const invalidFile = files.find((file) => !String(file.type || '').startsWith('image/'));
+    if (invalidFile) {
+      window.alert('只能选择图片文件');
+      return;
+    }
+    const oversizedFile = files.find((file) => Number(file.size || 0) > MAX_STAGE_SEND_IMAGE_SIZE_BYTES);
+    if (oversizedFile) {
+      window.alert('图片大小不能超过 5MB');
+      return;
+    }
+    state.images = state.images.concat(files.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })));
+    renderImages();
+    resetPreview();
+  });
+  els.imageList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-image-index]');
+    if (!button) return;
+    const imageIndex = Number(button.getAttribute('data-image-index'));
+    if (Number.isNaN(imageIndex)) return;
+    const removed = state.images.splice(imageIndex, 1);
+    if (removed[0] && removed[0].previewUrl) URL.revokeObjectURL(removed[0].previewUrl);
+    renderImages();
+    resetPreview();
+  });
+  els.previewBtn.addEventListener('click', async () => {
+    if (!String(els.text.value || '').trim() && !state.images.length) {
+      window.alert('请先填写发送内容或添加图片');
+      return;
+    }
+    try {
+      const payload = await fetchJson('{{ send_payload.manual_send_preview_url }}', {
+        method: 'POST',
+        body: buildFormData(),
+      });
+      renderPreview(payload);
+    } catch (error) {
+      window.alert((error && error.message) || '预览失败');
+    }
+  });
+  window.addEventListener('beforeunload', revokeImageUrls);
+  renderImages();
+  resetPreview();
+</script>
 {% endif %}
 {% endblock %}

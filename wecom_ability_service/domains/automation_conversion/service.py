@@ -1948,11 +1948,11 @@ def send_stage_manual_message(
     route_key: str,
     content: str = "",
     image_media_ids: list[str] | None = None,
+    images: list[dict[str, Any]] | None = None,
     operator_id: str = "",
 ) -> dict[str, Any]:
     refresh_expired_silent_members()
-    definition = _manual_send_stage_definition(route_key)
-    pool = _normalized_text(definition.get("pool"))
+    definition, pool, sendable_items, total_target_count, skipped_reasons = _build_stage_manual_send_plan(route_key)
     normalized_operator_id = _normalized_text(operator_id) or "crm_console"
     normalized_content = _normalized_text(content)
     normalized_image_media_ids = _normalize_manual_send_image_media_ids(image_media_ids)
@@ -1960,26 +1960,9 @@ def send_stage_manual_message(
         {
             "content": normalized_content,
             "image_media_ids": normalized_image_media_ids,
+            "images": list(images or []),
         }
     )
-    members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool)]
-    total_target_count = len(members)
-    skipped_reasons: dict[str, int] = {}
-    sendable_items: list[dict[str, Any]] = []
-    for member in members:
-        external_userid = _normalized_text(member.get("external_contact_id"))
-        if not external_userid:
-            skipped_reasons["missing_external_userid"] = int(skipped_reasons.get("missing_external_userid") or 0) + 1
-            continue
-        sendable_items.append(
-            {
-                "member_id": int(member.get("id") or 0),
-                "external_userid": external_userid,
-                "owner_userid": DEFAULT_OWNER_STAFF_ID,
-                "owner_display_name": DEFAULT_OWNER_STAFF_ID,
-            }
-        )
-
     skipped_count = sum(int(value or 0) for value in skipped_reasons.values())
     result = {
         "ok": True,
@@ -2060,6 +2043,81 @@ def send_stage_manual_message(
         }
     )
     return result
+
+
+def _build_stage_manual_send_plan(route_key: str) -> tuple[dict[str, Any], str, list[dict[str, Any]], int, dict[str, int]]:
+    definition = _manual_send_stage_definition(route_key)
+    pool = _normalized_text(definition.get("pool"))
+    members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool)]
+    skipped_reasons: dict[str, int] = {}
+    sendable_items: list[dict[str, Any]] = []
+    for member in members:
+        external_userid = _normalized_text(member.get("external_contact_id"))
+        if not external_userid:
+            skipped_reasons["missing_external_userid"] = int(skipped_reasons.get("missing_external_userid") or 0) + 1
+            continue
+        profile = _load_profile(external_userid, _normalized_text(member.get("phone")))
+        sendable_items.append(
+            {
+                "member_id": int(member.get("id") or 0),
+                "external_userid": external_userid,
+                "mobile": _normalized_text(profile.get("phone")) or _normalized_text(member.get("phone")),
+                "customer_name": _normalized_text(profile.get("customer_name")) or external_userid,
+                "owner_userid": DEFAULT_OWNER_STAFF_ID,
+                "owner_display_name": DEFAULT_OWNER_STAFF_ID,
+            }
+        )
+    return definition, pool, sendable_items, len(members), skipped_reasons
+
+
+def preview_stage_manual_message(
+    *,
+    route_key: str,
+    content: str = "",
+    image_media_ids: list[str] | None = None,
+    images: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    refresh_expired_silent_members()
+    definition, pool, sendable_items, total_target_count, skipped_reasons = _build_stage_manual_send_plan(route_key)
+    normalized_content = _normalized_text(content)
+    normalized_image_media_ids = _normalize_manual_send_image_media_ids(image_media_ids)
+    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(
+        {
+            "content": normalized_content,
+            "image_media_ids": normalized_image_media_ids,
+            "images": list(images or []),
+        }
+    )
+    skipped_count = sum(int(value or 0) for value in skipped_reasons.values())
+    return {
+        "ok": True,
+        "stage_key": _normalized_text(definition.get("route_key")),
+        "stage_label": _normalized_text(definition.get("label")),
+        "pool_key": pool,
+        "pool_label": _pool_label(pool),
+        "sender_userid": DEFAULT_OWNER_STAFF_ID,
+        "selected_count": total_target_count,
+        "total_target_count": total_target_count,
+        "eligible_count": len(sendable_items),
+        "sendable_count": len(sendable_items),
+        "skipped_count": skipped_count,
+        "skipped_reasons": skipped_reasons,
+        "skipped_summary": user_ops_page_service._summarize_skipped_by_reason(skipped_reasons),
+        "content_preview": content_preview,
+        "image_count": image_count,
+        "has_body": user_ops_page_service.has_private_message_body(task_payload),
+        "final_targets": [
+            {
+                "member_id": int(item.get("member_id") or 0),
+                "external_userid": _normalized_text(item.get("external_userid")),
+                "customer_name": _normalized_text(item.get("customer_name")),
+                "mobile": _normalized_text(item.get("mobile")),
+                "owner_userid": DEFAULT_OWNER_STAFF_ID,
+                "owner_display_name": DEFAULT_OWNER_STAFF_ID,
+            }
+            for item in sendable_items
+        ],
+    }
 
 
 def _focus_batch_detail_payload(batch_row: dict[str, Any] | None, *, item_limit: int = 12) -> dict[str, Any]:

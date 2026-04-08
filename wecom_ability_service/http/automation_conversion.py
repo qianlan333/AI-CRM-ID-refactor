@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import imghdr
 import json
 
 from flask import jsonify, redirect, request, url_for
@@ -11,6 +13,7 @@ from ..domains.automation_conversion import (
     get_focus_send_batch_detail,
     get_member_detail,
     get_overview_payload,
+    preview_stage_manual_message,
     get_settings_payload,
     get_stage_detail_payload,
     mark_won,
@@ -24,8 +27,18 @@ from ..domains.automation_conversion import (
     set_follow_type,
     unmark_won,
 )
+from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
 from .admin_console import _breadcrumb_items, _render_admin_template
 from .internal_auth import ensure_admin_console_action_token, require_internal_api_token, validate_admin_console_action_token
+
+
+MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
 
 
 def _query_text(name: str) -> str:
@@ -95,6 +108,33 @@ def _split_multiline_tokens(raw_value: str) -> list[str]:
     return tokens
 
 
+def _normalize_manual_send_images() -> list[dict[str, object]]:
+    files = [item for item in list(request.files.getlist("images") or []) if getattr(item, "filename", "")]
+    if len(files) > MAX_PRIVATE_MESSAGE_IMAGES:
+        raise ValueError(f"at most {MAX_PRIVATE_MESSAGE_IMAGES} images are allowed")
+
+    images: list[dict[str, object]] = []
+    for index, file_storage in enumerate(files, start=1):
+        file_name = str(getattr(file_storage, "filename", "") or f"image-{index}.png").strip() or f"image-{index}.png"
+        mime_type = str(getattr(file_storage, "mimetype", "") or "").strip().lower()
+        if not mime_type.startswith("image/"):
+            raise ValueError("only image files are allowed")
+        file_bytes = file_storage.read()
+        if len(file_bytes) > MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES:
+            raise ValueError("image file is too large (max 5MB)")
+        detected_type = ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES.get(str(imghdr.what(None, h=file_bytes) or "").lower(), "")
+        if not detected_type:
+            raise ValueError("only image files are allowed")
+        images.append(
+            {
+                "file_name": file_name,
+                "content_type": detected_type,
+                "data_base64": base64.b64encode(file_bytes).decode("ascii"),
+            }
+        )
+    return images
+
+
 def _build_manual_send_request_payload() -> dict[str, object]:
     json_payload = request.get_json(silent=True)
     if isinstance(json_payload, dict):
@@ -108,11 +148,15 @@ def _build_manual_send_request_payload() -> dict[str, object]:
             "image_media_ids": image_media_ids,
             "operator_id": _operator_from_request(),
         }
-    return {
+    payload: dict[str, object] = {
         "content": str(request.form.get("content") or "").strip(),
         "image_media_ids": _split_multiline_tokens(request.form.get("image_media_ids", "")),
         "operator_id": _operator_from_request(),
     }
+    images = _normalize_manual_send_images()
+    if images:
+        payload["images"] = images
+    return payload
 
 
 def _settings_notice() -> str:
@@ -197,6 +241,7 @@ def _stage_send_payload(stage_key: str) -> dict[str, object]:
         "send_payload": {
             "mode": send_mode,
             "manual_send_url": url_for("api.api_admin_automation_conversion_stage_manual_send", stage_key=stage_key),
+            "manual_send_preview_url": url_for("api.api_admin_automation_conversion_stage_manual_send_preview", stage_key=stage_key),
             "manual_send_form_action": url_for("api.admin_automation_conversion_stage_send_submit", stage_key=stage_key),
             "focus_send_batches_url": url_for("api.api_admin_automation_conversion_stage_focus_send_batches", stage_key=stage_key),
             "focus_send_batches_form_action": url_for("api.admin_automation_conversion_stage_send_submit", stage_key=stage_key),
@@ -569,6 +614,19 @@ def api_admin_automation_conversion_stage_manual_send(stage_key: str):
     return jsonify(result), status_code
 
 
+def api_admin_automation_conversion_stage_manual_send_preview(stage_key: str):
+    try:
+        payload = _build_manual_send_request_payload()
+        payload.pop("operator_id", None)
+        result = preview_stage_manual_message(route_key=stage_key, **payload)
+    except ValueError as exc:
+        message = str(exc)
+        if message == "invalid stage":
+            return jsonify({"ok": False, "error": message}), 404
+        return jsonify({"ok": False, "error": message}), 400
+    return jsonify(result)
+
+
 def api_admin_automation_conversion_stage_focus_send_batches(stage_key: str):
     try:
         result = create_focus_send_batch(route_key=stage_key, operator_id=_operator_from_request(), operator_type="user")
@@ -656,6 +714,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_save_settings)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_generate_default_channel)
+    bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview", methods=["POST"])(api_admin_automation_conversion_stage_manual_send_preview)
     bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send", methods=["POST"])(api_admin_automation_conversion_stage_manual_send)
     bp.route("/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches", methods=["POST"])(api_admin_automation_conversion_stage_focus_send_batches)
     bp.route("/api/admin/automation-conversion/focus-send-batches/<batch_id>", methods=["GET"])(api_admin_automation_conversion_focus_send_batch_detail)
