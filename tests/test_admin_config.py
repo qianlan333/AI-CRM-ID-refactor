@@ -137,6 +137,7 @@ def _signup_conversion_config_payload(
     enabled: bool = True,
     core_threshold: int = 3,
     top_threshold: int = 4,
+    day_start_hour: int = 9,
     quiet_hour_start: int = 23,
     timezone: str = "Asia/Shanghai",
     question_ids: list[int] | None = None,
@@ -150,6 +151,7 @@ def _signup_conversion_config_payload(
         "questionnaire_id": int(questionnaire_seed["questionnaire_id"]),
         "core_threshold": core_threshold,
         "top_threshold": top_threshold,
+        "day_start_hour": day_start_hour,
         "quiet_hour_start": quiet_hour_start,
         "timezone": timezone,
         "silent_threshold_days_by_pool": silent_threshold_days_by_pool
@@ -663,6 +665,8 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
     assert "沉默池" in visible_text
     assert "已成交" in visible_text
     assert "阶段分栏" in visible_text
+    assert "自动启动时间窗" in visible_text
+    assert "09:00 - 23:00" in visible_text
     assert "新用户池" in visible_text
     assert "进入设置页" in visible_text
     assert "进入调试页" in visible_text
@@ -711,6 +715,7 @@ def test_admin_automation_conversion_settings_page_uses_visual_rule_editor(app, 
         "/api/admin/marketing-automation/config",
         json=_signup_conversion_config_payload(
             seed,
+            day_start_hour=8,
             question_ids=[seed["question_ids"][0]],
             hit_option_ids_by_question={seed["question_ids"][0]: seed["option_ids_by_question"][seed["question_ids"][0]]},
         ),
@@ -722,9 +727,12 @@ def test_admin_automation_conversion_settings_page_uses_visual_rule_editor(app, 
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
+    assert "自动启动时间窗" in visible_text
+    assert "白天开始小时" in visible_text
     assert "关键题与命中答案" in visible_text
     assert "新增关键题" in visible_text
     assert "关键题规则 JSON" not in visible_text
+    assert 'name="day_start_hour"' in html
     assert 'id="question-rule-editor-root"' in html
     assert 'type="hidden" name="question_rules_json"' in html
     assert "关键问题1" in html
@@ -744,6 +752,7 @@ def test_admin_automation_conversion_settings_save_form_persists_visual_rules(ap
             "questionnaire_id": str(seed["questionnaire_id"]),
             "core_threshold": "2",
             "top_threshold": "3",
+            "day_start_hour": "9",
             "quiet_hour_start": "22",
             "timezone": "Asia/Shanghai",
             "silent_threshold_new_user": "7",
@@ -772,6 +781,8 @@ def test_admin_automation_conversion_settings_save_form_persists_visual_rules(ap
         assert config["questionnaire_id"] == seed["questionnaire_id"]
         assert config["core_threshold"] == 2
         assert config["top_threshold"] == 3
+        assert config["day_start_hour"] == 9
+        assert config["quiet_hour_start"] == 22
         assert config["silent_threshold_days_by_pool"]["inactive_focus"] == 9
         assert len(config["question_rules"]) == 1
         rule = config["question_rules"][0]
@@ -787,6 +798,95 @@ def test_admin_automation_conversion_settings_save_form_persists_visual_rules(ap
         assert rule["sort_order"] == 1
 
 
+def test_admin_automation_conversion_settings_save_form_persists_default_channel_fields(app, client):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=185, question_count=2)
+    question_id = seed["question_ids"][0]
+    option_id = seed["option_ids_by_question"][question_id][0]
+
+    response = client.post(
+        "/admin/automation-conversion/settings/save",
+        data={
+            "enabled": "1",
+            "questionnaire_id": str(seed["questionnaire_id"]),
+            "core_threshold": "2",
+            "top_threshold": "3",
+            "day_start_hour": "9",
+            "quiet_hour_start": "22",
+            "timezone": "Asia/Shanghai",
+            "welcome_message": "保存后的默认欢迎语",
+            "auto_accept_friend": "1",
+            "silent_threshold_new_user": "7",
+            "silent_threshold_inactive_normal": "8",
+            "silent_threshold_inactive_focus": "9",
+            "silent_threshold_active_normal": "10",
+            "silent_threshold_active_focus": "11",
+            "question_rules_json": json.dumps(
+                [
+                    {
+                        "questionnaire_question_id": question_id,
+                        "hit_option_ids_json": [option_id],
+                        "sort_order": 1,
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+        },
+    )
+
+    assert response.status_code == 302
+
+    page = client.get("/admin/automation-conversion/settings")
+    html = page.get_data(as_text=True)
+
+    assert page.status_code == 200
+    assert "保存后的默认欢迎语" in html
+    assert "免验证直接添加好友" in html
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT welcome_message, auto_accept_friend, status
+            FROM automation_channel
+            WHERE channel_code = 'default_qrcode'
+            """
+        ).fetchone()
+        assert row is not None
+        assert row["welcome_message"] == "保存后的默认欢迎语"
+        assert bool(row["auto_accept_friend"]) is True
+        assert row["status"] == "configured"
+
+
+def test_admin_automation_conversion_settings_save_form_rejects_invalid_auto_start_window(app, client):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=184, question_count=2)
+
+    response = client.post(
+        "/admin/automation-conversion/settings/save",
+        data={
+            "enabled": "1",
+            "questionnaire_id": str(seed["questionnaire_id"]),
+            "core_threshold": "2",
+            "top_threshold": "3",
+            "day_start_hour": "23",
+            "quiet_hour_start": "23",
+            "timezone": "Asia/Shanghai",
+            "silent_threshold_new_user": "7",
+            "silent_threshold_inactive_normal": "8",
+            "silent_threshold_inactive_focus": "9",
+            "silent_threshold_active_normal": "10",
+            "silent_threshold_active_focus": "11",
+            "question_rules_json": json.dumps([], ensure_ascii=False),
+        },
+    )
+
+    html = response.get_data(as_text=True)
+    visible_text = _visible_text(html)
+
+    assert response.status_code == 200
+    assert "day_start_hour must be &lt; quiet_hour_start" in html
+    assert "白天开始小时" in visible_text
+    assert 'value="23"' in html
+
+
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):
     _seed_automation_conversion_stage_board(app)
 
@@ -797,7 +897,9 @@ def test_admin_automation_conversion_stage_detail_page_renders_filtered_customer
     assert response.status_code == 200
     assert "未激活重点跟进池" in visible_text
     assert "重点跟进" in visible_text
-    assert "普通跟进" in visible_text
+    assert "总人数" in visible_text
+    assert "今日新增" in visible_text
+    assert "创建群发" in visible_text
     assert "wm_stage_inactive_focus_001" in visible_text
     assert "wm_stage_active_focus_001" not in visible_text
     assert "手机号或客户编号" in visible_text

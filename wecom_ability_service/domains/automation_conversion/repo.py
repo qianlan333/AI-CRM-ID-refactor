@@ -561,6 +561,250 @@ def insert_message_activity_sync_item(payload: dict[str, Any]) -> dict[str, Any]
     return dict(row) if row else {}
 
 
+def insert_focus_send_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_focus_send_batch (
+            stage_key,
+            pool_key,
+            operator_type,
+            operator_id,
+            status,
+            total_count,
+            sent_count,
+            failed_count,
+            skipped_count,
+            cancelled_count,
+            next_run_at,
+            last_run_at,
+            created_at,
+            updated_at,
+            finished_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("stage_key")),
+            _normalized_text(payload.get("pool_key")),
+            _normalized_text(payload.get("operator_type")),
+            _normalized_text(payload.get("operator_id")),
+            _normalized_text(payload.get("status")),
+            int(payload.get("total_count") or 0),
+            int(payload.get("sent_count") or 0),
+            int(payload.get("failed_count") or 0),
+            int(payload.get("skipped_count") or 0),
+            int(payload.get("cancelled_count") or 0),
+            _normalized_text(payload.get("next_run_at")),
+            _normalized_text(payload.get("last_run_at")),
+            _normalized_text(payload.get("created_at")),
+            _normalized_text(payload.get("updated_at")),
+            _normalized_text(payload.get("finished_at")),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_focus_send_batch(batch_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        UPDATE automation_focus_send_batch
+        SET stage_key = ?,
+            pool_key = ?,
+            operator_type = ?,
+            operator_id = ?,
+            status = ?,
+            total_count = ?,
+            sent_count = ?,
+            failed_count = ?,
+            skipped_count = ?,
+            cancelled_count = ?,
+            next_run_at = ?,
+            last_run_at = ?,
+            updated_at = ?,
+            finished_at = ?
+        WHERE id = ?
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("stage_key")),
+            _normalized_text(payload.get("pool_key")),
+            _normalized_text(payload.get("operator_type")),
+            _normalized_text(payload.get("operator_id")),
+            _normalized_text(payload.get("status")),
+            int(payload.get("total_count") or 0),
+            int(payload.get("sent_count") or 0),
+            int(payload.get("failed_count") or 0),
+            int(payload.get("skipped_count") or 0),
+            int(payload.get("cancelled_count") or 0),
+            _normalized_text(payload.get("next_run_at")),
+            _normalized_text(payload.get("last_run_at")),
+            _normalized_text(payload.get("updated_at")),
+            _normalized_text(payload.get("finished_at")),
+            int(batch_id),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def get_focus_send_batch(batch_id: int) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_focus_send_batch
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(batch_id),),
+    )
+
+
+def find_active_focus_send_batch_by_stage(stage_key: str) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_focus_send_batch
+        WHERE stage_key = ?
+          AND status IN ('pending', 'running')
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (_normalized_text(stage_key),),
+    )
+
+
+def list_due_focus_send_batches(*, due_at: str, limit: int = 20) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_focus_send_batch
+        WHERE status IN ('pending', 'running')
+          AND (next_run_at = '' OR next_run_at <= ?)
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (_normalized_text(due_at), int(limit)),
+    )
+
+
+def insert_focus_send_batch_item(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_focus_send_batch_item (
+            batch_id,
+            member_id,
+            external_contact_id,
+            phone,
+            position_index,
+            status,
+            detail,
+            result_payload,
+            created_at,
+            updated_at,
+            started_at,
+            finished_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING *
+        """,
+        (
+            int(payload.get("batch_id") or 0),
+            payload.get("member_id"),
+            _normalized_text(payload.get("external_contact_id")),
+            _normalized_text(payload.get("phone")),
+            int(payload.get("position_index") or 0),
+            _normalized_text(payload.get("status")),
+            _normalized_text(payload.get("detail")),
+            _json_dumps(payload.get("result_payload") or {}),
+            _normalized_text(payload.get("created_at")),
+            _normalized_text(payload.get("updated_at")),
+            _normalized_text(payload.get("started_at")),
+            _normalized_text(payload.get("finished_at")),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_focus_send_batch_item(item_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        UPDATE automation_focus_send_batch_item
+        SET member_id = ?,
+            external_contact_id = ?,
+            phone = ?,
+            position_index = ?,
+            status = ?,
+            detail = ?,
+            result_payload = ?,
+            updated_at = ?,
+            started_at = ?,
+            finished_at = ?
+        WHERE id = ?
+        RETURNING *
+        """,
+        (
+            payload.get("member_id"),
+            _normalized_text(payload.get("external_contact_id")),
+            _normalized_text(payload.get("phone")),
+            int(payload.get("position_index") or 0),
+            _normalized_text(payload.get("status")),
+            _normalized_text(payload.get("detail")),
+            _json_dumps(payload.get("result_payload") or {}),
+            _normalized_text(payload.get("updated_at")),
+            _normalized_text(payload.get("started_at")),
+            _normalized_text(payload.get("finished_at")),
+            int(item_id),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def list_focus_send_batch_items(*, batch_id: int, limit: int = 100, descending: bool = False) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        f"""
+        SELECT *
+        FROM automation_focus_send_batch_item
+        WHERE batch_id = ?
+        ORDER BY position_index {'DESC' if descending else 'ASC'}, id {'DESC' if descending else 'ASC'}
+        LIMIT ?
+        """,
+        (int(batch_id), int(limit)),
+    )
+
+
+def claim_next_focus_send_batch_item(*, batch_id: int, started_at: str) -> dict[str, Any] | None:
+    candidate = _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_focus_send_batch_item
+        WHERE batch_id = ?
+          AND status = 'pending'
+        ORDER BY position_index ASC, id ASC
+        LIMIT 1
+        """,
+        (int(batch_id),),
+    )
+    if not candidate:
+        return None
+    row = get_db().execute(
+        """
+        UPDATE automation_focus_send_batch_item
+        SET status = 'running',
+            updated_at = ?,
+            started_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+        RETURNING *
+        """,
+        (
+            _normalized_text(started_at),
+            _normalized_text(started_at),
+            int(candidate["id"]),
+        ),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def get_default_channel() -> dict[str, Any] | None:
     return _fetchone_dict(
         """
@@ -609,6 +853,8 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("qr_url")),
         _normalized_text(payload.get("qr_ticket")),
         _normalized_text(payload.get("scene_value")),
+        _normalized_text(payload.get("welcome_message")),
+        _db_bool(bool(payload.get("auto_accept_friend"))),
         _normalized_text(payload.get("owner_staff_id")),
         _normalized_text(payload.get("status")),
     )
@@ -620,6 +866,8 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
                 qr_url = ?,
                 qr_ticket = ?,
                 scene_value = ?,
+                welcome_message = ?,
+                auto_accept_friend = ?,
                 owner_staff_id = ?,
                 status = ?,
                 updated_at = CURRENT_TIMESTAMP
@@ -631,6 +879,8 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
                 _normalized_text(payload.get("qr_url")),
                 _normalized_text(payload.get("qr_ticket")),
                 _normalized_text(payload.get("scene_value")),
+                _normalized_text(payload.get("welcome_message")),
+                _db_bool(bool(payload.get("auto_accept_friend"))),
                 _normalized_text(payload.get("owner_staff_id")),
                 _normalized_text(payload.get("status")),
                 int(existing["id"]),
@@ -645,12 +895,14 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
             qr_url,
             qr_ticket,
             scene_value,
+            welcome_message,
+            auto_accept_friend,
             owner_staff_id,
             status,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         params,
@@ -775,6 +1027,18 @@ def list_stage_members(*, current_pool: str, keyword: str = "", limit: int = 50,
     return _fetchall_dicts(sql, tuple(params))
 
 
+def list_stage_members_for_manual_send(*, current_pool: str) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_member
+        WHERE current_pool = ?
+        ORDER BY updated_at DESC, id DESC
+        """,
+        (_normalized_text(current_pool),),
+    )
+
+
 def count_stage_members(*, current_pool: str, keyword: str = "") -> int:
     normalized_keyword = _normalized_text(keyword)
     params: list[Any] = [_normalized_text(current_pool)]
@@ -860,4 +1124,15 @@ def deserialize_message_activity_sync_item_row(row: dict[str, Any]) -> dict[str,
         **row,
         "before_snapshot": _json_loads(row.get("before_snapshot"), default={}),
         "after_snapshot": _json_loads(row.get("after_snapshot"), default={}),
+    }
+
+
+def deserialize_focus_send_batch_row(row: dict[str, Any]) -> dict[str, Any]:
+    return dict(row or {})
+
+
+def deserialize_focus_send_batch_item_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "result_payload": _json_loads(row.get("result_payload"), default={}),
     }

@@ -4,11 +4,11 @@
 
 - [ ] `AUTOMATION_INTERNAL_API_TOKEN` 已配置
 - [ ] `MCP_BEARER_TOKEN` 如仍保留 legacy 兼容，已确认与统一 token 不冲突
-- [ ] `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL` 已配置
-- [ ] `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN` 已配置
+- [ ] `OPENCLAW_WEBHOOK_URL` 已配置
 - [ ] `AUTOMATION_ACTIVATION_WEBHOOK_TOKEN` 如仍保留 legacy 兼容，已确认与统一 token 不冲突
 - [ ] `QUESTIONNAIRE_SUBMIT_WEBHOOK_URL` 已配置
 - [ ] `QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN` 已配置
+- [ ] `MESSAGE_ACTIVITY_DB_HOST/PORT/NAME/USER/PASS` 已配置
 - [ ] 企微相关配置已配置
 - [ ] 错误内部 token 调动作型接口会返回 401
 
@@ -36,19 +36,15 @@
 - [ ] 普通/重点人工改判可用
 - [ ] 人工确认成交可用
 
-## OpenClaw 池子群发检查
+## 自动化转化群发检查
 
-- [ ] 不同负责人名下池子都可群发
-- [ ] 不同负责人只命中自己名下客户
-- [ ] 纯文本池子群发可用
-- [ ] 纯图片池子群发可用
-- [ ] 纯附件池子群发可用
-- [ ] 文本 + 图片池子群发可用
-- [ ] 文本 + 附件池子群发可用
-- [ ] 图片 + 附件池子群发可用
-- [ ] 文本 + 图片 + 附件池子群发可用
+- [ ] 首页每个阶段都能点击 `创建群发`
+- [ ] `new-user / inactive-normal / active-normal / silent / won` 可走官方群发
+- [ ] 官方群发当前只支持 `文本 + 附件(file media_id)`
+- [ ] 当前按单发送人模型执行，不做 owner filter / owner 分桶
+- [ ] `inactive-focus / active-focus` 可创建 OpenClaw AI 批任务
+- [ ] AI 批任务通过后台 runner 推进，不在请求里 sleep
 - [ ] 发送记录可查
-- [ ] 沉默池不可群发
 
 ## 焦点消息 webhook 检查
 
@@ -78,7 +74,8 @@
 ## 日志 / 发送记录检查
 
 - [ ] service 日志能看到关键动作
-- [ ] 发送记录能查到池子群发记录
+- [ ] 发送记录能查到官方群发记录
+- [ ] focus batch 和 item 状态可查
 - [ ] webhook 失败有日志痕迹
 
 ## 异常处理与回退检查

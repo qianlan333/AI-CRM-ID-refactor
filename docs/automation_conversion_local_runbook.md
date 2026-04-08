@@ -17,17 +17,20 @@ python app.py run
 
 ## 2. 配置本地环境项
 
-推荐直接在后台设置页写入以下配置：
+推荐直接在后台设置页或环境变量写入以下配置：
 
 - `AUTOMATION_INTERNAL_API_TOKEN`
 - `MCP_BEARER_TOKEN`（仅 legacy 兼容需要时保留）
-- `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL`
-- `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN`
-- `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS`
+- `OPENCLAW_WEBHOOK_URL`
 - `AUTOMATION_ACTIVATION_WEBHOOK_TOKEN`（仅 legacy 兼容需要时保留）
 - `QUESTIONNAIRE_SUBMIT_WEBHOOK_URL`
 - `QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN`
 - `QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS`
+- `MESSAGE_ACTIVITY_DB_HOST`
+- `MESSAGE_ACTIVITY_DB_PORT`
+- `MESSAGE_ACTIVITY_DB_NAME`
+- `MESSAGE_ACTIVITY_DB_USER`
+- `MESSAGE_ACTIVITY_DB_PASS`
 
 如果只是本地联调，也可以在 app context 里直接写 `app_settings`：
 
@@ -36,7 +39,6 @@ python scripts/seed_automation_conversion_demo.py --write-settings \
   --internal-api-token internal-local-token \
   --mcp-token mcp-local-token \
   --openclaw-webhook-url http://127.0.0.1:19090/openclaw-focus \
-  --openclaw-webhook-token focus-local-token \
   --activation-webhook-token activation-local-token \
   --questionnaire-webhook-url http://127.0.0.1:19090/questionnaire-submit \
   --questionnaire-webhook-token questionnaire-local-token
@@ -198,169 +200,121 @@ curl -X POST http://127.0.0.1:5000/api/sidebar/marketing-status/set-followup-seg
 curl "http://127.0.0.1:5000/api/sidebar/marketing-status?external_userid=wm_demo_focus"
 ```
 
-## 9. 验证池子群发
+## 9. 验证自动化转化首页 / 阶段页 / send 页面
+
+1. 打开 `/admin/automation-conversion`
+2. 验证首页有：
+   - `立即刷新一次`
+   - `自动启动时间窗`
+   - 每个阶段都包含 `查看名单 / 创建群发`
+3. 打开 `/admin/automation-conversion/stage/new-user`
+4. 点击 `创建群发` 进入 `/admin/automation-conversion/stage/new-user/send`
+5. 验证页面显示 `官方群发`
+6. 打开 `/admin/automation-conversion/stage/inactive-focus/send`
+7. 验证页面显示 `AI 批量处理`
+
+## 10. 验证非重点阶段官方群发
+
+`new-user / inactive-normal / active-normal / silent / won` 都走这个接口：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/mcp \
+curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/stage/new-user/manual-send \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer mcp-local-token' \
   -d '{
-    "jsonrpc":"2.0",
-    "id":1,
-    "method":"tools/call",
-    "params":{
-      "name":"send_pool_private_message",
-      "arguments":{
-        "owner_userid":"sales_demo_02",
-        "pool_key":"active_focus",
-        "content":"这是本地联调群发消息",
-        "confirm":true
-      }
-    }
+    "content":"这是本地联调官方群发消息",
+    "operator":"qa_local"
   }'
 ```
 
-纯图片：
+如果要带附件，当前按 `file media_id` 传：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/mcp \
+curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/stage/silent/manual-send \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer mcp-local-token' \
   -d '{
-    "jsonrpc":"2.0",
-    "id":2,
-    "method":"tools/call",
-    "params":{
-      "name":"send_pool_private_message",
-      "arguments":{
-        "owner_userid":"sales_demo_02",
-        "pool_key":"active_focus",
-        "images":[{"file_name":"demo.png","data_url":"<data-url>"}],
-        "confirm":true
-      }
-    }
+    "content":"这是沉默池唤醒消息",
+    "attachment_media_ids":["media-id-001"],
+    "operator":"qa_local"
   }'
 ```
 
-文本 + 图片：
+预期：
+
+- 返回 `ok / stage_key / total_target_count / sent_count / skipped_count / skipped_reasons / record_id / task_ids`
+- 不按 owner 分桶
+- `silent / won` 也允许发送
+
+## 11. 验证重点阶段 OpenClaw 批任务
+
+创建批任务：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/mcp \
+curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer mcp-local-token' \
   -d '{
-    "jsonrpc":"2.0",
-    "id":3,
-    "method":"tools/call",
-    "params":{
-      "name":"send_pool_private_message",
-      "arguments":{
-        "owner_userid":"sales_demo_02",
-        "pool_key":"active_focus",
-        "content":"这是文本 + 图片联调消息",
-        "images":[{"file_name":"demo.png","data_url":"<data-url>"}],
-        "confirm":true
-      }
-    }
+    "operator":"qa_local"
   }'
 ```
 
-纯附件：
+查看批任务详情：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer mcp-local-token' \
-  -d '{
-    "jsonrpc":"2.0",
-    "id":4,
-    "method":"tools/call",
-    "params":{
-      "name":"send_pool_private_message",
-      "arguments":{
-        "owner_userid":"sales_demo_02",
-        "pool_key":"active_focus",
-        "attachments":[{"msgtype":"file","file":{"media_id":"file-media-001"}}],
-        "confirm":true
-      }
-    }
-  }'
+curl http://127.0.0.1:5000/api/admin/automation-conversion/focus-send-batches/<batch_id>
 ```
 
-文本 + 附件：
+后台 runner 推进到期 item：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer mcp-local-token' \
-  -d '{
-    "jsonrpc":"2.0",
-    "id":5,
-    "method":"tools/call",
-    "params":{
-      "name":"send_pool_private_message",
-      "arguments":{
-        "owner_userid":"sales_demo_02",
-        "pool_key":"active_focus",
-        "content":"这是文本 + 附件联调消息",
-        "attachments":[{"msgtype":"file","file":{"media_id":"file-media-002"}}],
-        "confirm":true
-      }
-    }
-  }'
+curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/focus-send-batches/run-due \
+  -H 'Authorization: Bearer internal-local-token'
 ```
 
-文本 + 图片 + 附件：
+预期：
+
+- 每次 runner 最多推进到期 item，不在 HTTP 请求里 sleep
+- `next_run_at` 按 20 秒向后推进
+- item 失败或 cooldown 只影响当前 item，不会卡死整批
+
+## 12. 验证消息活跃同步
+
+先保证环境变量已配置：
+
+- `MESSAGE_ACTIVITY_DB_HOST`
+- `MESSAGE_ACTIVITY_DB_PORT`
+- `MESSAGE_ACTIVITY_DB_NAME`
+- `MESSAGE_ACTIVITY_DB_USER`
+- `MESSAGE_ACTIVITY_DB_PASS`
+
+首页直接点一次 `立即刷新一次`，或者直接调接口：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/mcp \
+curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/message-activity-sync/run \
+  -H 'Authorization: Bearer internal-local-token' \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer mcp-local-token' \
-  -d '{
-    "jsonrpc":"2.0",
-    "id":6,
-    "method":"tools/call",
-    "params":{
-      "name":"send_pool_private_message",
-      "arguments":{
-        "owner_userid":"sales_demo_02",
-        "pool_key":"active_focus",
-        "content":"这是文本 + 图片 + 附件联调消息",
-        "images":[{"file_name":"demo.png","data_url":"<data-url>"}],
-        "attachments":[{"msgtype":"file","file":{"media_id":"file-media-003"}}],
-        "confirm":true
-      }
-    }
-  }'
+  -d '{"trigger_source":"manual","operator":"qa_local"}'
 ```
 
-## 10. 验证沉默池不可群发
+预期：
 
-```bash
-curl -X POST http://127.0.0.1:5000/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer mcp-local-token' \
-  -d '{
-    "jsonrpc":"2.0",
-    "id":7,
-    "method":"tools/call",
-    "params":{
-      "name":"send_pool_private_message",
-      "arguments":{
-        "owner_userid":"sales_demo_02",
-        "pool_key":"silent",
-        "content":"不应发送",
-        "confirm":true
-      }
-    }
-  }'
-```
+- 首页和设置页都能看到最近一次同步摘要
+- 只更新已有 `automation_member`
+- 不会新增成员入池
 
-预期返回：
+## 13. 验证默认渠道二维码
 
-- `silent pool is record-only and does not support batch send`
+在 `/admin/automation-conversion/settings`：
 
-## 11. 验证问卷提交外发 webhook
+- 配置 `欢迎语`
+- 打开 `免验证直接添加好友`
+- 保存后重新生成默认二维码
+
+预期：
+
+- 保存后再次进入能读回
+- `welcome_message / auto_accept_friend` 会随默认二维码一起下发给 provider
+- provider 不支持欢迎语时会明确显示 `unsupported`
+
+## 14. 验证问卷提交外发 webhook
 
 按第 6 步或第 7 步提交问卷后，检查本地 mock webhook 是否收到：
 
@@ -370,7 +324,7 @@ curl -X POST http://127.0.0.1:5000/mcp \
 
 其中 `userid` 取 `questionnaire_submissions.follow_user_userid`。
 
-## 12. 验证人工确认成交退出营销
+## 15. 验证人工确认成交退出营销
 
 ```bash
 curl -X POST http://127.0.0.1:5000/api/sidebar/marketing-status/mark-enrolled \

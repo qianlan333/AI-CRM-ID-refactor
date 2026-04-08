@@ -1,0 +1,189 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>{{ stage_payload.stage.label }}创建群发</h2>
+      <p>{{ stage_payload.stage.description }}</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="/admin/automation-conversion/stage/{{ stage_payload.stage.route_key }}">返回阶段详情</a>
+      <a class="admin-button admin-button--ghost" href="/admin/automation-conversion">返回自动化转化首页</a>
+    </div>
+  </div>
+
+  <div class="admin-card-grid">
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">总人数</div>
+      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.total_count }}</div>
+      <p class="admin-card-copy">当前这个阶段可供创建群发的客户总数。</p>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">今日新增</div>
+      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.today_new_count }}</div>
+      <p class="admin-card-copy">今天新进入当前阶段的客户数量。</p>
+    </article>
+  </div>
+</section>
+
+{% if send_result %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>本次执行结果</h2>
+      <p>提交后直接按当前阶段的全量名单执行，不按 owner 分桶。</p>
+    </div>
+  </div>
+  <div class="admin-card-grid">
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">状态</div>
+      <div class="admin-card-value admin-card-value--compact">{{ send_result.status or 'unknown' }}</div>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">目标人数</div>
+      <div class="admin-card-value admin-card-value--compact">{{ send_result.total_target_count or 0 }}</div>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">发送成功</div>
+      <div class="admin-card-value admin-card-value--compact">{{ send_result.sent_count or 0 }}</div>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">跳过人数</div>
+      <div class="admin-card-value admin-card-value--compact">{{ send_result.skipped_count or 0 }}</div>
+    </article>
+  </div>
+  <div class="admin-state admin-state--inline">
+    <strong>发送记录 ID</strong>
+    <span>{{ send_result.record_id or '无' }}</span>
+  </div>
+  <div class="admin-state admin-state--inline">
+    <strong>任务 ID</strong>
+    <span>{{ (send_result.task_ids or [])|join(', ') if send_result.task_ids else '无' }}</span>
+  </div>
+  {% if send_result.skipped_reasons %}
+  <div class="admin-state admin-state--inline">
+    <strong>跳过原因</strong>
+    <span>{{ send_result.skipped_reasons|tojson }}</span>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if focus_batch %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>AI 批任务状态</h2>
+      <p>重点阶段按 20 秒 1 个的节奏逐个交给 OpenClaw 处理，名单按创建时快照固定。</p>
+    </div>
+  </div>
+  <div class="admin-card-grid">
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">总数</div>
+      <div class="admin-card-value admin-card-value--compact">{{ focus_batch.batch.total_count or 0 }}</div>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">已发送</div>
+      <div class="admin-card-value admin-card-value--compact">{{ focus_batch.batch.sent_count or 0 }}</div>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">失败</div>
+      <div class="admin-card-value admin-card-value--compact">{{ focus_batch.batch.failed_count or 0 }}</div>
+    </article>
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">剩余</div>
+      <div class="admin-card-value admin-card-value--compact">{{ focus_batch.batch.remaining_count or 0 }}</div>
+    </article>
+  </div>
+  <div class="admin-state admin-state--inline">
+    <strong>批次状态</strong>
+    <span>{{ focus_batch.batch.status_label or focus_batch.batch.status or '未知' }}</span>
+  </div>
+  <div class="admin-state admin-state--inline">
+    <strong>下一次推进时间</strong>
+    <span>{{ focus_batch.batch.next_run_at or '无' }}</span>
+  </div>
+  {% if focus_batch.get('items') %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>序号</th>
+          <th>客户</th>
+          <th>状态</th>
+          <th>说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in focus_batch.get('items') %}
+        <tr>
+          <td>{{ item.position_index }}</td>
+          <td>{{ item.external_contact_id or item.phone or '未识别客户' }}</td>
+          <td>{{ item.status_label }}</td>
+          <td>{{ item.detail or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if send_payload.mode == "focus_ai" %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>AI 批量处理</h2>
+      <p>重点阶段不输入人工话术。点击后按“一键自动化写话术 / OpenClaw”思路逐个用户处理，每 20 秒 1 个，直到发完。</p>
+    </div>
+  </div>
+  <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ send_payload.focus_send_batches_form_action }}">
+    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+    <label class="admin-field">
+      <span>操作人</span>
+      <input type="text" name="operator" placeholder="填写本次发起人" value="{{ send_payload.form.operator }}">
+    </label>
+    <div class="admin-state admin-state--inline">
+      <strong>当前为 AI 批量处理壳子</strong>
+      <span>创建接口是 {{ send_payload.focus_send_batches_url }}，批次详情接口是 {{ send_payload.focus_send_batch_detail_url_template }}，runner 会在后台按 20 秒 1 个的节奏推进。</span>
+    </div>
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" type="submit">创建 AI 批任务</button>
+    </div>
+  </form>
+</section>
+{% else %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>官方群发</h2>
+      <p>非重点阶段这轮只支持文本 + 附件。附件按 file media_id 填写，提交后直接按当前阶段全量名单执行。</p>
+    </div>
+  </div>
+  <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ send_payload.manual_send_form_action }}">
+    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+    <label class="admin-field">
+      <span>群发文本</span>
+      <textarea name="content" rows="6" placeholder="输入本次官方群发的正文">{{ send_payload.form.content }}</textarea>
+    </label>
+    <label class="admin-field">
+      <span>附件 media_id</span>
+      <textarea name="attachment_media_ids" rows="4" placeholder="每行一个 file media_id">{{ send_payload.form.attachment_media_ids }}</textarea>
+    </label>
+    <label class="admin-field">
+      <span>操作人</span>
+      <input type="text" name="operator" placeholder="填写本次发起人" value="{{ send_payload.form.operator }}">
+    </label>
+    <div class="admin-state admin-state--inline">
+      <strong>当前为官方群发壳子</strong>
+      <span>实际执行接口是 {{ send_payload.manual_send_url }}，当前页面会直接展示本次发送结果摘要。</span>
+    </div>
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" type="submit">创建官方群发</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

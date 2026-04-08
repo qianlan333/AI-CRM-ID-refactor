@@ -1,5 +1,15 @@
 {% extends "admin_console/base.html" %}
 
+{% block head_extra %}
+<style>
+  .automation-sync-card__feedback[hidden],
+  .automation-sync-card__config[hidden],
+  .automation-sync-card__error[hidden] {
+    display: none;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <section class="admin-card">
   <div class="admin-card-head">
@@ -12,6 +22,10 @@
       <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_debug') }}">进入调试页</a>
     </div>
   </div>
+  <div class="admin-state admin-state--inline">
+    <strong>自动启动时间窗</strong>
+    <span>{{ overview_payload.auto_start_window.description }}</span>
+  </div>
   <div class="admin-card-grid">
     {% for item in overview_payload.cards %}
     <article class="admin-card admin-stat-card admin-stat-card--nested">
@@ -20,6 +34,78 @@
       <p class="admin-card-copy">{{ item.description }}</p>
     </article>
     {% endfor %}
+  </div>
+</section>
+
+<section
+  class="admin-card"
+  data-message-activity-sync-root
+>
+  <div class="admin-card-head">
+    <div>
+      <h2>消息活跃同步</h2>
+      <p>首页直接触发一次消息活跃同步，并查看最近一次执行摘要，不需要再跳到设置页操作。</p>
+    </div>
+    <div class="admin-toolbar">
+      <form
+        method="post"
+        action="{{ url_for('api.admin_automation_conversion_run_message_activity_sync') }}"
+        data-message-activity-sync-form
+      >
+        <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+        <button
+          class="admin-button admin-button--secondary"
+          type="submit"
+          data-message-activity-sync-button
+          data-loading-label="同步中..."
+        >
+          立即刷新一次
+        </button>
+      </form>
+      <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_settings') }}">查看详细设置</a>
+    </div>
+  </div>
+  <dl class="admin-definition-list">
+    <div>
+      <dt>最近状态</dt>
+      <dd data-message-activity-sync-status>
+        {{ overview_payload.message_activity_sync.last_run.status_label or ("未配置" if not overview_payload.message_activity_sync.db_status.configured else "暂无记录") }}
+      </dd>
+    </div>
+    <div>
+      <dt>最近时间</dt>
+      <dd data-message-activity-sync-finished-at>{{ overview_payload.message_activity_sync.last_run.finished_at or "暂无记录" }}</dd>
+    </div>
+    <div>
+      <dt>更新人数</dt>
+      <dd data-message-activity-sync-updated-count>{{ overview_payload.message_activity_sync.last_run.updated_count or 0 }}</dd>
+    </div>
+    <div>
+      <dt>跳过人数</dt>
+      <dd data-message-activity-sync-skipped-count>{{ overview_payload.message_activity_sync.last_run.skipped_count or 0 }}</dd>
+    </div>
+  </dl>
+  <div class="admin-state admin-state--inline automation-sync-card__feedback" data-message-activity-sync-feedback hidden>
+    <strong data-message-activity-sync-feedback-title></strong>
+    <span data-message-activity-sync-feedback-message></span>
+  </div>
+  <div
+    class="admin-state admin-state--inline admin-state--error automation-sync-card__config"
+    data-message-activity-sync-config
+    {% if overview_payload.message_activity_sync.db_status.configured %}hidden{% endif %}
+  >
+    <strong>消息库尚未配置</strong>
+    <span data-message-activity-sync-config-message>
+      请先补齐 {{ overview_payload.message_activity_sync.db_status.missing_keys|join('、') }}，再执行消息活跃同步。
+    </span>
+  </div>
+  <div
+    class="admin-state admin-state--inline admin-state--error automation-sync-card__error"
+    data-message-activity-sync-error
+    {% if not overview_payload.message_activity_sync.last_run.error_message %}hidden{% endif %}
+  >
+    <strong>最近一次同步失败</strong>
+    <span data-message-activity-sync-error-message>{{ overview_payload.message_activity_sync.last_run.error_message }}</span>
   </div>
 </section>
 
@@ -32,13 +118,13 @@
   </div>
   <div class="automation-stage-board">
     {% for item in overview_payload.stage_columns %}
-    <a
-      class="admin-card admin-stat-card admin-stat-card--nested automation-stage-card"
-      href="{{ url_for('api.admin_automation_conversion_stage_detail', stage_key=item.route_key) }}"
-    >
+    <article class="admin-card admin-stat-card admin-stat-card--nested automation-stage-card">
       <div class="automation-stage-card__head">
         <div class="admin-card-label">{{ item.label }}</div>
-        <span class="automation-stage-card__action">查看名单</span>
+        <div class="admin-toolbar">
+          <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_stage_detail', stage_key=item.route_key) }}">查看名单</a>
+          <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_stage_send', stage_key=item.route_key) }}">创建群发</a>
+        </div>
       </div>
       <div class="admin-card-value admin-card-value--compact">{{ item.total_count }}</div>
       <p class="admin-card-copy">{{ item.description }}</p>
@@ -48,20 +134,126 @@
           <dd>{{ item.total_count }}</dd>
         </div>
         <div>
-          <dt>重点跟进</dt>
-          <dd>{{ item.focus_count }}</dd>
-        </div>
-        <div>
-          <dt>普通跟进</dt>
-          <dd>{{ item.normal_count }}</dd>
-        </div>
-        <div>
           <dt>今日新增</dt>
           <dd>{{ item.today_new_count }}</dd>
         </div>
       </dl>
-    </a>
+    </article>
     {% endfor %}
   </div>
 </section>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  (() => {
+    const root = document.querySelector("[data-message-activity-sync-root]");
+    if (!root) {
+      return;
+    }
+
+    const form = root.querySelector("[data-message-activity-sync-form]");
+    const button = root.querySelector("[data-message-activity-sync-button]");
+    const feedback = root.querySelector("[data-message-activity-sync-feedback]");
+    const feedbackTitle = root.querySelector("[data-message-activity-sync-feedback-title]");
+    const feedbackMessage = root.querySelector("[data-message-activity-sync-feedback-message]");
+    const statusNode = root.querySelector("[data-message-activity-sync-status]");
+    const finishedAtNode = root.querySelector("[data-message-activity-sync-finished-at]");
+    const updatedCountNode = root.querySelector("[data-message-activity-sync-updated-count]");
+    const skippedCountNode = root.querySelector("[data-message-activity-sync-skipped-count]");
+    const configState = root.querySelector("[data-message-activity-sync-config]");
+    const configMessage = root.querySelector("[data-message-activity-sync-config-message]");
+    const errorState = root.querySelector("[data-message-activity-sync-error]");
+    const errorMessage = root.querySelector("[data-message-activity-sync-error-message]");
+
+    if (!form || !button) {
+      return;
+    }
+
+    const defaultLabel = button.textContent.trim();
+    const loadingLabel = button.getAttribute("data-loading-label") || defaultLabel;
+    let submitting = false;
+
+    const setFeedback = (title, message, tone = "success") => {
+      if (!feedback || !feedbackTitle || !feedbackMessage) {
+        return;
+      }
+      feedback.hidden = !(title || message);
+      feedback.className = tone === "error"
+        ? "admin-state admin-state--inline admin-state--error automation-sync-card__feedback"
+        : "admin-state admin-state--inline automation-sync-card__feedback";
+      feedbackTitle.textContent = title || "";
+      feedbackMessage.textContent = message || "";
+    };
+
+    const renderSyncSummary = (payload) => {
+      const syncPayload = payload || {};
+      const dbStatus = syncPayload.db_status || {};
+      const lastRun = syncPayload.last_run || {};
+      const missingKeys = Array.isArray(dbStatus.missing_keys) ? dbStatus.missing_keys.filter(Boolean) : [];
+
+      if (statusNode) {
+        statusNode.textContent = lastRun.status_label || (!dbStatus.configured ? "未配置" : "暂无记录");
+      }
+      if (finishedAtNode) {
+        finishedAtNode.textContent = lastRun.finished_at || "暂无记录";
+      }
+      if (updatedCountNode) {
+        updatedCountNode.textContent = String(lastRun.updated_count || 0);
+      }
+      if (skippedCountNode) {
+        skippedCountNode.textContent = String(lastRun.skipped_count || 0);
+      }
+      if (configState) {
+        configState.hidden = !!dbStatus.configured;
+      }
+      if (configMessage && !dbStatus.configured) {
+        configMessage.textContent = missingKeys.length
+          ? `请先补齐 ${missingKeys.join("、")}，再执行消息活跃同步。`
+          : "请先补齐消息库连接配置，再执行消息活跃同步。";
+      }
+      if (errorState) {
+        errorState.hidden = !lastRun.error_message;
+      }
+      if (errorMessage) {
+        errorMessage.textContent = lastRun.error_message || "";
+      }
+    };
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (submitting) {
+        return;
+      }
+      submitting = true;
+      button.disabled = true;
+      button.textContent = loadingLabel;
+      setFeedback("正在刷新", "系统正在同步最新消息活跃状态。");
+
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: new FormData(form),
+        });
+        const payload = await response.json().catch(() => ({}));
+        renderSyncSummary(payload.message_activity_sync || {});
+        if (response.ok && payload.ok) {
+          setFeedback("刷新完成", payload.message || "消息活跃同步已完成。");
+        } else {
+          setFeedback("刷新失败", payload.error || payload.message || "消息活跃同步失败。", "error");
+        }
+      } catch (error) {
+        setFeedback("刷新失败", error instanceof Error ? error.message : "消息活跃同步失败。", "error");
+      } finally {
+        submitting = false;
+        button.disabled = false;
+        button.textContent = defaultLabel;
+      }
+    });
+  })();
+</script>
 {% endblock %}

@@ -12,6 +12,8 @@ from ...wecom_client import WeComClientError
 from ..marketing_automation.service import get_customer_marketing_profile, get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail, list_questionnaires
+from ..tasks.service import dispatch_wecom_task
+from ..user_ops import page_service as user_ops_page_service
 from .message_activity_client import get_message_activity_db_status, query_message_activity_counts
 from . import repo
 from .provider import load_channel_provider
@@ -21,8 +23,12 @@ DEFAULT_CHANNEL_CODE = "default_qrcode"
 DEFAULT_CHANNEL_NAME = "默认渠道二维码"
 AI_PUSH_SCENE_SIDEBAR_SCRIPT = "sidebar_script"
 AI_PUSH_COOLDOWN_SECONDS = 30
+FOCUS_SEND_INTERVAL_SECONDS = 20
 MESSAGE_ACTIVITY_SYNC_SOURCE_MANUAL = "manual"
 MESSAGE_ACTIVITY_SYNC_SOURCE_SCHEDULED = "scheduled"
+CHANNEL_STATUS_NOT_GENERATED = "not_generated"
+CHANNEL_STATUS_CONFIGURED = "configured"
+CHANNEL_STATUS_ACTIVE = "active"
 
 POOL_NEW_USER = "new_user"
 POOL_INACTIVE_NORMAL = "inactive_normal"
@@ -77,6 +83,14 @@ POOL_LABELS = {
     POOL_SILENT: "沉默池",
     POOL_WON: "已成交",
     POOL_REMOVED: "已移出",
+}
+
+MANUAL_SEND_ALLOWED_POOLS = {
+    POOL_NEW_USER,
+    POOL_INACTIVE_NORMAL,
+    POOL_ACTIVE_NORMAL,
+    POOL_SILENT,
+    POOL_WON,
 }
 
 STAGE_BY_POOL = {
@@ -141,6 +155,10 @@ MESSAGE_ACTIVITY_SYNC_POOLS = (
     POOL_ACTIVE_NORMAL,
     POOL_ACTIVE_FOCUS,
 )
+FOCUS_SEND_ALLOWED_POOLS = {
+    POOL_INACTIVE_FOCUS,
+    POOL_ACTIVE_FOCUS,
+}
 
 
 def _normalized_text(value: Any) -> str:
@@ -194,6 +212,84 @@ def default_owner_staff_id() -> str:
 
 def _pool_label(pool: str) -> str:
     return POOL_LABELS.get(_normalized_text(pool), _normalized_text(pool) or "未设置")
+
+
+def _auto_start_window_payload(config: dict[str, Any]) -> dict[str, Any]:
+    day_start_hour = int(config.get("day_start_hour") or 9)
+    quiet_hour_start = int(config.get("quiet_hour_start") or 23)
+    timezone = _normalized_text(config.get("timezone")) or "Asia/Shanghai"
+    return {
+        "day_start_hour": day_start_hour,
+        "quiet_hour_start": quiet_hour_start,
+        "timezone": timezone,
+        "label": f"{day_start_hour:02d}:00 - {quiet_hour_start:02d}:00",
+        "description": f"按 {timezone} 时区，只有 {day_start_hour:02d}:00 - {quiet_hour_start:02d}:00 之间允许自动启动。",
+    }
+
+
+def _manual_send_allowed_route_keys() -> set[str]:
+    return {definition["route_key"] for definition in STAGE_DEFINITIONS if definition["pool"] in MANUAL_SEND_ALLOWED_POOLS}
+
+
+def _manual_send_stage_definition(route_key: str) -> dict[str, Any]:
+    normalized_route_key = _normalized_text(route_key)
+    pool = ROUTE_KEY_TO_POOL.get(normalized_route_key)
+    if not pool:
+        raise ValueError("invalid stage")
+    if pool not in MANUAL_SEND_ALLOWED_POOLS:
+        raise ValueError("focus stage must use focus send batches")
+    return dict(POOL_TO_STAGE_DEF.get(pool) or {})
+
+
+def _focus_send_stage_definition(route_key: str) -> dict[str, Any]:
+    normalized_route_key = _normalized_text(route_key)
+    pool = ROUTE_KEY_TO_POOL.get(normalized_route_key)
+    if not pool:
+        raise ValueError("invalid stage")
+    if pool not in FOCUS_SEND_ALLOWED_POOLS:
+        raise ValueError("stage does not support focus send batches")
+    return dict(POOL_TO_STAGE_DEF.get(pool) or {})
+
+
+def _normalize_manual_send_attachments(
+    *,
+    attachments: list[dict[str, Any]] | None = None,
+    attachment_media_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    normalized_attachments: list[dict[str, Any]] = []
+    for item in list(attachments or []):
+        if not isinstance(item, dict):
+            raise ValueError("attachments must be a list of attachment objects")
+        normalized_attachments.append(dict(item))
+    for media_id in list(attachment_media_ids or []):
+        normalized_media_id = _normalized_text(media_id)
+        if not normalized_media_id:
+            continue
+        normalized_attachments.append({"msgtype": "file", "file": {"media_id": normalized_media_id}})
+    return normalized_attachments
+
+
+def _focus_batch_status_label(value: str) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "pending": "待执行",
+        "running": "执行中",
+        "finished": "已完成",
+        "cancelled": "已取消",
+        "conflict": "冲突",
+    }.get(normalized, normalized or "未知")
+
+
+def _focus_batch_item_status_label(value: str) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "pending": "待执行",
+        "running": "执行中",
+        "sent": "已发送",
+        "failed": "发送失败",
+        "skipped": "已跳过",
+        "cancelled": "已取消",
+    }.get(normalized, normalized or "未知")
 
 
 def _stage_from_pool(pool: str) -> str:
@@ -683,6 +779,15 @@ def _message_activity_item_status_label(value: str) -> str:
     }.get(normalized, normalized or "未知")
 
 
+def _message_activity_sync_run_status_label(value: str) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "success": "成功",
+        "failed": "失败",
+        "running": "执行中",
+    }.get(normalized, normalized or "暂无记录")
+
+
 def _serialize_message_activity_sync_item(row: dict[str, Any]) -> dict[str, Any]:
     deserialized = repo.deserialize_message_activity_sync_item_row(row)
     return {
@@ -707,24 +812,81 @@ def _serialize_message_activity_sync_run(row: dict[str, Any] | None) -> dict[str
         return {}
     deserialized = repo.deserialize_message_activity_sync_run_row(row)
     summary = dict(deserialized.get("summary_json") or {})
+    skipped_ambiguous_count = int(deserialized.get("skipped_ambiguous_count") or 0)
+    skipped_unmatched_count = int(deserialized.get("skipped_unmatched_count") or 0)
+    skipped_missing_phone_count = int(deserialized.get("skipped_missing_phone_count") or 0)
     return {
         "id": int(deserialized.get("id") or 0),
         "trigger_source": _normalized_text(deserialized.get("trigger_source")),
         "operator_type": _normalized_text(deserialized.get("operator_type")),
         "operator_id": _normalized_text(deserialized.get("operator_id")),
         "status": _normalized_text(deserialized.get("status")),
+        "status_label": _message_activity_sync_run_status_label(deserialized.get("status")),
         "candidate_count": int(deserialized.get("candidate_count") or 0),
         "matched_count": int(deserialized.get("matched_count") or 0),
         "updated_count": int(deserialized.get("updated_count") or 0),
-        "skipped_ambiguous_count": int(deserialized.get("skipped_ambiguous_count") or 0),
-        "skipped_unmatched_count": int(deserialized.get("skipped_unmatched_count") or 0),
-        "skipped_missing_phone_count": int(deserialized.get("skipped_missing_phone_count") or 0),
+        "skipped_ambiguous_count": skipped_ambiguous_count,
+        "skipped_unmatched_count": skipped_unmatched_count,
+        "skipped_missing_phone_count": skipped_missing_phone_count,
+        "skipped_count": skipped_ambiguous_count + skipped_unmatched_count + skipped_missing_phone_count,
         "focus_count": int(deserialized.get("focus_count") or 0),
         "normal_count": int(deserialized.get("normal_count") or 0),
         "error_message": _normalized_text(deserialized.get("error_message")),
         "started_at": _normalized_text(deserialized.get("started_at")),
         "finished_at": _normalized_text(deserialized.get("finished_at")),
         "summary": summary,
+    }
+
+
+def _serialize_focus_send_batch_item(row: dict[str, Any]) -> dict[str, Any]:
+    deserialized = repo.deserialize_focus_send_batch_item_row(row)
+    return {
+        "id": int(deserialized.get("id") or 0),
+        "batch_id": int(deserialized.get("batch_id") or 0),
+        "member_id": int(deserialized.get("member_id") or 0) if deserialized.get("member_id") not in (None, "") else 0,
+        "external_contact_id": _normalized_text(deserialized.get("external_contact_id")),
+        "phone": _normalized_text(deserialized.get("phone")),
+        "position_index": int(deserialized.get("position_index") or 0),
+        "status": _normalized_text(deserialized.get("status")),
+        "status_label": _focus_batch_item_status_label(deserialized.get("status")),
+        "detail": _normalized_text(deserialized.get("detail")),
+        "result_payload": deserialized.get("result_payload") or {},
+        "created_at": _normalized_text(deserialized.get("created_at")),
+        "updated_at": _normalized_text(deserialized.get("updated_at")),
+        "started_at": _normalized_text(deserialized.get("started_at")),
+        "finished_at": _normalized_text(deserialized.get("finished_at")),
+    }
+
+
+def _serialize_focus_send_batch(row: dict[str, Any] | None) -> dict[str, Any]:
+    if not row:
+        return {}
+    deserialized = repo.deserialize_focus_send_batch_row(row)
+    total_count = int(deserialized.get("total_count") or 0)
+    sent_count = int(deserialized.get("sent_count") or 0)
+    failed_count = int(deserialized.get("failed_count") or 0)
+    skipped_count = int(deserialized.get("skipped_count") or 0)
+    cancelled_count = int(deserialized.get("cancelled_count") or 0)
+    remaining_count = max(0, total_count - sent_count - failed_count - skipped_count - cancelled_count)
+    return {
+        "id": int(deserialized.get("id") or 0),
+        "stage_key": _normalized_text(deserialized.get("stage_key")),
+        "pool_key": _normalized_text(deserialized.get("pool_key")),
+        "operator_type": _normalized_text(deserialized.get("operator_type")),
+        "operator_id": _normalized_text(deserialized.get("operator_id")),
+        "status": _normalized_text(deserialized.get("status")),
+        "status_label": _focus_batch_status_label(deserialized.get("status")),
+        "total_count": total_count,
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "skipped_count": skipped_count,
+        "cancelled_count": cancelled_count,
+        "remaining_count": remaining_count,
+        "next_run_at": _normalized_text(deserialized.get("next_run_at")),
+        "last_run_at": _normalized_text(deserialized.get("last_run_at")),
+        "created_at": _normalized_text(deserialized.get("created_at")),
+        "updated_at": _normalized_text(deserialized.get("updated_at")),
+        "finished_at": _normalized_text(deserialized.get("finished_at")),
     }
 
 
@@ -745,6 +907,74 @@ def _message_activity_sync_status_payload() -> dict[str, Any]:
         "cron_script_path": _normalized_text(current_app.config.get("MESSAGE_ACTIVITY_SYNC_CRON_SCRIPT_PATH")),
         "last_run": last_run,
         "recent_items": recent_items,
+    }
+
+
+def _channel_status_is_generated(status: str) -> bool:
+    return _normalized_text(status) == CHANNEL_STATUS_ACTIVE
+
+
+def _default_channel_field_statuses(
+    *,
+    provider: Any,
+    channel_status: str,
+    welcome_message: str,
+    auto_accept_friend: bool,
+) -> dict[str, dict[str, Any]]:
+    support = (
+        dict(provider.get_default_channel_field_support() or {})
+        if provider is not None and hasattr(provider, "get_default_channel_field_support")
+        else {}
+    )
+    welcome_supported = bool(support.get("welcome_message"))
+    auto_accept_supported = bool(support.get("auto_accept_friend"))
+    generated = _channel_status_is_generated(channel_status)
+
+    if welcome_message:
+        if welcome_supported:
+            welcome_status = "applied" if generated else "pending"
+            welcome_detail = "欢迎语会在生成默认二维码时一并透传。" if not generated else "欢迎语已在最近一次生成时透传。"
+        else:
+            welcome_status = "unsupported"
+            welcome_detail = "当前默认永久二维码 provider 不支持欢迎语透传。"
+    else:
+        welcome_status = "not_set"
+        welcome_detail = "当前未配置欢迎语。"
+
+    if auto_accept_supported:
+        if auto_accept_friend:
+            auto_accept_status = "applied" if generated else "pending"
+            auto_accept_detail = (
+                "免验证直接添加好友已在最近一次生成时透传。"
+                if generated
+                else "保存后需重新生成默认二维码，免验证开关才会真正生效。"
+            )
+        else:
+            auto_accept_status = "applied" if generated else "not_set"
+            auto_accept_detail = (
+                "当前默认二维码继续走好友验证。"
+                if generated
+                else "当前未开启免验证直接添加好友。"
+            )
+    else:
+        auto_accept_status = "unsupported" if auto_accept_friend else "not_set"
+        auto_accept_detail = (
+            "当前 provider 不支持免验证直接添加好友。"
+            if auto_accept_friend
+            else "当前未开启免验证直接添加好友。"
+        )
+
+    return {
+        "welcome_message": {
+            "status": welcome_status,
+            "supported": welcome_supported,
+            "detail": welcome_detail,
+        },
+        "auto_accept_friend": {
+            "status": auto_accept_status,
+            "supported": auto_accept_supported,
+            "detail": auto_accept_detail,
+        },
     }
 
 
@@ -1054,6 +1284,7 @@ def _build_questionnaire_rule_catalog(questionnaires: list[dict[str, Any]]) -> d
 def get_settings_payload() -> dict[str, Any]:
     config = get_signup_conversion_config()
     channel = repo.get_default_channel() or {}
+    provider = load_channel_provider()
     questionnaires = list_questionnaires()
     questionnaire_rule_catalog = _build_questionnaire_rule_catalog(questionnaires)
     questionnaire = None
@@ -1093,11 +1324,19 @@ def get_settings_payload() -> dict[str, Any]:
             "qr_url": _normalized_text(channel.get("qr_url")),
             "qr_ticket": _normalized_text(channel.get("qr_ticket")),
             "scene_value": _normalized_text(channel.get("scene_value")),
+            "welcome_message": _normalized_text(channel.get("welcome_message")),
+            "auto_accept_friend": _normalize_bool(channel.get("auto_accept_friend")),
             "owner_staff_id": _normalized_text(channel.get("owner_staff_id")) or DEFAULT_OWNER_STAFF_ID,
-            "status": _normalized_text(channel.get("status")) or "not_generated",
+            "status": _normalized_text(channel.get("status")) or CHANNEL_STATUS_NOT_GENERATED,
+            "field_statuses": _default_channel_field_statuses(
+                provider=provider,
+                channel_status=_normalized_text(channel.get("status")) or CHANNEL_STATUS_NOT_GENERATED,
+                welcome_message=_normalized_text(channel.get("welcome_message")),
+                auto_accept_friend=_normalize_bool(channel.get("auto_accept_friend")),
+            ),
         },
         "default_owner_staff_id": DEFAULT_OWNER_STAFF_ID,
-        "provider_available": load_channel_provider() is not None,
+        "provider_available": provider is not None,
         "message_activity_sync": _message_activity_sync_status_payload(),
     }
 
@@ -1108,6 +1347,7 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
         "questionnaire_id": payload.get("questionnaire_id"),
         "core_threshold": payload.get("core_threshold"),
         "top_threshold": payload.get("top_threshold", payload.get("core_threshold")),
+        "day_start_hour": payload.get("day_start_hour"),
         "quiet_hour_start": payload.get("quiet_hour_start"),
         "timezone": payload.get("timezone"),
         "silent_threshold_days_by_pool": payload.get("silent_threshold_days_by_pool"),
@@ -1115,15 +1355,40 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
     }
     save_signup_conversion_config(config_payload, enforce_required_mobile_question=True)
     existing = repo.get_default_channel() or {}
+    next_channel_name = _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
+    next_welcome_message = (
+        _normalized_text(payload.get("welcome_message"))
+        if "welcome_message" in payload
+        else _normalized_text(existing.get("welcome_message"))
+    )
+    next_auto_accept_friend = (
+        _normalize_bool(payload.get("auto_accept_friend"))
+        if "auto_accept_friend" in payload
+        else _normalize_bool(existing.get("auto_accept_friend"))
+    )
+    current_channel_name = _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
+    current_welcome_message = _normalized_text(existing.get("welcome_message"))
+    current_auto_accept_friend = _normalize_bool(existing.get("auto_accept_friend"))
+    channel_settings_changed = (
+        next_channel_name != current_channel_name
+        or next_welcome_message != current_welcome_message
+        or next_auto_accept_friend != current_auto_accept_friend
+    )
     repo.save_channel(
         {
             "channel_code": DEFAULT_CHANNEL_CODE,
-            "channel_name": _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME,
+            "channel_name": next_channel_name,
             "qr_url": _normalized_text(payload.get("qr_url")) or _normalized_text(existing.get("qr_url")),
             "qr_ticket": _normalized_text(payload.get("qr_ticket")) or _normalized_text(existing.get("qr_ticket")),
             "scene_value": _normalized_text(payload.get("scene_value")) or _normalized_text(existing.get("scene_value")),
+            "welcome_message": next_welcome_message,
+            "auto_accept_friend": next_auto_accept_friend,
             "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
-            "status": _normalized_text(payload.get("channel_status")) or _normalized_text(existing.get("status")) or "configured",
+            "status": (
+                CHANNEL_STATUS_CONFIGURED
+                if channel_settings_changed
+                else (_normalized_text(payload.get("channel_status")) or _normalized_text(existing.get("status")) or CHANNEL_STATUS_CONFIGURED)
+            ),
         }
     )
     get_db().commit()
@@ -1132,20 +1397,26 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
 
 def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
     provider = load_channel_provider()
+    existing = repo.get_default_channel() or {}
     if provider is None:
         return {
             "generated": False,
             "provider_available": False,
-            "channel": repo.get_default_channel() or {},
+            "channel": existing,
             "error": "二维码 provider 未接入，当前仓库无法生成真实企微渠道二维码",
             "operator": _normalized_text(operator),
             "status_code": 501,
             "error_code": "provider_missing",
         }
+    welcome_message = _normalized_text(existing.get("welcome_message"))
+    auto_accept_friend = _normalize_bool(existing.get("auto_accept_friend"))
     try:
-        channel_payload = provider.create_default_channel(owner_staff_id=DEFAULT_OWNER_STAFF_ID)
+        channel_payload = provider.create_default_channel(
+            owner_staff_id=DEFAULT_OWNER_STAFF_ID,
+            welcome_message=welcome_message,
+            auto_accept_friend=auto_accept_friend,
+        )
     except ValueError as exc:
-        existing = repo.get_default_channel() or {}
         saved = repo.save_channel(
             {
                 "channel_code": _normalized_text(existing.get("channel_code")) or DEFAULT_CHANNEL_CODE,
@@ -1153,6 +1424,8 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 "qr_url": _normalized_text(existing.get("qr_url")),
                 "qr_ticket": _normalized_text(existing.get("qr_ticket")),
                 "scene_value": _normalized_text(existing.get("scene_value")),
+                "welcome_message": welcome_message,
+                "auto_accept_friend": auto_accept_friend,
                 "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
                 "status": "generation_failed",
             }
@@ -1166,9 +1439,14 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
             "operator": _normalized_text(operator),
             "status_code": 400,
             "error_code": "invalid_state",
+            "field_statuses": _default_channel_field_statuses(
+                provider=provider,
+                channel_status=_normalized_text(saved.get("status")) or "generation_failed",
+                welcome_message=welcome_message,
+                auto_accept_friend=auto_accept_friend,
+            ),
         }
     except WeComClientError as exc:
-        existing = repo.get_default_channel() or {}
         saved = repo.save_channel(
             {
                 "channel_code": _normalized_text(existing.get("channel_code")) or DEFAULT_CHANNEL_CODE,
@@ -1176,6 +1454,8 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 "qr_url": _normalized_text(existing.get("qr_url")),
                 "qr_ticket": _normalized_text(existing.get("qr_ticket")),
                 "scene_value": _normalized_text(existing.get("scene_value")),
+                "welcome_message": welcome_message,
+                "auto_accept_friend": auto_accept_friend,
                 "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
                 "status": "config_incomplete" if "not configured" in str(exc).lower() else "generation_failed",
             }
@@ -1193,6 +1473,12 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 if "not configured" in str(exc).lower()
                 else (_normalized_text(exc.category) or "generation_failed")
             ),
+            "field_statuses": _default_channel_field_statuses(
+                provider=provider,
+                channel_status=_normalized_text(saved.get("status")) or "generation_failed",
+                welcome_message=welcome_message,
+                auto_accept_friend=auto_accept_friend,
+            ),
         }
     saved = repo.save_channel(
         {
@@ -1201,12 +1487,27 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
             "qr_url": _normalized_text(channel_payload.get("qr_url")),
             "qr_ticket": _normalized_text(channel_payload.get("qr_ticket")),
             "scene_value": _normalized_text(channel_payload.get("scene_value")),
+            "welcome_message": welcome_message,
+            "auto_accept_friend": auto_accept_friend,
             "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
-            "status": _normalized_text(channel_payload.get("status")) or "active",
+            "status": _normalized_text(channel_payload.get("status")) or CHANNEL_STATUS_ACTIVE,
         }
     )
     get_db().commit()
-    return {"generated": True, "provider_available": True, "channel": saved}
+    return {
+        "generated": True,
+        "provider_available": True,
+        "channel": saved,
+        "field_statuses": (
+            dict(channel_payload.get("field_statuses") or {})
+            or _default_channel_field_statuses(
+                provider=provider,
+                channel_status=_normalized_text(saved.get("status")) or CHANNEL_STATUS_ACTIVE,
+                welcome_message=welcome_message,
+                auto_accept_friend=auto_accept_friend,
+            )
+        ),
+    }
 
 
 def _resolve_existing_member(external_contact_id: str = "", phone: str = "") -> dict[str, Any] | None:
@@ -1543,6 +1844,8 @@ def get_overview_payload() -> dict[str, Any]:
     refresh_expired_silent_members()
     counts = repo.get_overview_counts()
     metrics_map = {_normalized_text(item.get("current_pool")): item for item in repo.get_stage_metrics()}
+    message_activity_sync = _message_activity_sync_status_payload()
+    config = get_signup_conversion_config()
     cards = [
         {"key": "in_pool_total", "label": "在池总人数", "value": counts["in_pool_total"], "description": "当前仍在自动化池里的成员数量。"},
         {"key": "today_joined", "label": "今日入池", "value": counts["today_joined"], "description": "今天新进入自动化池的成员数量。"},
@@ -1567,7 +1870,13 @@ def get_overview_payload() -> dict[str, Any]:
                 "today_new_count": int(metric.get("today_new_count") or 0),
             }
         )
-    return {"cards": cards, "stage_columns": stage_columns, "counts": counts}
+    return {
+        "cards": cards,
+        "stage_columns": stage_columns,
+        "counts": counts,
+        "message_activity_sync": message_activity_sync,
+        "auto_start_window": _auto_start_window_payload(config),
+    }
 
 
 def get_stage_detail_payload(*, route_key: str, keyword: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
@@ -1621,6 +1930,359 @@ def get_stage_detail_payload(*, route_key: str, keyword: str = "", limit: int = 
             "prev_offset": max(int(offset) - int(limit), 0),
             "next_offset": int(offset) + int(limit),
         },
+    }
+
+
+def send_stage_manual_message(
+    *,
+    route_key: str,
+    content: str = "",
+    attachments: list[dict[str, Any]] | None = None,
+    attachment_media_ids: list[str] | None = None,
+    operator_id: str = "",
+) -> dict[str, Any]:
+    refresh_expired_silent_members()
+    definition = _manual_send_stage_definition(route_key)
+    pool = _normalized_text(definition.get("pool"))
+    normalized_operator_id = _normalized_text(operator_id) or "crm_console"
+    normalized_content = _normalized_text(content)
+    normalized_attachments = _normalize_manual_send_attachments(
+        attachments=attachments,
+        attachment_media_ids=attachment_media_ids,
+    )
+    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(
+        {
+            "content": normalized_content,
+            "attachments": normalized_attachments,
+        }
+    )
+    members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool)]
+    total_target_count = len(members)
+    skipped_reasons: dict[str, int] = {}
+    sendable_items: list[dict[str, Any]] = []
+    for member in members:
+        external_userid = _normalized_text(member.get("external_contact_id"))
+        if not external_userid:
+            skipped_reasons["missing_external_userid"] = int(skipped_reasons.get("missing_external_userid") or 0) + 1
+            continue
+        sendable_items.append(
+            {
+                "member_id": int(member.get("id") or 0),
+                "external_userid": external_userid,
+                "owner_userid": DEFAULT_OWNER_STAFF_ID,
+                "owner_display_name": DEFAULT_OWNER_STAFF_ID,
+            }
+        )
+
+    skipped_count = sum(int(value or 0) for value in skipped_reasons.values())
+    result = {
+        "ok": True,
+        "stage_key": _normalized_text(definition.get("route_key")),
+        "stage_label": _normalized_text(definition.get("label")),
+        "pool_key": pool,
+        "pool_label": _pool_label(pool),
+        "sender_userid": DEFAULT_OWNER_STAFF_ID,
+        "total_target_count": total_target_count,
+        "sendable_count": len(sendable_items),
+        "sent_count": 0,
+        "skipped_count": skipped_count,
+        "skipped_reasons": skipped_reasons,
+        "record_id": None,
+        "task_ids": [],
+        "status": "empty",
+        "content_preview": content_preview,
+        "image_count": image_count,
+        "error": "",
+    }
+    if not total_target_count:
+        result["empty_reason"] = "no_customers_in_stage"
+        return result
+    if not sendable_items:
+        result["empty_reason"] = "no_sendable_customers_in_stage"
+        return result
+
+    outbound_task_ids: list[int] = []
+    task_results: list[dict[str, Any]] = []
+    request_payload = {
+        "sender": [DEFAULT_OWNER_STAFF_ID],
+        "external_userid": [item["external_userid"] for item in sendable_items],
+        **task_payload,
+    }
+    try:
+        wecom_result = dispatch_wecom_task("private_message", "create_private_message_task", request_payload)
+        outbound_task_ids.append(int(wecom_result["task_id"]))
+        task_results.append(user_ops_page_service._build_sender_success_result(DEFAULT_OWNER_STAFF_ID, sendable_items, wecom_result))
+    except (WeComClientError, AttributeError) as exc:
+        task_results.append(user_ops_page_service._build_sender_failure_result(DEFAULT_OWNER_STAFF_ID, sendable_items, exc))
+
+    sent_count = sum(int(item.get("target_count") or 0) for item in task_results if _normalized_text(item.get("status")) != "failed")
+    status = user_ops_page_service._derive_record_status(task_results, eligible_count=len(sendable_items))
+    record_id = user_ops_page_service._insert_send_record(
+        outbound_task_ids=outbound_task_ids,
+        task_results=task_results,
+        selected_count=total_target_count,
+        eligible_count=len(sendable_items),
+        sent_count=sent_count,
+        skipped_count=skipped_count,
+        skipped_reasons=skipped_reasons,
+        include_do_not_disturb=False,
+        content_preview=content_preview,
+        image_count=image_count,
+        sender_userids=[DEFAULT_OWNER_STAFF_ID],
+        filter_snapshot={
+            "selection_mode": "automation_conversion_stage",
+            "stage_key": _normalized_text(definition.get("route_key")),
+            "stage_label": _normalized_text(definition.get("label")),
+            "pool_key": pool,
+            "pool_label": _pool_label(pool),
+        },
+        operator=normalized_operator_id,
+        status=status,
+    )
+    result.update(
+        {
+            "ok": status != "failed",
+            "sent_count": sent_count,
+            "record_id": int(record_id),
+            "task_ids": outbound_task_ids,
+            "status": status,
+            "error": (
+                _normalized_text(task_results[0].get("error_message"))
+                if status == "failed" and task_results
+                else ""
+            ),
+        }
+    )
+    return result
+
+
+def _focus_batch_detail_payload(batch_row: dict[str, Any] | None, *, item_limit: int = 12) -> dict[str, Any]:
+    serialized_batch = _serialize_focus_send_batch(batch_row)
+    if not serialized_batch:
+        return {}
+    items = [
+        _serialize_focus_send_batch_item(row)
+        for row in repo.list_focus_send_batch_items(batch_id=int(serialized_batch["id"]), limit=max(1, int(item_limit)), descending=False)
+    ]
+    return {
+        "batch": serialized_batch,
+        "items": items[-max(1, int(item_limit)) :],
+    }
+
+
+def get_focus_send_batch_detail(*, batch_id: int, item_limit: int = 12) -> dict[str, Any]:
+    batch_row = repo.get_focus_send_batch(int(batch_id))
+    if not batch_row:
+        raise LookupError("focus send batch not found")
+    return _focus_batch_detail_payload(batch_row, item_limit=item_limit)
+
+
+def create_focus_send_batch(*, route_key: str, operator_id: str = "", operator_type: str = "user") -> dict[str, Any]:
+    refresh_expired_silent_members()
+    definition = _focus_send_stage_definition(route_key)
+    normalized_stage_key = _normalized_text(definition.get("route_key"))
+    conflict_batch = repo.find_active_focus_send_batch_by_stage(normalized_stage_key)
+    if conflict_batch:
+        return {
+            "ok": False,
+            "status": "conflict",
+            "error": "当前阶段已有进行中的 AI 批任务",
+            "batch": _serialize_focus_send_batch(conflict_batch),
+            "items": [
+                _serialize_focus_send_batch_item(row)
+                for row in repo.list_focus_send_batch_items(batch_id=int(conflict_batch["id"]), limit=12, descending=False)
+            ],
+        }
+
+    now_text = _iso_now()
+    members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=_normalized_text(definition.get("pool")))]
+    pending_items: list[dict[str, Any]] = []
+    skipped_count = 0
+    batch_row = repo.insert_focus_send_batch(
+        {
+            "stage_key": normalized_stage_key,
+            "pool_key": _normalized_text(definition.get("pool")),
+            "operator_type": _normalized_text(operator_type) or "user",
+            "operator_id": _normalized_text(operator_id) or "crm_console",
+            "status": "pending",
+            "total_count": len(members),
+            "sent_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "cancelled_count": 0,
+            "next_run_at": "",
+            "last_run_at": "",
+            "created_at": now_text,
+            "updated_at": now_text,
+            "finished_at": "",
+        }
+    )
+    batch_id = int(batch_row.get("id") or 0)
+    for index, member in enumerate(members, start=1):
+        external_contact_id = _normalized_text(member.get("external_contact_id"))
+        item_status = "pending"
+        detail = ""
+        if not external_contact_id:
+            item_status = "skipped"
+            detail = "missing_external_userid"
+            skipped_count += 1
+        else:
+            pending_items.append(member)
+        repo.insert_focus_send_batch_item(
+            {
+                "batch_id": batch_id,
+                "member_id": int(member.get("id") or 0) if member.get("id") not in (None, "") else None,
+                "external_contact_id": external_contact_id,
+                "phone": _normalized_text(member.get("phone")),
+                "position_index": index,
+                "status": item_status,
+                "detail": detail,
+                "result_payload": {},
+                "created_at": now_text,
+                "updated_at": now_text,
+                "started_at": "",
+                "finished_at": now_text if item_status == "skipped" else "",
+            }
+        )
+    batch_status = "pending" if pending_items else "finished"
+    finished_at = "" if pending_items else now_text
+    updated_batch_row = repo.update_focus_send_batch(
+        batch_id,
+        {
+            **batch_row,
+            "status": batch_status,
+            "total_count": len(members),
+            "sent_count": 0,
+            "failed_count": 0,
+            "skipped_count": skipped_count,
+            "cancelled_count": 0,
+            "next_run_at": now_text if pending_items else "",
+            "last_run_at": "",
+            "updated_at": now_text,
+            "finished_at": finished_at,
+        },
+    )
+    get_db().commit()
+    detail_payload = _focus_batch_detail_payload(updated_batch_row, item_limit=12)
+    return {"ok": True, "status": "created", **detail_payload}
+
+
+def _finalize_focus_send_batch(
+    batch_row: dict[str, Any],
+    *,
+    now_text: str,
+    sent_count: int,
+    failed_count: int,
+    skipped_count: int,
+    cancelled_count: int = 0,
+) -> dict[str, Any]:
+    remaining_count = max(0, int(batch_row.get("total_count") or 0) - sent_count - failed_count - skipped_count - cancelled_count)
+    status = "running" if remaining_count > 0 else "finished"
+    base_time = _parse_timestamp(now_text) or datetime.now()
+    next_run_at = (base_time + timedelta(seconds=FOCUS_SEND_INTERVAL_SECONDS)).strftime("%Y-%m-%d %H:%M:%S") if remaining_count > 0 else ""
+    finished_at = "" if remaining_count > 0 else now_text
+    return repo.update_focus_send_batch(
+        int(batch_row["id"]),
+        {
+            **batch_row,
+            "status": status,
+            "sent_count": sent_count,
+            "failed_count": failed_count,
+            "skipped_count": skipped_count,
+            "cancelled_count": cancelled_count,
+            "next_run_at": next_run_at,
+            "last_run_at": now_text,
+            "updated_at": now_text,
+            "finished_at": finished_at,
+        },
+    )
+
+
+def _process_focus_send_batch_once(batch_row: dict[str, Any], *, now_text: str) -> dict[str, Any]:
+    claimed_item = repo.claim_next_focus_send_batch_item(batch_id=int(batch_row["id"]), started_at=now_text)
+    if not claimed_item:
+        finalized = _finalize_focus_send_batch(
+            batch_row,
+            now_text=now_text,
+            sent_count=int(batch_row.get("sent_count") or 0),
+            failed_count=int(batch_row.get("failed_count") or 0),
+            skipped_count=int(batch_row.get("skipped_count") or 0),
+            cancelled_count=int(batch_row.get("cancelled_count") or 0),
+        )
+        return _focus_batch_detail_payload(finalized, item_limit=12)
+
+    serialized_item = _serialize_focus_send_batch_item(claimed_item)
+    next_status = "failed"
+    detail = ""
+    result_payload: dict[str, Any] = {}
+    try:
+        push_result = push_openclaw(
+            external_contact_id=serialized_item["external_contact_id"],
+            phone=serialized_item["phone"],
+            operator_id=f"focus_batch:{int(batch_row['id'])}",
+        )
+        result_payload = dict(push_result or {})
+        if push_result.get("accepted"):
+            next_status = "sent"
+        elif _normalized_text(push_result.get("status")) == "cooldown_blocked":
+            next_status = "skipped"
+            detail = f"cooldown_blocked:{int(push_result.get('remaining_seconds') or 0)}"
+        else:
+            next_status = "failed"
+            detail = _normalized_text(push_result.get("error")) or _normalized_text(push_result.get("status")) or "openclaw_push_failed"
+    except LookupError as exc:
+        next_status = "skipped"
+        detail = str(exc)
+        result_payload = {"error": str(exc)}
+    except ValueError as exc:
+        next_status = "skipped"
+        detail = str(exc)
+        result_payload = {"error": str(exc)}
+    except Exception as exc:
+        next_status = "failed"
+        detail = str(exc)
+        result_payload = {"error": str(exc)}
+
+    repo.update_focus_send_batch_item(
+        int(claimed_item["id"]),
+        {
+            **claimed_item,
+            "status": next_status,
+            "detail": detail,
+            "result_payload": result_payload,
+            "updated_at": now_text,
+            "started_at": _normalized_text(claimed_item.get("started_at")) or now_text,
+            "finished_at": now_text,
+        },
+    )
+    sent_count = int(batch_row.get("sent_count") or 0) + (1 if next_status == "sent" else 0)
+    failed_count = int(batch_row.get("failed_count") or 0) + (1 if next_status == "failed" else 0)
+    skipped_count = int(batch_row.get("skipped_count") or 0) + (1 if next_status == "skipped" else 0)
+    finalized = _finalize_focus_send_batch(
+        batch_row,
+        now_text=now_text,
+        sent_count=sent_count,
+        failed_count=failed_count,
+        skipped_count=skipped_count,
+        cancelled_count=int(batch_row.get("cancelled_count") or 0),
+    )
+    return _focus_batch_detail_payload(finalized, item_limit=12)
+
+
+def run_due_focus_send_batches(*, operator_id: str = "", operator_type: str = "system", limit: int = 20) -> dict[str, Any]:
+    refresh_expired_silent_members()
+    now_text = _iso_now()
+    due_batches = repo.list_due_focus_send_batches(due_at=now_text, limit=max(1, int(limit)))
+    results: list[dict[str, Any]] = []
+    for batch_row in due_batches:
+        results.append(_process_focus_send_batch_once(batch_row, now_text=now_text))
+    get_db().commit()
+    return {
+        "ok": True,
+        "processed_count": len(results),
+        "operator_type": _normalized_text(operator_type) or "system",
+        "operator_id": _normalized_text(operator_id) or "focus_batch_runner",
+        "batches": results,
     }
 
 

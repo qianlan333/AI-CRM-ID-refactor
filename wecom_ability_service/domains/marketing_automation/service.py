@@ -34,6 +34,7 @@ DEFAULT_TARGET_EVENT = "signup_success"
 DEFAULT_CHANNEL_TYPE = "text_message"
 DEFAULT_CORE_THRESHOLD = 3
 DEFAULT_TOP_THRESHOLD = 4
+DEFAULT_DAY_START_HOUR = 9
 DEFAULT_QUIET_HOUR_START = 23
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_ENROLLED_SIGNUP_STATUS = "signed_999"
@@ -88,7 +89,7 @@ _VALUE_SEGMENT_LABELS = {"unknown": "未知", "top": "Top", "core": "Core", "nor
 _PHASE_LABELS = {
     "awaiting_trigger": "待触发",
     "waiting_openclaw": "待 OpenClaw 处理",
-    "blocked_after_2300": "23:00 后不启动",
+    "blocked_after_2300": "自动启动时间窗外",
     "exited_signup_success": "已确认成交，退出全部营销",
 }
 _CUSTOMER_MARKETING_STATE_LABELS = {
@@ -382,6 +383,7 @@ def _default_config_payload(*, automation_key: str = DEFAULT_SCENARIO_KEY) -> di
         "missing_questionnaire_id": None,
         "core_threshold": DEFAULT_CORE_THRESHOLD,
         "top_threshold": DEFAULT_TOP_THRESHOLD,
+        "day_start_hour": DEFAULT_DAY_START_HOUR,
         "quiet_hour_start": DEFAULT_QUIET_HOUR_START,
         "timezone": DEFAULT_TIMEZONE,
         "silent_threshold_days_by_pool": _default_silent_threshold_days_by_pool(),
@@ -389,7 +391,16 @@ def _default_config_payload(*, automation_key: str = DEFAULT_SCENARIO_KEY) -> di
         "configured": False,
         "created_at": "",
         "updated_at": "",
-    }
+}
+
+
+def _format_auto_start_window(day_start_hour: int, quiet_hour_start: int) -> str:
+    return f"{int(day_start_hour):02d}:00 - {int(quiet_hour_start):02d}:00"
+
+
+def _is_within_auto_start_window(*, hour: int, day_start_hour: int, quiet_hour_start: int) -> bool:
+    normalized_hour = int(hour)
+    return int(day_start_hour) <= normalized_hour < int(quiet_hour_start)
 
 
 def _segment_rank(segment: str) -> int:
@@ -495,6 +506,13 @@ def get_signup_conversion_config(*, automation_key: str = DEFAULT_SCENARIO_KEY) 
         "missing_questionnaire_id": questionnaire_id if questionnaire_missing else None,
         "core_threshold": _normalize_int(payload.get("core_threshold"), "core_threshold", default=DEFAULT_CORE_THRESHOLD),
         "top_threshold": _normalize_int(payload.get("top_threshold"), "top_threshold", default=DEFAULT_TOP_THRESHOLD),
+        "day_start_hour": _normalize_int(
+            payload.get("day_start_hour"),
+            "day_start_hour",
+            default=DEFAULT_DAY_START_HOUR,
+            minimum=0,
+            maximum=23,
+        ),
         "quiet_hour_start": _normalize_int(
             row.get("do_not_start_after_hour"),
             "quiet_hour_start",
@@ -596,7 +614,17 @@ def save_signup_conversion_config(
         minimum=0,
         maximum=23,
     )
+    day_start_hour = _normalize_int(
+        raw_payload.get("day_start_hour", existing.get("day_start_hour")),
+        "day_start_hour",
+        default=DEFAULT_DAY_START_HOUR,
+        minimum=0,
+        maximum=23,
+    )
     assert quiet_hour_start is not None
+    assert day_start_hour is not None
+    if int(day_start_hour) >= int(quiet_hour_start):
+        raise ValueError("day_start_hour must be < quiet_hour_start")
     timezone = _validate_timezone(raw_payload.get("timezone", existing.get("timezone")))
     silent_threshold_days_by_pool = _normalize_silent_threshold_days_by_pool(
         raw_payload.get("silent_threshold_days_by_pool", existing.get("silent_threshold_days_by_pool"))
@@ -624,6 +652,7 @@ def save_signup_conversion_config(
                 "questionnaire_id": int(questionnaire_id),
                 "core_threshold": int(core_threshold),
                 "top_threshold": int(top_threshold),
+                "day_start_hour": int(day_start_hour),
                 "timezone": timezone,
                 "silent_threshold_days_by_pool": silent_threshold_days_by_pool,
             },
@@ -1234,6 +1263,7 @@ def preview_signup_conversion_customer(
             "questionnaire_id": _normalize_int(config.get("questionnaire_id"), "questionnaire_id", allow_none=True),
             "core_threshold": int(config.get("core_threshold") or DEFAULT_CORE_THRESHOLD),
             "top_threshold": int(config.get("top_threshold") or DEFAULT_TOP_THRESHOLD),
+            "day_start_hour": int(config.get("day_start_hour") or DEFAULT_DAY_START_HOUR),
             "quiet_hour_start": int(config.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START),
             "timezone": _normalized_text(config.get("timezone")) or DEFAULT_TIMEZONE,
             "silent_threshold_days_by_pool": _normalize_silent_threshold_days_by_pool(
@@ -2610,8 +2640,8 @@ def _compute_value_segment(base: dict[str, Any], *, config: dict[str, Any]) -> d
     }
 
 
-def _blocked_phase_label(quiet_hour_start: int) -> str:
-    return f"{int(quiet_hour_start):02d}:00 后不启动"
+def _blocked_phase_label(day_start_hour: int, quiet_hour_start: int) -> str:
+    return f"{_format_auto_start_window(day_start_hour, quiet_hour_start)} 外不启动"
 
 
 def _build_state_payload(
@@ -2649,8 +2679,11 @@ def _build_state_payload(
         if bool(batch_context.get("blocked_after_quiet_hour")) and not existing_is_active:
             return {
                 "marketing_phase": "blocked_after_2300",
-                "phase_label": _blocked_phase_label(int(batch_context.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START)),
-                "phase_reason": "window_start_after_quiet_hour",
+                "phase_label": _blocked_phase_label(
+                    int(batch_context.get("day_start_hour") or DEFAULT_DAY_START_HOUR),
+                    int(batch_context.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START),
+                ),
+                "phase_reason": "window_start_outside_auto_start_window",
                 "lifecycle_status": "blocked",
                 "last_batch_id": batch_context.get("batch_id"),
                 "last_batch_status": _normalized_text(batch_context.get("batch_status")),
@@ -2826,7 +2859,7 @@ def get_customer_marketing_profile(
     elif batch_context and bool(marketing_state.get("openclaw_eligible")):
         if bool(batch_context.get("blocked_after_quiet_hour")):
             marketing_phase = "blocked_after_2300"
-            phase_reason = "window_start_after_quiet_hour"
+            phase_reason = "window_start_outside_auto_start_window"
             lifecycle_status = "blocked"
         else:
             marketing_phase = "waiting_openclaw"
@@ -2841,7 +2874,14 @@ def get_customer_marketing_profile(
         "external_userid": normalized_external_userid,
         "marketing_state": {
             "marketing_phase": marketing_phase,
-            "phase_label": _PHASE_LABELS.get(marketing_phase, marketing_phase),
+            "phase_label": (
+                _blocked_phase_label(
+                    int((batch_context or {}).get("day_start_hour") or config.get("day_start_hour") or DEFAULT_DAY_START_HOUR),
+                    int((batch_context or {}).get("quiet_hour_start") or config.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START),
+                )
+                if marketing_phase == "blocked_after_2300"
+                else _PHASE_LABELS.get(marketing_phase, marketing_phase)
+            ),
             "phase_reason": phase_reason,
             "lifecycle_status": lifecycle_status,
             "last_batch_id": _normalize_int((batch_context or {}).get("batch_id"), "batch_id", allow_none=True),
@@ -2911,6 +2951,7 @@ def _build_batch_context(
     messages: list[dict[str, Any]],
     external_userid: str,
     *,
+    day_start_hour: int,
     quiet_hour_start: int,
 ) -> dict[str, Any]:
     customer_messages = [item for item in messages if _normalized_text(item.get("external_userid")) == external_userid]
@@ -2922,12 +2963,22 @@ def _build_batch_context(
     latest_customer_message_at = max((_normalized_text(item.get("send_time")) for item in customer_text_messages), default="")
     window_start = _normalized_text(batch.get("window_start"))
     window_start_dt = _parse_timestamp(window_start)
+    blocked_outside_auto_start_window = bool(
+        window_start_dt is not None
+        and not _is_within_auto_start_window(
+            hour=int(window_start_dt.hour),
+            day_start_hour=int(day_start_hour),
+            quiet_hour_start=int(quiet_hour_start),
+        )
+    )
     return {
         "batch_id": int(batch.get("id") or 0),
         "batch_status": _normalized_text(batch.get("status")),
         "window_start": window_start,
         "window_end": _normalized_text(batch.get("window_end")),
-        "blocked_after_quiet_hour": bool(window_start_dt is not None and window_start_dt.hour >= int(quiet_hour_start)),
+        "blocked_after_quiet_hour": blocked_outside_auto_start_window,
+        "blocked_outside_auto_start_window": blocked_outside_auto_start_window,
+        "day_start_hour": int(day_start_hour),
         "quiet_hour_start": int(quiet_hour_start),
         "latest_customer_message_at": latest_customer_message_at,
         "customer_text_count": len(customer_text_messages),
@@ -2940,9 +2991,14 @@ def _router_now(*, timezone: str) -> datetime:
 
 
 def _router_quiet_hours_blocked(*, config: dict[str, Any]) -> bool:
+    day_start_hour = int(config.get("day_start_hour") or DEFAULT_DAY_START_HOUR)
     quiet_hour_start = int(config.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START)
     timezone = _normalized_text(config.get("timezone")) or DEFAULT_TIMEZONE
-    return int(_router_now(timezone=timezone).hour) >= quiet_hour_start
+    return not _is_within_auto_start_window(
+        hour=int(_router_now(timezone=timezone).hour),
+        day_start_hour=day_start_hour,
+        quiet_hour_start=quiet_hour_start,
+    )
 
 
 def _serialize_dispatch_log(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -3526,6 +3582,7 @@ def route_signup_conversion_batch_candidates(
             batch,
             messages,
             external_userid,
+            day_start_hour=int(config.get("day_start_hour") or DEFAULT_DAY_START_HOUR),
             quiet_hour_start=int(config.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START),
         )
         if int(batch_context.get("customer_text_count") or 0) <= 0:

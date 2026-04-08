@@ -5,8 +5,10 @@ import json
 from flask import jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
+    create_focus_send_batch,
     generate_default_channel_qr,
     get_debug_payload,
+    get_focus_send_batch_detail,
     get_member_detail,
     get_overview_payload,
     get_settings_payload,
@@ -15,8 +17,10 @@ from ..domains.automation_conversion import (
     put_in_pool,
     push_openclaw,
     remove_from_pool,
+    run_due_focus_send_batches,
     run_message_activity_sync,
     save_settings,
+    send_stage_manual_message,
     set_follow_type,
     unmark_won,
 )
@@ -65,8 +69,11 @@ def _build_settings_form_payload() -> dict[str, object]:
         "questionnaire_id": request.form.get("questionnaire_id"),
         "core_threshold": request.form.get("core_threshold"),
         "top_threshold": request.form.get("top_threshold"),
+        "day_start_hour": request.form.get("day_start_hour"),
         "quiet_hour_start": request.form.get("quiet_hour_start"),
         "timezone": request.form.get("timezone"),
+        "welcome_message": str(request.form.get("welcome_message") or "").strip(),
+        "auto_accept_friend": str(request.form.get("auto_accept_friend") or "").strip().lower() in {"1", "true", "yes", "on"},
         "silent_threshold_days_by_pool": {
             "new_user": request.form.get("silent_threshold_new_user"),
             "inactive_normal": request.form.get("silent_threshold_inactive_normal"),
@@ -78,6 +85,39 @@ def _build_settings_form_payload() -> dict[str, object]:
     }
 
 
+def _split_multiline_tokens(raw_value: str) -> list[str]:
+    tokens: list[str] = []
+    normalized = str(raw_value or "").replace("\r", "\n").replace(",", "\n")
+    for item in normalized.split("\n"):
+        token = item.strip()
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _build_manual_send_request_payload() -> dict[str, object]:
+    json_payload = request.get_json(silent=True)
+    if isinstance(json_payload, dict):
+        raw_attachment_media_ids = json_payload.get("attachment_media_ids")
+        if isinstance(raw_attachment_media_ids, list):
+            attachment_media_ids = [str(item).strip() for item in raw_attachment_media_ids if str(item).strip()]
+        else:
+            attachment_media_ids = _split_multiline_tokens(str(raw_attachment_media_ids or ""))
+        attachments = json_payload.get("attachments")
+        return {
+            "content": str(json_payload.get("content") or "").strip(),
+            "attachments": list(attachments or []) if isinstance(attachments, list) else [],
+            "attachment_media_ids": attachment_media_ids,
+            "operator_id": _operator_from_request(),
+        }
+    return {
+        "content": str(request.form.get("content") or "").strip(),
+        "attachments": [],
+        "attachment_media_ids": _split_multiline_tokens(request.form.get("attachment_media_ids", "")),
+        "operator_id": _operator_from_request(),
+    }
+
+
 def _settings_notice() -> str:
     if _query_text("saved") == "1":
         return "设置已保存"
@@ -86,6 +126,12 @@ def _settings_notice() -> str:
     if _query_text("message_activity_sync") == "1":
         return "消息活跃同步已完成"
     return ""
+
+
+def _wants_json_response() -> bool:
+    accept = str(request.headers.get("Accept") or "").lower()
+    requested_with = str(request.headers.get("X-Requested-With") or "").strip()
+    return "application/json" in accept or requested_with == "XMLHttpRequest"
 
 
 def _apply_settings_form_overrides(payload: dict[str, object]) -> dict[str, object]:
@@ -100,6 +146,7 @@ def _apply_settings_form_overrides(payload: dict[str, object]) -> dict[str, obje
             "questionnaire_id": questionnaire_id_text or None,
             "core_threshold": str(request.form.get("core_threshold") or "").strip(),
             "top_threshold": str(request.form.get("top_threshold") or "").strip(),
+            "day_start_hour": str(request.form.get("day_start_hour") or "").strip(),
             "quiet_hour_start": str(request.form.get("quiet_hour_start") or "").strip(),
             "timezone": str(request.form.get("timezone") or "").strip(),
             "silent_threshold_days_by_pool": {
@@ -111,6 +158,14 @@ def _apply_settings_form_overrides(payload: dict[str, object]) -> dict[str, obje
             },
         }
     )
+    default_channel = dict(payload.get("default_channel") or {})
+    default_channel.update(
+        {
+            "welcome_message": str(request.form.get("welcome_message") or "").strip(),
+            "auto_accept_friend": str(request.form.get("auto_accept_friend") or "").strip().lower() in {"1", "true", "yes", "on"},
+        }
+    )
+    payload["default_channel"] = default_channel
     selected_catalog_item = questionnaire_catalog.get(questionnaire_id_text) if questionnaire_id_text else None
     payload["config"] = config
     payload["selected_questionnaire"] = selected_catalog_item
@@ -127,6 +182,84 @@ def _apply_settings_form_overrides(payload: dict[str, object]) -> dict[str, obje
         "rules_invalidated": bool(payload["questionnaire_missing"]),
     }
     return payload
+
+
+def _stage_send_payload(stage_key: str) -> dict[str, object]:
+    try:
+        payload = get_stage_detail_payload(
+            route_key=stage_key,
+            keyword="",
+            offset=0,
+            limit=20,
+        )
+    except ValueError:
+        return {}
+    send_mode = _stage_send_mode(payload)
+    return {
+        "stage_payload": payload,
+        "send_payload": {
+            "mode": send_mode,
+            "manual_send_url": url_for("api.api_admin_automation_conversion_stage_manual_send", stage_key=stage_key),
+            "manual_send_form_action": url_for("api.admin_automation_conversion_stage_send_submit", stage_key=stage_key),
+            "focus_send_batches_url": url_for("api.api_admin_automation_conversion_stage_focus_send_batches", stage_key=stage_key),
+            "focus_send_batches_form_action": url_for("api.admin_automation_conversion_stage_send_submit", stage_key=stage_key),
+            "focus_send_batch_detail_url_template": "/api/admin/automation-conversion/focus-send-batches/<batch_id>",
+            "form": {
+                "content": str(request.form.get("content") or "").strip(),
+                "attachment_media_ids": request.form.get("attachment_media_ids", ""),
+                "operator": str(request.form.get("operator") or "").strip(),
+            },
+        },
+    }
+
+
+def _render_stage_send_page(
+    stage_key: str,
+    *,
+    page_notice: str = "",
+    page_error: str = "",
+    send_result: dict[str, object] | None = None,
+    focus_batch: dict[str, object] | None = None,
+):
+    payload_bundle = _stage_send_payload(stage_key)
+    if not payload_bundle:
+        return _render_admin_template(
+            "placeholder.html",
+            active_nav="automation_conversion",
+            page_title="阶段不存在",
+            page_summary="当前阶段不存在，请返回自动化转化首页重新选择。",
+            breadcrumbs=_breadcrumb_items(
+                ("客户管理后台", url_for("api.admin_console_home")),
+                ("自动化转化", url_for("api.admin_automation_conversion")),
+                ("阶段不存在", None),
+            ),
+            actions=[{"label": "返回自动化转化首页", "href": url_for("api.admin_automation_conversion"), "variant": "secondary"}],
+            state_title="阶段不存在",
+            state_body="请检查链接是否正确。",
+            state_items=["支持查看：新用户池、未激活普通池、未激活重点跟进池、激活普通池、激活重点跟进池、沉默池、已成交。"],
+            page_error="未找到对应阶段",
+        ), 404
+    payload = payload_bundle["stage_payload"]
+    send_payload = payload_bundle["send_payload"]
+    return _render_admin_template(
+        "automation_conversion_stage_send.html",
+        active_nav="automation_conversion",
+        page_title=f"{payload['stage']['label']}创建群发",
+        page_summary="所有阶段都从这里进入群发壳子；重点阶段走 AI 批量处理，其他阶段走官方群发。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            (payload["stage"]["label"], url_for("api.admin_automation_conversion_stage_detail", stage_key=stage_key)),
+            ("创建群发", None),
+        ),
+        stage_payload=payload,
+        send_payload=send_payload,
+        send_result=send_result or {},
+        focus_batch=focus_batch or {},
+        page_notice=page_notice,
+        page_error=page_error,
+        admin_action_token=ensure_admin_console_action_token(),
+    )
 
 
 def _render_settings_page(*, settings_payload: dict[str, object] | None = None, question_rules_json: str | None = None, page_error: str = ""):
@@ -161,6 +294,7 @@ def admin_automation_conversion():
         page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
         overview_payload=overview_payload,
+        admin_action_token=ensure_admin_console_action_token(),
     )
 
 
@@ -203,6 +337,54 @@ def admin_automation_conversion_stage_detail(stage_key: str):
     )
 
 
+def _stage_send_mode(stage_payload: dict[str, object]) -> str:
+    pool = str(((stage_payload or {}).get("stage") or {}).get("pool") or "").strip()
+    return "focus_ai" if pool in {"inactive_focus", "active_focus"} else "manual_send"
+
+
+def admin_automation_conversion_stage_send(stage_key: str):
+    return _render_stage_send_page(stage_key)
+
+
+def admin_automation_conversion_stage_send_submit(stage_key: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_stage_send_page(stage_key, page_error=action_token_error)
+    payload_bundle = _stage_send_payload(stage_key)
+    if not payload_bundle:
+        return _render_stage_send_page(stage_key, page_error="未找到对应阶段")
+    send_mode = str(((payload_bundle.get("send_payload") or {}).get("mode") or "")).strip()
+    if send_mode == "focus_ai":
+        try:
+            result = create_focus_send_batch(route_key=stage_key, operator_id=_operator_from_request(), operator_type="user")
+        except ValueError as exc:
+            return _render_stage_send_page(stage_key, page_error=str(exc))
+        if result.get("ok"):
+            return _render_stage_send_page(
+                stage_key,
+                page_notice="AI 批任务已创建",
+                focus_batch={"batch": result.get("batch") or {}, "items": result.get("items") or []},
+            )
+        return _render_stage_send_page(
+            stage_key,
+            page_error=str(result.get("error") or "AI 批任务创建失败"),
+            focus_batch={"batch": result.get("batch") or {}, "items": result.get("items") or []},
+        )
+    try:
+        result = send_stage_manual_message(route_key=stage_key, **_build_manual_send_request_payload())
+    except ValueError as exc:
+        return _render_stage_send_page(stage_key, page_error=str(exc))
+    if result.get("ok"):
+        status = str(result.get("status") or "")
+        notice = "官方群发已创建" if status == "sent" else "当前阶段没有可发送客户"
+        return _render_stage_send_page(stage_key, page_notice=notice, send_result=result)
+    return _render_stage_send_page(
+        stage_key,
+        page_error=str(result.get("error") or "官方群发创建失败"),
+        send_result=result,
+    )
+
+
 def admin_automation_conversion_settings():
     return _render_settings_page()
 
@@ -230,12 +412,29 @@ def admin_automation_conversion_generate_default_channel():
 def admin_automation_conversion_run_message_activity_sync():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": action_token_error}), 400
         return _render_settings_page(page_error=action_token_error)
     result = run_message_activity_sync(
         operator_id=_operator_from_request(),
         operator_type="user",
         trigger_source="manual",
     )
+    if _wants_json_response():
+        overview_payload = get_overview_payload()
+        message_activity_sync = dict(overview_payload.get("message_activity_sync") or {})
+        status_code = 200 if result.get("ok") else 400
+        return (
+            jsonify(
+                {
+                    "ok": bool(result.get("ok")),
+                    "message": "消息活跃同步已完成" if result.get("ok") else str(result.get("error") or "消息活跃同步失败"),
+                    "run": result.get("run") or {},
+                    "message_activity_sync": message_activity_sync,
+                }
+            ),
+            status_code,
+        )
     if result.get("ok"):
         return redirect(url_for("api.admin_automation_conversion_settings", message_activity_sync=1), code=302)
     return _render_settings_page(page_error=str(result.get("error") or "消息活跃同步失败"))
@@ -358,6 +557,53 @@ def api_admin_automation_conversion_generate_default_channel():
     return jsonify({"ok": bool(result.get("generated")), **result}), status_code
 
 
+def api_admin_automation_conversion_stage_manual_send(stage_key: str):
+    try:
+        result = send_stage_manual_message(route_key=stage_key, **_build_manual_send_request_payload())
+    except ValueError as exc:
+        message = str(exc)
+        if message == "invalid stage":
+            return jsonify({"ok": False, "error": message}), 404
+        return jsonify({"ok": False, "error": message}), 400
+    status_code = 200 if result.get("ok") else 502
+    return jsonify(result), status_code
+
+
+def api_admin_automation_conversion_stage_focus_send_batches(stage_key: str):
+    try:
+        result = create_focus_send_batch(route_key=stage_key, operator_id=_operator_from_request(), operator_type="user")
+    except ValueError as exc:
+        message = str(exc)
+        if message == "invalid stage":
+            return jsonify({"ok": False, "error": message}), 404
+        return jsonify({"ok": False, "error": message}), 400
+    status_code = 201 if result.get("ok") else 409
+    return jsonify(result), status_code
+
+
+def api_admin_automation_conversion_focus_send_batch_detail(batch_id: str):
+    try:
+        result = get_focus_send_batch_detail(batch_id=int(batch_id))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid batch_id"}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_focus_send_batches_run_due():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_due_focus_send_batches(
+        operator_id=_operator_from_request(),
+        operator_type="system",
+        limit=int(payload.get("limit") or 20),
+    )
+    return jsonify(result)
+
+
 def api_admin_automation_conversion_run_message_activity_sync():
     auth_failure = require_internal_api_token()
     if auth_failure is not None:
@@ -382,7 +628,10 @@ def api_admin_automation_conversion_debug_member():
 
 def register_routes(bp):
     bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
+    bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage_detail)
+    bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET"])(admin_automation_conversion_stage_send)
+    bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["POST"])(admin_automation_conversion_stage_send_submit)
     bp.route("/admin/automation-conversion/settings", methods=["GET"])(admin_automation_conversion_settings)
     bp.route("/admin/automation-conversion/settings/save", methods=["POST"])(admin_automation_conversion_save_settings)
     bp.route("/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(admin_automation_conversion_generate_default_channel)
@@ -402,5 +651,9 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_save_settings)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_generate_default_channel)
+    bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send", methods=["POST"])(api_admin_automation_conversion_stage_manual_send)
+    bp.route("/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches", methods=["POST"])(api_admin_automation_conversion_stage_focus_send_batches)
+    bp.route("/api/admin/automation-conversion/focus-send-batches/<batch_id>", methods=["GET"])(api_admin_automation_conversion_focus_send_batch_detail)
+    bp.route("/api/admin/automation-conversion/focus-send-batches/run-due", methods=["POST"])(api_admin_automation_conversion_focus_send_batches_run_due)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
     bp.route("/api/admin/automation-conversion/debug/member", methods=["GET"])(api_admin_automation_conversion_debug_member)
