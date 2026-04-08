@@ -975,7 +975,7 @@ def _build_private_message_payload(customers: list[dict[str, Any]], *, content: 
     payload = {
         "chat_type": "single",
         "external_userid": [customers[0]["external_userid"]],
-        "sender": sender_userids,
+        "sender": sender_userids[0] if sender_userids else "",
         "text": {"content": content},
     }
     return payload, sender_userids

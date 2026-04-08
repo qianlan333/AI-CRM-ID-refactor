@@ -213,7 +213,7 @@ def test_create_private_message_task_resolves_mobile_then_executes(client, app, 
         request_payload = json.loads(row["request_payload"])
         assert request_payload["chat_type"] == "single"
         assert request_payload["external_userid"] == ["wm_private_001"]
-        assert request_payload["sender"] == ["sales_01"]
+        assert request_payload["sender"] == "sales_01"
         assert request_payload["text"]["content"] == "你好，来跟进一下"
 
 
