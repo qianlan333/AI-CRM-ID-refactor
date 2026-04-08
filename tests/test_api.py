@@ -712,7 +712,15 @@ def test_archive_sync_deduplicates_messages(client, app, monkeypatch):
 
 def test_create_private_message_task(client, app, monkeypatch):
     monkeypatch.setattr("requests.get", fake_wecom_get)
-    monkeypatch.setattr("requests.post", fake_wecom_post)
+
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/add_msg_template"):
+            captured_payloads.append(json or {})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.post", fake_post)
 
     response = client.post(
         "/api/tasks/private-message",
@@ -721,6 +729,7 @@ def test_create_private_message_task(client, app, monkeypatch):
     data = response.get_json()
     assert response.status_code == 200
     assert data["wecom_result"]["msgid"] == "task-msg-001"
+    assert captured_payloads[0]["sender"] == "sales_01"
 
     with app.app_context():
         row = get_db().execute("SELECT COUNT(*) AS total FROM outbound_tasks").fetchone()

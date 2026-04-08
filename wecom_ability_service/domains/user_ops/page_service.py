@@ -1133,7 +1133,7 @@ def execute_user_ops_batch_send(payload: dict[str, Any]) -> dict[str, Any]:
     for owner_userid, items in sorted(grouped_targets.items()):
         sender_userids.append(owner_userid)
         request_payload = {
-            "sender": [owner_userid],
+            "sender": owner_userid,
             "external_userid": [item["external_userid"] for item in items],
             **task_payload,
         }

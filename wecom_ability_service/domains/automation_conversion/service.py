@@ -1993,7 +1993,7 @@ def send_stage_manual_message(
     outbound_task_ids: list[int] = []
     task_results: list[dict[str, Any]] = []
     request_payload = {
-        "sender": [DEFAULT_OWNER_STAFF_ID],
+        "sender": DEFAULT_OWNER_STAFF_ID,
         "external_userid": [item["external_userid"] for item in sendable_items],
         **task_payload,
     }
