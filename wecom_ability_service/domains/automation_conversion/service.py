@@ -207,6 +207,18 @@ def _phone_last4(phone: Any) -> str:
     return text[-4:] if len(text) >= 4 else ""
 
 
+def _phone_prefix3(phone: Any) -> str:
+    text = _normalized_text(phone)
+    return text[:3] if len(text) >= 3 else ""
+
+
+def _phone_match_key(phone: Any) -> str:
+    text = _normalized_text(phone)
+    if len(text) < 7:
+        return ""
+    return f"{text[:3]}_{text[-4:]}"
+
+
 def default_owner_staff_id() -> str:
     return DEFAULT_OWNER_STAFF_ID
 
@@ -778,7 +790,7 @@ def _message_activity_item_status_label(value: str) -> str:
     return {
         "updated": "已更新",
         "unchanged": "无变化",
-        "skipped_ambiguous": "尾号冲突跳过",
+        "skipped_ambiguous": "匹配键冲突跳过",
         "skipped_unmatched": "未匹配跳过",
         "skipped_missing_phone": "手机号缺失跳过",
     }.get(normalized, normalized or "未知")
@@ -801,7 +813,9 @@ def _serialize_message_activity_sync_item(row: dict[str, Any]) -> dict[str, Any]
         "member_id": int(deserialized.get("member_id") or 0) if deserialized.get("member_id") not in (None, "") else 0,
         "external_contact_id": _normalized_text(deserialized.get("external_contact_id")),
         "phone": _normalized_text(deserialized.get("phone")),
+        "phone_prefix3": _normalized_text(deserialized.get("phone_prefix3")),
         "phone_last4": _normalized_text(deserialized.get("phone_last4")),
+        "phone_match_key": _normalized_text(deserialized.get("phone_match_key")),
         "message_count": int(deserialized.get("message_count") or 0),
         "status": _normalized_text(deserialized.get("status")),
         "status_label": _message_activity_item_status_label(deserialized.get("status")),
@@ -1051,30 +1065,39 @@ def run_message_activity_sync(
         "message_source_rows": 0,
         "active_focus_message_threshold": ACTIVE_FOCUS_MESSAGE_THRESHOLD,
         "active_message_min_threshold": ACTIVE_MESSAGE_MIN_THRESHOLD,
+        "ambiguous_phone_match_keys": [],
         "ambiguous_phone_last4": [],
     }
     try:
         eligible_members = [_serialize_member(row) for row in repo.list_members_for_message_activity_sync(current_pools=list(current_pools))]
         counters["candidate_count"] = len(eligible_members)
         message_counts = {
-            _normalized_text(row.get("phone_last4")): int(row.get("message_count") or 0)
+            _normalized_text(row.get("phone_match_key")): {
+                "phone_prefix3": _normalized_text(row.get("phone_prefix3")),
+                "phone_last4": _normalized_text(row.get("phone_last4")),
+                "phone_match_key": _normalized_text(row.get("phone_match_key")),
+                "message_count": int(row.get("message_count") or 0),
+            }
             for row in query_message_activity_counts()
-            if _normalized_text(row.get("phone_last4"))
+            if _normalized_text(row.get("phone_match_key"))
         }
         summary["message_source_rows"] = len(message_counts)
-        members_by_last4: dict[str, list[dict[str, Any]]] = {}
+        members_by_match_key: dict[str, list[dict[str, Any]]] = {}
         for member in eligible_members:
-            match_key = _phone_last4(member.get("phone"))
+            match_key = _phone_match_key(member.get("phone"))
             if not match_key:
                 continue
-            members_by_last4.setdefault(match_key, []).append(member)
-        ambiguous_groups = {key: rows for key, rows in members_by_last4.items() if len(rows) > 1}
-        summary["ambiguous_phone_last4"] = sorted(ambiguous_groups.keys())
+            members_by_match_key.setdefault(match_key, []).append(member)
+        ambiguous_groups = {key: rows for key, rows in members_by_match_key.items() if len(rows) > 1}
+        summary["ambiguous_phone_match_keys"] = sorted(ambiguous_groups.keys())
+        summary["ambiguous_phone_last4"] = [_normalized_text(item).split("_", 1)[-1] for item in summary["ambiguous_phone_match_keys"]]
 
         matched_members: list[dict[str, Any]] = []
         for member in eligible_members:
-            match_key = _phone_last4(member.get("phone"))
+            match_key = _phone_match_key(member.get("phone"))
             member_id = int(member.get("id") or 0)
+            phone_prefix3 = _phone_prefix3(member.get("phone"))
+            phone_last4 = _phone_last4(member.get("phone"))
             if not match_key:
                 counters["skipped_missing_phone_count"] += 1
                 repo.insert_message_activity_sync_item(
@@ -1083,10 +1106,12 @@ def run_message_activity_sync(
                         "member_id": member_id,
                         "external_contact_id": member.get("external_contact_id"),
                         "phone": member.get("phone"),
-                        "phone_last4": "",
+                        "phone_prefix3": phone_prefix3,
+                        "phone_last4": phone_last4,
+                        "phone_match_key": "",
                         "message_count": 0,
                         "status": "skipped_missing_phone",
-                        "detail": "member phone is empty or shorter than 4 digits",
+                        "detail": "member phone is empty or shorter than 7 digits, cannot build phone_match_key",
                         "before_snapshot": _member_snapshot(member),
                         "after_snapshot": _member_snapshot(member),
                         "created_at": _iso_now(),
@@ -1105,10 +1130,12 @@ def run_message_activity_sync(
                         "member_id": member_id,
                         "external_contact_id": member.get("external_contact_id"),
                         "phone": member.get("phone"),
-                        "phone_last4": match_key,
+                        "phone_prefix3": phone_prefix3,
+                        "phone_last4": phone_last4,
+                        "phone_match_key": match_key,
                         "message_count": 0,
                         "status": "skipped_ambiguous",
-                        "detail": f"phone_last4={match_key} matched multiple automation members: {conflict_members}",
+                        "detail": f"phone_match_key={match_key} matched multiple automation members: {conflict_members}",
                         "before_snapshot": _member_snapshot(member),
                         "after_snapshot": _member_snapshot(member),
                         "created_at": _iso_now(),
@@ -1123,10 +1150,12 @@ def run_message_activity_sync(
                         "member_id": member_id,
                         "external_contact_id": member.get("external_contact_id"),
                         "phone": member.get("phone"),
-                        "phone_last4": match_key,
+                        "phone_prefix3": phone_prefix3,
+                        "phone_last4": phone_last4,
+                        "phone_match_key": match_key,
                         "message_count": 0,
                         "status": "skipped_unmatched",
-                        "detail": f"phone_last4={match_key} not found in message activity source",
+                        "detail": f"phone_match_key={match_key} not found in message activity source",
                         "before_snapshot": _member_snapshot(member),
                         "after_snapshot": _member_snapshot(member),
                         "created_at": _iso_now(),
@@ -1136,8 +1165,10 @@ def run_message_activity_sync(
             matched_members.append(
                 {
                     "member": member,
-                    "phone_last4": match_key,
-                    "message_count": int(message_counts.get(match_key) or 0),
+                    "phone_prefix3": phone_prefix3,
+                    "phone_last4": phone_last4,
+                    "phone_match_key": match_key,
+                    "message_count": int((message_counts.get(match_key) or {}).get("message_count") or 0),
                 }
             )
 
@@ -1192,7 +1223,7 @@ def run_message_activity_sync(
                     before_snapshot=_member_snapshot(before),
                     after_snapshot=_member_snapshot(after),
                     remark=(
-                        f"message_count={message_count}; phone_last4={item['phone_last4']}; "
+                        f"message_count={message_count}; phone_match_key={item['phone_match_key']}; "
                         f"rank={index + 1}/{len(ranked_members)}; "
                         f"bucket={bucket_label}; "
                         f"follow_type={'manual_preserved' if manual_preserved else next_follow_type}"
@@ -1207,7 +1238,9 @@ def run_message_activity_sync(
                     "member_id": int(before["id"]),
                     "external_contact_id": before.get("external_contact_id"),
                     "phone": before.get("phone"),
+                    "phone_prefix3": item["phone_prefix3"],
                     "phone_last4": item["phone_last4"],
+                    "phone_match_key": item["phone_match_key"],
                     "message_count": message_count,
                     "status": "updated" if changed else "unchanged",
                     "detail": (

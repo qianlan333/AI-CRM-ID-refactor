@@ -619,7 +619,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
             external_contact_id TEXT NOT NULL DEFAULT '',
             phone TEXT NOT NULL DEFAULT '',
+            phone_prefix3 TEXT NOT NULL DEFAULT '',
             phone_last4 TEXT NOT NULL DEFAULT '',
+            phone_match_key TEXT NOT NULL DEFAULT '',
             message_count INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'updated',
             detail TEXT NOT NULL DEFAULT '',
@@ -703,6 +705,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_last4 ON automation_message_activity_sync_item (phone_last4, created_at DESC, id DESC)"
     )
     db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_match_key ON automation_message_activity_sync_item (phone_match_key, created_at DESC, id DESC)"
+    )
+    db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_stage_status ON automation_focus_send_batch (stage_key, status, id DESC)"
     )
     db.execute(
@@ -757,6 +762,18 @@ def _init_sqlite(db) -> None:
             WHERE tag_id <> ''
             """
         )
+    message_activity_sync_item_columns = _sqlite_table_columns(db, "automation_message_activity_sync_item")
+    if message_activity_sync_item_columns:
+        if "phone_prefix3" not in message_activity_sync_item_columns:
+            db.execute("ALTER TABLE automation_message_activity_sync_item ADD COLUMN phone_prefix3 TEXT NOT NULL DEFAULT ''")
+        if "phone_match_key" not in message_activity_sync_item_columns:
+            db.execute("ALTER TABLE automation_message_activity_sync_item ADD COLUMN phone_match_key TEXT NOT NULL DEFAULT ''")
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_match_key
+            ON automation_message_activity_sync_item (phone_match_key, created_at DESC, id DESC)
+            """
+        )
     db.commit()
 
 
@@ -765,6 +782,24 @@ def _ensure_postgres_user_ops_page_tables(db) -> None:
         """
         ALTER TABLE IF EXISTS user_ops_send_records
         ADD COLUMN IF NOT EXISTS image_count INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_message_activity_sync_item
+        ADD COLUMN IF NOT EXISTS phone_prefix3 TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_message_activity_sync_item
+        ADD COLUMN IF NOT EXISTS phone_match_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_match_key
+        ON automation_message_activity_sync_item (phone_match_key, created_at DESC, id DESC)
         """
     )
 

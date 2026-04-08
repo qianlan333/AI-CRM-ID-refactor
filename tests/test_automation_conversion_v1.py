@@ -301,6 +301,7 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "idx_automation_ai_push_log_status",
             "idx_automation_message_activity_sync_run_finished",
             "idx_automation_message_activity_sync_item_run",
+            "idx_automation_message_activity_sync_item_match_key",
             "idx_automation_focus_send_batch_stage_status",
             "idx_automation_focus_send_batch_item_batch_position",
         }.issubset(index_names)
@@ -1092,10 +1093,10 @@ def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monk
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
         lambda: [
-            {"phone_last4": "1231", "message_count": 15},
-            {"phone_last4": "1232", "message_count": 10},
-            {"phone_last4": "1233", "message_count": 1},
-            {"phone_last4": "1234", "message_count": 0},
+            {"phone_prefix3": "138", "phone_last4": "1231", "phone_match_key": "138_1231", "message_count": 15},
+            {"phone_prefix3": "138", "phone_last4": "1232", "phone_match_key": "138_1232", "message_count": 10},
+            {"phone_prefix3": "138", "phone_last4": "1233", "phone_match_key": "138_1233", "message_count": 1},
+            {"phone_prefix3": "138", "phone_last4": "1234", "phone_match_key": "138_1234", "message_count": 0},
         ],
     )
 
@@ -1193,8 +1194,8 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
         lambda: [
-            {"phone_last4": "2221", "message_count": 20},
-            {"phone_last4": "2222", "message_count": 0},
+            {"phone_prefix3": "138", "phone_last4": "2221", "phone_match_key": "138_2221", "message_count": 20},
+            {"phone_prefix3": "138", "phone_last4": "2222", "phone_match_key": "138_2222", "message_count": 0},
         ],
     )
 
@@ -1266,8 +1267,8 @@ def test_message_activity_sync_uses_questionnaire_result_for_inactive_members(ap
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
         lambda: [
-            {"phone_last4": "2441", "message_count": 1},
-            {"phone_last4": "2442", "message_count": 0},
+            {"phone_prefix3": "138", "phone_last4": "2441", "phone_match_key": "138_2441", "message_count": 1},
+            {"phone_prefix3": "138", "phone_last4": "2442", "phone_match_key": "138_2442", "message_count": 0},
         ],
     )
 
@@ -1309,7 +1310,7 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
     _configure_message_activity_db(app)
     rows = [
         ("wm_skip_sync_001", "13800003331"),
-        ("wm_skip_sync_002", "13900003331"),
+        ("wm_skip_sync_002", "13899993331"),
         ("wm_skip_sync_003", "13800003332"),
         ("wm_skip_sync_004", "13800003339"),
     ]
@@ -1331,8 +1332,8 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
         lambda: [
-            {"phone_last4": "3331", "message_count": 9},
-            {"phone_last4": "3332", "message_count": 3},
+            {"phone_prefix3": "138", "phone_last4": "3331", "phone_match_key": "138_3331", "message_count": 9},
+            {"phone_prefix3": "138", "phone_last4": "3332", "phone_match_key": "138_3332", "message_count": 3},
         ],
     )
 
@@ -1370,17 +1371,17 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
         {
             "external_contact_id": "wm_skip_sync_001",
             "status": "skipped_ambiguous",
-            "detail": "phone_last4=3331 matched multiple automation members: wm_skip_sync_001,wm_skip_sync_002",
+            "detail": "phone_match_key=138_3331 matched multiple automation members: wm_skip_sync_001,wm_skip_sync_002",
         },
         {
             "external_contact_id": "wm_skip_sync_002",
             "status": "skipped_ambiguous",
-            "detail": "phone_last4=3331 matched multiple automation members: wm_skip_sync_001,wm_skip_sync_002",
+            "detail": "phone_match_key=138_3331 matched multiple automation members: wm_skip_sync_001,wm_skip_sync_002",
         },
         {
             "external_contact_id": "wm_skip_sync_004",
             "status": "skipped_unmatched",
-            "detail": "phone_last4=3339 not found in message activity source",
+            "detail": "phone_match_key=138_3339 not found in message activity source",
         },
         {
             "external_contact_id": "wm_skip_sync_003",
@@ -1394,6 +1395,192 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
         {"external_contact_id": "wm_skip_sync_003", "activation_status": "active", "current_pool": "active_normal"},
         {"external_contact_id": "wm_skip_sync_004", "activation_status": "inactive", "current_pool": "inactive_normal"},
     ]
+
+
+def test_message_activity_sync_requires_same_prefix3_and_last4(app, monkeypatch):
+    _configure_message_activity_db(app)
+    _seed_contact(app, external_userid="wm_match_sync_001", mobile="13800005555", owner_userid="sales_match", customer_name="match")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_match_sync_001",
+        phone="13800005555",
+        owner_staff_id="sales_match",
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+    )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_prefix3": "139", "phone_last4": "5555", "phone_match_key": "139_5555", "message_count": 20},
+            {"phone_prefix3": "138", "phone_last4": "5555", "phone_match_key": "138_5555", "message_count": 20},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(operator_id="tester-message-sync", operator_type="user", trigger_source="manual")
+        row = get_db().execute(
+            """
+            SELECT activation_status, follow_type, current_pool
+            FROM automation_member
+            WHERE external_contact_id = 'wm_match_sync_001'
+            """
+        ).fetchone()
+
+    assert payload["ok"] is True
+    assert payload["run"]["matched_count"] == 1
+    assert dict(row) == {
+        "activation_status": "active",
+        "follow_type": "focus",
+        "current_pool": "active_focus",
+    }
+
+
+def test_message_activity_sync_same_last4_different_prefix_does_not_match(app, monkeypatch):
+    _configure_message_activity_db(app)
+    _seed_contact(app, external_userid="wm_last4_sync_001", mobile="13800006666", owner_userid="sales_last4", customer_name="last4")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_last4_sync_001",
+        phone="13800006666",
+        owner_staff_id="sales_last4",
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+    )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_prefix3": "139", "phone_last4": "6666", "phone_match_key": "139_6666", "message_count": 9},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(operator_id="tester-message-sync", operator_type="user", trigger_source="manual")
+        item = get_db().execute(
+            """
+            SELECT status, detail
+            FROM automation_message_activity_sync_item
+            WHERE run_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (payload["run"]["id"],),
+        ).fetchone()
+
+    assert payload["ok"] is True
+    assert payload["run"]["matched_count"] == 0
+    assert dict(item) == {
+        "status": "skipped_unmatched",
+        "detail": "phone_match_key=138_6666 not found in message activity source",
+    }
+
+
+def test_message_activity_sync_skips_same_phone_match_key_as_ambiguous(app, monkeypatch):
+    _configure_message_activity_db(app)
+    for external_userid, mobile in [
+        ("wm_key_sync_001", "13800007777"),
+        ("wm_key_sync_002", "13899997777"),
+    ]:
+        _seed_contact(app, external_userid=external_userid, mobile=mobile, owner_userid="sales_key", customer_name=external_userid)
+        _seed_automation_member(
+            app,
+            external_contact_id=external_userid,
+            phone=mobile,
+            owner_staff_id="sales_key",
+            current_pool="inactive_normal",
+            follow_type="normal",
+            activation_status="inactive",
+            questionnaire_status="submitted",
+            questionnaire_result="normal",
+            decision_source="questionnaire",
+        )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_prefix3": "138", "phone_last4": "7777", "phone_match_key": "138_7777", "message_count": 6},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(operator_id="tester-message-sync", operator_type="user", trigger_source="manual")
+        items = get_db().execute(
+            """
+            SELECT external_contact_id, status, detail
+            FROM automation_message_activity_sync_item
+            WHERE run_id = ?
+            ORDER BY external_contact_id ASC
+            """,
+            (payload["run"]["id"],),
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["run"]["skipped_ambiguous_count"] == 2
+    assert [dict(item) for item in items] == [
+        {
+            "external_contact_id": "wm_key_sync_001",
+            "status": "skipped_ambiguous",
+            "detail": "phone_match_key=138_7777 matched multiple automation members: wm_key_sync_001,wm_key_sync_002",
+        },
+        {
+            "external_contact_id": "wm_key_sync_002",
+            "status": "skipped_ambiguous",
+            "detail": "phone_match_key=138_7777 matched multiple automation members: wm_key_sync_001,wm_key_sync_002",
+        },
+    ]
+
+
+def test_message_activity_sync_skips_invalid_short_phone(app, monkeypatch):
+    _configure_message_activity_db(app)
+    _seed_contact(app, external_userid="wm_short_sync_001", mobile="123456", owner_userid="sales_short", customer_name="short-phone")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_short_sync_001",
+        phone="123456",
+        owner_staff_id="sales_short",
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+    )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_prefix3": "123", "phone_last4": "3456", "phone_match_key": "123_3456", "message_count": 20},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(operator_id="tester-message-sync", operator_type="user", trigger_source="manual")
+        item = get_db().execute(
+            """
+            SELECT status, detail
+            FROM automation_message_activity_sync_item
+            WHERE run_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (payload["run"]["id"],),
+        ).fetchone()
+
+    assert payload["ok"] is True
+    assert payload["run"]["skipped_missing_phone_count"] == 1
+    assert dict(item) == {
+        "status": "skipped_missing_phone",
+        "detail": "member phone is empty or shorter than 7 digits, cannot build phone_match_key",
+    }
 
 
 def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, client, monkeypatch):
@@ -1414,7 +1601,7 @@ def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, 
     )
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
-        lambda: [{"phone_last4": "4441", "message_count": 5}],
+        lambda: [{"phone_prefix3": "138", "phone_last4": "4441", "phone_match_key": "138_4441", "message_count": 5}],
     )
 
     unauthorized = client.post("/api/admin/automation-conversion/message-activity-sync/run", json={"trigger_source": "scheduled"})
@@ -1472,7 +1659,7 @@ def test_automation_conversion_home_page_renders_message_activity_sync_summary(a
     )
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
-        lambda: [{"phone_last4": "9441", "message_count": 6}],
+        lambda: [{"phone_prefix3": "138", "phone_last4": "9441", "phone_match_key": "138_9441", "message_count": 6}],
     )
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service._iso_now",
@@ -1515,7 +1702,7 @@ def test_admin_automation_conversion_run_message_activity_sync_returns_json_for_
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
-        lambda: [{"phone_last4": "9442", "message_count": 8}],
+        lambda: [{"phone_prefix3": "138", "phone_last4": "9442", "phone_match_key": "138_9442", "message_count": 8}],
     )
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service._iso_now",

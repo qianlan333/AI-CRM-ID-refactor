@@ -374,7 +374,7 @@
         候选 {{ settings_payload.message_activity_sync.last_run.candidate_count or 0 }} 人，
         成功匹配 {{ settings_payload.message_activity_sync.last_run.matched_count or 0 }} 人，
         实际更新 {{ settings_payload.message_activity_sync.last_run.updated_count or 0 }} 人，
-        尾号冲突跳过 {{ settings_payload.message_activity_sync.last_run.skipped_ambiguous_count or 0 }} 人，
+        匹配键冲突跳过 {{ settings_payload.message_activity_sync.last_run.skipped_ambiguous_count or 0 }} 人，
         未匹配跳过 {{ settings_payload.message_activity_sync.last_run.skipped_unmatched_count or 0 }} 人。
       </dd>
     </div>
@@ -401,7 +401,9 @@
             <th>状态</th>
             <th>客户</th>
             <th>手机号</th>
+            <th>前 3 位</th>
             <th>后 4 位</th>
+            <th>匹配键</th>
             <th>消息数</th>
             <th>说明</th>
           </tr>
@@ -412,7 +414,9 @@
             <td>{{ item.status_label }}</td>
             <td>{{ item.external_contact_id or ("member#" ~ item.member_id) }}</td>
             <td>{{ item.phone or "-" }}</td>
+            <td>{{ item.phone_prefix3 or "-" }}</td>
             <td>{{ item.phone_last4 or "-" }}</td>
+            <td>{{ item.phone_match_key or "-" }}</td>
             <td>{{ item.message_count }}</td>
             <td>{{ item.detail or "-" }}</td>
           </tr>
