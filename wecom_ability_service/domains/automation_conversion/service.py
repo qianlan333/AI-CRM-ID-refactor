@@ -73,6 +73,8 @@ ACTION_LABELS = {
     "unmark_won": "移除已成交",
     "push_openclaw": "一键自动化写话术",
     "message_activity_sync": "消息活跃同步",
+    "qrcode_welcome_sent": "扫码欢迎语已发送",
+    "qrcode_welcome_failed": "扫码欢迎语发送失败",
 }
 
 POOL_LABELS = {
@@ -1098,6 +1100,55 @@ def _write_event(
         raise
 
 
+def _send_channel_welcome_message(
+    *,
+    member: dict[str, Any],
+    channel: dict[str, Any],
+    operator_id: str = "",
+) -> dict[str, Any]:
+    welcome_message = _normalized_text(channel.get("welcome_message"))
+    external_contact_id = _normalized_text(member.get("external_contact_id"))
+    if not welcome_message or not external_contact_id:
+        return {"attempted": False, "sent": False, "reason": "not_configured"}
+
+    sender_userid = _normalized_text(channel.get("owner_staff_id")) or DEFAULT_OWNER_STAFF_ID
+    serialized_member = _serialize_member(member)
+    request_payload = {
+        "sender": sender_userid,
+        "external_userid": [external_contact_id],
+        "text": {"content": welcome_message},
+    }
+    try:
+        task_result = dispatch_wecom_task("private_message", "create_private_message_task", request_payload)
+    except (WeComClientError, AttributeError, ValueError) as exc:
+        _write_event(
+            member_id=int(member["id"]),
+            action="qrcode_welcome_failed",
+            operator_type="system",
+            operator_id=_normalized_text(operator_id) or "wecom_callback",
+            before_snapshot=_member_snapshot(serialized_member),
+            after_snapshot=_member_snapshot(serialized_member),
+            remark=str(exc),
+        )
+        return {"attempted": True, "sent": False, "error": str(exc)}
+
+    _write_event(
+        member_id=int(member["id"]),
+        action="qrcode_welcome_sent",
+        operator_type="system",
+        operator_id=_normalized_text(operator_id) or "wecom_callback",
+        before_snapshot=_member_snapshot(serialized_member),
+        after_snapshot=_member_snapshot(serialized_member),
+        remark=f"task_id={int(task_result['task_id'])}",
+    )
+    return {
+        "attempted": True,
+        "sent": True,
+        "task_id": int(task_result["task_id"]),
+        "wecom_result": dict(task_result.get("wecom_result") or {}),
+    }
+
+
 def _touch_member_from_sources(
     member: dict[str, Any],
     *,
@@ -1352,7 +1403,11 @@ def _default_channel_field_statuses(
     if welcome_message:
         if welcome_supported:
             welcome_status = "applied" if generated else "pending"
-            welcome_detail = "欢迎语会在生成默认二维码时一并透传。" if not generated else "欢迎语已在最近一次生成时透传。"
+            welcome_detail = (
+                "欢迎语会在客户扫码并成功添加好友后自动发送。"
+                if generated
+                else "保存后需重新生成默认二维码，欢迎语能力才会绑定到当前默认渠道。"
+            )
         else:
             welcome_status = "unsupported"
             welcome_detail = "当前默认永久二维码 provider 不支持欢迎语透传。"
@@ -3348,6 +3403,7 @@ def handle_qrcode_enter_from_callback(
     phone: str = "",
     payload_json: dict[str, Any] | None = None,
     operator_id: str = "",
+    send_welcome_message: bool = False,
 ) -> dict[str, Any]:
     channel_scene = _extract_channel_scene(payload_json or {})
     if not channel_scene:
@@ -3378,7 +3434,12 @@ def handle_qrcode_enter_from_callback(
             after_snapshot=_member_snapshot(saved),
             remark="member already won; qrcode entry only recorded",
         )
-        return {"handled": True, "member": _serialize_member(saved), "won_kept": True}
+        welcome_result = (
+            _send_channel_welcome_message(member=saved, channel=channel, operator_id=operator_id)
+            if send_welcome_message
+            else {"attempted": False, "sent": False, "reason": "disabled"}
+        )
+        return {"handled": True, "member": _serialize_member(saved), "won_kept": True, "welcome_message": welcome_result}
     current["current_pool"] = recompute_pool(current, {**context, "settings": get_signup_conversion_config()}, action="qrcode_enter")
     saved = _persist_member(member, current)
     _write_event(
@@ -3389,4 +3450,9 @@ def handle_qrcode_enter_from_callback(
         before_snapshot=_member_snapshot(before),
         after_snapshot=_member_snapshot(saved),
     )
-    return {"handled": True, "member": _serialize_member(saved)}
+    welcome_result = (
+        _send_channel_welcome_message(member=saved, channel=channel, operator_id=operator_id)
+        if send_welcome_message
+        else {"attempted": False, "sent": False, "reason": "disabled"}
+    )
+    return {"handled": True, "member": _serialize_member(saved), "welcome_message": welcome_result}

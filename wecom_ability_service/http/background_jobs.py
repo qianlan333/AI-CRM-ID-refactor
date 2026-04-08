@@ -209,6 +209,7 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                     phone=str(normalized_contact.get("mobile") or "").strip(),
                     payload_json=event_log.get("payload_json") or {},
                     operator_id=user_id or "wecom_callback",
+                    send_welcome_message=change_type in {"add_external_contact", "add_half_external_contact"},
                 )
             except Exception:
                 callback_logger.exception(
