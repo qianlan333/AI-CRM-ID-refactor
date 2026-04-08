@@ -419,6 +419,15 @@
     )).join('');
   }
 
+  function syncImageInputFiles() {
+    if (!els.imageInput || !window.DataTransfer) return;
+    const dataTransfer = new DataTransfer();
+    state.images.forEach((image) => {
+      if (image && image.file) dataTransfer.items.add(image.file);
+    });
+    els.imageInput.files = dataTransfer.files;
+  }
+
   function revokeImageUrls() {
     state.images.forEach((image) => {
       if (image.previewUrl) URL.revokeObjectURL(image.previewUrl);
@@ -482,6 +491,7 @@
       return;
     }
     state.images = state.images.concat(files.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })));
+    syncImageInputFiles();
     renderImages();
     resetPreview();
   });
@@ -492,6 +502,7 @@
     if (Number.isNaN(imageIndex)) return;
     const removed = state.images.splice(imageIndex, 1);
     if (removed[0] && removed[0].previewUrl) URL.revokeObjectURL(removed[0].previewUrl);
+    syncImageInputFiles();
     renderImages();
     resetPreview();
   });
@@ -510,7 +521,11 @@
       window.alert((error && error.message) || '预览失败');
     }
   });
+  els.form.addEventListener('submit', () => {
+    syncImageInputFiles();
+  });
   window.addEventListener('beforeunload', revokeImageUrls);
+  syncImageInputFiles();
   renderImages();
   resetPreview();
 </script>

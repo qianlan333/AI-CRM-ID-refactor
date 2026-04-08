@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -26,6 +25,8 @@ AI_PUSH_COOLDOWN_SECONDS = 30
 FOCUS_SEND_INTERVAL_SECONDS = 20
 MESSAGE_ACTIVITY_SYNC_SOURCE_MANUAL = "manual"
 MESSAGE_ACTIVITY_SYNC_SOURCE_SCHEDULED = "scheduled"
+ACTIVE_FOCUS_MESSAGE_THRESHOLD = 15
+ACTIVE_MESSAGE_MIN_THRESHOLD = 2
 CHANNEL_STATUS_NOT_GENERATED = "not_generated"
 CHANNEL_STATUS_CONFIGURED = "configured"
 CHANNEL_STATUS_ACTIVE = "active"
@@ -759,6 +760,19 @@ def _message_activity_pool(*, activation_status: str, follow_type: str) -> str:
     return POOL_INACTIVE_FOCUS if normalized_follow_type == FOLLOWUP_FOCUS else POOL_INACTIVE_NORMAL
 
 
+def _inactive_follow_type_from_member(before: dict[str, Any]) -> tuple[str, str, bool]:
+    manual_preserved = (
+        _normalized_text(before.get("decision_source")) == DECISION_SOURCE_MANUAL
+        and _normalized_text(before.get("follow_type")) in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}
+    )
+    if manual_preserved:
+        return _normalized_text(before.get("follow_type")), _normalized_text(before.get("decision_source")) or DECISION_SOURCE_MANUAL, True
+    questionnaire_follow_type = _normalized_text(before.get("questionnaire_result"))
+    if questionnaire_follow_type not in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
+        questionnaire_follow_type = FOLLOWUP_NORMAL
+    return questionnaire_follow_type, DECISION_SOURCE_SYSTEM, False
+
+
 def _message_activity_item_status_label(value: str) -> str:
     normalized = _normalized_text(value)
     return {
@@ -1035,7 +1049,8 @@ def run_message_activity_sync(
     summary: dict[str, Any] = {
         "candidate_pools": list(current_pools),
         "message_source_rows": 0,
-        "top_count": 0,
+        "active_focus_message_threshold": ACTIVE_FOCUS_MESSAGE_THRESHOLD,
+        "active_message_min_threshold": ACTIVE_MESSAGE_MIN_THRESHOLD,
         "ambiguous_phone_last4": [],
     }
     try:
@@ -1131,23 +1146,26 @@ def run_message_activity_sync(
             matched_members,
             key=lambda item: (-int(item["message_count"]), int((item["member"].get("id") or 0))),
         )
-        top_count = max(1, math.ceil(len(ranked_members) * 0.3)) if ranked_members else 0
-        summary["top_count"] = top_count
 
         for index, item in enumerate(ranked_members):
             before = item["member"]
             message_count = int(item["message_count"])
-            next_activation_status = ACTIVATION_ACTIVE if message_count > 1 else ACTIVATION_INACTIVE
-            ranked_follow_type = FOLLOWUP_FOCUS if index < top_count else FOLLOWUP_NORMAL
-            manual_preserved = (
-                _normalized_text(before.get("decision_source")) == DECISION_SOURCE_MANUAL
-                and _normalized_text(before.get("follow_type")) in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}
-            )
-            next_follow_type = _normalized_text(before.get("follow_type")) if manual_preserved else ranked_follow_type
-            next_decision_source = _normalized_text(before.get("decision_source")) if manual_preserved else DECISION_SOURCE_SYSTEM
-            if next_follow_type not in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
-                next_follow_type = ranked_follow_type
+            if message_count >= ACTIVE_FOCUS_MESSAGE_THRESHOLD:
+                next_activation_status = ACTIVATION_ACTIVE
+                next_follow_type = FOLLOWUP_FOCUS
                 next_decision_source = DECISION_SOURCE_SYSTEM
+                bucket_label = "active_focus_threshold"
+                manual_preserved = False
+            elif message_count >= ACTIVE_MESSAGE_MIN_THRESHOLD:
+                next_activation_status = ACTIVATION_ACTIVE
+                next_follow_type = FOLLOWUP_NORMAL
+                next_decision_source = DECISION_SOURCE_SYSTEM
+                bucket_label = "active_normal_threshold"
+                manual_preserved = False
+            else:
+                next_activation_status = ACTIVATION_INACTIVE
+                next_follow_type, next_decision_source, manual_preserved = _inactive_follow_type_from_member(before)
+                bucket_label = "inactive_questionnaire_or_manual"
             if next_follow_type == FOLLOWUP_FOCUS:
                 counters["focus_count"] += 1
             else:
@@ -1176,7 +1194,8 @@ def run_message_activity_sync(
                     remark=(
                         f"message_count={message_count}; phone_last4={item['phone_last4']}; "
                         f"rank={index + 1}/{len(ranked_members)}; "
-                        f"follow_type={'manual_preserved' if manual_preserved else ranked_follow_type}"
+                        f"bucket={bucket_label}; "
+                        f"follow_type={'manual_preserved' if manual_preserved else next_follow_type}"
                     ),
                 )
                 counters["updated_count"] += 1
@@ -1193,7 +1212,7 @@ def run_message_activity_sync(
                     "status": "updated" if changed else "unchanged",
                     "detail": (
                         f"rank={index + 1}/{len(ranked_members)}; "
-                        f"ranked_follow_type={ranked_follow_type}; "
+                        f"bucket={bucket_label}; "
                         f"effective_follow_type={next_follow_type}; "
                         f"manual_preserved={'yes' if manual_preserved else 'no'}"
                     ),
