@@ -1404,6 +1404,9 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
 
     assert normal_response.status_code == 200
     assert "官方群发" in normal_html
+    assert "文本 + 图片" in normal_html
+    assert "image media_id" in normal_html
+    assert "attachment_media_ids" not in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/manual-send" in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/focus-send-batches" not in normal_html
 
@@ -1675,7 +1678,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
 
     response = client.post(
         "/api/admin/automation-conversion/stage/new-user/manual-send",
-        json={"content": "欢迎先看问卷", "operator": "tester"},
+        json={"content": "欢迎先看问卷", "image_media_ids": ["img-media-001", "img-media-002"], "operator": "tester"},
     )
 
     payload = response.get_json()
@@ -1691,6 +1694,8 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
     assert dispatched_payloads[0]["fn_name"] == "create_private_message_task"
     assert dispatched_payloads[0]["payload"]["sender"] == ["QianLan"]
     assert sorted(dispatched_payloads[0]["payload"]["external_userid"]) == ["wm_manual_new_001", "wm_manual_new_002"]
+    assert dispatched_payloads[0]["payload"]["image_media_ids"] == ["img-media-001", "img-media-002"]
+    assert "attachments" not in dispatched_payloads[0]["payload"]
 
     with app.app_context():
         row = get_db().execute(
@@ -1848,7 +1853,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
 
     response = client.post(
         "/admin/automation-conversion/stage/new-user/send",
-        data={"content": "页面触达", "operator": "tester"},
+        data={"content": "页面触达", "image_media_ids": "img-page-001\nimg-page-002", "operator": "tester"},
     )
     html = response.get_data(as_text=True)
 
@@ -1856,6 +1861,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     assert "官方群发已创建" in html
     assert "本次执行结果" in html
     assert "发送记录 ID" in html
+    assert "image_media_ids" in html
 
 
 def test_admin_stage_send_page_shows_focus_batch_summary(app, client, monkeypatch):

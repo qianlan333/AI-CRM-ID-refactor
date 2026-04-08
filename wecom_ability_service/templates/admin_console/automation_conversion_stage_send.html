@@ -159,7 +159,7 @@
   <div class="admin-card-head">
     <div>
       <h2>官方群发</h2>
-      <p>非重点阶段这轮只支持文本 + 附件。附件按 file media_id 填写，提交后直接按当前阶段全量名单执行。</p>
+      <p>非重点阶段这轮只支持文本 + 图片。图片按 image media_id 填写，提交后直接按当前阶段全量名单执行。</p>
     </div>
   </div>
   <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ send_payload.manual_send_form_action }}">
@@ -169,8 +169,8 @@
       <textarea name="content" rows="6" placeholder="输入本次官方群发的正文">{{ send_payload.form.content }}</textarea>
     </label>
     <label class="admin-field">
-      <span>附件 media_id</span>
-      <textarea name="attachment_media_ids" rows="4" placeholder="每行一个 file media_id">{{ send_payload.form.attachment_media_ids }}</textarea>
+      <span>图片 media_id</span>
+      <textarea name="image_media_ids" rows="4" placeholder="每行一个 image media_id">{{ send_payload.form.image_media_ids }}</textarea>
     </label>
     <label class="admin-field">
       <span>操作人</span>
