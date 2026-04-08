@@ -1793,7 +1793,6 @@ def push_openclaw(*, external_contact_id: str = "", phone: str = "", operator_id
     member = _resolve_existing_member(external_contact_id=external_contact_id, phone=phone)
     if not member:
         raise LookupError("automation member not found")
-    member = _touch_member_from_sources(member, action="system_push_sync", persist_event=False)
     serialized = _serialize_member(member)
     if serialized["current_pool"] == POOL_REMOVED:
         raise ValueError("removed member cannot push openclaw")

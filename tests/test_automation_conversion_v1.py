@@ -469,6 +469,84 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
         assert accepted_payload["questionnaire"]["answers"] == [{"question": "预算", "answer": "999"}]
 
 
+def test_openclaw_push_does_not_recompute_active_focus_member_before_send(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_ai_keep_001", mobile="13800003011", owner_userid="sales_ai", customer_name="AI 稳定客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_ai_keep_001",
+        phone="13800003011",
+        owner_staff_id="sales_ai",
+        in_pool=1,
+        current_pool="active_focus",
+        follow_type="focus",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_result="focus",
+        decision_source="system",
+        source_type="message_activity_sync",
+        joined_at="2026-04-06 10:00:00",
+    )
+    _patch_live_context(
+        monkeypatch,
+        external_contact_id="wm_ai_keep_001",
+        phone="13800003011",
+        owner_staff_id="sales_ai",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="focus",
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_profile_tags_payload",
+        lambda *, external_userid: {"tags": [{"tag_name": "重点客户"}]},
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_questionnaire_answers_payload",
+        lambda *, external_userid="", mobile="": {"answers": [{"question": "预算", "answer": "999"}]},
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_messages_payload",
+        lambda *, external_userid="", mobile="", limit=20, fetch_all=False: {
+            "messages": [{"sender": "wm_ai_keep_001", "send_time": "2026-04-06 10:01:00", "content": "我想看看方案"}],
+        },
+    )
+
+    captured = {}
+
+    def _fake_send_outbound_webhook(*, event_type, payload, source_key, source_id):
+        captured["payload"] = payload
+        return {"ok": True, "delivery": {"id": 702}}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook",
+        _fake_send_outbound_webhook,
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/member/push-openclaw",
+        json={"external_contact_id": "wm_ai_keep_001", "operator": "tester-ai"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 202
+    assert payload["status"] == "accepted"
+    assert captured["payload"]["currentPool"] == "active_focus"
+    assert captured["payload"]["currentStage"] == "active_focus_followup"
+    assert captured["payload"]["currentTarget"] == "focus_followup"
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT activation_status, current_pool
+            FROM automation_member
+            WHERE external_contact_id = ?
+            """,
+            ("wm_ai_keep_001",),
+        ).fetchone()
+
+    assert row["activation_status"] == "active"
+    assert row["current_pool"] == "active_focus"
+
+
 def test_automation_member_detail_uses_sidebar_button_rules_for_won_members(app, client):
     _seed_contact(app, external_userid="wm_won_001", mobile="13800003099", owner_userid="sales_won", customer_name="已成交客户")
     with app.app_context():
