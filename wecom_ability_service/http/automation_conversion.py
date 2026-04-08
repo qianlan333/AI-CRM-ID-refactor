@@ -13,6 +13,10 @@ from ..domains.automation_conversion import (
     get_focus_send_batch_detail,
     get_member_detail,
     get_overview_payload,
+    get_sop_v1_batches_payload,
+    get_sop_v1_config_payload,
+    get_sop_v1_management_payload,
+    get_sop_v1_templates_payload,
     preview_stage_manual_message,
     get_settings_payload,
     get_stage_detail_payload,
@@ -21,7 +25,10 @@ from ..domains.automation_conversion import (
     push_openclaw,
     remove_from_pool,
     run_due_focus_send_batches,
+    run_due_sop,
     run_message_activity_sync,
+    save_sop_v1_pool_config,
+    save_sop_v1_template,
     save_settings,
     send_stage_manual_message,
     set_follow_type,
@@ -169,10 +176,36 @@ def _settings_notice() -> str:
     return ""
 
 
+def _sop_page_notice() -> str:
+    if _query_text("saved") == "1":
+        return "SOP 设置已保存"
+    return ""
+
+
 def _wants_json_response() -> bool:
     accept = str(request.headers.get("Accept") or "").lower()
     requested_with = str(request.headers.get("X-Requested-With") or "").strip()
     return "application/json" in accept or requested_with == "XMLHttpRequest"
+
+
+def _json_bool(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_sop_images_payload(raw_payload) -> list[dict[str, str]]:
+    if isinstance(raw_payload, list):
+        results: list[dict[str, str]] = []
+        for item in raw_payload:
+            if isinstance(item, str):
+                media_id = item.strip()
+            elif isinstance(item, dict):
+                media_id = str(item.get("media_id") or item.get("image_media_id") or "").strip()
+            else:
+                media_id = ""
+            if media_id:
+                results.append({"media_id": media_id})
+        return results
+    return [{"media_id": media_id} for media_id in _split_multiline_tokens(str(raw_payload or ""))]
 
 
 def _apply_settings_form_overrides(payload: dict[str, object]) -> dict[str, object]:
@@ -327,6 +360,25 @@ def _render_settings_page(*, settings_payload: dict[str, object] | None = None, 
     )
 
 
+def _render_sop_page(*, sop_payload: dict[str, object] | None = None, page_error: str = ""):
+    payload = sop_payload or get_sop_v1_management_payload()
+    return _render_admin_template(
+        "automation_conversion_sop.html",
+        active_nav="automation_conversion",
+        page_title="自动 SOP 管理",
+        page_summary="只管理 new_user、inactive_normal、active_normal 三个标准池的自动 SOP 配置与模板。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("自动 SOP", None),
+        ),
+        sop_payload=payload,
+        page_notice=_sop_page_notice(),
+        page_error=page_error,
+        admin_action_token=ensure_admin_console_action_token(),
+    )
+
+
 def admin_automation_conversion():
     overview_payload = get_overview_payload()
     return _render_admin_template(
@@ -338,6 +390,10 @@ def admin_automation_conversion():
         overview_payload=overview_payload,
         admin_action_token=ensure_admin_console_action_token(),
     )
+
+
+def admin_automation_conversion_sop():
+    return _render_sop_page()
 
 
 def admin_automation_conversion_stage_detail(stage_key: str):
@@ -596,6 +652,53 @@ def api_admin_automation_conversion_save_settings():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+def api_admin_automation_conversion_sop_config():
+    return jsonify({"ok": True, **get_sop_v1_config_payload()})
+
+
+def api_admin_automation_conversion_sop_config_save(pool_key: str):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_sop_v1_pool_config(
+            pool_key=pool_key,
+            enabled=payload.get("enabled"),
+            max_day_count=payload.get("max_day_count"),
+            send_time=payload.get("send_time"),
+            timezone=payload.get("timezone"),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_sop_templates(pool_key: str):
+    try:
+        result = get_sop_v1_templates_payload(pool_key)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_sop_template_save(pool_key: str, day_index: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_sop_v1_template(
+            pool_key=pool_key,
+            day_index=day_index,
+            content=payload.get("content"),
+            images_json=_parse_sop_images_payload(payload.get("images_json") or payload.get("image_media_ids") or payload.get("image_media_ids_text")),
+            enabled=payload.get("enabled"),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "template": result})
+
+
+def api_admin_automation_conversion_sop_batches():
+    limit = _query_int("limit", default=20, minimum=1, maximum=100)
+    return jsonify({"ok": True, **get_sop_v1_batches_payload(limit=limit)})
+
+
 def api_admin_automation_conversion_generate_default_channel():
     result = generate_default_channel_qr(operator=_operator_from_request())
     status_code = 200 if result.get("generated") else int(result.get("status_code") or 400)
@@ -681,6 +784,17 @@ def api_admin_automation_conversion_run_message_activity_sync():
     return jsonify(result), status_code
 
 
+def api_admin_automation_conversion_sop_run_due():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    result = run_due_sop(
+        operator_id=_operator_from_request(),
+        operator_type="system",
+    )
+    return jsonify(result)
+
+
 def api_admin_automation_conversion_debug_member():
     external_contact_id = _query_text("external_contact_id")
     phone = _query_text("phone")
@@ -691,6 +805,7 @@ def api_admin_automation_conversion_debug_member():
 
 def register_routes(bp):
     bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
+    bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
     bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage_detail)
     bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET"])(admin_automation_conversion_stage_send)
@@ -713,6 +828,11 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/member/push-openclaw", methods=["POST"])(api_admin_automation_conversion_push_openclaw)
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_save_settings)
+    bp.route("/api/admin/automation-conversion/sop/config", methods=["GET"])(api_admin_automation_conversion_sop_config)
+    bp.route("/api/admin/automation-conversion/sop/config/<pool_key>", methods=["PUT"])(api_admin_automation_conversion_sop_config_save)
+    bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>", methods=["GET"])(api_admin_automation_conversion_sop_templates)
+    bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["PUT"])(api_admin_automation_conversion_sop_template_save)
+    bp.route("/api/admin/automation-conversion/sop/batches", methods=["GET"])(api_admin_automation_conversion_sop_batches)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_generate_default_channel)
     bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview", methods=["POST"])(api_admin_automation_conversion_stage_manual_send_preview)
     bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send", methods=["POST"])(api_admin_automation_conversion_stage_manual_send)
@@ -720,4 +840,5 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/focus-send-batches/<batch_id>", methods=["GET"])(api_admin_automation_conversion_focus_send_batch_detail)
     bp.route("/api/admin/automation-conversion/focus-send-batches/run-due", methods=["POST"])(api_admin_automation_conversion_focus_send_batches_run_due)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
+    bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
     bp.route("/api/admin/automation-conversion/debug/member", methods=["GET"])(api_admin_automation_conversion_debug_member)

@@ -76,6 +76,13 @@ PY
 6. 配置至少 1 道关键题
 7. 配置普通跟进 / 重点跟进门槛
 8. 配置 5 个池子的沉默阈值
+9. 如果要联调自动 SOP，再打开 `/admin/automation-conversion/sop`
+10. 至少为 `new_user / inactive_normal / active_normal` 配置：
+   - enabled
+   - max_day_count
+   - send_time
+   - timezone
+   - day1 模板
 
 ## 5. 准备测试客户
 
@@ -226,14 +233,14 @@ curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/stage/new-use
   }'
 ```
 
-如果要带附件，当前按 `file media_id` 传：
+如果要带图片，当前支持本地上传图片预览，也支持直接按 `image media_id` 调接口：
 
 ```bash
 curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/stage/silent/manual-send \
   -H 'Content-Type: application/json' \
   -d '{
     "content":"这是沉默池唤醒消息",
-    "attachment_media_ids":["media-id-001"],
+    "image_media_ids":["img-media-001"],
     "operator":"qa_local"
   }'
 ```
@@ -243,6 +250,53 @@ curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/stage/silent/
 - 返回 `ok / stage_key / total_target_count / sent_count / skipped_count / skipped_reasons / record_id / task_ids`
 - 不按 owner 分桶
 - `silent / won` 也允许发送
+
+## 10.1 验证自动 SOP v1
+
+当前自动 SOP 只覆盖：
+
+- `new_user`
+- `inactive_normal`
+- `active_normal`
+
+业务规则：
+
+- 名单执行时现算
+- 只对当前仍在该池子的成员发
+- 重复进同池不重来
+- 离池期间错过的 day 不补发
+- SOP 和手工群发不去重
+- 只支持文本 + 图片
+
+手动触发 runner：
+
+```bash
+curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/sop/run-due \
+  -H 'Authorization: Bearer internal-local-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "operator":"qa_local"
+  }'
+```
+
+预期返回：
+
+- `scanned_pool_count`
+- `created_batch_count`
+- `total_success_count`
+- `total_skipped_count`
+- `total_failed_count`
+- `batch_ids`
+
+再执行一次，预期同一天不会重复给同一个 `member + pool + day` 发送。
+
+打开 `/admin/automation-conversion/sop`，确认最近 batch 区域能看到：
+
+- pool
+- day
+- scheduled_for
+- status
+- total / success / skipped / failed
 
 ## 11. 验证重点阶段 OpenClaw 批任务
 

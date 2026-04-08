@@ -1,0 +1,272 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .sop-note-list,
+  .sop-template-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .sop-template-list {
+    margin-top: 16px;
+  }
+
+  .sop-pool-card + .sop-pool-card {
+    margin-top: 20px;
+  }
+
+  .sop-template-card {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    padding: 16px;
+    background: rgba(248, 250, 252, 0.72);
+  }
+
+  .sop-template-card__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .sop-meta {
+    color: #64748b;
+    font-size: 13px;
+  }
+
+  .sop-feedback {
+    margin-top: 12px;
+  }
+
+  .sop-feedback[hidden] {
+    display: none;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>自动 SOP 管理</h2>
+      <p>只覆盖 new_user、inactive_normal、active_normal 三个标准池。这里配置池子开关、统一发送时间和 day1 ~ dayN 模板。</p>
+    </div>
+    <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion') }}">返回自动化转化首页</a>
+      <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_settings') }}">返回设置页</a>
+    </div>
+  </div>
+
+  <div class="sop-note-list">
+    {% for note in sop_payload.notes %}
+    <div class="admin-state admin-state--inline">
+      <strong>SOP 规则</strong>
+      <span>{{ note }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% for section in sop_payload.pool_sections %}
+<section class="admin-card sop-pool-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>{{ section.pool_label }}</h2>
+      <p>这个池子的所有 day 共用一个发送时间点。扩容会自动补空模板，缩容不会删除高 day 模板。</p>
+    </div>
+  </div>
+
+  <form class="admin-form-grid admin-form-grid--stacked" data-sop-config-form data-pool-key="{{ section.pool_key }}">
+    <div class="admin-grid-2">
+      <label class="admin-checkbox">
+        <input type="checkbox" name="enabled" value="1" {% if section.config.enabled %}checked{% endif %}>
+        <span>启用 {{ section.pool_label }} 自动 SOP</span>
+      </label>
+      <label class="admin-field">
+        <span>最大 day 数</span>
+        <input type="number" name="max_day_count" min="1" max="7" value="{{ section.config.max_day_count }}">
+      </label>
+      <label class="admin-field">
+        <span>统一发送时间</span>
+        <input type="time" name="send_time" value="{{ section.config.send_time }}">
+      </label>
+      <label class="admin-field">
+        <span>时区</span>
+        <input type="text" name="timezone" value="{{ section.config.timezone }}">
+      </label>
+    </div>
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" type="submit">保存池子配置</button>
+      <span class="sop-meta">当前展示到 day{{ section.display_day_count }}，保存后会自动刷新页面回显。</span>
+    </div>
+  </form>
+
+  <div class="sop-template-list">
+    {% for template in section.templates %}
+    <form class="sop-template-card" data-sop-template-form data-pool-key="{{ section.pool_key }}" data-day-index="{{ template.day_index }}">
+      <div class="sop-template-card__head">
+        <div>
+          <strong>day{{ template.day_index }}</strong>
+          <div class="sop-meta">{{ section.pool_label }} 的第 {{ template.day_index }} 天模板</div>
+        </div>
+        <label class="admin-checkbox">
+          <input type="checkbox" name="enabled" value="1" {% if template.enabled %}checked{% endif %}>
+          <span>启用</span>
+        </label>
+      </div>
+      <div class="admin-grid-2">
+        <label class="admin-field" style="grid-column: 1 / -1;">
+          <span>发送文本</span>
+          <textarea name="content" rows="4" placeholder="输入 day{{ template.day_index }} 的文本内容">{{ template.content }}</textarea>
+        </label>
+        <label class="admin-field" style="grid-column: 1 / -1;">
+          <span>图片集合</span>
+          <textarea name="image_media_ids_text" rows="3" placeholder="首版最小可用：每行一个 image media_id，可留空">{{ template.image_media_ids_text }}</textarea>
+        </label>
+      </div>
+      <div class="admin-toolbar">
+        <button class="admin-button admin-button--secondary" type="submit">保存 day{{ template.day_index }} 模板</button>
+        <span class="sop-meta">images_json 会按多图结构保存，首版输入形式为每行一个 image media_id。</span>
+      </div>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近 SOP 执行批次</h2>
+      <p>用于确认 run-due 是否持续推进，以及各池各 day 的发送结果摘要。</p>
+    </div>
+  </div>
+
+  {% if sop_payload.recent_batches %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>池子</th>
+          <th>day</th>
+          <th>计划发送时间</th>
+          <th>状态</th>
+          <th>总数</th>
+          <th>成功</th>
+          <th>跳过</th>
+          <th>失败</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for batch in sop_payload.recent_batches %}
+        <tr>
+          <td>{{ batch.pool_label }}</td>
+          <td>day{{ batch.day_index }}</td>
+          <td>{{ batch.scheduled_for or "暂无" }}</td>
+          <td>{{ batch.status_label }}</td>
+          <td>{{ batch.total_count }}</td>
+          <td>{{ batch.success_count }}</td>
+          <td>{{ batch.skipped_count }}</td>
+          <td>{{ batch.failed_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-state admin-state--inline">
+    <strong>暂无 SOP 批次</strong>
+    <span>当 run-due 开始执行后，这里会展示最近的批次摘要。</span>
+  </div>
+  {% endif %}
+</section>
+
+<div class="admin-state admin-state--inline sop-feedback" data-sop-feedback hidden>
+  <strong data-sop-feedback-title></strong>
+  <span data-sop-feedback-message></span>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  (() => {
+    const feedbackRoot = document.querySelector("[data-sop-feedback]");
+    const feedbackTitle = document.querySelector("[data-sop-feedback-title]");
+    const feedbackMessage = document.querySelector("[data-sop-feedback-message]");
+
+    const setFeedback = (title, message, tone = "success") => {
+      if (!feedbackRoot || !feedbackTitle || !feedbackMessage) {
+        return;
+      }
+      feedbackRoot.hidden = !(title || message);
+      feedbackRoot.className = tone === "error"
+        ? "admin-state admin-state--inline admin-state--error sop-feedback"
+        : "admin-state admin-state--inline sop-feedback";
+      feedbackTitle.textContent = title || "";
+      feedbackMessage.textContent = message || "";
+    };
+
+    const saveJson = async (url, payload, successTitle) => {
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || "保存失败");
+      }
+      setFeedback(successTitle, "保存成功，页面即将刷新。");
+      window.setTimeout(() => window.location.reload(), 200);
+    };
+
+    document.querySelectorAll("[data-sop-config-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const poolKey = form.getAttribute("data-pool-key");
+        const formData = new FormData(form);
+        try {
+          await saveJson(`/api/admin/automation-conversion/sop/config/${poolKey}`, {
+            enabled: formData.get("enabled") === "1",
+            max_day_count: formData.get("max_day_count"),
+            send_time: formData.get("send_time"),
+            timezone: formData.get("timezone"),
+          }, "池子配置已保存");
+        } catch (error) {
+          setFeedback("保存失败", error instanceof Error ? error.message : "池子配置保存失败", "error");
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-sop-template-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const poolKey = form.getAttribute("data-pool-key");
+        const dayIndex = form.getAttribute("data-day-index");
+        const formData = new FormData(form);
+        const imageMediaIds = String(formData.get("image_media_ids_text") || "")
+          .replace(/\r/g, "\n")
+          .split("\n")
+          .map((item) => item.trim())
+          .filter(Boolean);
+        try {
+          await saveJson(`/api/admin/automation-conversion/sop/templates/${poolKey}/${dayIndex}`, {
+            content: formData.get("content"),
+            enabled: formData.get("enabled") === "1",
+            image_media_ids: imageMediaIds,
+          }, `day${dayIndex} 模板已保存`);
+        } catch (error) {
+          setFeedback("保存失败", error instanceof Error ? error.message : "模板保存失败", "error");
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

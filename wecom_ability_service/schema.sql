@@ -1257,3 +1257,90 @@ ON automation_focus_send_batch_item (batch_id, position_index ASC, id ASC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_status
 ON automation_focus_send_batch_item (status, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_sop_pool_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    max_day_count INTEGER NOT NULL DEFAULT 5,
+    send_time TEXT NOT NULL DEFAULT '09:00',
+    timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_sop_pool_config_updated
+ON automation_sop_pool_config (updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_sop_template (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    day_index INTEGER NOT NULL DEFAULT 1,
+    content TEXT NOT NULL DEFAULT '',
+    images_json TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_template_pool_day
+ON automation_sop_template (pool_key, day_index);
+
+CREATE TABLE IF NOT EXISTS automation_sop_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    first_entered_at TEXT NOT NULL DEFAULT '',
+    last_entered_at TEXT NOT NULL DEFAULT '',
+    last_sent_day INTEGER NOT NULL DEFAULT 0,
+    last_sent_at TEXT NOT NULL DEFAULT '',
+    completed_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_progress_member_pool
+ON automation_sop_progress (member_id, pool_key);
+
+CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_day
+ON automation_sop_progress (pool_key, last_sent_day, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_sop_batch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    day_index INTEGER NOT NULL DEFAULT 0,
+    template_id INTEGER REFERENCES automation_sop_template(id) ON DELETE SET NULL,
+    scheduled_for TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'empty',
+    total_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    summary_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_status_scheduled
+ON automation_sop_batch (status, scheduled_for, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_sop_batch_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL REFERENCES automation_sop_batch(id) ON DELETE CASCADE,
+    member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    day_index INTEGER NOT NULL DEFAULT 0,
+    external_userid TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'skipped',
+    error_message TEXT NOT NULL DEFAULT '',
+    sent_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_batch_created
+ON automation_sop_batch_item (batch_id, id ASC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_batch_item_member_pool_day_success
+ON automation_sop_batch_item (member_id, pool_key, day_index)
+WHERE status = 'success';

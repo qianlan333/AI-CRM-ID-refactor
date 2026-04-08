@@ -11,6 +11,7 @@
 - [ ] `MESSAGE_ACTIVITY_DB_HOST/PORT/NAME/USER/PASS` 已配置
 - [ ] 企微相关配置已配置
 - [ ] 错误内部 token 调动作型接口会返回 401
+- [ ] 自动 SOP runner 调用 `/api/admin/automation-conversion/sop/run-due` 的调度已挂上
 
 ## 问卷检查
 
@@ -40,11 +41,24 @@
 
 - [ ] 首页每个阶段都能点击 `创建群发`
 - [ ] `new-user / inactive-normal / active-normal / silent / won` 可走官方群发
-- [ ] 官方群发当前只支持 `文本 + 附件(file media_id)`
+- [ ] 官方群发当前支持 `文本 + 图片`
 - [ ] 当前按单发送人模型执行，不做 owner filter / owner 分桶
 - [ ] `inactive-focus / active-focus` 可创建 OpenClaw AI 批任务
 - [ ] AI 批任务通过后台 runner 推进，不在请求里 sleep
 - [ ] 发送记录可查
+
+## 自动 SOP 检查
+
+- [ ] `/admin/automation-conversion/sop` 可打开
+- [ ] 只出现 `new_user / inactive_normal / active_normal` 三个 SOP 池
+- [ ] 三个 pool config 可保存
+- [ ] `max_day_count` 扩容会自动补空模板
+- [ ] `max_day_count` 缩容不会删除高 day 模板
+- [ ] 模板支持保存文本和图片 `image media_id`
+- [ ] 文案明确说明“重复进同池不重来、离池期间错过不补发、名单执行时现算、与手工群发不去重”
+- [ ] `POST /api/admin/automation-conversion/sop/run-due` 可正常执行
+- [ ] run-due 同一天重跑幂等，不会重复给同一 member + pool + day 发送
+- [ ] `recent batch` 列表可看到 `pool / day / scheduled_for / status / total / success / skipped / failed`
 
 ## 焦点消息 webhook 检查
 
