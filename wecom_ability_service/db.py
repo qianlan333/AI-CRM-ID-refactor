@@ -672,6 +672,86 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS automation_sop_pool_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+            enabled INTEGER NOT NULL DEFAULT 1,
+            max_day_count INTEGER NOT NULL DEFAULT 5,
+            send_time TEXT NOT NULL DEFAULT '09:00',
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_sop_template (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+            day_index INTEGER NOT NULL DEFAULT 1,
+            content TEXT NOT NULL DEFAULT '',
+            images_json TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_sop_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+            first_entered_at TEXT NOT NULL DEFAULT '',
+            last_entered_at TEXT NOT NULL DEFAULT '',
+            last_sent_day INTEGER NOT NULL DEFAULT 0,
+            last_sent_at TEXT NOT NULL DEFAULT '',
+            completed_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_sop_batch (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+            day_index INTEGER NOT NULL DEFAULT 0,
+            template_id INTEGER REFERENCES automation_sop_template(id) ON DELETE SET NULL,
+            scheduled_for TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'empty',
+            total_count INTEGER NOT NULL DEFAULT 0,
+            success_count INTEGER NOT NULL DEFAULT 0,
+            skipped_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_sop_batch_item (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL REFERENCES automation_sop_batch(id) ON DELETE CASCADE,
+            member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+            day_index INTEGER NOT NULL DEFAULT 0,
+            external_userid TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'skipped',
+            error_message TEXT NOT NULL DEFAULT '',
+            sent_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_member_external_non_empty
         ON automation_member (external_contact_id)
         WHERE external_contact_id <> ''
@@ -714,8 +794,35 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_status ON automation_focus_send_batch_item (status, updated_at DESC, id DESC)"
     )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_template_pool_day ON automation_sop_template (pool_key, day_index)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_progress_member_pool ON automation_sop_progress (member_id, pool_key)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_pool_config_updated ON automation_sop_pool_config (updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_day ON automation_sop_progress (pool_key, last_sent_day, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_status_scheduled ON automation_sop_batch (status, scheduled_for, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_batch_created ON automation_sop_batch_item (batch_id, id ASC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_batch_item_member_pool_day_success ON automation_sop_batch_item (member_id, pool_key, day_index) WHERE status = 'success'"
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_status ON automation_channel (status, updated_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_scene ON automation_channel (scene_value)")
+
+
+def _ensure_automation_sop_v1_seed_data() -> None:
+    from .domains.automation_conversion.service import ensure_sop_v1_defaults
+
+    ensure_sop_v1_defaults()
 
 
 def _init_sqlite(db) -> None:
@@ -727,6 +834,7 @@ def _init_sqlite(db) -> None:
     _ensure_sqlite_customer_value_segment_tables(db)
     _ensure_sqlite_customer_marketing_state_tables(db)
     _ensure_sqlite_automation_conversion_tables(db)
+    _ensure_automation_sop_v1_seed_data()
     columns = _sqlite_table_columns(db, "archived_messages")
     if "chat_type" not in columns:
         db.execute("ALTER TABLE archived_messages ADD COLUMN chat_type TEXT NOT NULL DEFAULT 'private'")
@@ -1079,6 +1187,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)
+    _ensure_automation_sop_v1_seed_data()
     db.execute("ALTER TABLE questionnaire_questions DROP CONSTRAINT IF EXISTS questionnaire_questions_type_check")
     db.execute(
         """

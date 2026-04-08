@@ -23,6 +23,7 @@
    - `/admin`
    - `/admin/questionnaires`
    - `/admin/automation-conversion`
+   - `/admin/automation-conversion/sop`
 7. 自动化转化问卷已经配置完成
 8. 至少准备好 2 个线上验收客户：
    - 普通路径客户
@@ -34,7 +35,7 @@
 
 - `AUTOMATION_INTERNAL_API_TOKEN`
 - `MCP_BEARER_TOKEN`（仅 legacy 兼容需要时保留）
-- `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL`
+- `OPENCLAW_WEBHOOK_URL`
 - `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN`
 - `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS`
 - `AUTOMATION_ACTIVATION_WEBHOOK_TOKEN`（仅 legacy 兼容需要时保留）
@@ -47,13 +48,18 @@
 - `WECOM_AGENT_ID`
 - `WECOM_API_BASE`
 
+如果启用自动 SOP v1，还要确认：
+
+- `POST /api/admin/automation-conversion/sop/run-due` 已可用
+- 生产调度器已经开始定时触发 `run-due`
+
 当前第 4 块和第 5 块按真实 `owner_userid` 生效，线上总验收至少准备两个不同负责人的样本客户更稳妥。
 
 ## 4. 线上哪些 webhook 地址必须可用
 
 至少要确认以下地址在线：
 
-1. `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL`
+1. `OPENCLAW_WEBHOOK_URL`
    - 重点跟进池客户来消息时使用
 2. `QUESTIONNAIRE_SUBMIT_WEBHOOK_URL`
    - 问卷提交成功后外发
@@ -71,7 +77,8 @@
 5. 重点跟进路径 smoke
 6. 异常路径 smoke
 7. 日志和发送记录检查
-8. 降级/止损动作确认
+8. 自动 SOP smoke
+9. 降级/止损动作确认
 
 ## 6. 线上 smoke 检查顺序
 
@@ -111,6 +118,107 @@
 
 - 问卷提交 webhook 失败但主流程不失败
 
+### 自动 SOP smoke
+
+1. 打开 `/admin/automation-conversion/sop`
+2. 确认只出现三个池子：
+   - `new_user`
+   - `inactive_normal`
+   - `active_normal`
+3. 为每个池子确认：
+   - `enabled`
+   - `max_day_count`
+   - `send_time`
+   - `timezone`
+   - day1 ~ dayN 模板
+4. 至少为 `new_user day1` 配一条文本模板
+5. 如需验证图片，再为 `inactive_normal day1` 配一条文本 + 图片 `image media_id` 模板
+6. 用内部 token 手动触发：
+
+```bash
+curl -sS -X POST http://127.0.0.1:5001/api/admin/automation-conversion/sop/run-due \
+  -H "Authorization: Bearer ${AUTOMATION_INTERNAL_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"prod_smoke"}'
+```
+
+7. 确认返回：
+   - `scanned_pool_count`
+   - `created_batch_count`
+   - `total_success_count`
+   - `total_skipped_count`
+   - `total_failed_count`
+   - `batch_ids`
+8. 再次立即触发一次，确认同一成员同一池同一天不会重复发送
+9. 再到 `/api/admin/automation-conversion/sop/batches` 确认最近 batch 摘要可见
+
+## 6.1 自动 SOP v1 业务规则
+
+当前自动 SOP 只覆盖：
+
+- `new_user`
+- `inactive_normal`
+- `active_normal`
+
+业务规则：
+
+- 名单执行时现算，不提前一天预生成
+- 只对当前仍在对应池子的成员发
+- 重复进入同池不重来，从 `last_sent_day + 1` 继续
+- 离池期间错过的 day 不补发
+- 当天 `send_time` 前进入池子的成员，当天可以吃到 day1
+- 当天 `send_time` 后进入池子的成员，次日再吃到 day1
+- SOP 和手工群发不去重
+- SOP 首版只支持文本 + 图片
+- 这轮不覆盖 `silent / won / focus`
+
+## 6.2 自动 SOP schema 变更
+
+本轮新增 5 张表：
+
+- `automation_sop_pool_config`
+- `automation_sop_template`
+- `automation_sop_progress`
+- `automation_sop_batch`
+- `automation_sop_batch_item`
+
+关键约束：
+
+- `pool_key` 唯一
+- `pool_key + day_index` 模板唯一
+- `member_id + pool_key` 进度唯一
+- `member_id + pool_key + day_index` 成功发送唯一
+
+上线时必须执行：
+
+```bash
+python app.py init-db
+```
+
+## 6.3 自动 SOP runner 挂载方式
+
+生产必须有调度器定时触发：
+
+- `POST /api/admin/automation-conversion/sop/run-due`
+
+推荐每分钟执行一次：
+
+```cron
+* * * * * cd /home/ubuntu/极简\ crm && \
+  source /home/ubuntu/.openclaw-wecom-pg.env && \
+  curl -fsS -X POST http://127.0.0.1:5001/api/admin/automation-conversion/sop/run-due \
+    -H "Authorization: Bearer ${AUTOMATION_INTERNAL_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"operator":"automation_sop_runner"}' \
+  >> /var/log/aicrm/automation_sop_runner.log 2>&1
+```
+
+如果 runner 没挂上，会出现：
+
+- `/admin/automation-conversion/sop` 能正常配置
+- 但 `recent_batches` 长时间无新记录
+- 成员不会按 day 推进发送
+
 ## 7. 线上只读 smoke 顺序
 
 先做只读检查，再做写操作：
@@ -133,7 +241,7 @@ sudo journalctl -u openclaw-wecom-postgres.service -n 100 --no-pager
 
 止损动作：
 
-- 把 `OPENCLAW_FOCUS_MESSAGE_WEBHOOK_URL` 清空
+- 把 `OPENCLAW_WEBHOOK_URL` 清空
 
 影响：
 
@@ -177,7 +285,19 @@ sudo journalctl -u openclaw-wecom-postgres.service -n 100 --no-pager
 - OpenClaw 无法再直接发起池子群发
 - CRM 其它链路不受影响
 
-### 8.5 需要临时停自动化转化
+### 8.5 自动 SOP runner 异常
+
+止损动作：
+
+- 先停掉 cron / timer，不再触发 `/api/admin/automation-conversion/sop/run-due`
+- 保留原有 `manual-send` 和 `focus batch`
+
+影响：
+
+- 自动 SOP 停止继续发送
+- 手工群发和 focus AI 批任务继续可用
+
+### 8.6 需要临时停自动化转化
 
 止损动作：
 

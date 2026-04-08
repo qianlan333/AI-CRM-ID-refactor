@@ -30,6 +30,14 @@ def _json_loads(value: Any, *, default: Any) -> Any:
         return default
 
 
+def _row_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return _normalized_text(value).lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
     row = get_db().execute(sql, params).fetchone()
     return dict(row) if row else None
@@ -805,6 +813,443 @@ def claim_next_focus_send_batch_item(*, batch_id: int, started_at: str) -> dict[
     return dict(row) if row else None
 
 
+def list_sop_pool_configs() -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_sop_pool_config
+        ORDER BY pool_key ASC, id ASC
+        """
+    )
+
+
+def get_sop_pool_config(pool_key: str) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_sop_pool_config
+        WHERE pool_key = ?
+        LIMIT 1
+        """,
+        (_normalized_text(pool_key),),
+    )
+
+
+def save_sop_pool_config(payload: dict[str, Any]) -> dict[str, Any]:
+    existing = get_sop_pool_config(_normalized_text(payload.get("pool_key")))
+    db = get_db()
+    if existing:
+        row = db.execute(
+            """
+            UPDATE automation_sop_pool_config
+            SET enabled = ?,
+                max_day_count = ?,
+                send_time = ?,
+                timezone = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            RETURNING *
+            """,
+            (
+                _db_bool(bool(payload.get("enabled"))),
+                int(payload.get("max_day_count") or 0),
+                _normalized_text(payload.get("send_time")),
+                _normalized_text(payload.get("timezone")),
+                int(existing["id"]),
+            ),
+        ).fetchone()
+        return dict(row) if row else {}
+    row = db.execute(
+        """
+        INSERT INTO automation_sop_pool_config (
+            pool_key,
+            enabled,
+            max_day_count,
+            send_time,
+            timezone,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("pool_key")),
+            _db_bool(bool(payload.get("enabled"))),
+            int(payload.get("max_day_count") or 0),
+            _normalized_text(payload.get("send_time")),
+            _normalized_text(payload.get("timezone")),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def list_sop_templates(*, pool_key: str = "") -> list[dict[str, Any]]:
+    normalized_pool_key = _normalized_text(pool_key)
+    if normalized_pool_key:
+        return _fetchall_dicts(
+            """
+            SELECT *
+            FROM automation_sop_template
+            WHERE pool_key = ?
+            ORDER BY day_index ASC, id ASC
+            """,
+            (normalized_pool_key,),
+        )
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_sop_template
+        ORDER BY pool_key ASC, day_index ASC, id ASC
+        """
+    )
+
+
+def get_sop_template(*, pool_key: str, day_index: int) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_sop_template
+        WHERE pool_key = ?
+          AND day_index = ?
+        LIMIT 1
+        """,
+        (_normalized_text(pool_key), int(day_index)),
+    )
+
+
+def save_sop_template(payload: dict[str, Any]) -> dict[str, Any]:
+    existing = get_sop_template(
+        pool_key=_normalized_text(payload.get("pool_key")),
+        day_index=int(payload.get("day_index") or 0),
+    )
+    db = get_db()
+    if existing:
+        row = db.execute(
+            """
+            UPDATE automation_sop_template
+            SET content = ?,
+                images_json = ?,
+                enabled = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            RETURNING *
+            """,
+            (
+                _normalized_text(payload.get("content")),
+                _json_dumps(payload.get("images_json") or []),
+                _db_bool(bool(payload.get("enabled"))),
+                int(existing["id"]),
+            ),
+        ).fetchone()
+        return dict(row) if row else {}
+    row = db.execute(
+        """
+        INSERT INTO automation_sop_template (
+            pool_key,
+            day_index,
+            content,
+            images_json,
+            enabled,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("pool_key")),
+            int(payload.get("day_index") or 0),
+            _normalized_text(payload.get("content")),
+            _json_dumps(payload.get("images_json") or []),
+            _db_bool(bool(payload.get("enabled"))),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def get_sop_progress(*, member_id: int, pool_key: str) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_sop_progress
+        WHERE member_id = ?
+          AND pool_key = ?
+        LIMIT 1
+        """,
+        (int(member_id), _normalized_text(pool_key)),
+    )
+
+
+def list_sop_progress_for_members(*, member_ids: list[int] | None = None, pool_key: str = "") -> list[dict[str, Any]]:
+    normalized_member_ids = [int(item) for item in (member_ids or []) if str(item).strip()]
+    normalized_pool_key = _normalized_text(pool_key)
+    params: list[Any] = []
+    sql = """
+    SELECT *
+    FROM automation_sop_progress
+    WHERE 1 = 1
+    """
+    if normalized_member_ids:
+        placeholders = ",".join("?" for _ in normalized_member_ids)
+        sql += f" AND member_id IN ({placeholders})"
+        params.extend(normalized_member_ids)
+    if normalized_pool_key:
+        sql += " AND pool_key = ?"
+        params.append(normalized_pool_key)
+    sql += " ORDER BY pool_key ASC, member_id ASC, id ASC"
+    return _fetchall_dicts(sql, tuple(params))
+
+
+def save_sop_progress(payload: dict[str, Any]) -> dict[str, Any]:
+    existing = get_sop_progress(
+        member_id=int(payload.get("member_id") or 0),
+        pool_key=_normalized_text(payload.get("pool_key")),
+    )
+    db = get_db()
+    if existing:
+        row = db.execute(
+            """
+            UPDATE automation_sop_progress
+            SET first_entered_at = ?,
+                last_entered_at = ?,
+                last_sent_day = ?,
+                last_sent_at = ?,
+                completed_at = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            RETURNING *
+            """,
+            (
+                _normalized_text(payload.get("first_entered_at")),
+                _normalized_text(payload.get("last_entered_at")),
+                int(payload.get("last_sent_day") or 0),
+                _normalized_text(payload.get("last_sent_at")),
+                _normalized_text(payload.get("completed_at")),
+                int(existing["id"]),
+            ),
+        ).fetchone()
+        return dict(row) if row else {}
+    row = db.execute(
+        """
+        INSERT INTO automation_sop_progress (
+            member_id,
+            pool_key,
+            first_entered_at,
+            last_entered_at,
+            last_sent_day,
+            last_sent_at,
+            completed_at,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            int(payload.get("member_id") or 0),
+            _normalized_text(payload.get("pool_key")),
+            _normalized_text(payload.get("first_entered_at")),
+            _normalized_text(payload.get("last_entered_at")),
+            int(payload.get("last_sent_day") or 0),
+            _normalized_text(payload.get("last_sent_at")),
+            _normalized_text(payload.get("completed_at")),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def insert_sop_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_sop_batch (
+            pool_key,
+            day_index,
+            template_id,
+            scheduled_for,
+            status,
+            total_count,
+            success_count,
+            skipped_count,
+            failed_count,
+            summary_json,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("pool_key")),
+            int(payload.get("day_index") or 0),
+            payload.get("template_id"),
+            _normalized_text(payload.get("scheduled_for")),
+            _normalized_text(payload.get("status")),
+            int(payload.get("total_count") or 0),
+            int(payload.get("success_count") or 0),
+            int(payload.get("skipped_count") or 0),
+            int(payload.get("failed_count") or 0),
+            _json_dumps(payload.get("summary_json") or {}),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_sop_batch(batch_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        UPDATE automation_sop_batch
+        SET pool_key = ?,
+            day_index = ?,
+            template_id = ?,
+            scheduled_for = ?,
+            status = ?,
+            total_count = ?,
+            success_count = ?,
+            skipped_count = ?,
+            failed_count = ?,
+            summary_json = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("pool_key")),
+            int(payload.get("day_index") or 0),
+            payload.get("template_id"),
+            _normalized_text(payload.get("scheduled_for")),
+            _normalized_text(payload.get("status")),
+            int(payload.get("total_count") or 0),
+            int(payload.get("success_count") or 0),
+            int(payload.get("skipped_count") or 0),
+            int(payload.get("failed_count") or 0),
+            _json_dumps(payload.get("summary_json") or {}),
+            int(batch_id),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def get_sop_batch(batch_id: int) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_sop_batch
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(batch_id),),
+    )
+
+
+def list_sop_batches(*, pool_key: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    normalized_pool_key = _normalized_text(pool_key)
+    params: list[Any] = []
+    sql = """
+    SELECT *
+    FROM automation_sop_batch
+    WHERE 1 = 1
+    """
+    if normalized_pool_key:
+        sql += " AND pool_key = ?"
+        params.append(normalized_pool_key)
+    sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+    params.append(max(1, int(limit)))
+    return _fetchall_dicts(sql, tuple(params))
+
+
+def get_successful_sop_batch_item(*, member_id: int, pool_key: str, day_index: int) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_sop_batch_item
+        WHERE member_id = ?
+          AND pool_key = ?
+          AND day_index = ?
+          AND status = 'success'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(member_id), _normalized_text(pool_key), int(day_index)),
+    )
+
+
+def insert_sop_batch_item(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_sop_batch_item (
+            batch_id,
+            member_id,
+            pool_key,
+            day_index,
+            external_userid,
+            status,
+            error_message,
+            sent_record_id,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            int(payload.get("batch_id") or 0),
+            payload.get("member_id"),
+            _normalized_text(payload.get("pool_key")),
+            int(payload.get("day_index") or 0),
+            _normalized_text(payload.get("external_userid")),
+            _normalized_text(payload.get("status")),
+            _normalized_text(payload.get("error_message")),
+            payload.get("sent_record_id"),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_sop_batch_item(item_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        UPDATE automation_sop_batch_item
+        SET batch_id = ?,
+            member_id = ?,
+            pool_key = ?,
+            day_index = ?,
+            external_userid = ?,
+            status = ?,
+            error_message = ?,
+            sent_record_id = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        RETURNING *
+        """,
+        (
+            int(payload.get("batch_id") or 0),
+            payload.get("member_id"),
+            _normalized_text(payload.get("pool_key")),
+            int(payload.get("day_index") or 0),
+            _normalized_text(payload.get("external_userid")),
+            _normalized_text(payload.get("status")),
+            _normalized_text(payload.get("error_message")),
+            payload.get("sent_record_id"),
+            int(item_id),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def list_sop_batch_items(*, batch_id: int, limit: int = 200) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_sop_batch_item
+        WHERE batch_id = ?
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (int(batch_id), max(1, int(limit))),
+    )
+
+
 def get_default_channel() -> dict[str, Any] | None:
     return _fetchone_dict(
         """
@@ -1136,3 +1581,26 @@ def deserialize_focus_send_batch_item_row(row: dict[str, Any]) -> dict[str, Any]
         **row,
         "result_payload": _json_loads(row.get("result_payload"), default={}),
     }
+
+
+def deserialize_sop_template_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "images_json": _json_loads(row.get("images_json"), default=[]),
+        "enabled": _row_bool(row.get("enabled")),
+    }
+
+
+def deserialize_sop_progress_row(row: dict[str, Any]) -> dict[str, Any]:
+    return dict(row or {})
+
+
+def deserialize_sop_batch_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "summary_json": _json_loads(row.get("summary_json"), default={}),
+    }
+
+
+def deserialize_sop_batch_item_row(row: dict[str, Any]) -> dict[str, Any]:
+    return dict(row or {})
