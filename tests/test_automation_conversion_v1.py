@@ -1165,8 +1165,8 @@ def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monk
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
         lambda: [
-            {"phone_last4": "1231", "message_count": 10},
-            {"phone_last4": "1232", "message_count": 9},
+            {"phone_last4": "1231", "message_count": 15},
+            {"phone_last4": "1232", "message_count": 10},
             {"phone_last4": "1233", "message_count": 1},
             {"phone_last4": "1234", "message_count": 0},
         ],
@@ -1199,8 +1199,8 @@ def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monk
     assert payload["run"]["candidate_count"] == 4
     assert payload["run"]["matched_count"] == 4
     assert payload["run"]["updated_count"] == 4
-    assert payload["run"]["focus_count"] == 2
-    assert payload["run"]["normal_count"] == 2
+    assert payload["run"]["focus_count"] == 1
+    assert payload["run"]["normal_count"] == 3
     assert [dict(row) for row in rows] == [
         {
             "external_contact_id": "wm_msg_sync_001",
@@ -1212,9 +1212,9 @@ def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monk
         {
             "external_contact_id": "wm_msg_sync_002",
             "activation_status": "active",
-            "follow_type": "focus",
+            "follow_type": "normal",
             "decision_source": "system",
-            "current_pool": "active_focus",
+            "current_pool": "active_normal",
         },
         {
             "external_contact_id": "wm_msg_sync_003",
@@ -1293,9 +1293,9 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
         {
             "external_contact_id": "wm_manual_sync_001",
             "activation_status": "active",
-            "follow_type": "normal",
-            "decision_source": "manual",
-            "current_pool": "active_normal",
+            "follow_type": "focus",
+            "decision_source": "system",
+            "current_pool": "active_focus",
         },
         {
             "external_contact_id": "wm_manual_sync_002",
@@ -1303,6 +1303,77 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
             "follow_type": "focus",
             "decision_source": "manual",
             "current_pool": "inactive_focus",
+        },
+    ]
+
+
+def test_message_activity_sync_uses_questionnaire_result_for_inactive_members(app, monkeypatch):
+    _configure_message_activity_db(app)
+    _seed_contact(app, external_userid="wm_questionnaire_sync_001", mobile="13800002441", owner_userid="sales_questionnaire", customer_name="questionnaire-focus")
+    _seed_contact(app, external_userid="wm_questionnaire_sync_002", mobile="13800002442", owner_userid="sales_questionnaire", customer_name="questionnaire-normal")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_questionnaire_sync_001",
+        phone="13800002441",
+        owner_staff_id="sales_questionnaire",
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="focus",
+        decision_source="system",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_questionnaire_sync_002",
+        phone="13800002442",
+        owner_staff_id="sales_questionnaire",
+        current_pool="inactive_focus",
+        follow_type="focus",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="system",
+    )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        lambda: [
+            {"phone_last4": "2441", "message_count": 1},
+            {"phone_last4": "2442", "message_count": 0},
+        ],
+    )
+
+    with app.app_context():
+        payload = run_message_activity_sync(
+            operator_id="tester-message-sync",
+            operator_type="user",
+            trigger_source="manual",
+        )
+        rows = get_db().execute(
+            """
+            SELECT external_contact_id, activation_status, follow_type, decision_source, current_pool
+            FROM automation_member
+            WHERE external_contact_id LIKE 'wm_questionnaire_sync_%'
+            ORDER BY external_contact_id ASC
+            """
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert [dict(row) for row in rows] == [
+        {
+            "external_contact_id": "wm_questionnaire_sync_001",
+            "activation_status": "inactive",
+            "follow_type": "focus",
+            "decision_source": "system",
+            "current_pool": "inactive_focus",
+        },
+        {
+            "external_contact_id": "wm_questionnaire_sync_002",
+            "activation_status": "inactive",
+            "follow_type": "normal",
+            "decision_source": "system",
+            "current_pool": "inactive_normal",
         },
     ]
 
@@ -1387,13 +1458,13 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
         {
             "external_contact_id": "wm_skip_sync_003",
             "status": "updated",
-            "detail": "rank=1/1; ranked_follow_type=focus; effective_follow_type=focus; manual_preserved=no",
+            "detail": "rank=1/1; bucket=active_normal_threshold; effective_follow_type=normal; manual_preserved=no",
         },
     ]
     assert [dict(item) for item in members] == [
         {"external_contact_id": "wm_skip_sync_001", "activation_status": "inactive", "current_pool": "inactive_normal"},
         {"external_contact_id": "wm_skip_sync_002", "activation_status": "inactive", "current_pool": "inactive_normal"},
-        {"external_contact_id": "wm_skip_sync_003", "activation_status": "active", "current_pool": "active_focus"},
+        {"external_contact_id": "wm_skip_sync_003", "activation_status": "active", "current_pool": "active_normal"},
         {"external_contact_id": "wm_skip_sync_004", "activation_status": "inactive", "current_pool": "inactive_normal"},
     ]
 
