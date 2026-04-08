@@ -561,14 +561,14 @@ def preview_customer_task_action(
         payload = {
             "chat_type": "single",
             "external_userid": [_normalized_text(external_userid)],
-            "sender": [normalized_userid],
+            "sender": normalized_userid,
             "text": {"content": normalized_content},
         }
     elif normalized_task_type == "group_message":
         payload = {
             "chat_type": "group",
             "external_userid": [_normalized_text(external_userid)],
-            "sender": [normalized_userid],
+            "sender": normalized_userid,
             "text": {"content": normalized_content},
         }
     else:

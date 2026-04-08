@@ -1792,7 +1792,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
     assert len(dispatched_payloads) == 1
     assert dispatched_payloads[0]["task_type"] == "private_message"
     assert dispatched_payloads[0]["fn_name"] == "create_private_message_task"
-    assert dispatched_payloads[0]["payload"]["sender"] == ["QianLan"]
+    assert dispatched_payloads[0]["payload"]["sender"] == "QianLan"
     assert sorted(dispatched_payloads[0]["payload"]["external_userid"]) == ["wm_manual_new_001", "wm_manual_new_002"]
     assert dispatched_payloads[0]["payload"]["image_media_ids"] == ["img-media-001", "img-media-002"]
     assert "attachments" not in dispatched_payloads[0]["payload"]
@@ -2016,7 +2016,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     assert "发送记录 ID" in html
     assert 'id="stage-send-image-input"' in html
     assert len(captured_payloads) == 1
-    assert captured_payloads[0]["sender"] == ["QianLan"]
+    assert captured_payloads[0]["sender"] == "QianLan"
     assert "images" in captured_payloads[0]
     assert "image_media_ids" not in captured_payloads[0]
 

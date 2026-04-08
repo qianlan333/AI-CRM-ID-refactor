@@ -28,6 +28,16 @@ def _normalize_image_list(value: Any) -> list[Any]:
     return [value]
 
 
+def _normalize_sender(value: Any) -> str:
+    if isinstance(value, list):
+        for item in value:
+            normalized_item = _normalize_str(item).strip()
+            if normalized_item:
+                return normalized_item
+        return ""
+    return _normalize_str(value).strip()
+
+
 def _normalize_binary_image_spec(item: Any, index: int) -> dict[str, Any]:
     if isinstance(item, str):
         raw = item.strip()
@@ -204,5 +214,11 @@ def build_private_message_request_payload(
 
     if not normalized_payload.get("text") and not normalized_payload.get("attachments"):
         raise ValueError("content, images, or attachments is required")
+
+    normalized_sender = _normalize_sender(normalized_payload.get("sender"))
+    if normalized_sender:
+        normalized_payload["sender"] = normalized_sender
+    else:
+        normalized_payload.pop("sender", None)
 
     return normalized_payload, image_count

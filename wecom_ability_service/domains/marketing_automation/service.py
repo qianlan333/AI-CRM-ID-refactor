@@ -1044,7 +1044,7 @@ def send_pool_private_message(
             continue
         sender_userids.append(sender_userid)
         request_payload = {
-            "sender": [sender_userid],
+            "sender": sender_userid,
             "external_userid": [_normalized_text(item.get("external_userid")) for item in items if _normalized_text(item.get("external_userid"))],
             **task_payload,
         }
