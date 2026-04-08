@@ -251,22 +251,13 @@ def _focus_send_stage_definition(route_key: str) -> dict[str, Any]:
     return dict(POOL_TO_STAGE_DEF.get(pool) or {})
 
 
-def _normalize_manual_send_attachments(
-    *,
-    attachments: list[dict[str, Any]] | None = None,
-    attachment_media_ids: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    normalized_attachments: list[dict[str, Any]] = []
-    for item in list(attachments or []):
-        if not isinstance(item, dict):
-            raise ValueError("attachments must be a list of attachment objects")
-        normalized_attachments.append(dict(item))
-    for media_id in list(attachment_media_ids or []):
+def _normalize_manual_send_image_media_ids(image_media_ids: list[str] | None = None) -> list[str]:
+    normalized_image_media_ids: list[str] = []
+    for media_id in list(image_media_ids or []):
         normalized_media_id = _normalized_text(media_id)
-        if not normalized_media_id:
-            continue
-        normalized_attachments.append({"msgtype": "file", "file": {"media_id": normalized_media_id}})
-    return normalized_attachments
+        if normalized_media_id:
+            normalized_image_media_ids.append(normalized_media_id)
+    return normalized_image_media_ids
 
 
 def _focus_batch_status_label(value: str) -> str:
@@ -1956,8 +1947,7 @@ def send_stage_manual_message(
     *,
     route_key: str,
     content: str = "",
-    attachments: list[dict[str, Any]] | None = None,
-    attachment_media_ids: list[str] | None = None,
+    image_media_ids: list[str] | None = None,
     operator_id: str = "",
 ) -> dict[str, Any]:
     refresh_expired_silent_members()
@@ -1965,14 +1955,11 @@ def send_stage_manual_message(
     pool = _normalized_text(definition.get("pool"))
     normalized_operator_id = _normalized_text(operator_id) or "crm_console"
     normalized_content = _normalized_text(content)
-    normalized_attachments = _normalize_manual_send_attachments(
-        attachments=attachments,
-        attachment_media_ids=attachment_media_ids,
-    )
+    normalized_image_media_ids = _normalize_manual_send_image_media_ids(image_media_ids)
     task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(
         {
             "content": normalized_content,
-            "attachments": normalized_attachments,
+            "image_media_ids": normalized_image_media_ids,
         }
     )
     members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool)]

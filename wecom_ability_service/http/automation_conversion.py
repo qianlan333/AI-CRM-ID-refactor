@@ -98,22 +98,19 @@ def _split_multiline_tokens(raw_value: str) -> list[str]:
 def _build_manual_send_request_payload() -> dict[str, object]:
     json_payload = request.get_json(silent=True)
     if isinstance(json_payload, dict):
-        raw_attachment_media_ids = json_payload.get("attachment_media_ids")
-        if isinstance(raw_attachment_media_ids, list):
-            attachment_media_ids = [str(item).strip() for item in raw_attachment_media_ids if str(item).strip()]
+        raw_image_media_ids = json_payload.get("image_media_ids")
+        if isinstance(raw_image_media_ids, list):
+            image_media_ids = [str(item).strip() for item in raw_image_media_ids if str(item).strip()]
         else:
-            attachment_media_ids = _split_multiline_tokens(str(raw_attachment_media_ids or ""))
-        attachments = json_payload.get("attachments")
+            image_media_ids = _split_multiline_tokens(str(raw_image_media_ids or ""))
         return {
             "content": str(json_payload.get("content") or "").strip(),
-            "attachments": list(attachments or []) if isinstance(attachments, list) else [],
-            "attachment_media_ids": attachment_media_ids,
+            "image_media_ids": image_media_ids,
             "operator_id": _operator_from_request(),
         }
     return {
         "content": str(request.form.get("content") or "").strip(),
-        "attachments": [],
-        "attachment_media_ids": _split_multiline_tokens(request.form.get("attachment_media_ids", "")),
+        "image_media_ids": _split_multiline_tokens(request.form.get("image_media_ids", "")),
         "operator_id": _operator_from_request(),
     }
 
@@ -206,7 +203,7 @@ def _stage_send_payload(stage_key: str) -> dict[str, object]:
             "focus_send_batch_detail_url_template": "/api/admin/automation-conversion/focus-send-batches/<batch_id>",
             "form": {
                 "content": str(request.form.get("content") or "").strip(),
-                "attachment_media_ids": request.form.get("attachment_media_ids", ""),
+                "image_media_ids": request.form.get("image_media_ids", ""),
                 "operator": str(request.form.get("operator") or "").strip(),
             },
         },
