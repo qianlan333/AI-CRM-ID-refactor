@@ -322,7 +322,7 @@
     </div>
     <form method="post" action="{{ url_for('api.admin_automation_conversion_run_message_activity_sync') }}">
       <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
-      <button class="admin-button admin-button--secondary" type="submit">立即刷新一次</button>
+      <button class="admin-button admin-button--secondary" type="submit" {% if not settings_payload.message_activity_sync.db_status.configured %}disabled title="请先配置消息库连接"{% endif %}>立即刷新一次</button>
     </form>
   </div>
   <dl class="admin-definition-list">
@@ -350,11 +350,23 @@
     </div>
     <div>
       <dt>最近一次状态</dt>
-      <dd>{{ settings_payload.message_activity_sync.last_run.status or "暂无记录" }}</dd>
+      <dd>
+        {% if not settings_payload.message_activity_sync.db_status.configured %}
+        未配置
+        {% else %}
+        {{ settings_payload.message_activity_sync.last_run.status or "暂无记录" }}
+        {% endif %}
+      </dd>
     </div>
     <div>
       <dt>最近完成时间</dt>
-      <dd>{{ settings_payload.message_activity_sync.last_run.finished_at or "暂无记录" }}</dd>
+      <dd>
+        {% if not settings_payload.message_activity_sync.db_status.configured %}
+        暂无记录
+        {% else %}
+        {{ settings_payload.message_activity_sync.last_run.finished_at or "暂无记录" }}
+        {% endif %}
+      </dd>
     </div>
     <div>
       <dt>最近一次摘要</dt>
@@ -373,7 +385,7 @@
     <span>请先补齐 {{ settings_payload.message_activity_sync.db_status.missing_keys|join('、') }}，再执行消息活跃同步。</span>
   </div>
   {% endif %}
-  {% if settings_payload.message_activity_sync.last_run.error_message %}
+  {% if settings_payload.message_activity_sync.db_status.configured and settings_payload.message_activity_sync.last_run.error_message %}
   <div class="admin-state admin-state--inline admin-state--error">
     <strong>最近一次同步失败</strong>
     <span>{{ settings_payload.message_activity_sync.last_run.error_message }}</span>
