@@ -1197,7 +1197,9 @@ CREATE TABLE IF NOT EXISTS automation_message_activity_sync_item (
     member_id BIGINT REFERENCES automation_member(id) ON DELETE CASCADE,
     external_contact_id TEXT NOT NULL DEFAULT '',
     phone TEXT NOT NULL DEFAULT '',
+    phone_prefix3 TEXT NOT NULL DEFAULT '',
     phone_last4 TEXT NOT NULL DEFAULT '',
+    phone_match_key TEXT NOT NULL DEFAULT '',
     message_count INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'updated',
     detail TEXT NOT NULL DEFAULT '',
@@ -1214,6 +1216,9 @@ ON automation_message_activity_sync_item (status, created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_last4
 ON automation_message_activity_sync_item (phone_last4, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_match_key
+ON automation_message_activity_sync_item (phone_match_key, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
     id BIGSERIAL PRIMARY KEY,

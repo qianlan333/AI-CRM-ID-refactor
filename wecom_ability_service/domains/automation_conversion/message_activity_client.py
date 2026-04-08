@@ -14,7 +14,9 @@ _MISSING_KEY_LABELS = {
 
 MESSAGE_ACTIVITY_SQL = """
 SELECT
-  RIGHT(u.phone, 4) AS phone_last4,
+  LEFT(TRIM(u.phone), 3) AS phone_prefix3,
+  RIGHT(TRIM(u.phone), 4) AS phone_last4,
+  CONCAT(LEFT(TRIM(u.phone), 3), '_', RIGHT(TRIM(u.phone), 4)) AS phone_match_key,
   COUNT(m.id) AS message_count
 FROM new_version_users u
 LEFT JOIN new_version_messages m
@@ -23,10 +25,14 @@ LEFT JOIN new_version_messages m
  AND m.role = 'user'
 WHERE u.is_deleted = 0
   AND u.phone IS NOT NULL
-  AND u.phone <> ''
+  AND TRIM(u.phone) <> ''
+  AND CHAR_LENGTH(TRIM(u.phone)) >= 7
   AND u.nickname NOT LIKE '%neo%'
   AND u.nickname NOT LIKE '%Neo%'
-GROUP BY RIGHT(u.phone, 4)
+GROUP BY
+  LEFT(TRIM(u.phone), 3),
+  RIGHT(TRIM(u.phone), 4),
+  CONCAT(LEFT(TRIM(u.phone), 3), '_', RIGHT(TRIM(u.phone), 4))
 """
 
 
@@ -89,9 +95,11 @@ def query_message_activity_counts() -> list[dict[str, Any]]:
         connection.close()
     return [
         {
+            "phone_prefix3": _normalized_text(row.get("phone_prefix3")),
             "phone_last4": _normalized_text(row.get("phone_last4")),
+            "phone_match_key": _normalized_text(row.get("phone_match_key")),
             "message_count": int(row.get("message_count") or 0),
         }
         for row in rows
-        if _normalized_text(row.get("phone_last4"))
+        if _normalized_text(row.get("phone_match_key"))
     ]

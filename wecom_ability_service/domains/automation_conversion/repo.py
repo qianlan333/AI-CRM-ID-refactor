@@ -541,7 +541,9 @@ def insert_message_activity_sync_item(payload: dict[str, Any]) -> dict[str, Any]
             member_id,
             external_contact_id,
             phone,
+            phone_prefix3,
             phone_last4,
+            phone_match_key,
             message_count,
             status,
             detail,
@@ -549,7 +551,7 @@ def insert_message_activity_sync_item(payload: dict[str, Any]) -> dict[str, Any]
             after_snapshot,
             created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         """,
         (
@@ -557,7 +559,9 @@ def insert_message_activity_sync_item(payload: dict[str, Any]) -> dict[str, Any]
             payload.get("member_id"),
             _normalized_text(payload.get("external_contact_id")),
             _normalized_text(payload.get("phone")),
+            _normalized_text(payload.get("phone_prefix3")),
             _normalized_text(payload.get("phone_last4")),
+            _normalized_text(payload.get("phone_match_key")),
             int(payload.get("message_count") or 0),
             _normalized_text(payload.get("status")),
             _normalized_text(payload.get("detail")),
