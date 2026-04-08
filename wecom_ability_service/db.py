@@ -518,6 +518,8 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             qr_url TEXT NOT NULL DEFAULT '',
             qr_ticket TEXT NOT NULL DEFAULT '',
             scene_value TEXT NOT NULL DEFAULT '',
+            welcome_message TEXT NOT NULL DEFAULT '',
+            auto_accept_friend INTEGER NOT NULL DEFAULT 0,
             owner_staff_id TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'inactive',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -525,6 +527,11 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         )
         """
     )
+    channel_columns = _sqlite_table_columns(db, "automation_channel")
+    if "welcome_message" not in channel_columns:
+        db.execute("ALTER TABLE automation_channel ADD COLUMN welcome_message TEXT NOT NULL DEFAULT ''")
+    if "auto_accept_friend" not in channel_columns:
+        db.execute("ALTER TABLE automation_channel ADD COLUMN auto_accept_friend INTEGER NOT NULL DEFAULT 0")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS automation_member (
@@ -624,6 +631,47 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stage_key TEXT NOT NULL DEFAULT '',
+            pool_key TEXT NOT NULL DEFAULT '',
+            operator_type TEXT NOT NULL DEFAULT 'user',
+            operator_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            total_count INTEGER NOT NULL DEFAULT 0,
+            sent_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            skipped_count INTEGER NOT NULL DEFAULT 0,
+            cancelled_count INTEGER NOT NULL DEFAULT 0,
+            next_run_at TEXT NOT NULL DEFAULT '',
+            last_run_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_focus_send_batch_item (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL REFERENCES automation_focus_send_batch(id) ON DELETE CASCADE,
+            member_id INTEGER REFERENCES automation_member(id) ON DELETE SET NULL,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            position_index INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            detail TEXT NOT NULL DEFAULT '',
+            result_payload TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at TEXT NOT NULL DEFAULT '',
+            finished_at TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_member_external_non_empty
         ON automation_member (external_contact_id)
         WHERE external_contact_id <> ''
@@ -653,6 +701,18 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_last4 ON automation_message_activity_sync_item (phone_last4, created_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_stage_status ON automation_focus_send_batch (stage_key, status, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_due ON automation_focus_send_batch (status, next_run_at, id ASC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_batch_position ON automation_focus_send_batch_item (batch_id, position_index ASC, id ASC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_status ON automation_focus_send_batch_item (status, updated_at DESC, id DESC)"
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_status ON automation_channel (status, updated_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_scene ON automation_channel (scene_value)")
@@ -983,6 +1043,18 @@ def _ensure_postgres_customer_marketing_state_tables(db) -> None:
 
 
 def _init_postgres(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_channel
+        ADD COLUMN IF NOT EXISTS welcome_message TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_channel
+        ADD COLUMN IF NOT EXISTS auto_accept_friend BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
     db.execute(
         """
         ALTER TABLE IF EXISTS class_term_tag_mapping

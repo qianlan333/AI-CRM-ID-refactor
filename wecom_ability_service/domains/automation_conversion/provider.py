@@ -15,7 +15,19 @@ from ...infra.wecom_runtime import get_contact_runtime_client
 class AutomationChannelProvider:
     provider_name: str
 
-    def create_default_channel(self, *, owner_staff_id: str) -> dict[str, Any]:
+    def get_default_channel_field_support(self) -> dict[str, bool]:
+        return {
+            "welcome_message": False,
+            "auto_accept_friend": False,
+        }
+
+    def create_default_channel(
+        self,
+        *,
+        owner_staff_id: str,
+        welcome_message: str = "",
+        auto_accept_friend: bool = False,
+    ) -> dict[str, Any]:
         raise NotImplementedError
 
 
@@ -43,13 +55,25 @@ def validate_contact_way_state_token(value: str) -> str:
 class WeComContactWayProvider(AutomationChannelProvider):
     provider_name: str = "wecom_contact_way"
 
-    def create_default_channel(self, *, owner_staff_id: str) -> dict[str, Any]:
+    def get_default_channel_field_support(self) -> dict[str, bool]:
+        return {
+            "welcome_message": False,
+            "auto_accept_friend": True,
+        }
+
+    def create_default_channel(
+        self,
+        *,
+        owner_staff_id: str,
+        welcome_message: str = "",
+        auto_accept_friend: bool = False,
+    ) -> dict[str, Any]:
         scene_value = validate_contact_way_state_token(build_default_channel_state_token())
         payload = {
             "type": 1,
             "scene": 2,
             "style": 1,
-            "skip_verify": False,
+            "skip_verify": bool(auto_accept_friend),
             "state": scene_value,
             "user": [owner_staff_id],
         }
@@ -63,6 +87,18 @@ class WeComContactWayProvider(AutomationChannelProvider):
             "status": "active",
             "provider_name": self.provider_name,
             "provider_payload": payload,
+            "field_statuses": {
+                "welcome_message": {
+                    "status": "unsupported" if str(welcome_message or "").strip() else "not_set",
+                    "supported": False,
+                    "detail": "当前默认永久二维码 provider 不支持欢迎语透传；如需欢迎语需改成临时会话/结束语方案。",
+                },
+                "auto_accept_friend": {
+                    "status": "applied",
+                    "supported": True,
+                    "detail": "已透传为 skip_verify。",
+                },
+            },
         }
 
 

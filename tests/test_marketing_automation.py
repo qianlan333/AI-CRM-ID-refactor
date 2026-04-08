@@ -492,6 +492,7 @@ def _signup_conversion_config_payload(
     enabled: bool = True,
     core_threshold: int = 3,
     top_threshold: int = 4,
+    day_start_hour: int = 9,
     quiet_hour_start: int = 23,
     timezone: str = "Asia/Shanghai",
     question_ids: list[int] | None = None,
@@ -505,6 +506,7 @@ def _signup_conversion_config_payload(
         "questionnaire_id": int(questionnaire_seed["questionnaire_id"]),
         "core_threshold": core_threshold,
         "top_threshold": top_threshold,
+        "day_start_hour": day_start_hour,
         "quiet_hour_start": quiet_hour_start,
         "timezone": timezone,
         "silent_threshold_days_by_pool": silent_threshold_days_by_pool
@@ -1480,6 +1482,61 @@ def test_candidate_router_blocks_after_quiet_hours_and_reenters_next_day(app, cl
         assert rows[0]["dispatch_status"] == "pending"
 
 
+def test_candidate_router_respects_auto_start_window_boundaries(app, client, monkeypatch):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=145)
+    save_response = client.put(
+        "/api/admin/marketing-automation/config",
+        json=_signup_conversion_config_payload(seed, day_start_hour=9, quiet_hour_start=23),
+    )
+    assert save_response.status_code == 200
+
+    _seed_customer(
+        app,
+        external_userid="wm_router_window",
+        mobile="13800138555",
+        customer_name="时间窗候选",
+        owner_userid="sales_145",
+        signup_status="lead",
+        signup_label_name="报名引流品",
+        messages=[("wm_router_window", "我先问一下", "2026-04-04 10:21:00")],
+    )
+    _create_questionnaire_submission(
+        app,
+        seed,
+        submission_id=14501,
+        external_userid="wm_router_window",
+        mobile_snapshot="13800138555",
+        hit_question_count=4,
+        submitted_at="2026-04-04 10:22:00",
+    )
+
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 08:59:00")
+    early_payload = client.get("/api/customers/automation/signup-conversion/batches").get_json()["automation_batches"]
+    assert early_payload["count"] == 1
+    batch_id = early_payload["items"][0]["id"]
+    assert early_payload["items"][0]["candidate_count"] == 0
+    assert early_payload["items"][0]["blocked_count"] == 1
+
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 09:00:00")
+    morning_payload = client.get(f"/api/customers/automation/signup-conversion/batches/{batch_id}").get_json()["automation_batch"]
+    assert morning_payload["candidate_count"] == 1
+    assert morning_payload["blocked_count"] == 0
+    assert morning_payload["candidates"][0]["external_userid"] == "wm_router_window"
+
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 22:59:00")
+    late_payload = client.get(f"/api/customers/automation/signup-conversion/batches/{batch_id}").get_json()["automation_batch"]
+    assert late_payload["candidate_count"] == 1
+    assert late_payload["blocked_count"] == 0
+
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 23:00:00")
+    blocked_payload = client.get(f"/api/customers/automation/signup-conversion/batches/{batch_id}").get_json()["automation_batch"]
+    blocked_reasons = {item["external_userid"]: item["reason"] for item in blocked_payload["skipped_customers"]}
+
+    assert blocked_payload["candidate_count"] == 0
+    assert blocked_payload["blocked_count"] == 1
+    assert blocked_reasons["wm_router_window"] == "blocked_quiet_hours"
+
+
 def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=23)
     save_response = client.put("/api/admin/marketing-automation/config", json=_signup_conversion_config_payload(seed))
@@ -1735,6 +1792,7 @@ def test_signup_conversion_config_api_saves_and_reads_back(app, client):
     initial_response = client.get("/api/admin/marketing-automation/config")
     assert initial_response.status_code == 200
     assert initial_response.get_json()["config"]["configured"] is False
+    assert initial_response.get_json()["config"]["day_start_hour"] == 9
     assert initial_response.get_json()["config"]["core_threshold"] == 3
     assert initial_response.get_json()["config"]["top_threshold"] == 4
 
@@ -1743,6 +1801,7 @@ def test_signup_conversion_config_api_saves_and_reads_back(app, client):
         enabled=True,
         core_threshold=35,
         top_threshold=65,
+        day_start_hour=8,
         quiet_hour_start=22,
         silent_threshold_days_by_pool={
             "new_user": 3,
@@ -1765,6 +1824,7 @@ def test_signup_conversion_config_api_saves_and_reads_back(app, client):
     assert save_payload["questionnaire_id"] == seed["questionnaire_id"]
     assert save_payload["core_threshold"] == 35
     assert save_payload["top_threshold"] == 65
+    assert save_payload["day_start_hour"] == 8
     assert save_payload["quiet_hour_start"] == 22
     assert save_payload["timezone"] == "Asia/Shanghai"
     assert save_payload["silent_threshold_days_by_pool"] == {
@@ -1783,9 +1843,22 @@ def test_signup_conversion_config_api_saves_and_reads_back(app, client):
 
     assert read_response.status_code == 200
     assert read_payload["configured"] is True
+    assert read_payload["day_start_hour"] == 8
     assert read_payload["top_threshold"] == 65
     assert read_payload["silent_threshold_days_by_pool"]["inactive_focus"] == 5
     assert read_payload["question_rules"][2]["sort_order"] == 3
+
+
+def test_signup_conversion_config_api_rejects_invalid_auto_start_window(app, client):
+    seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=191)
+
+    response = client.put(
+        "/api/admin/marketing-automation/config",
+        json=_signup_conversion_config_payload(seed, day_start_hour=23, quiet_hour_start=23),
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "day_start_hour must be < quiet_hour_start"
 
 
 def test_signup_conversion_config_api_rejects_invalid_question_and_option(app, client):

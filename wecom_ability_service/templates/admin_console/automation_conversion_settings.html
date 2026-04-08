@@ -92,7 +92,7 @@
   <div class="admin-card-head">
     <div>
       <h2>自动化转化设置</h2>
-      <p>这里统一维护问卷、关键题、沉默规则、夜间暂停和默认渠道二维码。</p>
+      <p>这里统一维护问卷、关键题、沉默规则、自动启动时间窗和默认渠道二维码。</p>
     </div>
     <div class="admin-toolbar">
       <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion') }}">返回概览</a>
@@ -135,6 +135,10 @@
         <input type="number" name="top_threshold" min="0" value="{{ settings_payload.config.top_threshold }}">
       </label>
       <label class="admin-field">
+        <span>白天开始小时</span>
+        <input type="number" name="day_start_hour" min="0" max="23" value="{{ settings_payload.config.day_start_hour or 9 }}">
+      </label>
+      <label class="admin-field">
         <span>夜间暂停开始小时</span>
         <input type="number" name="quiet_hour_start" min="0" max="23" value="{{ settings_payload.config.quiet_hour_start }}">
       </label>
@@ -142,6 +146,10 @@
         <span>时区</span>
         <input type="text" name="timezone" value="{{ settings_payload.config.timezone }}">
       </label>
+    </div>
+    <div class="admin-state admin-state--inline">
+      <strong>自动启动时间窗</strong>
+      <span>仅在 {{ "%02d"|format((settings_payload.config.day_start_hour or 9)|int) }}:00 - {{ "%02d"|format((settings_payload.config.quiet_hour_start or 23)|int) }}:00 之间允许自动新启动。</span>
     </div>
 
     <div>
@@ -221,6 +229,25 @@
       </div>
     </div>
 
+    <div>
+      <div class="admin-card-head admin-card-head--tight">
+        <div>
+          <h2>默认渠道配置</h2>
+          <p>这里维护默认渠道二维码的欢迎语和免验证开关；保存后需要重新生成二维码才会真正应用到企微。</p>
+        </div>
+      </div>
+      <div class="admin-grid-2">
+        <label class="admin-field" style="grid-column: 1 / -1;">
+          <span>欢迎语</span>
+          <textarea name="welcome_message" rows="4" placeholder="用于默认渠道二维码的欢迎语（当前 provider 不支持时会明确显示 unsupported）。">{{ settings_payload.default_channel.welcome_message }}</textarea>
+        </label>
+      </div>
+      <label class="admin-check-line">
+        <input type="checkbox" name="auto_accept_friend" value="1" {% if settings_payload.default_channel.auto_accept_friend %}checked{% endif %}>
+        <span>免验证直接添加好友</span>
+      </label>
+    </div>
+
     <div class="admin-toolbar">
       <button class="admin-button admin-button--primary" type="submit">保存设置</button>
     </div>
@@ -255,12 +282,28 @@
       <dd>{{ settings_payload.default_channel.scene_value or "未生成" }}</dd>
     </div>
     <div>
+      <dt>欢迎语</dt>
+      <dd>{{ settings_payload.default_channel.welcome_message or "未配置" }}</dd>
+    </div>
+    <div>
+      <dt>免验证直接添加好友</dt>
+      <dd>{{ "已开启" if settings_payload.default_channel.auto_accept_friend else "未开启" }}</dd>
+    </div>
+    <div>
       <dt>状态</dt>
       <dd>{{ settings_payload.default_channel.status }}</dd>
     </div>
     <div>
       <dt>默认归属客服</dt>
       <dd>{{ settings_payload.default_channel.owner_staff_id }}</dd>
+    </div>
+    <div>
+      <dt>欢迎语透传状态</dt>
+      <dd>{{ settings_payload.default_channel.field_statuses.welcome_message.status }}{% if settings_payload.default_channel.field_statuses.welcome_message.detail %}（{{ settings_payload.default_channel.field_statuses.welcome_message.detail }}）{% endif %}</dd>
+    </div>
+    <div>
+      <dt>免验证透传状态</dt>
+      <dd>{{ settings_payload.default_channel.field_statuses.auto_accept_friend.status }}{% if settings_payload.default_channel.field_statuses.auto_accept_friend.detail %}（{{ settings_payload.default_channel.field_statuses.auto_accept_friend.detail }}）{% endif %}</dd>
     </div>
   </dl>
   {% if not settings_payload.provider_available %}

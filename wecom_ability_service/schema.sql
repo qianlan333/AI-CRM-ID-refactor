@@ -1072,6 +1072,8 @@ CREATE TABLE IF NOT EXISTS automation_channel (
     qr_url TEXT NOT NULL DEFAULT '',
     qr_ticket TEXT NOT NULL DEFAULT '',
     scene_value TEXT NOT NULL DEFAULT '',
+    welcome_message TEXT NOT NULL DEFAULT '',
+    auto_accept_friend INTEGER NOT NULL DEFAULT 0,
     owner_staff_id TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'inactive',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1208,3 +1210,50 @@ ON automation_message_activity_sync_item (status, created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_last4
 ON automation_message_activity_sync_item (phone_last4, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stage_key TEXT NOT NULL DEFAULT '',
+    pool_key TEXT NOT NULL DEFAULT '',
+    operator_type TEXT NOT NULL DEFAULT 'user',
+    operator_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    total_count INTEGER NOT NULL DEFAULT 0,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
+    cancelled_count INTEGER NOT NULL DEFAULT 0,
+    next_run_at TEXT NOT NULL DEFAULT '',
+    last_run_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_stage_status
+ON automation_focus_send_batch (stage_key, status, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_due
+ON automation_focus_send_batch (status, next_run_at, id ASC);
+
+CREATE TABLE IF NOT EXISTS automation_focus_send_batch_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL REFERENCES automation_focus_send_batch(id) ON DELETE CASCADE,
+    member_id INTEGER REFERENCES automation_member(id) ON DELETE SET NULL,
+    external_contact_id TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    position_index INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    detail TEXT NOT NULL DEFAULT '',
+    result_payload TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TEXT NOT NULL DEFAULT '',
+    finished_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_batch_position
+ON automation_focus_send_batch_item (batch_id, position_index ASC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_status
+ON automation_focus_send_batch_item (status, updated_at DESC, id DESC);

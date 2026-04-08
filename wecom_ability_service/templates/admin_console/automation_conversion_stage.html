@@ -8,38 +8,23 @@
       <p>{{ stage_payload.stage.description }}</p>
     </div>
     <div class="admin-toolbar">
+      <a class="admin-button admin-button--primary" href="/admin/automation-conversion/stage/{{ stage_payload.stage.route_key }}/send">创建群发</a>
       <a class="admin-button admin-button--secondary" href="/admin/automation-conversion">返回自动化转化首页</a>
       <a class="admin-button admin-button--ghost" href="/admin/automation-conversion/debug">进入调试页</a>
     </div>
   </div>
 
-  <div class="admin-card-grid admin-card-grid--triple">
+  <div class="admin-card-grid">
     <article class="admin-card admin-stat-card admin-stat-card--nested">
       <div class="admin-card-label">总人数</div>
       <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.total_count }}</div>
       <p class="admin-card-copy">当前处在这一阶段的全部客户数量。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">重点跟进</div>
-      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.focus_count }}</div>
-      <p class="admin-card-copy">当前处在这个池子里，并按重点跟进节奏推进的客户数量。</p>
+      <div class="admin-card-label">今日新增</div>
+      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.today_new_count }}</div>
+      <p class="admin-card-copy">今天新进入这一阶段的客户数量。</p>
     </article>
-    <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">普通跟进</div>
-      <div class="admin-card-value admin-card-value--compact">{{ stage_payload.stage.normal_count }}</div>
-      <p class="admin-card-copy">当前处在这个池子里，并按标准话术推进的客户数量。</p>
-    </article>
-  </div>
-
-  <div class="admin-card-head automation-section-head">
-    <div>
-      <h2>今日新增</h2>
-      <p>今天新进入这一阶段的客户数量，方便运营判断节奏变化。</p>
-    </div>
-  </div>
-  <div class="admin-state admin-state--inline">
-    <strong>{{ stage_payload.stage.today_new_count }} 位</strong>
-    <span>这是今天新进入“{{ stage_payload.stage.label }}”的客户数量。</span>
   </div>
 </section>
 
