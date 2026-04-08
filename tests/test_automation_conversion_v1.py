@@ -916,7 +916,7 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
     assert payload["channel"]["qr_url"] == "https://wecom.example/qr/cfg-001"
     assert payload["channel"]["qr_ticket"] == "cfg-001"
     assert payload["channel"]["status"] == "active"
-    assert payload["field_statuses"]["welcome_message"]["status"] == "unsupported"
+    assert payload["field_statuses"]["welcome_message"]["status"] == "applied"
     assert payload["field_statuses"]["auto_accept_friend"]["status"] == "applied"
     assert payload["channel"]["scene_value"].startswith("aqr_")
     assert len(payload["channel"]["scene_value"]) <= 30
@@ -986,7 +986,7 @@ def test_default_channel_settings_save_and_readback_welcome_and_auto_accept(app,
     assert payload["ok"] is True
     assert payload["settings"]["default_channel"]["welcome_message"] == "这里是默认渠道欢迎语"
     assert payload["settings"]["default_channel"]["auto_accept_friend"] is True
-    assert payload["settings"]["default_channel"]["field_statuses"]["welcome_message"]["status"] == "unsupported"
+    assert payload["settings"]["default_channel"]["field_statuses"]["welcome_message"]["status"] == "pending"
     assert payload["settings"]["default_channel"]["field_statuses"]["auto_accept_friend"]["status"] == "pending"
 
     settings_page = client.get("/admin/automation-conversion/settings")
@@ -2248,3 +2248,67 @@ def test_qrcode_callback_creates_member_and_event(app):
             "operator_type": "system",
             "operator_id": "callback-user",
         }
+
+
+def test_qrcode_callback_sends_welcome_message_when_enabled(app, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion.service import handle_qrcode_enter_from_callback
+
+    captured: dict[str, object] = {}
+
+    def _fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        captured["task_type"] = task_type
+        captured["fn_name"] = fn_name
+        captured["payload"] = dict(payload)
+        return {"task_id": 77, "wecom_result": {"msgid": "welcome-msg-001"}}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        _fake_dispatch,
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_channel (
+                channel_code, channel_name, scene_value, owner_staff_id, status, welcome_message, auto_accept_friend, created_at, updated_at
+            )
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        db.commit()
+
+        result = handle_qrcode_enter_from_callback(
+            external_contact_id="wm_qrcode_002",
+            phone="13800004002",
+            payload_json={"state": "scene-default"},
+            operator_id="callback-user",
+            send_welcome_message=True,
+        )
+
+        assert result["handled"] is True
+        assert result["welcome_message"]["sent"] is True
+        assert result["welcome_message"]["task_id"] == 77
+        assert captured["task_type"] == "private_message"
+        assert captured["fn_name"] == "create_private_message_task"
+        assert captured["payload"] == {
+            "sender": "QianLan",
+            "external_userid": ["wm_qrcode_002"],
+            "text": {"content": "欢迎添加，稍后我来跟进你。"},
+        }
+
+        events = db.execute(
+            "SELECT action, operator_id, remark FROM automation_event ORDER BY id ASC"
+        ).fetchall()
+        assert [dict(item) for item in events[-2:]] == [
+            {
+                "action": "qrcode_enter",
+                "operator_id": "callback-user",
+                "remark": "",
+            },
+            {
+                "action": "qrcode_welcome_sent",
+                "operator_id": "callback-user",
+                "remark": "task_id=77",
+            },
+        ]

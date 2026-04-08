@@ -57,7 +57,7 @@ class WeComContactWayProvider(AutomationChannelProvider):
 
     def get_default_channel_field_support(self) -> dict[str, bool]:
         return {
-            "welcome_message": False,
+            "welcome_message": True,
             "auto_accept_friend": True,
         }
 
@@ -89,9 +89,13 @@ class WeComContactWayProvider(AutomationChannelProvider):
             "provider_payload": payload,
             "field_statuses": {
                 "welcome_message": {
-                    "status": "unsupported" if str(welcome_message or "").strip() else "not_set",
-                    "supported": False,
-                    "detail": "当前默认永久二维码 provider 不支持欢迎语透传；如需欢迎语需改成临时会话/结束语方案。",
+                    "status": "applied" if str(welcome_message or "").strip() else "not_set",
+                    "supported": True,
+                    "detail": (
+                        "欢迎语会在客户扫码并成功添加好友后自动发送。"
+                        if str(welcome_message or "").strip()
+                        else "当前未配置欢迎语。"
+                    ),
                 },
                 "auto_accept_friend": {
                     "status": "applied",
