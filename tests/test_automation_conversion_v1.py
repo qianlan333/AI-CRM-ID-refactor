@@ -13,9 +13,12 @@ from wecom_ability_service.domains.automation_conversion.service import (
     ensure_sop_v1_defaults,
     get_member_detail,
     record_sop_pool_entry,
+    run_due_reply_monitor,
     run_due_sop,
     run_message_activity_sync,
+    run_reply_monitor_capture,
     save_sop_v1_pool_config,
+    save_reply_monitor_enabled,
     save_sop_v1_template,
     sync_member_activation,
 )
@@ -232,6 +235,112 @@ def _configure_message_activity_db(app) -> None:
     app.config["MESSAGE_ACTIVITY_DB_PASS"] = "lobster_pass"
 
 
+def _configure_reply_monitor(
+    app,
+    *,
+    enabled: bool,
+    last_capture_cursor: int = 0,
+    last_capture_at: str = "",
+    last_capture_status: str = "",
+    last_dispatch_at: str = "",
+    last_dispatch_status: str = "",
+    last_error: str = "",
+    quiet_hours_start: str = "23:00",
+    quiet_hours_end: str = "09:00",
+    dispatch_interval_seconds: int = 30,
+) -> None:
+    with app.app_context():
+        db = get_db()
+        db.execute("DELETE FROM automation_reply_monitor_config")
+        db.execute(
+            """
+            INSERT INTO automation_reply_monitor_config (
+                config_key, enabled, last_capture_cursor, last_capture_at, last_capture_status,
+                last_capture_summary_json, last_dispatch_at, last_dispatch_status, last_dispatch_summary_json,
+                last_error, quiet_hours_start, quiet_hours_end, dispatch_interval_seconds, created_at, updated_at
+            )
+            VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                1 if enabled else 0,
+                last_capture_cursor,
+                last_capture_at,
+                last_capture_status,
+                json.dumps({}, ensure_ascii=False),
+                last_dispatch_at,
+                last_dispatch_status,
+                json.dumps({}, ensure_ascii=False),
+                last_error,
+                quiet_hours_start,
+                quiet_hours_end,
+                dispatch_interval_seconds,
+            ),
+        )
+        db.commit()
+
+
+def _seed_archived_message(
+    app,
+    *,
+    msgid: str,
+    seq: int,
+    external_userid: str,
+    owner_userid: str,
+    sender: str,
+    receiver: str = "",
+    chat_type: str = "private",
+    msgtype: str = "text",
+    content: str = "",
+    send_time: str = "2026-04-09 10:00:00",
+) -> int:
+    with app.app_context():
+        db = get_db()
+        row = db.execute(
+            """
+            INSERT INTO archived_messages (
+                seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                seq,
+                msgid,
+                chat_type,
+                external_userid,
+                owner_userid,
+                sender,
+                receiver,
+                msgtype,
+                content,
+                send_time,
+                "{}",
+            ),
+        ).fetchone()
+        db.commit()
+        return int(row["id"])
+
+
+def _patch_reply_monitor_payload_context(monkeypatch, *, external_userid: str, owner_display_name: str = "销售一") -> None:
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_profile_tags_payload",
+        lambda *, external_userid=external_userid: {"tags": [{"tag_name": "高潜客户"}]},
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_questionnaire_answers_payload",
+        lambda *, external_userid="", mobile="": {"answers": [{"question": "预算", "answer": "999"}]},
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_messages_payload",
+        lambda *, external_userid="", mobile="", limit=20, fetch_all=False: {
+            "messages": [
+                {"sender": external_userid, "send_time": "2026-04-09 09:58:00", "content": "你好"},
+                {"sender": "sales_01", "send_time": "2026-04-09 09:59:00", "content": "你好，我在"},
+            ],
+        },
+    )
+
+
 def _configure_sop_pool(
     app,
     *,
@@ -362,6 +471,8 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "automation_ai_push_log",
             "automation_message_activity_sync_run",
             "automation_message_activity_sync_item",
+            "automation_reply_monitor_config",
+            "automation_reply_monitor_queue",
             "automation_focus_send_batch",
             "automation_focus_send_batch_item",
             "automation_sop_pool_config",
@@ -379,6 +490,10 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "idx_automation_message_activity_sync_run_finished",
             "idx_automation_message_activity_sync_item_run",
             "idx_automation_message_activity_sync_item_match_key",
+            "idx_automation_reply_monitor_config_updated",
+            "idx_automation_reply_monitor_queue_status_due",
+            "idx_automation_reply_monitor_queue_external_updated",
+            "uq_automation_reply_monitor_queue_active_external",
             "idx_automation_focus_send_batch_stage_status",
             "idx_automation_focus_send_batch_item_batch_position",
             "idx_automation_sop_pool_config_updated",
@@ -1807,6 +1922,366 @@ def test_admin_automation_conversion_run_message_activity_sync_returns_json_for_
     assert payload["message_activity_sync"]["last_run"]["finished_at"] == "2026-04-08 10:40:00"
     assert payload["message_activity_sync"]["last_run"]["updated_count"] == 1
     assert payload["message_activity_sync"]["last_run"]["skipped_count"] == 0
+
+
+def test_automation_conversion_home_page_renders_reply_monitor_section(app, client):
+    _configure_reply_monitor(app, enabled=False)
+
+    response = client.get("/admin/automation-conversion")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "自动接话监控" in html
+    assert "开启监控" in html
+    assert "立即扫描一次" in html
+    assert "立即放行一条" in html
+    assert "关闭后停止自动触发但不影响聊天入库" in html
+
+
+def test_reply_monitor_capture_filters_private_inbound_messages_and_groups_by_user(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    _seed_contact(app, external_userid="wm_reply_001", mobile="13800009101", owner_userid="sales_01", customer_name="reply-1")
+    _seed_contact(app, external_userid="wm_reply_002", mobile="13800009102", owner_userid="sales_01", customer_name="reply-2")
+    _seed_contact(app, external_userid="wm_reply_003", mobile="13800009103", owner_userid="sales_01", customer_name="reply-3")
+    _seed_automation_member(app, external_contact_id="wm_reply_001", phone="13800009101", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_002", phone="13800009102", owner_staff_id="sales_01", current_pool="active_normal", follow_type="normal", activation_status="active", questionnaire_result="normal", decision_source="questionnaire")
+
+    _seed_archived_message(app, msgid="msg-rm-001", seq=1, external_userid="wm_reply_001", owner_userid="sales_01", sender="wm_reply_001", receiver="sales_01", content="你好 1", send_time="2026-04-09 10:00:01")
+    _seed_archived_message(app, msgid="msg-rm-002", seq=2, external_userid="wm_reply_001", owner_userid="sales_01", sender="wm_reply_001", receiver="sales_01", content="你好 2", send_time="2026-04-09 10:00:02")
+    _seed_archived_message(app, msgid="msg-rm-003", seq=3, external_userid="wm_reply_001", owner_userid="sales_01", sender="sales_01", receiver="wm_reply_001", content="客服回复", send_time="2026-04-09 10:00:03")
+    _seed_archived_message(app, msgid="msg-rm-004", seq=4, external_userid="wm_reply_001", owner_userid="sales_01", sender="wm_reply_001", receiver="sales_01", chat_type="group", content="群聊消息", send_time="2026-04-09 10:00:04")
+    _seed_archived_message(app, msgid="msg-rm-005", seq=5, external_userid="wm_reply_001", owner_userid="sales_01", sender="wm_reply_001", receiver="sales_01", msgtype="event", content="系统事件", send_time="2026-04-09 10:00:05")
+    _seed_archived_message(app, msgid="msg-rm-006", seq=6, external_userid="wm_reply_002", owner_userid="sales_01", sender="wm_reply_002", receiver="sales_01", content="另一个客户", send_time="2026-04-09 10:00:06")
+    _seed_archived_message(app, msgid="msg-rm-007", seq=7, external_userid="wm_reply_003", owner_userid="sales_01", sender="wm_reply_003", receiver="sales_01", content="非自动化用户", send_time="2026-04-09 10:00:07")
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:05:00")
+
+    with app.app_context():
+        payload = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        queue_rows = get_db().execute(
+            """
+            SELECT external_userid, owner_userid, status, message_count, message_ids_json
+            FROM automation_reply_monitor_queue
+            ORDER BY external_userid ASC
+            """
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["summary"] == {
+        "cursor_from": 0,
+        "cursor_to": 7,
+        "scanned_new_messages": 7,
+        "candidate_messages": 4,
+        "hit_users": 2,
+        "created_queue_items": 2,
+        "merged_queue_items": 0,
+    }
+    assert [dict(row) for row in queue_rows] == [
+        {
+            "external_userid": "wm_reply_001",
+            "owner_userid": "sales_01",
+            "status": "pending",
+            "message_count": 2,
+            "message_ids_json": json.dumps([1, 2]),
+        },
+        {
+            "external_userid": "wm_reply_002",
+            "owner_userid": "sales_01",
+            "status": "pending",
+            "message_count": 1,
+            "message_ids_json": json.dumps([6]),
+        },
+    ]
+
+
+def test_reply_monitor_capture_merges_new_messages_into_existing_pending_item(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    _seed_contact(app, external_userid="wm_reply_merge_001", mobile="13800009111", owner_userid="sales_01", customer_name="reply-merge")
+    _seed_automation_member(app, external_contact_id="wm_reply_merge_001", phone="13800009111", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-merge-001", seq=1, external_userid="wm_reply_merge_001", owner_userid="sales_01", sender="wm_reply_merge_001", receiver="sales_01", content="第一条", send_time="2026-04-09 10:00:01")
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:01:00")
+    with app.app_context():
+        first = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+    assert first["summary"]["created_queue_items"] == 1
+
+    _seed_archived_message(app, msgid="msg-rm-merge-002", seq=2, external_userid="wm_reply_merge_001", owner_userid="sales_01", sender="wm_reply_merge_001", receiver="sales_01", content="第二条", send_time="2026-04-09 10:02:01")
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:03:00")
+
+    with app.app_context():
+        second = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        row = get_db().execute(
+            """
+            SELECT status, message_count, message_ids_json
+            FROM automation_reply_monitor_queue
+            WHERE external_userid = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("wm_reply_merge_001",),
+        ).fetchone()
+
+    assert second["summary"]["created_queue_items"] == 0
+    assert second["summary"]["merged_queue_items"] == 1
+    assert dict(row) == {
+        "status": "pending",
+        "message_count": 2,
+        "message_ids_json": json.dumps([1, 2]),
+    }
+
+
+def test_reply_monitor_capture_and_dispatch_respect_quiet_hours(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    _seed_contact(app, external_userid="wm_reply_quiet_001", mobile="13800009121", owner_userid="sales_01", customer_name="reply-quiet")
+    _seed_automation_member(app, external_contact_id="wm_reply_quiet_001", phone="13800009121", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-quiet-001", seq=1, external_userid="wm_reply_quiet_001", owner_userid="sales_01", sender="wm_reply_quiet_001", receiver="sales_01", content="夜间消息", send_time="2026-04-09 23:14:00")
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 23:15:00")
+    sent_payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook",
+        lambda **kwargs: sent_payloads.append(kwargs) or {"ok": True, "delivery": {"id": 9001}},
+    )
+
+    with app.app_context():
+        capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        queue_row = get_db().execute(
+            """
+            SELECT status, not_before, message_count
+            FROM automation_reply_monitor_queue
+            WHERE external_userid = ?
+            """,
+            ("wm_reply_quiet_001",),
+        ).fetchone()
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="user")
+
+    assert capture["ok"] is True
+    assert dict(queue_row) == {
+        "status": "deferred_quiet_hours",
+        "not_before": "2026-04-10 09:00:00",
+        "message_count": 1,
+    }
+    assert dispatch["ok"] is True
+    assert dispatch["status"] == "quiet_hours"
+    assert dispatch["summary"]["deferred_count"] == 0
+    assert sent_payloads == []
+
+
+def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, dispatch_interval_seconds=30)
+    for external_userid, mobile in [("wm_reply_due_001", "13800009131"), ("wm_reply_due_002", "13800009132")]:
+        _seed_contact(app, external_userid=external_userid, mobile=mobile, owner_userid="sales_01", customer_name=external_userid)
+        _seed_automation_member(app, external_contact_id=external_userid, phone=mobile, owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_result="focus", decision_source="manual")
+    _seed_archived_message(app, msgid="msg-rm-due-001", seq=1, external_userid="wm_reply_due_001", owner_userid="sales_01", sender="wm_reply_due_001", receiver="sales_01", content="白天发送一", send_time="2026-04-09 23:29:01")
+    _seed_archived_message(app, msgid="msg-rm-due-002", seq=2, external_userid="wm_reply_due_002", owner_userid="sales_01", sender="wm_reply_due_002", receiver="sales_01", content="白天发送二", send_time="2026-04-09 23:29:02")
+    _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_due_001")
+    dispatched_payloads: list[dict[str, object]] = []
+
+    def _fake_send_outbound_webhook(*, event_type, payload, source_key, source_id):
+        dispatched_payloads.append({"event_type": event_type, "payload": payload, "source_id": source_id})
+        return {"ok": True, "delivery": {"id": 9100 + len(dispatched_payloads)}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook", _fake_send_outbound_webhook)
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 23:30:00")
+    with app.app_context():
+        capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        queued = get_db().execute(
+            """
+            SELECT external_userid, status, not_before
+            FROM automation_reply_monitor_queue
+            ORDER BY id ASC
+            """
+        ).fetchall()
+    assert capture["summary"]["created_queue_items"] == 2
+    assert [dict(item) for item in queued] == [
+        {"external_userid": "wm_reply_due_001", "status": "deferred_quiet_hours", "not_before": "2026-04-10 09:00:00"},
+        {"external_userid": "wm_reply_due_002", "status": "deferred_quiet_hours", "not_before": "2026-04-10 09:00:30"},
+    ]
+
+    monkeypatch.setattr("wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_profile_tags_payload", lambda *, external_userid: {"tags": [{"tag_name": "高潜客户"}]})
+    monkeypatch.setattr("wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_questionnaire_answers_payload", lambda *, external_userid="", mobile="": {"answers": [{"question": "预算", "answer": "999"}]})
+    monkeypatch.setattr("wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_messages_payload", lambda *, external_userid="", mobile="", limit=20, fetch_all=False: {"messages": []})
+
+    with app.app_context():
+        monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-10 09:00:00")
+        first = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-10 09:00:10")
+        throttled = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-10 09:00:31")
+        second = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+
+    assert first["ok"] is True
+    assert first["status"] == "success"
+    assert throttled["ok"] is True
+    assert throttled["status"] == "throttled"
+    assert second["ok"] is True
+    assert second["status"] == "success"
+    assert len(dispatched_payloads) == 2
+
+
+def test_reply_monitor_disabled_does_not_create_queue_items(app):
+    _configure_reply_monitor(app, enabled=False, last_capture_cursor=0)
+    _seed_archived_message(app, msgid="msg-rm-disabled-001", seq=1, external_userid="wm_reply_disabled_001", owner_userid="sales_01", sender="wm_reply_disabled_001", receiver="sales_01", content="消息仍然入库", send_time="2026-04-09 10:10:00")
+
+    with app.app_context():
+        payload = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        archived_count = get_db().execute("SELECT COUNT(*) AS count FROM archived_messages").fetchone()["count"]
+        queue_count = get_db().execute("SELECT COUNT(*) AS count FROM automation_reply_monitor_queue").fetchone()["count"]
+
+    assert payload["status"] == "disabled"
+    assert archived_count == 1
+    assert queue_count == 0
+
+
+def test_reply_monitor_reenable_starts_from_current_cursor_without_history_replay(app, monkeypatch):
+    _seed_archived_message(app, msgid="msg-rm-reenable-001", seq=1, external_userid="wm_reply_reenable_001", owner_userid="sales_01", sender="wm_reply_reenable_001", receiver="sales_01", content="旧消息", send_time="2026-04-09 09:00:00")
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:00:00")
+
+    with app.app_context():
+        enabled_payload = save_reply_monitor_enabled(enabled=True, operator_id="tester-reply-monitor")
+        assert enabled_payload["enabled"] is True
+        first_capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+
+    assert first_capture["summary"]["scanned_new_messages"] == 0
+
+    _seed_contact(app, external_userid="wm_reply_reenable_001", mobile="13800009141", owner_userid="sales_01", customer_name="reenable")
+    _seed_automation_member(app, external_contact_id="wm_reply_reenable_001", phone="13800009141", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-reenable-002", seq=2, external_userid="wm_reply_reenable_001", owner_userid="sales_01", sender="wm_reply_reenable_001", receiver="sales_01", content="新消息", send_time="2026-04-09 10:02:00")
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:03:00")
+
+    with app.app_context():
+        second_capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+
+    assert second_capture["summary"]["scanned_new_messages"] == 1
+    assert second_capture["summary"]["created_queue_items"] == 1
+
+
+def test_reply_monitor_capture_uses_storage_cursor_instead_of_send_time(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    _seed_contact(app, external_userid="wm_reply_cursor_001", mobile="13800009151", owner_userid="sales_01", customer_name="cursor")
+    _seed_automation_member(app, external_contact_id="wm_reply_cursor_001", phone="13800009151", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-cursor-001", seq=1, external_userid="wm_reply_cursor_001", owner_userid="sales_01", sender="wm_reply_cursor_001", receiver="sales_01", content="较新 send_time", send_time="2026-04-09 10:05:00")
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:06:00")
+
+    with app.app_context():
+        first = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+    assert first["summary"]["created_queue_items"] == 1
+
+    _seed_archived_message(app, msgid="msg-rm-cursor-002", seq=2, external_userid="wm_reply_cursor_001", owner_userid="sales_01", sender="wm_reply_cursor_001", receiver="sales_01", content="晚到但 send_time 更早", send_time="2026-04-09 10:01:00")
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:07:00")
+
+    with app.app_context():
+        second = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        row = get_db().execute(
+            """
+            SELECT message_count, message_ids_json
+            FROM automation_reply_monitor_queue
+            WHERE external_userid = ?
+            """,
+            ("wm_reply_cursor_001",),
+        ).fetchone()
+
+    assert second["summary"]["scanned_new_messages"] == 1
+    assert second["summary"]["merged_queue_items"] == 1
+    assert dict(row) == {
+        "message_count": 2,
+        "message_ids_json": json.dumps([1, 2]),
+    }
+
+
+def test_reply_monitor_dispatch_payload_contains_required_fields(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    _seed_contact(app, external_userid="wm_reply_payload_001", mobile="13800009161", owner_userid="sales_01", customer_name="payload")
+    _seed_automation_member(app, external_contact_id="wm_reply_payload_001", phone="13800009161", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_result="focus", decision_source="manual")
+    _seed_archived_message(app, msgid="msg-rm-payload-001", seq=1, external_userid="wm_reply_payload_001", owner_userid="sales_01", sender="wm_reply_payload_001", receiver="sales_01", content="我要继续了解", send_time="2026-04-09 10:20:00")
+    _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_payload_001")
+    captured: dict[str, object] = {}
+
+    def _fake_send_outbound_webhook(*, event_type, payload, source_key, source_id):
+        captured.update({
+            "event_type": event_type,
+            "payload": payload,
+            "source_key": source_key,
+            "source_id": source_id,
+        })
+        return {"ok": True, "delivery": {"id": 9201}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook", _fake_send_outbound_webhook)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:21:00")
+
+    with app.app_context():
+        capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+
+    assert capture["ok"] is True
+    assert dispatch["ok"] is True
+    assert captured["event_type"] == "openclaw_focus_message"
+    assert captured["source_key"] == "automation_reply_monitor_queue"
+    assert set(captured["payload"].keys()) >= {
+        "externalContactId",
+        "external_userid",
+        "owner_userid",
+        "owner_display_name",
+        "currentPool",
+        "currentStage",
+        "currentTarget",
+        "newMessages",
+        "aggregation_window",
+        "trigger_type",
+        "queueId",
+        "dedupeKey",
+    }
+    assert captured["payload"]["external_userid"] == "wm_reply_payload_001"
+    assert captured["payload"]["owner_userid"] == "sales_01"
+    assert captured["payload"]["trigger_type"] == "reply_monitor"
+    assert captured["payload"]["newMessages"] == [
+        {
+            "storage_id": 1,
+            "msgid": "msg-rm-payload-001",
+            "msgtype": "text",
+            "content": "我要继续了解",
+            "send_time": "2026-04-09 10:20:00",
+            "sender": "wm_reply_payload_001",
+            "receiver": "sales_01",
+        }
+    ]
+
+
+def test_process_inbound_messages_for_openclaw_skips_automation_scope_users(app, monkeypatch):
+    from wecom_ability_service.domains.marketing_automation.service import process_inbound_messages_for_openclaw
+
+    _seed_contact(app, external_userid="wm_reply_scope_001", mobile="13800009171", owner_userid="sales_01", customer_name="scope-1")
+    _seed_contact(app, external_userid="wm_reply_scope_002", mobile="13800009172", owner_userid="sales_01", customer_name="scope-2")
+    _seed_automation_member(app, external_contact_id="wm_reply_scope_001", phone="13800009171", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+
+    triggered: list[str] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.marketing_automation.service.trigger_openclaw_focus_message_webhook",
+        lambda *, external_userid: triggered.append(external_userid) or {"sent": True, "external_userid": external_userid},
+    )
+
+    with app.app_context():
+        result = process_inbound_messages_for_openclaw(
+            [
+                {
+                    "external_userid": "wm_reply_scope_001",
+                    "chat_type": "private",
+                    "sender": "wm_reply_scope_001",
+                    "send_time": "2026-04-09 10:30:00",
+                },
+                {
+                    "external_userid": "wm_reply_scope_002",
+                    "chat_type": "private",
+                    "sender": "wm_reply_scope_002",
+                    "send_time": "2026-04-09 10:31:00",
+                },
+            ]
+        )
+
+    assert triggered == ["wm_reply_scope_002"]
+    assert result["processed_count"] == 1
+    assert result["skipped_automation_scope_count"] == 1
 
 
 def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metrics(app, client):
