@@ -773,6 +773,37 @@ def list_recent_agent_llm_call_logs(*, limit: int = 20) -> list[dict[str, Any]]:
     )
 
 
+def insert_agent_execution_result(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_agent_execution_result (
+            route_log_id,
+            external_userid,
+            agent_code,
+            prompt_version,
+            reply_text,
+            input_snapshot_json,
+            status,
+            error_message,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            int(payload.get("route_log_id") or 0),
+            _normalized_text(payload.get("external_userid")),
+            _normalized_text(payload.get("agent_code")),
+            int(payload.get("prompt_version") or 1),
+            _normalized_text(payload.get("reply_text")),
+            _json_dumps(payload.get("input_snapshot_json") or {}),
+            _normalized_text(payload.get("status")),
+            _normalized_text(payload.get("error_message")),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
 def get_reply_monitor_config() -> dict[str, Any] | None:
     return _fetchone_dict(
         """
@@ -964,6 +995,35 @@ def update_reply_monitor_queue_item(queue_id: int, payload: dict[str, Any]) -> d
             _normalized_text(payload.get("error_message")),
             _json_dumps(payload.get("payload_snapshot_json") or {}),
             int(queue_id),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def insert_reply_monitor_route_log(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_reply_monitor_route_log (
+            queue_id,
+            external_userid,
+            router_request_payload,
+            router_response_payload,
+            agent_code,
+            parse_status,
+            error_message,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            payload.get("queue_id"),
+            _normalized_text(payload.get("external_userid")),
+            _json_dumps(payload.get("router_request_payload") or {}),
+            _json_dumps(payload.get("router_response_payload") or {}),
+            _normalized_text(payload.get("agent_code")),
+            _normalized_text(payload.get("parse_status")),
+            _normalized_text(payload.get("error_message")),
         ),
     ).fetchone()
     return dict(row) if row else {}
@@ -2129,10 +2189,18 @@ def deserialize_reply_monitor_queue_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def deserialize_agent_prompt_row(row: dict[str, Any]) -> dict[str, Any]:
+def deserialize_reply_monitor_route_log_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
-        "enabled": _row_bool(row.get("enabled")),
+        "router_request_payload": _json_loads(row.get("router_request_payload"), default={}),
+        "router_response_payload": _json_loads(row.get("router_response_payload"), default={}),
+    }
+
+
+def deserialize_agent_execution_result_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "input_snapshot_json": _json_loads(row.get("input_snapshot_json"), default={}),
     }
 
 
