@@ -261,6 +261,48 @@ APP_SETTING_DEFINITIONS = (
         "description": "重点跟进消息 webhook Bearer Token。页面不会显示完整内容；留空表示保持原值。",
     },
     {
+        "key": "DEEPSEEK_ENABLED",
+        "label": "DeepSeek 已启用",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。控制 CRM 内部 DeepSeek 调用是否启用。",
+    },
+    {
+        "key": "DEEPSEEK_API_KEY",
+        "label": "DeepSeek API Key",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "DeepSeek API Key。页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
+        "key": "DEEPSEEK_BASE_URL",
+        "label": "DeepSeek Base URL",
+        "mode": "editable",
+        "input_type": "url",
+        "description": "DeepSeek 接口基础地址。",
+    },
+    {
+        "key": "DEEPSEEK_ROUTER_MODEL",
+        "label": "DeepSeek Router Model",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "中央路由 Agent 默认使用的模型名。",
+    },
+    {
+        "key": "DEEPSEEK_EXECUTION_MODEL",
+        "label": "DeepSeek Execution Model",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "执行 Agent 默认使用的模型名。",
+    },
+    {
+        "key": "DEEPSEEK_TIMEOUT_SECONDS",
+        "label": "DeepSeek 超时时间",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "DeepSeek 请求超时时间（秒）。",
+    },
+    {
         "key": "OUTBOUND_WEBHOOK_RETRY_ENABLED",
         "label": "启用出站 Webhook 自动重试",
         "mode": "editable",
@@ -1011,16 +1053,18 @@ def _validate_known_setting(key: str, value: str) -> str:
     normalized = _normalized_text(value)
     if key in {
         "WECOM_ARCHIVE_TIMEOUT",
+        "DEEPSEEK_TIMEOUT_SECONDS",
         "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
         "OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS",
         "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
     }:
         return str(_normalize_int(normalized or "0", field_name=key, minimum=1))
-    if key == "OUTBOUND_WEBHOOK_RETRY_ENABLED":
+    if key in {"OUTBOUND_WEBHOOK_RETRY_ENABLED", "DEEPSEEK_ENABLED"}:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
     if key in {
         "WECOM_API_BASE",
+        "DEEPSEEK_BASE_URL",
         "OPENCLAW_WEBHOOK_URL",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
     } and normalized and not normalized.startswith(("http://", "https://")):

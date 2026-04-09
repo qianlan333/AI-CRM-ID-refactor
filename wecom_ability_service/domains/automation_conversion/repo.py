@@ -647,6 +647,132 @@ def list_active_automation_members_by_external_contact_ids(external_contact_ids:
     )
 
 
+def list_app_setting_rows(keys: list[str]) -> list[dict[str, Any]]:
+    normalized_keys = [_normalized_text(item) for item in keys if _normalized_text(item)]
+    if not normalized_keys:
+        return []
+    placeholders = ",".join("?" for _ in normalized_keys)
+    return _fetchall_dicts(
+        f"""
+        SELECT key, value, updated_at
+        FROM app_settings
+        WHERE key IN ({placeholders})
+        ORDER BY updated_at DESC, key ASC
+        """,
+        tuple(normalized_keys),
+    )
+
+
+def get_agent_prompt_row(agent_code: str) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_agent_prompt_registry
+        WHERE agent_code = ?
+        LIMIT 1
+        """,
+        (_normalized_text(agent_code),),
+    )
+
+
+def list_agent_prompt_rows() -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_agent_prompt_registry
+        ORDER BY updated_at DESC, id DESC
+        """
+    )
+
+
+def insert_agent_prompt_row(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_agent_prompt_registry (
+            agent_code,
+            display_name,
+            prompt_text,
+            enabled,
+            version,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("agent_code")),
+            _normalized_text(payload.get("display_name")),
+            _normalized_text(payload.get("prompt_text")),
+            _db_bool(bool(payload.get("enabled"))),
+            int(payload.get("version") or 1),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_agent_prompt_row(agent_code: str, payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        UPDATE automation_agent_prompt_registry
+        SET display_name = ?,
+            prompt_text = ?,
+            enabled = ?,
+            version = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE agent_code = ?
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("display_name")),
+            _normalized_text(payload.get("prompt_text")),
+            _db_bool(bool(payload.get("enabled"))),
+            int(payload.get("version") or 1),
+            _normalized_text(agent_code),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def insert_agent_llm_call_log(payload: dict[str, Any]) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        INSERT INTO automation_agent_llm_call_log (
+            agent_code,
+            model_name,
+            request_id,
+            status,
+            latency_ms,
+            error_message,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("agent_code")),
+            _normalized_text(payload.get("model_name")),
+            _normalized_text(payload.get("request_id")),
+            _normalized_text(payload.get("status")),
+            int(payload.get("latency_ms") or 0),
+            _normalized_text(payload.get("error_message")),
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def list_recent_agent_llm_call_logs(*, limit: int = 20) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_agent_llm_call_log
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+
+
 def get_reply_monitor_config() -> dict[str, Any] | None:
     return _fetchone_dict(
         """
@@ -2000,6 +2126,13 @@ def deserialize_reply_monitor_queue_row(row: dict[str, Any]) -> dict[str, Any]:
         **row,
         "message_ids_json": _json_loads(row.get("message_ids_json"), default=[]),
         "payload_snapshot_json": _json_loads(row.get("payload_snapshot_json"), default={}),
+    }
+
+
+def deserialize_agent_prompt_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "enabled": _row_bool(row.get("enabled")),
     }
 
 

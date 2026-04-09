@@ -1270,6 +1270,40 @@ ON automation_reply_monitor_queue (external_userid)
 WHERE external_userid <> ''
   AND status IN ('pending', 'deferred_quiet_hours', 'paused');
 
+CREATE TABLE IF NOT EXISTS automation_agent_prompt_registry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_code TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL DEFAULT '',
+    prompt_text TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_prompt_registry_enabled
+ON automation_agent_prompt_registry (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_prompt_registry_updated
+ON automation_agent_prompt_registry (updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_llm_call_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_code TEXT NOT NULL DEFAULT '',
+    model_name TEXT NOT NULL DEFAULT '',
+    request_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_agent_created
+ON automation_agent_llm_call_log (agent_code, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_status_created
+ON automation_agent_llm_call_log (status, created_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stage_key TEXT NOT NULL DEFAULT '',

@@ -14,6 +14,7 @@ from ..domains.automation_conversion import (
     get_debug_payload,
     get_focus_send_batch_detail,
     get_member_detail,
+    get_model_infra_payload,
     get_overview_payload,
     get_sop_v1_batches_payload,
     get_sop_v1_config_payload,
@@ -31,12 +32,15 @@ from ..domains.automation_conversion import (
     run_due_sop,
     run_message_activity_sync,
     run_reply_monitor_capture,
+    save_model_infra_prompt,
+    save_model_infra_settings,
     save_reply_monitor_enabled,
     save_sop_v1_pool_config,
     save_sop_v1_template,
     save_settings,
     send_stage_manual_message,
     set_follow_type,
+    test_model_infra_connection,
     unmark_won,
 )
 from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
@@ -110,6 +114,25 @@ def _build_settings_form_payload() -> dict[str, object]:
     }
 
 
+def _build_model_infra_settings_form_payload() -> dict[str, object]:
+    return {
+        "enabled": str(request.form.get("deepseek_enabled") or "").strip().lower() in {"1", "true", "yes", "on"},
+        "api_key": str(request.form.get("deepseek_api_key") or "").strip(),
+        "base_url": str(request.form.get("deepseek_base_url") or "").strip(),
+        "router_model": str(request.form.get("deepseek_router_model") or "").strip(),
+        "execution_model": str(request.form.get("deepseek_execution_model") or "").strip(),
+        "timeout_seconds": request.form.get("deepseek_timeout_seconds"),
+    }
+
+
+def _build_model_prompt_form_payload() -> dict[str, object]:
+    return {
+        "display_name": str(request.form.get("display_name") or "").strip(),
+        "prompt_text": str(request.form.get("prompt_text") or "").strip(),
+        "enabled": str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"},
+    }
+
+
 def _split_multiline_tokens(raw_value: str) -> list[str]:
     tokens: list[str] = []
     normalized = str(raw_value or "").replace("\r", "\n").replace(",", "\n")
@@ -178,6 +201,16 @@ def _settings_notice() -> str:
         return "默认渠道二维码已更新"
     if _query_text("message_activity_sync") == "1":
         return "消息活跃同步已完成"
+    return ""
+
+
+def _model_infra_notice() -> str:
+    if _query_text("settings_saved") == "1":
+        return "DeepSeek 配置已保存"
+    if _query_text("prompt_saved"):
+        return f"Prompt 已保存：{_query_text('prompt_saved')}"
+    if _query_text("tested") == "1":
+        return "DeepSeek 测试连接成功"
     return ""
 
 
@@ -396,6 +429,25 @@ def _render_settings_page(*, settings_payload: dict[str, object] | None = None, 
         else json.dumps((payload.get("rule_editor") or {}).get("rules") or [], ensure_ascii=False, indent=2),
         show_debug_json_editor=_query_text("debug") == "1",
         page_notice=_settings_notice(),
+        page_error=page_error,
+        admin_action_token=ensure_admin_console_action_token(),
+    )
+
+
+def _render_model_infra_page(*, model_infra_payload: dict[str, object] | None = None, page_error: str = ""):
+    payload = model_infra_payload or get_model_infra_payload()
+    return _render_admin_template(
+        "automation_conversion_model_infra.html",
+        active_nav="automation_conversion",
+        page_title="模型基础设施",
+        page_summary="这里统一维护 DeepSeek 配置、5 个 Agent Prompt 和最近一次模型调用日志。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("模型基础设施", None),
+        ),
+        model_infra_payload=payload,
+        page_notice=_model_infra_notice(),
         page_error=page_error,
         admin_action_token=ensure_admin_console_action_token(),
     )
@@ -625,6 +677,10 @@ def admin_automation_conversion_settings():
     return _render_settings_page()
 
 
+def admin_automation_conversion_model_infra():
+    return _render_model_infra_page()
+
+
 def admin_automation_conversion_save_settings():
     try:
         save_settings(_build_settings_form_payload())
@@ -636,6 +692,38 @@ def admin_automation_conversion_save_settings():
             question_rules_json=request.form.get("question_rules_json", ""),
             page_error=str(exc),
         )
+
+
+def admin_automation_conversion_save_model_infra_settings():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_model_infra_page(page_error=action_token_error)
+    try:
+        save_model_infra_settings(_build_model_infra_settings_form_payload())
+        return redirect(url_for("api.admin_automation_conversion_model_infra", settings_saved=1), code=302)
+    except ValueError as exc:
+        return _render_model_infra_page(page_error=str(exc))
+
+
+def admin_automation_conversion_test_model_infra():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_model_infra_page(page_error=action_token_error)
+    result = test_model_infra_connection()
+    if result.get("ok"):
+        return redirect(url_for("api.admin_automation_conversion_model_infra", tested=1), code=302)
+    return _render_model_infra_page(page_error=str(result.get("error") or "DeepSeek 测试连接失败"))
+
+
+def admin_automation_conversion_save_model_prompt(agent_code: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_model_infra_page(page_error=action_token_error)
+    try:
+        save_model_infra_prompt(agent_code=agent_code, **_build_model_prompt_form_payload())
+        return redirect(url_for("api.admin_automation_conversion_model_infra", prompt_saved=agent_code), code=302)
+    except ValueError as exc:
+        return _render_model_infra_page(page_error=str(exc))
 
 
 def admin_automation_conversion_generate_default_channel():
@@ -782,12 +870,44 @@ def api_admin_automation_conversion_settings():
     return jsonify({"ok": True, "settings": get_settings_payload()})
 
 
+def api_admin_automation_conversion_model_infra():
+    return jsonify({"ok": True, "model_infra": get_model_infra_payload()})
+
+
 def api_admin_automation_conversion_save_settings():
     payload = request.get_json(silent=True) or {}
     try:
         return jsonify({"ok": True, "settings": save_settings(payload)})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def api_admin_automation_conversion_save_model_infra_settings():
+    payload = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"ok": True, "model_infra": save_model_infra_settings(payload)})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def api_admin_automation_conversion_test_model_infra():
+    result = test_model_infra_connection()
+    status_code = 200 if result.get("ok") else 400
+    return jsonify(result), status_code
+
+
+def api_admin_automation_conversion_save_model_prompt(agent_code: str):
+    payload = request.get_json(silent=True) or {}
+    try:
+        prompt = save_model_infra_prompt(
+            agent_code=agent_code,
+            display_name=str(payload.get("display_name") or "").strip(),
+            prompt_text=str(payload.get("prompt_text") or "").strip(),
+            enabled=_json_bool(payload.get("enabled")),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "prompt": prompt})
 
 
 def api_admin_automation_conversion_sop_config():
@@ -993,6 +1113,10 @@ def api_admin_automation_conversion_debug_member():
 
 def register_routes(bp):
     bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
+    bp.route("/admin/automation-conversion/model-infra", methods=["GET"])(admin_automation_conversion_model_infra)
+    bp.route("/admin/automation-conversion/model-infra/save-settings", methods=["POST"])(admin_automation_conversion_save_model_infra_settings)
+    bp.route("/admin/automation-conversion/model-infra/test", methods=["POST"])(admin_automation_conversion_test_model_infra)
+    bp.route("/admin/automation-conversion/model-infra/prompts/<agent_code>/save", methods=["POST"])(admin_automation_conversion_save_model_prompt)
     bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
     bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/reply-monitor/toggle", methods=["POST"])(admin_automation_conversion_reply_monitor_toggle)
@@ -1019,6 +1143,10 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/member/push-openclaw", methods=["POST"])(api_admin_automation_conversion_push_openclaw)
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_save_settings)
+    bp.route("/api/admin/automation-conversion/model-infra", methods=["GET"])(api_admin_automation_conversion_model_infra)
+    bp.route("/api/admin/automation-conversion/model-infra/settings", methods=["POST"])(api_admin_automation_conversion_save_model_infra_settings)
+    bp.route("/api/admin/automation-conversion/model-infra/test-connection", methods=["POST"])(api_admin_automation_conversion_test_model_infra)
+    bp.route("/api/admin/automation-conversion/model-infra/prompts/<agent_code>", methods=["POST"])(api_admin_automation_conversion_save_model_prompt)
     bp.route("/api/admin/automation-conversion/sop/config", methods=["GET"])(api_admin_automation_conversion_sop_config)
     bp.route("/api/admin/automation-conversion/sop/config/<pool_key>", methods=["PUT"])(api_admin_automation_conversion_sop_config_save)
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>", methods=["GET"])(api_admin_automation_conversion_sop_templates)
