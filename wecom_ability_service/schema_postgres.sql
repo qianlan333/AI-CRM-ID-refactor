@@ -1220,6 +1220,59 @@ ON automation_message_activity_sync_item (phone_last4, created_at DESC, id DESC)
 CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_match_key
 ON automation_message_activity_sync_item (phone_match_key, created_at DESC, id DESC);
 
+CREATE TABLE IF NOT EXISTS automation_reply_monitor_config (
+    id BIGSERIAL PRIMARY KEY,
+    config_key TEXT NOT NULL UNIQUE,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    last_capture_cursor BIGINT NOT NULL DEFAULT 0,
+    last_capture_at TEXT NOT NULL DEFAULT '',
+    last_capture_status TEXT NOT NULL DEFAULT '',
+    last_capture_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_dispatch_at TEXT NOT NULL DEFAULT '',
+    last_dispatch_status TEXT NOT NULL DEFAULT '',
+    last_dispatch_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_error TEXT NOT NULL DEFAULT '',
+    quiet_hours_start TEXT NOT NULL DEFAULT '23:00',
+    quiet_hours_end TEXT NOT NULL DEFAULT '09:00',
+    dispatch_interval_seconds INTEGER NOT NULL DEFAULT 30,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_reply_monitor_config_updated
+ON automation_reply_monitor_config (updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_reply_monitor_queue (
+    id BIGSERIAL PRIMARY KEY,
+    member_id BIGINT REFERENCES automation_member(id) ON DELETE SET NULL,
+    external_userid TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    message_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    first_inbound_at TEXT NOT NULL DEFAULT '',
+    last_inbound_at TEXT NOT NULL DEFAULT '',
+    not_before TEXT NOT NULL DEFAULT '',
+    last_dispatch_at TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    payload_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_reply_monitor_queue_status_due
+ON automation_reply_monitor_queue (status, not_before, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_reply_monitor_queue_external_updated
+ON automation_reply_monitor_queue (external_userid, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_reply_monitor_queue_member_updated
+ON automation_reply_monitor_queue (member_id, updated_at DESC, id DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_reply_monitor_queue_active_external
+ON automation_reply_monitor_queue (external_userid)
+WHERE status IN ('pending', 'deferred_quiet_hours', 'paused') AND external_userid <> '';
+
 CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
     id BIGSERIAL PRIMARY KEY,
     stage_key TEXT NOT NULL DEFAULT '',

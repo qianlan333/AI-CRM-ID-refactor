@@ -1146,13 +1146,24 @@ def process_inbound_messages_for_openclaw(messages: list[dict[str, Any]]) -> dic
         if previous and _normalized_text(previous.get("send_time")) >= _normalized_text(item.get("send_time")):
             continue
         latest_by_external_userid[normalized_external_userid] = dict(item)
+    automation_scope_userids: set[str] = set()
+    if latest_by_external_userid:
+        from ..automation_conversion import repo as automation_repo
+
+        automation_scope_userids = {
+            _normalized_text(item)
+            for item in automation_repo.list_active_automation_external_contact_ids(sorted(latest_by_external_userid.keys()))
+            if _normalized_text(item)
+        }
     results = [
         trigger_openclaw_focus_message_webhook(external_userid=external_userid)
         for external_userid in sorted(latest_by_external_userid.keys())
+        if external_userid not in automation_scope_userids
     ]
     return {
-        "processed_count": len(latest_by_external_userid),
+        "processed_count": len(latest_by_external_userid) - len(automation_scope_userids),
         "sent_count": sum(1 for item in results if item.get("sent")),
+        "skipped_automation_scope_count": len(automation_scope_userids),
         "results": results,
     }
 

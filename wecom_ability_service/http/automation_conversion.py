@@ -26,9 +26,12 @@ from ..domains.automation_conversion import (
     put_in_pool,
     push_openclaw,
     remove_from_pool,
+    run_due_reply_monitor,
     run_due_focus_send_batches,
     run_due_sop,
     run_message_activity_sync,
+    run_reply_monitor_capture,
+    save_reply_monitor_enabled,
     save_sop_v1_pool_config,
     save_sop_v1_template,
     save_settings,
@@ -175,6 +178,19 @@ def _settings_notice() -> str:
         return "默认渠道二维码已更新"
     if _query_text("message_activity_sync") == "1":
         return "消息活跃同步已完成"
+    return ""
+
+
+def _overview_notice() -> str:
+    reply_monitor_action = _query_text("reply_monitor")
+    if reply_monitor_action == "enabled":
+        return "自动接话监控已开启"
+    if reply_monitor_action == "disabled":
+        return "自动接话监控已关闭"
+    if reply_monitor_action == "captured":
+        return "自动接话监控已完成一次增量扫描"
+    if reply_monitor_action == "dispatched":
+        return "自动接话监控已尝试放行一条到期队列"
     return ""
 
 
@@ -414,6 +430,102 @@ def admin_automation_conversion():
         page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
         overview_payload=overview_payload,
+        page_notice=_overview_notice(),
+        admin_action_token=ensure_admin_console_action_token(),
+    )
+
+
+def admin_automation_conversion_reply_monitor_toggle():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_admin_template(
+            "automation_conversion.html",
+            active_nav="automation_conversion",
+            page_title="自动化转化",
+            page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
+            breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
+            overview_payload=get_overview_payload(),
+            page_error=action_token_error,
+            admin_action_token=ensure_admin_console_action_token(),
+        )
+    enabled = _json_bool(request.form.get("enabled") or request.values.get("enabled"))
+    try:
+        save_reply_monitor_enabled(enabled=enabled, operator_id=_operator_from_request())
+    except ValueError as exc:
+        return _render_admin_template(
+            "automation_conversion.html",
+            active_nav="automation_conversion",
+            page_title="自动化转化",
+            page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
+            breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
+            overview_payload=get_overview_payload(),
+            page_error=str(exc),
+            admin_action_token=ensure_admin_console_action_token(),
+        )
+    return redirect(
+        url_for("api.admin_automation_conversion", reply_monitor="enabled" if enabled else "disabled"),
+        code=302,
+    )
+
+
+def admin_automation_conversion_reply_monitor_capture():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_admin_template(
+            "automation_conversion.html",
+            active_nav="automation_conversion",
+            page_title="自动化转化",
+            page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
+            breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
+            overview_payload=get_overview_payload(),
+            page_error=action_token_error,
+            admin_action_token=ensure_admin_console_action_token(),
+        )
+    result = run_reply_monitor_capture(
+        operator_id=_operator_from_request(),
+        operator_type="user",
+    )
+    if result.get("ok"):
+        return redirect(url_for("api.admin_automation_conversion", reply_monitor="captured"), code=302)
+    return _render_admin_template(
+        "automation_conversion.html",
+        active_nav="automation_conversion",
+        page_title="自动化转化",
+        page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
+        overview_payload=get_overview_payload(),
+        page_error=str(result.get("error") or "自动接话监控扫描失败"),
+        admin_action_token=ensure_admin_console_action_token(),
+    )
+
+
+def admin_automation_conversion_reply_monitor_run_due():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_admin_template(
+            "automation_conversion.html",
+            active_nav="automation_conversion",
+            page_title="自动化转化",
+            page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
+            breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
+            overview_payload=get_overview_payload(),
+            page_error=action_token_error,
+            admin_action_token=ensure_admin_console_action_token(),
+        )
+    result = run_due_reply_monitor(
+        operator_id=_operator_from_request(),
+        operator_type="user",
+    )
+    if result.get("ok"):
+        return redirect(url_for("api.admin_automation_conversion", reply_monitor="dispatched"), code=302)
+    return _render_admin_template(
+        "automation_conversion.html",
+        active_nav="automation_conversion",
+        page_title="自动化转化",
+        page_summary="概览页只展示成员结果和阶段名单，规则配置与单客试算已迁到独立页面。",
+        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
+        overview_payload=get_overview_payload(),
+        page_error=str(result.get("error") or "自动接话监控放行失败"),
         admin_action_token=ensure_admin_console_action_token(),
     )
 
@@ -832,6 +944,34 @@ def api_admin_automation_conversion_run_message_activity_sync():
     return jsonify(result), status_code
 
 
+def api_admin_automation_conversion_reply_monitor_capture():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_reply_monitor_capture(
+        operator_id=_operator_from_request(),
+        operator_type="system",
+        limit=int(payload.get("limit") or 500),
+    )
+    status_code = 200 if result.get("ok") or result.get("status") == "disabled" else 502
+    return jsonify(result), status_code
+
+
+def api_admin_automation_conversion_reply_monitor_run_due():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_due_reply_monitor(
+        operator_id=_operator_from_request(),
+        operator_type="system",
+        limit=int(payload.get("limit") or 20),
+    )
+    status_code = 200 if result.get("ok") or result.get("status") in {"disabled", "idle", "throttled", "quiet_hours"} else 502
+    return jsonify(result), status_code
+
+
 def api_admin_automation_conversion_sop_run_due():
     auth_failure = require_internal_api_token()
     if auth_failure is not None:
@@ -855,6 +995,9 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
     bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
     bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
+    bp.route("/admin/automation-conversion/reply-monitor/toggle", methods=["POST"])(admin_automation_conversion_reply_monitor_toggle)
+    bp.route("/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(admin_automation_conversion_reply_monitor_capture)
+    bp.route("/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(admin_automation_conversion_reply_monitor_run_due)
     bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage_detail)
     bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET"])(admin_automation_conversion_stage_send)
     bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["POST"])(admin_automation_conversion_stage_send_submit)
@@ -890,5 +1033,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/focus-send-batches/<batch_id>", methods=["GET"])(api_admin_automation_conversion_focus_send_batch_detail)
     bp.route("/api/admin/automation-conversion/focus-send-batches/run-due", methods=["POST"])(api_admin_automation_conversion_focus_send_batches_run_due)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
+    bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
+    bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
     bp.route("/api/admin/automation-conversion/debug/member", methods=["GET"])(api_admin_automation_conversion_debug_member)
