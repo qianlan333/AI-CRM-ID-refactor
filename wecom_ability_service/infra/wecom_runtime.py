@@ -69,6 +69,9 @@ class ContactWeComRuntimeClient:
     def create_contact_way(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._client.create_contact_way(payload)
 
+    def send_welcome_msg(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._client.send_welcome_msg(payload)
+
     def list_external_contact_tags(self) -> dict[str, Any]:
         return self._client.list_external_contact_tags()
 

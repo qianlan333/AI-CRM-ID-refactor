@@ -3171,15 +3171,14 @@ def test_qrcode_callback_sends_welcome_message_when_enabled(app, monkeypatch):
 
     captured: dict[str, object] = {}
 
-    def _fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
-        captured["task_type"] = task_type
-        captured["fn_name"] = fn_name
-        captured["payload"] = dict(payload)
-        return {"task_id": 77, "wecom_result": {"msgid": "welcome-msg-001"}}
+    class _FakeRuntimeClient:
+        def send_welcome_msg(self, payload: dict[str, object]) -> dict[str, object]:
+            captured["payload"] = dict(payload)
+            return {"errcode": 0, "errmsg": "ok"}
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        _fake_dispatch,
+        "wecom_ability_service.domains.automation_conversion.service.get_contact_runtime_client",
+        lambda: _FakeRuntimeClient(),
     )
 
     with app.app_context():
@@ -3197,19 +3196,16 @@ def test_qrcode_callback_sends_welcome_message_when_enabled(app, monkeypatch):
         result = handle_qrcode_enter_from_callback(
             external_contact_id="wm_qrcode_002",
             phone="13800004002",
-            payload_json={"state": "scene-default"},
+            payload_json={"state": "scene-default", "WelcomeCode": "WELCOME-CODE-001"},
             operator_id="callback-user",
             send_welcome_message=True,
         )
 
         assert result["handled"] is True
         assert result["welcome_message"]["sent"] is True
-        assert result["welcome_message"]["task_id"] == 77
-        assert captured["task_type"] == "private_message"
-        assert captured["fn_name"] == "create_private_message_task"
+        assert result["welcome_message"]["via"] == "send_welcome_msg"
         assert captured["payload"] == {
-            "sender": "QianLan",
-            "external_userid": ["wm_qrcode_002"],
+            "welcome_code": "WELCOME-CODE-001",
             "text": {"content": "欢迎添加，稍后我来跟进你。"},
         }
 
@@ -3225,6 +3221,48 @@ def test_qrcode_callback_sends_welcome_message_when_enabled(app, monkeypatch):
             {
                 "action": "qrcode_welcome_sent",
                 "operator_id": "callback-user",
-                "remark": "task_id=77",
+                "remark": "official_send_welcome_msg",
+            },
+        ]
+
+
+def test_qrcode_callback_skips_welcome_message_without_welcome_code(app):
+    from wecom_ability_service.domains.automation_conversion.service import handle_qrcode_enter_from_callback
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_channel (
+                channel_code, channel_name, scene_value, owner_staff_id, status, welcome_message, auto_accept_friend, created_at, updated_at
+            )
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        db.commit()
+
+        result = handle_qrcode_enter_from_callback(
+            external_contact_id="wm_qrcode_003",
+            phone="13800004003",
+            payload_json={"state": "scene-default"},
+            operator_id="callback-user",
+            send_welcome_message=True,
+        )
+
+        assert result["handled"] is True
+        assert result["welcome_message"] == {
+            "attempted": False,
+            "sent": False,
+            "reason": "welcome_code_missing",
+        }
+
+        events = db.execute(
+            "SELECT action, operator_id, remark FROM automation_event ORDER BY id ASC"
+        ).fetchall()
+        assert [dict(item) for item in events[-1:]] == [
+            {
+                "action": "qrcode_enter",
+                "operator_id": "callback-user",
+                "remark": "",
             },
         ]

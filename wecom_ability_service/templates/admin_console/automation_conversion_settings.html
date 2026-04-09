@@ -233,13 +233,13 @@
       <div class="admin-card-head admin-card-head--tight">
         <div>
           <h2>默认渠道配置</h2>
-          <p>这里维护默认渠道二维码的欢迎语和免验证开关；保存后需要重新生成二维码才会真正应用到企微。</p>
+          <p>这里维护默认渠道二维码的欢迎语和免验证开关；保存后需要重新生成二维码才会真正应用到企微，欢迎语会在扫码新增好友回调携带 welcome_code 时通过企微官方接口发送。</p>
         </div>
       </div>
       <div class="admin-grid-2">
         <label class="admin-field" style="grid-column: 1 / -1;">
           <span>欢迎语</span>
-          <textarea name="welcome_message" rows="4" placeholder="用于默认渠道二维码的欢迎语，客户扫码并成功添加好友后会自动发送。">{{ settings_payload.default_channel.welcome_message }}</textarea>
+          <textarea name="welcome_message" rows="4" placeholder="用于默认渠道二维码的欢迎语，客户扫码新增好友且 callback 带回 welcome_code 后会自动发送。">{{ settings_payload.default_channel.welcome_message }}</textarea>
         </label>
       </div>
       <label class="admin-check-line">

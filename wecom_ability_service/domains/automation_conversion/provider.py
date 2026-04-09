@@ -92,7 +92,7 @@ class WeComContactWayProvider(AutomationChannelProvider):
                     "status": "applied" if str(welcome_message or "").strip() else "not_set",
                     "supported": True,
                     "detail": (
-                        "欢迎语会在客户扫码并成功添加好友后自动发送。"
+                        "欢迎语会在企微回调携带 welcome_code 时，通过官方 send_welcome_msg 自动发送。"
                         if str(welcome_message or "").strip()
                         else "当前未配置欢迎语。"
                     ),
