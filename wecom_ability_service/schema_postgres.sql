@@ -1274,6 +1274,7 @@ CREATE TABLE IF NOT EXISTS automation_sop_pool_config (
     max_day_count INTEGER NOT NULL DEFAULT 5,
     send_time TEXT NOT NULL DEFAULT '09:00',
     timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+    effective_start_at TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -1301,6 +1302,9 @@ CREATE TABLE IF NOT EXISTS automation_sop_progress (
     pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
     first_entered_at TEXT NOT NULL DEFAULT '',
     last_entered_at TEXT NOT NULL DEFAULT '',
+    sop_anchor_date TEXT NOT NULL DEFAULT '',
+    first_effective_in_pool_at TEXT NOT NULL DEFAULT '',
+    last_in_pool_at TEXT NOT NULL DEFAULT '',
     last_sent_day INTEGER NOT NULL DEFAULT 0,
     last_sent_at TEXT NOT NULL DEFAULT '',
     completed_at TEXT NOT NULL DEFAULT '',
@@ -1313,6 +1317,9 @@ ON automation_sop_progress (member_id, pool_key);
 
 CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_day
 ON automation_sop_progress (pool_key, last_sent_day, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_anchor
+ON automation_sop_progress (pool_key, sop_anchor_date, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_sop_batch (
     id BIGSERIAL PRIMARY KEY,
@@ -1339,9 +1346,12 @@ CREATE TABLE IF NOT EXISTS automation_sop_batch_item (
     member_id BIGINT REFERENCES automation_member(id) ON DELETE CASCADE,
     pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
     day_index INTEGER NOT NULL DEFAULT 0,
+    day_index_snapshot INTEGER NOT NULL DEFAULT 0,
     external_userid TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'skipped',
     error_message TEXT NOT NULL DEFAULT '',
+    content_snapshot TEXT NOT NULL DEFAULT '',
+    images_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
     sent_record_id BIGINT REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -1349,6 +1359,9 @@ CREATE TABLE IF NOT EXISTS automation_sop_batch_item (
 
 CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_batch_created
 ON automation_sop_batch_item (batch_id, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_member_day_snapshot
+ON automation_sop_batch_item (member_id, pool_key, day_index_snapshot, id DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_batch_item_member_pool_day_success
 ON automation_sop_batch_item (member_id, pool_key, day_index)

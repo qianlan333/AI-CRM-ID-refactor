@@ -850,6 +850,7 @@ def save_sop_pool_config(payload: dict[str, Any]) -> dict[str, Any]:
                 max_day_count = ?,
                 send_time = ?,
                 timezone = ?,
+                effective_start_at = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             RETURNING *
@@ -859,6 +860,7 @@ def save_sop_pool_config(payload: dict[str, Any]) -> dict[str, Any]:
                 int(payload.get("max_day_count") or 0),
                 _normalized_text(payload.get("send_time")),
                 _normalized_text(payload.get("timezone")),
+                _normalized_text(payload.get("effective_start_at")),
                 int(existing["id"]),
             ),
         ).fetchone()
@@ -871,10 +873,11 @@ def save_sop_pool_config(payload: dict[str, Any]) -> dict[str, Any]:
             max_day_count,
             send_time,
             timezone,
+            effective_start_at,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
@@ -883,6 +886,7 @@ def save_sop_pool_config(payload: dict[str, Any]) -> dict[str, Any]:
             int(payload.get("max_day_count") or 0),
             _normalized_text(payload.get("send_time")),
             _normalized_text(payload.get("timezone")),
+            _normalized_text(payload.get("effective_start_at")),
         ),
     ).fetchone()
     return dict(row) if row else {}
@@ -972,6 +976,40 @@ def save_sop_template(payload: dict[str, Any]) -> dict[str, Any]:
     return dict(row) if row else {}
 
 
+def delete_sop_template_day(*, pool_key: str, day_index: int) -> None:
+    normalized_pool_key = _normalized_text(pool_key)
+    normalized_day_index = int(day_index)
+    db = get_db()
+    db.execute(
+        """
+        DELETE FROM automation_sop_template
+        WHERE pool_key = ?
+          AND day_index = ?
+        """,
+        (normalized_pool_key, normalized_day_index),
+    )
+    db.execute(
+        """
+        UPDATE automation_sop_template
+        SET day_index = day_index + 1000,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE pool_key = ?
+          AND day_index > ?
+        """,
+        (normalized_pool_key, normalized_day_index),
+    )
+    db.execute(
+        """
+        UPDATE automation_sop_template
+        SET day_index = day_index - 1001,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE pool_key = ?
+          AND day_index > ?
+        """,
+        (normalized_pool_key, normalized_day_index + 1000),
+    )
+
+
 def get_sop_progress(*, member_id: int, pool_key: str) -> dict[str, Any] | None:
     return _fetchone_dict(
         """
@@ -1017,6 +1055,9 @@ def save_sop_progress(payload: dict[str, Any]) -> dict[str, Any]:
             UPDATE automation_sop_progress
             SET first_entered_at = ?,
                 last_entered_at = ?,
+                sop_anchor_date = ?,
+                first_effective_in_pool_at = ?,
+                last_in_pool_at = ?,
                 last_sent_day = ?,
                 last_sent_at = ?,
                 completed_at = ?,
@@ -1027,6 +1068,9 @@ def save_sop_progress(payload: dict[str, Any]) -> dict[str, Any]:
             (
                 _normalized_text(payload.get("first_entered_at")),
                 _normalized_text(payload.get("last_entered_at")),
+                _normalized_text(payload.get("sop_anchor_date")),
+                _normalized_text(payload.get("first_effective_in_pool_at")),
+                _normalized_text(payload.get("last_in_pool_at")),
                 int(payload.get("last_sent_day") or 0),
                 _normalized_text(payload.get("last_sent_at")),
                 _normalized_text(payload.get("completed_at")),
@@ -1041,13 +1085,16 @@ def save_sop_progress(payload: dict[str, Any]) -> dict[str, Any]:
             pool_key,
             first_entered_at,
             last_entered_at,
+            sop_anchor_date,
+            first_effective_in_pool_at,
+            last_in_pool_at,
             last_sent_day,
             last_sent_at,
             completed_at,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
@@ -1055,6 +1102,9 @@ def save_sop_progress(payload: dict[str, Any]) -> dict[str, Any]:
             _normalized_text(payload.get("pool_key")),
             _normalized_text(payload.get("first_entered_at")),
             _normalized_text(payload.get("last_entered_at")),
+            _normalized_text(payload.get("sop_anchor_date")),
+            _normalized_text(payload.get("first_effective_in_pool_at")),
+            _normalized_text(payload.get("last_in_pool_at")),
             int(payload.get("last_sent_day") or 0),
             _normalized_text(payload.get("last_sent_at")),
             _normalized_text(payload.get("completed_at")),
@@ -1178,6 +1228,21 @@ def get_successful_sop_batch_item(*, member_id: int, pool_key: str, day_index: i
     )
 
 
+def get_sop_batch_item_for_member_day(*, member_id: int, pool_key: str, day_index_snapshot: int) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_sop_batch_item
+        WHERE member_id = ?
+          AND pool_key = ?
+          AND day_index_snapshot = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(member_id), _normalized_text(pool_key), int(day_index_snapshot)),
+    )
+
+
 def insert_sop_batch_item(payload: dict[str, Any]) -> dict[str, Any]:
     row = get_db().execute(
         """
@@ -1186,14 +1251,17 @@ def insert_sop_batch_item(payload: dict[str, Any]) -> dict[str, Any]:
             member_id,
             pool_key,
             day_index,
+            day_index_snapshot,
             external_userid,
             status,
             error_message,
+            content_snapshot,
+            images_snapshot,
             sent_record_id,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
@@ -1201,9 +1269,12 @@ def insert_sop_batch_item(payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("member_id"),
             _normalized_text(payload.get("pool_key")),
             int(payload.get("day_index") or 0),
+            int(payload.get("day_index_snapshot") or payload.get("day_index") or 0),
             _normalized_text(payload.get("external_userid")),
             _normalized_text(payload.get("status")),
             _normalized_text(payload.get("error_message")),
+            _normalized_text(payload.get("content_snapshot")),
+            _json_dumps(payload.get("images_snapshot") or []),
             payload.get("sent_record_id"),
         ),
     ).fetchone()
@@ -1218,9 +1289,12 @@ def update_sop_batch_item(item_id: int, payload: dict[str, Any]) -> dict[str, An
             member_id = ?,
             pool_key = ?,
             day_index = ?,
+            day_index_snapshot = ?,
             external_userid = ?,
             status = ?,
             error_message = ?,
+            content_snapshot = ?,
+            images_snapshot = ?,
             sent_record_id = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1231,9 +1305,12 @@ def update_sop_batch_item(item_id: int, payload: dict[str, Any]) -> dict[str, An
             payload.get("member_id"),
             _normalized_text(payload.get("pool_key")),
             int(payload.get("day_index") or 0),
+            int(payload.get("day_index_snapshot") or payload.get("day_index") or 0),
             _normalized_text(payload.get("external_userid")),
             _normalized_text(payload.get("status")),
             _normalized_text(payload.get("error_message")),
+            _normalized_text(payload.get("content_snapshot")),
+            _json_dumps(payload.get("images_snapshot") or []),
             payload.get("sent_record_id"),
             int(item_id),
         ),
@@ -1607,4 +1684,7 @@ def deserialize_sop_batch_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def deserialize_sop_batch_item_row(row: dict[str, Any]) -> dict[str, Any]:
-    return dict(row or {})
+    return {
+        **dict(row or {}),
+        "images_snapshot": _json_loads((row or {}).get("images_snapshot"), default=[]),
+    }

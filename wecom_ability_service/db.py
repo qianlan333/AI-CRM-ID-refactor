@@ -681,6 +681,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             max_day_count INTEGER NOT NULL DEFAULT 5,
             send_time TEXT NOT NULL DEFAULT '09:00',
             timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+            effective_start_at TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -708,6 +709,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
             first_entered_at TEXT NOT NULL DEFAULT '',
             last_entered_at TEXT NOT NULL DEFAULT '',
+            sop_anchor_date TEXT NOT NULL DEFAULT '',
+            first_effective_in_pool_at TEXT NOT NULL DEFAULT '',
+            last_in_pool_at TEXT NOT NULL DEFAULT '',
             last_sent_day INTEGER NOT NULL DEFAULT 0,
             last_sent_at TEXT NOT NULL DEFAULT '',
             completed_at TEXT NOT NULL DEFAULT '',
@@ -743,9 +747,12 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
             pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
             day_index INTEGER NOT NULL DEFAULT 0,
+            day_index_snapshot INTEGER NOT NULL DEFAULT 0,
             external_userid TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'skipped',
             error_message TEXT NOT NULL DEFAULT '',
+            content_snapshot TEXT NOT NULL DEFAULT '',
+            images_snapshot TEXT NOT NULL DEFAULT '[]',
             sent_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -812,10 +819,16 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         "CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_day ON automation_sop_progress (pool_key, last_sent_day, updated_at DESC, id DESC)"
     )
     db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_anchor ON automation_sop_progress (pool_key, sop_anchor_date, updated_at DESC, id DESC)"
+    )
+    db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_status_scheduled ON automation_sop_batch (status, scheduled_for, id DESC)"
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_batch_created ON automation_sop_batch_item (batch_id, id ASC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_member_day_snapshot ON automation_sop_batch_item (member_id, pool_key, day_index_snapshot, id DESC)"
     )
     db.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_batch_item_member_pool_day_success ON automation_sop_batch_item (member_id, pool_key, day_index) WHERE status = 'success'"
@@ -830,6 +843,35 @@ def _ensure_automation_sop_v1_seed_data() -> None:
     ensure_sop_v1_defaults()
 
 
+def _ensure_sqlite_automation_sop_v2_columns(db) -> None:
+    pool_config_columns = _sqlite_table_columns(db, "automation_sop_pool_config")
+    if "effective_start_at" not in pool_config_columns:
+        db.execute("ALTER TABLE automation_sop_pool_config ADD COLUMN effective_start_at TEXT NOT NULL DEFAULT ''")
+
+    progress_columns = _sqlite_table_columns(db, "automation_sop_progress")
+    if "sop_anchor_date" not in progress_columns:
+        db.execute("ALTER TABLE automation_sop_progress ADD COLUMN sop_anchor_date TEXT NOT NULL DEFAULT ''")
+    if "first_effective_in_pool_at" not in progress_columns:
+        db.execute("ALTER TABLE automation_sop_progress ADD COLUMN first_effective_in_pool_at TEXT NOT NULL DEFAULT ''")
+    if "last_in_pool_at" not in progress_columns:
+        db.execute("ALTER TABLE automation_sop_progress ADD COLUMN last_in_pool_at TEXT NOT NULL DEFAULT ''")
+
+    batch_item_columns = _sqlite_table_columns(db, "automation_sop_batch_item")
+    if "day_index_snapshot" not in batch_item_columns:
+        db.execute("ALTER TABLE automation_sop_batch_item ADD COLUMN day_index_snapshot INTEGER NOT NULL DEFAULT 0")
+    if "content_snapshot" not in batch_item_columns:
+        db.execute("ALTER TABLE automation_sop_batch_item ADD COLUMN content_snapshot TEXT NOT NULL DEFAULT ''")
+    if "images_snapshot" not in batch_item_columns:
+        db.execute("ALTER TABLE automation_sop_batch_item ADD COLUMN images_snapshot TEXT NOT NULL DEFAULT '[]'")
+
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_anchor ON automation_sop_progress (pool_key, sop_anchor_date, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_member_day_snapshot ON automation_sop_batch_item (member_id, pool_key, day_index_snapshot, id DESC)"
+    )
+
+
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
@@ -839,6 +881,7 @@ def _init_sqlite(db) -> None:
     _ensure_sqlite_customer_value_segment_tables(db)
     _ensure_sqlite_customer_marketing_state_tables(db)
     _ensure_sqlite_automation_conversion_tables(db)
+    _ensure_sqlite_automation_sop_v2_columns(db)
     _ensure_automation_sop_v1_seed_data()
     columns = _sqlite_table_columns(db, "archived_messages")
     if "chat_type" not in columns:
@@ -1216,6 +1259,48 @@ def _init_postgres(db) -> None:
         ADD COLUMN IF NOT EXISTS tag_id TEXT NOT NULL DEFAULT ''
         """
     )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_sop_pool_config
+        ADD COLUMN IF NOT EXISTS effective_start_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_sop_progress
+        ADD COLUMN IF NOT EXISTS sop_anchor_date TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_sop_progress
+        ADD COLUMN IF NOT EXISTS first_effective_in_pool_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_sop_progress
+        ADD COLUMN IF NOT EXISTS last_in_pool_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_sop_batch_item
+        ADD COLUMN IF NOT EXISTS day_index_snapshot INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_sop_batch_item
+        ADD COLUMN IF NOT EXISTS content_snapshot TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_sop_batch_item
+        ADD COLUMN IF NOT EXISTS images_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
     _ensure_postgres_questionnaire_external_push_tables(db)
@@ -1260,6 +1345,18 @@ def _init_postgres(db) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS uq_class_term_tag_mapping_tag_id_non_empty
         ON class_term_tag_mapping (tag_id)
         WHERE tag_id <> ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_sop_progress_pool_anchor
+        ON automation_sop_progress (pool_key, sop_anchor_date, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_member_day_snapshot
+        ON automation_sop_batch_item (member_id, pool_key, day_index_snapshot, id DESC)
         """
     )
     db.commit()

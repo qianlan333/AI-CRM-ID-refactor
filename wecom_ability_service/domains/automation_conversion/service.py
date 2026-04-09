@@ -167,20 +167,16 @@ SOP_V1_ALLOWED_POOLS = (
     POOL_INACTIVE_NORMAL,
     POOL_ACTIVE_NORMAL,
 )
-SOP_V1_DEFAULT_MAX_DAY_COUNT = 5
-SOP_V1_MAX_DAY_COUNT = 7
 SOP_V1_DEFAULT_SEND_TIME = "09:00"
 SOP_V1_DEFAULT_TIMEZONE = "Asia/Shanghai"
 SOP_RUN_SKIPPED_REASON_LABELS = {
     "moved_out_of_pool": "成员已移出当前池子",
-    "already_sent": "该池当天已成功发送",
-    "over_max_day_count": "超过当前池子的最大 day 配置",
-    "template_missing": "对应 day 模板不存在",
+    "already_processed_today": "当天这个 day 已处理过",
+    "no_template": "当天没有对应模板",
     "template_disabled": "对应 day 模板已禁用",
     "template_empty": "对应 day 模板内容为空",
     "missing_external_userid": "缺少 external_userid",
     "send_time_not_reached": "当前还未到发送时间",
-    "no_live_members": "当前池子没有 live 名单",
 }
 SOP_BATCH_STATUS_LABELS = {
     "finished": "已完成",
@@ -317,20 +313,6 @@ def _normalize_sop_send_time(value: Any) -> str:
     return normalized.strftime("%H:%M")
 
 
-def _normalize_sop_timezone(value: Any) -> str:
-    return _normalized_text(value) or (_normalized_text(get_signup_conversion_config().get("timezone")) or SOP_V1_DEFAULT_TIMEZONE)
-
-
-def _normalize_sop_max_day_count(value: Any) -> int:
-    try:
-        normalized = int(value or SOP_V1_DEFAULT_MAX_DAY_COUNT)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("sop max_day_count must be an integer") from exc
-    if normalized < 1 or normalized > SOP_V1_MAX_DAY_COUNT:
-        raise ValueError(f"sop max_day_count must be between 1 and {SOP_V1_MAX_DAY_COUNT}")
-    return normalized
-
-
 def _default_sop_send_time() -> str:
     try:
         day_start_hour = int(get_signup_conversion_config().get("day_start_hour") or 9)
@@ -344,9 +326,10 @@ def _default_sop_pool_config(pool_key: str) -> dict[str, Any]:
     return {
         "pool_key": normalized_pool_key,
         "enabled": True,
-        "max_day_count": SOP_V1_DEFAULT_MAX_DAY_COUNT,
+        "max_day_count": 1,
         "send_time": _default_sop_send_time(),
-        "timezone": _normalize_sop_timezone(""),
+        "timezone": SOP_V1_DEFAULT_TIMEZONE,
+        "effective_start_at": _iso_now(),
     }
 
 
@@ -370,7 +353,7 @@ def _serialize_sop_pool_config(row: dict[str, Any] | None) -> dict[str, Any]:
         "enabled": _normalize_bool(row.get("enabled")),
         "max_day_count": int(row.get("max_day_count") or 0),
         "send_time": _normalize_sop_send_time(row.get("send_time")),
-        "timezone": _normalize_sop_timezone(row.get("timezone")),
+        "effective_start_at": _normalized_text(row.get("effective_start_at")),
         "created_at": _normalized_text(row.get("created_at")),
         "updated_at": _normalized_text(row.get("updated_at")),
     }
@@ -393,6 +376,45 @@ def _serialize_sop_template(row: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _template_image_preview_url(item: dict[str, Any]) -> str:
+    data_url = _normalized_text(item.get("data_url"))
+    if data_url:
+        return data_url
+    data_base64 = _normalized_text(item.get("data_base64"))
+    if data_base64:
+        content_type = _normalized_text(item.get("content_type")) or "image/png"
+        return f"data:{content_type};base64,{data_base64}"
+    return ""
+
+
+def _serialize_sop_template_for_ui(template: dict[str, Any]) -> dict[str, Any]:
+    images: list[dict[str, Any]] = []
+    for index, raw_item in enumerate(list(template.get("images_json") or []), start=1):
+        if isinstance(raw_item, str):
+            item = {"media_id": _normalized_text(raw_item)}
+        elif isinstance(raw_item, dict):
+            item = dict(raw_item)
+        else:
+            continue
+        images.append(
+            {
+                "id": f"{template.get('pool_key')}-{template.get('day_index')}-{index}",
+                "file_name": _normalized_text(item.get("file_name")) or f"day{template.get('day_index')}-image-{index}.png",
+                "content_type": _normalized_text(item.get("content_type")) or "image/png",
+                "data_url": _normalized_text(item.get("data_url")),
+                "data_base64": _normalized_text(item.get("data_base64")),
+                "media_id": _normalized_text(item.get("media_id") or item.get("image_media_id")),
+                "preview_url": _template_image_preview_url(item),
+                "is_uploaded": bool(_template_image_preview_url(item)),
+            }
+        )
+    return {
+        **template,
+        "images_json": images,
+        "image_count": len(images),
+    }
+
+
 def _serialize_sop_progress(row: dict[str, Any] | None) -> dict[str, Any]:
     if not row:
         return {}
@@ -404,6 +426,9 @@ def _serialize_sop_progress(row: dict[str, Any] | None) -> dict[str, Any]:
         "pool_label": _pool_label(deserialized.get("pool_key")),
         "first_entered_at": _normalized_text(deserialized.get("first_entered_at")),
         "last_entered_at": _normalized_text(deserialized.get("last_entered_at")),
+        "sop_anchor_date": _normalized_text(deserialized.get("sop_anchor_date")),
+        "first_effective_in_pool_at": _normalized_text(deserialized.get("first_effective_in_pool_at")),
+        "last_in_pool_at": _normalized_text(deserialized.get("last_in_pool_at")),
         "last_sent_day": int(deserialized.get("last_sent_day") or 0),
         "last_sent_at": _normalized_text(deserialized.get("last_sent_at")),
         "completed_at": _normalized_text(deserialized.get("completed_at")),
@@ -444,78 +469,155 @@ def _serialize_sop_batch_item(row: dict[str, Any] | None) -> dict[str, Any]:
         "member_id": int(deserialized.get("member_id") or 0) if deserialized.get("member_id") not in (None, "") else None,
         "pool_key": _normalized_text(deserialized.get("pool_key")),
         "day_index": int(deserialized.get("day_index") or 0),
+        "day_index_snapshot": int(deserialized.get("day_index_snapshot") or 0),
         "external_userid": _normalized_text(deserialized.get("external_userid")),
         "status": _normalized_text(deserialized.get("status")),
         "error_message": _normalized_text(deserialized.get("error_message")),
+        "content_snapshot": _normalized_text(deserialized.get("content_snapshot")),
+        "images_snapshot": list(deserialized.get("images_snapshot") or []),
         "sent_record_id": int(deserialized.get("sent_record_id") or 0) if deserialized.get("sent_record_id") not in (None, "") else None,
         "created_at": _normalized_text(deserialized.get("created_at")),
         "updated_at": _normalized_text(deserialized.get("updated_at")),
     }
 
 
-def _ensure_sop_template_shells(pool_key: str, max_day_count: int) -> None:
+def _current_sop_template_day_count(pool_key: str) -> int:
+    templates = [_serialize_sop_template(row) for row in repo.list_sop_templates(pool_key=pool_key)]
+    return max([int(item.get("day_index") or 0) for item in templates] or [0])
+
+
+def _ensure_sop_template_day_exists(pool_key: str, day_index: int) -> dict[str, Any]:
     normalized_pool_key = _validate_sop_pool_key(pool_key)
-    normalized_max_day_count = _normalize_sop_max_day_count(max_day_count)
-    for day_index in range(1, normalized_max_day_count + 1):
-        if repo.get_sop_template(pool_key=normalized_pool_key, day_index=day_index):
-            continue
-        repo.save_sop_template(_empty_sop_template(normalized_pool_key, day_index))
+    normalized_day_index = max(1, int(day_index or 1))
+    template = repo.get_sop_template(pool_key=normalized_pool_key, day_index=normalized_day_index)
+    if template:
+        return _serialize_sop_template(template)
+    return _serialize_sop_template(repo.save_sop_template(_empty_sop_template(normalized_pool_key, normalized_day_index)))
+
+
+def _latest_sop_execution_summary(pool_key: str) -> dict[str, Any]:
+    latest_batch = next(iter([_serialize_sop_batch(row) for row in repo.list_sop_batches(pool_key=pool_key, limit=1)]), {})
+    if not latest_batch:
+        return {
+            "has_record": False,
+            "label": "暂无执行记录",
+            "scheduled_for": "",
+            "success_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+        }
+    return {
+        "has_record": True,
+        "label": latest_batch.get("scheduled_for") or latest_batch.get("created_at") or "最近执行",
+        "scheduled_for": _normalized_text(latest_batch.get("scheduled_for")),
+        "status": _normalized_text(latest_batch.get("status")),
+        "success_count": int(latest_batch.get("success_count") or 0),
+        "skipped_count": int(latest_batch.get("skipped_count") or 0),
+        "failed_count": int(latest_batch.get("failed_count") or 0),
+    }
 
 
 def ensure_sop_v1_defaults() -> dict[str, Any]:
     configs: list[dict[str, Any]] = []
+    templates_by_pool: dict[str, list[dict[str, Any]]] = {}
     for pool_key in SOP_V1_ALLOWED_POOLS:
-        existing = repo.get_sop_pool_config(pool_key)
-        if existing:
-            saved = repo.save_sop_pool_config(
-                {
-                    "pool_key": pool_key,
-                    "enabled": _normalize_bool(existing.get("enabled")),
-                    "max_day_count": _normalize_sop_max_day_count(existing.get("max_day_count")),
-                    "send_time": _normalize_sop_send_time(existing.get("send_time")),
-                    "timezone": _normalize_sop_timezone(existing.get("timezone")),
-                }
-            )
-        else:
-            saved = repo.save_sop_pool_config(_default_sop_pool_config(pool_key))
-        serialized = _serialize_sop_pool_config(saved)
-        _ensure_sop_template_shells(pool_key, serialized["max_day_count"])
-        configs.append(serialized)
+        _ensure_sop_template_day_exists(pool_key, 1)
+        existing = _serialize_sop_pool_config(repo.get_sop_pool_config(pool_key))
+        template_count = max(_current_sop_template_day_count(pool_key), 1)
+        saved = repo.save_sop_pool_config(
+            {
+                "pool_key": pool_key,
+                "enabled": _normalize_bool(existing.get("enabled")) if existing else True,
+                "max_day_count": template_count,
+                "send_time": _normalize_sop_send_time(existing.get("send_time") if existing else _default_sop_send_time()),
+                "timezone": SOP_V1_DEFAULT_TIMEZONE,
+                "effective_start_at": _normalized_text(existing.get("effective_start_at")) or _iso_now(),
+            }
+        )
+        configs.append(_serialize_sop_pool_config(saved))
+        templates_by_pool[pool_key] = [_serialize_sop_template(row) for row in repo.list_sop_templates(pool_key=pool_key)]
     get_db().commit()
-    return {
-        "configs": configs,
-        "templates": {
-            pool_key: [_serialize_sop_template(row) for row in repo.list_sop_templates(pool_key=pool_key)]
-            for pool_key in SOP_V1_ALLOWED_POOLS
-        },
-    }
+    return {"configs": configs, "templates": templates_by_pool}
 
 
-def save_sop_v1_pool_config(*, pool_key: str, enabled: Any, max_day_count: Any, send_time: Any, timezone: Any) -> dict[str, Any]:
+def save_sop_v1_pool_config(*, pool_key: str, enabled: Any, send_time: Any) -> dict[str, Any]:
     normalized_pool_key = _validate_sop_pool_key(pool_key)
+    _ensure_sop_template_day_exists(normalized_pool_key, 1)
+    existing = _serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key))
+    normalized_enabled = _normalize_bool(enabled)
+    effective_start_at = _normalized_text(existing.get("effective_start_at")) if existing else ""
+    if not effective_start_at or (existing and not _normalize_bool(existing.get("enabled")) and normalized_enabled):
+        effective_start_at = _iso_now()
+    template_count = max(_current_sop_template_day_count(normalized_pool_key), 1)
     saved = repo.save_sop_pool_config(
         {
             "pool_key": normalized_pool_key,
-            "enabled": _normalize_bool(enabled),
-            "max_day_count": _normalize_sop_max_day_count(max_day_count),
+            "enabled": normalized_enabled,
+            "max_day_count": template_count,
             "send_time": _normalize_sop_send_time(send_time),
-            "timezone": _normalize_sop_timezone(timezone),
+            "timezone": SOP_V1_DEFAULT_TIMEZONE,
+            "effective_start_at": effective_start_at,
         }
     )
-    serialized = _serialize_sop_pool_config(saved)
-    _ensure_sop_template_shells(normalized_pool_key, serialized["max_day_count"])
     get_db().commit()
     return {
-        "config": serialized,
-        "templates": [_serialize_sop_template(row) for row in repo.list_sop_templates(pool_key=normalized_pool_key)],
+        "config": _serialize_sop_pool_config(saved),
+        "templates": [_serialize_sop_template_for_ui(_serialize_sop_template(row)) for row in repo.list_sop_templates(pool_key=normalized_pool_key)],
+        "template_count": template_count,
     }
+
+
+def append_sop_v1_template_day(*, pool_key: str) -> dict[str, Any]:
+    normalized_pool_key = _validate_sop_pool_key(pool_key)
+    next_day_index = max(_current_sop_template_day_count(normalized_pool_key), 0) + 1
+    repo.save_sop_template(_empty_sop_template(normalized_pool_key, next_day_index))
+    existing_config = _serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key))
+    repo.save_sop_pool_config(
+        {
+            "pool_key": normalized_pool_key,
+            "enabled": _normalize_bool(existing_config.get("enabled")) if existing_config else True,
+            "max_day_count": next_day_index,
+            "send_time": _normalize_sop_send_time(existing_config.get("send_time") if existing_config else _default_sop_send_time()),
+            "timezone": SOP_V1_DEFAULT_TIMEZONE,
+            "effective_start_at": _normalized_text(existing_config.get("effective_start_at")) or _iso_now(),
+        }
+    )
+    get_db().commit()
+    return get_sop_v1_templates_payload(normalized_pool_key, selected_day_index=next_day_index)
+
+
+def delete_sop_v1_template_day(*, pool_key: str, day_index: Any) -> dict[str, Any]:
+    normalized_pool_key = _validate_sop_pool_key(pool_key)
+    normalized_day_index = int(day_index or 0)
+    if normalized_day_index < 1:
+        raise ValueError("sop day_index must be >= 1")
+    current_count = max(_current_sop_template_day_count(normalized_pool_key), 0)
+    if current_count <= 1:
+        raise ValueError("at least one sop day must remain")
+    if not repo.get_sop_template(pool_key=normalized_pool_key, day_index=normalized_day_index):
+        raise LookupError("sop template day not found")
+    repo.delete_sop_template_day(pool_key=normalized_pool_key, day_index=normalized_day_index)
+    new_count = max(_current_sop_template_day_count(normalized_pool_key), 1)
+    existing_config = _serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key))
+    repo.save_sop_pool_config(
+        {
+            "pool_key": normalized_pool_key,
+            "enabled": _normalize_bool(existing_config.get("enabled")) if existing_config else True,
+            "max_day_count": new_count,
+            "send_time": _normalize_sop_send_time(existing_config.get("send_time") if existing_config else _default_sop_send_time()),
+            "timezone": SOP_V1_DEFAULT_TIMEZONE,
+            "effective_start_at": _normalized_text(existing_config.get("effective_start_at")) or _iso_now(),
+        }
+    )
+    get_db().commit()
+    return get_sop_v1_templates_payload(normalized_pool_key, selected_day_index=min(normalized_day_index, new_count))
 
 
 def save_sop_v1_template(*, pool_key: str, day_index: Any, content: Any, images_json: list[dict[str, Any]] | None, enabled: Any) -> dict[str, Any]:
     normalized_pool_key = _validate_sop_pool_key(pool_key)
     normalized_day_index = int(day_index or 0)
-    if normalized_day_index < 1 or normalized_day_index > SOP_V1_MAX_DAY_COUNT:
-        raise ValueError(f"sop day_index must be between 1 and {SOP_V1_MAX_DAY_COUNT}")
+    if normalized_day_index < 1:
+        raise ValueError("sop day_index must be >= 1")
     saved = repo.save_sop_template(
         {
             "pool_key": normalized_pool_key,
@@ -525,29 +627,19 @@ def save_sop_v1_template(*, pool_key: str, day_index: Any, content: Any, images_
             "enabled": _normalize_bool(enabled),
         }
     )
+    existing_config = _serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key))
+    repo.save_sop_pool_config(
+        {
+            "pool_key": normalized_pool_key,
+            "enabled": _normalize_bool(existing_config.get("enabled")) if existing_config else True,
+            "max_day_count": max(_current_sop_template_day_count(normalized_pool_key), normalized_day_index),
+            "send_time": _normalize_sop_send_time(existing_config.get("send_time") if existing_config else _default_sop_send_time()),
+            "timezone": SOP_V1_DEFAULT_TIMEZONE,
+            "effective_start_at": _normalized_text(existing_config.get("effective_start_at")) or _iso_now(),
+        }
+    )
     get_db().commit()
-    return _serialize_sop_template(saved)
-
-
-def _sop_template_media_ids_text(template: dict[str, Any]) -> str:
-    media_ids: list[str] = []
-    for item in list(template.get("images_json") or []):
-        if isinstance(item, str):
-            normalized_media_id = _normalized_text(item)
-        elif isinstance(item, dict):
-            normalized_media_id = _normalized_text(item.get("media_id") or item.get("image_media_id"))
-        else:
-            normalized_media_id = ""
-        if normalized_media_id:
-            media_ids.append(normalized_media_id)
-    return "\n".join(media_ids)
-
-
-def _sop_template_form_payload(template: dict[str, Any]) -> dict[str, Any]:
-    return {
-        **template,
-        "image_media_ids_text": _sop_template_media_ids_text(template),
-    }
+    return _serialize_sop_template_for_ui(_serialize_sop_template(saved))
 
 
 def _sop_batch_status_label(value: Any) -> str:
@@ -561,28 +653,41 @@ def get_sop_v1_config_payload() -> dict[str, Any]:
         "configs": [dict(item) for item in list(defaults.get("configs") or [])],
     }
 
-
-def get_sop_v1_templates_payload(pool_key: str) -> dict[str, Any]:
+def get_sop_v1_templates_payload(pool_key: str, *, selected_day_index: int = 0) -> dict[str, Any]:
     normalized_pool_key = _validate_sop_pool_key(pool_key)
+    ensure_sop_v1_defaults()
     config = _serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key))
-    if not config:
-        config = _serialize_sop_pool_config(repo.save_sop_pool_config(_default_sop_pool_config(normalized_pool_key)))
-    _ensure_sop_template_shells(normalized_pool_key, int(config.get("max_day_count") or SOP_V1_DEFAULT_MAX_DAY_COUNT))
     templates = [_serialize_sop_template(row) for row in repo.list_sop_templates(pool_key=normalized_pool_key)]
-    template_by_day = {int(item.get("day_index") or 0): item for item in templates}
-    highest_existing_day = max([int(item.get("day_index") or 0) for item in templates] or [0])
-    display_day_count = max(int(config.get("max_day_count") or 0), highest_existing_day)
-    display_templates: list[dict[str, Any]] = []
-    for day_index in range(1, max(display_day_count, 0) + 1):
-        template = template_by_day.get(day_index) or _serialize_sop_template(_empty_sop_template(normalized_pool_key, day_index))
-        display_templates.append(_sop_template_form_payload(template))
+    if not templates:
+        _ensure_sop_template_day_exists(normalized_pool_key, 1)
+        templates = [_serialize_sop_template(row) for row in repo.list_sop_templates(pool_key=normalized_pool_key)]
+    template_count = max([int(item.get("day_index") or 0) for item in templates] or [1])
+    selected_day = int(selected_day_index or 0)
+    if selected_day < 1 or selected_day > template_count:
+        selected_day = 1
+    selected_template = next((item for item in templates if int(item.get("day_index") or 0) == selected_day), templates[0])
+    day_tabs = []
+    for template in templates:
+        day_index = int(template.get("day_index") or 0)
+        day_tabs.append(
+            {
+                "day_index": day_index,
+                "label": f"day{day_index}",
+                "is_selected": day_index == selected_day,
+                "has_content": bool(_normalized_text(template.get("content")) or list(template.get("images_json") or [])),
+                "enabled": _normalize_bool(template.get("enabled")),
+            }
+        )
     get_db().commit()
     return {
         "pool_key": normalized_pool_key,
         "pool_label": _pool_label(normalized_pool_key),
         "config": config,
-        "display_day_count": display_day_count,
-        "templates": display_templates,
+        "template_count": template_count,
+        "selected_day_index": selected_day,
+        "day_tabs": day_tabs,
+        "selected_template": _serialize_sop_template_for_ui(selected_template),
+        "recent_execution": _latest_sop_execution_summary(normalized_pool_key),
     }
 
 
@@ -599,42 +704,81 @@ def get_sop_v1_batches_payload(*, limit: int = 20) -> dict[str, Any]:
     }
 
 
-def get_sop_v1_management_payload(*, batch_limit: int = 20) -> dict[str, Any]:
+def get_sop_v1_management_payload(*, selected_pool_key: str = "", selected_day_index: int = 0) -> dict[str, Any]:
     ensure_sop_v1_defaults()
-    pool_sections: list[dict[str, Any]] = []
+    normalized_pool_key = _validate_sop_pool_key(selected_pool_key) if _normalized_text(selected_pool_key) else SOP_V1_ALLOWED_POOLS[0]
+    pool_cards: list[dict[str, Any]] = []
     for pool_key in SOP_V1_ALLOWED_POOLS:
-        templates_payload = get_sop_v1_templates_payload(pool_key)
-        pool_sections.append(
+        pool_payload = get_sop_v1_templates_payload(pool_key, selected_day_index=selected_day_index if pool_key == normalized_pool_key else 0)
+        config = dict(pool_payload.get("config") or {})
+        recent_execution = dict(pool_payload.get("recent_execution") or {})
+        pool_cards.append(
             {
                 "pool_key": pool_key,
                 "pool_label": _pool_label(pool_key),
-                "config": dict(templates_payload.get("config") or {}),
-                "display_day_count": int(templates_payload.get("display_day_count") or 0),
-                "templates": list(templates_payload.get("templates") or []),
+                "is_selected": pool_key == normalized_pool_key,
+                "enabled": _normalize_bool(config.get("enabled")),
+                "send_time": _normalize_sop_send_time(config.get("send_time")),
+                "template_count": int(pool_payload.get("template_count") or 0),
+                "recent_execution": recent_execution,
             }
         )
+    current_pool = get_sop_v1_templates_payload(normalized_pool_key, selected_day_index=selected_day_index)
     return {
-        "notes": [
-            "重复进同池不重来，从上次已发送进度继续",
-            "离池期间错过的 SOP 不补发",
-            "名单在执行时现算",
-            "SOP 和手工群发不去重",
-            "这轮自动 SOP 不覆盖 silent / won / focus",
-        ],
-        "pool_sections": pool_sections,
-        "recent_batches": list(get_sop_v1_batches_payload(limit=batch_limit).get("batches") or []),
+        "subtitle": "只覆盖新用户池、未激活普通池、激活普通池",
+        "selected_pool_key": normalized_pool_key,
+        "pool_cards": pool_cards,
+        "current_pool": current_pool,
     }
 
 
-def _upsert_sop_progress_entry(*, member_id: int, pool_key: str, entered_at: str) -> dict[str, Any]:
+def _later_timestamp_text(*values: Any) -> str:
+    latest: datetime | None = None
+    latest_text = ""
+    for value in values:
+        parsed = _parse_timestamp(value)
+        if parsed is None:
+            continue
+        if latest is None or parsed > latest:
+            latest = parsed
+            latest_text = parsed.strftime("%Y-%m-%d %H:%M:%S")
+    return latest_text
+
+
+def _sop_effective_start_at(pool_config: dict[str, Any]) -> str:
+    return _normalized_text(pool_config.get("effective_start_at")) or _iso_now()
+
+
+def _sop_anchor_date_from_entry(*, entry_time: str, pool_config: dict[str, Any]) -> tuple[str, str]:
+    entry_dt = _parse_timestamp(entry_time) or datetime.now()
+    effective_dt = _parse_timestamp(_sop_effective_start_at(pool_config)) or entry_dt
+    first_effective_dt = effective_dt if effective_dt > entry_dt else entry_dt
+    hour, minute = _parse_sop_send_time(pool_config.get("send_time"))
+    scheduled_same_day = first_effective_dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    anchor_dt = first_effective_dt if first_effective_dt < scheduled_same_day else first_effective_dt + timedelta(days=1)
+    return anchor_dt.strftime("%Y-%m-%d"), first_effective_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _upsert_sop_progress_entry(*, member_id: int, pool_key: str, entered_at: str, pool_config: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized_pool_key = _validate_sop_pool_key(pool_key)
+    normalized_pool_config = dict(pool_config or _serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or _default_sop_pool_config(normalized_pool_key))
     entry_time = _normalized_text(entered_at) or _iso_now()
     existing = _serialize_sop_progress(repo.get_sop_progress(member_id=int(member_id), pool_key=normalized_pool_key))
+    sop_anchor_date = _normalized_text(existing.get("sop_anchor_date"))
+    first_effective_in_pool_at = _normalized_text(existing.get("first_effective_in_pool_at"))
+    if not sop_anchor_date or not first_effective_in_pool_at:
+        sop_anchor_date, first_effective_in_pool_at = _sop_anchor_date_from_entry(
+            entry_time=_later_timestamp_text(entry_time, _sop_effective_start_at(normalized_pool_config)) or entry_time,
+            pool_config=normalized_pool_config,
+        )
     payload = {
         "member_id": int(member_id),
         "pool_key": normalized_pool_key,
         "first_entered_at": existing.get("first_entered_at") or entry_time,
         "last_entered_at": entry_time,
+        "sop_anchor_date": sop_anchor_date,
+        "first_effective_in_pool_at": first_effective_in_pool_at,
+        "last_in_pool_at": entry_time,
         "last_sent_day": int(existing.get("last_sent_day") or 0),
         "last_sent_at": _normalized_text(existing.get("last_sent_at")),
         "completed_at": _normalized_text(existing.get("completed_at")),
@@ -2673,25 +2817,45 @@ def _next_sop_send_slot(reference: datetime, *, send_time: str) -> datetime:
     return scheduled + timedelta(days=1)
 
 
+def _scheduled_sop_datetime_for_date(day_text: str, *, send_time: str) -> datetime | None:
+    normalized_day_text = _normalized_text(day_text)
+    if not normalized_day_text:
+        return None
+    try:
+        return datetime.strptime(f"{normalized_day_text} {_normalize_sop_send_time(send_time)}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+
+
+def _current_sop_day_index(progress: dict[str, Any], *, now_dt: datetime) -> int:
+    anchor_dt = _scheduled_sop_datetime_for_date(_normalized_text(progress.get("sop_anchor_date")), send_time="00:00")
+    if anchor_dt is None:
+        return 0
+    return (now_dt.date() - anchor_dt.date()).days + 1
+
+
 def _progress_anchor_timestamp(member: dict[str, Any], progress: dict[str, Any], *, now_text: str) -> str:
     return (
-        _normalized_text(progress.get("last_entered_at"))
+        _normalized_text(progress.get("last_in_pool_at"))
+        or _normalized_text(progress.get("last_entered_at"))
         or _normalized_text(progress.get("first_entered_at"))
         or _normalized_text(member.get("joined_at"))
-        or _normalized_text(member.get("updated_at"))
+        or _normalized_text(member.get("created_at"))
         or now_text
     )
 
 
-def _get_or_create_sop_progress(member: dict[str, Any], *, pool_key: str, now_text: str) -> dict[str, Any]:
+def _get_or_create_sop_progress(member: dict[str, Any], *, pool_config: dict[str, Any], now_text: str) -> dict[str, Any]:
+    pool_key = _validate_sop_pool_key(pool_config.get("pool_key"))
     member_id = int(member.get("id") or 0)
     progress = _serialize_sop_progress(repo.get_sop_progress(member_id=member_id, pool_key=pool_key))
-    if progress:
+    if progress and _normalized_text(progress.get("sop_anchor_date")) and _normalized_text(progress.get("first_effective_in_pool_at")):
         return progress
     return _upsert_sop_progress_entry(
         member_id=member_id,
         pool_key=pool_key,
-        entered_at=_progress_anchor_timestamp(member, {}, now_text=now_text),
+        entered_at=_progress_anchor_timestamp(member, progress, now_text=now_text),
+        pool_config=pool_config,
     )
 
 
@@ -2703,36 +2867,24 @@ def _evaluate_sop_due(
     now_dt: datetime,
     now_text: str,
 ) -> dict[str, Any]:
-    last_sent_day = int(progress.get("last_sent_day") or 0)
-    next_day = last_sent_day + 1
-    max_day_count = int(pool_config.get("max_day_count") or 0)
-    if next_day > max_day_count:
+    current_day_index = max(_current_sop_day_index(progress, now_dt=now_dt), int(progress.get("last_sent_day") or 0))
+    send_time = _normalize_sop_send_time(pool_config.get("send_time"))
+    today_scheduled_dt = _scheduled_sop_datetime_for_date(now_dt.strftime("%Y-%m-%d"), send_time=send_time)
+    if current_day_index <= 0:
+        anchor_scheduled_dt = _scheduled_sop_datetime_for_date(_normalized_text(progress.get("sop_anchor_date")), send_time=send_time)
         return {
             "member": member,
             "progress": progress,
-            "day_index": next_day,
-            "scheduled_for": now_text,
-            "skip_reason": "over_max_day_count",
+            "day_index": 0,
+            "scheduled_for": anchor_scheduled_dt.strftime("%Y-%m-%d %H:%M:%S") if anchor_scheduled_dt else now_text,
+            "skip_reason": "send_time_not_reached",
         }
-
-    send_time = _normalize_sop_send_time(pool_config.get("send_time"))
-    last_sent_at_dt = _parse_timestamp(progress.get("last_sent_at"))
-    last_entered_at_dt = _parse_timestamp(progress.get("last_entered_at"))
-
-    if last_sent_day <= 0:
-        base_dt = last_entered_at_dt or _parse_timestamp(progress.get("first_entered_at")) or _parse_timestamp(member.get("joined_at")) or now_dt
-    elif last_entered_at_dt and (last_sent_at_dt is None or last_entered_at_dt > last_sent_at_dt):
-        base_dt = last_entered_at_dt
-    else:
-        base_dt = (last_sent_at_dt or now_dt) + timedelta(seconds=1)
-
-    scheduled_dt = _next_sop_send_slot(base_dt, send_time=send_time)
-    scheduled_for = scheduled_dt.strftime("%Y-%m-%d %H:%M:%S")
-    skip_reason = "send_time_not_reached" if now_dt < scheduled_dt else ""
+    scheduled_for = today_scheduled_dt.strftime("%Y-%m-%d %H:%M:%S") if today_scheduled_dt else now_text
+    skip_reason = "send_time_not_reached" if today_scheduled_dt and now_dt < today_scheduled_dt else ""
     return {
         "member": member,
         "progress": progress,
-        "day_index": next_day,
+        "day_index": current_day_index,
         "scheduled_for": scheduled_for,
         "skip_reason": skip_reason,
     }
@@ -2774,7 +2926,7 @@ def _normalize_sop_template_images(template: dict[str, Any]) -> tuple[list[str],
 
 def _template_skip_reason(template: dict[str, Any]) -> str:
     if not template:
-        return "template_missing"
+        return "no_template"
     if not _normalize_bool(template.get("enabled")):
         return "template_disabled"
     content = _normalized_text(template.get("content"))
@@ -2819,6 +2971,8 @@ def _record_sop_batch_item(
     day_index: int,
     external_userid: str,
     status: str,
+    content_snapshot: str = "",
+    images_snapshot: list[dict[str, Any]] | None = None,
     error_message: str = "",
     sent_record_id: int | None = None,
 ) -> dict[str, Any]:
@@ -2829,9 +2983,12 @@ def _record_sop_batch_item(
                 "member_id": int(member.get("id") or 0) if member else None,
                 "pool_key": pool_key,
                 "day_index": int(day_index),
+                "day_index_snapshot": int(day_index),
                 "external_userid": _normalized_text(external_userid),
                 "status": _normalized_text(status),
                 "error_message": _normalized_text(error_message),
+                "content_snapshot": _normalized_text(content_snapshot),
+                "images_snapshot": list(images_snapshot or []),
                 "sent_record_id": sent_record_id,
             }
         )
@@ -2883,21 +3040,8 @@ def _run_due_sop_for_pool(
     pool_key = _validate_sop_pool_key(pool_config.get("pool_key"))
     live_members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool_key)]
     if not live_members:
-        empty_batch = _create_sop_batch(
-            pool_key=pool_key,
-            day_index=0,
-            template=None,
-            scheduled_for=now_text,
-            total_count=0,
-            summary_json={
-                "pool_key": pool_key,
-                "reason": "no_live_members",
-                "reason_label": _sop_skip_reason_label("no_live_members"),
-                "scanned_member_count": 0,
-            },
-        )
         return {
-            "batches": [empty_batch],
+            "batches": [],
             "success_count": 0,
             "skipped_count": 0,
             "failed_count": 0,
@@ -2905,7 +3049,7 @@ def _run_due_sop_for_pool(
 
     grouped_candidates: dict[tuple[int, str], list[dict[str, Any]]] = {}
     for member in live_members:
-        progress = _get_or_create_sop_progress(member, pool_key=pool_key, now_text=now_text)
+        progress = _get_or_create_sop_progress(member, pool_config=pool_config, now_text=now_text)
         candidate = _evaluate_sop_due(
             member=member,
             progress=progress,
@@ -2913,6 +3057,8 @@ def _run_due_sop_for_pool(
             now_dt=now_dt,
             now_text=now_text,
         )
+        if int(candidate.get("day_index") or 0) <= 0 or _normalized_text(candidate.get("skip_reason")) == "send_time_not_reached":
+            continue
         group_key = (int(candidate["day_index"]), _normalized_text(candidate["scheduled_for"]))
         grouped_candidates.setdefault(group_key, []).append(candidate)
 
@@ -2923,6 +3069,9 @@ def _run_due_sop_for_pool(
     for (day_index, scheduled_for), candidates in sorted(grouped_candidates.items(), key=lambda item: (item[0][1], item[0][0])):
         template = _serialize_sop_template(repo.get_sop_template(pool_key=pool_key, day_index=day_index))
         template_skip_reason = _template_skip_reason(template)
+        current_template_count = max(_current_sop_template_day_count(pool_key), 1)
+        content_snapshot = _normalized_text(template.get("content"))
+        images_snapshot = list(template.get("images_json") or [])
         batch = _create_sop_batch(
             pool_key=pool_key,
             day_index=day_index,
@@ -2949,6 +3098,7 @@ def _run_due_sop_for_pool(
             final_status = ""
             error_message = ""
             sent_record_id: int | None = None
+            should_advance_progress = False
 
             if not live_member or not _normalize_bool(live_member.get("in_pool")) or _normalized_text(live_member.get("current_pool")) != pool_key:
                 final_status = "skipped"
@@ -2956,15 +3106,17 @@ def _run_due_sop_for_pool(
             elif candidate.get("skip_reason"):
                 final_status = "skipped"
                 error_message = _normalized_text(candidate.get("skip_reason"))
-            elif repo.get_successful_sop_batch_item(member_id=member_id, pool_key=pool_key, day_index=day_index):
+            elif repo.get_sop_batch_item_for_member_day(member_id=member_id, pool_key=pool_key, day_index_snapshot=day_index):
                 final_status = "skipped"
-                error_message = "already_sent"
+                error_message = "already_processed_today"
             elif not external_userid:
                 final_status = "skipped"
                 error_message = "missing_external_userid"
+                should_advance_progress = True
             elif template_skip_reason:
                 final_status = "skipped"
                 error_message = template_skip_reason
+                should_advance_progress = True
             else:
                 image_media_ids, images = _normalize_sop_template_images(template)
                 dispatch_result = _dispatch_private_message_batch(
@@ -2978,7 +3130,7 @@ def _run_due_sop_for_pool(
                             "owner_display_name": DEFAULT_OWNER_STAFF_ID,
                         }
                     ],
-                    content=_normalized_text(template.get("content")),
+                    content=content_snapshot,
                     image_media_ids=image_media_ids,
                     images=images,
                     operator_id=operator_id or f"sop:{pool_key}:{day_index}",
@@ -2994,21 +3146,28 @@ def _run_due_sop_for_pool(
                     final_status = "success"
                     sent_record_id = int(dispatch_result.get("record_id") or 0) or None
                     success_record_ids.append(int(sent_record_id or 0))
-                    updated_progress = repo.save_sop_progress(
-                        {
-                            "member_id": member_id,
-                            "pool_key": pool_key,
-                            "first_entered_at": _normalized_text(candidate["progress"].get("first_entered_at")),
-                            "last_entered_at": _normalized_text(candidate["progress"].get("last_entered_at")),
-                            "last_sent_day": day_index,
-                            "last_sent_at": now_text,
-                            "completed_at": now_text if day_index >= int(pool_config.get("max_day_count") or 0) else "",
-                        }
-                    )
-                    candidate["progress"] = _serialize_sop_progress(updated_progress)
+                    should_advance_progress = True
                 else:
                     final_status = "failed"
                     error_message = _normalized_text(dispatch_result.get("error")) or _normalized_text(dispatch_result.get("status")) or "dispatch_failed"
+                    should_advance_progress = True
+
+            if should_advance_progress:
+                updated_progress = repo.save_sop_progress(
+                    {
+                        "member_id": member_id,
+                        "pool_key": pool_key,
+                        "first_entered_at": _normalized_text(candidate["progress"].get("first_entered_at")),
+                        "last_entered_at": _normalized_text(candidate["progress"].get("last_entered_at")) or _normalized_text(candidate["progress"].get("last_in_pool_at")),
+                        "sop_anchor_date": _normalized_text(candidate["progress"].get("sop_anchor_date")),
+                        "first_effective_in_pool_at": _normalized_text(candidate["progress"].get("first_effective_in_pool_at")),
+                        "last_in_pool_at": _normalized_text(candidate["progress"].get("last_in_pool_at")),
+                        "last_sent_day": max(int(candidate["progress"].get("last_sent_day") or 0), day_index),
+                        "last_sent_at": now_text if final_status == "success" else _normalized_text(candidate["progress"].get("last_sent_at")),
+                        "completed_at": now_text if day_index >= current_template_count else _normalized_text(candidate["progress"].get("completed_at")),
+                    }
+                )
+                candidate["progress"] = _serialize_sop_progress(updated_progress)
 
             if final_status == "success":
                 success_count += 1
@@ -3025,6 +3184,8 @@ def _run_due_sop_for_pool(
                 day_index=day_index,
                 external_userid=external_userid,
                 status=final_status,
+                content_snapshot=content_snapshot,
+                images_snapshot=images_snapshot,
                 error_message=error_message,
                 sent_record_id=sent_record_id,
             )
@@ -3067,7 +3228,7 @@ def run_due_sop(*, operator_id: str = "", operator_type: str = "system") -> dict
         if not pool_config or not _normalize_bool(pool_config.get("enabled")):
             continue
         scanned_pool_count += 1
-        scheduled_today = _parse_timestamp(f"{now_dt.strftime('%Y-%m-%d')} {_normalize_sop_send_time(pool_config.get('send_time'))}")
+        scheduled_today = _scheduled_sop_datetime_for_date(now_dt.strftime("%Y-%m-%d"), send_time=pool_config.get("send_time"))
         if scheduled_today is None or now_dt < scheduled_today:
             continue
         pool_result = _run_due_sop_for_pool(

@@ -8,6 +8,8 @@ from flask import jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
     create_focus_send_batch,
+    append_sop_v1_template_day,
+    delete_sop_v1_template_day,
     generate_default_channel_qr,
     get_debug_payload,
     get_focus_send_batch_detail,
@@ -193,17 +195,40 @@ def _json_bool(value) -> bool:
 
 
 def _parse_sop_images_payload(raw_payload) -> list[dict[str, str]]:
+    if isinstance(raw_payload, str):
+        text = raw_payload.strip()
+        if text.startswith("["):
+            try:
+                raw_payload = json.loads(text)
+            except ValueError:
+                raw_payload = text
     if isinstance(raw_payload, list):
         results: list[dict[str, str]] = []
         for item in raw_payload:
             if isinstance(item, str):
                 media_id = item.strip()
-            elif isinstance(item, dict):
-                media_id = str(item.get("media_id") or item.get("image_media_id") or "").strip()
-            else:
-                media_id = ""
+                if media_id:
+                    results.append({"media_id": media_id})
+                continue
+            if not isinstance(item, dict):
+                continue
+            media_id = str(item.get("media_id") or item.get("image_media_id") or "").strip()
+            data_url = str(item.get("data_url") or "").strip()
+            data_base64 = str(item.get("data_base64") or item.get("base64") or "").strip()
+            file_name = str(item.get("file_name") or item.get("name") or "").strip()
+            content_type = str(item.get("content_type") or item.get("mime_type") or "").strip()
             if media_id:
-                results.append({"media_id": media_id})
+                results.append({"media_id": media_id, "file_name": file_name, "content_type": content_type})
+            elif data_url or data_base64:
+                payload = {
+                    "file_name": file_name,
+                    "content_type": content_type,
+                }
+                if data_url:
+                    payload["data_url"] = data_url
+                if data_base64:
+                    payload["data_base64"] = data_base64
+                results.append(payload)
         return results
     return [{"media_id": media_id} for media_id in _split_multiline_tokens(str(raw_payload or ""))]
 
@@ -361,12 +386,13 @@ def _render_settings_page(*, settings_payload: dict[str, object] | None = None, 
 
 
 def _render_sop_page(*, sop_payload: dict[str, object] | None = None, page_error: str = ""):
-    payload = sop_payload or get_sop_v1_management_payload()
+    selected_day_index = _query_int("day", default=1, minimum=1, maximum=365)
+    payload = sop_payload or get_sop_v1_management_payload(selected_pool_key=_query_text("pool"), selected_day_index=selected_day_index)
     return _render_admin_template(
         "automation_conversion_sop.html",
         active_nav="automation_conversion",
         page_title="自动 SOP 管理",
-        page_summary="只管理 new_user、inactive_normal、active_normal 三个标准池的自动 SOP 配置与模板。",
+        page_summary="只覆盖新用户池、未激活普通池、激活普通池。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
@@ -662,9 +688,7 @@ def api_admin_automation_conversion_sop_config_save(pool_key: str):
         result = save_sop_v1_pool_config(
             pool_key=pool_key,
             enabled=payload.get("enabled"),
-            max_day_count=payload.get("max_day_count"),
             send_time=payload.get("send_time"),
-            timezone=payload.get("timezone"),
         )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -673,14 +697,28 @@ def api_admin_automation_conversion_sop_config_save(pool_key: str):
 
 def api_admin_automation_conversion_sop_templates(pool_key: str):
     try:
-        result = get_sop_v1_templates_payload(pool_key)
+        result = get_sop_v1_templates_payload(pool_key, selected_day_index=_query_int("day", default=1, minimum=1, maximum=365))
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, **result})
 
 
+def api_admin_automation_conversion_sop_template_append(pool_key: str):
+    try:
+        result = append_sop_v1_template_day(pool_key=pool_key)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result}), 201
+
+
 def api_admin_automation_conversion_sop_template_save(pool_key: str, day_index: int):
     payload = request.get_json(silent=True) or {}
+    if not payload and request.form:
+        payload = {
+            "content": request.form.get("content"),
+            "enabled": _json_bool(request.form.get("enabled")),
+            "images_json": request.form.get("images_json"),
+        }
     try:
         result = save_sop_v1_template(
             pool_key=pool_key,
@@ -692,6 +730,16 @@ def api_admin_automation_conversion_sop_template_save(pool_key: str, day_index: 
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "template": result})
+
+
+def api_admin_automation_conversion_sop_template_delete(pool_key: str, day_index: int):
+    try:
+        result = delete_sop_v1_template_day(pool_key=pool_key, day_index=day_index)
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
 
 
 def api_admin_automation_conversion_sop_batches():
@@ -831,7 +879,9 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/sop/config", methods=["GET"])(api_admin_automation_conversion_sop_config)
     bp.route("/api/admin/automation-conversion/sop/config/<pool_key>", methods=["PUT"])(api_admin_automation_conversion_sop_config_save)
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>", methods=["GET"])(api_admin_automation_conversion_sop_templates)
+    bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>", methods=["POST"])(api_admin_automation_conversion_sop_template_append)
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["PUT"])(api_admin_automation_conversion_sop_template_save)
+    bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["DELETE"])(api_admin_automation_conversion_sop_template_delete)
     bp.route("/api/admin/automation-conversion/sop/batches", methods=["GET"])(api_admin_automation_conversion_sop_batches)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_generate_default_channel)
     bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview", methods=["POST"])(api_admin_automation_conversion_stage_manual_send_preview)
