@@ -3566,6 +3566,76 @@ def _extract_channel_scene(payload_json: dict[str, Any]) -> str:
     return ""
 
 
+def _extract_welcome_code(payload_json: dict[str, Any]) -> str:
+    payload = _json_loads(payload_json, default={})
+    if not isinstance(payload, dict):
+        payload = {}
+    for key in ("welcome_code", "WelcomeCode", "welcomeCode"):
+        value = _normalized_text(payload.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _send_channel_welcome_message(
+    *,
+    member: dict[str, Any],
+    channel: dict[str, Any],
+    payload_json: dict[str, Any] | None = None,
+    operator_id: str = "",
+) -> dict[str, Any]:
+    welcome_message = _normalized_text(channel.get("welcome_message"))
+    welcome_code = _extract_welcome_code(payload_json or {})
+    serialized_member = _serialize_member(member)
+    if not welcome_message:
+        return {"attempted": False, "sent": False, "reason": "not_configured"}
+    if not welcome_code:
+        _write_event(
+            member_id=int(member["id"]),
+            action="qrcode_welcome_failed",
+            operator_type="system",
+            operator_id=_normalized_text(operator_id) or "wecom_callback",
+            before_snapshot=_member_snapshot(serialized_member),
+            after_snapshot=_member_snapshot(serialized_member),
+            remark="missing_welcome_code",
+        )
+        return {"attempted": True, "sent": False, "error": "missing_welcome_code"}
+
+    request_payload = {
+        "welcome_code": welcome_code,
+        "text": {"content": welcome_message},
+    }
+    try:
+        wecom_result = get_contact_runtime_client().send_welcome_msg(request_payload)
+    except (WeComClientError, AttributeError, ValueError) as exc:
+        _write_event(
+            member_id=int(member["id"]),
+            action="qrcode_welcome_failed",
+            operator_type="system",
+            operator_id=_normalized_text(operator_id) or "wecom_callback",
+            before_snapshot=_member_snapshot(serialized_member),
+            after_snapshot=_member_snapshot(serialized_member),
+            remark=str(exc),
+        )
+        return {"attempted": True, "sent": False, "error": str(exc)}
+
+    _write_event(
+        member_id=int(member["id"]),
+        action="qrcode_welcome_sent",
+        operator_type="system",
+        operator_id=_normalized_text(operator_id) or "wecom_callback",
+        before_snapshot=_member_snapshot(serialized_member),
+        after_snapshot=_member_snapshot(serialized_member),
+        remark=f"welcome_code={welcome_code}",
+    )
+    return {
+        "attempted": True,
+        "sent": True,
+        "welcome_code": welcome_code,
+        "wecom_result": dict(wecom_result or {}),
+    }
+
+
 def handle_qrcode_enter_from_callback(
     *,
     external_contact_id: str,

@@ -3083,104 +3083,86 @@ def test_qrcode_callback_creates_member_and_event(app):
             "operator_id": "callback-user",
         }
 
-
-def test_qrcode_callback_sends_welcome_message_when_enabled(app, monkeypatch):
-    from wecom_ability_service.domains.automation_conversion.service import handle_qrcode_enter_from_callback
+def test_qrcode_callback_sends_official_welcome_message(app, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import service as automation_service
 
     captured: dict[str, object] = {}
 
-    class _FakeRuntimeClient:
+    class _StubClient:
         def send_welcome_msg(self, payload: dict[str, object]) -> dict[str, object]:
-            captured["payload"] = dict(payload)
+            captured["payload"] = payload
             return {"errcode": 0, "errmsg": "ok"}
 
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.get_contact_runtime_client",
-        lambda: _FakeRuntimeClient(),
-    )
+    monkeypatch.setattr(automation_service, "get_contact_runtime_client", lambda: _StubClient())
 
     with app.app_context():
         db = get_db()
         db.execute(
             """
             INSERT INTO automation_channel (
-                channel_code, channel_name, scene_value, owner_staff_id, status, welcome_message, auto_accept_friend, created_at, updated_at
+                channel_code, channel_name, scene_value, owner_staff_id, welcome_message, status, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-welcome', 'QianLan', '欢迎加入', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.commit()
 
-        result = handle_qrcode_enter_from_callback(
+        result = automation_service.handle_qrcode_enter_from_callback(
             external_contact_id="wm_qrcode_002",
             phone="13800004002",
-            payload_json={"state": "scene-default", "WelcomeCode": "WELCOME-CODE-001"},
+            payload_json={"state": "scene-welcome", "WelcomeCode": "welcome-001"},
             operator_id="callback-user",
             send_welcome_message=True,
         )
 
         assert result["handled"] is True
         assert result["welcome_message"]["sent"] is True
-        assert result["welcome_message"]["via"] == "send_welcome_msg"
         assert captured["payload"] == {
-            "welcome_code": "WELCOME-CODE-001",
-            "text": {"content": "欢迎添加，稍后我来跟进你。"},
+            "welcome_code": "welcome-001",
+            "text": {"content": "欢迎加入"},
         }
-
         events = db.execute(
-            "SELECT action, operator_id, remark FROM automation_event ORDER BY id ASC"
+            "SELECT action FROM automation_event ORDER BY id DESC LIMIT 2"
         ).fetchall()
-        assert [dict(item) for item in events[-2:]] == [
-            {
-                "action": "qrcode_enter",
-                "operator_id": "callback-user",
-                "remark": "",
-            },
-            {
-                "action": "qrcode_welcome_sent",
-                "operator_id": "callback-user",
-                "remark": "official_send_welcome_msg",
-            },
-        ]
+        assert [str(row["action"]) for row in events] == ["qrcode_welcome_sent", "qrcode_enter"]
 
 
-def test_qrcode_callback_skips_welcome_message_without_welcome_code(app):
-    from wecom_ability_service.domains.automation_conversion.service import handle_qrcode_enter_from_callback
+def test_qrcode_callback_welcome_message_requires_welcome_code(app, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import service as automation_service
+
+    class _StubClient:
+        def send_welcome_msg(self, payload: dict[str, object]) -> dict[str, object]:
+            raise AssertionError("send_welcome_msg should not be called without welcome_code")
+
+    monkeypatch.setattr(automation_service, "get_contact_runtime_client", lambda: _StubClient())
 
     with app.app_context():
         db = get_db()
         db.execute(
             """
             INSERT INTO automation_channel (
-                channel_code, channel_name, scene_value, owner_staff_id, status, welcome_message, auto_accept_friend, created_at, updated_at
+                channel_code, channel_name, scene_value, owner_staff_id, welcome_message, status, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-no-code', 'QianLan', '欢迎加入', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.commit()
 
-        result = handle_qrcode_enter_from_callback(
+        result = automation_service.handle_qrcode_enter_from_callback(
             external_contact_id="wm_qrcode_003",
             phone="13800004003",
-            payload_json={"state": "scene-default"},
+            payload_json={"state": "scene-no-code"},
             operator_id="callback-user",
             send_welcome_message=True,
         )
 
         assert result["handled"] is True
-        assert result["welcome_message"] == {
-            "attempted": False,
-            "sent": False,
-            "reason": "welcome_code_missing",
+        assert result["welcome_message"]["sent"] is False
+        assert result["welcome_message"]["error"] == "missing_welcome_code"
+        event = db.execute(
+            "SELECT action, remark FROM automation_event ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert dict(event) == {
+            "action": "qrcode_welcome_failed",
+            "remark": "missing_welcome_code",
         }
-
-        events = db.execute(
-            "SELECT action, operator_id, remark FROM automation_event ORDER BY id ASC"
-        ).fetchall()
-        assert [dict(item) for item in events[-1:]] == [
-            {
-                "action": "qrcode_enter",
-                "operator_id": "callback-user",
-                "remark": "",
-            },
-        ]
