@@ -295,6 +295,8 @@ def fake_wecom_post(url, params=None, json=None, timeout=None, files=None):
         uploaded = (files or {}).get("media")
         file_name = uploaded[0] if isinstance(uploaded, tuple) and uploaded else "uploaded-image.png"
         return FakeResponse({"errcode": 0, "errmsg": "ok", "type": "image", "media_id": f"media-{file_name}"})
+    if url.endswith("/cgi-bin/externalcontact/send_welcome_msg"):
+        return FakeResponse({"errcode": 0, "errmsg": "ok"})
     if url.endswith("/cgi-bin/externalcontact/add_msg_template"):
         return FakeResponse({"errcode": 0, "errmsg": "ok", "msgid": "task-msg-001"})
     if url.endswith("/cgi-bin/externalcontact/add_moment_task"):
@@ -2411,6 +2413,84 @@ def test_external_contact_callback_logs_and_processes_event(client, app, monkeyp
             ("ww-test", "wm_ext_001", "sales_01"),
         ).fetchone()
         assert relation["relation_status"] == "active"
+
+
+def test_external_contact_callback_uses_official_welcome_msg_when_welcome_code_present(client, app, monkeypatch):
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+    welcome_calls: list[dict[str, object]] = []
+
+    def _fake_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/send_welcome_msg"):
+            welcome_calls.append({"url": url, "json": dict(json or {}), "timeout": timeout})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.post", _fake_post)
+
+    with app.app_context():
+        get_db().execute(
+            """
+            INSERT INTO automation_channel (
+                channel_code, channel_name, scene_value, owner_staff_id, status, welcome_message, auto_accept_friend, created_at, updated_at
+            )
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        get_db().commit()
+
+    token = "callback-token"
+    aes_key = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+    corp_id = "ww-test"
+    plain_xml = (
+        "<xml>"
+        "<Event>change_external_contact</Event>"
+        "<ChangeType>add_external_contact</ChangeType>"
+        "<ExternalUserID>wm_ext_001</ExternalUserID>"
+        "<UserID>sales_01</UserID>"
+        "<WelcomeCode>WELCOME-CODE-API-001</WelcomeCode>"
+        "<State>scene-default</State>"
+        "<CreateTime>1774000100</CreateTime>"
+        "</xml>"
+    )
+    encrypted = encrypt_message(plain_xml, aes_key, corp_id)
+    timestamp = "1774000100"
+    nonce = "nonce-ec-002"
+    signature = compute_signature(token, timestamp, nonce, encrypted)
+    body = f"<xml><Encrypt>{encrypted}</Encrypt></xml>"
+
+    response = client.post(
+        f"/wecom/external-contact/callback?msg_signature={signature}&timestamp={timestamp}&nonce={nonce}",
+        data=body,
+        content_type="application/xml",
+    )
+    assert response.status_code == 200
+    expected_url = f"{app.config['WECOM_API_BASE'].rstrip('/')}/cgi-bin/externalcontact/send_welcome_msg"
+    assert welcome_calls == [
+        {
+            "url": expected_url,
+            "json": {
+                "welcome_code": "WELCOME-CODE-API-001",
+                "text": {"content": "欢迎添加，稍后我来跟进你。"},
+            },
+            "timeout": 15,
+        }
+    ]
+
+    with app.app_context():
+        events = get_db().execute(
+            "SELECT action, operator_id, remark FROM automation_event ORDER BY id ASC"
+        ).fetchall()
+        assert [dict(item) for item in events[-2:]] == [
+            {
+                "action": "qrcode_enter",
+                "operator_id": "sales_01",
+                "remark": "",
+            },
+            {
+                "action": "qrcode_welcome_sent",
+                "operator_id": "sales_01",
+                "remark": "official_send_welcome_msg",
+            },
+        ]
 
 
 def test_extract_text_record():

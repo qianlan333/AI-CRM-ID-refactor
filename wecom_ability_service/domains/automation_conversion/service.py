@@ -7,6 +7,7 @@ from typing import Any
 from flask import current_app
 
 from ...db import get_db
+from ...infra.wecom_runtime import get_contact_runtime_client
 from ...wecom_client import WeComClientError
 from ..marketing_automation.service import get_customer_marketing_profile, get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
@@ -703,22 +704,29 @@ def _send_channel_welcome_message(
     *,
     member: dict[str, Any],
     channel: dict[str, Any],
+    payload_json: dict[str, Any] | None = None,
     operator_id: str = "",
 ) -> dict[str, Any]:
     welcome_message = _normalized_text(channel.get("welcome_message"))
-    external_contact_id = _normalized_text(member.get("external_contact_id"))
-    if not welcome_message or not external_contact_id:
+    payload = _json_loads(payload_json, default={})
+    if not isinstance(payload, dict):
+        payload = {}
+    welcome_code = ""
+    for key in ("WelcomeCode", "welcome_code", "welcomeCode"):
+        welcome_code = _normalized_text(payload.get(key))
+        if welcome_code:
+            break
+    if not welcome_message:
         return {"attempted": False, "sent": False, "reason": "not_configured"}
-
-    sender_userid = _normalized_text(channel.get("owner_staff_id")) or DEFAULT_OWNER_STAFF_ID
+    if not welcome_code:
+        return {"attempted": False, "sent": False, "reason": "welcome_code_missing"}
     serialized_member = _serialize_member(member)
     request_payload = {
-        "sender": sender_userid,
-        "external_userid": [external_contact_id],
+        "welcome_code": welcome_code,
         "text": {"content": welcome_message},
     }
     try:
-        task_result = dispatch_wecom_task("private_message", "create_private_message_task", request_payload)
+        wecom_result = get_contact_runtime_client().send_welcome_msg(request_payload)
     except (WeComClientError, AttributeError, ValueError) as exc:
         _write_event(
             member_id=int(member["id"]),
@@ -738,13 +746,13 @@ def _send_channel_welcome_message(
         operator_id=_normalized_text(operator_id) or "wecom_callback",
         before_snapshot=_member_snapshot(serialized_member),
         after_snapshot=_member_snapshot(serialized_member),
-        remark=f"task_id={int(task_result['task_id'])}",
+        remark="official_send_welcome_msg",
     )
     return {
         "attempted": True,
         "sent": True,
-        "task_id": int(task_result["task_id"]),
-        "wecom_result": dict(task_result.get("wecom_result") or {}),
+        "via": "send_welcome_msg",
+        "wecom_result": dict(wecom_result or {}),
     }
 
 
@@ -1001,7 +1009,7 @@ def _default_channel_field_statuses(
         if welcome_supported:
             welcome_status = "applied" if generated else "pending"
             welcome_detail = (
-                "欢迎语会在客户扫码并成功添加好友后自动发送。"
+                "欢迎语会在企微回调携带 welcome_code 时，通过官方 send_welcome_msg 自动发送。"
                 if generated
                 else "保存后需重新生成默认二维码，欢迎语能力才会绑定到当前默认渠道。"
             )
@@ -2527,7 +2535,12 @@ def handle_qrcode_enter_from_callback(
             remark="member already won; qrcode entry only recorded",
         )
         welcome_result = (
-            _send_channel_welcome_message(member=saved, channel=channel, operator_id=operator_id)
+            _send_channel_welcome_message(
+                member=saved,
+                channel=channel,
+                payload_json=payload_json,
+                operator_id=operator_id,
+            )
             if send_welcome_message
             else {"attempted": False, "sent": False, "reason": "disabled"}
         )
@@ -2543,7 +2556,12 @@ def handle_qrcode_enter_from_callback(
         after_snapshot=_member_snapshot(saved),
     )
     welcome_result = (
-        _send_channel_welcome_message(member=saved, channel=channel, operator_id=operator_id)
+        _send_channel_welcome_message(
+            member=saved,
+            channel=channel,
+            payload_json=payload_json,
+            operator_id=operator_id,
+        )
         if send_welcome_message
         else {"attempted": False, "sent": False, "reason": "disabled"}
     )

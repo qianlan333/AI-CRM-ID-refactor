@@ -234,6 +234,9 @@ class WeComClient:
     def create_group_message_task(self, payload: dict) -> dict:
         return self.post("/cgi-bin/externalcontact/add_msg_template", payload)
 
+    def send_welcome_msg(self, payload: dict) -> dict:
+        return self.post("/cgi-bin/externalcontact/send_welcome_msg", payload)
+
     def create_moment_task(self, payload: dict) -> dict:
         return self.post("/cgi-bin/externalcontact/add_moment_task", payload)
 
