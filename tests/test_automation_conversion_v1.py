@@ -6,17 +6,25 @@ import re
 from io import BytesIO
 
 import pytest
+import requests
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.domains.automation_conversion.agents.llm_client import (
+    DeepSeekClientError,
+    call_deepseek_agent,
+)
 from wecom_ability_service.domains.automation_conversion.service import (
     ensure_sop_v1_defaults,
     get_member_detail,
+    get_model_infra_payload,
     record_sop_pool_entry,
     run_due_reply_monitor,
     run_due_sop,
     run_message_activity_sync,
     run_reply_monitor_capture,
+    save_model_infra_prompt,
+    save_model_infra_settings,
     save_sop_v1_pool_config,
     save_reply_monitor_enabled,
     save_sop_v1_template,
@@ -233,6 +241,24 @@ def _configure_message_activity_db(app) -> None:
     app.config["MESSAGE_ACTIVITY_DB_NAME"] = "lobster"
     app.config["MESSAGE_ACTIVITY_DB_USER"] = "lobster_user"
     app.config["MESSAGE_ACTIVITY_DB_PASS"] = "lobster_pass"
+
+
+class _FakeDeepSeekResponse:
+    def __init__(
+        self,
+        *,
+        status_code: int = 200,
+        json_data: dict[str, object] | None = None,
+        text: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self._json_data = dict(json_data or {})
+        self.text = text
+        self.headers = dict(headers or {})
+
+    def json(self) -> dict[str, object]:
+        return dict(self._json_data)
 
 
 def _configure_reply_monitor(
@@ -1824,6 +1850,219 @@ def test_automation_conversion_settings_page_renders_message_activity_sync_secti
     assert response.status_code == 200
     assert "消息活跃同步" in html
     assert "立即刷新一次" in html
+
+
+def test_model_infra_settings_save_and_mask_deepseek_api_key(app, client):
+    response = client.post(
+        "/api/admin/automation-conversion/model-infra/settings",
+        json={
+            "enabled": True,
+            "api_key": "dsk-automation-secret-12345",
+            "base_url": "https://api.deepseek.com",
+            "router_model": "deepseek-router-x",
+            "execution_model": "deepseek-execution-x",
+            "timeout_seconds": 45,
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["model_infra"]["deepseek"] == {
+        "enabled": True,
+        "api_key_configured": True,
+        "api_key_masked": "dsk***45",
+        "base_url": "https://api.deepseek.com",
+        "router_model": "deepseek-router-x",
+        "execution_model": "deepseek-execution-x",
+        "timeout_seconds": 45,
+        "updated_at": payload["model_infra"]["deepseek"]["updated_at"],
+    }
+
+    with app.app_context():
+        stored_key = get_db().execute(
+            "SELECT value FROM app_settings WHERE key = 'DEEPSEEK_API_KEY'"
+        ).fetchone()["value"]
+        assert stored_key == "dsk-automation-secret-12345"
+
+    page = client.get("/admin/automation-conversion/model-infra")
+    html = page.get_data(as_text=True)
+
+    assert page.status_code == 200
+    assert "DeepSeek 配置" in html
+    assert "dsk-automation-secret-12345" not in html
+    assert "dsk***45" in html
+
+
+def test_model_infra_prompt_registry_seeds_and_saves_all_agent_prompts(app):
+    expected_codes = [
+        "central_router_agent",
+        "welcome_agent",
+        "pricing_agent",
+        "proof_agent",
+        "closing_agent",
+    ]
+
+    with app.app_context():
+        initial_payload = get_model_infra_payload()
+        assert [item["agent_code"] for item in initial_payload["prompts"]] == expected_codes
+
+        saved_prompts = {}
+        for agent_code in expected_codes:
+            saved_prompts[agent_code] = save_model_infra_prompt(
+                agent_code=agent_code,
+                display_name=f"{agent_code}-display",
+                prompt_text=f"{agent_code} prompt text v2",
+                enabled=agent_code != "proof_agent",
+            )
+
+        payload = get_model_infra_payload()
+        rows = get_db().execute(
+            "SELECT agent_code, display_name, prompt_text, enabled, version FROM automation_agent_prompt_registry ORDER BY agent_code ASC"
+        ).fetchall()
+
+    prompt_map = {item["agent_code"]: item for item in payload["prompts"]}
+    assert set(prompt_map.keys()) == set(expected_codes)
+    assert len(rows) == 5
+    for agent_code in expected_codes:
+        assert saved_prompts[agent_code]["agent_code"] == agent_code
+        assert saved_prompts[agent_code]["display_name"] == f"{agent_code}-display"
+        assert saved_prompts[agent_code]["prompt_text"] == f"{agent_code} prompt text v2"
+        assert saved_prompts[agent_code]["enabled"] is (agent_code != "proof_agent")
+        assert saved_prompts[agent_code]["version"] == 2
+        assert prompt_map[agent_code]["prompt_text"] == f"{agent_code} prompt text v2"
+
+
+def test_deepseek_llm_client_success_logs_and_parses_json(app, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        captured.update(
+            {
+                "url": url,
+                "headers": dict(headers or {}),
+                "json": dict(json or {}),
+                "timeout": timeout,
+            }
+        )
+        return _FakeDeepSeekResponse(
+            headers={"x-request-id": "deepseek-req-001"},
+            json_data={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json_module.dumps({"route": "welcome_agent", "confidence": 0.91})
+                        }
+                    }
+                ]
+            },
+        )
+
+    json_module = json
+    monkeypatch.setattr("requests.post", _fake_post)
+
+    with app.app_context():
+        save_model_infra_settings(
+            {
+                "enabled": True,
+                "api_key": "dsk-routing-key-556677",
+                "base_url": "https://api.deepseek.com",
+                "router_model": "deepseek-router-v1",
+                "execution_model": "deepseek-execution-v1",
+                "timeout_seconds": 21,
+            }
+        )
+        result = call_deepseek_agent(
+            agent_code="central_router_agent",
+            system_prompt="router system prompt",
+            user_input="客户刚回复了价格问题",
+            json_output=True,
+        )
+        row = get_db().execute(
+            """
+            SELECT agent_code, model_name, request_id, status, latency_ms, error_message
+            FROM automation_agent_llm_call_log
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert result["ok"] is True
+    assert result["request_id"] == "deepseek-req-001"
+    assert result["model_name"] == "deepseek-router-v1"
+    assert result["parsed_output"] == {"route": "welcome_agent", "confidence": 0.91}
+    assert captured["url"] == "https://api.deepseek.com/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer dsk-routing-key-556677"
+    assert captured["json"]["model"] == "deepseek-router-v1"
+    assert captured["json"]["response_format"] == {"type": "json_object"}
+    assert captured["timeout"] == 21
+    assert dict(row)["status"] == "success"
+    assert dict(row)["agent_code"] == "central_router_agent"
+    assert dict(row)["model_name"] == "deepseek-router-v1"
+    assert dict(row)["request_id"] == "deepseek-req-001"
+    assert dict(row)["error_message"] == ""
+
+
+def test_deepseek_llm_client_request_error_is_logged(app, monkeypatch):
+    monkeypatch.setattr(
+        "requests.post",
+        lambda *args, **kwargs: (_ for _ in ()).throw(requests.RequestException("deepseek request timeout")),
+    )
+
+    with app.app_context():
+        save_model_infra_settings(
+            {
+                "enabled": True,
+                "api_key": "dsk-execution-key-778899",
+                "base_url": "https://api.deepseek.com",
+                "router_model": "deepseek-router-v2",
+                "execution_model": "deepseek-execution-v2",
+                "timeout_seconds": 18,
+            }
+        )
+        with pytest.raises(DeepSeekClientError, match="deepseek request timeout"):
+            call_deepseek_agent(
+                agent_code="pricing_agent",
+                system_prompt="pricing system prompt",
+                user_input="给我价格说明",
+                json_output=False,
+            )
+        row = get_db().execute(
+            """
+            SELECT agent_code, model_name, status, error_message
+            FROM automation_agent_llm_call_log
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert dict(row) == {
+        "agent_code": "pricing_agent",
+        "model_name": "deepseek-execution-v2",
+        "status": "request_error",
+        "error_message": "deepseek request timeout",
+    }
+
+
+def test_model_infra_page_renders_and_homepage_keeps_existing_sections(app, client):
+    model_infra_page = client.get("/admin/automation-conversion/model-infra")
+    model_infra_html = model_infra_page.get_data(as_text=True)
+
+    assert model_infra_page.status_code == 200
+    assert "DeepSeek 配置" in model_infra_html
+    assert "Prompt Registry" in model_infra_html
+    assert "中央路由 Agent" in model_infra_html
+    assert "欢迎接待 Agent" in model_infra_html
+    assert "最近模型调用日志" in model_infra_html
+    assert "最近执行结果" not in model_infra_html
+
+    home_page = client.get("/admin/automation-conversion")
+    home_html = home_page.get_data(as_text=True)
+
+    assert home_page.status_code == 200
+    assert "模型基础设施" in home_html
+    assert "消息活跃同步" in home_html
+    assert "自动接话监控" in home_html
 
 
 def test_automation_conversion_home_stage_cards_show_view_and_send_actions(app, client):

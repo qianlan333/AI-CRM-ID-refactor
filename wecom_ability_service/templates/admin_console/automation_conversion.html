@@ -18,6 +18,7 @@
       <p>这里只展示独立自动化成员表里的结果统计，不再展示规则说明、环境状态或单客试算。</p>
     </div>
     <div class="admin-toolbar">
+      <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_model_infra') }}">模型基础设施</a>
       <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_sop') }}">进入 SOP 管理</a>
       <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_settings') }}">进入设置页</a>
       <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_debug') }}">进入调试页</a>

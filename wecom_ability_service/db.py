@@ -858,6 +858,58 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
     )
     db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_agent_prompt_registry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_code TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL DEFAULT '',
+            prompt_text TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_agent_prompt_registry_enabled
+        ON automation_agent_prompt_registry (enabled, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_agent_prompt_registry_updated
+        ON automation_agent_prompt_registry (updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_agent_llm_call_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_code TEXT NOT NULL DEFAULT '',
+            model_name TEXT NOT NULL DEFAULT '',
+            request_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '',
+            latency_ms INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_agent_created
+        ON automation_agent_llm_call_log (agent_code, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_status_created
+        ON automation_agent_llm_call_log (status, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_stage_status ON automation_focus_send_batch (stage_key, status, id DESC)"
     )
     db.execute(
@@ -906,6 +958,12 @@ def _ensure_automation_sop_v1_seed_data() -> None:
     ensure_sop_v1_defaults()
 
 
+def _ensure_automation_agent_prompt_defaults() -> None:
+    from .domains.automation_conversion.service import ensure_agent_prompt_defaults
+
+    ensure_agent_prompt_defaults()
+
+
 def _ensure_sqlite_automation_sop_v2_columns(db) -> None:
     pool_config_columns = _sqlite_table_columns(db, "automation_sop_pool_config")
     if "effective_start_at" not in pool_config_columns:
@@ -946,6 +1004,7 @@ def _init_sqlite(db) -> None:
     _ensure_sqlite_automation_conversion_tables(db)
     _ensure_sqlite_automation_sop_v2_columns(db)
     _ensure_automation_sop_v1_seed_data()
+    _ensure_automation_agent_prompt_defaults()
     columns = _sqlite_table_columns(db, "archived_messages")
     if "chat_type" not in columns:
         db.execute("ALTER TABLE archived_messages ADD COLUMN chat_type TEXT NOT NULL DEFAULT 'private'")
@@ -1371,6 +1430,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)
     _ensure_automation_sop_v1_seed_data()
+    _ensure_automation_agent_prompt_defaults()
     db.execute("ALTER TABLE questionnaire_questions DROP CONSTRAINT IF EXISTS questionnaire_questions_type_check")
     db.execute(
         """
