@@ -21,12 +21,10 @@ from ...wecom_client import WeComClientError
 from ..automation_state.state_defs import (
     FOLLOWUP_SEGMENT_FOCUS as SHARED_FOLLOWUP_SEGMENT_FOCUS,
     FOLLOWUP_SEGMENT_NORMAL as SHARED_FOLLOWUP_SEGMENT_NORMAL,
-    FOCUS_POOL_KEYS as SHARED_FOCUS_POOL_KEYS,
     POOL_ACTIVE_FOCUS as SHARED_POOL_ACTIVE_FOCUS,
     POOL_ACTIVE_NORMAL as SHARED_POOL_ACTIVE_NORMAL,
     POOL_INACTIVE_FOCUS as SHARED_POOL_INACTIVE_FOCUS,
     POOL_INACTIVE_NORMAL as SHARED_POOL_INACTIVE_NORMAL,
-    POOL_LABELS as SHARED_POOL_LABELS,
     POOL_NEW_USER as SHARED_POOL_NEW_USER,
     POOL_SILENT as SHARED_POOL_SILENT,
 )
@@ -45,6 +43,7 @@ from .agents import (
     test_deepseek_connection,
 )
 from .message_activity_client import get_message_activity_db_status, query_message_activity_counts
+from . import local_projection
 from . import repo
 from .provider import load_channel_provider
 
@@ -85,8 +84,8 @@ POOL_INACTIVE_FOCUS = SHARED_POOL_INACTIVE_FOCUS
 POOL_ACTIVE_NORMAL = SHARED_POOL_ACTIVE_NORMAL
 POOL_ACTIVE_FOCUS = SHARED_POOL_ACTIVE_FOCUS
 POOL_SILENT = SHARED_POOL_SILENT
-POOL_WON = "won"
-POOL_REMOVED = "removed"
+POOL_WON = local_projection.POOL_WON
+POOL_REMOVED = local_projection.POOL_REMOVED
 
 FOLLOWUP_NORMAL = SHARED_FOLLOWUP_SEGMENT_NORMAL
 FOLLOWUP_FOCUS = SHARED_FOLLOWUP_SEGMENT_FOCUS
@@ -127,83 +126,22 @@ ACTION_LABELS = {
     "qrcode_welcome_failed": "扫码欢迎语发送失败",
 }
 
-POOL_LABELS = {
-    **SHARED_POOL_LABELS,
-    POOL_WON: "已成交",
-    POOL_REMOVED: "已移出",
-}
-
-MANUAL_SEND_ALLOWED_POOLS = {
-    POOL_NEW_USER,
-    POOL_INACTIVE_NORMAL,
-    POOL_ACTIVE_NORMAL,
-    POOL_SILENT,
-    POOL_WON,
-}
-
-STAGE_BY_POOL = {
-    POOL_NEW_USER: "new_user_wait_questionnaire",
-    POOL_INACTIVE_NORMAL: "inactive_normal_followup",
-    POOL_INACTIVE_FOCUS: "inactive_focus_followup",
-    POOL_ACTIVE_NORMAL: "active_normal_followup",
-    POOL_ACTIVE_FOCUS: "active_focus_followup",
-    POOL_SILENT: "silent_waiting",
-    POOL_WON: "won",
-    POOL_REMOVED: "removed",
-}
-
-TARGET_BY_POOL = {
-    POOL_NEW_USER: "submit_questionnaire",
-    POOL_INACTIVE_NORMAL: "activate",
-    POOL_INACTIVE_FOCUS: "focus_activate",
-    POOL_ACTIVE_NORMAL: "normal_followup",
-    POOL_ACTIVE_FOCUS: "focus_followup",
-    POOL_SILENT: "revive",
-    POOL_WON: "post_deal",
-    POOL_REMOVED: "none",
-}
-
-STAGE_LABELS = {
-    "new_user_wait_questionnaire": "等待提交问卷",
-    "inactive_normal_followup": "未激活普通跟进",
-    "inactive_focus_followup": "未激活重点跟进",
-    "active_normal_followup": "已激活普通跟进",
-    "active_focus_followup": "已激活重点跟进",
-    "silent_waiting": "沉默等待",
-    "won": "已成交",
-    "removed": "已移出",
-}
-
-TARGET_LABELS = {
-    "submit_questionnaire": "推动提交问卷",
-    "activate": "促活",
-    "focus_activate": "重点促活",
-    "normal_followup": "普通跟进",
-    "focus_followup": "重点跟进",
-    "revive": "唤醒",
-    "post_deal": "成交后维护",
-    "none": "无",
-}
-
-STAGE_DEFINITIONS = (
-    {"pool": POOL_NEW_USER, "route_key": "new-user", "label": "新用户池", "description": "已入池但还没完成问卷的客户。"},
-    {"pool": POOL_INACTIVE_NORMAL, "route_key": "inactive-normal", "label": "未激活普通池", "description": "问卷已提交，当前按普通跟进推进。"},
-    {"pool": POOL_INACTIVE_FOCUS, "route_key": "inactive-focus", "label": "未激活重点跟进池", "description": "问卷已提交，当前按重点跟进推进。"},
-    {"pool": POOL_ACTIVE_NORMAL, "route_key": "active-normal", "label": "激活普通池", "description": "已激活，当前按普通跟进推进。"},
-    {"pool": POOL_ACTIVE_FOCUS, "route_key": "active-focus", "label": "激活重点跟进池", "description": "已激活，当前按重点跟进推进。"},
-    {"pool": POOL_SILENT, "route_key": "silent", "label": "沉默池", "description": "达到沉默阈值后进入沉默池。"},
-    {"pool": POOL_WON, "route_key": "won", "label": "已成交", "description": "人工确认成交后进入成交池。"},
-)
-
-ROUTE_KEY_TO_POOL = {item["route_key"]: item["pool"] for item in STAGE_DEFINITIONS}
-POOL_TO_STAGE_DEF = {item["pool"]: item for item in STAGE_DEFINITIONS}
+POOL_LABELS = local_projection.POOL_LABELS
+MANUAL_SEND_ALLOWED_POOLS = local_projection.MANUAL_SEND_ALLOWED_POOLS
+STAGE_BY_POOL = local_projection.STAGE_BY_POOL
+TARGET_BY_POOL = local_projection.TARGET_BY_POOL
+STAGE_LABELS = local_projection.STAGE_LABELS
+TARGET_LABELS = local_projection.TARGET_LABELS
+STAGE_DEFINITIONS = local_projection.STAGE_DEFINITIONS
+ROUTE_KEY_TO_POOL = local_projection.ROUTE_KEY_TO_POOL
+POOL_TO_STAGE_DEF = local_projection.POOL_TO_STAGE_DEF
 MESSAGE_ACTIVITY_SYNC_POOLS = (
     POOL_INACTIVE_NORMAL,
     POOL_INACTIVE_FOCUS,
     POOL_ACTIVE_NORMAL,
     POOL_ACTIVE_FOCUS,
 )
-FOCUS_SEND_ALLOWED_POOLS = set(SHARED_FOCUS_POOL_KEYS)
+FOCUS_SEND_ALLOWED_POOLS = local_projection.FOCUS_SEND_ALLOWED_POOLS
 SOP_V1_ALLOWED_POOLS = (
     POOL_NEW_USER,
     POOL_INACTIVE_NORMAL,
@@ -314,7 +252,7 @@ def default_owner_staff_id() -> str:
 
 
 def _pool_label(pool: str) -> str:
-    return POOL_LABELS.get(_normalized_text(pool), _normalized_text(pool) or "未设置")
+    return local_projection.pool_label(pool)
 
 
 def _auto_start_window_payload(config: dict[str, Any]) -> dict[str, Any]:
@@ -331,27 +269,15 @@ def _auto_start_window_payload(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _manual_send_allowed_route_keys() -> set[str]:
-    return {definition["route_key"] for definition in STAGE_DEFINITIONS if definition["pool"] in MANUAL_SEND_ALLOWED_POOLS}
+    return local_projection.manual_send_allowed_route_keys()
 
 
 def _manual_send_stage_definition(route_key: str) -> dict[str, Any]:
-    normalized_route_key = _normalized_text(route_key)
-    pool = ROUTE_KEY_TO_POOL.get(normalized_route_key)
-    if not pool:
-        raise ValueError("invalid stage")
-    if pool not in MANUAL_SEND_ALLOWED_POOLS:
-        raise ValueError("focus stage must use focus send batches")
-    return dict(POOL_TO_STAGE_DEF.get(pool) or {})
+    return local_projection.manual_send_stage_definition(route_key)
 
 
 def _focus_send_stage_definition(route_key: str) -> dict[str, Any]:
-    normalized_route_key = _normalized_text(route_key)
-    pool = ROUTE_KEY_TO_POOL.get(normalized_route_key)
-    if not pool:
-        raise ValueError("invalid stage")
-    if pool not in FOCUS_SEND_ALLOWED_POOLS:
-        raise ValueError("stage does not support focus send batches")
-    return dict(POOL_TO_STAGE_DEF.get(pool) or {})
+    return local_projection.focus_send_stage_definition(route_key)
 
 
 def _normalize_manual_send_image_media_ids(image_media_ids: list[str] | None = None) -> list[str]:
@@ -882,19 +808,19 @@ def _focus_batch_item_status_label(value: str) -> str:
 
 
 def _stage_from_pool(pool: str) -> str:
-    return STAGE_BY_POOL.get(_normalized_text(pool), "removed")
+    return local_projection.stage_from_pool(pool)
 
 
 def _stage_label(stage: str) -> str:
-    return STAGE_LABELS.get(_normalized_text(stage), _normalized_text(stage) or "未设置")
+    return local_projection.stage_label(stage)
 
 
 def _target_from_pool(pool: str) -> str:
-    return TARGET_BY_POOL.get(_normalized_text(pool), "none")
+    return local_projection.target_from_pool(pool)
 
 
 def _target_label(target: str) -> str:
-    return TARGET_LABELS.get(_normalized_text(target), _normalized_text(target) or "无")
+    return local_projection.target_label(target)
 
 
 def _follow_type_label(value: str) -> str:
@@ -3111,21 +3037,10 @@ def get_member_detail(*, external_contact_id: str = "", phone: str = "") -> dict
 
 
 def _button_state(member: dict[str, Any]) -> dict[str, Any]:
-    current_pool = _normalized_text(member.get("current_pool"))
-    in_pool = bool(member.get("in_pool"))
-    won = current_pool == POOL_WON
-    ai_enabled = current_pool != POOL_REMOVED
-    states = {
-        "put_in_pool": {"enabled": (not in_pool) and (not won)},
-        "remove_from_pool": {"enabled": in_pool and not won},
-        "set_focus": {"enabled": in_pool and not won},
-        "set_normal": {"enabled": in_pool and not won},
-        "mark_won": {"enabled": in_pool and not won},
-        "unmark_won": {"enabled": won},
-        "push_openclaw": {"enabled": ai_enabled},
-        "ai_push": {"enabled": ai_enabled},
-    }
-    return states
+    return local_projection.button_state(
+        current_pool=_normalized_text(member.get("current_pool")),
+        in_pool=bool(member.get("in_pool")),
+    )
 
 
 def _mutate_member(
