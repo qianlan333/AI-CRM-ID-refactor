@@ -1273,6 +1273,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_reply_monitor_queue_active_exter
 ON automation_reply_monitor_queue (external_userid)
 WHERE status IN ('pending', 'deferred_quiet_hours', 'paused') AND external_userid <> '';
 
+CREATE TABLE IF NOT EXISTS automation_reply_monitor_route_log (
+    id BIGSERIAL PRIMARY KEY,
+    queue_id BIGINT REFERENCES automation_reply_monitor_queue(id) ON DELETE SET NULL,
+    external_userid TEXT NOT NULL DEFAULT '',
+    router_request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    router_response_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    agent_code TEXT NOT NULL DEFAULT '',
+    parse_status TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_reply_monitor_route_log_queue_created
+ON automation_reply_monitor_route_log (queue_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_reply_monitor_route_log_external_created
+ON automation_reply_monitor_route_log (external_userid, created_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_agent_prompt_registry (
     id BIGSERIAL PRIMARY KEY,
     agent_code TEXT NOT NULL UNIQUE,
@@ -1306,6 +1324,28 @@ ON automation_agent_llm_call_log (agent_code, created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_status_created
 ON automation_agent_llm_call_log (status, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_execution_result (
+  id BIGSERIAL PRIMARY KEY,
+  route_log_id BIGINT NOT NULL DEFAULT 0,
+  external_userid TEXT NOT NULL DEFAULT '',
+  agent_code TEXT NOT NULL DEFAULT '',
+  prompt_version INTEGER NOT NULL DEFAULT 1,
+  reply_text TEXT NOT NULL DEFAULT '',
+  input_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_execution_result_route_created
+ON automation_agent_execution_result (route_log_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_execution_result_external_created
+ON automation_agent_execution_result (external_userid, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_execution_result_status_created
+ON automation_agent_execution_result (status, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
     id BIGSERIAL PRIMARY KEY,
