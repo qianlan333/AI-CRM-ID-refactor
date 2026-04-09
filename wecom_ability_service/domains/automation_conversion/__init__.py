@@ -3,8 +3,10 @@ from __future__ import annotations
 from .service import (
     AI_PUSH_COOLDOWN_SECONDS,
     FOCUS_SEND_INTERVAL_SECONDS,
+    append_sop_v1_template_day,
     create_focus_send_batch,
     default_owner_staff_id,
+    delete_sop_v1_template_day,
     ensure_sop_v1_defaults,
     generate_default_channel_qr,
     get_debug_payload,
@@ -41,8 +43,10 @@ from .service import (
 __all__ = [
     "AI_PUSH_COOLDOWN_SECONDS",
     "FOCUS_SEND_INTERVAL_SECONDS",
+    "append_sop_v1_template_day",
     "create_focus_send_batch",
     "default_owner_staff_id",
+    "delete_sop_v1_template_day",
     "ensure_sop_v1_defaults",
     "generate_default_channel_qr",
     "get_debug_payload",

@@ -237,17 +237,13 @@ def _configure_sop_pool(
     *,
     pool_key: str,
     enabled: bool,
-    max_day_count: int = 5,
     send_time: str = "09:00",
-    timezone: str = "Asia/Shanghai",
 ) -> dict[str, object]:
     with app.app_context():
         return save_sop_v1_pool_config(
             pool_key=pool_key,
             enabled=enabled,
-            max_day_count=max_day_count,
             send_time=send_time,
-            timezone=timezone,
         )
 
 
@@ -255,19 +251,33 @@ def _configure_only_sop_pool(
     app,
     *,
     pool_key: str,
-    max_day_count: int = 5,
     send_time: str = "09:00",
-    timezone: str = "Asia/Shanghai",
 ) -> None:
     for candidate_pool in ("new_user", "inactive_normal", "active_normal"):
         _configure_sop_pool(
             app,
             pool_key=candidate_pool,
             enabled=candidate_pool == pool_key,
-            max_day_count=max_day_count if candidate_pool == pool_key else 5,
             send_time=send_time if candidate_pool == pool_key else "09:00",
-            timezone=timezone,
         )
+
+
+def _set_sop_pool_effective_start(app, *, pool_key: str, effective_start_at: str) -> None:
+    with app.app_context():
+        get_db().execute(
+            """
+            UPDATE automation_sop_pool_config
+            SET effective_start_at = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE pool_key = ?
+            """,
+            (effective_start_at, pool_key),
+        )
+        get_db().commit()
+
+
+def _test_png_data_url() -> str:
+    encoded = base64.b64encode(_test_png_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def _save_sop_template(
@@ -2461,117 +2471,177 @@ def test_automation_conversion_settings_page_shows_real_message_activity_env_nam
     assert ">failed<" not in html
 
 
-def test_sop_v1_defaults_seed_three_pool_configs_and_templates(app):
+def test_sop_v1_defaults_seed_three_pool_configs_and_day1_only(app):
     with app.app_context():
         payload = ensure_sop_v1_defaults()
         configs = {item["pool_key"]: item for item in payload["configs"]}
 
     assert set(configs.keys()) == {"new_user", "inactive_normal", "active_normal"}
     assert all(config["enabled"] is True for config in configs.values())
-    assert all(config["max_day_count"] == 5 for config in configs.values())
     assert all(config["send_time"] == "09:00" for config in configs.values())
-    assert all(len(payload["templates"][pool_key]) == 5 for pool_key in configs)
-
-
-def test_sop_pool_config_expands_templates_when_max_day_count_grows(app):
-    _configure_sop_pool(app, pool_key="new_user", enabled=True, max_day_count=5)
+    assert all(config["max_day_count"] == 1 for config in configs.values())
+    assert all(len(payload["templates"][pool_key]) == 1 for pool_key in configs)
+    assert all(payload["templates"][pool_key][0]["day_index"] == 1 for pool_key in configs)
 
     with app.app_context():
-        before_days = [
-            row["day_index"]
+        timezones = [
+            row["timezone"]
             for row in get_db().execute(
-                "SELECT day_index FROM automation_sop_template WHERE pool_key = ? ORDER BY day_index ASC",
-                ("new_user",),
+                "SELECT timezone FROM automation_sop_pool_config ORDER BY pool_key ASC"
             ).fetchall()
         ]
-    assert before_days == [1, 2, 3, 4, 5]
+    assert timezones == ["Asia/Shanghai", "Asia/Shanghai", "Asia/Shanghai"]
 
-    _configure_sop_pool(app, pool_key="new_user", enabled=True, max_day_count=7)
+
+def test_admin_automation_conversion_sop_page_uses_pool_cards_and_day_tabs_without_legacy_rules(app, client):
+    with app.app_context():
+        ensure_sop_v1_defaults()
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_sop_batch (
+                pool_key, day_index, template_id, scheduled_for, status,
+                total_count, success_count, skipped_count, failed_count, summary_json,
+                created_at, updated_at
+            )
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "inactive_normal",
+                1,
+                "2026-04-08 09:00:00",
+                "finished",
+                8,
+                5,
+                2,
+                1,
+                json.dumps({"source": "test"}, ensure_ascii=False),
+            ),
+        )
+        db.commit()
+
+    response = client.get("/admin/automation-conversion/sop", query_string={"pool": "inactive_normal", "day": 1})
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "自动 SOP 管理" in html
+    assert "只覆盖新用户池、未激活普通池、激活普通池" in html
+    assert "新用户池" in html
+    assert "未激活普通池" in html
+    assert "激活普通池" in html
+    assert "新增一天" in html
+    assert "day1" in html
+    assert "保存池子配置" in html
+    assert "成功 5 / 跳过 2 / 失败 1" in html
+    assert "暂无执行记录" in html
+    assert "重复进同池不重来" not in html
+    assert "离池期间错过的 SOP 不补发" not in html
+    assert "最近 SOP 执行批次" not in html
+    assert "最大 day 数" not in html
+    assert 'name="timezone"' not in html
+
+
+def test_api_admin_automation_conversion_sop_config_no_timezone_required(app, client):
+    response = client.put(
+        "/api/admin/automation-conversion/sop/config/new_user",
+        json={"enabled": False, "send_time": "08:30"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["config"]["pool_key"] == "new_user"
+    assert payload["config"]["enabled"] is False
+    assert payload["config"]["send_time"] == "08:30"
+    assert payload["template_count"] == 1
+
+    listing = client.get("/api/admin/automation-conversion/sop/config")
+    listing_payload = listing.get_json()
+    config_by_pool = {item["pool_key"]: item for item in listing_payload["configs"]}
+    assert config_by_pool["new_user"]["send_time"] == "08:30"
 
     with app.app_context():
-        rows = get_db().execute(
-            "SELECT day_index, content, images_json FROM automation_sop_template WHERE pool_key = ? ORDER BY day_index ASC",
+        row = get_db().execute(
+            "SELECT timezone FROM automation_sop_pool_config WHERE pool_key = ?",
             ("new_user",),
-        ).fetchall()
-        days = [row["day_index"] for row in rows]
-        extra_templates = {row["day_index"]: row for row in rows if row["day_index"] in {6, 7}}
-
-    assert days == [1, 2, 3, 4, 5, 6, 7]
-    assert extra_templates[6]["content"] == ""
-    assert json.loads(extra_templates[6]["images_json"]) == []
-    assert extra_templates[7]["content"] == ""
-    assert json.loads(extra_templates[7]["images_json"]) == []
+        ).fetchone()
+    assert row["timezone"] == "Asia/Shanghai"
 
 
-def test_sop_pool_config_does_not_delete_high_day_templates_when_max_day_count_shrinks(app):
-    _configure_sop_pool(app, pool_key="active_normal", enabled=True, max_day_count=7)
-    _save_sop_template(app, pool_key="active_normal", day_index=6, content="day6 内容")
-    _save_sop_template(app, pool_key="active_normal", day_index=7, content="day7 内容")
+def test_api_admin_automation_conversion_sop_template_save_reads_back_structured_local_images(app, client):
+    local_image = {
+        "file_name": "welcome.png",
+        "content_type": "image/png",
+        "data_url": _test_png_data_url(),
+    }
+    response = client.put(
+        "/api/admin/automation-conversion/sop/templates/new_user/1",
+        json={
+            "content": "day1 欢迎文案",
+            "enabled": True,
+            "images_json": [local_image],
+        },
+    )
 
-    _configure_sop_pool(app, pool_key="active_normal", enabled=True, max_day_count=5)
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["template"]["content"] == "day1 欢迎文案"
+    assert payload["template"]["image_count"] == 1
+    assert payload["template"]["images_json"][0]["file_name"] == "welcome.png"
+    assert payload["template"]["images_json"][0]["data_url"] == local_image["data_url"]
+    assert payload["template"]["images_json"][0]["preview_url"] == local_image["data_url"]
+
+    templates_response = client.get("/api/admin/automation-conversion/sop/templates/new_user", query_string={"day": 1})
+    templates_payload = templates_response.get_json()
+    assert templates_response.status_code == 200
+    assert templates_payload["selected_template"]["images_json"][0]["file_name"] == "welcome.png"
+
+    with app.app_context():
+        raw_row = get_db().execute(
+            "SELECT images_json FROM automation_sop_template WHERE pool_key = ? AND day_index = ?",
+            ("new_user", 1),
+        ).fetchone()
+    assert json.loads(raw_row["images_json"]) == [local_image]
+
+
+def test_api_admin_automation_conversion_sop_delete_day_reorders_following_templates(app, client):
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1")
+    _save_sop_template(app, pool_key="new_user", day_index=2, content="day2")
+    _save_sop_template(app, pool_key="new_user", day_index=3, content="day3")
+    _save_sop_template(app, pool_key="new_user", day_index=4, content="day4")
+
+    response = client.delete("/api/admin/automation-conversion/sop/templates/new_user/2")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["template_count"] == 3
+    assert payload["selected_day_index"] == 2
+    assert payload["selected_template"]["content"] == "day3"
 
     with app.app_context():
         rows = get_db().execute(
             "SELECT day_index, content FROM automation_sop_template WHERE pool_key = ? ORDER BY day_index ASC",
-            ("active_normal",),
+            ("new_user",),
         ).fetchall()
 
-    assert [row["day_index"] for row in rows] == [1, 2, 3, 4, 5, 6, 7]
-    assert {row["day_index"]: row["content"] for row in rows}[6] == "day6 内容"
-    assert {row["day_index"]: row["content"] for row in rows}[7] == "day7 内容"
+    assert [(row["day_index"], row["content"]) for row in rows] == [
+        (1, "day1"),
+        (2, "day3"),
+        (3, "day4"),
+    ]
 
 
-def test_sop_progress_is_unique_and_reentry_preserves_last_sent_day(app):
-    _seed_contact(app, external_userid="wm_sop_progress_001", mobile="13800009501", owner_userid="sales_sop", customer_name="SOP 进度客户")
-    _seed_automation_member(
-        app,
-        external_contact_id="wm_sop_progress_001",
-        phone="13800009501",
-        owner_staff_id="sales_sop",
-        current_pool="new_user",
-        activation_status="inactive",
-        questionnaire_status="pending",
-        questionnaire_result="unknown",
-        decision_source="system",
-        joined_at="2026-04-05 08:00:00",
-    )
-
-    with app.app_context():
-        member_id = get_db().execute(
-            "SELECT id FROM automation_member WHERE external_contact_id = ?",
-            ("wm_sop_progress_001",),
-        ).fetchone()["id"]
-        first = record_sop_pool_entry(member_id=member_id, pool_key="new_user", entered_at="2026-04-05 08:00:00")
-        get_db().execute(
-            """
-            UPDATE automation_sop_progress
-            SET last_sent_day = 2,
-                last_sent_at = '2026-04-06 09:00:00'
-            WHERE id = ?
-            """,
-            (first["id"],),
-        )
-        get_db().commit()
-        second = record_sop_pool_entry(member_id=member_id, pool_key="new_user", entered_at="2026-04-10 08:30:00")
-        row = get_db().execute(
-            "SELECT COUNT(*) AS total FROM automation_sop_progress WHERE member_id = ? AND pool_key = ?",
-            (member_id, "new_user"),
-        ).fetchone()
-
-    assert row["total"] == 1
-    assert first["id"] == second["id"]
-    assert second["first_entered_at"] == "2026-04-05 08:00:00"
-    assert second["last_entered_at"] == "2026-04-10 08:30:00"
-    assert second["last_sent_day"] == 2
-
-
-def test_sop_run_due_sends_day1_when_entered_before_send_time(app, monkeypatch):
+def test_sop_run_due_uses_natural_calendar_day_two_after_entry(app, monkeypatch):
     _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
-    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
-    _seed_contact(app, external_userid="wm_sop_day1_early", mobile="13800009511", owner_userid="sales_sop", customer_name="SOP Day1 提前客户")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎")
+    _save_sop_template(app, pool_key="new_user", day_index=2, content="day2 跟进")
+    _seed_contact(app, external_userid="wm_sop_day2_001", mobile="13800009511", owner_userid="sales_sop", customer_name="SOP Day2 客户")
     _seed_automation_member(
         app,
-        external_contact_id="wm_sop_day1_early",
+        external_contact_id="wm_sop_day2_001",
         phone="13800009511",
         owner_staff_id="sales_sop",
         current_pool="new_user",
@@ -2581,7 +2651,7 @@ def test_sop_run_due_sends_day1_when_entered_before_send_time(app, monkeypatch):
         decision_source="system",
         joined_at="2026-04-08 08:30:00",
     )
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 09:05:00")
     dispatched: list[dict[str, object]] = []
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
@@ -2590,23 +2660,24 @@ def test_sop_run_due_sends_day1_when_entered_before_send_time(app, monkeypatch):
 
     with app.app_context():
         result = run_due_sop(operator_id="sop-runner", operator_type="system")
+        batch = get_db().execute("SELECT day_index FROM automation_sop_batch ORDER BY id DESC LIMIT 1").fetchone()
         progress = get_db().execute(
-            "SELECT last_sent_day, last_sent_at FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
+            "SELECT sop_anchor_date, last_sent_day, last_sent_at FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
     assert result["ok"] is True
-    assert result["scanned_pool_count"] == 1
     assert result["created_batch_count"] == 1
     assert result["total_success_count"] == 1
-    assert result["total_skipped_count"] == 0
-    assert dispatched[0]["external_userid"] == ["wm_sop_day1_early"]
-    assert dispatched[0]["sender"] == "QianLan"
-    assert progress["last_sent_day"] == 1
-    assert progress["last_sent_at"] == "2026-04-08 09:05:00"
+    assert dispatched[0]["text"]["content"] == "day2 跟进"
+    assert batch["day_index"] == 2
+    assert progress["sop_anchor_date"] == "2026-04-08"
+    assert progress["last_sent_day"] == 2
+    assert progress["last_sent_at"] == "2026-04-09 09:05:00"
 
 
-def test_sop_run_due_waits_until_next_day_when_entered_at_or_after_send_time(app, monkeypatch):
+def test_sop_run_due_entry_after_send_time_starts_day1_next_day(app, monkeypatch):
     _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
     _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
     _seed_contact(app, external_userid="wm_sop_day1_late", mobile="13800009512", owner_userid="sales_sop", customer_name="SOP Day1 晚入池")
     _seed_automation_member(
@@ -2630,30 +2701,68 @@ def test_sop_run_due_waits_until_next_day_when_entered_at_or_after_send_time(app
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
     with app.app_context():
         first = run_due_sop(operator_id="sop-runner", operator_type="system")
-        first_items = get_db().execute(
-            "SELECT status, error_message FROM automation_sop_batch_item ORDER BY id ASC"
-        ).fetchall()
 
+    assert first["created_batch_count"] == 0
     assert first["total_success_count"] == 0
-    assert first["total_skipped_count"] == 1
     assert dispatched == []
-    assert [(row["status"], row["error_message"]) for row in first_items] == [("skipped", "send_time_not_reached")]
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 09:05:00")
     with app.app_context():
         second = run_due_sop(operator_id="sop-runner", operator_type="system")
         progress = get_db().execute(
-            "SELECT last_sent_day, last_sent_at FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
+            "SELECT sop_anchor_date, last_sent_day FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
     assert second["total_success_count"] == 1
     assert len(dispatched) == 1
+    assert progress["sop_anchor_date"] == "2026-04-09"
     assert progress["last_sent_day"] == 1
-    assert progress["last_sent_at"] == "2026-04-09 09:05:00"
 
 
-def test_sop_run_due_reentry_continues_from_last_sent_day_without_backfill(app, monkeypatch):
+def test_record_sop_pool_entry_reentry_preserves_anchor_date(app):
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _seed_contact(app, external_userid="wm_sop_progress_001", mobile="13800009501", owner_userid="sales_sop", customer_name="SOP 进度客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_progress_001",
+        phone="13800009501",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+
+    with app.app_context():
+        member_id = get_db().execute(
+            "SELECT id FROM automation_member WHERE external_contact_id = ?",
+            ("wm_sop_progress_001",),
+        ).fetchone()["id"]
+        first = record_sop_pool_entry(member_id=member_id, pool_key="new_user", entered_at="2026-04-08 08:00:00")
+        second = record_sop_pool_entry(member_id=member_id, pool_key="new_user", entered_at="2026-04-10 08:30:00")
+        row = get_db().execute(
+            """
+            SELECT COUNT(*) AS total, sop_anchor_date, first_effective_in_pool_at, last_in_pool_at
+            FROM automation_sop_progress
+            WHERE member_id = ? AND pool_key = ?
+            """,
+            (member_id, "new_user"),
+        ).fetchone()
+
+    assert first["id"] == second["id"]
+    assert row["total"] == 1
+    assert row["sop_anchor_date"] == "2026-04-08"
+    assert row["first_effective_in_pool_at"] == "2026-04-08 08:00:00"
+    assert row["last_in_pool_at"] == "2026-04-10 08:30:00"
+
+
+def test_sop_run_due_reentry_keeps_anchor_and_does_not_backfill(app, monkeypatch):
     _configure_only_sop_pool(app, pool_key="inactive_normal", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="inactive_normal", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="inactive_normal", day_index=2, content="")
     _save_sop_template(app, pool_key="inactive_normal", day_index=3, content="day3 跟进")
     _seed_contact(app, external_userid="wm_sop_reenter_001", mobile="13800009521", owner_userid="sales_sop", customer_name="SOP 重入客户")
     _seed_automation_member(
@@ -2666,7 +2775,7 @@ def test_sop_run_due_reentry_continues_from_last_sent_day_without_backfill(app, 
         questionnaire_status="submitted",
         questionnaire_result="normal",
         decision_source="questionnaire",
-        joined_at="2026-04-05 08:00:00",
+        joined_at="2026-04-08 08:00:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-10 09:05:00")
     dispatched: list[dict[str, object]] = []
@@ -2680,235 +2789,30 @@ def test_sop_run_due_reentry_continues_from_last_sent_day_without_backfill(app, 
             "SELECT id FROM automation_member WHERE external_contact_id = ?",
             ("wm_sop_reenter_001",),
         ).fetchone()["id"]
-        progress = record_sop_pool_entry(member_id=member_id, pool_key="inactive_normal", entered_at="2026-04-05 08:00:00")
-        get_db().execute(
-            """
-            UPDATE automation_sop_progress
-            SET last_sent_day = 2,
-                last_sent_at = '2026-04-06 09:00:00',
-                last_entered_at = '2026-04-10 08:30:00'
-            WHERE id = ?
-            """,
-            (progress["id"],),
-        )
-        get_db().commit()
+        record_sop_pool_entry(member_id=member_id, pool_key="inactive_normal", entered_at="2026-04-08 08:00:00")
+        record_sop_pool_entry(member_id=member_id, pool_key="inactive_normal", entered_at="2026-04-10 08:30:00")
         result = run_due_sop(operator_id="sop-runner", operator_type="system")
-        updated = get_db().execute(
-            "SELECT last_sent_day, last_sent_at FROM automation_sop_progress WHERE id = ?",
-            (progress["id"],),
+        batch = get_db().execute("SELECT day_index FROM automation_sop_batch ORDER BY id DESC LIMIT 1").fetchone()
+        progress = get_db().execute(
+            "SELECT sop_anchor_date, last_sent_day, last_in_pool_at FROM automation_sop_progress WHERE member_id = ? AND pool_key = ?",
+            (member_id, "inactive_normal"),
         ).fetchone()
-        batches = get_db().execute(
-            "SELECT day_index FROM automation_sop_batch ORDER BY id ASC"
-        ).fetchall()
 
     assert result["total_success_count"] == 1
-    assert len(dispatched) == 1
-    assert updated["last_sent_day"] == 3
-    assert updated["last_sent_at"] == "2026-04-10 09:05:00"
-    assert [row["day_index"] for row in batches] == [3]
+    assert dispatched[0]["text"]["content"] == "day3 跟进"
+    assert batch["day_index"] == 3
+    assert progress["sop_anchor_date"] == "2026-04-08"
+    assert progress["last_sent_day"] == 3
+    assert progress["last_in_pool_at"] == "2026-04-10 08:30:00"
 
 
-def test_sop_run_due_skips_when_success_for_same_member_pool_day_already_exists(app, monkeypatch):
-    _configure_only_sop_pool(app, pool_key="active_normal", send_time="09:00")
-    _save_sop_template(app, pool_key="active_normal", day_index=1, content="day1 激活跟进")
-    _seed_contact(app, external_userid="wm_sop_dup_001", mobile="13800009531", owner_userid="sales_sop", customer_name="SOP 去重客户")
-    _seed_automation_member(
-        app,
-        external_contact_id="wm_sop_dup_001",
-        phone="13800009531",
-        owner_staff_id="sales_sop",
-        current_pool="active_normal",
-        activation_status="active",
-        questionnaire_status="submitted",
-        questionnaire_result="normal",
-        decision_source="questionnaire",
-        joined_at="2026-04-08 08:00:00",
-    )
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 804, "wecom_result": {"msgid": "msg-804"}},
-    )
-
-    with app.app_context():
-        member_id = get_db().execute(
-            "SELECT id FROM automation_member WHERE external_contact_id = ?",
-            ("wm_sop_dup_001",),
-        ).fetchone()["id"]
-        progress = record_sop_pool_entry(member_id=member_id, pool_key="active_normal", entered_at="2026-04-08 08:00:00")
-        get_db().execute(
-            """
-            INSERT INTO automation_sop_batch (
-                pool_key, day_index, template_id, scheduled_for, status, total_count, success_count, skipped_count, failed_count, summary_json, created_at, updated_at
-            )
-            VALUES ('active_normal', 1, NULL, '2026-04-08 09:00:00', 'finished', 1, 1, 0, 0, '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """
-        )
-        batch_id = get_db().execute("SELECT MAX(id) AS id FROM automation_sop_batch").fetchone()["id"]
-        get_db().execute(
-            """
-            INSERT INTO automation_sop_batch_item (
-                batch_id, member_id, pool_key, day_index, external_userid, status, error_message, sent_record_id, created_at, updated_at
-            )
-            VALUES (?, ?, 'active_normal', 1, 'wm_sop_dup_001', 'success', '', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            (batch_id, member_id),
-        )
-        get_db().execute(
-            "UPDATE automation_sop_progress SET last_sent_day = 0, last_sent_at = '' WHERE id = ?",
-            (progress["id"],),
-        )
-        get_db().commit()
-        result = run_due_sop(operator_id="sop-runner", operator_type="system")
-        items = get_db().execute(
-            "SELECT status, error_message FROM automation_sop_batch_item WHERE batch_id > ? ORDER BY id ASC",
-            (batch_id,),
-        ).fetchall()
-
-    assert result["total_success_count"] == 0
-    assert result["total_skipped_count"] == 1
-    assert dispatched == []
-    assert [(row["status"], row["error_message"]) for row in items] == [("skipped", "already_sent")]
-
-
-def test_sop_run_due_uses_live_pool_membership_and_skips_moved_out_member(app, monkeypatch):
-    _configure_only_sop_pool(app, pool_key="active_normal", send_time="09:00")
-    _save_sop_template(app, pool_key="active_normal", day_index=1, content="day1 激活跟进")
-    _seed_contact(app, external_userid="wm_sop_live_001", mobile="13800009541", owner_userid="sales_sop", customer_name="SOP live 客户")
-    _seed_automation_member(
-        app,
-        external_contact_id="wm_sop_live_001",
-        phone="13800009541",
-        owner_staff_id="sales_sop",
-        current_pool="active_normal",
-        activation_status="active",
-        questionnaire_status="submitted",
-        questionnaire_result="normal",
-        decision_source="questionnaire",
-        joined_at="2026-04-08 08:00:00",
-    )
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    original_get_member_by_id = __import__(
-        "wecom_ability_service.domains.automation_conversion.repo",
-        fromlist=["get_member_by_id"],
-    ).get_member_by_id
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: pytest.fail("should not dispatch when member moved out before send"),
-    )
-
-    def fake_get_member_by_id(member_id: int):
-        row = original_get_member_by_id(member_id)
-        if row and row.get("external_contact_id") == "wm_sop_live_001":
-            updated = dict(row)
-            updated["in_pool"] = 0
-            updated["current_pool"] = "removed"
-            return updated
-        return row
-
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.repo.get_member_by_id", fake_get_member_by_id)
-
-    with app.app_context():
-        result = run_due_sop(operator_id="sop-runner", operator_type="system")
-        items = get_db().execute(
-            "SELECT status, error_message FROM automation_sop_batch_item ORDER BY id ASC"
-        ).fetchall()
-
-    assert result["total_success_count"] == 0
-    assert result["total_skipped_count"] == 1
-    assert [(row["status"], row["error_message"]) for row in items] == [("skipped", "moved_out_of_pool")]
-
-
-def test_sop_run_due_rerun_is_idempotent_for_same_day(app, monkeypatch):
+def test_manual_send_does_not_change_sop_anchor_or_progress(app, client, monkeypatch):
     _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
-    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
-    _save_sop_template(app, pool_key="new_user", day_index=2, content="day2 继续跟进")
-    _seed_contact(app, external_userid="wm_sop_idem_001", mobile="13800009551", owner_userid="sales_sop", customer_name="SOP 幂等客户")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _seed_contact(app, external_userid="wm_sop_manual_001", mobile="13800009566", owner_userid="sales_sop", customer_name="SOP 手工群发客户")
     _seed_automation_member(
         app,
-        external_contact_id="wm_sop_idem_001",
-        phone="13800009551",
-        owner_staff_id="sales_sop",
-        current_pool="new_user",
-        activation_status="inactive",
-        questionnaire_status="pending",
-        questionnaire_result="unknown",
-        decision_source="system",
-        joined_at="2026-04-08 08:00:00",
-    )
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 805, "wecom_result": {"msgid": "msg-805"}},
-    )
-
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    with app.app_context():
-        first = run_due_sop(operator_id="sop-runner", operator_type="system")
-
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:10:00")
-    with app.app_context():
-        second = run_due_sop(operator_id="sop-runner", operator_type="system")
-        items = get_db().execute(
-            "SELECT day_index, status, error_message FROM automation_sop_batch_item ORDER BY id ASC"
-        ).fetchall()
-
-    assert first["total_success_count"] == 1
-    assert second["total_success_count"] == 0
-    assert second["total_skipped_count"] == 1
-    assert len(dispatched) == 1
-    assert [(row["day_index"], row["status"], row["error_message"]) for row in items] == [
-        (1, "success", ""),
-        (2, "skipped", "send_time_not_reached"),
-    ]
-
-
-def test_sop_run_due_supports_text_and_image_templates(app, monkeypatch):
-    _configure_only_sop_pool(app, pool_key="active_normal", send_time="09:00")
-    _save_sop_template(
-        app,
-        pool_key="active_normal",
-        day_index=1,
-        content="day1 文本 + 图片",
-        images_json=[{"media_id": "img-sop-001"}],
-    )
-    _seed_contact(app, external_userid="wm_sop_image_001", mobile="13800009561", owner_userid="sales_sop", customer_name="SOP 图片客户")
-    _seed_automation_member(
-        app,
-        external_contact_id="wm_sop_image_001",
-        phone="13800009561",
-        owner_staff_id="sales_sop",
-        current_pool="active_normal",
-        activation_status="active",
-        questionnaire_status="submitted",
-        questionnaire_result="normal",
-        decision_source="questionnaire",
-        joined_at="2026-04-08 08:00:00",
-    )
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 806, "wecom_result": {"msgid": "msg-806"}},
-    )
-
-    with app.app_context():
-        result = run_due_sop(operator_id="sop-runner", operator_type="system")
-
-    assert result["total_success_count"] == 1
-    assert dispatched[0]["sender"] == "QianLan"
-    assert dispatched[0]["text"]["content"] == "day1 文本 + 图片"
-    assert dispatched[0]["image_media_ids"] == ["img-sop-001"]
-
-
-def test_sop_run_due_does_not_dedupe_against_manual_send(app, client, monkeypatch):
-    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
-    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 SOP 继续发")
-    _seed_contact(app, external_userid="wm_sop_manual_overlap_001", mobile="13800009566", owner_userid="sales_sop", customer_name="SOP 不去重客户")
-    _seed_automation_member(
-        app,
-        external_contact_id="wm_sop_manual_overlap_001",
+        external_contact_id="wm_sop_manual_001",
         phone="13800009566",
         owner_staff_id="sales_sop",
         current_pool="new_user",
@@ -2918,40 +2822,188 @@ def test_sop_run_due_does_not_dedupe_against_manual_send(app, client, monkeypatc
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
-    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: {"task_id": 900, "wecom_result": {"msgid": "msg-900"}},
+    )
 
-    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
-        dispatched.append(dict(payload))
-        return {"task_id": 900 + len(dispatched), "wecom_result": {"msgid": f"msg-{900 + len(dispatched)}"}}
+    with app.app_context():
+        member_id = get_db().execute(
+            "SELECT id FROM automation_member WHERE external_contact_id = ?",
+            ("wm_sop_manual_001",),
+        ).fetchone()["id"]
+        record_sop_pool_entry(member_id=member_id, pool_key="new_user", entered_at="2026-04-08 08:00:00")
+        before = dict(
+            get_db().execute(
+                """
+                SELECT sop_anchor_date, first_effective_in_pool_at, last_in_pool_at, last_sent_day, last_sent_at
+                FROM automation_sop_progress
+                WHERE member_id = ? AND pool_key = ?
+                """,
+                (member_id, "new_user"),
+            ).fetchone()
+        )
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task", fake_dispatch)
-
-    manual_response = client.post(
+    response = client.post(
         "/api/admin/automation-conversion/stage/new-user/manual-send",
         json={"content": "手工先发一条", "operator": "tester"},
     )
-    assert manual_response.status_code == 200
-    assert manual_response.get_json()["ok"] is True
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+    with app.app_context():
+        after = dict(
+            get_db().execute(
+                """
+                SELECT sop_anchor_date, first_effective_in_pool_at, last_in_pool_at, last_sent_day, last_sent_at
+                FROM automation_sop_progress
+                WHERE member_id = ? AND pool_key = ?
+                """,
+                (member_id, "new_user"),
+            ).fetchone()
+        )
+
+    assert after == before
+
+
+def test_sop_run_due_template_empty_skips_today_and_moves_to_next_day(app, monkeypatch):
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=2, content="day2 继续跟进")
+    _seed_contact(app, external_userid="wm_sop_empty_001", mobile="13800009561", owner_userid="sales_sop", customer_name="SOP 空模板客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_empty_001",
+        phone="13800009561",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 806, "wecom_result": {"msgid": "msg-806"}},
+    )
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
     with app.app_context():
+        first = run_due_sop(operator_id="sop-runner", operator_type="system")
+        first_item = get_db().execute(
+            "SELECT status, error_message FROM automation_sop_batch_item ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        first_progress = get_db().execute(
+            "SELECT last_sent_day FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+    assert first["total_success_count"] == 0
+    assert first["total_skipped_count"] == 1
+    assert dispatched == []
+    assert (first_item["status"], first_item["error_message"]) == ("skipped", "template_empty")
+    assert first_progress["last_sent_day"] == 1
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 09:05:00")
+    with app.app_context():
+        second = run_due_sop(operator_id="sop-runner", operator_type="system")
+        second_progress = get_db().execute(
+            "SELECT last_sent_day FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+    assert second["total_success_count"] == 1
+    assert len(dispatched) == 1
+    assert dispatched[0]["text"]["content"] == "day2 继续跟进"
+    assert second_progress["last_sent_day"] == 2
+
+
+def test_sop_historical_member_uses_effective_start_as_day1_anchor(app, monkeypatch):
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
+    _seed_contact(app, external_userid="wm_sop_history_001", mobile="13800009571", owner_userid="sales_sop", customer_name="SOP 历史客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_history_001",
+        phone="13800009571",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-01 08:00:00",
+    )
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 807, "wecom_result": {"msgid": "msg-807"}},
+    )
+
+    with app.app_context():
         result = run_due_sop(operator_id="sop-runner", operator_type="system")
+        progress = get_db().execute(
+            """
+            SELECT sop_anchor_date, first_effective_in_pool_at, last_sent_day
+            FROM automation_sop_progress
+            ORDER BY id DESC LIMIT 1
+            """
+        ).fetchone()
 
     assert result["total_success_count"] == 1
-    assert len(dispatched) == 2
-    assert dispatched[0]["text"]["content"] == "手工先发一条"
-    assert dispatched[1]["text"]["content"] == "day1 SOP 继续发"
+    assert dispatched[0]["text"]["content"] == "day1 欢迎消息"
+    assert progress["sop_anchor_date"] == "2026-04-08"
+    assert progress["first_effective_in_pool_at"] == "2026-04-08 06:00:00"
+    assert progress["last_sent_day"] == 1
+
+
+def test_recent_execution_summary_appears_on_pool_cards(app, client):
+    with app.app_context():
+        ensure_sop_v1_defaults()
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_sop_batch (
+                pool_key, day_index, template_id, scheduled_for, status,
+                total_count, success_count, skipped_count, failed_count, summary_json,
+                created_at, updated_at
+            )
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "active_normal",
+                2,
+                "2026-04-08 10:00:00",
+                "finished",
+                6,
+                3,
+                2,
+                1,
+                json.dumps({"source": "test"}, ensure_ascii=False),
+            ),
+        )
+        db.commit()
+
+    response = client.get("/admin/automation-conversion/sop", query_string={"pool": "active_normal", "day": 1})
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "2026-04-08 10:00:00" in html
+    assert "成功 3 / 跳过 2 / 失败 1" in html
 
 
 def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeypatch):
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "sop-token"
     _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
     _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
-    _seed_contact(app, external_userid="wm_sop_api_001", mobile="13800009571", owner_userid="sales_sop", customer_name="SOP API 客户")
+    _seed_contact(app, external_userid="wm_sop_api_001", mobile="13800009581", owner_userid="sales_sop", customer_name="SOP API 客户")
     _seed_automation_member(
         app,
         external_contact_id="wm_sop_api_001",
-        phone="13800009571",
+        phone="13800009581",
         owner_staff_id="sales_sop",
         current_pool="new_user",
         activation_status="inactive",
@@ -2963,7 +3015,7 @@ def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeyp
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: {"task_id": 807, "wecom_result": {"msgid": "msg-807"}},
+        lambda task_type, fn_name, payload: {"task_id": 808, "wecom_result": {"msgid": "msg-808"}},
     )
 
     unauthorized = client.post("/api/admin/automation-conversion/sop/run-due", json={"operator": "tester"})
@@ -2981,140 +3033,6 @@ def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeyp
     assert payload["created_batch_count"] == 1
     assert payload["total_success_count"] == 1
     assert len(payload["batch_ids"]) == 1
-
-
-def test_admin_automation_conversion_sop_page_renders_three_pools_and_recent_batches(app, client):
-    with app.app_context():
-        ensure_sop_v1_defaults()
-        db = get_db()
-        db.execute(
-            """
-            INSERT INTO automation_sop_batch (
-                pool_key, day_index, template_id, scheduled_for, status,
-                total_count, success_count, skipped_count, failed_count, summary_json,
-                created_at, updated_at
-            )
-            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            (
-                "inactive_normal",
-                2,
-                "2026-04-08 09:00:00",
-                "finished",
-                8,
-                5,
-                2,
-                1,
-                json.dumps({"source": "test"}, ensure_ascii=False),
-            ),
-        )
-        db.commit()
-
-    response = client.get("/admin/automation-conversion/sop")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "自动 SOP 管理" in html
-    assert "新用户池" in html
-    assert "未激活普通池" in html
-    assert "激活普通池" in html
-    assert "重复进同池不重来" in html
-    assert "离池期间错过的 SOP 不补发" in html
-    assert "最近 SOP 执行批次" in html
-    assert "day2" in html
-    assert "已完成" in html
-
-
-def test_api_admin_automation_conversion_sop_config_saves_three_pools(app, client):
-    payloads = {
-        "new_user": {"enabled": True, "max_day_count": 3, "send_time": "08:30", "timezone": "Asia/Shanghai"},
-        "inactive_normal": {"enabled": False, "max_day_count": 4, "send_time": "10:15", "timezone": "UTC"},
-        "active_normal": {"enabled": True, "max_day_count": 7, "send_time": "11:45", "timezone": "Asia/Tokyo"},
-    }
-
-    for pool_key, payload in payloads.items():
-        response = client.put(f"/api/admin/automation-conversion/sop/config/{pool_key}", json=payload)
-        assert response.status_code == 200
-        body = response.get_json()
-        assert body["ok"] is True
-        assert body["config"]["pool_key"] == pool_key
-        assert body["config"]["max_day_count"] == payload["max_day_count"]
-        assert body["config"]["send_time"] == payload["send_time"]
-        assert body["config"]["timezone"] == payload["timezone"]
-
-    listing = client.get("/api/admin/automation-conversion/sop/config")
-    listed_payload = listing.get_json()
-
-    assert listing.status_code == 200
-    assert listed_payload["ok"] is True
-    config_by_pool = {item["pool_key"]: item for item in listed_payload["configs"]}
-    assert config_by_pool["new_user"]["max_day_count"] == 3
-    assert config_by_pool["inactive_normal"]["enabled"] is False
-    assert config_by_pool["active_normal"]["timezone"] == "Asia/Tokyo"
-
-
-def test_api_admin_automation_conversion_sop_template_save_supports_text_and_images(app, client):
-    response = client.put(
-        "/api/admin/automation-conversion/sop/templates/new_user/1",
-        json={
-            "content": "day1 欢迎文案",
-            "enabled": True,
-            "image_media_ids": ["img-sop-101", "img-sop-202"],
-        },
-    )
-
-    payload = response.get_json()
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["template"]["content"] == "day1 欢迎文案"
-    assert payload["template"]["images_json"] == [{"media_id": "img-sop-101"}, {"media_id": "img-sop-202"}]
-
-    templates_response = client.get("/api/admin/automation-conversion/sop/templates/new_user")
-    templates_payload = templates_response.get_json()
-
-    assert templates_response.status_code == 200
-    assert templates_payload["ok"] is True
-    template_by_day = {item["day_index"]: item for item in templates_payload["templates"]}
-    assert template_by_day[1]["content"] == "day1 欢迎文案"
-    assert template_by_day[1]["image_media_ids_text"] == "img-sop-101\nimg-sop-202"
-
-
-def test_api_admin_automation_conversion_sop_batches_lists_recent_batches(app, client):
-    with app.app_context():
-        ensure_sop_v1_defaults()
-        db = get_db()
-        db.execute(
-            """
-            INSERT INTO automation_sop_batch (
-                pool_key, day_index, template_id, scheduled_for, status,
-                total_count, success_count, skipped_count, failed_count, summary_json,
-                created_at, updated_at
-            )
-            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            ("new_user", 1, "2026-04-08 09:00:00", "finished", 4, 3, 1, 0, json.dumps({}, ensure_ascii=False)),
-        )
-        db.execute(
-            """
-            INSERT INTO automation_sop_batch (
-                pool_key, day_index, template_id, scheduled_for, status,
-                total_count, success_count, skipped_count, failed_count, summary_json,
-                created_at, updated_at
-            )
-            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            ("active_normal", 2, "2026-04-08 10:00:00", "running", 6, 2, 1, 0, json.dumps({}, ensure_ascii=False)),
-        )
-        db.commit()
-
-    response = client.get("/api/admin/automation-conversion/sop/batches", query_string={"limit": 10})
-    payload = response.get_json()
-
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert len(payload["batches"]) >= 2
-    assert {item["pool_key"] for item in payload["batches"]} >= {"new_user", "active_normal"}
-    assert {item["status_label"] for item in payload["batches"]} >= {"已完成", "执行中"}
 
 
 def test_qrcode_callback_creates_member_and_event(app):
