@@ -157,4 +157,45 @@
   <p class="admin-card-copy">暂无模型调用日志。</p>
   {% endif %}
 </section>
+
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近执行结果</h2>
+      <p>reply monitor 经中央路由后，会在 CRM 内部执行对应 Agent 并先把结果落库，供人工检查质量。</p>
+    </div>
+  </div>
+  {% if model_infra_payload.execution_results %}
+  <div class="admin-table-wrapper">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>external_userid</th>
+          <th>Agent</th>
+          <th>状态</th>
+          <th>Prompt 版本</th>
+          <th>话术结果</th>
+          <th>错误</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in model_infra_payload.execution_results %}
+        <tr>
+          <td>{{ item.created_at or "-" }}</td>
+          <td>{{ item.external_userid or "-" }}</td>
+          <td>{{ item.agent_code or "-" }}</td>
+          <td>{{ item.status or "-" }}</td>
+          <td>v{{ item.prompt_version }}</td>
+          <td>{{ item.reply_text or "-" }}</td>
+          <td>{{ item.error_message or "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="admin-card-copy">暂无执行结果。</p>
+  {% endif %}
+</section>
 {% endblock %}

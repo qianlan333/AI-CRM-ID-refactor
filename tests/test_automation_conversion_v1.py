@@ -403,6 +403,36 @@ def _patch_reply_monitor_router(monkeypatch, *, agent_code: str = "welcome_agent
     )
 
 
+def _patch_reply_monitor_execution_agent(monkeypatch, *, captured: dict[str, object] | None = None) -> None:
+    def _fake_call_deepseek_agent(*, agent_code: str, system_prompt: str, user_input: str, json_output: bool = False, model_name: str = ""):
+        parsed_user_input = json.loads(user_input)
+        if captured is not None:
+            captured["agent_code"] = agent_code
+            captured["system_prompt"] = system_prompt
+            captured["user_input"] = parsed_user_input
+            captured["json_output"] = json_output
+            captured["model_name"] = model_name
+        parsed_output = {
+            "external_userid": parsed_user_input["external_userid"],
+            "agent_code": agent_code,
+            "reply_text": f"{agent_code} 已生成建议话术",
+        }
+        return {
+            "ok": True,
+            "request_id": "deepseek-reply-monitor-001",
+            "model_name": "deepseek-chat",
+            "content": json.dumps(parsed_output, ensure_ascii=False),
+            "parsed_output": parsed_output,
+            "latency_ms": 88,
+            "response_json": {},
+        }
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.call_deepseek_agent",
+        _fake_call_deepseek_agent,
+    )
+
+
 def _configure_sop_pool(
     app,
     *,
@@ -2090,7 +2120,7 @@ def test_model_infra_page_renders_and_homepage_keeps_existing_sections(app, clie
     assert "中央路由 Agent" in model_infra_html
     assert "欢迎接待 Agent" in model_infra_html
     assert "最近模型调用日志" in model_infra_html
-    assert "最近执行结果" not in model_infra_html
+    assert "最近执行结果" in model_infra_html
 
     home_page = client.get("/admin/automation-conversion")
     home_html = home_page.get_data(as_text=True)
@@ -2343,6 +2373,8 @@ def test_reply_monitor_capture_and_dispatch_respect_quiet_hours(app, monkeypatch
             "headers": {},
         },
     )
+    _patch_reply_monitor_execution_agent(monkeypatch)
+
     with app.app_context():
         capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
         queue_row = get_db().execute(
@@ -2376,6 +2408,8 @@ def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap
     _seed_archived_message(app, msgid="msg-rm-due-002", seq=2, external_userid="wm_reply_due_002", owner_userid="sales_01", sender="wm_reply_due_002", receiver="sales_01", content="白天发送二", send_time="2026-04-09 23:29:02")
     _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_due_001")
     router_calls: list[dict[str, object]] = []
+    execution_calls: list[dict[str, object]] = []
+
     def _fake_route_recent_messages(*, external_userid: str, messages: list[dict[str, str]]):
         router_calls.append({"external_userid": external_userid, "messages": list(messages)})
         return {
@@ -2386,7 +2420,32 @@ def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap
             "headers": {},
         }
 
+    def _fake_call_deepseek_agent(*, agent_code: str, system_prompt: str, user_input: str, json_output: bool = False, model_name: str = ""):
+        parsed_user_input = json.loads(user_input)
+        execution_calls.append({"agent_code": agent_code, "user_input": parsed_user_input, "json_output": json_output})
+        return {
+            "ok": True,
+            "request_id": f"deepseek-dispatch-{len(execution_calls)}",
+            "model_name": "deepseek-chat",
+            "content": json.dumps(
+                {
+                    "external_userid": parsed_user_input["external_userid"],
+                    "agent_code": agent_code,
+                    "reply_text": "执行完成",
+                },
+                ensure_ascii=False,
+            ),
+            "parsed_output": {
+                "external_userid": parsed_user_input["external_userid"],
+                "agent_code": agent_code,
+                "reply_text": "执行完成",
+            },
+            "latency_ms": 55,
+            "response_json": {},
+        }
+
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.route_recent_messages", _fake_route_recent_messages)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.call_deepseek_agent", _fake_call_deepseek_agent)
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 23:30:00")
     with app.app_context():
@@ -2419,6 +2478,8 @@ def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap
     assert second["ok"] is True
     assert second["status"] == "success"
     assert len(router_calls) == 2
+    assert len(execution_calls) == 2
+    assert execution_calls[0]["json_output"] is True
 
 
 def test_reply_monitor_disabled_does_not_create_queue_items(app):
@@ -2500,6 +2561,7 @@ def test_reply_monitor_dispatch_routes_minimal_payload_and_logs_route_result(app
     captured: dict[str, object] = {}
     _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_payload_001")
     _patch_reply_monitor_router(monkeypatch, agent_code="pricing_agent", captured=captured)
+    _patch_reply_monitor_execution_agent(monkeypatch, captured=captured)
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:21:00")
 
     with app.app_context():
@@ -2509,6 +2571,14 @@ def test_reply_monitor_dispatch_routes_minimal_payload_and_logs_route_result(app
             """
             SELECT external_userid, agent_code, parse_status, error_message, router_request_payload, router_response_payload
             FROM automation_reply_monitor_route_log
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        execution_row = get_db().execute(
+            """
+            SELECT external_userid, agent_code, prompt_version, reply_text, status, error_message, input_snapshot_json
+            FROM automation_agent_execution_result
             ORDER BY id DESC
             LIMIT 1
             """
@@ -2546,6 +2616,33 @@ def test_reply_monitor_dispatch_routes_minimal_payload_and_logs_route_result(app
     assert "currentTarget" not in request_payload_text
     assert "questionnaire" not in request_payload_text
     assert "tags" not in request_payload_text
+    assert captured["agent_code"] == "pricing_agent"
+    execution_input = dict(captured["user_input"])
+    assert execution_input["external_userid"] == "wm_reply_payload_001"
+    assert execution_input["agent_code"] == "pricing_agent"
+    assert execution_input["owner_userid"] == "sales_01"
+    assert execution_input["owner_display_name"] == "sales_01"
+    assert execution_input["current_pool"] == "active_focus"
+    assert execution_input["trigger_type"] == "reply_monitor"
+    assert execution_input["tags"] == ["高潜客户"]
+    assert execution_input["questionnaire"]["status"] == "submitted"
+    assert execution_input["questionnaire"]["result"] == "focus"
+    assert execution_input["questionnaire_answers"] == [{"question": "预算", "answer": "999"}]
+    assert execution_input["recent_messages"] == [
+        {"role": "customer", "content": "你好", "timestamp": "2026-04-09 09:58:00"},
+        {"role": "sales", "content": "你好，我在", "timestamp": "2026-04-09 09:59:00"},
+    ]
+    assert execution_input["new_messages"] == [
+        {
+            "storage_id": 1,
+            "msgid": "msg-rm-payload-001",
+            "msgtype": "text",
+            "content": "我要继续了解",
+            "send_time": "2026-04-09 10:20:00",
+            "sender": "wm_reply_payload_001",
+            "receiver": "sales_01",
+        }
+    ]
     assert dict(route_log) == {
         "external_userid": "wm_reply_payload_001",
         "agent_code": "pricing_agent",
@@ -2579,12 +2676,23 @@ def test_reply_monitor_dispatch_routes_minimal_payload_and_logs_route_result(app
             ensure_ascii=False,
         ),
     }
+    assert dict(execution_row) == {
+        "external_userid": "wm_reply_payload_001",
+        "agent_code": "pricing_agent",
+        "prompt_version": 1,
+        "reply_text": "pricing_agent 已生成建议话术",
+        "status": "success",
+        "error_message": "",
+        "input_snapshot_json": json.dumps(execution_input, ensure_ascii=False),
+    }
     queue_snapshot = json.loads(queue_row["payload_snapshot_json"])
     assert queue_row["status"] == "dispatched"
     assert queue_snapshot["router_decision"] == {
         "external_userid": "wm_reply_payload_001",
         "agent_code": "pricing_agent",
     }
+    assert queue_snapshot["execution_result"]["agent_code"] == "pricing_agent"
+    assert queue_snapshot["execution_result"]["reply_text"] == "pricing_agent 已生成建议话术"
 
 
 def test_reply_monitor_dispatch_rejects_invalid_agent_code_and_records_route_error(app, monkeypatch):
@@ -2620,6 +2728,9 @@ def test_reply_monitor_dispatch_rejects_invalid_agent_code_and_records_route_err
             LIMIT 1
             """
         ).fetchone()
+        execution_count = get_db().execute(
+            "SELECT COUNT(*) AS total FROM automation_agent_execution_result"
+        ).fetchone()["total"]
 
     assert result["ok"] is False
     assert result["status"] == "failed"
@@ -2632,13 +2743,14 @@ def test_reply_monitor_dispatch_rejects_invalid_agent_code_and_records_route_err
         "parse_status": "parse_error",
         "error_message": "router_agent_code_invalid",
     }
+    assert execution_count == 0
 
 
 @pytest.mark.parametrize(
     "agent_code",
     ["welcome_agent", "pricing_agent", "proof_agent", "closing_agent"],
 )
-def test_reply_monitor_dispatch_accepts_supported_agent_codes(app, monkeypatch, agent_code):
+def test_reply_monitor_dispatch_executes_supported_agent_codes(app, monkeypatch, agent_code):
     external_userid = f"wm_reply_exec_{agent_code}"
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
     _seed_contact(app, external_userid=external_userid, mobile="13800009188", owner_userid="sales_01", customer_name="exec")
@@ -2666,6 +2778,7 @@ def test_reply_monitor_dispatch_accepts_supported_agent_codes(app, monkeypatch, 
     )
     _patch_reply_monitor_payload_context(monkeypatch, external_userid=external_userid)
     _patch_reply_monitor_router(monkeypatch, agent_code=agent_code)
+    _patch_reply_monitor_execution_agent(monkeypatch)
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 11:01:00")
 
     with app.app_context():
@@ -2673,8 +2786,8 @@ def test_reply_monitor_dispatch_accepts_supported_agent_codes(app, monkeypatch, 
         result = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
         row = get_db().execute(
             """
-            SELECT external_userid, agent_code, parse_status, error_message
-            FROM automation_reply_monitor_route_log
+            SELECT external_userid, agent_code, reply_text, status
+            FROM automation_agent_execution_result
             ORDER BY id DESC
             LIMIT 1
             """
@@ -2684,8 +2797,8 @@ def test_reply_monitor_dispatch_accepts_supported_agent_codes(app, monkeypatch, 
     assert dict(row) == {
         "external_userid": external_userid,
         "agent_code": agent_code,
-        "parse_status": "success",
-        "error_message": "",
+        "reply_text": f"{agent_code} 已生成建议话术",
+        "status": "success",
     }
 
 
