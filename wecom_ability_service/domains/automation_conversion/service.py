@@ -3626,7 +3626,7 @@ def _send_channel_welcome_message(
         operator_id=_normalized_text(operator_id) or "wecom_callback",
         before_snapshot=_member_snapshot(serialized_member),
         after_snapshot=_member_snapshot(serialized_member),
-        remark=f"welcome_code={welcome_code}",
+        remark="official_send_welcome_msg",
     )
     return {
         "attempted": True,
