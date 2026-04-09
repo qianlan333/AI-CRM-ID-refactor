@@ -1322,28 +1322,6 @@ ON automation_agent_llm_call_log (agent_code, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_status_created
 ON automation_agent_llm_call_log (status, created_at DESC, id DESC);
 
-CREATE TABLE IF NOT EXISTS automation_agent_execution_result (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  route_log_id INTEGER NOT NULL DEFAULT 0,
-  external_userid TEXT NOT NULL DEFAULT '',
-  agent_code TEXT NOT NULL DEFAULT '',
-  prompt_version INTEGER NOT NULL DEFAULT 1,
-  reply_text TEXT NOT NULL DEFAULT '',
-  input_snapshot_json TEXT NOT NULL DEFAULT '{}',
-  status TEXT NOT NULL DEFAULT '',
-  error_message TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_automation_agent_execution_result_route_created
-ON automation_agent_execution_result (route_log_id, created_at DESC, id DESC);
-
-CREATE INDEX IF NOT EXISTS idx_automation_agent_execution_result_external_created
-ON automation_agent_execution_result (external_userid, created_at DESC, id DESC);
-
-CREATE INDEX IF NOT EXISTS idx_automation_agent_execution_result_status_created
-ON automation_agent_execution_result (status, created_at DESC, id DESC);
-
 CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stage_key TEXT NOT NULL DEFAULT '',

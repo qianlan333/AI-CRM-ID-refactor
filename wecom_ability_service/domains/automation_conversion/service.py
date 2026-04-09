@@ -1840,202 +1840,6 @@ def _reply_monitor_recent_router_messages(*, external_userid: str) -> list[dict[
     ]
 
 
-def _reply_monitor_execution_prompt(agent_code: str) -> dict[str, Any]:
-    row = repo.get_agent_prompt_row(agent_code)
-    if not row:
-        ensure_agent_prompt_defaults()
-        row = repo.get_agent_prompt_row(agent_code)
-    serialized = _serialize_agent_prompt_row(row)
-    if not serialized:
-        raise DeepSeekClientError("agent_prompt_not_found")
-    if not _normalize_bool(serialized.get("enabled")):
-        raise DeepSeekClientError("agent_prompt_disabled")
-    if not _normalized_text(serialized.get("prompt_text")):
-        raise DeepSeekClientError("agent_prompt_empty")
-    return serialized
-
-
-def _reply_monitor_execution_input(
-    *,
-    queue_item: dict[str, Any],
-    member: dict[str, Any],
-    agent_code: str,
-    new_messages: list[dict[str, Any]],
-) -> dict[str, Any]:
-    from ..admin_console.customer_profile_service import (
-        get_customer_messages_payload,
-        get_customer_profile_tags_payload,
-        get_customer_questionnaire_answers_payload,
-    )
-
-    serialized = _serialize_member(member)
-    profile = _load_profile(serialized["external_contact_id"], serialized["phone"])
-    external_userid = serialized["external_contact_id"]
-    owner_userid = _normalized_text(queue_item.get("owner_userid")) or serialized["owner_staff_id"]
-    owner_display_name = (
-        _normalized_text(profile.get("owner_display_name"))
-        or _normalized_text(profile.get("owner_staff_id"))
-        or owner_userid
-    )
-    tags_payload = get_customer_profile_tags_payload(external_userid=external_userid) if external_userid else {"tags": []}
-    questionnaire_payload = get_customer_questionnaire_answers_payload(external_userid=external_userid, mobile=serialized["phone"])
-    messages_payload = get_customer_messages_payload(external_userid=external_userid, mobile=serialized["phone"], limit=20)
-
-    recent_messages: list[dict[str, str]] = []
-    for item in (messages_payload.get("messages") or [])[:20]:
-        sender = _normalized_text(item.get("sender"))
-        recent_messages.append(
-            {
-                "role": "customer" if sender == external_userid else "sales",
-                "content": _normalized_text(item.get("content")),
-                "timestamp": _normalized_text(item.get("send_time")),
-            }
-        )
-
-    return {
-        "external_userid": external_userid,
-        "agent_code": agent_code,
-        "owner_userid": owner_userid,
-        "owner_display_name": owner_display_name,
-        "current_pool": serialized["current_pool"],
-        "current_stage": serialized["current_stage"],
-        "current_target": serialized["current_target"],
-        "recent_messages": recent_messages,
-        "new_messages": [_reply_monitor_message_entry(message) for message in new_messages],
-        "tags": [(_normalized_text(item.get("tag_name")) or _normalized_text(item.get("tag_id"))) for item in tags_payload.get("tags") or []],
-        "questionnaire": {
-            "status": serialized["questionnaire_status"],
-            "result": serialized["questionnaire_result"],
-            "status_label": serialized["questionnaire_status_label"],
-            "result_label": serialized["questionnaire_result_label"],
-        },
-        "questionnaire_answers": [
-            {
-                "question": _normalized_text(item.get("question")),
-                "answer": _normalized_text(item.get("answer")),
-            }
-            for item in (questionnaire_payload.get("answers") or [])
-        ],
-        "trigger_type": REPLY_MONITOR_TRIGGER_TYPE,
-        "queue_id": int(queue_item.get("id") or 0),
-    }
-
-
-def _reply_monitor_execution_output(
-    *,
-    parsed_output: Any,
-    expected_external_userid: str,
-    expected_agent_code: str,
-) -> dict[str, str]:
-    if not isinstance(parsed_output, dict):
-        raise DeepSeekClientError("execution_output_invalid")
-    external_userid = _normalized_text(parsed_output.get("external_userid"))
-    agent_code = _normalized_text(parsed_output.get("agent_code"))
-    reply_text = _normalized_text(parsed_output.get("reply_text"))
-    if external_userid != _normalized_text(expected_external_userid):
-        raise DeepSeekClientError("execution_external_userid_mismatch")
-    if agent_code != _normalized_text(expected_agent_code):
-        raise DeepSeekClientError("execution_agent_code_mismatch")
-    if not reply_text:
-        raise DeepSeekClientError("execution_reply_text_missing")
-    return {
-        "external_userid": external_userid,
-        "agent_code": agent_code,
-        "reply_text": reply_text,
-    }
-
-
-def _serialize_agent_execution_result(row: dict[str, Any] | None) -> dict[str, Any]:
-    if not row:
-        return {}
-    deserialized = repo.deserialize_agent_execution_result_row(row)
-    return {
-        "id": int(deserialized.get("id") or 0),
-        "route_log_id": int(deserialized.get("route_log_id") or 0),
-        "external_userid": _normalized_text(deserialized.get("external_userid")),
-        "agent_code": _normalized_text(deserialized.get("agent_code")),
-        "prompt_version": int(deserialized.get("prompt_version") or 1),
-        "reply_text": _normalized_text(deserialized.get("reply_text")),
-        "input_snapshot": dict(deserialized.get("input_snapshot_json") or {}),
-        "status": _normalized_text(deserialized.get("status")),
-        "error_message": _normalized_text(deserialized.get("error_message")),
-        "created_at": _normalized_text(deserialized.get("created_at")),
-    }
-
-
-def _run_reply_monitor_execution_agent(
-    *,
-    route_log_id: int,
-    queue_item: dict[str, Any],
-    member: dict[str, Any],
-    router_decision: dict[str, Any],
-    new_messages: list[dict[str, Any]],
-) -> tuple[dict[str, Any], str]:
-    serialized = _serialize_member(member)
-    agent_code = _normalized_text(router_decision.get("agent_code"))
-    prompt_version = 0
-    execution_input = _reply_monitor_execution_input(
-        queue_item=queue_item,
-        member=member,
-        agent_code=agent_code,
-        new_messages=new_messages,
-    )
-    try:
-        prompt_row = _reply_monitor_execution_prompt(agent_code)
-        prompt_version = int(prompt_row.get("version") or 1)
-        result = call_deepseek_agent(
-            agent_code=agent_code,
-            system_prompt=(
-                f"{_normalized_text(prompt_row.get('prompt_text'))}\n"
-                "请只返回 JSON 对象，结构固定为 "
-                '{"external_userid":"...","agent_code":"...","reply_text":"..."}。'
-                "不要输出 markdown，不要附加解释。"
-            ),
-            user_input=json.dumps(execution_input, ensure_ascii=False),
-            json_output=True,
-        )
-        output = _reply_monitor_execution_output(
-            parsed_output=result.get("parsed_output"),
-            expected_external_userid=serialized["external_contact_id"],
-            expected_agent_code=agent_code,
-        )
-        stored = repo.insert_agent_execution_result(
-            {
-                "route_log_id": int(route_log_id),
-                "external_userid": serialized["external_contact_id"],
-                "agent_code": agent_code,
-                "prompt_version": prompt_version,
-                "reply_text": output["reply_text"],
-                "input_snapshot_json": execution_input,
-                "status": "success",
-                "error_message": "",
-            }
-        )
-        return (
-            {
-                **_serialize_agent_execution_result(stored),
-                "request_id": _normalized_text(result.get("request_id")),
-                "model_name": _normalized_text(result.get("model_name")),
-                "latency_ms": int(result.get("latency_ms") or 0),
-            },
-            "",
-        )
-    except DeepSeekClientError as exc:
-        stored = repo.insert_agent_execution_result(
-            {
-                "route_log_id": int(route_log_id),
-                "external_userid": serialized["external_contact_id"],
-                "agent_code": agent_code,
-                "prompt_version": prompt_version or 1,
-                "reply_text": "",
-                "input_snapshot_json": execution_input,
-                "status": "failed",
-                "error_message": str(exc),
-            }
-        )
-        return (_serialize_agent_execution_result(stored), str(exc))
-
-
 def _build_reply_monitor_dispatch_snapshot(
     *,
     queue_item: dict[str, Any],
@@ -2043,7 +1847,6 @@ def _build_reply_monitor_dispatch_snapshot(
     router_request_payload: dict[str, Any],
     router_response_payload: Any,
     router_decision: dict[str, Any],
-    execution_result: dict[str, Any],
     messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
     serialized = _serialize_member(member)
@@ -2067,7 +1870,6 @@ def _build_reply_monitor_dispatch_snapshot(
         "router_request_payload": router_request_payload,
         "router_response_payload": router_response_payload,
         "router_decision": router_decision,
-        "execution_result": execution_result,
     }
 
 
@@ -2416,7 +2218,6 @@ def run_due_reply_monitor(
     router_request_payload: dict[str, Any] = {}
     router_response_payload: Any = {}
     router_decision: dict[str, Any] = {}
-    execution_result: dict[str, Any] = {}
     parse_status = "success"
     dispatch_error = ""
     route_log_row: dict[str, Any] = {}
@@ -2454,24 +2255,12 @@ def run_due_reply_monitor(
             "error_message": dispatch_error,
         }
     )
-    if not dispatch_error:
-        execution_result, execution_error = _run_reply_monitor_execution_agent(
-            route_log_id=int(route_log_row.get("id") or 0),
-            queue_item=queue_item,
-            member=member,
-            router_decision=router_decision,
-            new_messages=messages,
-        )
-        if execution_error:
-            parse_status = "execution_error"
-            dispatch_error = execution_error
     payload_snapshot = _build_reply_monitor_dispatch_snapshot(
         queue_item=queue_item,
         member=member,
         router_request_payload=router_request_payload,
         router_response_payload=router_response_payload,
         router_decision=router_decision,
-        execution_result=execution_result,
         messages=messages,
     )
     delivery_ok = not bool(dispatch_error)
