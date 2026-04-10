@@ -35,6 +35,11 @@ def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _nullable_timestamp_text(value: Any) -> str | None:
+    normalized = _normalized_text(value)
+    return normalized or None
+
+
 def _json_dumps(value: Any) -> str:
     return json.dumps({} if value is None else value, ensure_ascii=False)
 
@@ -1054,8 +1059,8 @@ def upsert_customer_marketing_state_current(
     last_batch_window_start: str,
     last_batch_window_end: str,
     last_trigger_message_at: str,
-    entered_at: str,
-    exited_at: str,
+    entered_at: str | None,
+    exited_at: str | None,
     exit_reason: str,
     state_payload: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -1087,8 +1092,8 @@ def upsert_customer_marketing_state_current(
         _normalized_text(last_batch_window_start),
         _normalized_text(last_batch_window_end),
         _normalized_text(last_trigger_message_at),
-        _normalized_text(entered_at),
-        _normalized_text(exited_at),
+        _nullable_timestamp_text(entered_at),
+        _nullable_timestamp_text(exited_at),
         _normalized_text(exit_reason),
         _json_dumps(state_payload),
     )
