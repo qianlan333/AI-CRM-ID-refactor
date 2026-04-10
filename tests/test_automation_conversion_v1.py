@@ -3433,6 +3433,64 @@ def test_sop_run_due_entry_after_send_time_starts_day1_next_day(app, monkeypatch
     assert progress["last_sent_day"] == 1
 
 
+def test_sop_run_due_groups_same_day_candidates_into_one_dispatch(app, monkeypatch):
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
+    _seed_contact(app, external_userid="wm_sop_group_001", mobile="13800009513", owner_userid="sales_sop", customer_name="SOP 分组客户1")
+    _seed_contact(app, external_userid="wm_sop_group_002", mobile="13800009514", owner_userid="sales_sop", customer_name="SOP 分组客户2")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_group_001",
+        phone="13800009513",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_group_002",
+        phone="13800009514",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:10:00",
+    )
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 810, "wecom_result": {"msgid": "msg-810", "fail_list": []}},
+    )
+
+    with app.app_context():
+        result = run_due_sop(operator_id="sop-runner", operator_type="system")
+        batch = get_db().execute(
+            "SELECT total_count, success_count, failed_count FROM automation_sop_batch ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        item_rows = get_db().execute(
+            "SELECT external_userid, status, sent_record_id FROM automation_sop_batch_item ORDER BY external_userid ASC"
+        ).fetchall()
+
+    assert result["created_batch_count"] == 1
+    assert result["total_success_count"] == 2
+    assert len(dispatched) == 1
+    assert sorted(dispatched[0]["external_userid"]) == ["wm_sop_group_001", "wm_sop_group_002"]
+    assert dict(batch) == {"total_count": 2, "success_count": 2, "failed_count": 0}
+    assert [(row["external_userid"], row["status"]) for row in item_rows] == [
+        ("wm_sop_group_001", "success"),
+        ("wm_sop_group_002", "success"),
+    ]
+    assert len({row["sent_record_id"] for row in item_rows}) == 1
+
+
 def test_record_sop_pool_entry_reentry_preserves_anchor_date(app):
     _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
     _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
@@ -3632,10 +3690,12 @@ def test_sop_run_due_template_empty_skips_today_and_moves_to_next_day(app, monke
     assert second_progress["last_sent_day"] == 2
 
 
-def test_sop_historical_member_uses_effective_start_as_day1_anchor(app, monkeypatch):
+def test_sop_historical_member_uses_real_entry_date_and_clamps_to_last_day(app, monkeypatch):
     _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
     _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
     _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
+    _save_sop_template(app, pool_key="new_user", day_index=2, content="day2 跟进消息")
+    _save_sop_template(app, pool_key="new_user", day_index=3, content="day3 最后一条消息")
     _seed_contact(app, external_userid="wm_sop_history_001", mobile="13800009571", owner_userid="sales_sop", customer_name="SOP 历史客户")
     _seed_automation_member(
         app,
@@ -3667,10 +3727,10 @@ def test_sop_historical_member_uses_effective_start_as_day1_anchor(app, monkeypa
         ).fetchone()
 
     assert result["total_success_count"] == 1
-    assert dispatched[0]["text"]["content"] == "day1 欢迎消息"
-    assert progress["sop_anchor_date"] == "2026-04-08"
-    assert progress["first_effective_in_pool_at"] == "2026-04-08 06:00:00"
-    assert progress["last_sent_day"] == 1
+    assert dispatched[0]["text"]["content"] == "day3 最后一条消息"
+    assert progress["sop_anchor_date"] == "2026-04-01"
+    assert progress["first_effective_in_pool_at"] == "2026-04-01 08:00:00"
+    assert progress["last_sent_day"] == 3
 
 
 def test_recent_execution_summary_appears_on_pool_cards(app, client):
@@ -3747,6 +3807,107 @@ def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeyp
     assert payload["created_batch_count"] == 1
     assert payload["total_success_count"] == 1
     assert len(payload["batch_ids"]) == 1
+
+
+def test_sop_run_due_api_fails_closed_when_token_is_not_configured(app, client, monkeypatch):
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
+    _seed_contact(app, external_userid="wm_sop_api_closed_001", mobile="13800009582", owner_userid="sales_sop", customer_name="SOP API 客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_api_closed_001",
+        phone="13800009582",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
+
+    response = client.post("/api/admin/automation-conversion/sop/run-due", json={"operator": "tester"})
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "internal token not configured"
+    with app.app_context():
+        batch_total = get_db().execute("SELECT COUNT(*) AS total FROM automation_sop_batch").fetchone()["total"]
+    assert batch_total == 0
+
+
+def test_sop_run_due_second_pass_does_not_create_duplicate_empty_batch(app, monkeypatch):
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
+    _seed_contact(app, external_userid="wm_sop_dup_001", mobile="13800009583", owner_userid="sales_sop", customer_name="SOP 重复客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_dup_001",
+        phone="13800009583",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 809, "wecom_result": {"msgid": "msg-809"}},
+    )
+
+    with app.app_context():
+        first = run_due_sop(operator_id="sop-runner", operator_type="system")
+        second = run_due_sop(operator_id="sop-runner", operator_type="system")
+        batch_total = get_db().execute("SELECT COUNT(*) AS total FROM automation_sop_batch").fetchone()["total"]
+        item_total = get_db().execute("SELECT COUNT(*) AS total FROM automation_sop_batch_item").fetchone()["total"]
+
+    assert first["created_batch_count"] == 1
+    assert first["total_success_count"] == 1
+    assert second["created_batch_count"] == 0
+    assert second["total_success_count"] == 0
+    assert second["total_skipped_count"] == 0
+    assert batch_total == 1
+    assert item_total == 1
+    assert len(dispatched) == 1
+
+
+def test_sop_run_due_skips_pool_when_lock_is_held(app, monkeypatch):
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
+    _seed_contact(app, external_userid="wm_sop_lock_001", mobile="13800009584", owner_userid="sales_sop", customer_name="SOP 锁客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_sop_lock_001",
+        phone="13800009584",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.repo.try_acquire_sop_pool_run_lock",
+        lambda *, pool_key: False,
+    )
+
+    with app.app_context():
+        result = run_due_sop(operator_id="sop-runner", operator_type="system")
+        batch_total = get_db().execute("SELECT COUNT(*) AS total FROM automation_sop_batch").fetchone()["total"]
+
+    assert result["scanned_pool_count"] == 1
+    assert result["created_batch_count"] == 0
+    assert result["total_success_count"] == 0
+    assert batch_total == 0
 
 
 def test_qrcode_callback_creates_member_and_event(app):

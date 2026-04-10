@@ -1093,7 +1093,7 @@ def api_admin_automation_conversion_reply_monitor_run_due():
 
 
 def api_admin_automation_conversion_sop_run_due():
-    auth_failure = require_internal_api_token()
+    auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
         return auth_failure
     result = run_due_sop(
