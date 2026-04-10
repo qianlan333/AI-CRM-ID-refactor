@@ -293,6 +293,57 @@ def _create_questionnaire_submission(
         db.commit()
 
 
+def test_repo_upsert_customer_marketing_state_current_nulls_blank_postgres_timestamps(monkeypatch):
+    from wecom_ability_service.domains.marketing_automation import repo as marketing_repo
+
+    captured: dict[str, object] = {}
+
+    class _FakeCursor:
+        def fetchone(self):
+            return {"id": 1}
+
+    class _FakeDb:
+        def execute(self, sql, params=None):
+            captured["sql"] = sql
+            captured["params"] = params
+            return _FakeCursor()
+
+    monkeypatch.setattr(marketing_repo, "get_db_backend", lambda: "postgres")
+    monkeypatch.setattr(marketing_repo, "get_db", lambda: _FakeDb())
+    monkeypatch.setattr(
+        marketing_repo,
+        "_list_customer_marketing_state_current_candidates",
+        lambda **kwargs: [],
+    )
+
+    marketing_repo.upsert_customer_marketing_state_current(
+        external_userid="wm_ext_001",
+        person_id=None,
+        automation_key="signup_conversion_v1",
+        main_stage="pool",
+        sub_stage="new_user",
+        activated=False,
+        converted=False,
+        eligible_for_conversion=False,
+        lifecycle_status="pool",
+        last_activation_at="",
+        last_conversion_marked_at="",
+        last_message_at="2026-04-04 10:01:10",
+        last_batch_id=None,
+        last_batch_status="",
+        last_batch_window_start="",
+        last_batch_window_end="",
+        last_trigger_message_at="2026-04-04 10:01:10",
+        entered_at="2026-04-04 10:03:00",
+        exited_at="",
+        exit_reason="trial_not_opened",
+        state_payload={"pool_key": "new_user"},
+    )
+
+    assert captured["params"][17] == "2026-04-04 10:03:00"
+    assert captured["params"][18] is None
+
+
 def _seed_activation_source(app, *, mobile: str, updated_at: str):
     with app.app_context():
         db = get_db()

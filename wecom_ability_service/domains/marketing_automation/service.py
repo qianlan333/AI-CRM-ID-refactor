@@ -131,6 +131,11 @@ def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _nullable_timestamp_text(value: Any) -> str | None:
+    normalized = _normalized_text(value)
+    return normalized or None
+
+
 def _get_active_owner_role(userid: str) -> dict[str, Any]:
     owner_role = dict(repo.get_owner_role_item(_normalized_text(userid)) or {})
     if not owner_role or not bool(owner_role.get("active")):
@@ -2143,8 +2148,8 @@ def evaluate_customer_marketing_state(
             last_batch_window_start=result.get("last_batch_window_start", ""),
             last_batch_window_end=result.get("last_batch_window_end", ""),
             last_trigger_message_at=result.get("last_trigger_message_at", ""),
-            entered_at=entered_at,
-            exited_at=exited_at,
+            entered_at=_nullable_timestamp_text(entered_at),
+            exited_at=_nullable_timestamp_text(exited_at),
             exit_reason=exit_reason,
             state_payload=state_payload,
         )
