@@ -2106,7 +2106,7 @@ def api_admin_automation_conversion_focus_send_batches_run_due():
 
 
 def api_admin_automation_conversion_run_message_activity_sync():
-    auth_failure = require_internal_api_token()
+    auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
         return auth_failure
     payload = request.get_json(silent=True) or {}
@@ -2125,7 +2125,7 @@ def api_admin_automation_conversion_run_message_activity_sync():
 
 
 def api_admin_automation_conversion_reply_monitor_capture():
-    auth_failure = require_internal_api_token()
+    auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
         return auth_failure
     payload = request.get_json(silent=True) or {}
@@ -2139,7 +2139,7 @@ def api_admin_automation_conversion_reply_monitor_capture():
 
 
 def api_admin_automation_conversion_reply_monitor_run_due():
-    auth_failure = require_internal_api_token()
+    auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
         return auth_failure
     payload = request.get_json(silent=True) or {}
