@@ -18,6 +18,18 @@ from ...infra.settings import (
 )
 from ...infra.wecom_runtime import get_contact_runtime_client
 from ...wecom_client import WeComClientError
+from ..automation_state.state_defs import (
+    FOLLOWUP_SEGMENT_FOCUS as SHARED_FOLLOWUP_SEGMENT_FOCUS,
+    FOLLOWUP_SEGMENT_NORMAL as SHARED_FOLLOWUP_SEGMENT_NORMAL,
+    FOCUS_POOL_KEYS as SHARED_FOCUS_POOL_KEYS,
+    POOL_ACTIVE_FOCUS as SHARED_POOL_ACTIVE_FOCUS,
+    POOL_ACTIVE_NORMAL as SHARED_POOL_ACTIVE_NORMAL,
+    POOL_INACTIVE_FOCUS as SHARED_POOL_INACTIVE_FOCUS,
+    POOL_INACTIVE_NORMAL as SHARED_POOL_INACTIVE_NORMAL,
+    POOL_LABELS as SHARED_POOL_LABELS,
+    POOL_NEW_USER as SHARED_POOL_NEW_USER,
+    POOL_SILENT as SHARED_POOL_SILENT,
+)
 from ..marketing_automation.service import get_customer_marketing_profile, get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail, list_questionnaires
@@ -67,17 +79,17 @@ CHANNEL_STATUS_NOT_GENERATED = "not_generated"
 CHANNEL_STATUS_CONFIGURED = "configured"
 CHANNEL_STATUS_ACTIVE = "active"
 
-POOL_NEW_USER = "new_user"
-POOL_INACTIVE_NORMAL = "inactive_normal"
-POOL_INACTIVE_FOCUS = "inactive_focus"
-POOL_ACTIVE_NORMAL = "active_normal"
-POOL_ACTIVE_FOCUS = "active_focus"
-POOL_SILENT = "silent"
+POOL_NEW_USER = SHARED_POOL_NEW_USER
+POOL_INACTIVE_NORMAL = SHARED_POOL_INACTIVE_NORMAL
+POOL_INACTIVE_FOCUS = SHARED_POOL_INACTIVE_FOCUS
+POOL_ACTIVE_NORMAL = SHARED_POOL_ACTIVE_NORMAL
+POOL_ACTIVE_FOCUS = SHARED_POOL_ACTIVE_FOCUS
+POOL_SILENT = SHARED_POOL_SILENT
 POOL_WON = "won"
 POOL_REMOVED = "removed"
 
-FOLLOWUP_NORMAL = "normal"
-FOLLOWUP_FOCUS = "focus"
+FOLLOWUP_NORMAL = SHARED_FOLLOWUP_SEGMENT_NORMAL
+FOLLOWUP_FOCUS = SHARED_FOLLOWUP_SEGMENT_FOCUS
 
 QUESTIONNAIRE_PENDING = "pending"
 QUESTIONNAIRE_SUBMITTED = "submitted"
@@ -116,12 +128,7 @@ ACTION_LABELS = {
 }
 
 POOL_LABELS = {
-    POOL_NEW_USER: "新用户池",
-    POOL_INACTIVE_NORMAL: "未激活普通池",
-    POOL_INACTIVE_FOCUS: "未激活重点跟进池",
-    POOL_ACTIVE_NORMAL: "激活普通池",
-    POOL_ACTIVE_FOCUS: "激活重点跟进池",
-    POOL_SILENT: "沉默池",
+    **SHARED_POOL_LABELS,
     POOL_WON: "已成交",
     POOL_REMOVED: "已移出",
 }
@@ -196,10 +203,7 @@ MESSAGE_ACTIVITY_SYNC_POOLS = (
     POOL_ACTIVE_NORMAL,
     POOL_ACTIVE_FOCUS,
 )
-FOCUS_SEND_ALLOWED_POOLS = {
-    POOL_INACTIVE_FOCUS,
-    POOL_ACTIVE_FOCUS,
-}
+FOCUS_SEND_ALLOWED_POOLS = set(SHARED_FOCUS_POOL_KEYS)
 SOP_V1_ALLOWED_POOLS = (
     POOL_NEW_USER,
     POOL_INACTIVE_NORMAL,
