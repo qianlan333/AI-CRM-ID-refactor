@@ -12,6 +12,12 @@ from flask import current_app
 from ...db import get_db
 from ...infra.settings import get_setting
 from ...wecom_client import WeComClientError
+from ..automation_state.calculator import (
+    calculate_marketing_state as _calculate_marketing_state,
+    resolve_pool_key_for_customer as _shared_resolve_pool_key_for_customer,
+    resolve_pool_reference_at as _shared_resolve_pool_reference_at,
+    should_enter_silent_pool as _shared_should_enter_silent_pool,
+)
 from ..automation_state.state_defs import (
     FOLLOWUP_SEGMENT_FOCUS as SHARED_FOLLOWUP_SEGMENT_FOCUS,
     FOLLOWUP_SEGMENT_LABELS as SHARED_FOLLOWUP_SEGMENT_LABELS,
@@ -316,14 +322,12 @@ def _resolve_pool_key_for_customer(
     activated: bool,
     followup_segment: str,
 ) -> str:
-    if not has_questionnaire_submission:
-        return POOL_NEW_USER
-    normalized_segment = _normalize_followup_segment(followup_segment, allow_unknown=False)
-    if activated:
-        return POOL_ACTIVE_FOCUS if normalized_segment == FOLLOWUP_SEGMENT_FOCUS else POOL_ACTIVE_NORMAL
-    if not trial_opened:
-        return POOL_NEW_USER
-    return POOL_INACTIVE_FOCUS if normalized_segment == FOLLOWUP_SEGMENT_FOCUS else POOL_INACTIVE_NORMAL
+    return _shared_resolve_pool_key_for_customer(
+        has_questionnaire_submission=has_questionnaire_submission,
+        trial_opened=trial_opened,
+        activated=activated,
+        current_segment=_normalize_followup_segment(followup_segment, allow_unknown=False),
+    )
 
 
 def _resolve_silent_threshold_days(config: dict[str, Any], *, pool_key: str) -> int:
@@ -351,11 +355,11 @@ def _resolve_manual_followup_segment(
 
 
 def _should_enter_silent_pool(*, entered_at: str, threshold_days: int, now_text: str) -> bool:
-    entered_dt = _parse_timestamp(entered_at)
-    now_dt = _parse_timestamp(now_text)
-    if entered_dt is None or now_dt is None:
-        return False
-    return now_dt >= entered_dt + timedelta(days=int(threshold_days))
+    return _shared_should_enter_silent_pool(
+        entered_at=entered_at,
+        silent_threshold_days=threshold_days,
+        now=now_text,
+    )
 
 
 def _resolve_pool_reference_at(
@@ -367,11 +371,14 @@ def _resolve_pool_reference_at(
     message_at: str,
     fallback_now: str,
 ) -> str:
-    if pool_key in {POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}:
-        return activation_at or trial_opened_at or submission_at or message_at or fallback_now
-    if pool_key in {POOL_INACTIVE_NORMAL, POOL_INACTIVE_FOCUS}:
-        return trial_opened_at or submission_at or message_at or fallback_now
-    return message_at or submission_at or trial_opened_at or activation_at or fallback_now
+    return _shared_resolve_pool_reference_at(
+        pool_key=pool_key,
+        trial_opened_at=trial_opened_at,
+        submission_at=submission_at,
+        activation_at=activation_at,
+        last_message_at=message_at,
+        now=fallback_now,
+    )
 
 
 def _default_config_payload(*, automation_key: str = DEFAULT_SCENARIO_KEY) -> dict[str, Any]:
@@ -1957,99 +1964,59 @@ def evaluate_customer_marketing_state(
     trial_opened_source = _normalized_text((trial_opening_fact or {}).get("source_type"))
     trial_opened_external_userid = _normalized_text((trial_opening_fact or {}).get("external_userid"))
     now_text = _iso_now()
-    if manual_followup_segment:
-        followup_segment = manual_followup_segment
-        followup_segment_source = "manual_override"
-    elif has_questionnaire_submission:
-        followup_segment = (
-            questionnaire_followup_segment
-            if questionnaire_followup_segment != FOLLOWUP_SEGMENT_UNKNOWN
-            else FOLLOWUP_SEGMENT_NORMAL
-        )
-        followup_segment_source = "questionnaire"
-    else:
-        followup_segment = FOLLOWUP_SEGMENT_UNKNOWN
-        followup_segment_source = "awaiting_questionnaire"
-
-    base_pool_key = _resolve_pool_key_for_customer(
+    existing_stage_key = _normalized_text((existing or {}).get("stage_key"))
+    existing_payload = dict((existing or {}).get("state_payload") or {})
+    preview_base_pool_key = _resolve_pool_key_for_customer(
         has_questionnaire_submission=has_questionnaire_submission,
         trial_opened=trial_opened,
         activated=activated,
-        followup_segment=followup_segment,
+        followup_segment=(
+            manual_followup_segment
+            or (questionnaire_followup_segment if questionnaire_followup_segment != FOLLOWUP_SEGMENT_UNKNOWN else FOLLOWUP_SEGMENT_NORMAL)
+            or FOLLOWUP_SEGMENT_UNKNOWN
+        ),
     )
-    base_stage_key = _pool_stage_key(base_pool_key)
-    base_reference_at = _resolve_pool_reference_at(
-        pool_key=base_pool_key,
-        trial_opened_at=trial_opened_at,
+    silent_threshold_days = _resolve_silent_threshold_days(config, pool_key=preview_base_pool_key)
+    calculated_state = _calculate_marketing_state(
+        has_questionnaire_submission=has_questionnaire_submission,
+        questionnaire_segment=(
+            questionnaire_followup_segment
+            if questionnaire_followup_segment != FOLLOWUP_SEGMENT_UNKNOWN
+            else FOLLOWUP_SEGMENT_NORMAL
+        ),
+        manual_segment=manual_followup_segment,
+        trial_opened=trial_opened,
+        activated=activated,
+        converted=converted,
+        has_external_userid=has_external_userid,
         submission_at=submission_at,
+        trial_opened_at=trial_opened_at,
         activation_at=last_activation_at,
-        message_at=last_message_at,
-        fallback_now=now_text,
+        last_message_at=last_message_at,
+        silent_threshold_days=silent_threshold_days,
+        existing_stage_key=existing_stage_key,
+        existing_entered_at=_normalized_text((existing or {}).get("entered_at")),
+        existing_state_payload=existing_payload,
+        now=now_text,
+        converted_at=last_conversion_marked_at,
     )
-    existing_stage_key = _normalized_text((existing or {}).get("stage_key"))
-    existing_payload = dict((existing or {}).get("state_payload") or {})
-    base_entered_at = base_reference_at or now_text
-    if existing_stage_key == base_stage_key and _normalized_text((existing or {}).get("entered_at")):
-        base_entered_at = _normalized_text((existing or {}).get("entered_at"))
-    elif (
-        existing_stage_key == _pool_stage_key(POOL_SILENT)
-        and _normalized_text(existing_payload.get("silent_base_pool_key")) == base_pool_key
-    ):
-        base_entered_at = (
-            _normalized_text(existing_payload.get("silent_base_pool_entered_at"))
-            or _normalized_text(existing_payload.get("base_pool_entered_at"))
-            or base_reference_at
-            or now_text
-        )
 
-    silent_threshold_days = _resolve_silent_threshold_days(config, pool_key=base_pool_key)
-    final_pool_key = base_pool_key
-    if not converted and base_pool_key in _SILENT_ELIGIBLE_POOL_KEYS:
-        if (
-            existing_stage_key == _pool_stage_key(POOL_SILENT)
-            and _normalized_text(existing_payload.get("silent_base_pool_key")) == base_pool_key
-        ):
-            final_pool_key = POOL_SILENT
-        elif _should_enter_silent_pool(
-            entered_at=base_entered_at,
-            threshold_days=silent_threshold_days,
-            now_text=now_text,
-        ):
-            final_pool_key = POOL_SILENT
-
-    if converted:
-        main_stage = "converted"
-        sub_stage = "enrolled"
-        lifecycle_status = "converted"
-        eligible_for_conversion = False
-        exit_reason = "enrolled"
-        stage_key = "converted/enrolled"
-        entered_at = _normalized_text((existing or {}).get("entered_at"))
-        if existing_stage_key != stage_key:
-            entered_at = last_conversion_marked_at or now_text
-        exited_at = last_conversion_marked_at or now_text
-    else:
-        main_stage = POOL_STAGE
-        sub_stage = final_pool_key
-        lifecycle_status = "silent" if final_pool_key == POOL_SILENT else "pool"
-        eligible_for_conversion = bool((trial_opened or activated) and has_questionnaire_submission and final_pool_key != POOL_SILENT)
-        if final_pool_key == POOL_SILENT:
-            exit_reason = "silent_timeout"
-        elif not has_questionnaire_submission:
-            exit_reason = "awaiting_questionnaire"
-        elif not trial_opened and not activated:
-            exit_reason = "trial_not_opened"
-        else:
-            exit_reason = ""
-        stage_key = _pool_stage_key(final_pool_key)
-        entered_at = _normalized_text((existing or {}).get("entered_at"))
-        if existing_stage_key != stage_key:
-            entered_at = now_text if final_pool_key == POOL_SILENT else (base_reference_at or now_text)
-        exited_at = ""
-
-    openclaw_eligible = bool(
-        stage_key in _ACTIONABLE_POOL_STAGE_KEYS and has_external_userid and not converted and final_pool_key != POOL_SILENT
-    )
+    followup_segment = _normalized_text(calculated_state.get("current_segment")) or FOLLOWUP_SEGMENT_UNKNOWN
+    followup_segment_source = _normalized_text(calculated_state.get("current_segment_source")) or "awaiting_questionnaire"
+    base_pool_key = _normalized_text(calculated_state.get("base_pool_key"))
+    base_stage_key = _normalized_text(calculated_state.get("base_stage_key"))
+    base_reference_at = _normalized_text(calculated_state.get("base_reference_at"))
+    base_entered_at = _normalized_text(calculated_state.get("base_entered_at"))
+    final_pool_key = _normalized_text(calculated_state.get("pool_key"))
+    main_stage = _normalized_text(calculated_state.get("main_stage"))
+    sub_stage = _normalized_text(calculated_state.get("sub_stage"))
+    lifecycle_status = _normalized_text(calculated_state.get("lifecycle_status"))
+    eligible_for_conversion = bool(calculated_state.get("eligible_for_conversion"))
+    exit_reason = _normalized_text(calculated_state.get("exit_reason"))
+    stage_key = _normalized_text(calculated_state.get("stage_key"))
+    entered_at = _normalized_text(calculated_state.get("entered_at"))
+    exited_at = _normalized_text(calculated_state.get("exited_at"))
+    openclaw_eligible = bool(calculated_state.get("openclaw_eligible"))
     state_payload = {
         "person_id": target.get("person_id"),
         "mobile": _normalized_text(target.get("mobile")),
