@@ -308,10 +308,10 @@ def test_customers_list_filters_by_marketing_segment_stage_and_eligibility(clien
     response = client.get(
         "/api/customers",
         query_string={
-            "marketing_segment": "core",
-            "marketing_main_stage": "active",
-            "marketing_sub_stage": "activated",
-            "eligible_for_conversion": "true",
+            "marketing_segment": "unknown",
+            "marketing_main_stage": "converted",
+            "marketing_sub_stage": "enrolled",
+            "eligible_for_conversion": "false",
         },
     )
 
@@ -319,10 +319,10 @@ def test_customers_list_filters_by_marketing_segment_stage_and_eligibility(clien
     payload = response.get_json()
     assert payload["count"] == 1
     assert payload["customers"][0]["external_userid"] == "wm_customer_001"
-    assert payload["filters"]["marketing_segment"] == "core"
-    assert payload["filters"]["marketing_main_stage"] == "active"
-    assert payload["filters"]["marketing_sub_stage"] == "activated"
-    assert payload["filters"]["eligible_for_conversion"] == "true"
+    assert payload["filters"]["marketing_segment"] == "unknown"
+    assert payload["filters"]["marketing_main_stage"] == "converted"
+    assert payload["filters"]["marketing_sub_stage"] == "enrolled"
+    assert payload["filters"]["eligible_for_conversion"] == "false"
 
 
 def test_customers_list_filters_by_marketing_unknown_and_ineligible(client, app):
@@ -330,7 +330,12 @@ def test_customers_list_filters_by_marketing_unknown_and_ineligible(client, app)
 
     response = client.get(
         "/api/customers",
-        query_string={"marketing_segment": "unknown", "eligible_for_conversion": "false"},
+        query_string={
+            "marketing_segment": "unknown",
+            "marketing_main_stage": "pool",
+            "marketing_sub_stage": "silent",
+            "eligible_for_conversion": "false",
+        },
     )
 
     assert response.status_code == 200
@@ -368,11 +373,11 @@ def test_customer_detail_returns_unified_dto(client, app):
     assert customer["class_user_status"]["signup_status"] == "signed_999"
     assert customer["marketing_profile"]["marketing_state"]["marketing_phase"] == "exited_signup_success"
     assert customer["marketing_summary"] == {
-        "main_stage": "active",
-        "sub_stage": "activated",
-        "segment": "core",
+        "main_stage": "converted",
+        "sub_stage": "enrolled",
+        "segment": "unknown",
         "hit_count": 3,
-        "eligible_for_conversion": True,
+        "eligible_for_conversion": False,
         "last_activation_at": "2026-03-24 09:30:00",
         "last_conversion_marked_at": "",
         "last_dispatch_at": "2026-03-24 10:40:00",
@@ -390,8 +395,8 @@ def test_customer_detail_returns_stable_empty_marketing_summary_when_current_row
     customer = response.get_json()["customer"]
     assert customer["external_userid"] == "wm_customer_002"
     assert customer["marketing_summary"] == {
-        "main_stage": "",
-        "sub_stage": "",
+        "main_stage": "pool",
+        "sub_stage": "silent",
         "segment": "unknown",
         "hit_count": 0,
         "eligible_for_conversion": False,

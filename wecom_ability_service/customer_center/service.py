@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ..services import refresh_contact_tags_for_external_userid
@@ -214,20 +213,39 @@ def _build_customer_list_item(external_userid: str, context: dict[str, Any]) -> 
 def _build_marketing_summary(external_userid: str) -> CustomerMarketingSummaryDTO:
     state_row = fetch_customer_marketing_state_current(external_userid) or {}
     value_segment_row = fetch_customer_value_segment_current(external_userid) or {}
-    try:
-        state_payload = json.loads(str(state_row.get("state_payload_json") or "{}"))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        state_payload = {}
+    marketing_profile = get_customer_marketing_profile(external_userid)
+    return _build_marketing_summary_from_profile(
+        external_userid=external_userid,
+        state_row=state_row,
+        value_segment_row=value_segment_row,
+        marketing_profile=marketing_profile,
+    )
+
+
+def _split_stage_key(stage_key: Any) -> tuple[str, str]:
+    normalized = str(stage_key or "").strip()
+    if not normalized:
+        return "", ""
+    if "/" not in normalized:
+        return normalized, ""
+    return tuple(normalized.split("/", 1))  # type: ignore[return-value]
+
+
+def _build_marketing_summary_from_profile(
+    *,
+    external_userid: str,
+    state_row: dict[str, Any],
+    value_segment_row: dict[str, Any],
+    marketing_profile: dict[str, Any],
+) -> CustomerMarketingSummaryDTO:
+    profile_summary = dict((marketing_profile or {}).get("summary") or {})
+    main_stage, sub_stage = _split_stage_key(profile_summary.get("current_stage"))
     return CustomerMarketingSummaryDTO(
-        main_stage=str(state_row.get("main_stage") or "").strip(),
-        sub_stage=str(state_row.get("sub_stage") or "").strip(),
-        segment=(
-            str(state_payload.get("followup_segment") or state_payload.get("current_segment") or "").strip()
-            or str(value_segment_row.get("segment") or "").strip()
-            or "unknown"
-        ),
+        main_stage=main_stage,
+        sub_stage=sub_stage,
+        segment=str(profile_summary.get("current_segment") or "").strip() or "unknown",
         hit_count=int(value_segment_row.get("score") or 0),
-        eligible_for_conversion=bool(state_row.get("eligible_for_conversion")),
+        eligible_for_conversion=bool(profile_summary.get("eligible_for_conversion")),
         last_activation_at=str(state_row.get("last_activation_at") or "").strip(),
         last_conversion_marked_at=str(state_row.get("last_conversion_marked_at") or "").strip(),
         last_dispatch_at=fetch_customer_last_dispatch_at(external_userid),
@@ -237,23 +255,12 @@ def _build_marketing_summary(external_userid: str) -> CustomerMarketingSummaryDT
 def _build_marketing_summary_from_context(external_userid: str, context: dict[str, Any]) -> CustomerMarketingSummaryDTO:
     state_row = context["marketing_states"].get(external_userid, {})
     value_segment_row = context["marketing_value_segments"].get(external_userid, {})
-    try:
-        state_payload = json.loads(str(state_row.get("state_payload_json") or "{}"))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        state_payload = {}
-    return CustomerMarketingSummaryDTO(
-        main_stage=str(state_row.get("main_stage") or "").strip(),
-        sub_stage=str(state_row.get("sub_stage") or "").strip(),
-        segment=(
-            str(state_payload.get("followup_segment") or state_payload.get("current_segment") or "").strip()
-            or str(value_segment_row.get("segment") or "").strip()
-            or "unknown"
-        ),
-        hit_count=int(value_segment_row.get("score") or 0),
-        eligible_for_conversion=bool(state_row.get("eligible_for_conversion")),
-        last_activation_at=str(state_row.get("last_activation_at") or "").strip(),
-        last_conversion_marked_at=str(state_row.get("last_conversion_marked_at") or "").strip(),
-        last_dispatch_at=fetch_customer_last_dispatch_at(external_userid),
+    marketing_profile = get_customer_marketing_profile(external_userid)
+    return _build_marketing_summary_from_profile(
+        external_userid=external_userid,
+        state_row=state_row,
+        value_segment_row=value_segment_row,
+        marketing_profile=marketing_profile,
     )
 
 
