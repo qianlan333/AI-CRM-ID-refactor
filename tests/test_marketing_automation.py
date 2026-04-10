@@ -644,6 +644,46 @@ def test_signup_conversion_batch_mcp_tools_return_filtered_profiles(app, client,
     assert candidate["routing"]["reason"] == "pending_text_message_batch"
 
 
+def test_mcp_customer_marketing_profile_normalizes_blank_exit_timestamp_before_upsert(app, client, monkeypatch):
+    from wecom_ability_service.domains.marketing_automation import repo as marketing_repo
+
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 10:30:00")
+    seed = _save_default_signup_conversion_config(client, app, questionnaire_id=52)
+    _seed_marketing_fixture(app)
+    _create_questionnaire_submission(
+        app,
+        seed,
+        submission_id=5201,
+        external_userid="wm_conv_001",
+        mobile_snapshot="13800138001",
+        hit_question_count=4,
+        submitted_at="2026-04-04 10:03:00",
+        trial_opened=False,
+    )
+
+    original_upsert = marketing_repo.upsert_customer_marketing_state_current
+    captured: dict[str, object] = {}
+
+    def _capturing_upsert(**kwargs):
+        captured["entered_at"] = kwargs.get("entered_at")
+        captured["exited_at"] = kwargs.get("exited_at")
+        return original_upsert(**kwargs)
+
+    monkeypatch.setattr(marketing_repo, "upsert_customer_marketing_state_current", _capturing_upsert)
+
+    profile_payload = _mcp_call(
+        client,
+        "get_customer_marketing_profile",
+        {"external_userid": "wm_conv_001", "recent_message_limit": 2},
+    ).get_json()["result"]["structuredContent"]
+
+    assert profile_payload["customer"]["external_userid"] == "wm_conv_001"
+    assert profile_payload["routing"]["reason"] == "trial_not_opened"
+    assert profile_payload["marketing_state"]["stage_key"] == "pool/new_user"
+    assert captured["entered_at"] == "2026-04-04 10:01:20"
+    assert captured["exited_at"] is None
+
+
 def test_send_pool_private_message_mcp_tool_supports_multiple_owners_and_writes_records(app, client):
     seed = _save_default_signup_conversion_config(client, app, questionnaire_id=242)
     _seed_customer(
