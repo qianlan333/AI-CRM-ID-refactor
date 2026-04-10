@@ -1843,6 +1843,19 @@ def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, 
     assert authorized.get_json()["run"]["matched_count"] == 1
 
 
+def test_message_activity_sync_api_fails_closed_when_token_is_not_configured(app, client, monkeypatch):
+    _configure_message_activity_db(app)
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_message_activity_sync",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_message_activity_sync should not be called")),
+    )
+
+    response = client.post("/api/admin/automation-conversion/message-activity-sync/run", json={"trigger_source": "scheduled"})
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "internal token not configured"
+
+
 def test_automation_conversion_settings_page_focuses_on_flow_design_sections(app, client):
     response = client.get("/admin/automation-conversion/settings", follow_redirects=True)
     html = response.get_data(as_text=True)
@@ -2614,6 +2627,32 @@ def test_reply_monitor_dispatch_payload_contains_required_fields(app, monkeypatc
             "receiver": "sales_01",
         }
     ]
+
+
+def test_reply_monitor_capture_api_fails_closed_when_token_is_not_configured(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_reply_monitor_capture",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_reply_monitor_capture should not be called")),
+    )
+
+    response = client.post("/api/admin/automation-conversion/reply-monitor/capture", json={"limit": 10})
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "internal token not configured"
+
+
+def test_reply_monitor_run_due_api_fails_closed_when_token_is_not_configured(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_due_reply_monitor",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_due_reply_monitor should not be called")),
+    )
+
+    response = client.post("/api/admin/automation-conversion/reply-monitor/run-due", json={"limit": 10})
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "internal token not configured"
 
 
 def test_process_inbound_messages_for_openclaw_skips_automation_scope_users(app, monkeypatch):
