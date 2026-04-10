@@ -1,0 +1,198 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
+{% endblock %}
+
+{% block content %}
+{% set sync_run = overview_payload.message_activity_sync.last_run or {} %}
+{% set sync_db = overview_payload.message_activity_sync.db_status or {} %}
+{% set reply_monitor = overview_payload.reply_monitor or {} %}
+{% set dashboard = overview_dashboard or {} %}
+{% set todo_items = dashboard.todo_items or [] %}
+{% set largest_stage = dashboard.largest_stage or {} %}
+
+<section class="admin-card ac-overview-header">
+  <div class="ac-overview-header__head">
+    <div>
+      <div class="ac-eyebrow">总览</div>
+      <h2>自动化转化</h2>
+      <p>这是自动化转化的经营驾驶舱，只回答结果、阶段卡点、异常待办和最近运行状态。</p>
+    </div>
+    <div class="ac-overview-header__links">
+      <a class="admin-chip admin-chip--neutral" href="{{ url_for('api.admin_automation_conversion_flow_design', section='questionnaire') }}">流程设计</a>
+      <a class="admin-chip admin-chip--neutral" href="{{ url_for('api.admin_automation_conversion_member_ops', stage='new-user', panel='members') }}">成员运营</a>
+      <a class="admin-chip admin-chip--neutral" href="{{ url_for('api.admin_automation_conversion_run_center', tab='overview') }}">运行中心</a>
+    </div>
+  </div>
+  <div class="ac-overview-header__meta">
+    <div class="admin-chip admin-chip--{{ shell_status.environment.tone }}">环境 {{ shell_status.environment.label }}</div>
+    <div class="admin-chip admin-chip--neutral">版本 {{ shell_status.release_sha }}</div>
+    <div class="admin-chip admin-chip--{{ dashboard.current_status.tone }}">{{ dashboard.current_status.label }}</div>
+    <div class="admin-chip admin-chip--neutral">自动启动 {{ overview_payload.auto_start_window.description }}</div>
+  </div>
+</section>
+
+<section class="admin-card" id="overview-summary">
+  <div class="admin-card-head">
+    <div>
+      <h2>经营摘要</h2>
+      <p>优先看结果，不在首页承载配置、运维和操作表单。</p>
+    </div>
+  </div>
+  <div class="admin-card-grid">
+    {% for item in overview_payload.cards %}
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">{{ item.label }}</div>
+      <div class="admin-card-value admin-card-value--compact">{{ item.value }}</div>
+      <p class="admin-card-copy">{{ item.description }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="admin-card" id="overview-funnel">
+  <div class="admin-card-head">
+    <div>
+      <h2>阶段漏斗 / 阶段分布</h2>
+      <p>
+        当前人数最多的阶段：
+        {% if largest_stage %}
+        <strong>{{ largest_stage.label }}</strong>（{{ largest_stage.total_count }}）
+        {% else %}
+        <strong>暂无数据</strong>
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="ac-funnel-grid">
+    {% for item in overview_payload.stage_columns %}
+    <a class="ac-funnel-card ac-funnel-card--link" href="{{ url_for('api.admin_automation_conversion_member_ops', stage=item.route_key, panel='members') }}#member-listing">
+      <div class="ac-funnel-card__topline">
+        <div>
+          <strong>{{ item.label }}</strong>
+          <p class="admin-card-copy">{{ item.description }}</p>
+        </div>
+        <span class="ac-funnel-card__action">进入成员运营</span>
+      </div>
+      <div class="admin-card-value admin-card-value--compact">{{ item.total_count }}</div>
+      <dl class="ac-funnel-card__metrics">
+        <div>
+          <dt>今日新增</dt>
+          <dd>{{ item.today_new_count }}</dd>
+        </div>
+        <div>
+          <dt>重点跟进</dt>
+          <dd>{{ item.focus_count }}</dd>
+        </div>
+        <div>
+          <dt>普通跟进</dt>
+          <dd>{{ item.normal_count }}</dd>
+        </div>
+        <div>
+          <dt>阶段编码</dt>
+          <dd>{{ item.route_key }}</dd>
+        </div>
+      </dl>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="admin-card" id="overview-todo">
+  <div class="admin-card-head">
+    <div>
+      <h2>待处理事项</h2>
+      <p>只保留需要业务或管理员明确跟进的问题，点击即可进入对应处理区。</p>
+    </div>
+  </div>
+  {% if todo_items %}
+  <div class="ac-todo-list">
+    {% for item in todo_items %}
+    <a class="ac-todo-item{% if item.tone == 'danger' %} is-danger{% elif item.tone == 'warning' %} is-warning{% endif %}" href="{{ item.href }}">
+      <div>
+        <strong>{{ item.title }}</strong>
+        <p class="admin-card-copy">{{ item.body }}</p>
+      </div>
+      <span class="ac-todo-item__action">{{ item.action }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="admin-state admin-state--inline">
+    <strong>当前没有待处理事项</strong>
+    <span>自动化配置、阶段推进和运行状态暂时都在健康区间。</span>
+  </div>
+  {% endif %}
+</section>
+
+<section class="admin-card" id="overview-runtime">
+  <div class="admin-card-head">
+    <div>
+      <h2>最近运行摘要</h2>
+      <p>首页只保留摘要，不提供同步、监控、调试的操作按钮。</p>
+    </div>
+  </div>
+  <div class="ac-card-grid--auto">
+    <article class="ac-subcard">
+      <h3 class="ac-subcard__title">当前版本</h3>
+      <div class="admin-card-value admin-card-value--compact">{{ shell_status.release_sha }}</div>
+      <p class="ac-meta">环境：{{ shell_status.environment.label }}</p>
+    </article>
+    <article class="ac-subcard">
+      <h3 class="ac-subcard__title">当前运行状态</h3>
+      <div class="admin-card-value admin-card-value--compact">{{ dashboard.current_status.label }}</div>
+      <p class="ac-meta">自动启动时间窗：{{ overview_payload.auto_start_window.description }}</p>
+    </article>
+    <article class="ac-subcard">
+      <h3 class="ac-subcard__title">最近消息活跃同步</h3>
+      <div class="admin-card-value admin-card-value--compact">{{ sync_run.status_label or ("未配置" if not sync_db.configured else "暂无记录") }}</div>
+      <p class="ac-meta">最近时间：{{ sync_run.finished_at or "暂无记录" }}</p>
+      <p class="ac-meta">异常：{{ sync_run.error_message or "无" }}</p>
+    </article>
+    <article class="ac-subcard">
+      <h3 class="ac-subcard__title">最近自动接话监控</h3>
+      <div class="admin-card-value admin-card-value--compact">{{ reply_monitor.status_label }}</div>
+      <p class="ac-meta">最近扫描：{{ reply_monitor.last_capture_at or "暂无记录" }}</p>
+      <p class="ac-meta">异常：{{ reply_monitor.last_error or "无" }}</p>
+    </article>
+    <article class="ac-subcard">
+      <h3 class="ac-subcard__title">最近更新时间</h3>
+      <div class="admin-card-value admin-card-value--compact">{{ dashboard.latest_update_at }}</div>
+      <p class="ac-meta">包含同步完成、接话扫描或接话放行的最近一次时间。</p>
+    </article>
+  </div>
+</section>
+
+<section class="admin-card" id="overview-shortcuts">
+  <div class="admin-card-head">
+    <div>
+      <h2>快捷动作</h2>
+      <p>降级为次要入口，只做分流，不再让首页承担配置和运维职责。</p>
+    </div>
+  </div>
+  <div class="ac-quick-grid">
+    <a class="ac-quick-card" href="{{ url_for('api.admin_automation_conversion_member_ops', stage='new-user', panel='members') }}">
+      <div class="ac-quick-card__topline">
+        <strong>查看成员运营</strong>
+        <span class="admin-chip admin-chip--neutral">名单</span>
+      </div>
+      <div class="ac-meta">进入阶段视角，按人、按阶段继续筛选、干预和批量触达。</div>
+    </a>
+    <a class="ac-quick-card" href="{{ url_for('api.admin_automation_conversion_flow_design', section='questionnaire') }}">
+      <div class="ac-quick-card__topline">
+        <strong>进入流程设计</strong>
+        <span class="admin-chip admin-chip--neutral">规则</span>
+      </div>
+      <div class="ac-meta">调整阶段模型、问卷规则、SOP、全局规则和默认渠道入口。</div>
+    </a>
+    <a class="ac-quick-card" href="{{ url_for('api.admin_automation_conversion_run_center', tab='overview') }}">
+      <div class="ac-quick-card__topline">
+        <strong>进入运行中心</strong>
+        <span class="admin-chip admin-chip--neutral">运维</span>
+      </div>
+      <div class="ac-meta">处理数据同步、自动接话、模型基础设施和单客调试。</div>
+    </a>
+  </div>
+</section>
+{% endblock %}

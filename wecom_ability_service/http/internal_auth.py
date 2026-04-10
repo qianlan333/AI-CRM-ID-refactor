@@ -40,9 +40,16 @@ def _provided_internal_token(*, legacy_header_names: Iterable[str] = ()) -> str:
     return ""
 
 
-def require_internal_api_token(*, token_keys: tuple[str, ...] = (), legacy_header_names: tuple[str, ...] = ()):
+def require_internal_api_token(
+    *,
+    token_keys: tuple[str, ...] = (),
+    legacy_header_names: tuple[str, ...] = (),
+    require_configured: bool = False,
+):
     expected_tokens = _configured_internal_tokens(*token_keys)
     if not expected_tokens:
+        if require_configured:
+            return jsonify({"ok": False, "error": "internal token not configured"}), 503
         return None
     provided_token = _provided_internal_token(legacy_header_names=legacy_header_names)
     if not provided_token:

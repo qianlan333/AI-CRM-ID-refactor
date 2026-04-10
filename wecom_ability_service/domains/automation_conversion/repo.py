@@ -5,6 +5,8 @@ from typing import Any
 
 from ...db import get_db, get_db_backend
 
+_AUTOMATION_SOP_POOL_LOCK_NAMESPACE = 41017
+
 
 def _db_bool(value: bool) -> bool | int:
     return value if get_db_backend() == "postgres" else (1 if value else 0)
@@ -1158,6 +1160,18 @@ def list_due_focus_send_batches(*, due_at: str, limit: int = 20) -> list[dict[st
     )
 
 
+def list_recent_focus_send_batches(*, limit: int = 20) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_focus_send_batch
+        ORDER BY updated_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+
+
 def insert_focus_send_batch_item(payload: dict[str, Any]) -> dict[str, Any]:
     row = get_db().execute(
         """
@@ -1669,6 +1683,19 @@ def list_sop_batches(*, pool_key: str = "", limit: int = 50) -> list[dict[str, A
     sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
     params.append(max(1, int(limit)))
     return _fetchall_dicts(sql, tuple(params))
+
+
+def try_acquire_sop_pool_run_lock(*, pool_key: str) -> bool:
+    normalized_pool_key = _normalized_text(pool_key)
+    if not normalized_pool_key or get_db_backend() != "postgres":
+        return True
+    row = get_db().execute(
+        """
+        SELECT pg_try_advisory_xact_lock(?, hashtext(?)) AS locked
+        """,
+        (_AUTOMATION_SOP_POOL_LOCK_NAMESPACE, normalized_pool_key),
+    ).fetchone()
+    return _row_bool((row or {}).get("locked"))
 
 
 def get_successful_sop_batch_item(*, member_id: int, pool_key: str, day_index: int) -> dict[str, Any] | None:
