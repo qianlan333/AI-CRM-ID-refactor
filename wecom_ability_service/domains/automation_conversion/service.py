@@ -700,6 +700,13 @@ def get_sop_v1_batches_payload(*, limit: int = 20) -> dict[str, Any]:
     }
 
 
+def get_focus_send_batches_payload(*, limit: int = 20) -> dict[str, Any]:
+    batches = [_serialize_focus_send_batch(row) for row in repo.list_recent_focus_send_batches(limit=max(1, int(limit)))]
+    return {
+        "batches": batches,
+    }
+
+
 def get_sop_v1_management_payload(*, selected_pool_key: str = "", selected_day_index: int = 0) -> dict[str, Any]:
     ensure_sop_v1_defaults()
     normalized_pool_key = _validate_sop_pool_key(selected_pool_key) if _normalized_text(selected_pool_key) else SOP_V1_ALLOWED_POOLS[0]

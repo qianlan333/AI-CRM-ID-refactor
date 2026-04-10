@@ -1,0 +1,1786 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
+<style>
+  .rule-editor {
+    display: grid;
+    gap: 16px;
+  }
+
+  .rule-editor__toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .rule-editor__list {
+    display: grid;
+    gap: 14px;
+  }
+
+  .rule-editor__row {
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 16px;
+    padding: 16px;
+    background: rgba(248, 250, 252, 0.8);
+    display: grid;
+    gap: 12px;
+  }
+
+  .rule-editor__row-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .rule-editor__option-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+  }
+
+  .rule-editor__checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: #fff;
+  }
+
+  .rule-editor__checkbox input {
+    margin-top: 2px;
+  }
+
+  .rule-editor__empty,
+  .rule-editor__notice {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.04);
+    color: #334155;
+  }
+
+  .rule-editor__notice.is-warning {
+    background: rgba(245, 158, 11, 0.12);
+    color: #92400e;
+  }
+
+  .rule-editor__meta,
+  .flow-design-note {
+    font-size: 13px;
+    color: #64748b;
+  }
+
+  .admin-debug-details {
+    margin-top: 12px;
+  }
+
+  .admin-debug-details summary {
+    cursor: pointer;
+    color: #475569;
+    font-weight: 600;
+  }
+
+  .sop-pool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+
+  .sop-pool-card {
+    display: grid;
+    gap: 12px;
+    padding: 20px;
+    border-radius: 24px;
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    background: rgba(255, 251, 245, 0.72);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .sop-pool-card.is-selected {
+    border-color: rgba(164, 101, 37, 0.4);
+    box-shadow: 0 18px 38px rgba(99, 77, 45, 0.12);
+    background: rgba(255, 248, 239, 0.98);
+  }
+
+  .sop-pool-topline,
+  .sop-day-head,
+  .image-picker-head,
+  .preview-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .sop-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    background: #fff;
+    color: rgba(72, 56, 33, 0.78);
+  }
+
+  .sop-pill.is-enabled {
+    color: #17603a;
+    background: rgba(206, 242, 217, 0.78);
+    border-color: rgba(23, 96, 58, 0.18);
+  }
+
+  .sop-card-metrics,
+  .preview-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .preview-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .sop-card-metric,
+  .preview-metric {
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid rgba(99, 77, 45, 0.08);
+  }
+
+  .sop-card-metric span,
+  .preview-metric span {
+    display: block;
+    color: rgba(72, 56, 33, 0.66);
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
+  .sop-card-metric strong,
+  .preview-metric strong {
+    font-size: 18px;
+  }
+
+  .sop-card-recent {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(99, 77, 45, 0.08);
+    font-size: 14px;
+    color: rgba(72, 56, 33, 0.82);
+  }
+
+  .sop-day-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .sop-day-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    background: #fff;
+    color: rgba(72, 56, 33, 0.82);
+    text-decoration: none;
+    font-size: 14px;
+  }
+
+  .sop-day-tab.is-selected {
+    background: rgba(164, 101, 37, 0.12);
+    border-color: rgba(164, 101, 37, 0.4);
+    color: #6d4217;
+  }
+
+  .sop-day-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(164, 101, 37, 0.24);
+  }
+
+  .sop-day-dot.has-content {
+    background: #a46525;
+  }
+
+  .image-picker,
+  .preview-panel {
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    border-radius: 24px;
+    padding: 20px;
+    background: rgba(255, 251, 245, 0.72);
+    display: grid;
+    gap: 16px;
+  }
+
+  .image-input-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .image-thumb-list {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+
+  .image-thumb-card {
+    border: 1px solid rgba(99, 77, 45, 0.12);
+    border-radius: 18px;
+    padding: 12px;
+    background: #fff;
+    display: grid;
+    gap: 10px;
+  }
+
+  .image-thumb-card img {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    border-radius: 14px;
+    background: rgba(99, 77, 45, 0.08);
+  }
+
+  .image-thumb-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    color: rgba(72, 56, 33, 0.8);
+  }
+
+  .sop-template-panel {
+    display: grid;
+    gap: 20px;
+  }
+
+  .sop-feedback[hidden] {
+    display: none;
+  }
+
+  .flow-design-header {
+    gap: 22px;
+  }
+
+  .flow-design-header__meta {
+    display: grid;
+    gap: 10px;
+    justify-items: end;
+  }
+
+  .flow-design-shell {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .flow-design-sidebar {
+    position: sticky;
+    top: 24px;
+    display: grid;
+    gap: 16px;
+  }
+
+  .flow-design-sidebar__section {
+    display: grid;
+    gap: 14px;
+  }
+
+  .flow-design-side-nav {
+    display: grid;
+    gap: 10px;
+  }
+
+  .flow-design-side-link {
+    display: grid;
+    gap: 6px;
+    padding: 14px 16px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.82);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .flow-design-side-link strong {
+    color: #1f2937;
+  }
+
+  .flow-design-side-link span {
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .flow-design-side-link.is-active {
+    border-color: rgba(157, 99, 48, 0.24);
+    background: linear-gradient(135deg, rgba(244, 231, 215, 0.82), rgba(255, 255, 255, 0.98));
+    box-shadow: 0 16px 26px rgba(99, 67, 26, 0.08);
+  }
+
+  .flow-design-main {
+    display: grid;
+    gap: 18px;
+  }
+
+  .flow-design-section-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
+    gap: 18px;
+  }
+
+  .flow-design-panel {
+    display: grid;
+    gap: 18px;
+  }
+
+  .flow-design-block {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.78);
+  }
+
+  .flow-design-block__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .flow-design-block__head p,
+  .flow-design-stage-summary {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .flow-design-summary-grid {
+    display: grid;
+    gap: 12px;
+  }
+
+  .flow-design-summary-card {
+    display: grid;
+    gap: 8px;
+    padding: 16px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.82);
+  }
+
+  .flow-design-summary-card span {
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .flow-design-summary-card strong {
+    font-size: 20px;
+    color: #1f2937;
+  }
+
+  .flow-design-summary-card p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .flow-design-phase-grid {
+    display: grid;
+    gap: 16px;
+  }
+
+  .flow-design-phase {
+    display: grid;
+    gap: 14px;
+    padding: 20px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 22px;
+    background: linear-gradient(135deg, rgba(253, 249, 242, 0.9), rgba(255, 255, 255, 0.98));
+  }
+
+  .flow-design-phase__stage-grid,
+  .flow-design-sequence {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+
+  .flow-design-phase__stage,
+  .flow-design-sequence__item {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+  }
+
+  .flow-design-phase__stage span,
+  .flow-design-sequence__item span {
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .flow-design-phase__stage strong,
+  .flow-design-sequence__item strong {
+    font-size: 16px;
+    color: #1f2937;
+  }
+
+  .flow-design-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding-left: 18px;
+    color: #475569;
+    line-height: 1.7;
+  }
+
+  .flow-design-chip-list,
+  .flow-design-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .flow-design-note-card {
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px dashed rgba(15, 23, 42, 0.12);
+    background: rgba(248, 250, 252, 0.7);
+    color: #475569;
+    line-height: 1.7;
+  }
+
+  .flow-design-publish-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .flow-design-placeholder {
+    border-style: dashed;
+    background: rgba(248, 250, 252, 0.7);
+  }
+
+  .flow-design-channel-link {
+    word-break: break-all;
+  }
+
+  .flow-design-context-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .flow-design-context-list > div {
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: rgba(248, 250, 252, 0.78);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+  }
+
+  .flow-design-context-list dt {
+    margin-bottom: 6px;
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .flow-design-context-list dd {
+    margin: 0;
+    color: #1f2937;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 900px) {
+    .preview-metrics {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .flow-design-shell,
+    .flow-design-section-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .flow-design-sidebar {
+      position: static;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .preview-metrics,
+    .sop-card-metrics,
+    .flow-design-phase__stage-grid,
+    .flow-design-sequence {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set current_pool = sop_payload.current_pool %}
+{% set current_config = current_pool.config %}
+{% set selected_template = current_pool.selected_template %}
+{% set workspace = flow_design_workspace or {} %}
+{% set publish = workspace.publish or {} %}
+{% set current_sop_context = workspace.current_sop_context or {} %}
+
+{% include "admin_console/_automation_conversion_workspace_tabs.html" %}
+
+<form id="flow-design-settings-form" method="post" action="{{ url_for('api.admin_automation_conversion_save_settings') }}" hidden>
+  <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+  <input type="hidden" name="section" value="{% if flow_design_entry_section == 'stage_model' %}stage-model{% elif flow_design_entry_section == 'sop' %}sop{% elif flow_design_entry_section == 'global' %}global-rules{% elif flow_design_entry_section == 'channel' %}channel{% elif flow_design_entry_section == 'publish' %}publish{% else %}questionnaire{% endif %}">
+  <input type="hidden" name="pool" value="{{ current_pool.pool_key }}">
+  <input type="hidden" name="day" value="{{ current_pool.selected_day_index }}">
+</form>
+
+<section class="admin-card ac-hero flow-design-header">
+  <div class="ac-hero__head">
+    <div>
+      <div class="ac-eyebrow">流程设计</div>
+      <h2>流程设计</h2>
+      <p>配置自动化转化规则与 SOP。这里统一承接阶段结构、入池分层、SOP 剧本、全局规则、默认渠道入口和发布管理。</p>
+    </div>
+    <div class="flow-design-header__meta">
+      <div class="flow-design-chip-list">
+        <div class="admin-chip admin-chip--{{ publish.draft_status.tone or 'neutral' }}">当前草稿状态：{{ publish.draft_status.label or "草稿待校验" }}</div>
+        <div class="admin-chip admin-chip--{{ publish.live_status.tone or 'neutral' }}">已发布状态：{{ publish.live_status.label or "兼容生效中" }}</div>
+      </div>
+      <div class="flow-design-action-row">
+        {% if flow_design_entry_section in ['rules', 'global', 'channel'] %}
+        <button class="admin-button admin-button--primary" form="flow-design-settings-form" type="submit">保存当前草稿</button>
+        {% elif flow_design_entry_section == 'sop' %}
+        <a class="admin-button admin-button--primary" href="#flow-sop">在下方保存 SOP</a>
+        {% else %}
+        <a class="admin-button admin-button--primary" href="#flow-publish">查看发布管理</a>
+        {% endif %}
+        <a class="admin-button admin-button--secondary" href="#flow-publish">查看发布管理</a>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='overview') }}">去运行中心校验</a>
+      </div>
+    </div>
+  </div>
+  <div class="ac-section-nav" aria-label="流程设计内容区">
+    <a class="ac-section-link{% if flow_design_entry_section == 'stage_model' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='stage-model') }}#flow-stage-model">阶段模型</a>
+    <a class="ac-section-link{% if flow_design_entry_section == 'rules' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='questionnaire') }}#flow-rules">入池与问卷规则</a>
+    <a class="ac-section-link{% if flow_design_entry_section == 'sop' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='sop', pool=current_pool.pool_key, day=current_pool.selected_day_index) }}#flow-sop">SOP 剧本</a>
+    <a class="ac-section-link{% if flow_design_entry_section == 'global' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='global-rules') }}#flow-global">全局规则</a>
+    <a class="ac-section-link{% if flow_design_entry_section == 'channel' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='channel') }}#flow-channel">默认渠道入口</a>
+    <a class="ac-section-link{% if flow_design_entry_section == 'publish' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='publish') }}#flow-publish">发布管理</a>
+  </div>
+</section>
+
+<div class="flow-design-shell">
+  <aside class="flow-design-sidebar">
+    <section class="admin-card flow-design-sidebar__section">
+      <div>
+        <div class="ac-eyebrow">内部导航</div>
+        <h3>流程设计模块</h3>
+      </div>
+      <nav class="flow-design-side-nav" aria-label="流程设计内部导航">
+        <a class="flow-design-side-link{% if flow_design_entry_section == 'stage_model' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='stage-model') }}#flow-stage-model">
+          <strong>阶段模型</strong>
+          <span>先看清用户如何从入池走到沉默或成交。</span>
+        </a>
+        <a class="flow-design-side-link{% if flow_design_entry_section == 'rules' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='questionnaire') }}#flow-rules">
+          <strong>入池与问卷规则</strong>
+          <span>先选问卷，再配关键题，再设定分层阈值。</span>
+        </a>
+        <a class="flow-design-side-link{% if flow_design_entry_section == 'sop' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='sop', pool=current_pool.pool_key, day=current_pool.selected_day_index) }}#flow-sop">
+          <strong>SOP 剧本</strong>
+          <span>围绕池子和 day 连续编辑，不再单独跳到 SOP 页面。</span>
+        </a>
+        <a class="flow-design-side-link{% if flow_design_entry_section == 'global' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='global-rules') }}#flow-global">
+          <strong>全局规则</strong>
+          <span>统一承接自动启动时间窗和沉默池阈值。</span>
+        </a>
+        <a class="flow-design-side-link{% if flow_design_entry_section == 'channel' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='channel') }}#flow-channel">
+          <strong>默认渠道入口</strong>
+          <span>管理默认二维码、欢迎语和自动通过好友配置。</span>
+        </a>
+        <a class="flow-design-side-link{% if flow_design_entry_section == 'publish' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='publish') }}#flow-publish">
+          <strong>发布管理</strong>
+          <span>先保存，再校验，再为未来版本化发布留出位置。</span>
+        </a>
+      </nav>
+    </section>
+
+    <section class="admin-card flow-design-sidebar__section">
+      <div>
+        <div class="ac-eyebrow">配置摘要</div>
+        <h3>当前配置一览</h3>
+      </div>
+      <div class="flow-design-summary-grid">
+        {% for item in workspace.config_summaries or [] %}
+        <article class="flow-design-summary-card">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+          <p>{{ item.detail }}</p>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="admin-card flow-design-sidebar__section">
+      <div>
+        <div class="ac-eyebrow">发布提示</div>
+        <h3>当前草稿与已发布</h3>
+      </div>
+      <div class="flow-design-note-card">{{ publish.draft_status.detail }}</div>
+      <div class="flow-design-note-card">{{ publish.live_status.detail }}</div>
+      <div class="flow-design-action-row">
+        <button class="admin-button admin-button--secondary" form="flow-design-settings-form" type="submit">保存规则草稿</button>
+        <a class="admin-button admin-button--ghost" href="#flow-publish">查看发布动作</a>
+      </div>
+    </section>
+  </aside>
+
+  <div class="flow-design-main">
+    <section class="admin-card" id="flow-stage-model">
+      <div class="admin-card-head">
+        <div>
+          <h2>阶段模型</h2>
+          <p>先把阶段链路看清楚，再决定问卷如何分层、SOP 在哪些池子生效，以及默认入口怎样接入。</p>
+        </div>
+      </div>
+
+      <section class="flow-design-block">
+        <div class="flow-design-block__head">
+          <div>
+            <h3>阶段顺序</h3>
+            <p>从进入自动化开始，依次经过问卷分层、激活推进，最终流向沉默池或已成交。</p>
+          </div>
+        </div>
+        <div class="flow-design-sequence">
+          {% for item in workspace.stage_sequence or [] %}
+          <article class="flow-design-sequence__item">
+            <span>{{ loop.index }}</span>
+            <strong>{{ item.label }}</strong>
+            <p class="flow-design-stage-summary">{{ item.description }}</p>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+
+      <div class="flow-design-phase-grid">
+        {% for group in workspace.stage_groups or [] %}
+        <section class="flow-design-phase">
+          <div class="flow-design-block__head">
+            <div>
+              <h3>{{ group.label }}</h3>
+              <p>{{ group.description }}</p>
+            </div>
+            <span class="admin-chip admin-chip--neutral">{{ group.summary }}</span>
+          </div>
+              <div class="flow-design-phase__stage-grid">
+                {% for item in group["items"] or [] %}
+                <article class="flow-design-phase__stage">
+              <span>{{ item.route_key }}</span>
+              <strong>{{ item.label }}</strong>
+              <p class="flow-design-stage-summary">{{ item.description }}</p>
+              <p class="flow-design-stage-summary">当前 {{ item.total_count }} 人，今日新增 {{ item.today_new_count }} 人。</p>
+            </article>
+            {% endfor %}
+          </div>
+        </section>
+        {% endfor %}
+      </div>
+
+      <section class="flow-design-block">
+        <div class="flow-design-block__head">
+          <div>
+            <h3>阶段间流转关系摘要</h3>
+            <p>这部分先聚焦结构理解，不在这里承载技术动作和执行按钮。</p>
+          </div>
+        </div>
+        <ol class="flow-design-list">
+          {% for item in workspace.flow_relations or [] %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ol>
+      </section>
+    </section>
+
+    <section class="admin-card" id="flow-rules">
+      <div class="admin-card-head">
+        <div>
+          <h2>入池与问卷规则</h2>
+          <p>围绕“先选问卷，再配关键题，再设阈值”组织入池分层配置，不再混入技术运维内容。</p>
+        </div>
+      </div>
+
+      <div class="flow-design-section-grid">
+        <div class="flow-design-panel">
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>自动化开关</h3>
+                <p>控制整套自动化转化是否开启。</p>
+              </div>
+              <span class="admin-chip admin-chip--{% if settings_payload.config.enabled %}healthy{% else %}neutral{% endif %}">
+                {{ "已开启" if settings_payload.config.enabled else "已关闭" }}
+              </span>
+            </div>
+            <label class="admin-checkbox">
+              <input form="flow-design-settings-form" type="checkbox" name="enabled" value="1" {% if settings_payload.config.enabled %}checked{% endif %}>
+              <span>开启自动化转化</span>
+            </label>
+          </section>
+
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>当前问卷选择</h3>
+                <p>先确定本次分层所依赖的问卷，关键题规则将根据这里的问卷动态变化。</p>
+              </div>
+              <span class="admin-chip admin-chip--neutral">{{ workspace.current_questionnaire.label or "未选择" }}</span>
+            </div>
+            <label class="admin-field">
+              <span>当前问卷</span>
+              <select form="flow-design-settings-form" name="questionnaire_id" id="questionnaire-id-select" required>
+                <option value="">请选择问卷</option>
+                {% for item in settings_payload.questionnaires %}
+                <option value="{{ item.id }}" {% if (settings_payload.config.questionnaire_id|string) == (item.id|string) %}selected{% endif %}>
+                  {{ item.title or item.name or ("问卷 #" ~ item.id) }}{% if item.is_disabled %}（已停用）{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </label>
+            {% if settings_payload.questionnaire_missing %}
+            <div class="admin-state admin-state--inline admin-state--error">
+              <strong>问卷失效提醒</strong>
+              <span>已配置的问卷 #{{ settings_payload.missing_questionnaire_id }} 不存在，请重新选择有效问卷后重建关键题规则。</span>
+            </div>
+            {% endif %}
+          </section>
+
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>关键题规则</h3>
+                <p>以业务配置器方式维护：先选题目，再勾选会命中重点跟进的答案。</p>
+              </div>
+              <span class="admin-chip admin-chip--neutral">当前 {{ workspace.current_questionnaire.rule_count or 0 }} 条</span>
+            </div>
+
+            {% if settings_payload.questionnaire_missing %}
+            <div class="admin-state admin-state--inline admin-state--error">
+              <strong>旧规则已失效</strong>
+              <span>当前不会继续展示失效问卷的旧规则，请重新选择有效问卷后新增关键题。</span>
+            </div>
+            {% endif %}
+
+            <div class="rule-editor" id="question-rule-editor-root">
+              <div class="rule-editor__toolbar">
+                <div class="rule-editor__meta">每一行表示一条业务规则：选择关键题，勾选会命中重点跟进的答案。</div>
+                <button
+                  class="admin-button admin-button--secondary"
+                  id="question-rule-add-button"
+                  type="button"
+                  {% if not settings_payload.rule_editor.selected_questionnaire_id %}disabled{% endif %}
+                >
+                  新增关键题
+                </button>
+              </div>
+              <div class="rule-editor__notice is-warning" id="question-rule-change-notice" hidden></div>
+              <div class="rule-editor__list" id="question-rule-editor-list"></div>
+            </div>
+
+            <input form="flow-design-settings-form" type="hidden" name="question_rules_json" id="question-rules-json" value="{{ question_rules_json|e }}">
+          </section>
+
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>分层阈值</h3>
+                <p>关键题负责优先命中，阈值负责统一的重点 / Top 分层边界。</p>
+              </div>
+            </div>
+            <div class="admin-grid-2">
+              <label class="admin-field">
+                <span>重点跟进门槛</span>
+                <input form="flow-design-settings-form" type="number" name="core_threshold" min="0" value="{{ settings_payload.config.core_threshold }}">
+              </label>
+              <label class="admin-field">
+                <span>Top 门槛</span>
+                <input form="flow-design-settings-form" type="number" name="top_threshold" min="0" value="{{ settings_payload.config.top_threshold }}">
+              </label>
+            </div>
+          </section>
+
+          <details class="admin-debug-details">
+            <summary>高级调试 / 开发模式</summary>
+            {% if show_debug_json_editor %}
+            <label class="admin-field">
+              <span>底层规则数据（只读）</span>
+              <textarea rows="12" readonly>{{ question_rules_json }}</textarea>
+            </label>
+            {% else %}
+            <p class="rule-editor__meta">默认隐藏底层规则数据。需要查看时，可在地址后加 `?debug=1` 进入开发模式。</p>
+            {% endif %}
+          </details>
+        </div>
+
+        <aside class="ac-panel-stack">
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">当前配置摘要</h3>
+            <p class="ac-meta">当前问卷：{{ workspace.current_questionnaire.label or "未选择" }}</p>
+            <p class="ac-meta">关键题：{{ workspace.current_questionnaire.rule_count or 0 }} 条</p>
+            <p class="ac-meta">重点门槛：{{ settings_payload.config.core_threshold or 0 }}</p>
+            <p class="ac-meta">Top 门槛：{{ settings_payload.config.top_threshold or 0 }}</p>
+          </article>
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">规则设计提示</h3>
+            <p class="ac-meta">业务上优先通过关键题直接命中重点跟进，再用阈值做补充分层。</p>
+            <p class="ac-meta">消息活跃同步已迁到运行中心，本页不再承载同步执行动作。</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section class="admin-card" id="flow-sop">
+      <div class="admin-card-head">
+        <div>
+          <h2>SOP 剧本</h2>
+          <p>把 SOP 合并进流程设计后，池子选择、池子级配置、Day 模板导航和当前 Day 编辑器都留在同一工作台内。</p>
+        </div>
+      </div>
+
+      <section class="flow-design-block">
+        <div class="flow-design-block__head">
+          <div>
+            <h3>池子 / 阶段选择</h3>
+            <p>{{ sop_payload.subtitle }}</p>
+          </div>
+          <span class="admin-chip admin-chip--neutral">当前池子：{{ current_pool.pool_label }}</span>
+        </div>
+        <div class="sop-pool-grid">
+          {% for card in sop_payload.pool_cards %}
+          <a
+            class="sop-pool-card{% if card.is_selected %} is-selected{% endif %}"
+            href="{{ url_for('api.admin_automation_conversion_flow_design', section='sop', pool=card.pool_key, day=1) }}#flow-sop"
+          >
+            <div class="sop-pool-topline">
+              <div>
+                <strong>{{ card.pool_label }}</strong>
+              </div>
+              <span class="sop-pill{% if card.enabled %} is-enabled{% endif %}">
+                {{ "已启用" if card.enabled else "未启用" }}
+              </span>
+            </div>
+            <div class="sop-card-metrics">
+              <div class="sop-card-metric">
+                <span>统一发送时间</span>
+                <strong>{{ card.send_time }}</strong>
+              </div>
+              <div class="sop-card-metric">
+                <span>模板天数</span>
+                <strong>{{ card.template_count }}</strong>
+              </div>
+            </div>
+            <div class="sop-card-recent">
+              <strong>最近执行</strong>
+              {% if card.recent_execution.has_record %}
+              <span>{{ card.recent_execution.scheduled_for or card.recent_execution.label }}</span>
+              <span>成功 {{ card.recent_execution.success_count }} / 跳过 {{ card.recent_execution.skipped_count }} / 失败 {{ card.recent_execution.failed_count }}</span>
+              {% else %}
+              <span>暂无执行记录</span>
+              {% endif %}
+            </div>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
+
+      <div class="flow-design-section-grid">
+        <div class="flow-design-panel">
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>池子级配置</h3>
+                <p>为当前池子统一控制是否启用以及每日统一发送时间。</p>
+              </div>
+            </div>
+
+            <form id="sop-config-form" class="admin-form-grid admin-form-grid--stacked">
+              <div class="admin-grid-2">
+                <label class="admin-checkbox">
+                  <input type="checkbox" name="enabled" value="1" {% if current_config.enabled %}checked{% endif %}>
+                  <span>启用 {{ current_pool.pool_label }} 自动 SOP</span>
+                </label>
+                <label class="admin-field">
+                  <span>统一发送时间</span>
+                  <input type="time" name="send_time" value="{{ current_config.send_time }}">
+                </label>
+              </div>
+              <div class="admin-toolbar">
+                <button class="admin-button admin-button--primary" type="submit">保存池子配置</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>Day 模板导航</h3>
+                <p>当前池子与 day 上下文持续可见，新增和切换都留在同一工作面中。</p>
+              </div>
+              <button id="add-sop-day-btn" class="admin-button admin-button--secondary" type="button">新增一天</button>
+            </div>
+
+            <div class="sop-day-tabs">
+              {% for tab in current_pool.day_tabs %}
+              <a
+                class="sop-day-tab{% if tab.is_selected %} is-selected{% endif %}"
+                href="{{ url_for('api.admin_automation_conversion_flow_design', section='sop', pool=current_pool.pool_key, day=tab.day_index) }}#flow-sop"
+              >
+                <span class="sop-day-dot{% if tab.has_content %} has-content{% endif %}"></span>
+                <span>{{ tab.label }}</span>
+              </a>
+              {% endfor %}
+            </div>
+          </section>
+
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>当前 Day 编辑器</h3>
+                <p>当前正在编辑 day{{ current_pool.selected_day_index }}。删除某一天后，后续模板会自动前移一天。</p>
+              </div>
+              <span class="admin-chip admin-chip--neutral">{{ current_pool.pool_label }} · day{{ selected_template.day_index }}</span>
+            </div>
+
+            <form id="sop-template-form" class="sop-template-panel admin-form-grid admin-form-grid--stacked">
+              <div class="admin-grid-2">
+                <label class="admin-checkbox">
+                  <input type="checkbox" name="enabled" value="1" {% if selected_template.enabled %}checked{% endif %}>
+                  <span>启用 day{{ selected_template.day_index }}</span>
+                </label>
+                <div class="admin-state admin-state--inline">
+                  <strong>当前 day</strong>
+                  <span>day{{ selected_template.day_index }}</span>
+                </div>
+                <label class="admin-field" style="grid-column: 1 / -1;">
+                  <span>文本内容</span>
+                  <textarea id="sop-template-content" name="content" rows="6" placeholder="输入 day{{ selected_template.day_index }} 的发送文本">{{ selected_template.content }}</textarea>
+                </label>
+              </div>
+
+              <section class="image-picker">
+                <div class="image-picker-head">
+                  <div>
+                    <strong>图片内容</strong>
+                    <div class="flow-design-note">最多 3 张，只支持文本 + 图片，不支持附件和素材库。</div>
+                  </div>
+                  <div class="admin-toolbar">
+                    <span id="sop-image-count" class="flow-design-note">已选 0/3 张</span>
+                    <button id="pick-sop-images-btn" class="admin-button admin-button--secondary" type="button">添加图片</button>
+                  </div>
+                </div>
+                <input id="sop-image-input" class="image-input-hidden" type="file" accept="image/*" multiple>
+                <div id="sop-image-list" class="image-thumb-list">
+                  <div class="admin-empty">暂未添加图片</div>
+                </div>
+              </section>
+
+              <section class="preview-panel">
+                <div class="preview-head">
+                  <div>
+                    <strong>预览摘要</strong>
+                    <div id="sop-preview-summary" class="flow-design-note">未配置发送内容</div>
+                  </div>
+                </div>
+                <div class="preview-metrics">
+                  <div class="preview-metric">
+                    <span>当前池子</span>
+                    <strong>{{ current_pool.pool_label }}</strong>
+                  </div>
+                  <div class="preview-metric">
+                    <span>模板天数</span>
+                    <strong>{{ current_pool.template_count }}</strong>
+                  </div>
+                  <div class="preview-metric">
+                    <span>统一发送时间</span>
+                    <strong>{{ current_config.send_time }}</strong>
+                  </div>
+                  <div class="preview-metric">
+                    <span>最近执行</span>
+                    <strong>{% if current_pool.recent_execution.has_record %}{{ current_pool.recent_execution.success_count }}/{{ current_pool.recent_execution.skipped_count }}/{{ current_pool.recent_execution.failed_count }}{% else %}暂无{% endif %}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <div class="admin-toolbar">
+                <button class="admin-button admin-button--primary" type="submit">保存 day{{ selected_template.day_index }} 模板</button>
+                {% if current_pool.template_count > 1 %}
+                <button id="delete-sop-day-btn" class="admin-button admin-button--ghost" type="button">删除 day{{ selected_template.day_index }}</button>
+                {% endif %}
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <aside class="ac-panel-stack">
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">当前上下文</h3>
+            <dl class="flow-design-context-list">
+              <div>
+                <dt>当前池子</dt>
+                <dd>{{ current_sop_context.pool_label }}</dd>
+              </div>
+              <div>
+                <dt>当前 Day</dt>
+                <dd>day{{ current_sop_context.day_index }}</dd>
+              </div>
+              <div>
+                <dt>统一发送时间</dt>
+                <dd>{{ current_sop_context.send_time }}</dd>
+              </div>
+              <div>
+                <dt>模板状态</dt>
+                <dd>{{ "已启用" if current_sop_context.template_enabled else "未启用" }}</dd>
+              </div>
+            </dl>
+          </article>
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">池子级摘要</h3>
+            <p class="ac-meta">当前池子共有 {{ current_sop_context.template_count }} 天模板。</p>
+            <p class="ac-meta">
+              最近执行：
+              {% if current_sop_context.recent_execution.has_record %}
+              成功 {{ current_sop_context.recent_execution.success_count }} / 跳过 {{ current_sop_context.recent_execution.skipped_count }} / 失败 {{ current_sop_context.recent_execution.failed_count }}
+              {% else %}
+              暂无执行记录
+              {% endif %}
+            </p>
+          </article>
+        </aside>
+      </div>
+
+      <div class="admin-state admin-state--inline sop-feedback" id="sop-feedback" hidden>
+        <strong id="sop-feedback-title"></strong>
+        <span id="sop-feedback-message"></span>
+      </div>
+    </section>
+
+    <section class="admin-card" id="flow-global">
+      <div class="admin-card-head">
+        <div>
+          <h2>全局规则</h2>
+          <p>这里集中管理整个自动化共用的启动时间窗和沉默池阈值，不再混入技术配置或执行动作。</p>
+        </div>
+      </div>
+
+      <div class="flow-design-section-grid">
+        <div class="flow-design-panel">
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>自动启动时间窗</h3>
+                <p>只定义何时允许自动新启动；消息活跃同步和接话监控的执行已迁到运行中心。</p>
+              </div>
+            </div>
+            <div class="admin-grid-2">
+              <label class="admin-field">
+                <span>白天开始小时</span>
+                <input form="flow-design-settings-form" type="number" name="day_start_hour" min="0" max="23" value="{{ settings_payload.config.day_start_hour or 9 }}">
+              </label>
+              <label class="admin-field">
+                <span>夜间暂停开始小时</span>
+                <input form="flow-design-settings-form" type="number" name="quiet_hour_start" min="0" max="23" value="{{ settings_payload.config.quiet_hour_start }}">
+              </label>
+              <label class="admin-field">
+                <span>时区</span>
+                <input form="flow-design-settings-form" type="text" name="timezone" value="{{ settings_payload.config.timezone }}">
+              </label>
+            </div>
+          </section>
+
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>沉默池规则</h3>
+                <p>按池子停留天数定义何时进入沉默池，保证规则在一个全局区域里可统一维护。</p>
+              </div>
+            </div>
+            <div class="admin-grid-2">
+              <label class="admin-field">
+                <span>新用户池阈值</span>
+                <input form="flow-design-settings-form" type="number" name="silent_threshold_new_user" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('new_user', 7) }}">
+              </label>
+              <label class="admin-field">
+                <span>未激活普通池阈值</span>
+                <input form="flow-design-settings-form" type="number" name="silent_threshold_inactive_normal" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('inactive_normal', 7) }}">
+              </label>
+              <label class="admin-field">
+                <span>未激活重点池阈值</span>
+                <input form="flow-design-settings-form" type="number" name="silent_threshold_inactive_focus" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('inactive_focus', 7) }}">
+              </label>
+              <label class="admin-field">
+                <span>激活普通池阈值</span>
+                <input form="flow-design-settings-form" type="number" name="silent_threshold_active_normal" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('active_normal', 7) }}">
+              </label>
+              <label class="admin-field">
+                <span>激活重点池阈值</span>
+                <input form="flow-design-settings-form" type="number" name="silent_threshold_active_focus" min="1" value="{{ (settings_payload.config.silent_threshold_days_by_pool or {}).get('active_focus', 7) }}">
+              </label>
+            </div>
+          </section>
+        </div>
+
+        <aside class="ac-panel-stack">
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">全局规则摘要</h3>
+            <p class="ac-meta">自动启动时间窗：{{ workspace.global_summary.window }}</p>
+            <p class="ac-meta">沉默池阈值覆盖 5 个核心池子。</p>
+          </article>
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">已下沉到运行中心</h3>
+            <p class="ac-meta">消息活跃同步 -> 运行中心 / 数据同步</p>
+            <p class="ac-meta">自动接话监控 -> 运行中心 / 自动接话监控</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section class="admin-card" id="flow-channel">
+      <div class="admin-card-head">
+        <div>
+          <h2>默认渠道入口</h2>
+          <p>把默认二维码、欢迎语、免验证加好友和当前入口状态聚合到一个清晰子区，不再埋在设置页中间。</p>
+        </div>
+      </div>
+
+      <div class="flow-design-section-grid">
+        <div class="flow-design-panel">
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>默认渠道信息</h3>
+                <p>默认入口用于把客户引入自动化转化，新建后将默认归属 {{ settings_payload.default_owner_staff_id }}。</p>
+              </div>
+              <form method="post" action="{{ url_for('api.admin_automation_conversion_generate_default_channel') }}">
+                <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+                <button class="admin-button admin-button--secondary" type="submit">生成 / 更新二维码</button>
+              </form>
+            </div>
+
+            <dl class="admin-definition-list">
+              <div>
+                <dt>渠道编码</dt>
+                <dd>{{ settings_payload.default_channel.channel_code }}</dd>
+              </div>
+              <div>
+                <dt>渠道名称</dt>
+                <dd>{{ settings_payload.default_channel.channel_name }}</dd>
+              </div>
+              <div>
+                <dt>默认归属客服</dt>
+                <dd>{{ settings_payload.default_channel.owner_staff_id }}</dd>
+              </div>
+              <div>
+                <dt>二维码状态</dt>
+                <dd>{{ "已生成" if settings_payload.default_channel.qr_url else "未生成" }}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="flow-design-block">
+            <div class="flow-design-block__head">
+              <div>
+                <h3>欢迎语配置</h3>
+                <p>客户通过默认渠道新增好友后，用这里的欢迎语作为入口后的第一条触达内容。</p>
+              </div>
+            </div>
+            <label class="admin-field">
+              <span>欢迎语</span>
+              <textarea form="flow-design-settings-form" name="welcome_message" rows="4" placeholder="用于默认渠道二维码的欢迎语，客户扫码新增好友且 callback 带回 welcome_code 后会自动发送。">{{ settings_payload.default_channel.welcome_message }}</textarea>
+            </label>
+            <label class="admin-check-line">
+              <input form="flow-design-settings-form" type="checkbox" name="auto_accept_friend" value="1" {% if settings_payload.default_channel.auto_accept_friend %}checked{% endif %}>
+              <span>自动通过好友（免验证直接添加好友）</span>
+            </label>
+          </section>
+        </div>
+
+        <aside class="ac-panel-stack">
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">二维码状态</h3>
+            <p class="ac-meta">二维码地址：
+              {% if settings_payload.default_channel.qr_url %}
+              <a class="flow-design-channel-link" href="{{ settings_payload.default_channel.qr_url }}" target="_blank" rel="noreferrer">{{ settings_payload.default_channel.qr_url }}</a>
+              {% else %}
+              未生成
+              {% endif %}
+            </p>
+            <p class="ac-meta">回调 state：{{ settings_payload.default_channel.scene_value or "未生成" }}</p>
+            <p class="ac-meta">渠道状态：{{ settings_payload.default_channel.status }}</p>
+          </article>
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">透传状态</h3>
+            <p class="ac-meta">欢迎语：{{ settings_payload.default_channel.field_statuses.welcome_message.status }}{% if settings_payload.default_channel.field_statuses.welcome_message.detail %}（{{ settings_payload.default_channel.field_statuses.welcome_message.detail }}）{% endif %}</p>
+            <p class="ac-meta">自动通过好友：{{ settings_payload.default_channel.field_statuses.auto_accept_friend.status }}{% if settings_payload.default_channel.field_statuses.auto_accept_friend.detail %}（{{ settings_payload.default_channel.field_statuses.auto_accept_friend.detail }}）{% endif %}</p>
+          </article>
+          {% if not settings_payload.provider_available %}
+          <article class="ac-subcard">
+            <h3 class="ac-subcard__title">接入状态</h3>
+            <p class="ac-meta">当前仓库还没有真实二维码 provider，页面结构和入池逻辑已接好，但生成真实二维码仍是占位能力。</p>
+          </article>
+          {% endif %}
+        </aside>
+      </div>
+    </section>
+
+    <section class="admin-card" id="flow-publish">
+      <div class="admin-card-head">
+        <div>
+          <h2>发布管理</h2>
+          <p>先把草稿态、已生效态和发布动作组织出来。当前后端还没有完整版本系统，但页面结构已经为未来扩展预留。</p>
+        </div>
+      </div>
+
+      <div class="flow-design-publish-grid">
+        <article class="flow-design-summary-card">
+          <span>当前草稿摘要</span>
+          <strong>{{ publish.draft_status.label }}</strong>
+          <p>{{ publish.draft_status.detail }}</p>
+        </article>
+        <article class="flow-design-summary-card">
+          <span>当前生效版本摘要</span>
+          <strong>{{ publish.live_status.label }}</strong>
+          <p>{{ publish.live_status.detail }}</p>
+        </article>
+        <article class="flow-design-summary-card">
+          <span>最近修改内容提示</span>
+          <p>{% for item in publish.recent_changes or [] %}{{ item }}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
+        </article>
+        <article class="flow-design-summary-card flow-design-placeholder">
+          <span>回滚 / 历史版本</span>
+          <strong>占位中</strong>
+          <p>{{ publish.history_placeholder }}</p>
+        </article>
+      </div>
+
+      {% if publish.issues %}
+      <div class="admin-state admin-state--inline admin-state--error">
+        <strong>发布前需关注</strong>
+        <span>{% for item in publish.issues %}{{ item }}{% if not loop.last %}；{% endif %}{% endfor %}</span>
+      </div>
+      {% else %}
+      <div class="admin-state admin-state--inline">
+        <strong>当前配置完整度良好</strong>
+        <span>保存后建议到运行中心完成运行验证，再进入正式发布能力。</span>
+      </div>
+      {% endif %}
+
+      <div class="flow-design-action-row">
+        <button class="admin-button admin-button--primary" form="flow-design-settings-form" type="submit">保存规则与入口配置</button>
+        <button class="admin-button admin-button--secondary" form="sop-config-form" type="submit">保存当前池子配置</button>
+        <button class="admin-button admin-button--secondary" form="sop-template-form" type="submit">保存当前 Day 模板</button>
+        <button class="admin-button admin-button--ghost" type="button" disabled>发布当前草稿（占位）</button>
+        <button class="admin-button admin-button--ghost" type="button" disabled>回滚到历史版本（占位）</button>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='overview') }}">前往运行中心校验</a>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script id="sop-template-images-data" type="application/json">{{ selected_template.images_json|tojson }}</script>
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script>
+  (() => {
+    const questionnaireSelect = document.getElementById("questionnaire-id-select");
+    const addButton = document.getElementById("question-rule-add-button");
+    const listRoot = document.getElementById("question-rule-editor-list");
+    const hiddenInput = document.getElementById("question-rules-json");
+    const changeNotice = document.getElementById("question-rule-change-notice");
+    const questionnaireCatalog = {{ settings_payload.questionnaire_rule_catalog|tojson }};
+    const initialQuestionnaireId = String({{ settings_payload.rule_editor.selected_questionnaire_id|tojson }} || "");
+
+    function parseRules(rawValue) {
+      try {
+        const parsed = JSON.parse(rawValue || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_error) {
+        return [];
+      }
+    }
+
+    let rows = parseRules(hiddenInput.value);
+
+    function currentQuestionnaire() {
+      return questionnaireCatalog[String(questionnaireSelect.value || "")] || null;
+    }
+
+    function syncHiddenInput() {
+      const normalizedRows = rows
+        .map((row, index) => {
+          const questionId = Number(row.questionnaire_question_id || 0);
+          const hitOptionIds = Array.isArray(row.hit_option_ids_json)
+            ? row.hit_option_ids_json
+                .map((item) => Number(item || 0))
+                .filter((item, itemIndex, array) => item > 0 && array.indexOf(item) === itemIndex)
+            : [];
+          if (!questionId) {
+            return null;
+          }
+          return {
+            questionnaire_question_id: questionId,
+            hit_option_ids_json: hitOptionIds,
+            sort_order: index + 1,
+          };
+        })
+        .filter(Boolean);
+      hiddenInput.value = JSON.stringify(normalizedRows, null, 2);
+    }
+
+    function setChangeNotice(message) {
+      if (!message) {
+        changeNotice.hidden = true;
+        changeNotice.textContent = "";
+        return;
+      }
+      changeNotice.hidden = false;
+      changeNotice.textContent = message;
+    }
+
+    function emptyState(message) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "rule-editor__empty";
+      wrapper.textContent = message;
+      return wrapper;
+    }
+
+    function selectedQuestionIds(excludeIndex) {
+      return new Set(
+        rows
+          .map((row, index) => (index === excludeIndex ? 0 : Number(row.questionnaire_question_id || 0)))
+          .filter((questionId) => questionId > 0)
+      );
+    }
+
+    function renderRows() {
+      listRoot.innerHTML = "";
+      const questionnaire = currentQuestionnaire();
+      if (!questionnaireSelect.value) {
+        addButton.disabled = true;
+        listRoot.appendChild(emptyState("请先选择当前问卷，再新增关键题。"));
+        syncHiddenInput();
+        return;
+      }
+      if (!questionnaire) {
+        addButton.disabled = true;
+        rows = [];
+        listRoot.appendChild(emptyState("当前问卷无效，请重新选择有效问卷后配置关键题。"));
+        syncHiddenInput();
+        return;
+      }
+
+      const availableQuestions = Array.isArray(questionnaire.questions) ? questionnaire.questions : [];
+      if (!availableQuestions.length) {
+        addButton.disabled = true;
+        listRoot.appendChild(emptyState("当前问卷没有可配置的单选 / 多选题。"));
+        syncHiddenInput();
+        return;
+      }
+
+      addButton.disabled = false;
+      const hasQuestionnaireChanged = initialQuestionnaireId && initialQuestionnaireId !== String(questionnaireSelect.value || "");
+      setChangeNotice(hasQuestionnaireChanged ? "你已经切换了问卷，建议重新检查关键题与答案映射后再保存。" : "");
+
+      if (!rows.length) {
+        listRoot.appendChild(emptyState("暂未配置关键题，可点击“新增关键题”开始。"));
+        syncHiddenInput();
+        return;
+      }
+
+      rows.forEach((row, index) => {
+        const container = document.createElement("div");
+        container.className = "rule-editor__row";
+        const rowHead = document.createElement("div");
+        rowHead.className = "rule-editor__row-head";
+
+        const selectLabel = document.createElement("label");
+        selectLabel.className = "admin-field";
+        const title = document.createElement("span");
+        title.textContent = "关键题";
+        const select = document.createElement("select");
+        select.dataset.rowIndex = String(index);
+        const usedQuestionIds = selectedQuestionIds(index);
+        const defaultOption = document.createElement("option");
+        defaultOption.value = "";
+        defaultOption.textContent = "请选择题目";
+        select.appendChild(defaultOption);
+        availableQuestions.forEach((question) => {
+          const option = document.createElement("option");
+          option.value = String(question.id);
+          option.textContent = question.title;
+          option.selected = Number(row.questionnaire_question_id || 0) === Number(question.id || 0);
+          option.disabled = usedQuestionIds.has(Number(question.id || 0));
+          select.appendChild(option);
+        });
+        selectLabel.appendChild(title);
+        selectLabel.appendChild(select);
+        rowHead.appendChild(selectLabel);
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "admin-button admin-button--ghost";
+        removeButton.textContent = "删除";
+        removeButton.dataset.removeIndex = String(index);
+        rowHead.appendChild(removeButton);
+        container.appendChild(rowHead);
+
+        const questionId = Number(row.questionnaire_question_id || 0);
+        const question = availableQuestions.find((item) => Number(item.id || 0) === questionId);
+        if (!question) {
+          const invalidNotice = document.createElement("div");
+          invalidNotice.className = "rule-editor__notice is-warning";
+          invalidNotice.textContent = "当前题目不在已选问卷中，请重新选择。";
+          container.appendChild(invalidNotice);
+        } else if (!(question.options || []).length) {
+          const invalidNotice = document.createElement("div");
+          invalidNotice.className = "rule-editor__notice is-warning";
+          invalidNotice.textContent = "当前题目没有可命中的选项。";
+          container.appendChild(invalidNotice);
+        } else {
+          const optionGrid = document.createElement("div");
+          optionGrid.className = "rule-editor__option-grid";
+          const selectedOptionIds = Array.isArray(row.hit_option_ids_json) ? row.hit_option_ids_json.map((item) => Number(item || 0)) : [];
+          question.options.forEach((option) => {
+            const checkboxLabel = document.createElement("label");
+            checkboxLabel.className = "rule-editor__checkbox";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.value = String(option.id);
+            checkbox.checked = selectedOptionIds.includes(Number(option.id || 0));
+            checkbox.dataset.rowIndex = String(index);
+            checkbox.dataset.optionId = String(option.id);
+            const textWrap = document.createElement("div");
+            textWrap.innerHTML = "<strong>" + option.option_text + "</strong>";
+            checkboxLabel.appendChild(checkbox);
+            checkboxLabel.appendChild(textWrap);
+            optionGrid.appendChild(checkboxLabel);
+          });
+          container.appendChild(optionGrid);
+        }
+        listRoot.appendChild(container);
+      });
+      syncHiddenInput();
+    }
+
+    questionnaireSelect.addEventListener("change", () => {
+      rows = [];
+      renderRows();
+    });
+
+    addButton.addEventListener("click", () => {
+      rows.push({ questionnaire_question_id: "", hit_option_ids_json: [] });
+      renderRows();
+    });
+
+    listRoot.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("[data-remove-index]");
+      if (!removeButton) return;
+      const removeIndex = Number(removeButton.dataset.removeIndex || -1);
+      if (removeIndex < 0) return;
+      rows.splice(removeIndex, 1);
+      renderRows();
+    });
+
+    listRoot.addEventListener("change", (event) => {
+      const select = event.target.closest("select[data-row-index]");
+      if (select) {
+        const rowIndex = Number(select.dataset.rowIndex || -1);
+        if (rowIndex >= 0) {
+          rows[rowIndex] = { questionnaire_question_id: Number(select.value || 0), hit_option_ids_json: [] };
+          renderRows();
+        }
+        return;
+      }
+
+      const checkbox = event.target.closest("input[type='checkbox'][data-row-index][data-option-id]");
+      if (!checkbox) return;
+      const rowIndex = Number(checkbox.dataset.rowIndex || -1);
+      const optionId = Number(checkbox.dataset.optionId || 0);
+      if (rowIndex < 0 || !optionId) return;
+      const selectedOptionIds = new Set(Array.isArray(rows[rowIndex].hit_option_ids_json) ? rows[rowIndex].hit_option_ids_json.map((item) => Number(item || 0)) : []);
+      if (checkbox.checked) {
+        selectedOptionIds.add(optionId);
+      } else {
+        selectedOptionIds.delete(optionId);
+      }
+      rows[rowIndex].hit_option_ids_json = Array.from(selectedOptionIds);
+      syncHiddenInput();
+    });
+
+    renderRows();
+  })();
+</script>
+<script>
+  (() => {
+    const MAX_IMAGES = 3;
+    const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+    const poolKey = {{ sop_payload.current_pool.pool_key|tojson }};
+    const dayIndex = {{ sop_payload.current_pool.selected_day_index|tojson }};
+    const basePageUrl = {{ url_for('api.admin_automation_conversion_flow_design')|tojson }};
+    const imagesSeed = JSON.parse(document.getElementById('sop-template-images-data').textContent || '[]');
+    const state = {
+      images: Array.isArray(imagesSeed) ? imagesSeed.map((item, index) => ({
+        id: item.id || ('seed-' + index),
+        fileName: item.file_name || ('image-' + (index + 1) + '.png'),
+        contentType: item.content_type || 'image/png',
+        dataUrl: item.data_url || '',
+        dataBase64: item.data_base64 || '',
+        previewUrl: item.preview_url || item.data_url || '',
+        mediaId: item.media_id || '',
+      })) : [],
+    };
+
+    const els = {
+      configForm: document.getElementById('sop-config-form'),
+      templateForm: document.getElementById('sop-template-form'),
+      content: document.getElementById('sop-template-content'),
+      imageInput: document.getElementById('sop-image-input'),
+      pickImagesBtn: document.getElementById('pick-sop-images-btn'),
+      imageCount: document.getElementById('sop-image-count'),
+      imageList: document.getElementById('sop-image-list'),
+      previewSummary: document.getElementById('sop-preview-summary'),
+      addDayBtn: document.getElementById('add-sop-day-btn'),
+      deleteDayBtn: document.getElementById('delete-sop-day-btn'),
+      feedback: document.getElementById('sop-feedback'),
+      feedbackTitle: document.getElementById('sop-feedback-title'),
+      feedbackMessage: document.getElementById('sop-feedback-message'),
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function buildPageUrl(nextPoolKey, nextDayIndex) {
+      const params = new URLSearchParams();
+      params.set('section', 'sop');
+      params.set('pool', nextPoolKey);
+      params.set('day', String(nextDayIndex));
+      return basePageUrl + '?' + params.toString() + '#flow-sop';
+    }
+
+    function setFeedback(title, message, tone) {
+      els.feedback.hidden = !(title || message);
+      els.feedback.className = tone === 'error'
+        ? 'admin-state admin-state--inline admin-state--error sop-feedback'
+        : 'admin-state admin-state--inline sop-feedback';
+      els.feedbackTitle.textContent = title || '';
+      els.feedbackMessage.textContent = message || '';
+    }
+
+    function buildSummary() {
+      const hasText = Boolean(String(els.content.value || '').trim());
+      const imageCount = state.images.length;
+      if (hasText && imageCount > 0) return '文本 + 图片 ' + imageCount + ' 张';
+      if (imageCount > 0) return '图片 ' + imageCount + ' 张';
+      if (hasText) return '纯文本';
+      return '未配置发送内容';
+    }
+
+    function renderImages() {
+      els.imageCount.textContent = '已选 ' + state.images.length + '/' + MAX_IMAGES + ' 张';
+      els.previewSummary.textContent = buildSummary();
+      if (!state.images.length) {
+        els.imageList.innerHTML = '<div class="admin-empty">暂未添加图片</div>';
+        return;
+      }
+      els.imageList.innerHTML = state.images.map((image, index) => (
+        '<article class="image-thumb-card">'
+        + '<img src="' + escapeHtml(image.previewUrl || '') + '" alt="图片 ' + (index + 1) + '">'
+        + '<div class="image-thumb-meta">'
+        + '<span>' + escapeHtml(image.fileName || ('图片 ' + (index + 1))) + '</span>'
+        + '<button class="admin-button admin-button--secondary" type="button" data-image-index="' + index + '">移除</button>'
+        + '</div>'
+        + '</article>'
+      )).join('');
+    }
+
+    async function readFileAsDataUrl(file) {
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function addFiles(files) {
+      const picked = Array.from(files || []);
+      if (!picked.length) return;
+      if (state.images.length + picked.length > MAX_IMAGES) {
+        window.alert('最多只能添加 3 张图片');
+        return;
+      }
+      const invalidFile = picked.find((file) => !String(file.type || '').startsWith('image/'));
+      if (invalidFile) {
+        window.alert('只能选择图片文件');
+        return;
+      }
+      const oversizedFile = picked.find((file) => Number(file.size || 0) > MAX_IMAGE_SIZE_BYTES);
+      if (oversizedFile) {
+        window.alert('图片大小不能超过 5MB');
+        return;
+      }
+      for (const file of picked) {
+        const dataUrl = await readFileAsDataUrl(file);
+        state.images.push({
+          id: 'picked-' + Date.now() + '-' + Math.random().toString(16).slice(2),
+          fileName: file.name,
+          contentType: file.type,
+          dataUrl,
+          dataBase64: String(dataUrl.split(',')[1] || ''),
+          previewUrl: dataUrl,
+          mediaId: '',
+        });
+      }
+      renderImages();
+    }
+
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(String(payload.error || payload.message || '请求失败'));
+      }
+      return payload;
+    }
+
+    function buildImagesPayload() {
+      return state.images.map((image) => ({
+        file_name: image.fileName,
+        content_type: image.contentType,
+        data_url: image.dataUrl,
+        data_base64: image.dataBase64,
+        media_id: image.mediaId,
+      }));
+    }
+
+    els.pickImagesBtn.addEventListener('click', () => els.imageInput.click());
+    els.imageInput.addEventListener('change', async (event) => {
+      const files = event.target.files;
+      els.imageInput.value = '';
+      await addFiles(files);
+    });
+    els.imageList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-image-index]');
+      if (!button) return;
+      const imageIndex = Number(button.getAttribute('data-image-index'));
+      if (Number.isNaN(imageIndex)) return;
+      state.images.splice(imageIndex, 1);
+      renderImages();
+    });
+    els.content.addEventListener('input', () => {
+      els.previewSummary.textContent = buildSummary();
+    });
+
+    els.configForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setFeedback('', '', '');
+      try {
+        await requestJson('/api/admin/automation-conversion/sop/config/' + poolKey, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enabled: Boolean(els.configForm.querySelector('input[name="enabled"]').checked),
+            send_time: String(els.configForm.querySelector('input[name="send_time"]').value || ''),
+          }),
+        });
+        setFeedback('保存成功', '池子配置已更新。', '');
+      } catch (error) {
+        setFeedback('保存失败', error.message, 'error');
+      }
+    });
+
+    els.templateForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setFeedback('', '', '');
+      try {
+        await requestJson('/api/admin/automation-conversion/sop/templates/' + poolKey + '/' + dayIndex, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: String(els.content.value || ''),
+            enabled: Boolean(els.templateForm.querySelector('input[name="enabled"]').checked),
+            images_json: buildImagesPayload(),
+          }),
+        });
+        setFeedback('保存成功', '当前 SOP 模板已更新。', '');
+      } catch (error) {
+        setFeedback('保存失败', error.message, 'error');
+      }
+    });
+
+    els.addDayBtn.addEventListener('click', async () => {
+      setFeedback('', '', '');
+      try {
+        const payload = await requestJson('/api/admin/automation-conversion/sop/templates/' + poolKey, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const nextDayIndex = Number((payload.template || {}).day_index || (payload.current_pool || {}).template_count || (dayIndex + 1));
+        window.location.href = buildPageUrl(poolKey, nextDayIndex);
+      } catch (error) {
+        setFeedback('新增失败', error.message, 'error');
+      }
+    });
+
+    if (els.deleteDayBtn) {
+      els.deleteDayBtn.addEventListener('click', async () => {
+        if (!window.confirm('确认删除当前 day 模板吗？删除后，后续模板会自动前移一天。')) return;
+        setFeedback('', '', '');
+        try {
+          await requestJson('/api/admin/automation-conversion/sop/templates/' + poolKey + '/' + dayIndex, {
+            method: 'DELETE',
+          });
+          const nextDayIndex = Math.max(1, dayIndex - 1);
+          window.location.href = buildPageUrl(poolKey, nextDayIndex);
+        } catch (error) {
+          setFeedback('删除失败', error.message, 'error');
+        }
+      });
+    }
+
+    renderImages();
+  })();
+</script>
+{% endblock %}

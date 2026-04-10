@@ -56,6 +56,12 @@ def client(app):
     return app.test_client()
 
 
+def _admin_action_token(client, path: str = "/admin/automation-conversion/flow-design") -> str:
+    client.get(path, follow_redirects=True)
+    with client.session_transaction() as session:
+        return str(session["admin_console_action_token"])
+
+
 def _seed_signup_conversion_questionnaire(
     app,
     *,
@@ -656,7 +662,8 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
 
     assert response.status_code == 200
     assert "自动化转化" in visible_text
-    assert "概览" in visible_text
+    assert "经营驾驶舱" in visible_text
+    assert "经营摘要" in visible_text
     assert "在池总人数" in visible_text
     assert "今日入池" in visible_text
     assert "待问卷" in visible_text
@@ -664,18 +671,22 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
     assert "重点跟进" in visible_text
     assert "沉默池" in visible_text
     assert "已成交" in visible_text
-    assert "阶段分栏" in visible_text
-    assert "自动启动时间窗" in visible_text
-    assert "09:00 - 23:00" in visible_text
-    assert "新用户池" in visible_text
-    assert "进入设置页" in visible_text
-    assert "进入调试页" in visible_text
-    assert '/admin/automation-conversion/stage/new-user' in html
-    assert '/admin/automation-conversion/stage/inactive-focus' in html
+    assert "阶段漏斗 / 阶段分布" in visible_text
+    assert "待处理事项" in visible_text
+    assert "最近运行摘要" in visible_text
+    assert "快捷动作" in visible_text
+    assert "流程设计" in visible_text
+    assert "成员运营" in visible_text
+    assert "运行中心" in visible_text
+    assert "/admin/automation-conversion/member-ops?stage=new-user" in html
+    assert "/admin/automation-conversion/member-ops?stage=inactive-focus" in html
+    assert "/admin/automation-conversion/flow-design?section=questionnaire" in html
+    assert "/admin/automation-conversion/run-center?tab=overview" in html
     assert "配置步骤" not in visible_text
     assert "最近处理情况" not in visible_text
-    assert "关键题与命中答案" not in visible_text
-    assert "沉默池规则" not in visible_text
+    assert "立即刷新一次" not in visible_text
+    assert "进入设置页" not in visible_text
+    assert "进入调试页" not in visible_text
     assert "JSON" not in visible_text
 
 
@@ -697,15 +708,19 @@ def test_admin_automation_conversion_page_survives_missing_configured_questionna
         db.execute("DELETE FROM questionnaires WHERE id = ?", (82,))
         db.commit()
 
-    response = client.get("/admin/automation-conversion/settings")
+    legacy_response = client.get("/admin/automation-conversion/settings")
+    assert legacy_response.status_code == 302
+    assert "/admin/automation-conversion/flow-design" in legacy_response.headers["Location"]
+    assert "section=questionnaire" in legacy_response.headers["Location"]
+
+    response = client.get("/admin/automation-conversion/settings", follow_redirects=True)
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
-    assert "自动化转化设置" in visible_text
-    assert "当前问卷已失效" in visible_text
+    assert "流程设计" in visible_text
     assert "已配置的问卷 #82 不存在" in visible_text
-    assert "旧规则已失效" in visible_text
+    assert "当前不会继续展示失效问卷的旧规则" in visible_text
     assert "关键题规则 JSON" not in visible_text
 
 
@@ -722,14 +737,16 @@ def test_admin_automation_conversion_settings_page_uses_visual_rule_editor(app, 
     )
     assert save_response.status_code == 200
 
-    response = client.get("/admin/automation-conversion/settings")
+    response = client.get("/admin/automation-conversion/settings", follow_redirects=True)
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
+    assert "流程设计" in visible_text
+    assert "入池与问卷规则" in visible_text
     assert "自动启动时间窗" in visible_text
     assert "白天开始小时" in visible_text
-    assert "关键题与命中答案" in visible_text
+    assert "关键题规则" in visible_text
     assert "新增关键题" in visible_text
     assert "关键题规则 JSON" not in visible_text
     assert 'name="day_start_hour"' in html
@@ -744,10 +761,13 @@ def test_admin_automation_conversion_settings_save_form_persists_visual_rules(ap
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=84, question_count=2)
     question_id = seed["question_ids"][1]
     option_ids = seed["option_ids_by_question"][question_id]
+    action_token = _admin_action_token(client, "/admin/automation-conversion/flow-design?section=questionnaire")
 
     response = client.post(
         "/admin/automation-conversion/settings/save",
         data={
+            "admin_action_token": action_token,
+            "section": "questionnaire",
             "enabled": "1",
             "questionnaire_id": str(seed["questionnaire_id"]),
             "core_threshold": "2",
@@ -774,7 +794,9 @@ def test_admin_automation_conversion_settings_save_form_persists_visual_rules(ap
     )
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/automation-conversion/settings?saved=1")
+    assert "/admin/automation-conversion/flow-design" in response.headers["Location"]
+    assert "section=questionnaire" in response.headers["Location"]
+    assert "saved=1" in response.headers["Location"]
 
     with app.app_context():
         config = get_signup_conversion_config()
@@ -802,10 +824,13 @@ def test_admin_automation_conversion_settings_save_form_persists_default_channel
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=185, question_count=2)
     question_id = seed["question_ids"][0]
     option_id = seed["option_ids_by_question"][question_id][0]
+    action_token = _admin_action_token(client, "/admin/automation-conversion/flow-design?section=channel")
 
     response = client.post(
         "/admin/automation-conversion/settings/save",
         data={
+            "admin_action_token": action_token,
+            "section": "channel",
             "enabled": "1",
             "questionnaire_id": str(seed["questionnaire_id"]),
             "core_threshold": "2",
@@ -834,13 +859,18 @@ def test_admin_automation_conversion_settings_save_form_persists_default_channel
     )
 
     assert response.status_code == 302
+    assert "/admin/automation-conversion/flow-design" in response.headers["Location"]
+    assert "section=channel" in response.headers["Location"]
+    assert "saved=1" in response.headers["Location"]
 
-    page = client.get("/admin/automation-conversion/settings")
+    page = client.get(response.headers["Location"])
     html = page.get_data(as_text=True)
+    visible_text = _visible_text(html)
 
     assert page.status_code == 200
+    assert "默认渠道入口" in visible_text
     assert "保存后的默认欢迎语" in html
-    assert "免验证直接添加好友" in html
+    assert "自动通过好友" in html
 
     with app.app_context():
         row = get_db().execute(
@@ -858,10 +888,13 @@ def test_admin_automation_conversion_settings_save_form_persists_default_channel
 
 def test_admin_automation_conversion_settings_save_form_rejects_invalid_auto_start_window(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=184, question_count=2)
+    action_token = _admin_action_token(client, "/admin/automation-conversion/flow-design?section=global-rules")
 
     response = client.post(
         "/admin/automation-conversion/settings/save",
         data={
+            "admin_action_token": action_token,
+            "section": "global-rules",
             "enabled": "1",
             "questionnaire_id": str(seed["questionnaire_id"]),
             "core_threshold": "2",
@@ -882,7 +915,8 @@ def test_admin_automation_conversion_settings_save_form_rejects_invalid_auto_sta
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
-    assert "day_start_hour must be &lt; quiet_hour_start" in html
+    assert "day_start_hour must be" in html
+    assert "全局规则" in visible_text
     assert "白天开始小时" in visible_text
     assert 'value="23"' in html
 
@@ -890,11 +924,18 @@ def test_admin_automation_conversion_settings_save_form_rejects_invalid_auto_sta
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):
     _seed_automation_conversion_stage_board(app)
 
-    response = client.get("/admin/automation-conversion/stage/inactive-focus")
+    legacy_response = client.get("/admin/automation-conversion/stage/inactive-focus")
+    assert legacy_response.status_code == 302
+    assert "/admin/automation-conversion/member-ops" in legacy_response.headers["Location"]
+    assert "stage=inactive-focus" in legacy_response.headers["Location"]
+    assert "panel=members" in legacy_response.headers["Location"]
+
+    response = client.get("/admin/automation-conversion/stage/inactive-focus", follow_redirects=True)
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
+    assert "成员运营" in visible_text
     assert "未激活重点跟进池" in visible_text
     assert "重点跟进" in visible_text
     assert "总人数" in visible_text
@@ -902,11 +943,12 @@ def test_admin_automation_conversion_stage_detail_page_renders_filtered_customer
     assert "创建群发" in visible_text
     assert "wm_stage_inactive_focus_001" in visible_text
     assert "wm_stage_active_focus_001" not in visible_text
-    assert "手机号或客户编号" in visible_text
+    assert "搜索与筛选条" in visible_text
 
     filtered_response = client.get(
         "/admin/automation-conversion/stage/inactive-focus",
         query_string={"keyword": "focus_001"},
+        follow_redirects=True,
     )
     filtered_text = _visible_text(filtered_response.get_data(as_text=True))
     assert filtered_response.status_code == 200
@@ -918,7 +960,7 @@ def test_admin_automation_conversion_preview_page_renders_runtime_search_shell(c
     response = client.get("/admin/automation-conversion/preview")
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/automation-conversion/debug")
+    assert response.headers["Location"].endswith("/admin/automation-conversion/run-center?tab=debug")
 
 
 def test_admin_marketing_automation_dispatch_history_api_supports_status_filter(app, client):
@@ -947,12 +989,13 @@ def test_admin_marketing_automation_dispatch_history_api_supports_status_filter(
 
 
 def test_admin_automation_conversion_debug_page_renders_search_shell(client):
-    response = client.get("/admin/automation-conversion/debug")
+    response = client.get("/admin/automation-conversion/debug", follow_redirects=True)
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
+    assert "运行中心" in visible_text
     assert "单客调试" in visible_text
     assert "external_contact_id" in visible_text
     assert "手机号" in visible_text
-    assert "人工改判优先" not in visible_text
+    assert "查看状态" in visible_text

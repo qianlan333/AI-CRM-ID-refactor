@@ -1160,6 +1160,18 @@ def list_due_focus_send_batches(*, due_at: str, limit: int = 20) -> list[dict[st
     )
 
 
+def list_recent_focus_send_batches(*, limit: int = 20) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_focus_send_batch
+        ORDER BY updated_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+
+
 def insert_focus_send_batch_item(payload: dict[str, Any]) -> dict[str, Any]:
     row = get_db().execute(
         """

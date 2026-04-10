@@ -80,6 +80,18 @@ def fake_contact_client(monkeypatch):
 def _seed_customer_profile_fixture(app) -> None:
     with app.app_context():
         db = get_db()
+        now = datetime.now().replace(microsecond=0)
+        contact_updated_at = (now - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+        status_set_at = (now - timedelta(hours=5, minutes=50)).strftime("%Y-%m-%d %H:%M:%S")
+        submission_1_at = (now - timedelta(hours=5, minutes=45)).strftime("%Y-%m-%d %H:%M:%S")
+        submission_2_at = (now - timedelta(hours=5, minutes=40)).strftime("%Y-%m-%d %H:%M:%S")
+        activation_at = (now - timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+        last_message_at = (now - timedelta(hours=5, minutes=25)).strftime("%Y-%m-%d %H:%M:%S")
+        trial_opened_at = (now - timedelta(hours=5, minutes=35)).strftime("%Y-%m-%d %H:%M:%S")
+        segment_evaluated_at = (now - timedelta(hours=5, minutes=28)).strftime("%Y-%m-%d %H:%M:%S")
+        batch_window_start = (now - timedelta(hours=5, minutes=25)).strftime("%Y-%m-%d %H:%M:%S")
+        batch_window_end = (now - timedelta(hours=5, minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
+        dispatch_at = (now - timedelta(hours=5, minutes=20)).strftime("%Y-%m-%d %H:%M:%S")
         db.execute(
             """
             INSERT INTO owner_role_map (userid, display_name, role, active)
@@ -89,8 +101,10 @@ def _seed_customer_profile_fixture(app) -> None:
         db.execute(
             """
             INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
-            VALUES ('ext-1', '客户一', 'owner-a', '重点客户', '客户描述', '2026-04-03 09:00:00')
+            VALUES ('ext-1', '客户一', 'owner-a', '重点客户', '客户描述', ?)
             """
+            ,
+            (contact_updated_at,),
         )
         db.execute(
             """
@@ -130,9 +144,10 @@ def _seed_customer_profile_fixture(app) -> None:
             )
             VALUES (
                 'ext-1', 'lead', '报名引流品', '客户一', 'owner-a',
-                '13800138000', 'owner-a', '2026-04-03 09:10:00', 'success', '', '{}'
+                '13800138000', 'owner-a', ?, 'success', '', '{}'
             )
-            """
+            """,
+            (status_set_at,),
         )
         db.execute(
             """
@@ -149,9 +164,10 @@ def _seed_customer_profile_fixture(app) -> None:
                 matched_by, mobile_snapshot, total_score, final_tags, redirect_url_snapshot, submitted_at
             )
             VALUES
-            (1, 1, 'resp-1', 'openid-1', 'union-1', 'ext-1', 'owner-a', 'openid', '13800138000', 80, '[]', '', '2026-04-03 09:15:00'),
-            (2, 1, 'resp-2', 'openid-1', 'union-1', 'ext-1', 'owner-a', 'openid', '13800138000', 90, '[]', '', '2026-04-03 09:20:00')
-            """
+            (1, 1, 'resp-1', 'openid-1', 'union-1', 'ext-1', 'owner-a', 'openid', '13800138000', 80, '[]', '', ?),
+            (2, 1, 'resp-2', 'openid-1', 'union-1', 'ext-1', 'owner-a', 'openid', '13800138000', 90, '[]', '', ?)
+            """,
+            (submission_1_at, submission_2_at),
         )
         db.execute(
             """
@@ -175,12 +191,20 @@ def _seed_customer_profile_fixture(app) -> None:
             )
             VALUES (
                 1, 'ext-1', 'signup_conversion_v1', 'pool', 'active_focus', 1, 0, 1, 'pool',
-                '2026-04-03 09:30:00', '', '2026-04-03 09:35:00', NULL, '', '', '',
-                '2026-04-03 09:35:00', '2026-04-03 09:30:00', '', '',
-                '{"followup_segment":"focus","questionnaire_segment":"top","trial_opened":true,"trial_opened_at":"2026-04-03 09:25:00"}',
+                ?, '', ?, NULL, '', '', '',
+                ?, ?, '', '',
+                ?,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
-            """
+            """,
+            (
+                activation_at,
+                last_message_at,
+                last_message_at,
+                activation_at,
+                '{"followup_segment":"focus","questionnaire_segment":"top","trial_opened":true,"trial_opened_at":"%s"}'
+                % trial_opened_at,
+            ),
         )
         db.execute(
             """
@@ -190,17 +214,19 @@ def _seed_customer_profile_fixture(app) -> None:
             )
             VALUES (
                 'ext-1', 'top', 3, 4, 'signup_conversion_question_hits_v1', 'seed', 2,
-                '[1,2,3,4]', '{}', '2026-04-03 09:32:00', '2026-04-03 09:32:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                '[1,2,3,4]', '{}', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
-            """
+            """,
+            (segment_evaluated_at, segment_evaluated_at),
         )
         db.execute(
             """
             INSERT INTO message_batches (
                 id, batch_key, window_start, window_end, status, message_count, created_at
             )
-            VALUES (9001, 'seed-batch-9001', '2026-04-03 09:35:00', '2026-04-03 09:45:00', 'acked', 1, CURRENT_TIMESTAMP)
-            """
+            VALUES (9001, 'seed-batch-9001', ?, ?, 'acked', 1, CURRENT_TIMESTAMP)
+            """,
+            (batch_window_start, batch_window_end),
         )
         db.execute(
             """
@@ -210,12 +236,13 @@ def _seed_customer_profile_fixture(app) -> None:
             )
             VALUES (
                 'signup_conversion_v1', 9001, 'ext-1', 'sent', 'text_message', '{}',
-                'seed dispatch', '2026-04-03 09:40:00', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                'seed dispatch', ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
-            """
+            """,
+            (dispatch_at,),
         )
 
-        started_at = datetime(2026, 4, 3, 8, 0, 0)
+        started_at = now - timedelta(hours=6)
         for index in range(1, 36):
             send_time = started_at + timedelta(minutes=index)
             sender = "owner-a" if index % 2 else "ext-1"

@@ -1214,7 +1214,7 @@ def test_default_channel_settings_save_and_readback_welcome_and_auto_accept(app,
     assert payload["settings"]["default_channel"]["field_statuses"]["welcome_message"]["status"] == "pending"
     assert payload["settings"]["default_channel"]["field_statuses"]["auto_accept_friend"]["status"] == "pending"
 
-    settings_page = client.get("/admin/automation-conversion/settings")
+    settings_page = client.get("/admin/automation-conversion/settings", follow_redirects=True)
     html = settings_page.get_data(as_text=True)
     assert settings_page.status_code == 200
     assert "这里是默认渠道欢迎语" in html
@@ -1843,13 +1843,142 @@ def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, 
     assert authorized.get_json()["run"]["matched_count"] == 1
 
 
-def test_automation_conversion_settings_page_renders_message_activity_sync_section(app, client):
-    response = client.get("/admin/automation-conversion/settings")
+def test_automation_conversion_settings_page_focuses_on_flow_design_sections(app, client):
+    response = client.get("/admin/automation-conversion/settings", follow_redirects=True)
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "消息活跃同步" in html
-    assert "立即刷新一次" in html
+    assert "流程设计" in html
+    assert "阶段模型" in html
+    assert "入池与问卷规则" in html
+    assert "SOP 剧本" in html
+    assert "全局规则" in html
+    assert "默认渠道入口" in html
+    assert "发布管理" in html
+    assert "立即刷新一次" not in html
+    assert "消息活跃同步已迁到运行中心" in html
+    assert "前往运行中心校验" in html
+
+
+def test_legacy_admin_automation_conversion_routes_redirect_to_new_workspaces(app, client):
+    settings = client.get("/admin/automation-conversion/settings", query_string={"saved": 1})
+    assert settings.status_code == 302
+    assert "/admin/automation-conversion/flow-design" in settings.headers["Location"]
+    assert "section=questionnaire" in settings.headers["Location"]
+    assert "saved=1" in settings.headers["Location"]
+
+    sop = client.get("/admin/automation-conversion/sop", query_string={"pool": "inactive_normal", "day": 1})
+    assert sop.status_code == 302
+    assert "/admin/automation-conversion/flow-design" in sop.headers["Location"]
+    assert "section=sop" in sop.headers["Location"]
+    assert "pool=inactive_normal" in sop.headers["Location"]
+    assert "day=1" in sop.headers["Location"]
+
+    stage = client.get(
+        "/admin/automation-conversion/stage/new-user",
+        query_string={"keyword": "abc", "external_contact_id": "wm_legacy_stage_001"},
+    )
+    assert stage.status_code == 302
+    assert "/admin/automation-conversion/member-ops" in stage.headers["Location"]
+    assert "stage=new-user" in stage.headers["Location"]
+    assert "panel=members" in stage.headers["Location"]
+    assert "keyword=abc" in stage.headers["Location"]
+    assert "external_contact_id=wm_legacy_stage_001" in stage.headers["Location"]
+
+    stage_send = client.get(
+        "/admin/automation-conversion/stage/active-focus/send",
+        query_string={"phone": "13800001234"},
+    )
+    assert stage_send.status_code == 302
+    assert "/admin/automation-conversion/member-ops" in stage_send.headers["Location"]
+    assert "stage=active-focus" in stage_send.headers["Location"]
+    assert "panel=send" in stage_send.headers["Location"]
+    assert "phone=13800001234" in stage_send.headers["Location"]
+
+    model_infra = client.get("/admin/automation-conversion/model-infra", query_string={"tested": 1})
+    assert model_infra.status_code == 302
+    assert "/admin/automation-conversion/run-center" in model_infra.headers["Location"]
+    assert "tab=model-infra" in model_infra.headers["Location"]
+    assert "tested=1" in model_infra.headers["Location"]
+
+    debug = client.get("/admin/automation-conversion/debug", query_string={"external_contact_id": "wm_debug_001"})
+    assert debug.status_code == 302
+    assert "/admin/automation-conversion/run-center" in debug.headers["Location"]
+    assert "tab=debug" in debug.headers["Location"]
+    assert "external_contact_id=wm_debug_001" in debug.headers["Location"]
+
+
+def test_admin_automation_conversion_save_settings_redirects_back_to_current_flow_design_section(app, client, monkeypatch):
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.save_settings", lambda payload: payload)
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+
+    response = client.post(
+        "/admin/automation-conversion/settings/save",
+        data={"section": "global-rules"},
+    )
+
+    assert response.status_code == 302
+    assert "/admin/automation-conversion/flow-design" in response.headers["Location"]
+    assert "section=global-rules" in response.headers["Location"]
+    assert "saved=1" in response.headers["Location"]
+
+
+def test_admin_automation_conversion_save_settings_error_keeps_current_flow_design_section(app, client, monkeypatch):
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.save_settings",
+        lambda payload: (_ for _ in ()).throw(ValueError("保存失败")),
+    )
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+
+    response = client.post(
+        "/admin/automation-conversion/settings/save",
+        data={"section": "channel", "welcome_message": "保留输入"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "保存失败" in html
+    assert "保留输入" in html
+    assert 'href="/admin/automation-conversion/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
+    assert 'ac-section-link is-active' in html
+
+
+def test_admin_automation_conversion_save_settings_requires_action_token_and_keeps_section(app, client):
+    response = client.post(
+        "/admin/automation-conversion/settings/save",
+        data={"section": "channel", "welcome_message": "未提交成功"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "后台动作令牌无效，请刷新页面后重试" in html
+    assert "未提交成功" in html
+    assert 'href="/admin/automation-conversion/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
+
+
+def test_admin_generate_default_channel_error_keeps_channel_section(app, client, monkeypatch):
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.generate_default_channel_qr",
+        lambda operator: {"generated": False, "error": "二维码生成失败"},
+    )
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+
+    response = client.post("/admin/automation-conversion/settings/default-channel/generate")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "二维码生成失败" in html
+    assert 'href="/admin/automation-conversion/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
+    assert 'ac-section-link is-active' in html
+
+
+def test_admin_generate_default_channel_requires_action_token(app, client):
+    response = client.post("/admin/automation-conversion/settings/default-channel/generate")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "后台动作令牌无效，请刷新页面后重试" in html
+    assert 'href="/admin/automation-conversion/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
 
 
 def test_model_infra_settings_save_and_mask_deepseek_api_key(app, client):
@@ -1885,7 +2014,7 @@ def test_model_infra_settings_save_and_mask_deepseek_api_key(app, client):
         ).fetchone()["value"]
         assert stored_key == "dsk-automation-secret-12345"
 
-    page = client.get("/admin/automation-conversion/model-infra")
+    page = client.get("/admin/automation-conversion/model-infra", follow_redirects=True)
     html = page.get_data(as_text=True)
 
     assert page.status_code == 200
@@ -2045,7 +2174,7 @@ def test_deepseek_llm_client_request_error_is_logged(app, monkeypatch):
 
 
 def test_model_infra_page_renders_and_homepage_keeps_existing_sections(app, client):
-    model_infra_page = client.get("/admin/automation-conversion/model-infra")
+    model_infra_page = client.get("/admin/automation-conversion/model-infra", follow_redirects=True)
     model_infra_html = model_infra_page.get_data(as_text=True)
 
     assert model_infra_page.status_code == 200
@@ -2071,12 +2200,12 @@ def test_automation_conversion_home_stage_cards_show_view_and_send_actions(app, 
 
     assert response.status_code == 200
     assert "消息活跃同步" in html
-    assert "立即刷新一次" in html
-    assert 'data-message-activity-sync-root' in html
-    assert 'data-message-activity-sync-button' in html
-    assert html.count("创建群发") == 7
-    assert html.count("查看名单") == 7
-    assert '<article class="admin-card admin-stat-card admin-stat-card--nested automation-stage-card">' in html
+    assert "立即刷新一次" not in html
+    assert 'data-message-activity-sync-root' not in html
+    assert 'data-message-activity-sync-button' not in html
+    assert "阶段漏斗" in html
+    assert html.count("进入成员运营") == 7
+    assert "创建群发" not in html
 
 
 def test_automation_conversion_home_page_renders_message_activity_sync_summary(app, client, monkeypatch):
@@ -2115,10 +2244,10 @@ def test_automation_conversion_home_page_renders_message_activity_sync_summary(a
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert re.search(r'data-message-activity-sync-status>\s*成功\s*</dd>', html)
-    assert re.search(r'data-message-activity-sync-finished-at>\s*2026-04-08 10:30:00\s*</dd>', html)
-    assert re.search(r'data-message-activity-sync-updated-count>\s*1\s*</dd>', html)
-    assert re.search(r'data-message-activity-sync-skipped-count>\s*0\s*</dd>', html)
+    assert "运行摘要" in html
+    assert "消息活跃同步" in html
+    assert "最近时间：2026-04-08 10:30:00" in html
+    assert "异常：无" in html
 
 
 def test_admin_automation_conversion_run_message_activity_sync_returns_json_for_homepage(app, client, monkeypatch):
@@ -2171,10 +2300,10 @@ def test_automation_conversion_home_page_renders_reply_monitor_section(app, clie
 
     assert response.status_code == 200
     assert "自动接话监控" in html
-    assert "开启监控" in html
-    assert "立即扫描一次" in html
-    assert "立即放行一条" in html
-    assert "关闭后停止自动触发但不影响聊天入库" in html
+    assert "已关闭" in html
+    assert "开启监控" not in html
+    assert "立即扫描一次" not in html
+    assert "立即放行一条" not in html
 
 
 def test_reply_monitor_capture_filters_private_inbound_messages_and_groups_by_user(app, monkeypatch):
@@ -2537,7 +2666,7 @@ def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metri
         decision_source="system",
     )
 
-    response = client.get("/admin/automation-conversion/stage/new-user")
+    response = client.get("/admin/automation-conversion/stage/new-user", follow_redirects=True)
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
@@ -2548,9 +2677,45 @@ def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metri
     assert '<div class="admin-card-label">普通跟进</div>' not in html
 
 
+def test_member_ops_page_renders_business_detail_sidebar_with_member_query(app, client):
+    _seed_contact(app, external_userid="wm_member_ops_001", mobile="13800009131", owner_userid="sales_member", customer_name="成员运营客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_member_ops_001",
+        phone="13800009131",
+        owner_staff_id="sales_member",
+        current_pool="active_normal",
+        follow_type="normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="system",
+    )
+
+    client.post(
+        "/api/admin/automation-conversion/member/set-focus",
+        json={"external_contact_id": "wm_member_ops_001", "operator": "tester-member-ops"},
+    )
+
+    response = client.get(
+        "/admin/automation-conversion/member-ops",
+        query_string={"stage": "active-focus", "panel": "members", "member": "wm_member_ops_001"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "成员列表工作区" in html
+    assert "问卷与规则信息" in html
+    assert "最近业务事件" in html
+    assert "单客动作" in html
+    assert "当前分层原因 / 说明" in html
+    assert "set_focus" in html
+    assert "member=wm_member_ops_001" in html
+
+
 def test_automation_conversion_stage_send_page_switches_between_manual_and_focus_modes(app, client):
-    normal_response = client.get("/admin/automation-conversion/stage/new-user/send")
-    focus_response = client.get("/admin/automation-conversion/stage/inactive-focus/send")
+    normal_response = client.get("/admin/automation-conversion/stage/new-user/send", follow_redirects=True)
+    focus_response = client.get("/admin/automation-conversion/stage/inactive-focus/send", follow_redirects=True)
 
     normal_html = normal_response.get_data(as_text=True)
     focus_html = focus_response.get_data(as_text=True)
@@ -2570,6 +2735,23 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
     assert "/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches" in focus_html
     assert "/api/admin/automation-conversion/stage/inactive-focus/manual-send" not in focus_html
     assert "/api/admin/automation-conversion/focus-send-batches/" in focus_html
+
+
+def test_member_ops_send_panel_contains_batch_placeholder_actions_for_both_modes(app, client):
+    normal_response = client.get("/admin/automation-conversion/member-ops", query_string={"stage": "new-user", "panel": "send"})
+    focus_response = client.get("/admin/automation-conversion/member-ops", query_string={"stage": "inactive-focus", "panel": "send"})
+
+    normal_html = normal_response.get_data(as_text=True)
+    focus_html = focus_response.get_data(as_text=True)
+
+    assert normal_response.status_code == 200
+    assert "批量状态动作" in normal_html
+    assert "官方群发" in normal_html
+    assert "AI 批量处理" not in normal_html
+
+    assert focus_response.status_code == 200
+    assert "批量状态动作" in focus_html
+    assert "AI 批量处理" in focus_html
 
 
 def test_automation_conversion_stage_send_api_surfaces_validation_and_placeholder_states(app, client):
@@ -3054,7 +3236,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
     captured_payloads: list[dict[str, object]] = []
 
-    response = client.post(
+    redirect_response = client.post(
         "/admin/automation-conversion/stage/new-user/send",
         data=_build_stage_send_form_data(
             content="页面触达",
@@ -3063,6 +3245,13 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
         ),
         content_type="multipart/form-data",
     )
+    assert redirect_response.status_code == 302
+    assert "/admin/automation-conversion/member-ops" in redirect_response.headers["Location"]
+    assert "stage=new-user" in redirect_response.headers["Location"]
+    assert "panel=send" in redirect_response.headers["Location"]
+    assert "manual_send_notice=sent" in redirect_response.headers["Location"]
+
+    response = client.get(redirect_response.headers["Location"])
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
@@ -3091,10 +3280,18 @@ def test_admin_stage_send_page_shows_focus_batch_summary(app, client, monkeypatc
     )
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
 
-    response = client.post(
+    redirect_response = client.post(
         "/admin/automation-conversion/stage/inactive-focus/send",
         data={"operator": "tester"},
     )
+    assert redirect_response.status_code == 302
+    assert "/admin/automation-conversion/member-ops" in redirect_response.headers["Location"]
+    assert "stage=inactive-focus" in redirect_response.headers["Location"]
+    assert "panel=send" in redirect_response.headers["Location"]
+    assert "focus_batch_notice=created" in redirect_response.headers["Location"]
+    assert "focus_batch_id=" in redirect_response.headers["Location"]
+
+    response = client.get(redirect_response.headers["Location"])
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
@@ -3147,7 +3344,7 @@ def test_message_activity_sync_api_returns_400_when_db_not_configured(app, clien
     ]
 
 
-def test_automation_conversion_settings_page_shows_real_message_activity_env_names(app, client):
+def test_automation_conversion_run_center_sync_tab_shows_real_message_activity_env_names(app, client):
     with app.app_context():
         db = get_db()
         db.execute(
@@ -3171,7 +3368,7 @@ def test_automation_conversion_settings_page_shows_real_message_activity_env_nam
         )
         db.commit()
 
-    response = client.get("/admin/automation-conversion/settings")
+    response = client.get("/admin/automation-conversion/run-center", query_string={"tab": "sync"})
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
@@ -3179,10 +3376,37 @@ def test_automation_conversion_settings_page_shows_real_message_activity_env_nam
     assert "MESSAGE_ACTIVITY_DB_PASS" in html
     assert "MESSAGE_ACTIVITY_DB_DATABASE" not in html
     assert "MESSAGE_ACTIVITY_DB_PASSWORD" not in html
-    assert "最近一次状态" in html
+    assert "数据同步" in html
+    assert "立即刷新一次" in html
     assert "未配置" in html
     assert "最近一次同步失败" not in html
     assert ">failed<" not in html
+
+
+def test_automation_conversion_run_center_logs_tab_uses_canonical_query(app, client):
+    response = client.get("/admin/automation-conversion/run-center", query_string={"tab": "logs"})
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "执行日志 / 审计" in html
+    assert "当前占位边界" in html
+    assert "最近 SOP 执行摘要" in html
+    assert "最近 AI 批任务摘要" in html
+    assert "最近同步任务摘要" in html
+    assert "最近失败任务提示" in html
+    assert "/admin/automation-conversion/run-center?tab=logs" in html
+
+
+def test_automation_conversion_run_center_overview_tab_avoids_heavy_operation_forms(app, client):
+    response = client.get("/admin/automation-conversion/run-center", query_string={"tab": "overview"})
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "运行概况" in html
+    assert "数据同步" in html
+    assert "自动接话监控" in html
+    assert "立即刷新一次" not in html
+    assert "保存 DeepSeek 配置" not in html
 
 
 def test_sop_v1_defaults_seed_three_pool_configs_and_day1_only(app):
@@ -3234,25 +3458,32 @@ def test_admin_automation_conversion_sop_page_uses_pool_cards_and_day_tabs_witho
         )
         db.commit()
 
-    response = client.get("/admin/automation-conversion/sop", query_string={"pool": "inactive_normal", "day": 1})
+    response = client.get(
+        "/admin/automation-conversion/sop",
+        query_string={"pool": "inactive_normal", "day": 1},
+        follow_redirects=True,
+    )
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "自动 SOP 管理" in html
-    assert "只覆盖新用户池、未激活普通池、激活普通池" in html
+    assert "流程设计" in html
+    assert "SOP 剧本" in html
     assert "新用户池" in html
     assert "未激活普通池" in html
     assert "激活普通池" in html
+    assert "池子 / 阶段选择" in html
+    assert "当前 Day 编辑器" in html
     assert "新增一天" in html
     assert "day1" in html
     assert "保存池子配置" in html
+    assert "发布管理" in html
     assert "成功 5 / 跳过 2 / 失败 1" in html
     assert "暂无执行记录" in html
     assert "重复进同池不重来" not in html
     assert "离池期间错过的 SOP 不补发" not in html
     assert "最近 SOP 执行批次" not in html
     assert "最大 day 数" not in html
-    assert 'name="timezone"' not in html
+    assert 'name="timezone"' in html
 
 
 def test_api_admin_automation_conversion_sop_config_no_timezone_required(app, client):
@@ -3760,7 +3991,11 @@ def test_recent_execution_summary_appears_on_pool_cards(app, client):
         )
         db.commit()
 
-    response = client.get("/admin/automation-conversion/sop", query_string={"pool": "active_normal", "day": 1})
+    response = client.get(
+        "/admin/automation-conversion/sop",
+        query_string={"pool": "active_normal", "day": 1},
+        follow_redirects=True,
+    )
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
