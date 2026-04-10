@@ -18,6 +18,7 @@ from ...infra.settings import (
 )
 from ...infra.wecom_runtime import get_contact_runtime_client
 from ...wecom_client import WeComClientError
+from ..automation_state.renderer import business_pool_label
 from ..automation_state.state_defs import (
     FOLLOWUP_SEGMENT_FOCUS as SHARED_FOLLOWUP_SEGMENT_FOCUS,
     FOLLOWUP_SEGMENT_NORMAL as SHARED_FOLLOWUP_SEGMENT_NORMAL,
@@ -252,6 +253,9 @@ def default_owner_staff_id() -> str:
 
 
 def _pool_label(pool: str) -> str:
+    shared_label = business_pool_label(pool)
+    if shared_label:
+        return shared_label
     return local_projection.pool_label(pool)
 
 
