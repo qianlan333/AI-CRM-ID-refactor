@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from wecom_ability_service import create_app
@@ -91,6 +92,9 @@ def _save_config(app, questionnaire_seed: dict[str, object]) -> None:
 
 
 def _seed_bound_customer(app, questionnaire_seed: dict[str, object]) -> None:
+    now = datetime.now().replace(microsecond=0)
+    last_message_at = (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    submission_at = (now - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
     with app.app_context():
         db = get_db()
         db.execute(
@@ -127,18 +131,21 @@ def _seed_bound_customer(app, questionnaire_seed: dict[str, object]) -> None:
             INSERT INTO archived_messages (
                 seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload
             )
-            VALUES (1, 'wm_backfill_001-msg-1', 'private', 'wm_backfill_001', 'sales_61', 'wm_backfill_001', 'sales_61', 'text', '我想报名', '2026-04-04 10:01:00', ?)
+            VALUES (1, 'wm_backfill_001-msg-1', 'private', 'wm_backfill_001', 'sales_61', 'wm_backfill_001', 'sales_61', 'text', '我想报名', ?, ?)
             """,
-            (json.dumps({"decrypted_message": {"from": "wm_backfill_001", "tolist": ["sales_61"], "roomid": ""}}, ensure_ascii=False),),
+            (
+                last_message_at,
+                json.dumps({"decrypted_message": {"from": "wm_backfill_001", "tolist": ["sales_61"], "roomid": ""}}, ensure_ascii=False),
+            ),
         )
         db.execute(
             """
             INSERT INTO questionnaire_submissions (
                 id, questionnaire_id, respondent_key, external_userid, mobile_snapshot, total_score, final_tags, redirect_url_snapshot, submitted_at
             )
-            VALUES (?, ?, ?, 'wm_backfill_001', '13800138611', 40, '[]', '', '2026-04-04 10:05:00')
+            VALUES (?, ?, ?, 'wm_backfill_001', '13800138611', 40, '[]', '', ?)
             """,
-            (61011, int(questionnaire_seed["questionnaire_id"]), "resp-61011"),
+            (61011, int(questionnaire_seed["questionnaire_id"]), "resp-61011", submission_at),
         )
         for index, question_id in enumerate(questionnaire_seed["question_ids"], start=1):
             option_id = questionnaire_seed["option_ids_by_question"][question_id][0 if index <= 4 else 1]

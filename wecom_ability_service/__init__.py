@@ -7,6 +7,7 @@ from pathlib import Path
 from flask import Flask, Response
 
 from .db import close_db, init_app as init_db_app
+from .domains.customer_pulse.access import bind_customer_pulse_request_context
 from .infra.settings import DEFAULT_OPENCLAW_WEBHOOK_URL
 from .mcp_adapter import mcp_bp
 from .observability import attach_logging_filter, register_request_observability
@@ -147,6 +148,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     _configure_logging(app)
     _log_startup_config(app)
     register_request_observability(app)
+
+    @app.before_request
+    def _bind_customer_pulse_access() -> None:
+        bind_customer_pulse_request_context()
 
     @app.get("/favicon.ico")
     def favicon() -> Response:

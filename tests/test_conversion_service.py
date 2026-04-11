@@ -433,7 +433,8 @@ def test_mark_enrolled_cancels_pending_candidate_and_unmark_recomputes_to_activa
         assert unmarked["marketing_state"]["converted"] is False
 
 
-def test_unmark_enrolled_recomputes_to_wecom_connected_without_activation(app):
+def test_unmark_enrolled_recomputes_to_wecom_connected_without_activation(app, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     _seed_bound_customer(
         app,
         external_userid="wm_conv_task05_wecom",
@@ -491,7 +492,8 @@ def test_unmark_enrolled_recomputes_to_mobile_only_without_live_external_facts(a
         assert unmarked["marketing_state"]["external_userid"] == ""
 
 
-def test_unmark_enrolled_without_restore_status_does_not_default_class_user_to_lead(app):
+def test_unmark_enrolled_without_restore_status_does_not_default_class_user_to_lead(app, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     _seed_bound_customer(
         app,
         external_userid="wm_conv_task05_no_restore",
@@ -513,7 +515,8 @@ def test_unmark_enrolled_without_restore_status_does_not_default_class_user_to_l
         assert unmarked["marketing_state"]["stage_key"] == "pool/new_user"
 
 
-def test_mcp_mark_and_unmark_enrolled_tools_use_unified_conversion_service(app, client):
+def test_mcp_mark_and_unmark_enrolled_tools_use_unified_conversion_service(app, client, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     _seed_bound_customer(
         app,
         external_userid="wm_conv_mcp_001",

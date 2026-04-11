@@ -126,6 +126,7 @@ def calculate_marketing_state(
     existing_state_payload: dict[str, Any] | None,
     now: str,
     converted_at: str = "",
+    force_base_entered_at: str = "",
 ) -> dict[str, Any]:
     existing_payload = dict(existing_state_payload or {})
     current_segment_payload = resolve_current_segment(
@@ -164,6 +165,9 @@ def calculate_marketing_state(
             or base_reference_at
             or _text(now)
         )
+    if _text(force_base_entered_at):
+        base_reference_at = _text(force_base_entered_at)
+        base_entered_at = _text(force_base_entered_at)
 
     final_pool_key = base_pool_key
     if not converted:

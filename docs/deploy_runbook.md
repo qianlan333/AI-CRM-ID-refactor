@@ -77,6 +77,9 @@ curl -sS http://127.0.0.1:5001/health
 
 - service 日志：
   - `sudo journalctl -u openclaw-wecom-postgres.service -f`
+- 自动化 due runner 日志：
+  - `sudo journalctl -u openclaw-automation-conversion-due-runner.service -f`
+  - `sudo systemctl status openclaw-automation-conversion-due-runner.timer --no-pager`
 - Nginx 日志：
   - `/var/log/nginx/access.log`
   - `/var/log/nginx/error.log`

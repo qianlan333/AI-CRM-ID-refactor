@@ -11,7 +11,7 @@
 - [ ] `MESSAGE_ACTIVITY_DB_HOST/PORT/NAME/USER/PASS` 已配置
 - [ ] 企微相关配置已配置
 - [ ] 错误内部 token 调动作型接口会返回 401
-- [ ] 自动 SOP runner 调用 `/api/admin/automation-conversion/sop/run-due` 的调度已挂上
+- [ ] `openclaw-automation-conversion-due-runner.timer` 已安装并处于 active，15 分钟轮询执行自动化运营 due jobs
 
 ## 问卷检查
 

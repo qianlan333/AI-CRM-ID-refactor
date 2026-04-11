@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -12,6 +13,19 @@ from .customer_center import get_customer_detail
 from .customer_timeline.service import get_customer_timeline
 from .db import get_db
 from .domains.admin_config import list_mcp_runtime_tools, mcp_tool_enabled
+from .domains.automation_conversion import (
+    audit_agent_skill_call,
+    create_agent_output_export_job,
+    get_agent_config_detail,
+    get_agent_output_detail,
+    get_agent_output_export_job,
+    get_agent_outputs_by_request,
+    get_agent_outputs_by_user,
+    get_pool_snapshot,
+    list_agent_outputs,
+    save_agent_config_draft,
+    suggest_pool_action,
+)
 from .http.internal_auth import require_internal_api_token
 from .services import (
     ack_conversion_batch,
@@ -552,6 +566,118 @@ TOOL_DEFS = [
             "properties": {
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 "lookback_hours": {"type": "integer", "minimum": 1, "maximum": 168},
+            },
+        },
+    },
+    {
+        "name": "get_pool_snapshot",
+        "description": "Read a pool/stage snapshot for automation conversion.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pool_key": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            "required": ["pool_key"],
+        },
+    },
+    {
+        "name": "get_agent_config",
+        "description": "Read one child agent's draft/published configuration.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "save_agent_prompt_draft",
+        "description": "Save one child agent's draft configuration without publishing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "display_name": {"type": "string"},
+                "enabled": {"type": "boolean"},
+                "role_prompt": {"type": "string"},
+                "task_prompt": {"type": "string"},
+                "variables": {"type": "array"},
+                "output_schema": {"type": "array"},
+                "change_summary": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code", "role_prompt", "task_prompt"],
+        },
+    },
+    {
+        "name": "list_agent_outputs",
+        "description": "Query the unified agent output ledger with filters and pagination.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filters": {"type": "object"},
+                "page": {"type": "integer", "minimum": 1, "maximum": 100000},
+                "page_size": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+        },
+    },
+    {
+        "name": "get_agent_output",
+        "description": "Read one agent output record plus its run context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "output_id": {"type": "string"},
+            },
+            "required": ["output_id"],
+        },
+    },
+    {
+        "name": "get_agent_outputs_by_request",
+        "description": "Read agent outputs by request_id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "request_id": {"type": "string"},
+            },
+            "required": ["request_id"],
+        },
+    },
+    {
+        "name": "get_agent_outputs_by_user",
+        "description": "Read recent agent outputs by external_contact_id or userid.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "userid": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+            "required": ["userid"],
+        },
+    },
+    {
+        "name": "export_agent_outputs",
+        "description": "Create an Excel export job for agent outputs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filters": {"type": "object"},
+                "requested_by": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "suggest_pool_action",
+        "description": "Return a safe pool-action suggestion for one member without applying it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_contact_id": {"type": "string"},
+                "phone": {"type": "string"},
+                "operator": {"type": "string"},
             },
         },
     },
@@ -1385,6 +1511,44 @@ def _call_wecom_task(fn_name: str, task_type: str, arguments: dict[str, Any]) ->
     return {"ok": True, "task_id": local_id, "wecom_result": result}
 
 
+def _run_agent_skill(
+    skill_code: str,
+    arguments: dict[str, Any],
+    *,
+    permission_scope: str,
+    fn,
+) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    idempotency_key = str(arguments.get("idempotency_key") or "").strip()
+    try:
+        payload = fn()
+    except Exception as exc:
+        audit_agent_skill_call(
+            skill_code=skill_code,
+            source="mcp",
+            permissions_scope=permission_scope,
+            request_payload=arguments,
+            response_payload={"ok": False, "error": str(exc)},
+            status="error",
+            error_code="runtime_error",
+            error_message=str(exc),
+            latency_ms=int((time.perf_counter() - started_at) * 1000),
+            idempotency_key=idempotency_key,
+        )
+        raise
+    audit_agent_skill_call(
+        skill_code=skill_code,
+        source="mcp",
+        permissions_scope=permission_scope,
+        request_payload=arguments,
+        response_payload=payload,
+        status="success",
+        latency_ms=int((time.perf_counter() - started_at) * 1000),
+        idempotency_key=idempotency_key,
+    )
+    return _tool_result(payload)
+
+
 def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     arguments = arguments or {}
     if not mcp_tool_enabled(name):
@@ -1621,6 +1785,98 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         )
     if name == "get_hourly_followup_candidates":
         return _tool_result(_build_followup_candidates(arguments))
+    if name == "get_pool_snapshot":
+        return _run_agent_skill(
+            "get_pool_snapshot",
+            arguments,
+            permission_scope="read",
+            fn=lambda: get_pool_snapshot(
+                pool_key=str(arguments.get("pool_key") or "").strip(),
+                limit=int(arguments.get("limit") or 10),
+            ),
+        )
+    if name == "get_agent_config":
+        return _run_agent_skill(
+            "get_agent_config",
+            arguments,
+            permission_scope="read",
+            fn=lambda: {"agent": get_agent_config_detail(str(arguments.get("agent_code") or "").strip())},
+        )
+    if name == "save_agent_prompt_draft":
+        return _run_agent_skill(
+            "save_agent_prompt_draft",
+            arguments,
+            permission_scope="draft_write",
+            fn=lambda: save_agent_config_draft(
+                str(arguments.get("agent_code") or "").strip(),
+                {
+                    "display_name": arguments.get("display_name"),
+                    "enabled": bool(arguments.get("enabled", True)),
+                    "role_prompt": arguments.get("role_prompt"),
+                    "task_prompt": arguments.get("task_prompt"),
+                    "variables": list(arguments.get("variables") or []),
+                    "output_schema": list(arguments.get("output_schema") or []),
+                    "change_summary": arguments.get("change_summary"),
+                },
+                operator_id=str(arguments.get("operator") or "mcp").strip() or "mcp",
+                source="mcp",
+            ),
+        )
+    if name == "list_agent_outputs":
+        return _run_agent_skill(
+            "list_agent_outputs",
+            arguments,
+            permission_scope="read",
+            fn=lambda: list_agent_outputs(
+                dict(arguments.get("filters") or {}),
+                page=int(arguments.get("page") or 1),
+                page_size=int(arguments.get("page_size") or 20),
+                visibility="full",
+            ),
+        )
+    if name == "get_agent_output":
+        return _run_agent_skill(
+            "get_agent_output",
+            arguments,
+            permission_scope="read",
+            fn=lambda: get_agent_output_detail(str(arguments.get("output_id") or "").strip(), visibility="full"),
+        )
+    if name == "get_agent_outputs_by_request":
+        return _run_agent_skill(
+            "list_agent_outputs",
+            arguments,
+            permission_scope="read",
+            fn=lambda: get_agent_outputs_by_request(str(arguments.get("request_id") or "").strip(), visibility="full"),
+        )
+    if name == "get_agent_outputs_by_user":
+        return _run_agent_skill(
+            "list_agent_outputs",
+            arguments,
+            permission_scope="read",
+            fn=lambda: get_agent_outputs_by_user(
+                str(arguments.get("userid") or "").strip(),
+                limit=int(arguments.get("limit") or 20),
+                visibility="full",
+            ),
+        )
+    if name == "export_agent_outputs":
+        return _run_agent_skill(
+            "export_agent_outputs",
+            arguments,
+            permission_scope="export",
+            fn=lambda: {"job": create_agent_output_export_job(dict(arguments.get("filters") or {}), requested_by=str(arguments.get("requested_by") or "mcp").strip() or "mcp")},
+        )
+    if name == "suggest_pool_action":
+        return _run_agent_skill(
+            "suggest_pool_action",
+            arguments,
+            permission_scope="suggest_only",
+            fn=lambda: suggest_pool_action(
+                external_contact_id=str(arguments.get("external_contact_id") or "").strip(),
+                phone=str(arguments.get("phone") or "").strip(),
+                operator_id=str(arguments.get("operator") or "mcp").strip() or "mcp",
+            ),
+        )
     raise ValueError(f"unknown tool: {name}")
 
 

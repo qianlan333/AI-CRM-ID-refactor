@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Any
 
 from flask import current_app, g
 
@@ -993,6 +992,275 @@ def _ensure_sqlite_automation_sop_v2_columns(db) -> None:
     )
 
 
+def _ensure_sqlite_customer_pulse_tables(db) -> None:
+    deferred_job_columns = _sqlite_table_columns(db, "user_ops_deferred_jobs")
+    if deferred_job_columns and "tenant_key" not in deferred_job_columns:
+        db.execute("ALTER TABLE user_ops_deferred_jobs ADD COLUMN tenant_key TEXT NOT NULL DEFAULT 'aicrm'")
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_deferred_jobs_job_tenant_status
+        ON user_ops_deferred_jobs (job_type, tenant_key, status, run_after, id DESC)
+        """
+    )
+
+    signal_columns = _sqlite_table_columns(db, "customer_pulse_signal_events")
+    if signal_columns and "tenant_key" not in signal_columns:
+        db.execute("ALTER TABLE customer_pulse_signal_events ADD COLUMN tenant_key TEXT NOT NULL DEFAULT 'aicrm'")
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_signal_events_tenant_external_status
+        ON customer_pulse_signal_events (tenant_key, external_userid, signal_status, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_signal_events_tenant_type
+        ON customer_pulse_signal_events (tenant_key, signal_type, updated_at DESC, id DESC)
+        """
+    )
+
+    snapshot_columns = _sqlite_table_columns(db, "customer_pulse_snapshots")
+    if snapshot_columns:
+        if "tenant_key" not in snapshot_columns:
+            db.execute("ALTER TABLE customer_pulse_snapshots ADD COLUMN tenant_key TEXT NOT NULL DEFAULT 'aicrm'")
+        if "priority_score" not in snapshot_columns:
+            db.execute("ALTER TABLE customer_pulse_snapshots ADD COLUMN priority_score REAL NOT NULL DEFAULT 0")
+        if "risk_flags_json" not in snapshot_columns:
+            db.execute("ALTER TABLE customer_pulse_snapshots ADD COLUMN risk_flags_json TEXT NOT NULL DEFAULT '[]'")
+        if "opportunity_flags_json" not in snapshot_columns:
+            db.execute("ALTER TABLE customer_pulse_snapshots ADD COLUMN opportunity_flags_json TEXT NOT NULL DEFAULT '[]'")
+        if "suggested_action_candidates_json" not in snapshot_columns:
+            db.execute("ALTER TABLE customer_pulse_snapshots ADD COLUMN suggested_action_candidates_json TEXT NOT NULL DEFAULT '[]'")
+        if "score_breakdown_json" not in snapshot_columns:
+            db.execute("ALTER TABLE customer_pulse_snapshots ADD COLUMN score_breakdown_json TEXT NOT NULL DEFAULT '[]'")
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_snapshots_tenant_external
+        ON customer_pulse_snapshots (tenant_key, external_userid, created_at DESC, id DESC)
+        """
+    )
+
+    card_columns = _sqlite_table_columns(db, "customer_pulse_cards")
+    if card_columns:
+        if "tenant_key" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN tenant_key TEXT NOT NULL DEFAULT 'aicrm'")
+        if "customer_name" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN customer_name TEXT NOT NULL DEFAULT ''")
+        if "mobile" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN mobile TEXT NOT NULL DEFAULT ''")
+        if "owner_display_name" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN owner_display_name TEXT NOT NULL DEFAULT ''")
+        if "marketing_main_stage" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN marketing_main_stage TEXT NOT NULL DEFAULT ''")
+        if "marketing_sub_stage" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN marketing_sub_stage TEXT NOT NULL DEFAULT ''")
+        if "value_segment" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN value_segment TEXT NOT NULL DEFAULT ''")
+        if "priority_score" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN priority_score REAL NOT NULL DEFAULT 0")
+        if "risk_flags_json" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN risk_flags_json TEXT NOT NULL DEFAULT '[]'")
+        if "opportunity_flags_json" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN opportunity_flags_json TEXT NOT NULL DEFAULT '[]'")
+        if "suggested_action_candidates_json" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN suggested_action_candidates_json TEXT NOT NULL DEFAULT '[]'")
+        if "score_breakdown_json" not in card_columns:
+            db.execute("ALTER TABLE customer_pulse_cards ADD COLUMN score_breakdown_json TEXT NOT NULL DEFAULT '[]'")
+
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_status_score
+        ON customer_pulse_cards (card_status, priority_score DESC, due_at, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_tenant_external
+        ON customer_pulse_cards (tenant_key, external_userid, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_tenant_status_score
+        ON customer_pulse_cards (tenant_key, card_status, priority_score DESC, due_at, updated_at DESC, id DESC)
+        """
+    )
+    feedback_columns = _sqlite_table_columns(db, "customer_pulse_feedback_logs")
+    if feedback_columns and "tenant_key" not in feedback_columns:
+        db.execute("ALTER TABLE customer_pulse_feedback_logs ADD COLUMN tenant_key TEXT NOT NULL DEFAULT 'aicrm'")
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_feedback_logs_tenant_card
+        ON customer_pulse_feedback_logs (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    execution_log_columns = _sqlite_table_columns(db, "customer_pulse_execution_logs")
+    if execution_log_columns:
+        if "tenant_key" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN tenant_key TEXT NOT NULL DEFAULT 'aicrm'")
+        if "actor_userid" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN actor_userid TEXT NOT NULL DEFAULT ''")
+        if "actor_role" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN actor_role TEXT NOT NULL DEFAULT ''")
+        if "resource_type" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN resource_type TEXT NOT NULL DEFAULT ''")
+        if "resource_id" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN resource_id TEXT NOT NULL DEFAULT ''")
+        if "tenant_context_json" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN tenant_context_json TEXT NOT NULL DEFAULT '{}'")
+        if "audit_labels_json" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN audit_labels_json TEXT NOT NULL DEFAULT '[]'")
+        if "rollback_payload_json" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN rollback_payload_json TEXT NOT NULL DEFAULT '{}'")
+        if "execution_key" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN execution_key TEXT NOT NULL DEFAULT ''")
+        if "idempotency_key" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''")
+        if "activity_log_id" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN activity_log_id INTEGER")
+        if "outbound_task_id" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN outbound_task_id INTEGER")
+        if "undo_status" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN undo_status TEXT NOT NULL DEFAULT ''")
+        if "undo_until" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN undo_until TEXT NOT NULL DEFAULT ''")
+        if "undone_at" not in execution_log_columns:
+            db.execute("ALTER TABLE customer_pulse_execution_logs ADD COLUMN undone_at TEXT NOT NULL DEFAULT ''")
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_card
+        ON customer_pulse_execution_logs (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_idempotency
+        ON customer_pulse_execution_logs (tenant_key, idempotency_key, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_resource
+        ON customer_pulse_execution_logs (tenant_key, resource_type, resource_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_pulse_activity_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+            external_userid TEXT NOT NULL DEFAULT '',
+            owner_userid TEXT NOT NULL DEFAULT '',
+            activity_type TEXT NOT NULL DEFAULT '',
+            activity_status TEXT NOT NULL DEFAULT '',
+            activity_source TEXT NOT NULL DEFAULT 'ai_customer_pulse',
+            tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+            execution_key TEXT NOT NULL DEFAULT '',
+            idempotency_key TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            due_at TEXT NOT NULL DEFAULT '',
+            operator TEXT NOT NULL DEFAULT '',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            undone_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_external_userid
+        ON customer_pulse_activity_logs (tenant_key, external_userid, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_card
+        ON customer_pulse_activity_logs (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_idempotency
+        ON customer_pulse_activity_logs (tenant_key, idempotency_key, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_pulse_action_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+            execution_log_id INTEGER REFERENCES customer_pulse_execution_logs(id) ON DELETE SET NULL,
+            external_userid TEXT NOT NULL DEFAULT '',
+            owner_userid TEXT NOT NULL DEFAULT '',
+            action_type TEXT NOT NULL DEFAULT '',
+            feedback_type TEXT NOT NULL DEFAULT '',
+            feedback_source TEXT NOT NULL DEFAULT '',
+            tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+            operator TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_card
+        ON customer_pulse_action_feedback (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_execution
+        ON customer_pulse_action_feedback (tenant_key, execution_log_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_type
+        ON customer_pulse_action_feedback (tenant_key, feedback_type, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_pulse_metric_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER REFERENCES customer_pulse_cards(id) ON DELETE SET NULL,
+            execution_log_id INTEGER REFERENCES customer_pulse_execution_logs(id) ON DELETE SET NULL,
+            external_userid TEXT NOT NULL DEFAULT '',
+            owner_userid TEXT NOT NULL DEFAULT '',
+            action_type TEXT NOT NULL DEFAULT '',
+            event_type TEXT NOT NULL DEFAULT '',
+            event_source TEXT NOT NULL DEFAULT '',
+            tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+            operator TEXT NOT NULL DEFAULT '',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_type
+        ON customer_pulse_metric_events (tenant_key, event_type, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_card
+        ON customer_pulse_metric_events (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_execution
+        ON customer_pulse_metric_events (tenant_key, execution_log_id, created_at DESC, id DESC)
+        """
+    )
+
+
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
@@ -1003,6 +1271,7 @@ def _init_sqlite(db) -> None:
     _ensure_sqlite_customer_marketing_state_tables(db)
     _ensure_sqlite_automation_conversion_tables(db)
     _ensure_sqlite_automation_sop_v2_columns(db)
+    _ensure_sqlite_customer_pulse_tables(db)
     _ensure_automation_sop_v1_seed_data()
     _ensure_automation_agent_prompt_defaults()
     columns = _sqlite_table_columns(db, "archived_messages")
@@ -1045,6 +1314,30 @@ def _init_sqlite(db) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_match_key
             ON automation_message_activity_sync_item (phone_match_key, created_at DESC, id DESC)
+            """
+        )
+    agent_output_columns = _sqlite_table_columns(db, "automation_agent_output")
+    if agent_output_columns:
+        if "adopted_by" not in agent_output_columns:
+            db.execute("ALTER TABLE automation_agent_output ADD COLUMN adopted_by TEXT NOT NULL DEFAULT ''")
+        if "adopted_action" not in agent_output_columns:
+            db.execute("ALTER TABLE automation_agent_output ADD COLUMN adopted_action TEXT NOT NULL DEFAULT ''")
+        if "adopted_at" not in agent_output_columns:
+            db.execute("ALTER TABLE automation_agent_output ADD COLUMN adopted_at TEXT NOT NULL DEFAULT ''")
+        if "outcome_status" not in agent_output_columns:
+            db.execute("ALTER TABLE automation_agent_output ADD COLUMN outcome_status TEXT NOT NULL DEFAULT ''")
+        if "outcome_value" not in agent_output_columns:
+            db.execute("ALTER TABLE automation_agent_output ADD COLUMN outcome_value TEXT NOT NULL DEFAULT ''")
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_automation_agent_output_target_agent
+            ON automation_agent_output (target_agent_code, created_at DESC, id DESC)
+            """
+        )
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_automation_agent_output_outcome_status
+            ON automation_agent_output (outcome_status, created_at DESC, id DESC)
             """
         )
     db.commit()
@@ -1425,6 +1718,337 @@ def _init_postgres(db) -> None:
     )
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS user_ops_deferred_jobs
+        ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_ops_deferred_jobs_job_tenant_status
+        ON user_ops_deferred_jobs (job_type, tenant_key, status, run_after, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_signal_events
+        ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_signal_events_tenant_external_status
+        ON customer_pulse_signal_events (tenant_key, external_userid, signal_status, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_signal_events_tenant_type
+        ON customer_pulse_signal_events (tenant_key, signal_type, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_snapshots
+        ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_snapshots_tenant_external
+        ON customer_pulse_snapshots (tenant_key, external_userid, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_cards
+        ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_cards
+        ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_cards
+        ADD COLUMN IF NOT EXISTS mobile TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_cards
+        ADD COLUMN IF NOT EXISTS owner_display_name TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_cards
+        ADD COLUMN IF NOT EXISTS marketing_main_stage TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_cards
+        ADD COLUMN IF NOT EXISTS marketing_sub_stage TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_cards
+        ADD COLUMN IF NOT EXISTS value_segment TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_tenant_external
+        ON customer_pulse_cards (tenant_key, external_userid, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_tenant_status_score
+        ON customer_pulse_cards (tenant_key, card_status, priority_score DESC, due_at, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_feedback_logs
+        ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_feedback_logs_tenant_card
+        ON customer_pulse_feedback_logs (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS actor_userid TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS actor_role TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS resource_id TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS tenant_context_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS audit_labels_json JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS rollback_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS execution_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS idempotency_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS activity_log_id BIGINT
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS outbound_task_id BIGINT
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS undo_status TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS undo_until TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS customer_pulse_execution_logs
+        ADD COLUMN IF NOT EXISTS undone_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_card
+        ON customer_pulse_execution_logs (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_idempotency
+        ON customer_pulse_execution_logs (tenant_key, idempotency_key, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_resource
+        ON customer_pulse_execution_logs (tenant_key, resource_type, resource_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_pulse_activity_logs (
+            id BIGSERIAL PRIMARY KEY,
+            card_id BIGINT NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+            external_userid TEXT NOT NULL DEFAULT '',
+            owner_userid TEXT NOT NULL DEFAULT '',
+            activity_type TEXT NOT NULL DEFAULT '',
+            activity_status TEXT NOT NULL DEFAULT '',
+            activity_source TEXT NOT NULL DEFAULT 'ai_customer_pulse',
+            tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+            execution_key TEXT NOT NULL DEFAULT '',
+            idempotency_key TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            due_at TEXT NOT NULL DEFAULT '',
+            operator TEXT NOT NULL DEFAULT '',
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            undone_at TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_external_userid
+        ON customer_pulse_activity_logs (tenant_key, external_userid, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_card
+        ON customer_pulse_activity_logs (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_idempotency
+        ON customer_pulse_activity_logs (tenant_key, idempotency_key, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_pulse_action_feedback (
+            id BIGSERIAL PRIMARY KEY,
+            card_id BIGINT NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+            execution_log_id BIGINT REFERENCES customer_pulse_execution_logs(id) ON DELETE SET NULL,
+            external_userid TEXT NOT NULL DEFAULT '',
+            owner_userid TEXT NOT NULL DEFAULT '',
+            action_type TEXT NOT NULL DEFAULT '',
+            feedback_type TEXT NOT NULL DEFAULT '',
+            feedback_source TEXT NOT NULL DEFAULT '',
+            tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+            operator TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_card
+        ON customer_pulse_action_feedback (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_execution
+        ON customer_pulse_action_feedback (tenant_key, execution_log_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_type
+        ON customer_pulse_action_feedback (tenant_key, feedback_type, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS customer_pulse_metric_events (
+            id BIGSERIAL PRIMARY KEY,
+            card_id BIGINT REFERENCES customer_pulse_cards(id) ON DELETE SET NULL,
+            execution_log_id BIGINT REFERENCES customer_pulse_execution_logs(id) ON DELETE SET NULL,
+            external_userid TEXT NOT NULL DEFAULT '',
+            owner_userid TEXT NOT NULL DEFAULT '',
+            action_type TEXT NOT NULL DEFAULT '',
+            event_type TEXT NOT NULL DEFAULT '',
+            event_source TEXT NOT NULL DEFAULT '',
+            tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+            operator TEXT NOT NULL DEFAULT '',
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_type
+        ON customer_pulse_metric_events (tenant_key, event_type, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_card
+        ON customer_pulse_metric_events (tenant_key, card_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_execution
+        ON customer_pulse_metric_events (tenant_key, execution_log_id, created_at DESC, id DESC)
+        """
+    )
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_customer_value_segment_tables(db)
@@ -1480,6 +2104,48 @@ def _init_postgres(db) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_member_day_snapshot
         ON automation_sop_batch_item (member_id, pool_key, day_index_snapshot, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_output
+        ADD COLUMN IF NOT EXISTS adopted_by TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_output
+        ADD COLUMN IF NOT EXISTS adopted_action TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_output
+        ADD COLUMN IF NOT EXISTS adopted_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_output
+        ADD COLUMN IF NOT EXISTS outcome_status TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_output
+        ADD COLUMN IF NOT EXISTS outcome_value TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_agent_output_target_agent
+        ON automation_agent_output (target_agent_code, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_agent_output_outcome_status
+        ON automation_agent_output (outcome_status, created_at DESC, id DESC)
         """
     )
     db.commit()

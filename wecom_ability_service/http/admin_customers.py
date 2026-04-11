@@ -6,10 +6,13 @@ from ..domains.admin_console.customer_profile_service import (
     build_customer_detail_payload,
     build_customer_list_payload,
     get_customer_messages_payload,
+    get_customer_pulse_payload,
     get_customer_profile_payload,
     get_customer_profile_tags_payload,
     get_customer_questionnaire_answers_payload,
 )
+from ..domains.customer_pulse.access import CustomerPulseAccessDenied, current_customer_pulse_request_access_context, customer_pulse_template_access_payload
+from ..domains.followup_orchestrator import is_followup_orchestrator_enabled
 from ..domains.admin_console.service import (
     execute_customer_tag_action,
     execute_customer_task_action,
@@ -17,6 +20,7 @@ from ..domains.admin_console.service import (
     preview_customer_task_action,
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
+from .internal_auth import ensure_admin_console_action_token
 
 
 def _lookup_params(source) -> dict[str, str]:
@@ -49,6 +53,7 @@ def _render_customer_detail_page(
     action_result: dict | None = None,
 ):
     payload = build_customer_detail_payload(external_userid, legacy_tab=legacy_tab)
+    access_context = current_customer_pulse_request_access_context()
     if not payload:
         return _render_admin_template(
             "placeholder.html",
@@ -81,10 +86,16 @@ def _render_customer_detail_page(
         page_notice=page_notice,
         page_error=page_error,
         show_shell_meta=False,
+        admin_action_token=ensure_admin_console_action_token(),
         action_result=action_result or {},
         customer_profile_urls={
             "profile": url_for("api.admin_customer_profile_api", external_userid=external_userid),
             "tags": url_for("api.admin_customer_profile_tags_api", external_userid=external_userid),
+            "pulse": url_for("api.admin_customer_profile_pulse_api", external_userid=external_userid),
+            "pulse_inbox": url_for("api.admin_customer_pulse_inbox", external_userid=external_userid),
+            "pulse_card_api_base": f"{url_for('api.admin_customer_pulse_api')}/cards",
+            "followup_orchestrator": url_for("api.admin_followup_orchestrator", external_userid=external_userid),
+            "followup_orchestrator_api": url_for("api.api_admin_followup_orchestrator_customer", external_userid=external_userid),
             "questionnaire_answers": url_for(
                 "api.admin_customer_profile_questionnaire_answers_api",
                 external_userid=external_userid,
@@ -99,6 +110,8 @@ def _render_customer_detail_page(
             "automation_unmark_won": url_for("api.api_admin_automation_conversion_unmark_won"),
             "automation_push_openclaw": url_for("api.api_admin_automation_conversion_push_openclaw"),
         },
+        customer_pulse_access=customer_pulse_template_access_payload(access_context),
+        followup_orchestrator_enabled=is_followup_orchestrator_enabled(access_context=access_context),
     )
 
 
@@ -214,6 +227,18 @@ def admin_customer_profile_questionnaire_answers_api():
         return jsonify({"ok": False, "error": "当前无法加载问卷记录", "answers": []})
 
 
+def admin_customer_profile_pulse_api():
+    try:
+        payload = get_customer_pulse_payload(**_lookup_params(request.args))
+        return jsonify({"ok": True, **payload})
+    except CustomerPulseAccessDenied as exc:
+        return jsonify({"ok": False, "error": str(exc), "code": exc.code, "pulse": {}, "customer_pulse": {}}), int(exc.http_status)
+    except LookupError:
+        return jsonify({"ok": False, "error": "customer not found", "pulse": {}, "customer_pulse": {}}), 404
+    except Exception:
+        return jsonify({"ok": False, "error": "当前无法加载 AI 下一步", "pulse": {}, "customer_pulse": {}})
+
+
 def admin_customer_profile_messages_api():
     try:
         payload = get_customer_messages_payload(
@@ -235,6 +260,7 @@ def register_routes(bp):
     bp.route("/admin/customers/<external_userid>/tasks", methods=["POST"])(admin_console_customer_task_action)
     bp.route("/api/admin/customers/profile", methods=["GET"])(admin_customer_profile_api)
     bp.route("/api/admin/customers/profile/tags", methods=["GET"])(admin_customer_profile_tags_api)
+    bp.route("/api/admin/customers/profile/pulse", methods=["GET"])(admin_customer_profile_pulse_api)
     bp.route("/api/admin/customers/profile/questionnaire-answers", methods=["GET"])(
         admin_customer_profile_questionnaire_answers_api
     )

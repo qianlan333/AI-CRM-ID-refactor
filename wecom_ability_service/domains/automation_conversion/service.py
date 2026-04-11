@@ -38,6 +38,7 @@ from ..user_ops import page_service as user_ops_page_service
 from .agents import (
     AGENT_PROMPT_DEFINITION_MAP,
     AGENT_PROMPT_ORDER,
+    CHILD_AGENT_CONFIG_MAP,
     DeepSeekClientError,
     call_deepseek_agent,
     default_agent_prompt_payloads,
@@ -2179,6 +2180,23 @@ def run_due_reply_monitor(
 
     messages = repo.list_archived_messages_by_ids(queue_item.get("message_ids") or [])
     payload = _build_reply_monitor_payload(queue_item, member, messages)
+    shadow_result: dict[str, Any] = {}
+    try:
+        from .orchestration_service import run_agent_router_shadow_decision
+
+        shadow_result = run_agent_router_shadow_decision(
+            external_contact_id=_normalized_text(queue_item.get("external_userid")),
+            owner_userid=_normalized_text(queue_item.get("owner_userid")),
+            batch_id=f"reply_monitor_queue:{int(queue_item['id'])}",
+            source="reply_monitor_shadow",
+            member_detail=get_member_detail(
+                external_contact_id=_normalized_text(queue_item.get("external_userid")),
+                phone=_normalized_text(member.get("phone")),
+            ),
+        )
+    except Exception:  # pragma: no cover - shadow mode must not block primary dispatch
+        current_app.logger.exception("automation router shadow mode failed")
+        shadow_result = {"ok": False, "status": "shadow_error", "shadow_called": False}
     delivery = send_outbound_webhook(
         event_type=EVENT_OPENCLAW_FOCUS_MESSAGE,
         payload=payload,
@@ -2227,6 +2245,26 @@ def run_due_reply_monitor(
         "deferred_count": int(queue_counts.get("deferred_quiet_hours") or 0),
         "queue_id": int(queue_item["id"]),
     }
+    if shadow_result.get("shadow_called") and shadow_result.get("output_id"):
+        try:
+            from .orchestration_service import record_agent_output_outcome
+
+            record_agent_output_outcome(
+                str(shadow_result.get("output_id") or ""),
+                outcome_status="dispatch_success" if delivery_ok else "dispatch_failed",
+                outcome_value=json.dumps(
+                    {
+                        "queue_id": int(queue_item["id"]),
+                        "delivery_ok": delivery_ok,
+                        "delivery_reason": delivery_reason,
+                        "shadow_mode": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                applied_status="shadow_observed",
+            )
+        except Exception:  # pragma: no cover - outcome writeback must not block dispatch
+            current_app.logger.exception("automation router shadow outcome writeback failed")
     _save_reply_monitor_config(
         {
             "last_dispatch_at": now_text,
@@ -2242,6 +2280,7 @@ def run_due_reply_monitor(
         "summary": summary,
         "reply_monitor": _reply_monitor_status_payload(),
         "error": "" if delivery_ok else delivery_reason,
+        "shadow_router": shadow_result,
     }
 
 
@@ -2378,7 +2417,10 @@ def run_message_activity_sync(
         "ambiguous_phone_last4": [],
     }
     try:
-        eligible_members = [_serialize_member(row) for row in repo.list_members_for_message_activity_sync(current_pools=list(current_pools))]
+        eligible_members = sorted(
+            [_serialize_member(row) for row in repo.list_members_for_message_activity_sync(current_pools=list(current_pools))],
+            key=lambda item: (_normalized_text(item.get("external_contact_id")), int(item.get("id") or 0)),
+        )
         counters["candidate_count"] = len(eligible_members)
         message_counts = {
             _normalized_text(row.get("phone_match_key")): {
@@ -2431,7 +2473,10 @@ def run_message_activity_sync(
                 counters["skipped_ambiguous_count"] += 1
                 conflict_members = ",".join(
                     _normalized_text(item.get("external_contact_id")) or f"id:{int(item.get('id') or 0)}"
-                    for item in ambiguous_groups[match_key]
+                    for item in sorted(
+                        ambiguous_groups[match_key],
+                        key=lambda item: (_normalized_text(item.get("external_contact_id")), int(item.get("id") or 0)),
+                    )
                 )
                 repo.insert_message_activity_sync_item(
                     {
@@ -2797,6 +2842,24 @@ def save_model_infra_prompt(*, agent_code: str, display_name: str, prompt_text: 
                 "enabled": bool(enabled),
                 "version": 1,
             }
+        )
+    if normalized_agent_code in CHILD_AGENT_CONFIG_MAP:
+        from .orchestration_service import get_agent_config_detail, save_agent_config_draft
+
+        current_config = get_agent_config_detail(normalized_agent_code)
+        save_agent_config_draft(
+            normalized_agent_code,
+            {
+                "display_name": next_display_name,
+                "enabled": bool(enabled),
+                "role_prompt": str(((current_config.get("draft") or {}).get("role_prompt")) or ""),
+                "task_prompt": next_prompt_text,
+                "variables": list(((current_config.get("draft") or {}).get("variables")) or []),
+                "output_schema": list(((current_config.get("draft") or {}).get("output_schema")) or []),
+                "change_summary": "从 legacy Prompt Registry 同步任务提示词",
+            },
+            operator_id="legacy_model_infra",
+            source="legacy_prompt_registry",
         )
     get_db().commit()
     return _serialize_agent_prompt_row(saved)
@@ -4251,6 +4314,93 @@ def run_due_sop(*, operator_id: str = "", operator_type: str = "system") -> dict
         "total_failed_count": total_failed_count,
         "batch_ids": batch_ids,
         "batches": batches,
+    }
+
+
+def list_registered_due_jobs() -> list[dict[str, Any]]:
+    return [
+        {
+            "job_code": "sop",
+            "label": "SOP 池运营",
+            "frequency_minutes": 15,
+            "description": "轮询 new_user / inactive_normal / active_normal 三个池子，到点后统一执行 day 模板。",
+        }
+    ]
+
+
+def run_registered_due_jobs(
+    *,
+    job_codes: list[str] | None = None,
+    operator_id: str = "",
+    operator_type: str = "system",
+) -> dict[str, Any]:
+    registry = {item["job_code"]: dict(item) for item in list_registered_due_jobs()}
+    selected_job_codes = [
+        _normalized_text(item)
+        for item in (job_codes or list(registry.keys()))
+        if _normalized_text(item)
+    ]
+    if not selected_job_codes:
+        selected_job_codes = list(registry.keys())
+
+    invalid_job_codes = [item for item in selected_job_codes if item not in registry]
+    if invalid_job_codes:
+        raise ValueError(f"unsupported due jobs: {', '.join(sorted(dict.fromkeys(invalid_job_codes)))}")
+
+    jobs_payload: list[dict[str, Any]] = []
+    executed_job_count = 0
+    failed_job_count = 0
+    total_success_count = 0
+    total_skipped_count = 0
+    total_failed_count = 0
+    batch_ids: list[int] = []
+
+    for job_code in selected_job_codes:
+        definition = registry[job_code]
+        try:
+            if job_code == "sop":
+                payload = run_due_sop(
+                    operator_id=operator_id or "automation_conversion_due_runner",
+                    operator_type=operator_type,
+                )
+            else:
+                raise ValueError(f"unsupported due job runner: {job_code}")
+        except Exception as exc:
+            failed_job_count += 1
+            jobs_payload.append(
+                {
+                    **definition,
+                    "ok": False,
+                    "error": str(exc),
+                }
+            )
+            continue
+
+        executed_job_count += 1
+        total_success_count += int(payload.get("total_success_count") or 0)
+        total_skipped_count += int(payload.get("total_skipped_count") or 0)
+        total_failed_count += int(payload.get("total_failed_count") or 0)
+        batch_ids.extend(int(item) for item in (payload.get("batch_ids") or []) if int(item or 0))
+        jobs_payload.append(
+            {
+                **definition,
+                "ok": bool(payload.get("ok")),
+                "result": payload,
+            }
+        )
+
+    return {
+        "ok": failed_job_count == 0,
+        "operator_type": _normalized_text(operator_type) or "system",
+        "operator_id": _normalized_text(operator_id) or "automation_conversion_due_runner",
+        "requested_job_codes": selected_job_codes,
+        "executed_job_count": executed_job_count,
+        "failed_job_count": failed_job_count,
+        "total_success_count": total_success_count,
+        "total_skipped_count": total_skipped_count,
+        "total_failed_count": total_failed_count,
+        "batch_ids": list(dict.fromkeys(batch_ids)),
+        "jobs": jobs_payload,
     }
 
 

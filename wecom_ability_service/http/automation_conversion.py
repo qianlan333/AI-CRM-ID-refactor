@@ -4,13 +4,26 @@ import base64
 import imghdr
 import json
 
-from flask import jsonify, redirect, request, url_for
+from flask import Response, jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
     create_focus_send_batch,
+    create_agent_output_export_job,
     append_sop_v1_template_day,
+    append_agent_output,
+    audit_agent_skill_call,
     delete_sop_v1_template_day,
+    ensure_agent_orchestration_defaults,
     generate_default_channel_qr,
+    get_agent_config_detail,
+    get_agent_orchestration_payload,
+    get_agent_output_detail,
+    get_agent_output_export_file,
+    get_agent_output_export_job,
+    get_agent_outputs_by_request,
+    get_agent_outputs_by_user,
+    get_agent_replay_payload,
+    get_agent_run_detail,
     get_debug_payload,
     get_focus_send_batch_detail,
     get_focus_send_batches_payload,
@@ -24,15 +37,22 @@ from ..domains.automation_conversion import (
     preview_stage_manual_message,
     get_settings_payload,
     get_stage_detail_payload,
+    get_pool_snapshot,
+    list_agent_outputs,
     mark_won,
+    publish_agent_config,
     put_in_pool,
     push_openclaw,
+    replay_agent_run,
     remove_from_pool,
+    run_registered_due_jobs,
     run_due_reply_monitor,
     run_due_focus_send_batches,
     run_due_sop,
     run_message_activity_sync,
     run_reply_monitor_capture,
+    save_agent_config_draft,
+    save_agent_router_settings,
     save_model_infra_prompt,
     save_model_infra_settings,
     save_reply_monitor_enabled,
@@ -41,6 +61,7 @@ from ..domains.automation_conversion import (
     save_settings,
     send_stage_manual_message,
     set_follow_type,
+    suggest_pool_action,
     test_model_infra_connection,
     unmark_won,
 )
@@ -132,6 +153,138 @@ def _build_model_prompt_form_payload() -> dict[str, object]:
         "prompt_text": str(request.form.get("prompt_text") or "").strip(),
         "enabled": str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"},
     }
+
+
+def _build_agent_router_form_payload() -> dict[str, object]:
+    return {
+        "enabled": str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"},
+        "webhook_url": str(request.form.get("webhook_url") or "").strip(),
+        "signature_token": str(request.form.get("signature_token") or "").strip(),
+        "signature_secret": str(request.form.get("signature_secret") or "").strip(),
+        "signature_header": str(request.form.get("signature_header") or "").strip() or "X-Lobster-Signature",
+        "timeout_seconds": request.form.get("timeout_seconds"),
+        "retry_count": request.form.get("retry_count"),
+        "fallback_strategy": {
+            "on_timeout": str(request.form.get("fallback_on_timeout") or "").strip(),
+            "on_invalid_schema": str(request.form.get("fallback_on_invalid_schema") or "").strip(),
+            "on_unknown_agent_code": str(request.form.get("fallback_on_unknown_agent_code") or "").strip(),
+            "default_agent_code": str(request.form.get("fallback_default_agent_code") or "").strip(),
+            "default_pool": str(request.form.get("fallback_default_pool") or "").strip(),
+            "need_human_review": str(request.form.get("fallback_need_human_review") or "").strip().lower() in {"1", "true", "yes", "on"},
+            "alert_channel": str(request.form.get("fallback_alert_channel") or "").strip() or "run_center",
+            "fail_closed": str(request.form.get("fallback_fail_closed") or "").strip().lower() in {"1", "true", "yes", "on"},
+        },
+    }
+
+
+def _build_agent_config_form_payload() -> dict[str, object]:
+    variables_json = str(request.form.get("variables_json") or "").strip()
+    output_schema_json = str(request.form.get("output_schema_json") or "").strip()
+    try:
+        variables = json.loads(variables_json or "[]")
+    except ValueError as exc:
+        raise ValueError("variables_json must be valid JSON array") from exc
+    try:
+        output_schema = json.loads(output_schema_json or "[]")
+    except ValueError as exc:
+        raise ValueError("output_schema_json must be valid JSON array") from exc
+    if not isinstance(variables, list):
+        raise ValueError("variables_json must be a JSON array")
+    if not isinstance(output_schema, list):
+        raise ValueError("output_schema_json must be a JSON array")
+    return {
+        "display_name": str(request.form.get("display_name") or "").strip(),
+        "enabled": str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"},
+        "role_prompt": str(request.form.get("role_prompt") or "").strip(),
+        "task_prompt": str(request.form.get("task_prompt") or "").strip(),
+        "variables": variables,
+        "output_schema": output_schema,
+        "change_summary": str(request.form.get("change_summary") or "").strip(),
+    }
+
+
+def _build_agent_output_filters_from_request() -> dict[str, object]:
+    return {
+        "request_id": _query_text("request_id") or str(request.form.get("request_id") or "").strip(),
+        "batch_id": _query_text("batch_id") or str(request.form.get("batch_id") or "").strip(),
+        "agent_code": _query_text("agent_code") or str(request.form.get("agent_code") or "").strip(),
+        "output_type": _query_text("output_type") or str(request.form.get("output_type") or "").strip(),
+        "userid": _query_text("userid") or str(request.form.get("userid") or "").strip(),
+        "external_contact_id": _query_text("external_contact_id") or str(request.form.get("external_contact_id") or "").strip(),
+        "current_pool": _query_text("current_pool") or str(request.form.get("current_pool") or "").strip(),
+        "target_pool": _query_text("target_pool") or str(request.form.get("target_pool") or "").strip(),
+        "applied_status": _query_text("applied_status") or str(request.form.get("applied_status") or "").strip(),
+        "date_from": _query_text("date_from") or str(request.form.get("date_from") or "").strip(),
+        "date_to": _query_text("date_to") or str(request.form.get("date_to") or "").strip(),
+        "min_confidence": _query_text("min_confidence") or str(request.form.get("min_confidence") or "").strip(),
+        "max_confidence": _query_text("max_confidence") or str(request.form.get("max_confidence") or "").strip(),
+        "has_error": _query_text("has_error")
+        or _query_text("is_error")
+        or str(request.form.get("has_error") or request.form.get("is_error") or "").strip(),
+    }
+
+
+def _apply_agent_router_form_state(payload: dict[str, object]) -> dict[str, object]:
+    router = dict((payload.get("router") or {}))
+    config = dict(router.get("config") or {})
+    fallback_strategy = dict(config.get("fallback_strategy") or {})
+    config.update(
+        {
+            "enabled": str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"},
+            "webhook_url": str(request.form.get("webhook_url") or "").strip(),
+            "signature_header": str(request.form.get("signature_header") or "").strip() or "X-Lobster-Signature",
+            "timeout_seconds": str(request.form.get("timeout_seconds") or "").strip() or config.get("timeout_seconds") or 8,
+            "retry_count": str(request.form.get("retry_count") or "").strip() or config.get("retry_count") or 1,
+        }
+    )
+    fallback_strategy.update(
+        {
+            "on_timeout": str(request.form.get("fallback_on_timeout") or "").strip(),
+            "on_invalid_schema": str(request.form.get("fallback_on_invalid_schema") or "").strip(),
+            "on_unknown_agent_code": str(request.form.get("fallback_on_unknown_agent_code") or "").strip(),
+            "default_agent_code": str(request.form.get("fallback_default_agent_code") or "").strip(),
+            "default_pool": str(request.form.get("fallback_default_pool") or "").strip(),
+            "need_human_review": str(request.form.get("fallback_need_human_review") or "").strip().lower() in {"1", "true", "yes", "on"},
+            "alert_channel": str(request.form.get("fallback_alert_channel") or "").strip() or "run_center",
+            "fail_closed": str(request.form.get("fallback_fail_closed") or "").strip().lower() in {"1", "true", "yes", "on"},
+        }
+    )
+    config["fallback_strategy"] = fallback_strategy
+    router["config"] = config
+    payload["router"] = router
+    return payload
+
+
+def _apply_agent_config_form_state(payload: dict[str, object]) -> dict[str, object]:
+    agents = dict((payload.get("agents") or {}))
+    selected = dict((agents.get("selected") or {}))
+    draft = dict(selected.get("draft") or {})
+
+    display_name = str(request.form.get("display_name") or "").strip()
+    if display_name:
+        selected["display_name"] = display_name
+    selected["enabled"] = str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"}
+    selected["last_change_summary"] = str(request.form.get("change_summary") or "").strip()
+    draft["role_prompt"] = str(request.form.get("role_prompt") or "").strip()
+    draft["task_prompt"] = str(request.form.get("task_prompt") or "").strip()
+
+    variables_json = str(request.form.get("variables_json") or "").strip()
+    output_schema_json = str(request.form.get("output_schema_json") or "").strip()
+    if variables_json:
+        try:
+            draft["variables"] = json.loads(variables_json)
+        except ValueError:
+            draft["variables_json_raw"] = variables_json
+    if output_schema_json:
+        try:
+            draft["output_schema"] = json.loads(output_schema_json)
+        except ValueError:
+            draft["output_schema_json_raw"] = output_schema_json
+
+    selected["draft"] = draft
+    agents["selected"] = selected
+    payload["agents"] = agents
+    return payload
 
 
 def _split_multiline_tokens(raw_value: str) -> list[str]:
@@ -284,6 +437,16 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
 def _run_center_notice() -> str:
     if _query_text("message_activity_sync") == "1":
         return "消息活跃同步已完成"
+    if _query_text("router_saved") == "1":
+        return "路由接入配置已保存"
+    if _query_text("agent_draft_saved"):
+        return f"{_query_text('agent_draft_saved')} 草稿已保存"
+    if _query_text("agent_published"):
+        return f"{_query_text('agent_published')} 已发布"
+    if _query_text("agent_replayed"):
+        return f"{_query_text('agent_replayed')} 已生成回放副本"
+    if _query_text("agent_export_job"):
+        return "输出导出任务已创建"
     return _model_infra_notice() or _overview_notice()
 
 
@@ -341,6 +504,8 @@ def _run_center_section_from_query(default: str = "overview") -> str:
         "sync": "sync",
         "reply-monitor": "reply_monitor",
         "reply_monitor": "reply_monitor",
+        "agent-orchestration": "agent_orchestration",
+        "agent_orchestration": "agent_orchestration",
         "model-infra": "model",
         "model_infra": "model",
         "model": "model",
@@ -348,6 +513,18 @@ def _run_center_section_from_query(default: str = "overview") -> str:
         "logs": "logs",
     }
     return mapping.get(_query_text("tab"), default)
+
+
+def _run_center_subtab_from_query(default: str = "router") -> str:
+    mapping = {
+        "router": "router",
+        "metrics": "metrics",
+        "skills": "skills",
+        "agents": "agents",
+        "replay": "replay",
+        "outputs": "outputs",
+    }
+    return mapping.get(_query_text("subtab"), default)
 
 
 def _redirect_to(endpoint: str, **params):
@@ -813,6 +990,7 @@ def _build_run_center_workspace(
     settings_payload: dict[str, object],
     overview_payload: dict[str, object],
     model_infra_payload: dict[str, object],
+    orchestration_payload: dict[str, object],
     debug_payload: dict[str, object] | None,
     sop_batches_payload: dict[str, object],
     focus_batches_payload: dict[str, object],
@@ -824,6 +1002,10 @@ def _build_run_center_workspace(
     reply_queue = dict(reply_monitor.get("queue_counts") or {})
     deepseek = dict(model_infra_payload.get("deepseek") or {})
     model_logs = list(model_infra_payload.get("logs") or [])
+    orchestration = dict(orchestration_payload or {})
+    orchestration_router = dict((orchestration.get("router") or {}).get("config") or {})
+    orchestration_agents = list((orchestration.get("agents") or {}).get("items") or [])
+    orchestration_outputs = dict(orchestration.get("outputs") or {})
     sop_batches = list(sop_batches_payload.get("batches") or [])
     focus_batches = list(focus_batches_payload.get("batches") or [])
     debug = dict(debug_payload or {})
@@ -833,8 +1015,9 @@ def _build_run_center_workspace(
     sync_status = str(sync_run.get("status_label") or "").strip() or ("未配置" if not sync_db.get("configured") else "暂无记录")
     reply_status = str(reply_monitor.get("status_label") or "").strip() or ("已开启" if reply_monitor.get("enabled") else "已关闭")
     model_status = "已启用" if deepseek.get("enabled") else "未启用"
+    router_status = str(orchestration_router.get("last_status") or "").strip() or ("enabled" if orchestration_router.get("enabled") else "disabled")
     debug_status = "已选择成员" if debug_lookup.get("external_contact_id") or debug_lookup.get("phone") else "待输入成员"
-    audit_summary = f"SOP {len(sop_batches)} 条 / AI 批次 {len(focus_batches)} 条 / 调试事件 {len(debug_events)} 条"
+    audit_summary = f"SOP {len(sop_batches)} 条 / AI 批次 {len(focus_batches)} 条 / Agent 输出 {int(orchestration_outputs.get('total') or 0)} 条"
 
     attention_items: list[dict[str, str]] = []
     if not bool(sync_db.get("configured")):
@@ -888,6 +1071,16 @@ def _build_run_center_workspace(
                 "body": "DeepSeek 当前关闭，涉及模型路由和执行 Agent 的能力不会真实生效。",
                 "href": url_for('api.admin_automation_conversion_run_center', tab='model-infra'),
                 "action": "查看模型配置",
+            }
+        )
+    if orchestration_router.get("enabled") and router_status not in {"success", "never_called"}:
+        attention_items.append(
+            {
+                "tone": "warning" if router_status != "http_error" else "danger",
+                "title": "中央路由接入需关注",
+                "body": str(orchestration_router.get("last_error") or f"最近一次路由状态为 {router_status}"),
+                "href": url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router'),
+                "action": "查看路由接入",
             }
         )
 
@@ -963,11 +1156,19 @@ def _build_run_center_workspace(
             "href": f"{url_for('api.admin_automation_conversion_run_center', tab='reply-monitor')}#run-reply-monitor",
         },
         {
+            "key": "agent_orchestration",
+            "tab": "agent-orchestration",
+            "label": "Agent Orchestration",
+            "badge": f"{len(orchestration_agents)} 个子 Agent / {int(orchestration_outputs.get('total') or 0)} 条输出",
+            "detail": "统一维护龙虾路由接入、Skill Registry、子 Agent 配置、回放调试和输出账本。",
+            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router')}#run-agent-orchestration",
+        },
+        {
             "key": "model",
             "tab": "model-infra",
             "label": "AI / 模型基础设施",
             "badge": model_status,
-            "detail": "DeepSeek 配置、Prompt Registry 和模型调用日志都在这里维护。",
+            "detail": "保留 DeepSeek 纯配置和模型调用日志兼容入口；Agent 编排已迁到独立子区。",
             "href": f"{url_for('api.admin_automation_conversion_run_center', tab='model-infra')}#run-model",
         },
         {
@@ -1012,6 +1213,14 @@ def _build_run_center_workspace(
             "meta": f"最近模型日志：{model_logs[0].get('created_at') if model_logs else '暂无记录'}",
             "href": f"{url_for('api.admin_automation_conversion_run_center', tab='model-infra')}#run-model",
             "action": "进入模型配置",
+        },
+        {
+            "title": "Agent 编排",
+            "value": router_status,
+            "detail": f"子 Agent {len(orchestration_agents)} 个，最近输出 {int(orchestration_outputs.get('total') or 0)} 条。",
+            "meta": f"最近路由错误：{orchestration_router.get('last_error') or '无'}",
+            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router')}#run-agent-orchestration",
+            "action": "进入 Agent 编排",
         },
         {
             "title": "关键任务执行",
@@ -1076,6 +1285,11 @@ def _build_run_center_workspace(
         "model_status": model_status,
         "debug_status": debug_status,
         "logs_summary_cards": logs_summary_cards,
+        "agent_orchestration_summary": {
+            "router_status": router_status,
+            "agent_count": len(orchestration_agents),
+            "output_count": int(orchestration_outputs.get("total") or 0),
+        },
         "logs_payload": {
             "sop_batches": sop_batches,
             "focus_batches": focus_batches,
@@ -1434,19 +1648,45 @@ def _render_run_center_page(
     *,
     settings_payload: dict[str, object] | None = None,
     model_infra_payload: dict[str, object] | None = None,
+    orchestration_payload: dict[str, object] | None = None,
     overview_payload: dict[str, object] | None = None,
     debug_payload: dict[str, object] | None = None,
     page_error: str = "",
     entry_section: str = "overview",
 ):
     resolved_entry_section = _run_center_section_from_query(entry_section)
+    orchestration_default_subtab = str((orchestration_payload or {}).get("subtab") or "router").strip() or "router"
+    resolved_subtab = _run_center_subtab_from_query(orchestration_default_subtab)
     settings = settings_payload or get_settings_payload()
     overview = overview_payload or get_overview_payload()
     model_infra = model_infra_payload or get_model_infra_payload()
+    orchestration = orchestration_payload or get_agent_orchestration_payload(
+        subtab=resolved_subtab,
+        agent_code=_query_text("agent"),
+        skill_code=_query_text("skill"),
+        output_id=_query_text("output_id"),
+        run_id=_query_text("run_id"),
+        request_id=_query_text("request_id"),
+        batch_id=_query_text("batch_id"),
+        external_contact_id=_query_text("external_contact_id"),
+        userid=_query_text("userid"),
+        date_from=_query_text("date_from"),
+        date_to=_query_text("date_to"),
+        output_type=_query_text("output_type"),
+        current_pool=_query_text("current_pool"),
+        target_pool=_query_text("target_pool"),
+        applied_status=_query_text("applied_status"),
+        min_confidence=_query_text("min_confidence"),
+        max_confidence=_query_text("max_confidence"),
+        has_error=_query_text("has_error") or _query_text("is_error"),
+        page=_query_int("page", default=1, minimum=1, maximum=100000),
+        page_size=_query_int("page_size", default=20, minimum=1, maximum=100),
+        export_job_id=_query_text("export_job"),
+    )
     sop_batches = get_sop_v1_batches_payload(limit=8)
     focus_batches = get_focus_send_batches_payload(limit=8)
     debug = debug_payload
-    if debug is None:
+    if debug is None and resolved_entry_section == "debug":
         external_contact_id = _query_text("external_contact_id")
         phone = _query_text("phone")
         if external_contact_id or phone:
@@ -1463,10 +1703,12 @@ def _render_run_center_page(
         ),
         workspace_tabs=_automation_conversion_workspace_tabs("run_center"),
         run_center_entry_section=resolved_entry_section,
+        run_center_subtab=resolved_subtab,
         run_center_workspace=_build_run_center_workspace(
             settings_payload=settings,
             overview_payload=overview,
             model_infra_payload=model_infra,
+            orchestration_payload=orchestration,
             debug_payload=debug,
             sop_batches_payload=sop_batches,
             focus_batches_payload=focus_batches,
@@ -1474,6 +1716,7 @@ def _render_run_center_page(
         settings_payload=settings,
         overview_payload=overview,
         model_infra_payload=model_infra,
+        orchestration_payload=orchestration,
         sop_batches_payload=sop_batches,
         focus_batches_payload=focus_batches,
         debug_payload=debug,
@@ -1787,6 +2030,169 @@ def admin_automation_conversion_save_model_prompt(agent_code: str):
         return _render_model_infra_page(page_error=str(exc))
 
 
+def admin_automation_conversion_save_agent_router_settings():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        payload = _apply_agent_router_form_state(get_agent_orchestration_payload(subtab="router"))
+        return _render_run_center_page(
+            page_error=action_token_error,
+            entry_section="agent_orchestration",
+            orchestration_payload=payload,
+        )
+    try:
+        save_agent_router_settings(_build_agent_router_form_payload(), operator_id=_operator_from_request())
+        return redirect(
+            url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="router", router_saved=1),
+            code=302,
+        )
+    except ValueError as exc:
+        payload = _apply_agent_router_form_state(get_agent_orchestration_payload(subtab="router"))
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=payload,
+        )
+
+
+def admin_automation_conversion_save_agent_config_draft(agent_code: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        payload = _apply_agent_config_form_state(get_agent_orchestration_payload(subtab="agents", agent_code=agent_code))
+        return _render_run_center_page(
+            page_error=action_token_error,
+            entry_section="agent_orchestration",
+            orchestration_payload=payload,
+        )
+    try:
+        save_agent_config_draft(agent_code, _build_agent_config_form_payload(), operator_id=_operator_from_request())
+        return redirect(
+            url_for(
+                "api.admin_automation_conversion_run_center",
+                tab="agent-orchestration",
+                subtab="agents",
+                agent=agent_code,
+                agent_draft_saved=agent_code,
+            ),
+            code=302,
+        )
+    except (ValueError, LookupError) as exc:
+        payload = _apply_agent_config_form_state(get_agent_orchestration_payload(subtab="agents", agent_code=agent_code))
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=payload,
+        )
+
+
+def admin_automation_conversion_publish_agent_config(agent_code: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(
+            page_error=action_token_error,
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="agents", agent_code=agent_code),
+        )
+    try:
+        publish_agent_config(agent_code, operator_id=_operator_from_request())
+        return redirect(
+            url_for(
+                "api.admin_automation_conversion_run_center",
+                tab="agent-orchestration",
+                subtab="agents",
+                agent=agent_code,
+                agent_published=agent_code,
+            ),
+            code=302,
+        )
+    except (ValueError, LookupError) as exc:
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="agents", agent_code=agent_code),
+        )
+
+
+def admin_automation_conversion_replay_agent_run(run_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(
+            page_error=action_token_error,
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="replay", run_id=run_id),
+        )
+    try:
+        replay = replay_agent_run(run_id, operator_id=_operator_from_request())
+        return redirect(
+            url_for(
+                "api.admin_automation_conversion_run_center",
+                tab="agent-orchestration",
+                subtab="replay",
+                run_id=str((replay.get("run") or {}).get("run_id") or ""),
+                request_id=str((replay.get("run") or {}).get("request_id") or ""),
+                agent_replayed=run_id,
+            ),
+            code=302,
+        )
+    except LookupError as exc:
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="replay", run_id=run_id),
+        )
+
+
+def admin_automation_conversion_export_agent_outputs():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(page_error=action_token_error, entry_section="agent_orchestration")
+    filters = _build_agent_output_filters_from_request()
+    try:
+        job = create_agent_output_export_job(filters, requested_by=_operator_from_request())
+    except ValueError as exc:
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(
+                subtab="outputs",
+                request_id=str(filters.get("request_id") or ""),
+                batch_id=str(filters.get("batch_id") or ""),
+                external_contact_id=str(filters.get("external_contact_id") or ""),
+                userid=str(filters.get("userid") or ""),
+                agent_code=str(filters.get("agent_code") or ""),
+                output_type=str(filters.get("output_type") or ""),
+                current_pool=str(filters.get("current_pool") or ""),
+                target_pool=str(filters.get("target_pool") or ""),
+                applied_status=str(filters.get("applied_status") or ""),
+                min_confidence=str(filters.get("min_confidence") or ""),
+                max_confidence=str(filters.get("max_confidence") or ""),
+                has_error=str(filters.get("has_error") or ""),
+                date_from=str(filters.get("date_from") or ""),
+                date_to=str(filters.get("date_to") or ""),
+            ),
+        )
+    return redirect(
+        url_for(
+            "api.admin_automation_conversion_run_center",
+            tab="agent-orchestration",
+            subtab="outputs",
+            export_job=str(job.get("job_id") or ""),
+            agent_export_job=1,
+        ),
+        code=302,
+    )
+
+
+def admin_automation_conversion_download_agent_output_export(job_id: str):
+    payload = get_agent_output_export_file(job_id)
+    if not payload:
+        return _render_run_center_page(page_error="未找到对应导出任务", entry_section="agent_orchestration"), 404
+    if not payload.get("content_bytes"):
+        return _render_run_center_page(page_error="导出任务尚未完成", entry_section="agent_orchestration")
+    response = Response(payload["content_bytes"], mimetype="application/vnd.ms-excel")
+    response.headers["Content-Disposition"] = f"attachment; filename={payload.get('file_name') or 'agent-outputs.xls'}"
+    return response
+
+
 def admin_automation_conversion_generate_default_channel():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
@@ -1932,6 +2338,121 @@ def api_admin_automation_conversion_settings():
 
 def api_admin_automation_conversion_model_infra():
     return jsonify({"ok": True, "model_infra": get_model_infra_payload()})
+
+
+def api_admin_automation_conversion_agent_outputs():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    page = _query_int("page", default=1, minimum=1, maximum=100000)
+    page_size = _query_int("page_size", default=20, minimum=1, maximum=100)
+    filters = _build_agent_output_filters_from_request()
+    return jsonify({"ok": True, **list_agent_outputs(filters, page=page, page_size=page_size, visibility="full")})
+
+
+def api_admin_automation_conversion_agent_output_detail(output_id: str):
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    detail = get_agent_output_detail(output_id, visibility="full")
+    if not detail:
+        return jsonify({"ok": False, "error": "output not found"}), 404
+    return jsonify({"ok": True, **detail})
+
+
+def api_admin_automation_conversion_agent_run_detail(run_id: str):
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    detail = get_agent_run_detail(run_id, visibility="full")
+    if not detail:
+        return jsonify({"ok": False, "error": "run not found"}), 404
+    return jsonify({"ok": True, "run": detail})
+
+
+def api_admin_automation_conversion_agent_replay():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = get_agent_replay_payload(
+        run_id=_query_text("run_id"),
+        request_id=_query_text("request_id"),
+        external_contact_id=_query_text("external_contact_id"),
+        userid=_query_text("userid"),
+        date_from=_query_text("date_from"),
+        date_to=_query_text("date_to"),
+        visibility="full",
+    )
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_agent_outputs_export():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    filters = dict(payload.get("filters") or {})
+    requested_by = str(payload.get("requested_by") or _operator_from_request() or "internal_api").strip() or "internal_api"
+    try:
+        job = create_agent_output_export_job(filters, requested_by=requested_by)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 429
+    return jsonify({"ok": True, "job": job}), 202
+
+
+def api_admin_automation_conversion_agent_output_export_job(job_id: str):
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    if str(request.args.get("download") or "").strip() in {"1", "true"}:
+        payload = get_agent_output_export_file(job_id)
+        if not payload:
+            return jsonify({"ok": False, "error": "export job not found"}), 404
+        if not payload.get("content_bytes"):
+            return jsonify({"ok": False, "error": "export job not completed", "job": payload.get("job") or {}}), 409
+        response = Response(payload["content_bytes"], mimetype="application/vnd.ms-excel")
+        response.headers["Content-Disposition"] = f"attachment; filename={payload.get('file_name') or 'agent-outputs.xls'}"
+        return response
+    job = get_agent_output_export_job(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "export job not found"}), 404
+    return jsonify({"ok": True, "job": job})
+
+
+def api_admin_automation_conversion_agent_router_save():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_agent_router_settings(payload, operator_id=_operator_from_request(), source="api")
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_agent_config_detail(agent_code: str):
+    try:
+        result = get_agent_config_detail(agent_code)
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, "agent": result})
+
+
+def api_admin_automation_conversion_agent_config_save_draft(agent_code: str):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_agent_config_draft(agent_code, payload, operator_id=_operator_from_request(), source="api")
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_agent_config_publish(agent_code: str):
+    try:
+        result = publish_agent_config(agent_code, operator_id=_operator_from_request())
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, **result})
 
 
 def api_admin_automation_conversion_save_settings():
@@ -2156,10 +2677,27 @@ def api_admin_automation_conversion_sop_run_due():
     auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
         return auth_failure
-    result = run_due_sop(
+    result = run_registered_due_jobs(
+        job_codes=["sop"],
         operator_id=_operator_from_request(),
         operator_type="system",
     )
+    return jsonify(result)
+
+
+def api_admin_automation_conversion_jobs_run_due():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = run_registered_due_jobs(
+            job_codes=list(payload.get("jobs") or []),
+            operator_id=_operator_from_request(),
+            operator_type="system",
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify(result)
 
 
@@ -2181,6 +2719,12 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/model-infra/save-settings", methods=["POST"])(admin_automation_conversion_save_model_infra_settings)
     bp.route("/admin/automation-conversion/model-infra/test", methods=["POST"])(admin_automation_conversion_test_model_infra)
     bp.route("/admin/automation-conversion/model-infra/prompts/<agent_code>/save", methods=["POST"])(admin_automation_conversion_save_model_prompt)
+    bp.route("/admin/automation-conversion/agent-orchestration/router/save", methods=["POST"])(admin_automation_conversion_save_agent_router_settings)
+    bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft", methods=["POST"])(admin_automation_conversion_save_agent_config_draft)
+    bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/publish", methods=["POST"])(admin_automation_conversion_publish_agent_config)
+    bp.route("/admin/automation-conversion/agent-orchestration/replay/<run_id>", methods=["POST"])(admin_automation_conversion_replay_agent_run)
+    bp.route("/admin/automation-conversion/agent-orchestration/outputs/export", methods=["POST"])(admin_automation_conversion_export_agent_outputs)
+    bp.route("/admin/automation-conversion/agent-orchestration/outputs/export/<job_id>", methods=["GET"])(admin_automation_conversion_download_agent_output_export)
     bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
     bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/reply-monitor/toggle", methods=["POST"])(admin_automation_conversion_reply_monitor_toggle)
@@ -2207,6 +2751,16 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/member/push-openclaw", methods=["POST"])(api_admin_automation_conversion_push_openclaw)
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_save_settings)
+    bp.route("/api/admin/automation-conversion/agent-outputs", methods=["GET"])(api_admin_automation_conversion_agent_outputs)
+    bp.route("/api/admin/automation-conversion/agent-outputs/<output_id>", methods=["GET"])(api_admin_automation_conversion_agent_output_detail)
+    bp.route("/api/admin/automation-conversion/agent-runs/<run_id>", methods=["GET"])(api_admin_automation_conversion_agent_run_detail)
+    bp.route("/api/admin/automation-conversion/agent-replay", methods=["GET"])(api_admin_automation_conversion_agent_replay)
+    bp.route("/api/admin/automation-conversion/agent-outputs/export", methods=["POST"])(api_admin_automation_conversion_agent_outputs_export)
+    bp.route("/api/admin/automation-conversion/agent-outputs/export/<job_id>", methods=["GET"])(api_admin_automation_conversion_agent_output_export_job)
+    bp.route("/api/admin/automation-conversion/agent-orchestration/router", methods=["POST"])(api_admin_automation_conversion_agent_router_save)
+    bp.route("/api/admin/automation-conversion/agent-orchestration/agents/<agent_code>", methods=["GET"])(api_admin_automation_conversion_agent_config_detail)
+    bp.route("/api/admin/automation-conversion/agent-orchestration/agents/<agent_code>/draft", methods=["POST"])(api_admin_automation_conversion_agent_config_save_draft)
+    bp.route("/api/admin/automation-conversion/agent-orchestration/agents/<agent_code>/publish", methods=["POST"])(api_admin_automation_conversion_agent_config_publish)
     bp.route("/api/admin/automation-conversion/model-infra", methods=["GET"])(api_admin_automation_conversion_model_infra)
     bp.route("/api/admin/automation-conversion/model-infra/settings", methods=["POST"])(api_admin_automation_conversion_save_model_infra_settings)
     bp.route("/api/admin/automation-conversion/model-infra/test-connection", methods=["POST"])(api_admin_automation_conversion_test_model_infra)
@@ -2228,4 +2782,5 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
     bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
+    bp.route("/api/admin/automation-conversion/jobs/run-due", methods=["POST"])(api_admin_automation_conversion_jobs_run_due)
     bp.route("/api/admin/automation-conversion/debug/member", methods=["GET"])(api_admin_automation_conversion_debug_member)

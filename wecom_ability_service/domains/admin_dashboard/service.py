@@ -5,11 +5,21 @@ from typing import Any
 from flask import current_app
 
 from ..admin_jobs import build_jobs_dashboard_groups, build_jobs_runtime_snapshot
+from ..customer_pulse import build_customer_pulse_dashboard_group, is_customer_pulse_inbox_enabled
+from ..customer_pulse.access import (
+    CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
+    build_customer_pulse_legacy_tenant_context,
+    current_customer_pulse_request_access_context,
+    customer_pulse_has_permission,
+)
+from ..followup_orchestrator import is_followup_orchestrator_enabled
 from . import repo
 
 ADMIN_NAV_ITEMS = (
     {"key": "workbench", "label": "工作台", "endpoint": "api.admin_console_home"},
     {"key": "customers", "label": "客户", "endpoint": "api.admin_console_customers"},
+    {"key": "customer_pulse", "label": "AI推进", "endpoint": "api.admin_customer_pulse_inbox", "feature_flag": "ai_customer_pulse"},
+    {"key": "followup_orchestrator", "label": "团队编排", "endpoint": "api.admin_followup_orchestrator", "feature_flag": "ai_followup_orchestrator"},
     {"key": "operations", "label": "运营", "endpoint": "api.admin_console_user_ops"},
     {"key": "automation_conversion", "label": "自动化转化", "endpoint": "api.admin_automation_conversion"},
     {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
@@ -21,11 +31,32 @@ ADMIN_NAV_ITEMS = (
 )
 
 
+def _customer_pulse_page_visible() -> bool:
+    access_context = current_customer_pulse_request_access_context()
+    return is_customer_pulse_inbox_enabled(access_context=access_context) and customer_pulse_has_permission(
+        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
+        access_context=access_context,
+    )
+
+
+def _followup_orchestrator_page_visible() -> bool:
+    access_context = current_customer_pulse_request_access_context()
+    return is_followup_orchestrator_enabled(access_context=access_context) and customer_pulse_has_permission(
+        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
+        access_context=access_context,
+    )
+
+
 def list_admin_navigation(active_nav: str) -> list[dict[str, Any]]:
     normalized_active_nav = str(active_nav or "").strip() or "workbench"
     return [
         {**item, "active": item["key"] == normalized_active_nav}
         for item in ADMIN_NAV_ITEMS
+        if (
+            not item.get("feature_flag")
+            or (item.get("feature_flag") == "ai_customer_pulse" and _customer_pulse_page_visible())
+            or (item.get("feature_flag") == "ai_followup_orchestrator" and _followup_orchestrator_page_visible())
+        )
     ]
 
 
@@ -164,7 +195,7 @@ def build_system_status_payload() -> dict[str, Any]:
             "key": "last_archive_sync",
             "label": "最近聊天同步",
             "value": _status_text(last_archive_sync["status"], default="暂无记录"),
-            "description": _empty_value(last_archive_sync["time"], fallback="暂无记录"),
+            "description": _empty_value(str(last_archive_sync["time"] or "").strip(), fallback="暂无记录"),
             "tone": "degraded" if last_archive_sync["status"] == "failed" else "neutral",
         },
         {
@@ -347,6 +378,19 @@ def build_dashboard_todos() -> dict[str, Any]:
         _build_questionnaire_preflight_group(),
         _build_mcp_runtime_group(),
     ]
+    if is_customer_pulse_inbox_enabled(access_context=current_customer_pulse_request_access_context()):
+        pulse_context: dict[str, Any] = dict(current_customer_pulse_request_access_context())
+        groups.append(
+            build_customer_pulse_dashboard_group(
+                tenant_context=pulse_context
+                or dict(
+                    build_customer_pulse_legacy_tenant_context(
+                    operator="admin_dashboard",
+                    source="legacy_internal_dashboard",
+                    )
+                )
+            )
+        )
     return {
         "groups": groups,
         "total_pending": sum(int(group["count"]) for group in groups),

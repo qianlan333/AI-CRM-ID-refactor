@@ -5,6 +5,7 @@ from typing import Any
 
 from ..services import refresh_contact_tags_for_external_userid
 from ..domains.marketing_automation.service import get_customer_marketing_profile
+from .pulse_service import build_customer_pulse, is_customer_pulse_enabled
 from .dto import (
     CustomerBindingDTO,
     CustomerClassStatusDTO,
@@ -434,4 +435,7 @@ def get_customer_detail(external_userid: str, *, refresh_tags: bool = False) -> 
             "marketing_profile": marketing_profile,
         },
     )
-    return detail.to_dict()
+    detail_payload = detail.to_dict()
+    if is_customer_pulse_enabled():
+        detail_payload["customer_pulse"] = build_customer_pulse(normalized_external_userid)
+    return detail_payload

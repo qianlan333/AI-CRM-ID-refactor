@@ -43,7 +43,11 @@
     {% for row in editable_rows %}
     <label>
       <span>{{ row.label }} <code>{{ row.key }}</code></span>
+      {% if row.input_type == "textarea" %}
+      <textarea name="setting__{{ row.key }}" rows="10">{{ row.value }}</textarea>
+      {% else %}
       <input type="{{ row.input_type }}" name="setting__{{ row.key }}" value="{{ row.value }}">
+      {% endif %}
       <small>{{ row.description }} · 来源：{{ "数据库" if row.source == "app_settings" else "配置文件" }} · 最近修改：{{ row.last_modified_by or "-" }} {{ row.last_modified_at or "" }}</small>
     </label>
     {% endfor %}

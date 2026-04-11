@@ -4,6 +4,8 @@ from flask import Blueprint
 
 from .admin_jobs import register_routes as register_admin_jobs_console_routes
 from .admin_customers import register_routes as register_admin_customer_console_routes
+from .admin_customer_pulse import register_routes as register_admin_customer_pulse_routes
+from .admin_followup_orchestrator import register_routes as register_admin_followup_orchestrator_routes
 from .admin_audit import register_routes as register_admin_audit_console_routes
 from .admin_mcp import register_routes as register_admin_mcp_console_routes
 from .admin_operations import register_routes as register_admin_operations_console_routes
@@ -59,6 +61,8 @@ HTTP_ROUTE_MODULES = {
     "admin_jobs": "wecom_ability_service.http.admin_jobs",
     "admin_audit": "wecom_ability_service.http.admin_audit",
     "admin_customers": "wecom_ability_service.http.admin_customers",
+    "admin_customer_pulse": "wecom_ability_service.http.admin_customer_pulse",
+    "admin_followup_orchestrator": "wecom_ability_service.http.admin_followup_orchestrator",
     "admin_mcp": "wecom_ability_service.http.admin_mcp",
     "admin_operations": "wecom_ability_service.http.admin_operations",
     "admin_questionnaire_console": "wecom_ability_service.http.admin_questionnaire_console",
@@ -82,6 +86,8 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_jobs.py for /admin/jobs and confirmed sync/task actions",
         "admin_audit.py for /admin/audit governance page and /api/admin/audit/logs",
         "admin_customers.py for /admin/customers* pages and customer detail actions",
+        "admin_customer_pulse.py for /admin/customer-pulse and /api/admin/customer-pulse* action-card flows",
+        "admin_followup_orchestrator.py for /admin/followup-orchestrator and /api/admin/followup-orchestrator* mission orchestration flows",
         "admin_mcp.py for /admin/mcp console, preflight, and safe sample-call actions",
         "admin_operations.py for /admin/user-ops, /admin/class-users, and confirmed operations actions",
         "admin_questionnaire_console.py for /admin/questionnaires* shell pages",
@@ -112,6 +118,8 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_jobs", register_admin_jobs_console_routes),
     ("admin_audit", register_admin_audit_console_routes),
     ("admin_customers", register_admin_customer_console_routes),
+    ("admin_customer_pulse", register_admin_customer_pulse_routes),
+    ("admin_followup_orchestrator", register_admin_followup_orchestrator_routes),
     ("admin_mcp", register_admin_mcp_console_routes),
     ("admin_operations", register_admin_operations_console_routes),
     ("admin_questionnaire_console", register_admin_questionnaire_console_routes),

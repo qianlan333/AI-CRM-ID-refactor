@@ -380,7 +380,8 @@ def _seed_trial_opening_fact(
         get_db().commit()
 
 
-def test_questionnaire_initial_split_enters_corresponding_pool(app):
+def test_questionnaire_initial_split_enters_corresponding_pool(app, monkeypatch):
+    _freeze_state_time(monkeypatch, timestamp="2026-04-04 10:00:00")
     questionnaire_seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=81)
     _save_automation_config(app, questionnaire_seed)
 
@@ -436,7 +437,8 @@ def test_questionnaire_initial_split_enters_corresponding_pool(app):
         assert focus_state["entered_at"] == "2026-04-04 09:12:00"
 
 
-def test_activation_moves_customer_from_inactive_pool_to_active_pool(app):
+def test_activation_moves_customer_from_inactive_pool_to_active_pool(app, monkeypatch):
+    _freeze_state_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     questionnaire_seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=82)
     _save_automation_config(app, questionnaire_seed)
 
@@ -464,6 +466,7 @@ def test_activation_moves_customer_from_inactive_pool_to_active_pool(app):
         assert first["stage_key"] == "pool/inactive_focus"
 
     _seed_activation_source(app, mobile="13800138501", updated_at="2026-04-04 12:00:00")
+    _freeze_state_time(monkeypatch, timestamp="2026-04-04 12:30:00")
 
     with app.app_context():
         second = evaluate_customer_marketing_state(external_userid="wm_pool_upgrade")
@@ -479,7 +482,8 @@ def test_activation_moves_customer_from_inactive_pool_to_active_pool(app):
         assert int(history_total) == 2
 
 
-def test_customer_marketing_state_current_keeps_single_pool_row(app):
+def test_customer_marketing_state_current_keeps_single_pool_row(app, monkeypatch):
+    _freeze_state_time(monkeypatch, timestamp="2026-04-10 09:00:00")
     questionnaire_seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=83)
     _save_automation_config(app, questionnaire_seed)
 
@@ -587,7 +591,7 @@ def test_customer_enters_silent_pool_after_threshold_days(app, monkeypatch):
         assert value_segment["segment"] == "top"
 
 
-def test_trial_opening_fact_controls_transition_into_inactive_pool(app):
+def test_trial_opening_fact_controls_transition_into_inactive_pool(app, monkeypatch):
     questionnaire_seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=85)
     _save_automation_config(app, questionnaire_seed)
 
@@ -602,6 +606,7 @@ def test_trial_opening_fact_controls_transition_into_inactive_pool(app):
         hit_question_count=4,
         submitted_at="2026-04-04 11:00:00",
     )
+    _freeze_state_time(monkeypatch, timestamp="2026-04-04 11:15:00")
 
     with app.app_context():
         before = evaluate_customer_marketing_state(external_userid="wm_trial_gate")
@@ -617,6 +622,7 @@ def test_trial_opening_fact_controls_transition_into_inactive_pool(app):
         customer_name="试用门槛客户",
         opened_at="2026-04-04 11:30:00",
     )
+    _freeze_state_time(monkeypatch, timestamp="2026-04-04 11:35:00")
 
     with app.app_context():
         after = evaluate_customer_marketing_state(external_userid="wm_trial_gate")

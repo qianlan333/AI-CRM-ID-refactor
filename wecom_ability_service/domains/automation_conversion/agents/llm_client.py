@@ -8,6 +8,7 @@ from typing import Any
 import requests
 from flask import current_app
 
+from ....db import get_db
 from ....infra.settings import (
     DEFAULT_DEEPSEEK_BASE_URL,
     DEFAULT_DEEPSEEK_EXECUTION_MODEL,
@@ -104,6 +105,43 @@ def _log_call(
     )
 
 
+def _agent_run_versions(agent_code: str) -> tuple[str, str]:
+    config_row = repo.get_agent_config_row(agent_code)
+    if config_row:
+        deserialized = repo.deserialize_agent_config_row(config_row)
+        role_version = f"published-v{int(deserialized.get('published_version') or 0)}"
+        task_version = f"draft-v{int(deserialized.get('draft_version') or 1)}"
+        return role_version, task_version
+    prompt_row = repo.get_agent_prompt_row(agent_code)
+    version = int((prompt_row or {}).get("version") or 1)
+    return "", f"legacy-v{version}"
+
+
+def _touch_router_runtime_status(*, status: str, error_message: str = "", last_called_at: str = "") -> None:
+    existing = repo.deserialize_agent_router_config_row(repo.get_agent_router_config() or {})
+    if not existing:
+        return
+    repo.save_agent_router_config(
+        {
+            "enabled": bool(existing.get("enabled")),
+            "webhook_url": _normalized_text(existing.get("webhook_url")),
+            "signature_token": _normalized_text(existing.get("signature_token")),
+            "signature_secret": _normalized_text(existing.get("signature_secret")),
+            "signature_header": _normalized_text(existing.get("signature_header")) or "X-Lobster-Signature",
+            "timeout_seconds": int(existing.get("timeout_seconds") or 8),
+            "retry_count": int(existing.get("retry_count") or 1),
+            "fallback_strategy_json": existing.get("fallback_strategy_json") or {},
+            "request_sample_json": existing.get("request_sample_json") or {},
+            "response_sample_json": existing.get("response_sample_json") or {},
+            "last_status": _normalized_text(status),
+            "last_error": _normalized_text(error_message),
+            "last_called_at": _normalized_text(last_called_at),
+            "updated_by": _normalized_text(existing.get("updated_by")) or "system",
+            "updated_source": _normalized_text(existing.get("updated_source")) or "runtime",
+        }
+    )
+
+
 def call_deepseek_agent(
     *,
     agent_code: str,
@@ -113,9 +151,32 @@ def call_deepseek_agent(
     model_name: str = "",
 ) -> dict[str, Any]:
     request_id = uuid.uuid4().hex
+    run_id = f"arun-{uuid.uuid4().hex}"
     started_at = time.perf_counter()
     config = get_deepseek_runtime_config()
     selected_model = _selected_model(agent_code, explicit_model=model_name)
+    role_prompt_version, task_prompt_version = _agent_run_versions(agent_code)
+    repo.insert_agent_run(
+        {
+            "run_id": run_id,
+            "request_id": request_id,
+            "agent_code": _normalized_text(agent_code),
+            "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+            "provider": "deepseek",
+            "input_snapshot_json": {
+                "system_prompt": _normalized_text(system_prompt),
+                "user_input": _normalized_text(user_input),
+                "json_output": bool(json_output),
+                "model_name": selected_model,
+            },
+            "variables_snapshot_json": {},
+            "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+            "role_prompt_version": role_prompt_version,
+            "task_prompt_version": task_prompt_version,
+            "status": "pending",
+            "source": "llm_client",
+        }
+    )
     if not config["enabled"]:
         latency_ms = int((time.perf_counter() - started_at) * 1000)
         _log_call(
@@ -126,6 +187,48 @@ def call_deepseek_agent(
             latency_ms=latency_ms,
             error_message="deepseek_disabled",
         )
+        repo.update_agent_run(
+            run_id,
+            {
+                "request_id": request_id,
+                "agent_code": _normalized_text(agent_code),
+                "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+                "provider": "deepseek",
+                "input_snapshot_json": {
+                    "system_prompt": _normalized_text(system_prompt),
+                    "user_input": _normalized_text(user_input),
+                    "json_output": bool(json_output),
+                    "model_name": selected_model,
+                },
+                "variables_snapshot_json": {},
+                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "role_prompt_version": role_prompt_version,
+                "task_prompt_version": task_prompt_version,
+                "status": "disabled",
+                "error_code": "deepseek_disabled",
+                "error_message": "deepseek_disabled",
+                "latency_ms": latency_ms,
+                "source": "llm_client",
+            },
+        )
+        repo.insert_agent_output(
+            {
+                "output_id": f"aout-{uuid.uuid4().hex}",
+                "run_id": run_id,
+                "request_id": request_id,
+                "agent_code": _normalized_text(agent_code),
+                "output_type": "error_output",
+                "raw_output_text": "",
+                "normalized_output_json": {"error": "deepseek_disabled"},
+                "rendered_output_text": "deepseek_disabled",
+                "error_code": "deepseek_disabled",
+                "error_message": "deepseek_disabled",
+                "applied_status": "not_applied",
+            }
+        )
+        if _normalized_text(agent_code) == "central_router_agent":
+            _touch_router_runtime_status(status="disabled", error_message="deepseek_disabled")
+        get_db().commit()
         raise DeepSeekClientError("deepseek_disabled")
     if not _normalized_text(config["api_key"]):
         latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -137,6 +240,48 @@ def call_deepseek_agent(
             latency_ms=latency_ms,
             error_message="deepseek_api_key_not_configured",
         )
+        repo.update_agent_run(
+            run_id,
+            {
+                "request_id": request_id,
+                "agent_code": _normalized_text(agent_code),
+                "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+                "provider": "deepseek",
+                "input_snapshot_json": {
+                    "system_prompt": _normalized_text(system_prompt),
+                    "user_input": _normalized_text(user_input),
+                    "json_output": bool(json_output),
+                    "model_name": selected_model,
+                },
+                "variables_snapshot_json": {},
+                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "role_prompt_version": role_prompt_version,
+                "task_prompt_version": task_prompt_version,
+                "status": "not_configured",
+                "error_code": "deepseek_api_key_not_configured",
+                "error_message": "deepseek_api_key_not_configured",
+                "latency_ms": latency_ms,
+                "source": "llm_client",
+            },
+        )
+        repo.insert_agent_output(
+            {
+                "output_id": f"aout-{uuid.uuid4().hex}",
+                "run_id": run_id,
+                "request_id": request_id,
+                "agent_code": _normalized_text(agent_code),
+                "output_type": "error_output",
+                "raw_output_text": "",
+                "normalized_output_json": {"error": "deepseek_api_key_not_configured"},
+                "rendered_output_text": "deepseek_api_key_not_configured",
+                "error_code": "deepseek_api_key_not_configured",
+                "error_message": "deepseek_api_key_not_configured",
+                "applied_status": "not_applied",
+            }
+        )
+        if _normalized_text(agent_code) == "central_router_agent":
+            _touch_router_runtime_status(status="not_configured", error_message="deepseek_api_key_not_configured")
+        get_db().commit()
         raise DeepSeekClientError("deepseek_api_key_not_configured")
 
     request_payload: dict[str, Any] = {
@@ -159,14 +304,57 @@ def call_deepseek_agent(
         )
         latency_ms = int((time.perf_counter() - started_at) * 1000)
     except requests.RequestException as exc:
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         _log_call(
             agent_code=agent_code,
             model_name=selected_model,
             request_id=request_id,
             status="request_error",
-            latency_ms=int((time.perf_counter() - started_at) * 1000),
+            latency_ms=elapsed_ms,
             error_message=str(exc),
         )
+        repo.update_agent_run(
+            run_id,
+            {
+                "request_id": request_id,
+                "agent_code": _normalized_text(agent_code),
+                "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+                "provider": "deepseek",
+                "input_snapshot_json": {
+                    "system_prompt": _normalized_text(system_prompt),
+                    "user_input": _normalized_text(user_input),
+                    "json_output": bool(json_output),
+                    "model_name": selected_model,
+                },
+                "variables_snapshot_json": {},
+                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "role_prompt_version": role_prompt_version,
+                "task_prompt_version": task_prompt_version,
+                "status": "request_error",
+                "error_code": "request_error",
+                "error_message": str(exc),
+                "latency_ms": elapsed_ms,
+                "source": "llm_client",
+            },
+        )
+        repo.insert_agent_output(
+            {
+                "output_id": f"aout-{uuid.uuid4().hex}",
+                "run_id": run_id,
+                "request_id": request_id,
+                "agent_code": _normalized_text(agent_code),
+                "output_type": "error_output",
+                "raw_output_text": "",
+                "normalized_output_json": {"error": str(exc)},
+                "rendered_output_text": str(exc),
+                "error_code": "request_error",
+                "error_message": str(exc),
+                "applied_status": "not_applied",
+            }
+        )
+        if _normalized_text(agent_code) == "central_router_agent":
+            _touch_router_runtime_status(status="request_error", error_message=str(exc))
+        get_db().commit()
         raise DeepSeekClientError(str(exc)) from exc
 
     response_request_id = _normalized_text(getattr(response, "headers", {}).get("x-request-id")) or request_id
@@ -181,6 +369,43 @@ def call_deepseek_agent(
             latency_ms=latency_ms,
             error_message="invalid_json_response",
         )
+        repo.update_agent_run(
+            run_id,
+            {
+                "request_id": response_request_id,
+                "agent_code": _normalized_text(agent_code),
+                "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+                "provider": "deepseek",
+                "input_snapshot_json": request_payload,
+                "variables_snapshot_json": {},
+                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "role_prompt_version": role_prompt_version,
+                "task_prompt_version": task_prompt_version,
+                "status": "invalid_response",
+                "error_code": "invalid_json_response",
+                "error_message": "invalid_json_response",
+                "latency_ms": latency_ms,
+                "source": "llm_client",
+            },
+        )
+        repo.insert_agent_output(
+            {
+                "output_id": f"aout-{uuid.uuid4().hex}",
+                "run_id": run_id,
+                "request_id": response_request_id,
+                "agent_code": _normalized_text(agent_code),
+                "output_type": "error_output",
+                "raw_output_text": _normalized_text(response.text),
+                "normalized_output_json": {"error": "invalid_json_response"},
+                "rendered_output_text": "invalid_json_response",
+                "error_code": "invalid_json_response",
+                "error_message": "invalid_json_response",
+                "applied_status": "not_applied",
+            }
+        )
+        if _normalized_text(agent_code) == "central_router_agent":
+            _touch_router_runtime_status(status="invalid_response", error_message="invalid_json_response")
+        get_db().commit()
         raise DeepSeekClientError("invalid_json_response") from exc
 
     if int(response.status_code) >= 400:
@@ -193,6 +418,43 @@ def call_deepseek_agent(
             latency_ms=latency_ms,
             error_message=error_message or f"http_status_{int(response.status_code)}",
         )
+        repo.update_agent_run(
+            run_id,
+            {
+                "request_id": response_request_id,
+                "agent_code": _normalized_text(agent_code),
+                "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+                "provider": "deepseek",
+                "input_snapshot_json": request_payload,
+                "variables_snapshot_json": {},
+                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "role_prompt_version": role_prompt_version,
+                "task_prompt_version": task_prompt_version,
+                "status": "http_error",
+                "error_code": f"http_status_{int(response.status_code)}",
+                "error_message": error_message or f"http_status_{int(response.status_code)}",
+                "latency_ms": latency_ms,
+                "source": "llm_client",
+            },
+        )
+        repo.insert_agent_output(
+            {
+                "output_id": f"aout-{uuid.uuid4().hex}",
+                "run_id": run_id,
+                "request_id": response_request_id,
+                "agent_code": _normalized_text(agent_code),
+                "output_type": "error_output",
+                "raw_output_text": _normalized_text(response.text),
+                "normalized_output_json": {"error": error_message or f"http_status_{int(response.status_code)}"},
+                "rendered_output_text": error_message or f"http_status_{int(response.status_code)}",
+                "error_code": f"http_status_{int(response.status_code)}",
+                "error_message": error_message or f"http_status_{int(response.status_code)}",
+                "applied_status": "not_applied",
+            }
+        )
+        if _normalized_text(agent_code) == "central_router_agent":
+            _touch_router_runtime_status(status="http_error", error_message=error_message or f"http_status_{int(response.status_code)}")
+        get_db().commit()
         raise DeepSeekClientError(error_message or f"http_status_{int(response.status_code)}")
 
     message = dict(((response_data.get("choices") or [{}])[0].get("message") or {}))
@@ -210,6 +472,43 @@ def call_deepseek_agent(
                 latency_ms=latency_ms,
                 error_message="invalid_json_output",
             )
+            repo.update_agent_run(
+                run_id,
+                {
+                    "request_id": response_request_id,
+                    "agent_code": _normalized_text(agent_code),
+                    "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+                    "provider": "deepseek",
+                    "input_snapshot_json": request_payload,
+                    "variables_snapshot_json": {},
+                    "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                    "role_prompt_version": role_prompt_version,
+                    "task_prompt_version": task_prompt_version,
+                    "status": "parse_error",
+                    "error_code": "invalid_json_output",
+                    "error_message": "invalid_json_output",
+                    "latency_ms": latency_ms,
+                    "source": "llm_client",
+                },
+            )
+            repo.insert_agent_output(
+                {
+                    "output_id": f"aout-{uuid.uuid4().hex}",
+                    "run_id": run_id,
+                    "request_id": response_request_id,
+                    "agent_code": _normalized_text(agent_code),
+                    "output_type": "error_output",
+                    "raw_output_text": content,
+                    "normalized_output_json": {"error": "invalid_json_output"},
+                    "rendered_output_text": "invalid_json_output",
+                    "error_code": "invalid_json_output",
+                    "error_message": "invalid_json_output",
+                    "applied_status": "not_applied",
+                }
+            )
+            if _normalized_text(agent_code) == "central_router_agent":
+                _touch_router_runtime_status(status="parse_error", error_message="invalid_json_output")
+            get_db().commit()
             raise DeepSeekClientError("invalid_json_output") from exc
 
     _log_call(
@@ -219,8 +518,71 @@ def call_deepseek_agent(
         status="success",
         latency_ms=latency_ms,
     )
+    output_type = "agent_reply_draft"
+    target_agent_code = ""
+    target_pool = ""
+    confidence = 0
+    reason = ""
+    need_human_review = False
+    if json_output and isinstance(parsed_output, dict):
+        if _normalized_text(agent_code) == "central_router_agent":
+            output_type = "route_decision"
+            target_agent_code = _normalized_text(parsed_output.get("agent_code") or parsed_output.get("route"))
+            target_pool = _normalized_text(parsed_output.get("target_pool"))
+            confidence = float(parsed_output.get("confidence") or 0)
+            reason = _normalized_text(parsed_output.get("reason"))
+            need_human_review = bool(parsed_output.get("need_human_review"))
+        else:
+            output_type = "next_action_suggestion"
+            target_pool = _normalized_text(parsed_output.get("target_pool"))
+            confidence = float(parsed_output.get("confidence") or 0)
+            reason = _normalized_text(parsed_output.get("reason"))
+            need_human_review = bool(parsed_output.get("need_human_review"))
+    elif not json_output:
+        output_type = "agent_reply_final"
+    repo.update_agent_run(
+        run_id,
+        {
+            "request_id": response_request_id,
+            "agent_code": _normalized_text(agent_code),
+            "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
+            "provider": "deepseek",
+            "input_snapshot_json": request_payload,
+            "variables_snapshot_json": {},
+            "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+            "role_prompt_version": role_prompt_version,
+            "task_prompt_version": task_prompt_version,
+            "status": "success",
+            "error_code": "",
+            "error_message": "",
+            "latency_ms": latency_ms,
+            "source": "llm_client",
+        },
+    )
+    repo.insert_agent_output(
+        {
+            "output_id": f"aout-{uuid.uuid4().hex}",
+            "run_id": run_id,
+            "request_id": response_request_id,
+            "agent_code": _normalized_text(agent_code),
+            "output_type": output_type,
+            "raw_output_text": content,
+            "normalized_output_json": parsed_output if isinstance(parsed_output, dict) else {},
+            "rendered_output_text": content,
+            "target_agent_code": target_agent_code,
+            "target_pool": target_pool,
+            "confidence": confidence,
+            "reason": reason,
+            "need_human_review": need_human_review,
+            "applied_status": "generated",
+        }
+    )
+    if _normalized_text(agent_code) == "central_router_agent":
+        _touch_router_runtime_status(status="success", error_message="", last_called_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    get_db().commit()
     return {
         "ok": True,
+        "run_id": run_id,
         "request_id": response_request_id,
         "model_name": selected_model,
         "content": content,
