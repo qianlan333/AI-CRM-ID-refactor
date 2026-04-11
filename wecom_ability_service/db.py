@@ -1716,6 +1716,34 @@ def _init_postgres(db) -> None:
         ADD COLUMN IF NOT EXISTS images_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb
         """
     )
+    # Existing PostgreSQL installs may already have pre-tenant tables.
+    # Add the tenant key before replaying schema indexes so CREATE INDEX
+    # statements in schema_postgres.sql do not fail on upgraded databases.
+    pre_schema_tenant_backfills = (
+        "user_ops_deferred_jobs",
+        "customer_pulse_signal_events",
+        "customer_pulse_snapshots",
+        "customer_pulse_cards",
+        "customer_pulse_feedback_logs",
+        "customer_pulse_execution_logs",
+        "customer_pulse_activity_logs",
+        "customer_pulse_action_feedback",
+        "customer_pulse_metric_events",
+        "followup_orchestrator_policies",
+        "followup_orchestrator_missions",
+        "followup_orchestrator_mission_items",
+        "followup_orchestrator_assignment_decisions",
+        "followup_orchestrator_mission_feedback",
+        "followup_orchestrator_execution_logs",
+    )
+    for table_name in pre_schema_tenant_backfills:
+        db.execute(
+            f"""
+            ALTER TABLE IF EXISTS {table_name}
+            ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
+            """
+        )
+
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
     db.execute(
