@@ -5212,3 +5212,191 @@ def test_customer_center_detail_aggregates_sidebar_related_data(client, app):
     assert customer["sidebar_context"]["signup_tag_status"]["current_signup_status"] == "lead"
     assert customer["tags"][0]["tag_name"] == "高净值"
     assert customer["follow_users"][0]["userid"] == "sales_09"
+
+
+def test_customer_center_detail_customer_pulse_falls_back_to_rule_suggestion_when_ai_confidence_is_low(client, app):
+    app.config["ai_customer_pulse"] = True
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO owner_role_map (userid, display_name, role, active)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("sales_pulse", "顾问脉搏", "sales", 1),
+        )
+        db.execute(
+            """
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("wm_customer_pulse_001", "脉搏客户", "sales_pulse", "最近在问价格", "AI pulse regression", "2026-04-11 09:00:00"),
+        )
+        db.execute(
+            """
+            INSERT INTO class_user_status_current (
+                external_userid, signup_status, signup_label_name, customer_name_snapshot, owner_userid_snapshot,
+                mobile_snapshot, set_by_userid, set_at, wecom_tag_sync_status, wecom_tag_sync_error, status_flags_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "wm_customer_pulse_001",
+                "lead",
+                "报名引流品",
+                "脉搏客户",
+                "sales_pulse",
+                "13800138123",
+                "sales_pulse",
+                "2026-04-11 09:10:00",
+                "success",
+                "",
+                "{}",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO archived_messages (
+                seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "pulse-msg-001",
+                "private",
+                "wm_customer_pulse_001",
+                "sales_pulse",
+                "wm_customer_pulse_001",
+                "sales_pulse",
+                "text",
+                "最近课程价格怎么算？",
+                "2026-04-11 09:30:00",
+                json.dumps({"decrypted_message": {"from": "wm_customer_pulse_001"}}, ensure_ascii=False),
+                "2026-04-11 09:30:01",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_marketing_state_current (
+                external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                eligible_for_conversion, lifecycle_status, last_activation_at, last_conversion_marked_at,
+                last_message_at, state_payload_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "wm_customer_pulse_001",
+                "signup_conversion_v1",
+                "pool",
+                "active_focus",
+                1,
+                0,
+                1,
+                "pool",
+                "2026-04-11 08:30:00",
+                "",
+                "2026-04-11 09:30:00",
+                json.dumps({"followup_segment": "focus"}, ensure_ascii=False),
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_value_segment_current (
+                external_userid, segment, segment_rank, score, scoring_version, computed_reason,
+                matched_question_ids_json, source_payload_json, evaluated_at, computed_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "wm_customer_pulse_001",
+                "focus",
+                3,
+                4,
+                "pulse-test",
+                "seed",
+                "[1,2]",
+                "{}",
+                "2026-04-11 09:20:00",
+                "2026-04-11 09:20:00",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO automation_agent_run (
+                run_id, request_id, userid, external_contact_id, agent_code, agent_type, provider,
+                input_snapshot_json, variables_snapshot_json, final_prompt_preview,
+                role_prompt_version, task_prompt_version, status, source, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "arun-pulse-low-001",
+                "req-pulse-low-001",
+                "sales_pulse",
+                "wm_customer_pulse_001",
+                "pricing_agent",
+                "child_agent",
+                "deepseek",
+                json.dumps({"messages": [{"content": "最近课程价格怎么算？"}]}, ensure_ascii=False),
+                json.dumps({"current_pool": "active_focus"}, ensure_ascii=False),
+                "prompt",
+                "published-v1",
+                "draft-v1",
+                "success",
+                "test",
+                "2026-04-11 09:35:00",
+                "2026-04-11 09:35:00",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO automation_agent_output (
+                output_id, run_id, request_id, userid, external_contact_id, agent_code, output_type,
+                raw_output_text, normalized_output_json, rendered_output_text, target_agent_code, target_pool,
+                confidence, reason, need_human_review, applied_status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "aout-pulse-low-001",
+                "arun-pulse-low-001",
+                "req-pulse-low-001",
+                "sales_pulse",
+                "wm_customer_pulse_001",
+                "pricing_agent",
+                "next_action_suggestion",
+                "建议继续报价解释",
+                json.dumps(
+                    {
+                        "confidence": 0.42,
+                        "reason": "客户询价",
+                        "next_action": "quote_explain",
+                        "draft_reply": "我先给你讲一下价格。",
+                        "need_human_review": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                "建议继续报价解释",
+                "pricing_agent",
+                "active_focus",
+                0.42,
+                "客户询价",
+                1,
+                "generated",
+                "2026-04-11 09:36:00",
+            ),
+        )
+        db.commit()
+
+    response = client.get("/api/customers/wm_customer_pulse_001")
+    assert response.status_code == 200
+    payload = response.get_json()
+    pulse = payload["customer"]["customer_pulse"]
+    assert pulse["enabled"] is True
+    assert pulse["source"] == "rule_suggestion"
+    assert pulse["degraded_from_ai"] is True
+    assert pulse["degraded_reason"] == "low_confidence"
+    assert pulse["draft_message"] == ""
+    assert pulse["need_human_confirmation"] is True
+    assert len(pulse["evidence"]) >= 1

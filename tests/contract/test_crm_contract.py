@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime as real_datetime
 from pathlib import Path
 
 import pytest
@@ -282,11 +282,35 @@ def _mcp_call(client, name: str, arguments: dict[str, object]):
 
 
 def _freeze_router_time(monkeypatch, *, timestamp: str) -> None:
-    fixed_now = datetime.fromisoformat(timestamp)
+    frozen = real_datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return cls(
+                    frozen.year,
+                    frozen.month,
+                    frozen.day,
+                    frozen.hour,
+                    frozen.minute,
+                    frozen.second,
+                )
+            return cls(
+                frozen.year,
+                frozen.month,
+                frozen.day,
+                frozen.hour,
+                frozen.minute,
+                frozen.second,
+                tzinfo=tz,
+            )
+
+    monkeypatch.setattr(marketing_automation_service, "datetime", FrozenDateTime)
     monkeypatch.setattr(
         marketing_automation_service,
         "_router_now",
-        lambda *, timezone: fixed_now,
+        lambda *, timezone: FrozenDateTime.now(),
     )
 
 

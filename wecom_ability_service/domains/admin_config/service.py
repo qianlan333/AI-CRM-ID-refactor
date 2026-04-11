@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -296,6 +297,13 @@ APP_SETTING_DEFINITIONS = (
         "description": "执行 Agent 默认使用的模型名。",
     },
     {
+        "key": "DEEPSEEK_REASONER_MODEL",
+        "label": "DeepSeek Reasoner Model",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "需要更强推理时显式切换使用的模型名，默认 deepseek-reasoner。",
+    },
+    {
         "key": "DEEPSEEK_TIMEOUT_SECONDS",
         "label": "DeepSeek 超时时间",
         "mode": "editable",
@@ -357,6 +365,83 @@ APP_SETTING_DEFINITIONS = (
         "mode": "editable",
         "input_type": "text",
         "description": "填写 true / false 或 1 / 0。关闭后，已开启问卷外推的问卷提交会直接记录“全局关闭跳过”，不再发起外推请求。",
+    },
+    {
+        "key": "ai_customer_pulse",
+        "label": "AI 客户推进收件箱",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。开启后显示 Customer Pulse Inbox 导航、页面与接口。",
+    },
+    {
+        "key": "ai_followup_orchestrator",
+        "label": "AI 团队跟进编排器",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。开启后显示团队编排入口，并基于 customer_pulse action cards 生成任务包候选。",
+    },
+    {
+        "key": "FOLLOWUP_ORCHESTRATOR_DEEPSEEK_USE_REASONER",
+        "label": "团队编排启用 DeepSeek Reasoner",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。默认 false，仅在需要更强推理时让 Follow-up Orchestrator 改走 reasoner 模型。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_HIGH_PRIORITY_THRESHOLD",
+        "label": "AI 推进高优先级阈值",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "Customer Pulse priority_score 达到该分值后标记为高优先级，默认 70。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_SHOW_LOW_CONFIDENCE_SUGGESTIONS",
+        "label": "展示低置信度建议",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。关闭后，不展示因 AI 低置信度降级出来的建议卡。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_ALLOWED_ACTION_TYPES",
+        "label": "AI 推进允许动作类型",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "逗号分隔动作类型：generate_reply_draft,create_followup_task,update_followup_segment,update_tags,set_followup_reminder。留空表示全部允许。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_DEEPSEEK_USE_REASONER",
+        "label": "AI 推进启用 DeepSeek Reasoner",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。默认 false，仅在需要更强推理时让 Customer Pulse 改走 reasoner 模型。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_TENANT_MODE",
+        "label": "AI 推进租户模式",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 legacy_internal 或 request_scoped。默认 legacy_internal；对外 SaaS 租户接入时切到 request_scoped。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_EXTERNAL_ENFORCE_REQUEST_SCOPED",
+        "label": "AI 推进外部环境强制 request-scoped",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。开启后，如果 Customer Pulse 仍配置 legacy_internal，会直接拒绝对外请求。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_TENANT_ACCESS_POLICY_JSON",
+        "label": "AI 推进租户访问策略 JSON",
+        "mode": "editable",
+        "input_type": "textarea",
+        "description": "按 tenant_key 配置 owner_userids、member_userids、viewer_roles、operator_roles、internal_roles；request_scoped 模式下必填。",
+    },
+    {
+        "key": "CUSTOMER_PULSE_FLAG_POLICY_JSON",
+        "label": "AI 推进灰度开关策略 JSON",
+        "mode": "editable",
+        "input_type": "textarea",
+        "description": "在全局 ai_customer_pulse=true 基础上，按 tenant / role / userid 做二级灰度；不配置时默认沿用全局开关。",
     },
     {
         "key": "QUESTIONNAIRE_EXTERNAL_PUSH_TIMEOUT_SECONDS",
@@ -540,7 +625,7 @@ def _automation_today_string() -> str:
 
 def automation_conversion_segment_cards() -> dict[str, Any]:
     counts = repo.get_automation_conversion_segment_counts()
-    cards = [
+    cards: list[dict[str, Any]] = [
         {
             "key": item["key"],
             "label": item["label"],
@@ -572,7 +657,7 @@ def automation_conversion_segment_cards() -> dict[str, Any]:
 def automation_conversion_stage_columns() -> list[dict[str, Any]]:
     rows = repo.list_automation_conversion_stage_snapshot_rows()
     today_string = _automation_today_string()
-    columns_by_stage = {
+    columns_by_stage: dict[str, dict[str, Any]] = {
         _automation_stage_key(item["main_stage"], item.get("sub_stage", "")): {
             "key": item["key"],
             "label": item["label"],
@@ -587,7 +672,7 @@ def automation_conversion_stage_columns() -> list[dict[str, Any]]:
         for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS
     }
     for row in rows:
-        stage_key = _automation_stage_key(row.get("main_stage"), row.get("sub_stage"))
+        stage_key = _automation_stage_key(_normalized_text(row.get("main_stage")), _normalized_text(row.get("sub_stage")))
         column = columns_by_stage.get(stage_key)
         if not column:
             continue
@@ -1058,10 +1143,68 @@ def _validate_known_setting(key: str, value: str) -> str:
         "OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS",
         "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
+        "CUSTOMER_PULSE_HIGH_PRIORITY_THRESHOLD",
     }:
         return str(_normalize_int(normalized or "0", field_name=key, minimum=1))
-    if key in {"OUTBOUND_WEBHOOK_RETRY_ENABLED", "DEEPSEEK_ENABLED"}:
+    if key in {
+        "OUTBOUND_WEBHOOK_RETRY_ENABLED",
+        "DEEPSEEK_ENABLED",
+        "ai_customer_pulse",
+        "CUSTOMER_PULSE_DEEPSEEK_USE_REASONER",
+        "CUSTOMER_PULSE_SHOW_LOW_CONFIDENCE_SUGGESTIONS",
+        "CUSTOMER_PULSE_EXTERNAL_ENFORCE_REQUEST_SCOPED",
+        "FOLLOWUP_ORCHESTRATOR_DEEPSEEK_USE_REASONER",
+    }:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
+    if key == "CUSTOMER_PULSE_ALLOWED_ACTION_TYPES":
+        allowed = {
+            "generate_reply_draft",
+            "create_followup_task",
+            "update_followup_segment",
+            "update_tags",
+            "set_followup_reminder",
+        }
+        values = [item.strip() for item in normalized.replace("|", ",").split(",") if item.strip()]
+        invalid = [item for item in values if item not in allowed]
+        if invalid:
+            raise ValueError(f"CUSTOMER_PULSE_ALLOWED_ACTION_TYPES 包含未知动作：{', '.join(invalid)}")
+        return ",".join(values)
+    if key == "CUSTOMER_PULSE_TENANT_MODE":
+        if normalized not in {"legacy_internal", "request_scoped"}:
+            raise ValueError("CUSTOMER_PULSE_TENANT_MODE 只允许 legacy_internal 或 request_scoped")
+        return normalized
+    if key == "CUSTOMER_PULSE_TENANT_ACCESS_POLICY_JSON":
+        if not normalized:
+            return ""
+        try:
+            payload = json.loads(normalized)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("CUSTOMER_PULSE_TENANT_ACCESS_POLICY_JSON 必须是合法 JSON") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("CUSTOMER_PULSE_TENANT_ACCESS_POLICY_JSON 顶层必须是对象")
+        for tenant_key, item in payload.items():
+            if not _normalized_text(tenant_key):
+                raise ValueError("CUSTOMER_PULSE_TENANT_ACCESS_POLICY_JSON 不能包含空 tenant_key")
+            if not isinstance(item, dict):
+                raise ValueError(f"{tenant_key} 的策略必须是对象")
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    if key == "CUSTOMER_PULSE_FLAG_POLICY_JSON":
+        if not normalized:
+            return ""
+        try:
+            payload = json.loads(normalized)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("CUSTOMER_PULSE_FLAG_POLICY_JSON 必须是合法 JSON") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("CUSTOMER_PULSE_FLAG_POLICY_JSON 顶层必须是对象")
+        if "tenants" in payload and not isinstance(payload.get("tenants"), dict):
+            raise ValueError("CUSTOMER_PULSE_FLAG_POLICY_JSON.tenants 必须是对象")
+        for tenant_key, item in (payload.get("tenants") or {}).items():
+            if not _normalized_text(tenant_key):
+                raise ValueError("CUSTOMER_PULSE_FLAG_POLICY_JSON.tenants 不能包含空 tenant_key")
+            if not isinstance(item, dict):
+                raise ValueError(f"{tenant_key} 的灰度策略必须是对象")
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
     if key in {
         "WECOM_API_BASE",
         "DEEPSEEK_BASE_URL",
@@ -1323,7 +1466,10 @@ def list_mcp_tool_settings(*, query: str, enabled_only: bool) -> dict[str, Any]:
             {"label": "后台展示", "value": sum(1 for row in rows if row["visible_in_console"]), "description": "当前在后台显示的工具数量"},
             {"label": "访问令牌", "value": "已配置" if auth_value else "未配置", "description": "AI 工具访问令牌状态"},
         ],
-        "audit_entries": [{**item, "action_label": _audit_action_label(item.get("action_type"))} for item in _recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)],
+        "audit_entries": [
+            {**item, "action_label": _audit_action_label(_normalized_text(item.get("action_type")))}
+            for item in _recent_audit_entries(TARGET_MCP_TOOL_SETTING, limit=8)
+        ],
     }
 
 

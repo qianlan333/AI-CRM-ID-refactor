@@ -255,10 +255,64 @@
     font-size: 12px;
   }
 
+  .run-center-agent-subnav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .run-center-agent-columns {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.95fr) minmax(0, 1.05fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .run-center-agent-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .run-center-agent-item {
+    display: grid;
+    gap: 8px;
+    padding: 16px 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.82);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .run-center-agent-item.is-active {
+    border-color: rgba(157, 99, 48, 0.32);
+    box-shadow: 0 16px 28px rgba(99, 67, 26, 0.08);
+    background: rgba(255, 250, 240, 0.9);
+  }
+
+  .run-center-code-block {
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: #0f172a;
+    color: #e2e8f0;
+    overflow: auto;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .run-center-note-list {
+    display: grid;
+    gap: 8px;
+    color: #475569;
+  }
+
   @media (max-width: 1180px) {
     .run-center-header__summary,
     .run-center-definition-grid,
-    .run-center-split {
+    .run-center-split,
+    .run-center-agent-columns {
       grid-template-columns: 1fr;
     }
   }
@@ -281,6 +335,13 @@
 {% set deepseek = model_infra_payload.deepseek %}
 {% set logs_payload = workspace.logs_payload or {} %}
 {% set debug_lookup = (debug_payload or {}).get('lookup', {}) %}
+{% set orchestration = orchestration_payload or {} %}
+{% set orchestration_router = orchestration.router or {} %}
+{% set orchestration_skills = orchestration.skills or {} %}
+{% set orchestration_agents = orchestration.agents or {} %}
+{% set orchestration_outputs = orchestration.outputs or {} %}
+{% set orchestration_replay = orchestration.replay or {} %}
+{% set orchestration_metrics = orchestration.metrics or {} %}
 
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
@@ -406,7 +467,14 @@
             <strong>进入 AI / 模型基础设施</strong>
             <span class="admin-chip admin-chip--neutral">{{ workspace.model_status }}</span>
           </div>
-          <p>维护 DeepSeek 配置、Prompt Registry 和最近模型调用日志。</p>
+          <p>维护 DeepSeek 纯配置和最近模型调用日志；子 Agent 编排已迁到专用子区。</p>
+        </a>
+        <a class="run-center-quick-card" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router') }}#run-agent-orchestration">
+          <div class="run-center-quick-card__top">
+            <strong>进入 Agent 编排</strong>
+            <span class="admin-chip admin-chip--neutral">{{ workspace.agent_orchestration_summary.output_count if workspace.agent_orchestration_summary else 0 }} 条输出</span>
+          </div>
+          <p>维护龙虾路由接入、Skill Registry、子 Agent 配置、回放调试和输出账本。</p>
         </a>
         <a class="run-center-quick-card" href="{{ url_for('api.admin_automation_conversion_run_center', tab='logs') }}#run-logs">
           <div class="run-center-quick-card__top">
@@ -742,13 +810,759 @@
     {% endif %}
   </section>
 </section>
+{% elif run_center_entry_section == 'agent_orchestration' %}
+<section class="run-center-panel" id="run-agent-orchestration">
+  <section class="admin-card run-center-card">
+    <div class="run-center-card__head">
+      <div>
+        <h2>Agent Orchestration</h2>
+        <p>把龙虾路由接入、Skill Registry、子 Agent 配置、调试回放与输出账本统一收口在运行中心内，不打破现有 run-center canonical URL。</p>
+      </div>
+      <div class="run-center-agent-subnav">
+        <a class="ac-section-link{% if run_center_subtab == 'router' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router') }}#run-agent-orchestration">路由接入</a>
+        <a class="ac-section-link{% if run_center_subtab == 'metrics' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='metrics') }}#run-agent-orchestration">最小 Metrics</a>
+        <a class="ac-section-link{% if run_center_subtab == 'skills' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='skills') }}#run-agent-orchestration">Skill Registry</a>
+        <a class="ac-section-link{% if run_center_subtab == 'agents' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='agents') }}#run-agent-orchestration">子 Agent 配置</a>
+        <a class="ac-section-link{% if run_center_subtab == 'replay' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='replay') }}#run-agent-orchestration">调试与回放</a>
+        <a class="ac-section-link{% if run_center_subtab == 'outputs' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs') }}#run-agent-orchestration">输出记录</a>
+      </div>
+    </div>
+    <div class="run-center-kpi-grid">
+      <article class="run-center-kpi-card">
+        <span>路由接入状态</span>
+        <strong>{{ (orchestration_router.config or {}).last_status or "never_called" }}</strong>
+        <p class="run-center-kpi-card__meta">中央路由不再是普通 Prompt 配置，而是独立的 webhook 接入与 fallback 策略。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>子 Agent 数量</span>
+        <strong>{{ (orchestration_agents.get('items') or [])|length }}</strong>
+        <p class="run-center-kpi-card__meta">草稿态与已发布态统一在子 Agent 配置中维护。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>Skill 数量</span>
+        <strong>{{ (orchestration_skills.get('items') or [])|length }}</strong>
+        <p class="run-center-kpi-card__meta">Skill 按只读、草稿写入和建议能力分层，不直接放开高风险写操作。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>账本输出数</span>
+        <strong>{{ orchestration_outputs.total or 0 }}</strong>
+        <p class="run-center-kpi-card__meta">统一记录 route_decision、draft、fallback 与 error_output。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>Shadow 调用量</span>
+        <strong>{{ (orchestration_metrics.call_volume or 0) }}</strong>
+        <p class="run-center-kpi-card__meta">当前仅旁路观测，不接管真实生产分流。</p>
+      </article>
+    </div>
+  </section>
+
+  {% if run_center_subtab == 'metrics' %}
+  <section class="admin-card run-center-card">
+    <div class="run-center-card__head">
+      <div>
+        <h2>最小 Metrics</h2>
+        <p>基于 lobster shadow mode 的中央路由旁路账本计算调用量、fallback、latency、命中分布与采纳闭环指标。</p>
+      </div>
+    </div>
+    <div class="run-center-kpi-grid">
+      <article class="run-center-kpi-card">
+        <span>调用量</span>
+        <strong>{{ orchestration_metrics.call_volume or 0 }}</strong>
+        <p class="run-center-kpi-card__meta">统计窗口：{{ (orchestration_metrics.window or {}).date_from or '-' }} ~ {{ (orchestration_metrics.window or {}).date_to or '现在' }}</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>成功率</span>
+        <strong>{{ '%.2f%%'|format((orchestration_metrics.success_rate or 0) * 100) }}</strong>
+        <p class="run-center-kpi-card__meta">仅统计 shadow router webhook 调用成功。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>fallback 率</span>
+        <strong>{{ '%.2f%%'|format((orchestration_metrics.fallback_rate or 0) * 100) }}</strong>
+        <p class="run-center-kpi-card__meta">包含 timeout、schema 非法、unknown agent_code 等兜底。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>schema 非法率</span>
+        <strong>{{ '%.2f%%'|format((orchestration_metrics.invalid_schema_rate or 0) * 100) }}</strong>
+        <p class="run-center-kpi-card__meta">返回结构不符协议时的占比。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>平均 / P95 latency</span>
+        <strong>{{ (orchestration_metrics.latency or {}).avg_ms or 0 }} / {{ (orchestration_metrics.latency or {}).p95_ms or 0 }} ms</strong>
+        <p class="run-center-kpi-card__meta">基于已入账的 router run 延迟。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>采纳率</span>
+        <strong>{{ '%.2f%%'|format((orchestration_metrics.adoption_rate or 0) * 100) }}</strong>
+        <p class="run-center-kpi-card__meta">当前只统计真正进入 applied / adopted / replayed 的输出，shadow 观察不算采纳。</p>
+      </article>
+      <article class="run-center-kpi-card">
+        <span>采纳后转化率</span>
+        <strong>{{ '%.2f%%'|format((orchestration_metrics.adoption_conversion_rate or 0) * 100) }}</strong>
+        <p class="run-center-kpi-card__meta">采纳后成员当前处于已成交池的占比。</p>
+      </article>
+    </div>
+  </section>
+  <section class="run-center-agent-columns">
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>agent 命中分布 / confidence 分布</h2>
+          <p>这里展示 shadow router 的 target_agent_code 命中结果和 confidence bucket。</p>
+        </div>
+      </div>
+      <div class="run-center-log-table">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>target_agent_code</th>
+              <th>count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in orchestration_metrics.agent_hit_distribution or [] %}
+            <tr>
+              <td>{{ item.agent_code or '-' }}</td>
+              <td>{{ item.count or 0 }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2">暂无命中记录</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="run-center-log-table">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>confidence bucket</th>
+              <th>count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in orchestration_metrics.confidence_distribution or [] %}
+            <tr>
+              <td>{{ item.bucket or '-' }}</td>
+              <td>{{ item.count or 0 }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2">暂无 confidence 分布</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>Top Error</h2>
+          <p>异常按错误码 / 错误信息聚合；用于观察 webhook 质量和 fallback 健康度。</p>
+        </div>
+      </div>
+      <div class="run-center-note-list">
+        {% for item in orchestration_metrics.top_errors or [] %}
+        <div>{{ item.error or '-' }} · {{ item.count or 0 }}</div>
+        {% else %}
+        <div>当前没有 top error。</div>
+        {% endfor %}
+      </div>
+      <div class="run-center-note-list">
+        {% for item in orchestration_metrics.notes or [] %}
+        <div>{{ item }}</div>
+        {% endfor %}
+      </div>
+    </section>
+  </section>
+  {% elif run_center_subtab == 'router' %}
+  <section class="run-center-agent-columns">
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>龙虾路由接入配置</h2>
+          <p>系统会向龙虾发送近 20 条消息、userid、成员快照和 allowed_agents，再由龙虾返回应接手的子 Agent。</p>
+        </div>
+      </div>
+      <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ url_for('api.admin_automation_conversion_save_agent_router_settings') }}">
+        <label class="admin-checkbox">
+          <input type="checkbox" name="enabled" value="1" {% if (orchestration_router.config or {}).enabled %}checked{% endif %}>
+          <span>启用中央路由接入</span>
+        </label>
+        <div class="admin-grid-2">
+          <label class="admin-field">
+            <span>龙虾 webhook 地址</span>
+            <input type="url" name="webhook_url" value="{{ (orchestration_router.config or {}).webhook_url or '' }}" placeholder="https://lobster.example.com/router">
+          </label>
+          <label class="admin-field">
+            <span>签名 Header</span>
+            <input type="text" name="signature_header" value="{{ (orchestration_router.config or {}).signature_header or 'X-Lobster-Signature' }}">
+          </label>
+          <label class="admin-field">
+            <span>请求签名 Token</span>
+            <input type="password" name="signature_token" value="" placeholder="{% if (orchestration_router.config or {}).signature_token_configured %}留空保持当前值（{{ (orchestration_router.config or {}).signature_token_masked }}）{% else %}输入 token{% endif %}">
+          </label>
+          <label class="admin-field">
+            <span>请求签名 Secret</span>
+            <input type="password" name="signature_secret" value="" placeholder="{% if (orchestration_router.config or {}).signature_secret_configured %}留空保持当前值（{{ (orchestration_router.config or {}).signature_secret_masked }}）{% else %}输入 secret{% endif %}">
+          </label>
+          <label class="admin-field">
+            <span>请求超时（秒）</span>
+            <input type="number" min="1" max="60" name="timeout_seconds" value="{{ (orchestration_router.config or {}).timeout_seconds or 8 }}">
+          </label>
+          <label class="admin-field">
+            <span>重试次数</span>
+            <input type="number" min="0" max="5" name="retry_count" value="{{ (orchestration_router.config or {}).retry_count or 1 }}">
+          </label>
+        </div>
+        <div class="admin-grid-2">
+          <label class="admin-field">
+            <span>timeout fallback</span>
+            <input type="text" name="fallback_on_timeout" value="{{ ((orchestration_router.config or {}).fallback_strategy or {}).on_timeout or '' }}">
+          </label>
+          <label class="admin-field">
+            <span>invalid schema fallback</span>
+            <input type="text" name="fallback_on_invalid_schema" value="{{ ((orchestration_router.config or {}).fallback_strategy or {}).on_invalid_schema or '' }}">
+          </label>
+          <label class="admin-field">
+            <span>agent_code 不存在 fallback</span>
+            <input type="text" name="fallback_on_unknown_agent_code" value="{{ ((orchestration_router.config or {}).fallback_strategy or {}).on_unknown_agent_code or '' }}">
+          </label>
+          <label class="admin-field">
+            <span>默认 Agent</span>
+            <input type="text" name="fallback_default_agent_code" value="{{ ((orchestration_router.config or {}).fallback_strategy or {}).default_agent_code or '' }}">
+          </label>
+          <label class="admin-field">
+            <span>默认池子</span>
+            <input type="text" name="fallback_default_pool" value="{{ ((orchestration_router.config or {}).fallback_strategy or {}).default_pool or '' }}">
+          </label>
+          <label class="admin-field">
+            <span>告警去向</span>
+            <input type="text" name="fallback_alert_channel" value="{{ ((orchestration_router.config or {}).fallback_strategy or {}).alert_channel or 'run_center' }}">
+          </label>
+        </div>
+        <div class="admin-grid-2">
+          <label class="admin-checkbox">
+            <input type="checkbox" name="fallback_need_human_review" value="1" {% if ((orchestration_router.config or {}).fallback_strategy or {}).need_human_review %}checked{% endif %}>
+            <span>失败时进入人工复核队列</span>
+          </label>
+          <label class="admin-checkbox">
+            <input type="checkbox" name="fallback_fail_closed" value="1" {% if ((orchestration_router.config or {}).fallback_strategy or {}).fail_closed %}checked{% endif %}>
+            <span>fail-closed</span>
+          </label>
+        </div>
+        <div class="admin-toolbar">
+          <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+          <button class="admin-button admin-button--primary" type="submit">保存路由接入配置</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="run-center-log-stack">
+      <section class="admin-card run-center-card">
+        <div class="run-center-card__head">
+          <div>
+            <h2>最近一次调用状态</h2>
+            <p>用真实状态表达 webhook 与 fallback 健康度；当前只以 shadow mode 旁路观察，不接管真实分流。</p>
+          </div>
+        </div>
+        <dl class="run-center-definition-grid">
+          <div>
+            <dt>最近状态</dt>
+            <dd>{{ (orchestration_router.config or {}).last_status or "never_called" }}</dd>
+          </div>
+          <div>
+            <dt>最近错误</dt>
+            <dd>{{ (orchestration_router.config or {}).last_error or "无" }}</dd>
+          </div>
+          <div>
+            <dt>最近调用时间</dt>
+            <dd>{{ (orchestration_router.config or {}).last_called_at or "暂无记录" }}</dd>
+          </div>
+          <div>
+            <dt>最近路由结果</dt>
+            <dd>{{ ((orchestration_router.last_route_output or {}).target_agent_code) or "暂无结果" }}</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="admin-card run-center-card">
+        <div class="run-center-card__head">
+          <div>
+            <h2>请求 / 返回协议样例</h2>
+            <p>这里展示中央路由的输入输出协议，不再维护中央路由的普通 Prompt 文本框。</p>
+          </div>
+        </div>
+        <strong>请求样例</strong>
+        <pre class="run-center-code-block">{{ (orchestration_router.input_protocol or {})|tojson(indent=2) }}</pre>
+        <strong>返回样例</strong>
+        <pre class="run-center-code-block">{{ (orchestration_router.output_protocol or {})|tojson(indent=2) }}</pre>
+      </section>
+    </section>
+  </section>
+  {% elif run_center_subtab == 'skills' %}
+  <section class="run-center-agent-columns">
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>Skill 列表</h2>
+          <p>只读、草稿写入和建议能力分离；高风险动作当前不直接对外开放。</p>
+        </div>
+      </div>
+      <div class="run-center-agent-list">
+        {% for item in orchestration_skills.get('items') or [] %}
+        <a class="run-center-agent-item{% if (orchestration_skills.selected or {}).skill_code == item.skill_code %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='skills', skill=item.skill_code) }}#run-agent-orchestration">
+          <strong>{{ item.skill_code }}</strong>
+          <div class="model-infra-prompt-card__meta">对应 Agent：{{ item.agent_code }} · 池子：{{ (item.pool_keys or [])|join('、') or '全部' }}</div>
+          <div class="model-infra-prompt-card__meta">只读：{{ (item.read_capabilities or [])|join('、') or '无' }}</div>
+          <div class="model-infra-prompt-card__meta">可写：{{ (item.write_capabilities or [])|join('、') or '无' }}</div>
+          <div class="model-infra-prompt-card__meta">最近调用：{{ item.last_call_status or 'never_called' }} · {{ item.last_called_at or '暂无记录' }}</div>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>Skill 详情</h2>
+          <p>当前展示输入/输出 schema、权限、幂等、审计和示例请求响应。</p>
+        </div>
+      </div>
+      {% set selected_skill = orchestration_skills.selected or {} %}
+      <dl class="run-center-definition-grid">
+        <div>
+          <dt>输入 schema</dt>
+          <dd><pre class="run-center-code-block">{{ (selected_skill.input_schema or {})|tojson(indent=2) }}</pre></dd>
+        </div>
+        <div>
+          <dt>输出 schema</dt>
+          <dd><pre class="run-center-code-block">{{ (selected_skill.output_schema or {})|tojson(indent=2) }}</pre></dd>
+        </div>
+        <div>
+          <dt>权限说明</dt>
+          <dd>{{ selected_skill.permission_notes or "暂无" }}</dd>
+        </div>
+        <div>
+          <dt>幂等说明</dt>
+          <dd>{{ selected_skill.idempotency_notes or "暂无" }}</dd>
+        </div>
+        <div>
+          <dt>审计要求</dt>
+          <dd>{{ selected_skill.audit_notes or "暂无" }}</dd>
+        </div>
+        <div>
+          <dt>示例请求 / 响应</dt>
+          <dd>见下方代码块</dd>
+        </div>
+      </dl>
+      <strong>示例请求</strong>
+      <pre class="run-center-code-block">{{ (selected_skill.example_request or {})|tojson(indent=2) }}</pre>
+      <strong>示例响应</strong>
+      <pre class="run-center-code-block">{{ (selected_skill.example_response or {})|tojson(indent=2) }}</pre>
+    </section>
+  </section>
+  {% elif run_center_subtab == 'agents' %}
+  <section class="run-center-agent-columns">
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>子 Agent 列表</h2>
+          <p>当前版本、关联池子和最后更新时间一屏可见；修改默认只进入草稿态。</p>
+        </div>
+      </div>
+      <div class="run-center-agent-list">
+        {% for item in orchestration_agents.get('items') or [] %}
+        <a class="run-center-agent-item{% if (orchestration_agents.selected or {}).agent_code == item.agent_code %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='agents', agent=item.agent_code) }}#run-agent-orchestration">
+          <strong>{{ item.display_name }}</strong>
+          <div class="model-infra-prompt-card__meta">agent_code={{ item.agent_code }} · pools={{ (item.pool_keys or [])|join('、') or '未关联' }}</div>
+          <div class="model-infra-prompt-card__meta">draft=v{{ item.draft_version }} · published=v{{ item.published_version }} · enabled={{ "yes" if item.enabled else "no" }}</div>
+          <div class="model-infra-prompt-card__meta">最近更新：{{ item.last_modified_at or '暂无记录' }}</div>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    <section class="run-center-log-stack">
+      {% set selected_agent = orchestration_agents.selected or {} %}
+      <section class="admin-card run-center-card">
+        <div class="run-center-card__head">
+          <div>
+            <h2>Agent 详情</h2>
+            <p>配置已拆成角色提示词、任务提示词、变量配置和输出协议。中央路由不在这里当普通 Prompt 维护。</p>
+          </div>
+        </div>
+        <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ url_for('api.admin_automation_conversion_save_agent_config_draft', agent_code=selected_agent.agent_code or '') }}">
+          <div class="admin-grid-2">
+            <label class="admin-field">
+              <span>显示名称</span>
+              <input type="text" name="display_name" value="{{ selected_agent.display_name or '' }}">
+            </label>
+            <label class="admin-checkbox">
+              <input type="checkbox" name="enabled" value="1" {% if selected_agent.enabled %}checked{% endif %}>
+              <span>启用此子 Agent</span>
+            </label>
+          </div>
+          <label class="admin-field">
+            <span>角色提示词</span>
+            <textarea name="role_prompt" rows="6">{{ ((selected_agent.draft or {}).role_prompt) or '' }}</textarea>
+          </label>
+          <label class="admin-field">
+            <span>任务 / 文本提示词</span>
+            <textarea name="task_prompt" rows="8">{{ ((selected_agent.draft or {}).task_prompt) or '' }}</textarea>
+          </label>
+          <label class="admin-field">
+            <span>变量配置（JSON）</span>
+            <textarea name="variables_json" rows="12">{{ ((selected_agent.draft or {}).variables_json_raw) or ((((selected_agent.draft or {}).variables) or [])|tojson(indent=2)) }}</textarea>
+          </label>
+          <label class="admin-field">
+            <span>输出协议（JSON）</span>
+            <textarea name="output_schema_json" rows="12">{{ ((selected_agent.draft or {}).output_schema_json_raw) or ((((selected_agent.draft or {}).output_schema) or [])|tojson(indent=2)) }}</textarea>
+          </label>
+          <label class="admin-field">
+            <span>变更摘要</span>
+            <input type="text" name="change_summary" value="{{ selected_agent.last_change_summary or '' }}">
+          </label>
+          <div class="admin-toolbar">
+            <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+            <button class="admin-button admin-button--primary" type="submit">保存草稿</button>
+          </div>
+        </form>
+        <form method="post" action="{{ url_for('api.admin_automation_conversion_publish_agent_config', agent_code=selected_agent.agent_code or '') }}">
+          <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+          <button class="admin-button admin-button--secondary" type="submit">发布当前草稿</button>
+        </form>
+      </section>
+      <section class="admin-card run-center-card">
+        <div class="run-center-card__head">
+          <div>
+            <h2>草稿态 / 已发布态</h2>
+            <p>当前先提供最小版本能力：草稿版本、已发布版本、最近修改信息与 Diff 摘要。</p>
+          </div>
+        </div>
+        <dl class="run-center-definition-grid">
+          <div>
+            <dt>草稿版本</dt>
+            <dd>v{{ selected_agent.draft_version or 1 }}</dd>
+          </div>
+          <div>
+            <dt>已发布版本</dt>
+            <dd>v{{ selected_agent.published_version or 0 }}</dd>
+          </div>
+          <div>
+            <dt>最近修改</dt>
+            <dd>{{ selected_agent.last_modified_at or '暂无记录' }} · {{ selected_agent.last_modified_by or 'system' }}</dd>
+          </div>
+          <div>
+            <dt>最近发布</dt>
+            <dd>{{ selected_agent.published_at or '尚未发布' }} · {{ selected_agent.published_by or '-' }}</dd>
+          </div>
+        </dl>
+        <div class="run-center-note-list">
+          {% for item in selected_agent.diff_summary or [] %}
+          <div>{{ item }}</div>
+          {% else %}
+          <div>当前草稿与已发布态一致。</div>
+          {% endfor %}
+          <div>回滚能力当前仍是结构占位，尚未接成完整版本系统。</div>
+        </div>
+      </section>
+    </section>
+  </section>
+  {% elif run_center_subtab == 'replay' %}
+  <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>调试与回放</h2>
+          <p>支持按 request_id 或 userid / external_contact_id 回放最近一次 run，查看输入快照、变量快照、最终 prompt 和输出账本。页面默认脱敏，明文仅内部 API / Skill 可见。</p>
+        </div>
+      </div>
+    <form class="run-center-debug-form" method="get" action="{{ url_for('api.admin_automation_conversion_run_center') }}">
+      <input type="hidden" name="tab" value="agent-orchestration">
+      <input type="hidden" name="subtab" value="replay">
+      <label>
+        <span>request_id</span>
+        <input type="text" name="request_id" value="{{ (orchestration_replay.filters or {}).request_id or '' }}">
+      </label>
+      <label>
+        <span>external_contact_id / userid</span>
+        <input type="text" name="external_contact_id" value="{{ (orchestration_replay.filters or {}).external_contact_id or '' }}">
+      </label>
+      <label>
+        <span>userid</span>
+        <input type="text" name="userid" value="{{ (orchestration_replay.filters or {}).userid or '' }}">
+      </label>
+      <label>
+        <span>开始时间</span>
+        <input type="text" name="date_from" value="{{ (orchestration_replay.filters or {}).date_from or '' }}" placeholder="2026-04-10 00:00:00">
+      </label>
+      <label>
+        <span>结束时间</span>
+        <input type="text" name="date_to" value="{{ (orchestration_replay.filters or {}).date_to or '' }}" placeholder="2026-04-10 23:59:59">
+      </label>
+      <button class="admin-button admin-button--secondary" type="submit">查询回放</button>
+    </form>
+  </section>
+  <section class="run-center-agent-columns">
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>回放摘要</h2>
+          <p>当前回放基于已记录输入快照与输出账本，不会重新命中外部 webhook。</p>
+        </div>
+      </div>
+      {% set replay_run = orchestration_replay.selected_run or {} %}
+      {% if replay_run.run_id %}
+      <dl class="run-center-definition-grid">
+        <div>
+          <dt>run_id</dt>
+          <dd>{{ replay_run.run_id }}</dd>
+        </div>
+        <div>
+          <dt>request_id</dt>
+          <dd>{{ replay_run.request_id or '-' }}</dd>
+        </div>
+        <div>
+          <dt>角色提示词版本</dt>
+          <dd>{{ replay_run.role_prompt_version or '-' }}</dd>
+        </div>
+        <div>
+          <dt>任务提示词版本</dt>
+          <dd>{{ replay_run.task_prompt_version or '-' }}</dd>
+        </div>
+      </dl>
+      <strong>原始输入</strong>
+      <pre class="run-center-code-block">{{ (replay_run.input_snapshot or {})|tojson(indent=2) }}</pre>
+      <strong>变量快照</strong>
+      <pre class="run-center-code-block">{{ (replay_run.variables_snapshot or {})|tojson(indent=2) }}</pre>
+      <strong>最终 Prompt 预览</strong>
+      <pre class="run-center-code-block">{{ replay_run.final_prompt_preview or '暂无记录' }}</pre>
+      {% else %}
+      <div class="admin-state admin-state--inline">
+        <strong>暂无可回放的 run</strong>
+        <span>请按 request_id 或 external_contact_id 查询最近一次 run。</span>
+      </div>
+      {% endif %}
+    </section>
+    <section class="run-center-log-stack">
+      <section class="admin-card run-center-card">
+        <div class="run-center-card__head">
+          <div>
+            <h2>最终输出与 diff</h2>
+            <p>区分“生成了什么”和“最后采用了什么”，并和上一条同条件 run 做差异对比。</p>
+          </div>
+        </div>
+        <strong>最终路由 / 最终输出</strong>
+        <pre class="run-center-code-block">{{ (orchestration_replay.final_output or {})|tojson(indent=2) }}</pre>
+        <div class="run-center-note-list">
+          {% for item in orchestration_replay.diff_items or [] %}
+          <div>{{ item }}</div>
+          {% else %}
+          <div>当前没有可展示的 diff，可能这是首条 run 或上一条上下文完全一致。</div>
+          {% endfor %}
+        </div>
+        {% if replay_run.run_id %}
+        <div class="admin-toolbar">
+          <form method="post" action="{{ url_for('api.admin_automation_conversion_replay_agent_run', run_id=replay_run.run_id) }}">
+            <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+            <button class="admin-button admin-button--primary" type="submit">重新回放</button>
+          </form>
+          <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', request_id=replay_run.request_id) }}#run-agent-orchestration">查看关联输出</a>
+        </div>
+        {% endif %}
+      </section>
+    </section>
+  </section>
+  {% elif run_center_subtab == 'outputs' %}
+  <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>输出记录</h2>
+          <p>所有 route_decision、agent draft/final、fallback 和 error_output 都统一入账，支持筛选、导出、API 与 skill 调取。当前页面默认脱敏；导出同样只导出脱敏字段。</p>
+        </div>
+      </div>
+    <form class="admin-form-grid admin-form-grid--stacked" method="get" action="{{ url_for('api.admin_automation_conversion_run_center') }}">
+      <input type="hidden" name="tab" value="agent-orchestration">
+      <input type="hidden" name="subtab" value="outputs">
+      <div class="admin-grid-3">
+        <label class="admin-field">
+          <span>request_id</span>
+          <input type="text" name="request_id" value="{{ (orchestration_outputs.filters or {}).request_id or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>batch_id</span>
+          <input type="text" name="batch_id" value="{{ (orchestration_outputs.filters or {}).batch_id or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>external_contact_id</span>
+          <input type="text" name="external_contact_id" value="{{ (orchestration_outputs.filters or {}).external_contact_id or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>userid</span>
+          <input type="text" name="userid" value="{{ (orchestration_outputs.filters or {}).userid or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>agent_code</span>
+          <input type="text" name="agent_code" value="{{ (orchestration_outputs.filters or {}).agent_code or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>output_type</span>
+          <input type="text" name="output_type" value="{{ (orchestration_outputs.filters or {}).output_type or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>当前池子</span>
+          <input type="text" name="current_pool" value="{{ (orchestration_outputs.filters or {}).current_pool or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>target_pool</span>
+          <input type="text" name="target_pool" value="{{ (orchestration_outputs.filters or {}).target_pool or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>applied_status</span>
+          <input type="text" name="applied_status" value="{{ (orchestration_outputs.filters or {}).applied_status or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>confidence ≥</span>
+          <input type="text" name="min_confidence" value="{{ (orchestration_outputs.filters or {}).min_confidence or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>confidence ≤</span>
+          <input type="text" name="max_confidence" value="{{ (orchestration_outputs.filters or {}).max_confidence or '' }}">
+        </label>
+        <label class="admin-field">
+          <span>开始时间</span>
+          <input type="text" name="date_from" value="{{ (orchestration_outputs.filters or {}).date_from or '' }}" placeholder="2026-04-10 00:00:00">
+        </label>
+        <label class="admin-field">
+          <span>结束时间</span>
+          <input type="text" name="date_to" value="{{ (orchestration_outputs.filters or {}).date_to or '' }}" placeholder="2026-04-10 23:59:59">
+        </label>
+        <label class="admin-field">
+          <span>是否异常</span>
+          <select name="has_error">
+            <option value="" {% if not (orchestration_outputs.filters or {}).has_error %}selected{% endif %}>全部</option>
+            <option value="1" {% if (orchestration_outputs.filters or {}).has_error in ['1', 'true', 'yes', 'on'] %}selected{% endif %}>仅异常</option>
+            <option value="0" {% if (orchestration_outputs.filters or {}).has_error in ['0', 'false', 'no', 'off'] %}selected{% endif %}>仅正常</option>
+          </select>
+        </label>
+      </div>
+      <div class="admin-toolbar">
+        <button class="admin-button admin-button--secondary" type="submit">筛选</button>
+      </div>
+    </form>
+    <form method="post" action="{{ url_for('api.admin_automation_conversion_export_agent_outputs') }}">
+      {% for key, value in orchestration_outputs.filters.items() %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endfor %}
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <button class="admin-button admin-button--secondary" type="submit">导出 Excel</button>
+    </form>
+    {% if (orchestration_outputs.export_job or {}).job_id %}
+    <div class="run-center-placeholder">
+      <strong>导出任务 {{ orchestration_outputs.export_job.job_id }}</strong>
+      <p>状态：{{ orchestration_outputs.export_job.status }}{% if orchestration_outputs.export_job.error_message %} · {{ orchestration_outputs.export_job.error_message }}{% endif %}</p>
+      {% if orchestration_outputs.export_job.has_file %}
+      <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_download_agent_output_export', job_id=orchestration_outputs.export_job.job_id) }}">下载导出文件</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  <section class="run-center-agent-columns">
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>列表区</h2>
+          <p>当前筛选命中 {{ orchestration_outputs.total or 0 }} 条输出。</p>
+        </div>
+      </div>
+      {% if orchestration_outputs.rows %}
+      <div class="run-center-log-table">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>agent_code</th>
+              <th>output_type</th>
+              <th>userid</th>
+              <th>target_agent_code</th>
+              <th>target_pool</th>
+              <th>confidence</th>
+              <th>applied_status</th>
+              <th>outcome_status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in orchestration_outputs.rows %}
+            <tr>
+              <td><a href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', output_id=item.output_id, request_id=(orchestration_outputs.filters or {}).request_id, batch_id=(orchestration_outputs.filters or {}).batch_id, external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, userid=(orchestration_outputs.filters or {}).userid, agent_code=(orchestration_outputs.filters or {}).agent_code, output_type=(orchestration_outputs.filters or {}).output_type, current_pool=(orchestration_outputs.filters or {}).current_pool, target_pool=(orchestration_outputs.filters or {}).target_pool, applied_status=(orchestration_outputs.filters or {}).applied_status, min_confidence=(orchestration_outputs.filters or {}).min_confidence, max_confidence=(orchestration_outputs.filters or {}).max_confidence, has_error=(orchestration_outputs.filters or {}).has_error, date_from=(orchestration_outputs.filters or {}).date_from, date_to=(orchestration_outputs.filters or {}).date_to) }}#run-agent-orchestration">{{ item.created_at or "-" }}</a></td>
+              <td>{{ item.agent_code or "-" }}</td>
+              <td>{{ item.output_type or "-" }}</td>
+              <td>{{ item.userid or "-" }}</td>
+              <td>{{ item.target_agent_code or "-" }}</td>
+              <td>{{ item.target_pool or "-" }}</td>
+              <td>{{ item.confidence }}</td>
+              <td>{{ item.applied_status or "-" }}</td>
+              <td>{{ item.outcome_status or "-" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="admin-state admin-state--inline">
+        <strong>暂无输出记录</strong>
+        <span>当前筛选条件下还没有入账输出。</span>
+      </div>
+      {% endif %}
+    </section>
+    <section class="admin-card run-center-card">
+      <div class="run-center-card__head">
+        <div>
+          <h2>详情区</h2>
+          <p>统一查看输入快照、变量快照、Prompt 版本、原始输出、结构化输出和采用状态。</p>
+        </div>
+      </div>
+      {% set output_detail = orchestration_outputs.selected or {} %}
+      {% if output_detail.output %}
+      <dl class="run-center-definition-grid">
+        <div>
+          <dt>Prompt 版本</dt>
+          <dd>{{ (output_detail.run or {}).role_prompt_version or '-' }} / {{ (output_detail.run or {}).task_prompt_version or '-' }}</dd>
+        </div>
+        <div>
+          <dt>是否已采用</dt>
+          <dd>{{ (output_detail.output or {}).applied_status or '-' }}</dd>
+        </div>
+        <div>
+          <dt>采纳人 / 动作</dt>
+          <dd>{{ (output_detail.output or {}).adopted_by or '-' }} / {{ (output_detail.output or {}).adopted_action or '-' }}</dd>
+        </div>
+        <div>
+          <dt>结果闭环</dt>
+          <dd>{{ (output_detail.output or {}).outcome_status or '-' }} / {{ (output_detail.output or {}).outcome_value or '-' }}</dd>
+        </div>
+      </dl>
+      <strong>输入快照</strong>
+      <pre class="run-center-code-block">{{ ((((output_detail.run or {}).input_snapshot) or {}))|tojson(indent=2) }}</pre>
+      <strong>变量快照</strong>
+      <pre class="run-center-code-block">{{ ((((output_detail.run or {}).variables_snapshot) or {}))|tojson(indent=2) }}</pre>
+      <strong>原始输出</strong>
+      <pre class="run-center-code-block">{{ (output_detail.output or {}).raw_output_text or '无' }}</pre>
+      <strong>结构化输出</strong>
+      <pre class="run-center-code-block">{{ ((((output_detail.output or {}).normalized_output) or {}))|tojson(indent=2) }}</pre>
+      <strong>渲染文本</strong>
+      <pre class="run-center-code-block">{{ (output_detail.output or {}).rendered_output_text or '无' }}</pre>
+      {% else %}
+      <div class="admin-state admin-state--inline">
+        <strong>未选中输出</strong>
+        <span>从左侧列表选择一条输出，即可查看 run 级上下文与结构化结果。</span>
+      </div>
+      {% endif %}
+    </section>
+  </section>
+  {% endif %}
+</section>
 {% elif run_center_entry_section == 'model' %}
 <section class="run-center-panel" id="run-model">
   <section class="admin-card run-center-card">
     <div class="run-center-card__head">
       <div>
         <h2>AI / 模型基础设施</h2>
-        <p>旧 model-infra 页面已经完整并入这里。这里只承接明显的技术配置与模型可观测性，不再和流程设计混放。</p>
+        <p>这里保留 DeepSeek 纯配置和最近模型调用日志的兼容入口；中央路由、Skill Registry、子 Agent 配置与输出账本已经升级到 Agent Orchestration。</p>
       </div>
     </div>
     <div class="run-center-kpi-grid">
@@ -837,41 +1651,15 @@
   <section class="admin-card run-center-card">
     <div class="run-center-card__head">
       <div>
-        <h2>Prompt Registry</h2>
-        <p>central router 与执行 Agent 的 Prompt 文本维护都统一放在这里。</p>
+        <h2>兼容说明</h2>
+        <p>旧 Prompt Registry 已升级为 Agent Orchestration 下的“子 Agent 配置”。中央路由不再在这里作为普通 Prompt 文本框维护。</p>
       </div>
     </div>
-    <div class="model-infra-prompt-grid">
-      {% for item in model_infra_payload.prompts %}
-      <article class="model-infra-prompt-card">
-        <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ url_for('api.admin_automation_conversion_save_model_prompt', agent_code=item.agent_code) }}">
-          <div class="run-center-card__head">
-            <div>
-              <h3 class="ac-subcard__title">{{ item.display_name }}</h3>
-              <p class="model-infra-prompt-card__meta">agent_code={{ item.agent_code }} · version={{ item.version }} · enabled={{ "yes" if item.enabled else "no" }} · updated_at={{ item.updated_at or '暂无记录' }}</p>
-            </div>
-          </div>
-          <div class="admin-grid-2">
-            <label class="admin-field">
-              <span>显示名称</span>
-              <input type="text" name="display_name" value="{{ item.display_name }}">
-            </label>
-            <label class="admin-checkbox">
-              <input type="checkbox" name="enabled" value="1" {% if item.enabled %}checked{% endif %}>
-              <span>启用此 Prompt</span>
-            </label>
-          </div>
-          <label class="admin-field">
-            <span>Prompt 文本</span>
-            <textarea name="prompt_text" rows="8">{{ item.prompt_text }}</textarea>
-          </label>
-          <div class="admin-toolbar">
-            <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
-            <button class="admin-button admin-button--primary" type="submit">保存 Prompt</button>
-          </div>
-        </form>
-      </article>
-      {% endfor %}
+    <div class="run-center-placeholder">
+      <strong>已迁移到 Agent Orchestration</strong>
+      <p>子 Agent 现在按“角色提示词 + 任务提示词 + 变量配置 + 输出协议”维护，支持草稿态和已发布态。</p>
+      <p>中央路由改为龙虾 webhook 接入配置，包含 timeout / retry / fallback / 最近状态，不再暴露普通 Prompt 文本框。</p>
+      <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='agents') }}#run-agent-orchestration">进入 Agent Orchestration</a>
     </div>
   </section>
 

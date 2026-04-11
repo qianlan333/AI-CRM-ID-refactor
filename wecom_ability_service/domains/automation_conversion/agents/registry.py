@@ -49,6 +49,363 @@ AGENT_PROMPT_DEFINITIONS = (
 AGENT_PROMPT_DEFINITION_MAP = {str(item["agent_code"]): dict(item) for item in AGENT_PROMPT_DEFINITIONS}
 AGENT_PROMPT_ORDER = [str(item["agent_code"]) for item in AGENT_PROMPT_DEFINITIONS]
 
+AGENT_OUTPUT_TYPE_OPTIONS = (
+    "route_decision",
+    "agent_reply_draft",
+    "agent_reply_final",
+    "pool_change_suggestion",
+    "pool_change_applied",
+    "next_action_suggestion",
+    "fallback_decision",
+    "error_output",
+)
+
+ROUTER_REQUEST_SAMPLE = {
+    "request_id": "route-req-20260410-001",
+    "batch_id": "batch-20260410-01",
+    "tenant": "aicrm",
+    "env": "prod",
+    "messages": [
+        {"role": "customer", "content": "课程多少钱？", "created_at": "2026-04-10 09:15:00"},
+        {"role": "staff", "content": "你更关注价格还是课程效果？", "created_at": "2026-04-10 09:15:21"},
+    ],
+    "userid": "sales_01",
+    "external_contact_id": "wm_agent_route_001",
+    "member_snapshot": {
+        "current_pool": "inactive_normal",
+        "current_stage": "inactive_normal_followup",
+        "questionnaire_result": "normal",
+        "owner_staff_id": "sales_01",
+    },
+    "allowed_agents": ["welcome_agent", "pricing_agent", "proof_agent", "closing_agent"],
+    "context_version": "agent-orchestration-v1",
+    "created_at": "2026-04-10 09:15:30",
+}
+
+ROUTER_RESPONSE_SAMPLE = {
+    "userid": "sales_01",
+    "external_contact_id": "wm_agent_route_001",
+    "agent_code": "pricing_agent",
+    "confidence": 0.86,
+    "reason": "客户当前问题集中在价格和付款方式，优先进入价格答疑 Agent。",
+    "target_pool": "inactive_normal",
+    "need_human_review": False,
+    "response_version": "router-v1",
+}
+
+ROUTER_FALLBACK_DEFAULT = {
+    "on_timeout": "fallback_to_default_agent",
+    "on_invalid_schema": "human_review_queue",
+    "on_unknown_agent_code": "fallback_to_default_agent",
+    "default_agent_code": "welcome_agent",
+    "default_pool": "new_user",
+    "need_human_review": True,
+    "alert_channel": "run_center",
+    "fail_closed": True,
+}
+
+
+def _common_output_schema() -> list[dict[str, Any]]:
+    return [
+        {"field_key": "agent_code", "display_name": "Agent Code", "type": "string", "required": True, "description": "当前输出所属的子 Agent。", "example": "pricing_agent"},
+        {"field_key": "userid", "display_name": "负责人", "type": "string", "required": False, "description": "执行上下文内的负责人或 owner。", "example": "sales_01"},
+        {"field_key": "target_pool", "display_name": "目标池子", "type": "string", "required": False, "description": "如果输出建议改池，记录目标池子。", "example": "active_focus"},
+        {"field_key": "confidence", "display_name": "置信度", "type": "number", "required": False, "description": "结构化结果的置信度。", "example": 0.82},
+        {"field_key": "reason", "display_name": "原因", "type": "string", "required": True, "description": "解释为什么给出当前建议。", "example": "客户连续追问价格与成交条件。"},
+        {"field_key": "next_action", "display_name": "下一步动作", "type": "string", "required": False, "description": "建议系统或运营下一步做什么。", "example": "send_pricing_clarification"},
+        {"field_key": "draft_reply", "display_name": "草稿回复", "type": "string", "required": False, "description": "生成给客户的草稿回复。", "example": "目前课程有 2 档方案，我先给你拆开说明。"},
+        {"field_key": "need_human_review", "display_name": "需要人工复核", "type": "boolean", "required": True, "description": "是否需要人工复核后再采用。", "example": False},
+    ]
+
+
+def _common_variables() -> list[dict[str, Any]]:
+    return [
+        {
+            "variable_key": "recent_messages",
+            "display_name": "近 20 条消息",
+            "description": "客户最近消息上下文，用于理解当前对话意图。",
+            "source": "archive.recent_messages",
+            "example_value": ["客户：课程多少钱？", "员工：你更关注价格还是效果？"],
+            "enabled": True,
+            "required": True,
+            "sort_order": 10,
+        },
+        {
+            "variable_key": "current_pool",
+            "display_name": "当前池子",
+            "description": "成员当前所在池子。",
+            "source": "automation_member.current_pool",
+            "example_value": "inactive_normal",
+            "enabled": True,
+            "required": True,
+            "sort_order": 20,
+        },
+        {
+            "variable_key": "current_stage",
+            "display_name": "当前阶段",
+            "description": "成员当前阶段标识。",
+            "source": "automation_member.current_stage",
+            "example_value": "inactive_normal_followup",
+            "enabled": True,
+            "required": True,
+            "sort_order": 30,
+        },
+        {
+            "variable_key": "questionnaire_result",
+            "display_name": "问卷结果",
+            "description": "成员当前问卷状态与结果。",
+            "source": "automation_member.questionnaire_result",
+            "example_value": "normal",
+            "enabled": True,
+            "required": False,
+            "sort_order": 40,
+        },
+        {
+            "variable_key": "focus_reason",
+            "display_name": "重点原因",
+            "description": "如果当前是重点跟进，说明命中原因或人工改判原因。",
+            "source": "automation_member.decision_source + questionnaire",
+            "example_value": "命中关键题：预算与落地周期",
+            "enabled": True,
+            "required": False,
+            "sort_order": 50,
+        },
+        {
+            "variable_key": "owner_name",
+            "display_name": "负责人",
+            "description": "当前成员负责人展示名。",
+            "source": "customer_profile.owner_display_name",
+            "example_value": "QianLan",
+            "enabled": True,
+            "required": False,
+            "sort_order": 60,
+        },
+        {
+            "variable_key": "last_touch_at",
+            "display_name": "最近触达时间",
+            "description": "最近人工或系统触达时间。",
+            "source": "automation_event / member.updated_at",
+            "example_value": "2026-04-10 09:00:00",
+            "enabled": True,
+            "required": False,
+            "sort_order": 70,
+        },
+        {
+            "variable_key": "member_tags",
+            "display_name": "成员标签",
+            "description": "来自营销画像或 CRM 的标签集合。",
+            "source": "marketing_profile.tags",
+            "example_value": ["价格敏感", "已问课程安排"],
+            "enabled": True,
+            "required": False,
+            "sort_order": 80,
+        },
+        {
+            "variable_key": "message_activity_level",
+            "display_name": "消息活跃度",
+            "description": "消息活跃同步产出的活跃度分层。",
+            "source": "message_activity_sync",
+            "example_value": "active",
+            "enabled": True,
+            "required": False,
+            "sort_order": 90,
+        },
+        {
+            "variable_key": "latest_agent_outputs",
+            "display_name": "最近 Agent 输出",
+            "description": "同一成员最近的 Agent 输出摘要。",
+            "source": "agent_output_ledger",
+            "example_value": ["pricing_agent: 价格异议解释", "closing_agent: 建议预约试听"],
+            "enabled": True,
+            "required": False,
+            "sort_order": 100,
+        },
+    ]
+
+
+CHILD_AGENT_CONFIG_DEFINITIONS = (
+    {
+        "agent_code": "welcome_agent",
+        "display_name": "欢迎接待 Agent",
+        "pool_keys": ["new_user"],
+        "role_prompt": "你是自动化转化里的欢迎接待 Agent，职责是在首次对话中建立关系、识别意图，并避免过度销售。",
+        "task_prompt": "基于最近消息和成员上下文，输出一条适合首次接待的跟进建议与草稿回复；如果信息不足，明确说明缺口并保持克制。",
+        "variables": _common_variables(),
+        "output_schema": _common_output_schema(),
+    },
+    {
+        "agent_code": "pricing_agent",
+        "display_name": "价格答疑 Agent",
+        "pool_keys": ["inactive_normal", "inactive_focus"],
+        "role_prompt": "你是自动化转化里的价格答疑 Agent，负责围绕价格、价值、支付与方案选择给出清晰说明，不夸大承诺。",
+        "task_prompt": "识别客户当前的价格疑问，输出结构化判断、建议池子/下一步动作和一段可发送的价格解释草稿。",
+        "variables": _common_variables(),
+        "output_schema": _common_output_schema(),
+    },
+    {
+        "agent_code": "proof_agent",
+        "display_name": "案例证明 Agent",
+        "pool_keys": ["active_normal"],
+        "role_prompt": "你是自动化转化里的案例证明 Agent，职责是补充案例、证据和可信背书，帮助客户建立信任。",
+        "task_prompt": "结合当前阶段和客户疑虑，生成证据型跟进建议，输出理由、下一步动作和一段案例说明草稿。",
+        "variables": _common_variables(),
+        "output_schema": _common_output_schema(),
+    },
+    {
+        "agent_code": "closing_agent",
+        "display_name": "成交推进 Agent",
+        "pool_keys": ["active_focus", "silent", "won"],
+        "role_prompt": "你是自动化转化里的成交推进 Agent，职责是推进预约、付款、确认下一步，但不能替代人工做高风险承诺。",
+        "task_prompt": "基于最近上下文输出成交推进建议，必要时提示人工复核，并返回结构化 next_action 与 draft_reply。",
+        "variables": _common_variables(),
+        "output_schema": _common_output_schema(),
+    },
+)
+
+CHILD_AGENT_CONFIG_MAP = {str(item["agent_code"]): dict(item) for item in CHILD_AGENT_CONFIG_DEFINITIONS}
+CHILD_AGENT_ORDER = [str(item["agent_code"]) for item in CHILD_AGENT_CONFIG_DEFINITIONS]
+
+SKILL_REGISTRY_DEFINITIONS = (
+    {
+        "skill_code": "get_pool_snapshot",
+        "agent_code": "shared",
+        "pool_keys": ["new_user", "inactive_normal", "inactive_focus", "active_normal", "active_focus", "silent", "won"],
+        "read_capabilities": ["pool_member_counts", "sample_members", "stage_summary"],
+        "write_capabilities": [],
+        "enabled": True,
+        "input_schema": {"pool_key": "string", "limit": "integer<=50"},
+        "output_schema": {"pool_key": "string", "member_count": "integer", "sample_members": "array"},
+        "permission_notes": "只读查询；不返回完整敏感消息原文。",
+        "idempotency_notes": "纯读取，无需幂等键。",
+        "audit_notes": "所有调用都记录 skill audit。",
+        "example_request": {"pool_key": "inactive_focus", "limit": 10},
+        "example_response": {"pool_key": "inactive_focus", "member_count": 28},
+    },
+    {
+        "skill_code": "get_agent_config",
+        "agent_code": "shared",
+        "pool_keys": [],
+        "read_capabilities": ["draft_version", "published_version", "variables", "output_schema"],
+        "write_capabilities": [],
+        "enabled": True,
+        "input_schema": {"agent_code": "string"},
+        "output_schema": {"agent_code": "string", "draft": "object", "published": "object"},
+        "permission_notes": "只读查询配置，不返回 secret 明文。",
+        "idempotency_notes": "纯读取，无需幂等键。",
+        "audit_notes": "记录来源、operator 与访问结果。",
+        "example_request": {"agent_code": "pricing_agent"},
+        "example_response": {"agent_code": "pricing_agent", "draft_version": 2},
+    },
+    {
+        "skill_code": "save_agent_prompt_draft",
+        "agent_code": "shared",
+        "pool_keys": [],
+        "read_capabilities": [],
+        "write_capabilities": ["draft_prompt", "draft_variables", "draft_output_schema"],
+        "enabled": True,
+        "input_schema": {"agent_code": "string", "task_prompt": "string", "role_prompt": "string", "idempotency_key": "string"},
+        "output_schema": {"agent_code": "string", "draft_version": "integer", "updated_at": "string"},
+        "permission_notes": "只允许写草稿，不直接发布。",
+        "idempotency_notes": "建议携带 idempotency_key，避免重复保存。",
+        "audit_notes": "记录修改来源、变更摘要和幂等键。",
+        "example_request": {"agent_code": "pricing_agent", "task_prompt": "更新后的任务提示词", "idempotency_key": "draft-001"},
+        "example_response": {"agent_code": "pricing_agent", "draft_version": 3},
+    },
+    {
+        "skill_code": "list_agent_outputs",
+        "agent_code": "shared",
+        "pool_keys": [],
+        "read_capabilities": ["output_ledger", "filters", "pagination"],
+        "write_capabilities": [],
+        "enabled": True,
+        "input_schema": {"filters": "object", "page": "integer", "page_size": "integer<=100"},
+        "output_schema": {"rows": "array", "page": "integer", "total": "integer"},
+        "permission_notes": "默认返回脱敏文本与结构化摘要。",
+        "idempotency_notes": "纯读取，无需幂等键。",
+        "audit_notes": "记录筛选条件和页码。",
+        "example_request": {"filters": {"agent_code": "pricing_agent"}, "page": 1, "page_size": 20},
+        "example_response": {"rows": [{"output_type": "agent_reply_draft"}], "total": 12},
+    },
+    {
+        "skill_code": "get_agent_output",
+        "agent_code": "shared",
+        "pool_keys": [],
+        "read_capabilities": ["output_detail", "run_context", "normalized_output"],
+        "write_capabilities": [],
+        "enabled": True,
+        "input_schema": {"output_id": "string"},
+        "output_schema": {"output": "object", "run": "object"},
+        "permission_notes": "返回细节前会做敏感字段脱敏。",
+        "idempotency_notes": "纯读取，无需幂等键。",
+        "audit_notes": "记录 output_id 和调用来源。",
+        "example_request": {"output_id": "aout-001"},
+        "example_response": {"output": {"output_id": "aout-001"}, "run": {"run_id": "arun-001"}},
+    },
+    {
+        "skill_code": "get_agent_outputs_by_request",
+        "agent_code": "shared",
+        "pool_keys": [],
+        "read_capabilities": ["output_ledger", "request_lookup"],
+        "write_capabilities": [],
+        "enabled": True,
+        "input_schema": {"request_id": "string"},
+        "output_schema": {"rows": "array"},
+        "permission_notes": "按 request_id 读取同一次执行下的全部输出。",
+        "idempotency_notes": "纯读取，无需幂等键。",
+        "audit_notes": "记录 request_id 和调用来源。",
+        "example_request": {"request_id": "route-req-20260410-001"},
+        "example_response": {"rows": [{"request_id": "route-req-20260410-001"}]},
+    },
+    {
+        "skill_code": "get_agent_outputs_by_user",
+        "agent_code": "shared",
+        "pool_keys": [],
+        "read_capabilities": ["output_ledger", "user_lookup"],
+        "write_capabilities": [],
+        "enabled": True,
+        "input_schema": {"userid": "string", "limit": "integer<=100"},
+        "output_schema": {"rows": "array"},
+        "permission_notes": "按 external_contact_id / userid 查看最近输出。",
+        "idempotency_notes": "纯读取，无需幂等键。",
+        "audit_notes": "记录 userid 和 limit。",
+        "example_request": {"userid": "wm_agent_route_001", "limit": 5},
+        "example_response": {"rows": [{"userid": "wm_agent_route_001"}]},
+    },
+    {
+        "skill_code": "export_agent_outputs",
+        "agent_code": "shared",
+        "pool_keys": [],
+        "read_capabilities": ["export_job"],
+        "write_capabilities": ["export_task"],
+        "enabled": True,
+        "input_schema": {"filters": "object", "requested_by": "string"},
+        "output_schema": {"job": "object"},
+        "permission_notes": "只允许创建导出任务，不直接暴露未脱敏原始文件内容。",
+        "idempotency_notes": "建议按筛选条件生成 export job id。",
+        "audit_notes": "导出任务创建与下载都要记录操作来源。",
+        "example_request": {"filters": {"agent_code": "pricing_agent"}, "requested_by": "lobster"},
+        "example_response": {"job": {"status": "queued"}},
+    },
+    {
+        "skill_code": "suggest_pool_action",
+        "agent_code": "shared",
+        "pool_keys": ["new_user", "inactive_normal", "inactive_focus", "active_normal", "active_focus", "silent"],
+        "read_capabilities": ["member_detail", "stage_context"],
+        "write_capabilities": [],
+        "enabled": True,
+        "input_schema": {"external_contact_id": "string", "phone": "string"},
+        "output_schema": {"next_action": "string", "target_pool": "string", "reason": "string"},
+        "permission_notes": "只给建议，不直接落库改池。",
+        "idempotency_notes": "纯建议，无需幂等键。",
+        "audit_notes": "建议结果会进入 Agent Output Ledger。",
+        "example_request": {"external_contact_id": "wm_agent_route_001"},
+        "example_response": {"next_action": "keep_followup", "target_pool": "inactive_normal"},
+    },
+)
+
+SKILL_REGISTRY_MAP = {str(item["skill_code"]): dict(item) for item in SKILL_REGISTRY_DEFINITIONS}
+SKILL_REGISTRY_ORDER = [str(item["skill_code"]) for item in SKILL_REGISTRY_DEFINITIONS]
+
 
 def default_agent_prompt_payloads() -> list[dict[str, Any]]:
     return [
@@ -61,3 +418,67 @@ def default_agent_prompt_payloads() -> list[dict[str, Any]]:
         }
         for item in AGENT_PROMPT_DEFINITIONS
     ]
+
+
+def default_agent_router_payload() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "webhook_url": "",
+        "signature_token": "",
+        "signature_secret": "",
+        "signature_header": "X-Lobster-Signature",
+        "timeout_seconds": 8,
+        "retry_count": 1,
+        "fallback_strategy": dict(ROUTER_FALLBACK_DEFAULT),
+        "request_sample": dict(ROUTER_REQUEST_SAMPLE),
+        "response_sample": dict(ROUTER_RESPONSE_SAMPLE),
+    }
+
+
+def default_agent_config_payloads() -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for item in CHILD_AGENT_CONFIG_DEFINITIONS:
+        payloads.append(
+            {
+                "agent_code": str(item["agent_code"]),
+                "display_name": str(item["display_name"]),
+                "pool_keys": list(item.get("pool_keys") or []),
+                "enabled": True,
+                "draft_role_prompt": str(item["role_prompt"]),
+                "draft_task_prompt": str(item["task_prompt"]),
+                "draft_variables": list(item.get("variables") or []),
+                "draft_output_schema": list(item.get("output_schema") or []),
+                "published_role_prompt": str(item["role_prompt"]),
+                "published_task_prompt": str(item["task_prompt"]),
+                "published_variables": list(item.get("variables") or []),
+                "published_output_schema": list(item.get("output_schema") or []),
+                "draft_version": 1,
+                "published_version": 1,
+                "last_modified_source": "seed",
+                "last_change_summary": "初始化默认 Agent 配置",
+            }
+        )
+    return payloads
+
+
+def default_skill_registry_payloads() -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for item in SKILL_REGISTRY_DEFINITIONS:
+        payloads.append(
+            {
+                "skill_code": str(item["skill_code"]),
+                "agent_code": str(item["agent_code"]),
+                "pool_keys": list(item.get("pool_keys") or []),
+                "read_capabilities": list(item.get("read_capabilities") or []),
+                "write_capabilities": list(item.get("write_capabilities") or []),
+                "enabled": bool(item.get("enabled", True)),
+                "input_schema": dict(item.get("input_schema") or {}),
+                "output_schema": dict(item.get("output_schema") or {}),
+                "permission_notes": str(item.get("permission_notes") or ""),
+                "idempotency_notes": str(item.get("idempotency_notes") or ""),
+                "audit_notes": str(item.get("audit_notes") or ""),
+                "example_request": dict(item.get("example_request") or {}),
+                "example_response": dict(item.get("example_response") or {}),
+            }
+        )
+    return payloads

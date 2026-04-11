@@ -10,6 +10,13 @@ from ..domains.admin_dashboard import (
     build_system_status_payload,
     list_admin_navigation,
 )
+from ..domains.followup_orchestrator import is_followup_orchestrator_enabled
+from ..domains.customer_pulse import is_customer_pulse_inbox_enabled
+from ..domains.customer_pulse.access import (
+    CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
+    current_customer_pulse_request_access_context,
+    customer_pulse_has_permission,
+)
 from .common import _deprecated_admin_redirect
 
 
@@ -51,6 +58,15 @@ def render_admin_user_ops_shell():
 
 
 def admin_console_home():
+    access_context = current_customer_pulse_request_access_context()
+    customer_pulse_page_visible = is_customer_pulse_inbox_enabled(access_context=access_context) and customer_pulse_has_permission(
+        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
+        access_context=access_context,
+    )
+    followup_orchestrator_page_visible = is_followup_orchestrator_enabled(access_context=access_context) and customer_pulse_has_permission(
+        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
+        access_context=access_context,
+    )
     quick_links = [
         {
             "label": "进入客户中心",
@@ -67,6 +83,28 @@ def admin_console_home():
             "description": "查看运营名单、班期、导入记录和作业状态。",
             "href": url_for("api.admin_console_user_ops"),
         },
+        *(
+            [
+                {
+                    "label": "进入 AI推进",
+                    "description": "按行动卡流查看今天该跟进谁、先做什么。",
+                    "href": url_for("api.admin_customer_pulse_inbox"),
+                }
+            ]
+            if customer_pulse_page_visible
+            else []
+        ),
+        *(
+            [
+                {
+                    "label": "进入团队编排",
+                    "description": "按任务包、波次和团队负载查看今天谁接谁、哪些客户需要升级。",
+                    "href": url_for("api.admin_followup_orchestrator"),
+                }
+            ]
+            if followup_orchestrator_page_visible
+            else []
+        ),
         {
             "label": "进入同步任务",
             "description": "查看聊天同步、回调状态、消息批次和待处理作业。",

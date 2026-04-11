@@ -9,6 +9,7 @@ DEFAULT_OPENCLAW_WEBHOOK_URL = "http://claw.youcangogogo.com/webhook"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_ROUTER_MODEL = "deepseek-chat"
 DEFAULT_DEEPSEEK_EXECUTION_MODEL = "deepseek-chat"
+DEFAULT_DEEPSEEK_REASONER_MODEL = "deepseek-reasoner"
 DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = 30
 
 SENSITIVE_KEYS = {
@@ -104,6 +105,7 @@ def list_settings_snapshot(config: dict[str, Any]) -> dict[str, str]:
         "DEEPSEEK_BASE_URL",
         "DEEPSEEK_ROUTER_MODEL",
         "DEEPSEEK_EXECUTION_MODEL",
+        "DEEPSEEK_REASONER_MODEL",
         "DEEPSEEK_TIMEOUT_SECONDS",
         "OPENCLAW_WEBHOOK_URL",
         "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN",
@@ -117,6 +119,17 @@ def list_settings_snapshot(config: dict[str, Any]) -> dict[str, str]:
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
         "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED",
         "QUESTIONNAIRE_EXTERNAL_PUSH_TIMEOUT_SECONDS",
+        "ai_customer_pulse",
+        "ai_followup_orchestrator",
+        "CUSTOMER_PULSE_HIGH_PRIORITY_THRESHOLD",
+        "CUSTOMER_PULSE_SHOW_LOW_CONFIDENCE_SUGGESTIONS",
+        "CUSTOMER_PULSE_ALLOWED_ACTION_TYPES",
+        "CUSTOMER_PULSE_DEEPSEEK_USE_REASONER",
+        "CUSTOMER_PULSE_TENANT_MODE",
+        "CUSTOMER_PULSE_EXTERNAL_ENFORCE_REQUEST_SCOPED",
+        "CUSTOMER_PULSE_TENANT_ACCESS_POLICY_JSON",
+        "CUSTOMER_PULSE_FLAG_POLICY_JSON",
+        "FOLLOWUP_ORCHESTRATOR_DEEPSEEK_USE_REASONER",
     ]
     snapshot: dict[str, str] = {}
     for key in keys:

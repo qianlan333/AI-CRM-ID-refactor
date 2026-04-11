@@ -201,16 +201,41 @@ python app.py init-db
 
 - `POST /api/admin/automation-conversion/sop/run-due`
 
-推荐每分钟执行一次：
+本仓库现在正式交付了统一 due runner 脚本：
+
+- `scripts/run_automation_conversion_due_jobs.py`
+
+当前 registry 默认纳入：
+
+- `sop`
+
+保留兼容的单任务脚本：
+
+- `scripts/run_automation_sop.py`
+
+优先使用仓库内的 systemd timer，而不是手写 cron：
+
+```bash
+sudo cp deploy/openclaw-automation-conversion-due-runner.service /etc/systemd/system/
+sudo cp deploy/openclaw-automation-conversion-due-runner.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now openclaw-automation-conversion-due-runner.timer
+sudo systemctl status openclaw-automation-conversion-due-runner.timer --no-pager
+```
+
+对应 service 会每 15 分钟轮询一次 due jobs，并：
+
+- 进入 `/home/ubuntu/极简 crm`
+- source `/home/ubuntu/.openclaw-wecom-pg.env`
+- 执行 `python scripts/run_automation_conversion_due_jobs.py`
+
+如果暂时仍使用 cron，至少统一改成调用仓库脚本，而不是继续把 curl 命令散落在 crontab 里：
 
 ```cron
-* * * * * cd /home/ubuntu/极简\ crm && \
+ */15 * * * * cd /home/ubuntu/极简\ crm && \
   source /home/ubuntu/.openclaw-wecom-pg.env && \
-  curl -fsS -X POST http://127.0.0.1:5001/api/admin/automation-conversion/sop/run-due \
-    -H "Authorization: Bearer ${AUTOMATION_INTERNAL_API_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{"operator":"automation_sop_runner"}' \
-  >> /var/log/aicrm/automation_sop_runner.log 2>&1
+  source /home/ubuntu/venvs/openclaw/bin/activate && \
+  python scripts/run_automation_conversion_due_jobs.py >> /var/log/aicrm/automation_conversion_due_runner.log 2>&1
 ```
 
 如果 runner 没挂上，会出现：

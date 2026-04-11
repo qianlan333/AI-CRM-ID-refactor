@@ -35,6 +35,7 @@ _SIDEBAR_SWITCHABLE_POOL_STAGE_KEYS = {
     "pool/inactive_focus",
     "pool/active_normal",
     "pool/active_focus",
+    "pool/silent",
 }
 
 

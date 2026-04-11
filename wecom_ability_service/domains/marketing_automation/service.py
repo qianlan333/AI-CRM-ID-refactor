@@ -1982,6 +1982,11 @@ def evaluate_customer_marketing_state(
         ),
     )
     silent_threshold_days = _resolve_silent_threshold_days(config, pool_key=preview_base_pool_key)
+    override_payload = dict(state_payload_overrides or {})
+    force_base_entered_at = ""
+    override_manual_segment = _normalize_followup_segment(override_payload.get("manual_followup_segment"))
+    if override_manual_segment in {FOLLOWUP_SEGMENT_NORMAL, FOLLOWUP_SEGMENT_FOCUS}:
+        force_base_entered_at = _normalized_text(override_payload.get("manual_followup_segment_at")) or now_text
     calculated_state = _calculate_marketing_state(
         has_questionnaire_submission=has_questionnaire_submission,
         questionnaire_segment=(
@@ -2004,6 +2009,7 @@ def evaluate_customer_marketing_state(
         existing_state_payload=existing_payload,
         now=now_text,
         converted_at=last_conversion_marked_at,
+        force_base_entered_at=force_base_entered_at,
     )
 
     followup_segment = _normalized_text(calculated_state.get("current_segment")) or FOLLOWUP_SEGMENT_UNKNOWN
@@ -2533,6 +2539,7 @@ def set_manual_followup_segment(
         _pool_stage_key(POOL_INACTIVE_FOCUS),
         _pool_stage_key(POOL_ACTIVE_NORMAL),
         _pool_stage_key(POOL_ACTIVE_FOCUS),
+        _pool_stage_key(POOL_SILENT),
     }:
         raise ValueError("current pool does not support manual followup switching")
     marketing_state = evaluate_customer_marketing_state(

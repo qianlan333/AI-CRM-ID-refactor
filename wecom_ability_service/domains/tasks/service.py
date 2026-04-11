@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...wecom_client import WeComClient
+from .private_message import build_private_message_request_payload
 from . import repo
 
 _MARK_ENROLLED_FEEDBACK_TYPES = {
@@ -76,6 +77,46 @@ def _sync_conversion_truth_from_feedback(
 
 def save_outbound_task(task_type: str, request_payload: dict[str, Any], response_payload: dict[str, Any]) -> int:
     return repo.save_outbound_task(task_type, request_payload, response_payload)
+
+
+def save_local_private_message_draft(
+    payload: dict[str, Any],
+    *,
+    source: str = "",
+) -> dict[str, Any]:
+    normalized_payload, image_count = build_private_message_request_payload(dict(payload or {}))
+    response_payload = {
+        "draft_only": True,
+        "status": "draft",
+        "image_count": image_count,
+        "source": _normalized_text(source) or "customer_pulse",
+    }
+    task_id = repo.save_outbound_task_record(
+        "private_message",
+        normalized_payload,
+        response_payload,
+        status="draft",
+    )
+    return {
+        "task_id": int(task_id),
+        "request_payload": normalized_payload,
+        "response_payload": response_payload,
+        "image_count": image_count,
+        "status": "draft",
+    }
+
+
+def update_outbound_task_status(
+    task_id: int,
+    *,
+    status: str,
+    response_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return repo.update_outbound_task_status(task_id, status=status, response_payload=response_payload)
+
+
+def get_outbound_task(task_id: int) -> dict[str, Any] | None:
+    return repo.get_outbound_task(task_id)
 
 
 def dispatch_wecom_task(task_type: str, fn_name: str, payload: dict[str, Any]) -> dict[str, Any]:

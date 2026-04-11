@@ -9,7 +9,14 @@ import pytest
 import requests
 
 from wecom_ability_service import create_app
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import _sqlite_table_columns, get_db, init_db
+from wecom_ability_service.domains.automation_conversion import (
+    append_agent_output,
+    create_agent_run,
+    ensure_agent_orchestration_defaults,
+    get_agent_config_detail,
+    save_agent_router_settings,
+)
 from wecom_ability_service.domains.automation_conversion.agents.llm_client import (
     DeepSeekClientError,
     call_deepseek_agent,
@@ -48,6 +55,25 @@ def _build_stage_send_form_data(
     if images:
         payload["images"] = [(BytesIO(file_bytes), file_name, mime_type) for file_name, file_bytes, mime_type in images]
     return payload
+
+
+def _admin_action_token(client, path: str = "/admin/automation-conversion/run-center?tab=agent-orchestration&subtab=agents") -> str:
+    client.get(path, follow_redirects=True)
+    with client.session_transaction() as session:
+        return str(session["admin_console_action_token"])
+
+
+def _mcp_call(client, name: str, arguments: dict[str, object]):
+    return client.post(
+        "/mcp",
+        headers={"Authorization": "Bearer mcp-token"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+    )
 
 
 @pytest.fixture()
@@ -489,12 +515,20 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
         db = get_db()
         table_names = _sqlite_object_names(db, "table")
         index_names = _sqlite_object_names(db, "index")
+        agent_output_columns = _sqlite_table_columns(db, "automation_agent_output")
 
         assert {
             "automation_channel",
             "automation_member",
             "automation_event",
             "automation_ai_push_log",
+            "automation_agent_router_config",
+            "automation_agent_config",
+            "automation_agent_skill_registry",
+            "automation_agent_run",
+            "automation_agent_output",
+            "automation_agent_output_export_job",
+            "automation_agent_skill_call_audit",
             "automation_message_activity_sync_run",
             "automation_message_activity_sync_item",
             "automation_reply_monitor_config",
@@ -509,10 +543,25 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
         }.issubset(table_names)
         assert {
             "uq_automation_member_external_non_empty",
-            "idx_automation_member_phone",
-            "idx_automation_member_pool",
-            "idx_automation_event_member_created",
-            "idx_automation_ai_push_log_status",
+                "idx_automation_member_phone",
+                "idx_automation_member_pool",
+                "idx_automation_event_member_created",
+                "idx_automation_ai_push_log_status",
+                "idx_automation_agent_router_config_updated",
+                "idx_automation_agent_config_enabled",
+                "idx_automation_agent_config_updated",
+                "idx_automation_agent_skill_registry_enabled",
+                "idx_automation_agent_run_request",
+                "idx_automation_agent_run_user",
+                "idx_automation_agent_run_agent_created",
+                "idx_automation_agent_output_request",
+                "idx_automation_agent_output_user",
+                "idx_automation_agent_output_agent_type",
+                "idx_automation_agent_output_applied",
+                "idx_automation_agent_output_target_agent",
+                "idx_automation_agent_output_outcome_status",
+                "idx_automation_agent_output_export_job_status",
+                "idx_automation_agent_skill_call_audit_skill_created",
             "idx_automation_message_activity_sync_run_finished",
             "idx_automation_message_activity_sync_item_run",
             "idx_automation_message_activity_sync_item_match_key",
@@ -529,6 +578,7 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "idx_automation_sop_batch_item_batch_created",
             "uq_automation_sop_batch_item_member_pool_day_success",
         }.issubset(index_names)
+        assert {"adopted_by", "adopted_action", "adopted_at", "outcome_status", "outcome_value"}.issubset(agent_output_columns)
 
 
 def test_automation_overview_counts_only_from_automation_member(app, client):
@@ -2075,6 +2125,24 @@ def test_model_infra_prompt_registry_seeds_and_saves_all_agent_prompts(app):
         assert prompt_map[agent_code]["prompt_text"] == f"{agent_code} prompt text v2"
 
 
+def test_save_model_infra_prompt_syncs_child_agent_draft_config(app):
+    with app.app_context():
+        ensure_agent_orchestration_defaults()
+        before = get_agent_config_detail("welcome_agent")
+        save_model_infra_prompt(
+            agent_code="welcome_agent",
+            display_name="欢迎接待 Agent v3",
+            prompt_text="欢迎接待 Agent 的任务提示词 v3",
+            enabled=True,
+        )
+        after = get_agent_config_detail("welcome_agent")
+
+    assert before["display_name"] != after["display_name"]
+    assert after["display_name"] == "欢迎接待 Agent v3"
+    assert after["draft"]["task_prompt"] == "欢迎接待 Agent 的任务提示词 v3"
+    assert after["published"]["task_prompt"] != "欢迎接待 Agent 的任务提示词 v3"
+
+
 def test_deepseek_llm_client_success_logs_and_parses_json(app, monkeypatch):
     captured: dict[str, object] = {}
 
@@ -2193,8 +2261,8 @@ def test_model_infra_page_renders_and_homepage_keeps_existing_sections(app, clie
     assert model_infra_page.status_code == 200
     assert "DeepSeek 配置" in model_infra_html
     assert "Prompt Registry" in model_infra_html
-    assert "中央路由 Agent" in model_infra_html
-    assert "欢迎接待 Agent" in model_infra_html
+    assert "Agent Orchestration" in model_infra_html
+    assert "中央路由不再在这里作为普通 Prompt 文本框维护" in model_infra_html
     assert "最近模型调用日志" in model_infra_html
     assert "最近执行结果" not in model_infra_html
 
@@ -2205,6 +2273,267 @@ def test_model_infra_page_renders_and_homepage_keeps_existing_sections(app, clie
     assert "模型基础设施" in home_html
     assert "消息活跃同步" in home_html
     assert "自动接话监控" in home_html
+
+
+def test_run_center_agent_orchestration_router_subtab_uses_webhook_contract_not_prompt_box(app, client):
+    response = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={"tab": "agent-orchestration", "subtab": "router"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Agent Orchestration" in html
+    assert "龙虾路由接入配置" in html
+    assert "启用中央路由接入" in html
+    assert "龙虾 webhook 地址" in html
+    assert "请求签名 Token" in html
+    assert "fallback" in html
+    assert "请求 / 返回协议样例" in html
+    assert 'name="prompt_text"' not in html
+
+
+def test_save_agent_router_settings_keeps_existing_secret_when_form_leaves_it_blank(app):
+    with app.app_context():
+        ensure_agent_orchestration_defaults()
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "router-token-001",
+                "signature_secret": "router-secret-001",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 6,
+                "retry_count": 2,
+                "fallback_strategy": {"default_agent_code": "welcome_agent", "default_pool": "new_user"},
+            },
+            operator_id="tester",
+        )
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router-v2",
+                "signature_token": "",
+                "signature_secret": "",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 7,
+                "retry_count": 1,
+                "fallback_strategy": {"default_agent_code": "pricing_agent", "default_pool": "inactive_normal"},
+            },
+            operator_id="tester-2",
+        )
+        row = get_db().execute(
+            """
+            SELECT webhook_url, signature_token, signature_secret, timeout_seconds, retry_count
+            FROM automation_agent_router_config
+            WHERE config_key = 'default'
+            """
+        ).fetchone()
+
+    assert dict(row) == {
+        "webhook_url": "https://lobster.example.com/router-v2",
+        "signature_token": "router-token-001",
+        "signature_secret": "router-secret-001",
+        "timeout_seconds": 7,
+        "retry_count": 1,
+    }
+
+
+def test_run_center_agent_orchestration_agents_subtab_shows_split_prompt_layers(app, client):
+    response = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={"tab": "agent-orchestration", "subtab": "agents"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "子 Agent 列表" in html
+    assert "Agent 详情" in html
+    assert "角色提示词" in html
+    assert "任务 / 文本提示词" in html
+    assert "变量配置（JSON）" in html
+    assert "输出协议（JSON）" in html
+    assert "草稿态 / 已发布态" in html
+    assert "中央路由不在这里当普通 Prompt 维护" in html
+
+
+def test_run_center_agent_orchestration_metrics_subtab_renders_shadow_metrics(app, client):
+    with app.app_context():
+        create_agent_run(
+            {
+                "run_id": "arun-metrics-001",
+                "request_id": "req-metrics-001",
+                "external_contact_id": "wm_metrics_001",
+                "userid": "sales_metrics",
+                "agent_code": "central_router_agent",
+                "agent_type": "router",
+                "provider": "lobster_shadow",
+                "input_snapshot": {"messages": [{"content": "课程怎么收费"}]},
+                "variables_snapshot": {"current_pool": "inactive_normal"},
+                "final_prompt_preview": "shadow_router_webhook",
+                "role_prompt_version": "router-webhook",
+                "task_prompt_version": "shadow-v1",
+                "status": "success",
+                "latency_ms": 180,
+                "source": "test",
+            }
+        )
+        append_agent_output(
+            {
+                "output_id": "aout-metrics-001",
+                "run_id": "arun-metrics-001",
+                "request_id": "req-metrics-001",
+                "userid": "sales_metrics",
+                "external_contact_id": "wm_metrics_001",
+                "agent_code": "central_router_agent",
+                "output_type": "route_decision",
+                "raw_output_text": '{"agent_code":"pricing_agent"}',
+                "normalized_output": {"agent_code": "pricing_agent", "confidence": 0.88, "reason": "价格问题"},
+                "rendered_output_text": "价格问题",
+                "target_agent_code": "pricing_agent",
+                "target_pool": "inactive_normal",
+                "confidence": 0.88,
+                "reason": "价格问题",
+                "applied_status": "shadow_observed",
+                "outcome_status": "dispatch_success",
+                "outcome_value": '{"queue_id":1}',
+            }
+        )
+
+    response = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={"tab": "agent-orchestration", "subtab": "metrics"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "最小 Metrics" in html
+    assert "调用量" in html
+    assert "成功率" in html
+    assert "fallback 率" in html
+    assert "schema 非法率" in html
+    assert "采纳率" in html
+    assert "采纳后转化率" in html
+    assert "pricing_agent" in html
+
+
+def test_reply_monitor_dispatch_runs_router_shadow_mode_and_records_outcome(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_shadow_001", mobile="13800009181", owner_userid="sales_01", customer_name="shadow")
+    _seed_automation_member(app, external_contact_id="wm_reply_shadow_001", phone="13800009181", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    for idx in range(1, 26):
+        _seed_archived_message(
+            app,
+            msgid=f"msg-rm-shadow-{idx:03d}",
+            seq=idx,
+            external_userid="wm_reply_shadow_001",
+            owner_userid="sales_01",
+            sender="wm_reply_shadow_001" if idx % 2 else "sales_01",
+            receiver="sales_01" if idx % 2 else "wm_reply_shadow_001",
+            content=f"shadow message {idx}",
+            send_time=f"2026-04-09 10:{idx:02d}:00",
+        )
+    _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_shadow_001")
+
+    captured_router: dict[str, object] = {}
+
+    class _ShadowRouterResponse:
+        status_code = 200
+        text = json.dumps(
+            {
+                "userid": "sales_01",
+                "external_contact_id": "wm_reply_shadow_001",
+                "agent_code": "pricing_agent",
+                "confidence": 0.84,
+                "reason": "客户连续追问价格",
+                "target_pool": "inactive_normal",
+                "need_human_review": False,
+                "response_version": "router-v1",
+            },
+            ensure_ascii=False,
+        )
+
+        def json(self):
+            return json.loads(self.text)
+
+    def _fake_router_post(url, data=None, headers=None, timeout=None):
+        captured_router.update(
+            {
+                "url": url,
+                "body": json.loads((data or b"{}").decode("utf-8")),
+                "headers": dict(headers or {}),
+                "timeout": timeout,
+            }
+        )
+        return _ShadowRouterResponse()
+
+    def _fake_send_outbound_webhook(*, event_type, payload, source_key, source_id):
+        return {"ok": True, "delivery": {"id": 9911}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", _fake_router_post)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook", _fake_send_outbound_webhook)
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        run_row = get_db().execute(
+            """
+            SELECT provider, agent_type, status, request_id
+            FROM automation_agent_run
+            WHERE agent_code = 'central_router_agent'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        output_row = get_db().execute(
+            """
+            SELECT output_type, target_agent_code, confidence, reason, need_human_review, applied_status, outcome_status, outcome_value
+            FROM automation_agent_output
+            WHERE agent_code = 'central_router_agent'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert dispatch["ok"] is True
+    assert dispatch["shadow_router"]["shadow_called"] is True
+    assert captured_router["url"] == "https://lobster.example.com/router"
+    assert captured_router["timeout"] == 5
+    assert len(captured_router["body"]["messages"]) == 20
+    assert captured_router["body"]["userid"] == "sales_01"
+    assert captured_router["body"]["member_snapshot"]["current_pool"] in {"new_user", "inactive_normal"}
+    assert "current_stage" in captured_router["body"]["member_snapshot"]
+    assert captured_router["body"]["allowed_agents"]
+    assert captured_router["headers"]["Authorization"] == "Bearer lobster-token"
+    assert captured_router["headers"]["X-Shadow-Mode"] == "1"
+    assert dict(run_row)["provider"] == "lobster_shadow"
+    assert dict(run_row)["agent_type"] == "router"
+    assert dict(output_row)["output_type"] == "route_decision"
+    assert dict(output_row)["target_agent_code"] == "pricing_agent"
+    assert dict(output_row)["confidence"] == pytest.approx(0.84)
+    assert dict(output_row)["reason"] == "客户连续追问价格"
+    assert dict(output_row)["need_human_review"] in {0, False}
+    assert dict(output_row)["applied_status"] == "shadow_observed"
+    assert dict(output_row)["outcome_status"] == "dispatch_success"
+    assert '"shadow_mode": true' in str(dict(output_row)["outcome_value"]).lower()
 
 
 def test_automation_conversion_home_stage_cards_show_view_and_send_actions(app, client):
@@ -2412,7 +2741,7 @@ def test_reply_monitor_capture_merges_new_messages_into_existing_pending_item(ap
 
 
 def test_reply_monitor_capture_and_dispatch_respect_quiet_hours(app, monkeypatch):
-    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="23:00", quiet_hours_end="09:00")
     _seed_contact(app, external_userid="wm_reply_quiet_001", mobile="13800009121", owner_userid="sales_01", customer_name="reply-quiet")
     _seed_automation_member(app, external_contact_id="wm_reply_quiet_001", phone="13800009121", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-quiet-001", seq=1, external_userid="wm_reply_quiet_001", owner_userid="sales_01", sender="wm_reply_quiet_001", receiver="sales_01", content="夜间消息", send_time="2026-04-09 23:14:00")
@@ -3448,6 +3777,380 @@ def test_automation_conversion_run_center_overview_tab_avoids_heavy_operation_fo
     assert "保存 DeepSeek 配置" not in html
 
 
+def test_admin_agent_config_draft_validation_keeps_raw_json_on_error(app, client):
+    action_token = _admin_action_token(
+        client,
+        "/admin/automation-conversion/run-center?tab=agent-orchestration&subtab=agents&agent=welcome_agent",
+    )
+
+    response = client.post(
+        "/admin/automation-conversion/agent-orchestration/agents/welcome_agent/save-draft",
+        data={
+            "admin_action_token": action_token,
+            "display_name": "欢迎接待 Agent",
+            "enabled": "1",
+            "role_prompt": "你是欢迎接待 Agent。",
+            "task_prompt": "请生成欢迎回复。",
+            "variables_json": '[{"variable_key":"recent_messages"}',
+            "output_schema_json": '[{"field":"draft_reply"}]',
+            "change_summary": "测试保留非法 JSON 输入",
+        },
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "variables_json must be valid JSON array" in html
+    assert 'name="variables_json"' in html
+    assert "recent_messages" in html
+    assert "输出协议（JSON）" in html
+
+
+def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, client):
+    _seed_contact(app, external_userid="wm_agent_ledger_001", mobile="13800009701", owner_userid="sales_agent", customer_name="账本客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_agent_ledger_001",
+        phone="13800009701",
+        owner_staff_id="sales_agent",
+        current_pool="new_user",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+    )
+
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-test-ledger-001",
+                "request_id": "req-ledger-001",
+                "batch_id": "batch-ledger-001",
+                "userid": "sales_agent",
+                "external_contact_id": "wm_agent_ledger_001",
+                "agent_code": "welcome_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "input_snapshot": {"messages": ["你好"], "member_snapshot": {"current_pool": "new_user"}},
+                "variables_snapshot": {"current_pool": "new_user", "recent_messages": ["你好"]},
+                "final_prompt_preview": "角色+任务+变量",
+                "role_prompt_version": "v2",
+                "task_prompt_version": "v5",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        output = append_agent_output(
+            {
+                "output_id": "aout-test-ledger-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wm_agent_ledger_001",
+                "agent_code": "welcome_agent",
+                "output_type": "agent_reply_draft",
+                "raw_output_text": "欢迎联系我",
+                "normalized_output": {
+                    "agent_code": "welcome_agent",
+                    "userid": "sales_agent",
+                    "target_pool": "new_user",
+                    "confidence": 0.93,
+                    "reason": "新用户需要欢迎回复",
+                    "draft_reply": "欢迎联系我",
+                    "need_human_review": False,
+                },
+                "rendered_output_text": "欢迎联系我",
+                "target_agent_code": "welcome_agent",
+                "target_pool": "new_user",
+                "confidence": 0.93,
+                "reason": "新用户需要欢迎回复",
+                "applied_status": "applied",
+                "applied_at": "2026-04-10 12:00:00",
+            }
+        )
+        append_agent_output(
+            {
+                "output_id": "aout-test-ledger-002",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wm_agent_ledger_001",
+                "agent_code": "welcome_agent",
+                "output_type": "error_output",
+                "raw_output_text": "timeout",
+                "normalized_output": {"status": "timeout"},
+                "rendered_output_text": "timeout",
+                "target_pool": "new_user",
+                "confidence": 0.1,
+                "reason": "请求超时",
+                "applied_status": "pending",
+                "error_code": "timeout",
+                "error_message": "请求超时",
+            }
+        )
+
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "agent-token"
+    list_response = client.get(
+        "/api/admin/automation-conversion/agent-outputs",
+        query_string={
+            "request_id": "req-ledger-001",
+            "current_pool": "new_user",
+            "min_confidence": "0.9",
+            "has_error": "0",
+        },
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    list_payload = list_response.get_json()
+    assert list_response.status_code == 200
+    assert list_payload["ok"] is True
+    assert list_payload["total"] == 1
+    assert list_payload["rows"][0]["output_id"] == output["output_id"]
+    assert list_payload["rows"][0]["raw_output_text"] == "欢迎联系我"
+
+    detail_response = client.get(
+        f"/api/admin/automation-conversion/agent-outputs/{output['output_id']}",
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    detail_payload = detail_response.get_json()
+    assert detail_response.status_code == 200
+    assert detail_payload["ok"] is True
+    assert detail_payload["output"]["output_type"] == "agent_reply_draft"
+    assert detail_payload["run"]["request_id"] == "req-ledger-001"
+    assert detail_payload["output"]["raw_output_text"] == "欢迎联系我"
+    assert detail_payload["run"]["input_snapshot"]["messages"] == ["你好"]
+
+    run_response = client.get(
+        f"/api/admin/automation-conversion/agent-runs/{run['run_id']}",
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    run_payload = run_response.get_json()
+    assert run_response.status_code == 200
+    assert run_payload["ok"] is True
+    assert run_payload["run"]["run_id"] == run["run_id"]
+    assert len(run_payload["run"]["outputs"]) == 2
+
+    export_response = client.post(
+        "/api/admin/automation-conversion/agent-outputs/export",
+        json={"filters": {"request_id": "req-ledger-001"}, "requested_by": "tester"},
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    export_payload = export_response.get_json()
+    assert export_response.status_code == 202
+    assert export_payload["ok"] is True
+    assert export_payload["job"]["status"] == "completed"
+
+    export_job_id = export_payload["job"]["job_id"]
+    export_job_response = client.get(
+        f"/api/admin/automation-conversion/agent-outputs/export/{export_job_id}",
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    assert export_job_response.status_code == 200
+    assert export_job_response.get_json()["job"]["has_file"] is True
+
+    export_file_response = client.get(
+        f"/api/admin/automation-conversion/agent-outputs/export/{export_job_id}",
+        query_string={"download": 1},
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    assert export_file_response.status_code == 200
+    assert export_file_response.mimetype == "application/vnd.ms-excel"
+    assert b"req-ledger-001" in export_file_response.data
+
+    replay_response = client.get(
+        "/api/admin/automation-conversion/agent-replay",
+        query_string={"request_id": "req-ledger-001"},
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    replay_payload = replay_response.get_json()
+    assert replay_response.status_code == 200
+    assert replay_payload["ok"] is True
+    assert replay_payload["selected_run"]["run_id"] == "arun-test-ledger-001"
+    assert replay_payload["final_output"]["output_id"] == "aout-test-ledger-001"
+
+    action_token = _admin_action_token(
+        client,
+        "/admin/automation-conversion/run-center?tab=agent-orchestration&subtab=replay&request_id=req-ledger-001",
+    )
+    replay_admin = client.post(
+        "/admin/automation-conversion/agent-orchestration/replay/arun-test-ledger-001",
+        data={"admin_action_token": action_token},
+        follow_redirects=True,
+    )
+    replay_html = replay_admin.get_data(as_text=True)
+    assert replay_admin.status_code == 200
+    assert "已生成回放副本" in replay_html
+    assert "req-ledger-001" in replay_html
+
+    page_response = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={
+            "tab": "agent-orchestration",
+            "subtab": "outputs",
+            "request_id": "req-ledger-001",
+            "batch_id": "batch-ledger-001",
+            "current_pool": "new_user",
+            "min_confidence": "0.9",
+            "has_error": "0",
+        },
+    )
+    page_html = page_response.get_data(as_text=True)
+    assert page_response.status_code == 200
+    assert "输出记录" in page_html
+    assert "batch_id" in page_html
+    assert "当前池子" in page_html
+    assert "confidence ≥" in page_html
+    assert "是否异常" in page_html
+    assert "req-ledger-001" in page_html
+    assert "敏感内容已隐藏，仅内部 API / Skill 可查看明文" in page_html
+
+
+def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):
+    with app.app_context():
+        create_agent_run(
+            {
+                "run_id": "arun-auth-001",
+                "request_id": "req-auth-001",
+                "agent_code": "central_router_agent",
+                "agent_type": "router",
+                "provider": "lobster_shadow",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        append_agent_output(
+            {
+                "output_id": "aout-auth-001",
+                "run_id": "arun-auth-001",
+                "request_id": "req-auth-001",
+                "agent_code": "central_router_agent",
+                "output_type": "route_decision",
+                "raw_output_text": '{"agent_code":"welcome_agent"}',
+                "normalized_output": {"agent_code": "welcome_agent"},
+                "rendered_output_text": "welcome_agent",
+                "target_agent_code": "welcome_agent",
+                "target_pool": "new_user",
+                "applied_status": "shadow_recorded",
+            }
+        )
+        db = get_db()
+        for idx in range(5):
+            db.execute(
+                """
+                INSERT INTO automation_agent_output_export_job (
+                    job_id, requested_by, filters_json, status, total_count, exported_count, file_name, file_content_base64, error_message, created_at, updated_at, finished_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '')
+                """,
+                (
+                    f"aexp-rate-limit-{idx}",
+                    "tester",
+                    "{}",
+                    "completed",
+                    1,
+                    1,
+                    f"agent-outputs-{idx}.xls",
+                    "",
+                    "",
+                ),
+            )
+        db.commit()
+
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "agent-token"
+    unauthorized = client.get("/api/admin/automation-conversion/agent-outputs")
+    assert unauthorized.status_code == 401
+
+    limited = client.post(
+        "/api/admin/automation-conversion/agent-outputs/export",
+        json={"filters": {"request_id": "req-auth-001"}, "requested_by": "tester"},
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    assert limited.status_code == 429
+    assert limited.get_json()["error"] == "export rate limited, please retry later"
+
+
+def test_mcp_agent_orchestration_tools_list_and_call_outputs(app, client):
+    _seed_contact(app, external_userid="wm_agent_tool_001", mobile="13800009702", owner_userid="sales_tool", customer_name="技能客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_agent_tool_001",
+        phone="13800009702",
+        owner_staff_id="sales_tool",
+        current_pool="inactive_normal",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+    )
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-test-tool-001",
+                "request_id": "req-tool-001",
+                "userid": "sales_tool",
+                "external_contact_id": "wm_agent_tool_001",
+                "agent_code": "pricing_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "input_snapshot": {"messages": ["报价多少"]},
+                "variables_snapshot": {"current_pool": "inactive_normal"},
+                "final_prompt_preview": "prompt",
+                "role_prompt_version": "v1",
+                "task_prompt_version": "v1",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        output = append_agent_output(
+            {
+                "output_id": "aout-test-tool-001",
+                "run_id": run["run_id"],
+                "request_id": "req-tool-001",
+                "userid": "sales_tool",
+                "external_contact_id": "wm_agent_tool_001",
+                "agent_code": "pricing_agent",
+                "output_type": "next_action_suggestion",
+                "raw_output_text": "建议继续报价解释",
+                "normalized_output": {"next_action": "followup"},
+                "rendered_output_text": "建议继续报价解释",
+                "target_pool": "inactive_normal",
+                "confidence": 0.78,
+                "reason": "用户正在询价",
+                "applied_status": "suggested",
+            }
+        )
+
+    tools_response = client.post(
+        "/mcp",
+        headers={"Authorization": "Bearer mcp-token"},
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+    )
+    tool_names = {tool["name"] for tool in tools_response.get_json()["result"]["tools"]}
+    assert {"get_pool_snapshot", "get_agent_config", "list_agent_outputs", "get_agent_output", "export_agent_outputs"}.issubset(tool_names)
+
+    snapshot_payload = _mcp_call(client, "get_pool_snapshot", {"pool_key": "inactive_normal", "limit": 5}).get_json()["result"]["structuredContent"]
+    assert snapshot_payload["pool_key"] == "inactive_normal"
+    assert snapshot_payload["member_count"] >= 1
+
+    outputs_payload = _mcp_call(client, "list_agent_outputs", {"external_contact_id": "wm_agent_tool_001", "page": 1, "page_size": 10}).get_json()["result"]["structuredContent"]
+    assert outputs_payload["total"] >= 1
+    assert any(item["output_id"] == output["output_id"] for item in outputs_payload["rows"])
+    assert any(item["raw_output_text"] == "建议继续报价解释" for item in outputs_payload["rows"])
+
+    output_payload = _mcp_call(client, "get_agent_output", {"output_id": output["output_id"]}).get_json()["result"]["structuredContent"]
+    assert output_payload["output"]["output_id"] == output["output_id"]
+    assert output_payload["output"]["raw_output_text"] == "建议继续报价解释"
+
+    config_payload = _mcp_call(client, "get_agent_config", {"agent_code": "pricing_agent"}).get_json()["result"]["structuredContent"]
+    assert config_payload["agent"]["agent_code"] == "pricing_agent"
+
+    with app.app_context():
+        audit_rows = get_db().execute(
+            "SELECT skill_code, status FROM automation_agent_skill_call_audit ORDER BY id DESC LIMIT 4"
+        ).fetchall()
+    assert {row["skill_code"] for row in audit_rows}.issuperset({"get_pool_snapshot", "list_agent_outputs", "get_agent_output", "get_agent_config"})
+
+
 def test_sop_v1_defaults_seed_three_pool_configs_and_day1_only(app):
     with app.app_context():
         payload = ensure_sop_v1_defaults()
@@ -4077,8 +4780,11 @@ def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeyp
     assert authorized.status_code == 200
     payload = authorized.get_json()
     assert payload["ok"] is True
-    assert payload["scanned_pool_count"] == 1
-    assert payload["created_batch_count"] == 1
+    assert payload["requested_job_codes"] == ["sop"]
+    assert payload["executed_job_count"] == 1
+    assert payload["jobs"][0]["job_code"] == "sop"
+    assert payload["jobs"][0]["result"]["scanned_pool_count"] == 1
+    assert payload["jobs"][0]["result"]["created_batch_count"] == 1
     assert payload["total_success_count"] == 1
     assert len(payload["batch_ids"]) == 1
 
@@ -4109,6 +4815,58 @@ def test_sop_run_due_api_fails_closed_when_token_is_not_configured(app, client, 
     with app.app_context():
         batch_total = get_db().execute("SELECT COUNT(*) AS total FROM automation_sop_batch").fetchone()["total"]
     assert batch_total == 0
+
+
+def test_due_jobs_api_runs_registered_sop_job(app, client, monkeypatch):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "runner-token"
+    _configure_only_sop_pool(app, pool_key="new_user", send_time="09:00")
+    _set_sop_pool_effective_start(app, pool_key="new_user", effective_start_at="2026-04-08 06:00:00")
+    _save_sop_template(app, pool_key="new_user", day_index=1, content="day1 欢迎消息")
+    _seed_contact(app, external_userid="wm_due_runner_001", mobile="13800009591", owner_userid="sales_sop", customer_name="Due Runner 客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_due_runner_001",
+        phone="13800009591",
+        owner_staff_id="sales_sop",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: {"task_id": 819, "wecom_result": {"msgid": "msg-819"}},
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/jobs/run-due",
+        json={"operator": "due-runner", "jobs": ["sop"]},
+        headers={"Authorization": "Bearer runner-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["requested_job_codes"] == ["sop"]
+    assert payload["jobs"][0]["job_code"] == "sop"
+    assert payload["jobs"][0]["result"]["created_batch_count"] == 1
+    assert payload["total_success_count"] == 1
+
+
+def test_due_jobs_api_rejects_unknown_job_code(app, client):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "runner-token"
+
+    response = client.post(
+        "/api/admin/automation-conversion/jobs/run-due",
+        json={"jobs": ["unknown-job"]},
+        headers={"Authorization": "Bearer runner-token"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "unsupported due jobs: unknown-job"
 
 
 def test_sop_run_due_second_pass_does_not_create_duplicate_empty_batch(app, monkeypatch):

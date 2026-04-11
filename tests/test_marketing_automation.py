@@ -1577,7 +1577,7 @@ def test_candidate_router_respects_auto_start_window_boundaries(app, client, mon
     assert blocked_reasons["wm_router_window"] == "blocked_quiet_hours"
 
 
-def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app, client):
+def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app, client, monkeypatch):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=23)
     save_response = client.put("/api/admin/marketing-automation/config", json=_signup_conversion_config_payload(seed))
     assert save_response.status_code == 200
@@ -1601,6 +1601,7 @@ def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app
         hit_question_count=4,
         submitted_at="2026-04-04 13:05:00",
     )
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 13:10:00")
 
     initial_response = client.get(
         "/api/sidebar/marketing-status",
@@ -1950,7 +1951,7 @@ def test_disabled_signup_conversion_config_blocks_candidate_batches(app, client)
     assert payload["items"] == []
 
 
-def test_admin_marketing_automation_preview_returns_current_state_and_hits(app, client):
+def test_admin_marketing_automation_preview_returns_current_state_and_hits(app, client, monkeypatch):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=21)
     save_response = client.put("/api/admin/marketing-automation/config", json=_signup_conversion_config_payload(seed))
     assert save_response.status_code == 200
@@ -1973,6 +1974,7 @@ def test_admin_marketing_automation_preview_returns_current_state_and_hits(app, 
         hit_question_count=3,
         submitted_at="2026-04-04 11:00:00",
     )
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 11:15:00")
 
     response = client.post(
         "/api/admin/marketing-automation/config/preview",
@@ -2038,7 +2040,8 @@ def test_admin_marketing_automation_preview_supports_mobile_only_person(app, cli
     assert payload["summary"]["ineligible_reason"] == "awaiting_questionnaire"
 
 
-def test_admin_marketing_automation_recompute_refreshes_current_and_history(app, client):
+def test_admin_marketing_automation_recompute_refreshes_current_and_history(app, client, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=22)
     save_response = client.put("/api/admin/marketing-automation/config", json=_signup_conversion_config_payload(seed))
     assert save_response.status_code == 200

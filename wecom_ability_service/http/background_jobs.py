@@ -204,6 +204,26 @@ def _process_external_contact_event(event_log_id: int) -> dict:
             )
             refresh_external_contact_identity_owner(corp_id, external_userid)
             try:
+                from ..domains.customer_pulse.access import build_customer_pulse_legacy_tenant_context
+                from ..domains.customer_pulse.service import enqueue_customer_pulse_recompute
+
+                enqueue_customer_pulse_recompute(
+                    external_userid=external_userid,
+                    owner_userid=str(normalized_contact.get("owner_userid") or user_id or "").strip(),
+                    delay_seconds=0,
+                    operator="wecom_callback",
+                    trigger_source="wecom_external_contact_event",
+                    trigger_ref_type="wecom_external_contact_event_logs",
+                    trigger_ref_id=str(event_log_id),
+                    tenant_context=build_customer_pulse_legacy_tenant_context(
+                        operator="wecom_callback",
+                        user_id=user_id,
+                        source="legacy_internal_callback",
+                    ),
+                )
+            except Exception:
+                callback_logger.exception("customer pulse enqueue failed external_userid=%s", external_userid)
+            try:
                 handle_qrcode_enter_from_callback(
                     external_contact_id=external_userid,
                     phone=str(normalized_contact.get("mobile") or "").strip(),
@@ -237,6 +257,26 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                 status="inactive",
             )
             refresh_external_contact_identity_owner(corp_id, external_userid)
+            try:
+                from ..domains.customer_pulse.access import build_customer_pulse_legacy_tenant_context
+                from ..domains.customer_pulse.service import enqueue_customer_pulse_recompute
+
+                enqueue_customer_pulse_recompute(
+                    external_userid=external_userid,
+                    owner_userid=user_id,
+                    delay_seconds=0,
+                    operator="wecom_callback",
+                    trigger_source="wecom_external_contact_event",
+                    trigger_ref_type="wecom_external_contact_event_logs",
+                    trigger_ref_id=str(event_log_id),
+                    tenant_context=build_customer_pulse_legacy_tenant_context(
+                        operator="wecom_callback",
+                        user_id=user_id,
+                        source="legacy_internal_callback",
+                    ),
+                )
+            except Exception:
+                callback_logger.exception("customer pulse enqueue failed external_userid=%s", external_userid)
         else:
             finish_external_contact_event_log(event_log_id, status="ignored")
             callback_logger.info(

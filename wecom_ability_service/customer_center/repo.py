@@ -224,6 +224,50 @@ def fetch_last_message_map(external_userids: list[str]) -> dict[str, str]:
     }
 
 
+def list_customer_agent_output_rows(external_userid: str, *, limit: int = 10) -> list[dict[str, Any]]:
+    normalized_external_userid = str(external_userid or "").strip()
+    if not normalized_external_userid:
+        return []
+    return _fetchall_dict(
+        """
+        SELECT
+            output.id,
+            output.output_id,
+            output.run_id,
+            output.request_id,
+            output.userid,
+            output.external_contact_id,
+            output.agent_code,
+            output.output_type,
+            output.raw_output_text,
+            output.normalized_output_json,
+            output.rendered_output_text,
+            output.target_agent_code,
+            output.target_pool,
+            output.confidence,
+            output.reason,
+            output.need_human_review,
+            output.applied_status,
+            output.error_code,
+            output.error_message,
+            output.created_at,
+            COALESCE(run.input_snapshot_json, '{}') AS input_snapshot_json,
+            COALESCE(run.variables_snapshot_json, '{}') AS variables_snapshot_json,
+            COALESCE(run.status, '') AS run_status,
+            COALESCE(run.created_at, '') AS run_created_at
+        FROM automation_agent_output output
+        LEFT JOIN automation_agent_run run ON run.run_id = output.run_id
+        WHERE output.external_contact_id = ?
+          AND output.output_type IN ('next_action_suggestion', 'agent_reply_draft', 'agent_reply_final')
+          AND COALESCE(output.error_code, '') = ''
+          AND COALESCE(output.error_message, '') = ''
+        ORDER BY output.created_at DESC, output.id DESC
+        LIMIT ?
+        """,
+        (normalized_external_userid, max(1, min(int(limit or 10), 50))),
+    )
+
+
 def fetch_owner_role_map(userids: list[str]) -> dict[str, dict[str, Any]]:
     normalized = [str(userid or "").strip() for userid in userids if str(userid or "").strip()]
     if not normalized:

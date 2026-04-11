@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime as real_datetime
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
@@ -41,6 +42,50 @@ def _make_app(tmp_path):
     with app.app_context():
         init_db()
     return app
+
+
+def _freeze_contract_time(monkeypatch, *, timestamp: str) -> None:
+    from wecom_ability_service.domains.marketing_automation import service as marketing_service
+
+    frozen = real_datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return cls(
+                    frozen.year,
+                    frozen.month,
+                    frozen.day,
+                    frozen.hour,
+                    frozen.minute,
+                    frozen.second,
+                )
+            return tz.fromutc(
+                cls(
+                    frozen.year,
+                    frozen.month,
+                    frozen.day,
+                    frozen.hour,
+                    frozen.minute,
+                    frozen.second,
+                    tzinfo=tz,
+                )
+            )
+
+        @classmethod
+        def strptime(cls, date_string, format):
+            parsed = real_datetime.strptime(date_string, format)
+            return cls(
+                parsed.year,
+                parsed.month,
+                parsed.day,
+                parsed.hour,
+                parsed.minute,
+                parsed.second,
+            )
+
+    monkeypatch.setattr(marketing_service, "datetime", FrozenDateTime)
 
 
 def _seed_person(app, *, person_id: int, mobile: str):
@@ -358,7 +403,8 @@ def test_automation_conversion_removed_projection_freezes_buttons_and_stage_targ
     assert detail["actions"]["push_openclaw"]["enabled"] is False
 
 
-def test_shared_subset_contract_freezes_common_pool_and_segment(tmp_path):
+def test_shared_subset_contract_freezes_common_pool_and_segment(tmp_path, monkeypatch):
+    _freeze_contract_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     app = _make_app(tmp_path)
     questionnaire_seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=301)
     _save_config(app, questionnaire_seed)
@@ -393,7 +439,8 @@ def test_shared_subset_contract_freezes_common_pool_and_segment(tmp_path):
     assert detail["member"]["current_pool"] == "inactive_focus"
 
 
-def test_known_divergence_trial_gate_is_frozen_before_phase2(tmp_path):
+def test_known_divergence_trial_gate_is_frozen_before_phase2(tmp_path, monkeypatch):
+    _freeze_contract_time(monkeypatch, timestamp="2026-04-04 10:30:00")
     app = _make_app(tmp_path)
     questionnaire_seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=302)
     _save_config(app, questionnaire_seed)

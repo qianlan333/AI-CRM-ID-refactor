@@ -424,6 +424,7 @@ ON user_ops_huangxiaocan_activation_source (is_active);
 CREATE TABLE IF NOT EXISTS user_ops_deferred_jobs (
     id BIGSERIAL PRIMARY KEY,
     job_type TEXT NOT NULL DEFAULT '',
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
     external_userid TEXT NOT NULL DEFAULT '',
     owner_userid TEXT NOT NULL DEFAULT '',
     run_after TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -441,6 +442,9 @@ ON user_ops_deferred_jobs (status, run_after);
 
 CREATE INDEX IF NOT EXISTS idx_user_ops_deferred_jobs_owner_external
 ON user_ops_deferred_jobs (owner_userid, external_userid);
+
+CREATE INDEX IF NOT EXISTS idx_user_ops_deferred_jobs_job_tenant_status
+ON user_ops_deferred_jobs (job_type, tenant_key, status, run_after, id DESC);
 
 CREATE TABLE IF NOT EXISTS user_ops_pool_history (
     id BIGSERIAL PRIMARY KEY,
@@ -797,6 +801,377 @@ ON customer_marketing_state_history (external_userid, recorded_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_customer_marketing_state_history_person_id
 ON customer_marketing_state_history (person_id, recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_signal_events (
+    id BIGSERIAL PRIMARY KEY,
+    signal_key TEXT NOT NULL UNIQUE,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    external_userid TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    signal_type TEXT NOT NULL DEFAULT '',
+    signal_source TEXT NOT NULL DEFAULT '',
+    signal_status TEXT NOT NULL DEFAULT 'open',
+    priority TEXT NOT NULL DEFAULT 'normal',
+    evidence_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    source_ref_type TEXT NOT NULL DEFAULT '',
+    source_ref_id TEXT NOT NULL DEFAULT '',
+    source_updated_at TEXT NOT NULL DEFAULT '',
+    score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    summary TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_signal_events_external_status
+ON customer_pulse_signal_events (tenant_key, external_userid, signal_status, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_signal_events_type
+ON customer_pulse_signal_events (tenant_key, signal_type, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    external_userid TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    snapshot_status TEXT NOT NULL DEFAULT 'ready',
+    confidence DOUBLE PRECISION,
+    priority_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    summary TEXT NOT NULL DEFAULT '',
+    recommended_action_type TEXT NOT NULL DEFAULT '',
+    recommended_action_label TEXT NOT NULL DEFAULT '',
+    evidence_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ai_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    signals_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    risk_flags_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    opportunity_flags_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    suggested_action_candidates_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    score_breakdown_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    source_updated_at TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT 'system',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_snapshots_external
+ON customer_pulse_snapshots (tenant_key, external_userid, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_cards (
+    id BIGSERIAL PRIMARY KEY,
+    card_key TEXT NOT NULL UNIQUE,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    external_userid TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    customer_name TEXT NOT NULL DEFAULT '',
+    mobile TEXT NOT NULL DEFAULT '',
+    owner_display_name TEXT NOT NULL DEFAULT '',
+    marketing_main_stage TEXT NOT NULL DEFAULT '',
+    marketing_sub_stage TEXT NOT NULL DEFAULT '',
+    value_segment TEXT NOT NULL DEFAULT '',
+    snapshot_id BIGINT REFERENCES customer_pulse_snapshots(id) ON DELETE SET NULL,
+    card_status TEXT NOT NULL DEFAULT 'open',
+    priority TEXT NOT NULL DEFAULT 'normal',
+    priority_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    card_type TEXT NOT NULL DEFAULT 'followup',
+    title TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    suggested_action_type TEXT NOT NULL DEFAULT '',
+    suggested_action_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    evidence_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    risk_flags_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    opportunity_flags_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    suggested_action_candidates_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    score_breakdown_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    draft_message TEXT NOT NULL DEFAULT '',
+    need_human_confirmation BOOLEAN NOT NULL DEFAULT TRUE,
+    due_at TEXT NOT NULL DEFAULT '',
+    snooze_until TEXT NOT NULL DEFAULT '',
+    resolved_at TEXT NOT NULL DEFAULT '',
+    resolution_note TEXT NOT NULL DEFAULT '',
+    source_updated_at TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_status_due
+ON customer_pulse_cards (tenant_key, card_status, priority, due_at, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_external
+ON customer_pulse_cards (tenant_key, external_userid, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_cards_status_score
+ON customer_pulse_cards (tenant_key, card_status, priority_score DESC, due_at, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_feedback_logs (
+    id BIGSERIAL PRIMARY KEY,
+    card_id BIGINT NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    external_userid TEXT NOT NULL DEFAULT '',
+    feedback_type TEXT NOT NULL DEFAULT '',
+    feedback_value TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    operator TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_feedback_logs_card
+ON customer_pulse_feedback_logs (card_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_feedback_logs_tenant_card
+ON customer_pulse_feedback_logs (tenant_key, card_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_execution_logs (
+    id BIGSERIAL PRIMARY KEY,
+    card_id BIGINT NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+    external_userid TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL DEFAULT '',
+    execution_status TEXT NOT NULL DEFAULT '',
+    channel_type TEXT NOT NULL DEFAULT '',
+    operator TEXT NOT NULL DEFAULT '',
+    actor_userid TEXT NOT NULL DEFAULT '',
+    actor_role TEXT NOT NULL DEFAULT '',
+    resource_type TEXT NOT NULL DEFAULT '',
+    resource_id TEXT NOT NULL DEFAULT '',
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    tenant_context_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    audit_labels_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    rollback_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    execution_key TEXT NOT NULL DEFAULT '',
+    idempotency_key TEXT NOT NULL DEFAULT '',
+    activity_log_id BIGINT,
+    outbound_task_id BIGINT REFERENCES outbound_tasks(id) ON DELETE SET NULL,
+    undo_status TEXT NOT NULL DEFAULT '',
+    undo_until TEXT NOT NULL DEFAULT '',
+    undone_at TEXT NOT NULL DEFAULT '',
+    request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_card
+ON customer_pulse_execution_logs (tenant_key, card_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_idempotency
+ON customer_pulse_execution_logs (tenant_key, idempotency_key, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_execution_logs_tenant_resource
+ON customer_pulse_execution_logs (tenant_key, resource_type, resource_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_activity_logs (
+    id BIGSERIAL PRIMARY KEY,
+    card_id BIGINT NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+    external_userid TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    activity_type TEXT NOT NULL DEFAULT '',
+    activity_status TEXT NOT NULL DEFAULT '',
+    activity_source TEXT NOT NULL DEFAULT 'ai_customer_pulse',
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    execution_key TEXT NOT NULL DEFAULT '',
+    idempotency_key TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    due_at TEXT NOT NULL DEFAULT '',
+    operator TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    undone_at TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_external_userid
+ON customer_pulse_activity_logs (tenant_key, external_userid, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_card
+ON customer_pulse_activity_logs (tenant_key, card_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_activity_logs_tenant_idempotency
+ON customer_pulse_activity_logs (tenant_key, idempotency_key, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_action_feedback (
+    id BIGSERIAL PRIMARY KEY,
+    card_id BIGINT NOT NULL REFERENCES customer_pulse_cards(id) ON DELETE CASCADE,
+    execution_log_id BIGINT REFERENCES customer_pulse_execution_logs(id) ON DELETE SET NULL,
+    external_userid TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL DEFAULT '',
+    feedback_type TEXT NOT NULL DEFAULT '',
+    feedback_source TEXT NOT NULL DEFAULT '',
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    operator TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_card
+ON customer_pulse_action_feedback (tenant_key, card_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_execution
+ON customer_pulse_action_feedback (tenant_key, execution_log_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_action_feedback_tenant_type
+ON customer_pulse_action_feedback (tenant_key, feedback_type, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS customer_pulse_metric_events (
+    id BIGSERIAL PRIMARY KEY,
+    card_id BIGINT REFERENCES customer_pulse_cards(id) ON DELETE SET NULL,
+    execution_log_id BIGINT REFERENCES customer_pulse_execution_logs(id) ON DELETE SET NULL,
+    external_userid TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL DEFAULT '',
+    event_type TEXT NOT NULL DEFAULT '',
+    event_source TEXT NOT NULL DEFAULT '',
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    operator TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_type
+ON customer_pulse_metric_events (tenant_key, event_type, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_card
+ON customer_pulse_metric_events (tenant_key, card_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_pulse_metric_events_tenant_execution
+ON customer_pulse_metric_events (tenant_key, execution_log_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS followup_orchestrator_policies (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    policy_key TEXT NOT NULL DEFAULT '',
+    policy_type TEXT NOT NULL DEFAULT '',
+    policy_scope TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (tenant_key, policy_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_policies_tenant_type
+ON followup_orchestrator_policies (tenant_key, policy_type, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS followup_orchestrator_missions (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    mission_key TEXT NOT NULL DEFAULT '',
+    mission_type TEXT NOT NULL DEFAULT '',
+    mission_status TEXT NOT NULL DEFAULT 'unassigned',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    team_scope_key TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT 'customer_pulse',
+    summary TEXT NOT NULL DEFAULT '',
+    priority_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    item_count INTEGER NOT NULL DEFAULT 0,
+    requires_manager_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (tenant_key, mission_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_missions_tenant_status
+ON followup_orchestrator_missions (tenant_key, mission_status, priority_score DESC, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_missions_tenant_owner
+ON followup_orchestrator_missions (tenant_key, owner_userid, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS followup_orchestrator_mission_items (
+    id BIGSERIAL PRIMARY KEY,
+    mission_id BIGINT NOT NULL REFERENCES followup_orchestrator_missions(id) ON DELETE CASCADE,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    mission_item_key TEXT NOT NULL DEFAULT '',
+    item_status TEXT NOT NULL DEFAULT 'suggested',
+    assignment_status TEXT NOT NULL DEFAULT 'suggested',
+    external_userid TEXT NOT NULL DEFAULT '',
+    customer_name TEXT NOT NULL DEFAULT '',
+    owner_userid TEXT NOT NULL DEFAULT '',
+    suggested_assignee_userid TEXT NOT NULL DEFAULT '',
+    pulse_card_id BIGINT REFERENCES customer_pulse_cards(id) ON DELETE SET NULL,
+    pulse_snapshot_id BIGINT REFERENCES customer_pulse_snapshots(id) ON DELETE SET NULL,
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    evidence_refs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (tenant_key, mission_item_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_items_tenant_mission
+ON followup_orchestrator_mission_items (tenant_key, mission_id, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_items_tenant_customer
+ON followup_orchestrator_mission_items (tenant_key, external_userid, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS followup_orchestrator_assignment_decisions (
+    id BIGSERIAL PRIMARY KEY,
+    mission_id BIGINT NOT NULL REFERENCES followup_orchestrator_missions(id) ON DELETE CASCADE,
+    mission_item_id BIGINT REFERENCES followup_orchestrator_mission_items(id) ON DELETE CASCADE,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    decision_type TEXT NOT NULL DEFAULT '',
+    decision_status TEXT NOT NULL DEFAULT 'suggested',
+    current_owner_userid TEXT NOT NULL DEFAULT '',
+    suggested_owner_userid TEXT NOT NULL DEFAULT '',
+    decided_by_userid TEXT NOT NULL DEFAULT '',
+    approved_by_userid TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_assignment_tenant_status
+ON followup_orchestrator_assignment_decisions (tenant_key, decision_status, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_assignment_tenant_item
+ON followup_orchestrator_assignment_decisions (tenant_key, mission_item_id, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS followup_orchestrator_mission_feedback (
+    id BIGSERIAL PRIMARY KEY,
+    mission_id BIGINT NOT NULL REFERENCES followup_orchestrator_missions(id) ON DELETE CASCADE,
+    mission_item_id BIGINT REFERENCES followup_orchestrator_mission_items(id) ON DELETE CASCADE,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    feedback_type TEXT NOT NULL DEFAULT '',
+    feedback_source TEXT NOT NULL DEFAULT '',
+    operator TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_feedback_tenant_mission
+ON followup_orchestrator_mission_feedback (tenant_key, mission_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS followup_orchestrator_execution_logs (
+    id BIGSERIAL PRIMARY KEY,
+    mission_id BIGINT NOT NULL REFERENCES followup_orchestrator_missions(id) ON DELETE CASCADE,
+    mission_item_id BIGINT REFERENCES followup_orchestrator_mission_items(id) ON DELETE CASCADE,
+    tenant_key TEXT NOT NULL DEFAULT 'aicrm',
+    action_type TEXT NOT NULL DEFAULT '',
+    execution_status TEXT NOT NULL DEFAULT '',
+    operator TEXT NOT NULL DEFAULT '',
+    actor_userid TEXT NOT NULL DEFAULT '',
+    actor_role TEXT NOT NULL DEFAULT '',
+    resource_type TEXT NOT NULL DEFAULT '',
+    resource_id TEXT NOT NULL DEFAULT '',
+    tenant_context_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_execution_tenant_mission
+ON followup_orchestrator_execution_logs (tenant_key, mission_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_followup_orchestrator_execution_tenant_status
+ON followup_orchestrator_execution_logs (tenant_key, execution_status, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS conversion_dispatch_log (
     id BIGSERIAL PRIMARY KEY,
@@ -1306,6 +1681,209 @@ ON automation_agent_llm_call_log (agent_code, created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_status_created
 ON automation_agent_llm_call_log (status, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_router_config (
+    id BIGSERIAL PRIMARY KEY,
+    config_key TEXT NOT NULL UNIQUE DEFAULT 'default',
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    webhook_url TEXT NOT NULL DEFAULT '',
+    signature_token TEXT NOT NULL DEFAULT '',
+    signature_secret TEXT NOT NULL DEFAULT '',
+    signature_header TEXT NOT NULL DEFAULT 'X-Lobster-Signature',
+    timeout_seconds INTEGER NOT NULL DEFAULT 8,
+    retry_count INTEGER NOT NULL DEFAULT 1,
+    fallback_strategy_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    request_sample_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_sample_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_status TEXT NOT NULL DEFAULT 'never_called',
+    last_error TEXT NOT NULL DEFAULT '',
+    last_called_at TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    updated_source TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_router_config_updated
+ON automation_agent_router_config (updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_config (
+    id BIGSERIAL PRIMARY KEY,
+    agent_code TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL DEFAULT '',
+    pool_keys_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    draft_role_prompt TEXT NOT NULL DEFAULT '',
+    draft_task_prompt TEXT NOT NULL DEFAULT '',
+    draft_variables_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    draft_output_schema_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    published_role_prompt TEXT NOT NULL DEFAULT '',
+    published_task_prompt TEXT NOT NULL DEFAULT '',
+    published_variables_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    published_output_schema_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    draft_version INTEGER NOT NULL DEFAULT 1,
+    published_version INTEGER NOT NULL DEFAULT 0,
+    published_at TEXT NOT NULL DEFAULT '',
+    published_by TEXT NOT NULL DEFAULT '',
+    last_modified_at TEXT NOT NULL DEFAULT '',
+    last_modified_by TEXT NOT NULL DEFAULT '',
+    last_modified_source TEXT NOT NULL DEFAULT '',
+    last_change_summary TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_config_enabled
+ON automation_agent_config (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_config_updated
+ON automation_agent_config (updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_skill_registry (
+    id BIGSERIAL PRIMARY KEY,
+    skill_code TEXT NOT NULL UNIQUE,
+    agent_code TEXT NOT NULL DEFAULT '',
+    pool_keys_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    read_capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    write_capabilities_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    input_schema_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    output_schema_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    permission_notes TEXT NOT NULL DEFAULT '',
+    idempotency_notes TEXT NOT NULL DEFAULT '',
+    audit_notes TEXT NOT NULL DEFAULT '',
+    example_request_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    example_response_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_call_status TEXT NOT NULL DEFAULT 'never_called',
+    last_error TEXT NOT NULL DEFAULT '',
+    last_called_at TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_skill_registry_enabled
+ON automation_agent_skill_registry (enabled, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_run (
+    id BIGSERIAL PRIMARY KEY,
+    run_id TEXT NOT NULL UNIQUE,
+    request_id TEXT NOT NULL DEFAULT '',
+    batch_id TEXT NOT NULL DEFAULT '',
+    userid TEXT NOT NULL DEFAULT '',
+    external_contact_id TEXT NOT NULL DEFAULT '',
+    agent_code TEXT NOT NULL DEFAULT '',
+    agent_type TEXT NOT NULL DEFAULT '',
+    provider TEXT NOT NULL DEFAULT '',
+    input_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    variables_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    final_prompt_preview TEXT NOT NULL DEFAULT '',
+    role_prompt_version TEXT NOT NULL DEFAULT '',
+    task_prompt_version TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    error_code TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT '',
+    parent_run_id TEXT NOT NULL DEFAULT '',
+    replay_of_run_id TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_run_request
+ON automation_agent_run (request_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_run_user
+ON automation_agent_run (external_contact_id, userid, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_run_agent_created
+ON automation_agent_run (agent_code, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_output (
+    id BIGSERIAL PRIMARY KEY,
+    output_id TEXT NOT NULL UNIQUE,
+    run_id TEXT NOT NULL DEFAULT '',
+    request_id TEXT NOT NULL DEFAULT '',
+    userid TEXT NOT NULL DEFAULT '',
+    external_contact_id TEXT NOT NULL DEFAULT '',
+    agent_code TEXT NOT NULL DEFAULT '',
+    output_type TEXT NOT NULL DEFAULT '',
+    raw_output_text TEXT NOT NULL DEFAULT '',
+    normalized_output_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    rendered_output_text TEXT NOT NULL DEFAULT '',
+    target_agent_code TEXT NOT NULL DEFAULT '',
+    target_pool TEXT NOT NULL DEFAULT '',
+    confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+    reason TEXT NOT NULL DEFAULT '',
+    need_human_review BOOLEAN NOT NULL DEFAULT FALSE,
+    applied_status TEXT NOT NULL DEFAULT 'pending',
+    applied_at TEXT NOT NULL DEFAULT '',
+    adopted_by TEXT NOT NULL DEFAULT '',
+    adopted_action TEXT NOT NULL DEFAULT '',
+    adopted_at TEXT NOT NULL DEFAULT '',
+    outcome_status TEXT NOT NULL DEFAULT '',
+    outcome_value TEXT NOT NULL DEFAULT '',
+    revision_of_output_id TEXT NOT NULL DEFAULT '',
+    error_code TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_output_request
+ON automation_agent_output (request_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_output_user
+ON automation_agent_output (external_contact_id, userid, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_output_agent_type
+ON automation_agent_output (agent_code, output_type, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_output_applied
+ON automation_agent_output (applied_status, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_output_target_agent
+ON automation_agent_output (target_agent_code, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_output_outcome_status
+ON automation_agent_output (outcome_status, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_output_export_job (
+    id BIGSERIAL PRIMARY KEY,
+    job_id TEXT NOT NULL UNIQUE,
+    requested_by TEXT NOT NULL DEFAULT '',
+    filters_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'queued',
+    total_count INTEGER NOT NULL DEFAULT 0,
+    exported_count INTEGER NOT NULL DEFAULT 0,
+    file_name TEXT NOT NULL DEFAULT '',
+    file_content_base64 TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_output_export_job_status
+ON automation_agent_output_export_job (status, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_agent_skill_call_audit (
+    id BIGSERIAL PRIMARY KEY,
+    call_id TEXT NOT NULL UNIQUE,
+    skill_code TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    permissions_scope TEXT NOT NULL DEFAULT '',
+    idempotency_key TEXT NOT NULL DEFAULT '',
+    request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT '',
+    error_code TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_agent_skill_call_audit_skill_created
+ON automation_agent_skill_call_audit (skill_code, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_focus_send_batch (
     id BIGSERIAL PRIMARY KEY,
