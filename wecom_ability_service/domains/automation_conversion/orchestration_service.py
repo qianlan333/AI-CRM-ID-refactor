@@ -15,14 +15,16 @@ from typing import Any
 import requests
 from flask import current_app
 
+from ...customer_timeline.service import get_customer_timeline
 from ...db import get_db
 from ...infra.settings import mask_value
 from ...services import get_recent_messages_by_user
-from . import repo
+from . import local_projection, repo
 from .agents import (
     AGENT_OUTPUT_TYPE_OPTIONS,
     CHILD_AGENT_CONFIG_MAP,
     CHILD_AGENT_ORDER,
+    ROUTER_ACK_SAMPLE,
     ROUTER_REQUEST_SAMPLE,
     ROUTER_RESPONSE_SAMPLE,
     ROUTER_FALLBACK_DEFAULT,
@@ -31,9 +33,31 @@ from .agents import (
     default_agent_router_payload,
     default_skill_registry_payloads,
 )
-from .service import ensure_agent_prompt_defaults, get_member_detail, get_stage_detail_payload
+from .service import apply_router_target_pool, ensure_agent_prompt_defaults, get_member_detail, get_stage_detail_payload
 
 _EXPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-output-export")
+
+
+class DraftVersionConflictError(ValueError):
+    error_code = "draft_version_conflict"
+
+    def __init__(self, *, agent_code: str, expected_draft_version: int, current_draft_version: int):
+        self.agent_code = _normalized_text(agent_code)
+        self.expected_draft_version = int(expected_draft_version)
+        self.current_draft_version = int(current_draft_version)
+        super().__init__(
+            f"draft_version_conflict: agent_code={self.agent_code}, expected_draft_version={self.expected_draft_version}, "
+            f"current_draft_version={self.current_draft_version}, please reload the latest draft before retrying"
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "error_code": self.error_code,
+            "agent_code": self.agent_code,
+            "expected_draft_version": self.expected_draft_version,
+            "current_draft_version": self.current_draft_version,
+            "suggestion": "请先重新拉取最新草稿配置后再重试保存或提交发布申请。",
+        }
 
 _POOL_TO_ROUTE_KEY = {
     "new_user": "new-user",
@@ -43,6 +67,13 @@ _POOL_TO_ROUTE_KEY = {
     "active_focus": "active-focus",
     "silent": "silent",
     "won": "won",
+    local_projection.POOL_NO_REPLY: "no-reply",
+    local_projection.POOL_HUMAN_REPLY: "human-reply",
+}
+
+_ROUTER_SPECIAL_AGENT_CODES = {
+    local_projection.POOL_NO_REPLY,
+    local_projection.POOL_HUMAN_REPLY,
 }
 
 _DEFAULT_OUTPUT_HEADERS = [
@@ -61,6 +92,8 @@ _DEFAULT_OUTPUT_HEADERS = [
 ]
 _EXPORT_RATE_LIMIT_WINDOW_MINUTES = 10
 _EXPORT_RATE_LIMIT_COUNT = 5
+_ROUTER_ACK_HTTP_STATUS = 200
+_ROUTER_MIN_CALLBACK_CONFIDENCE = 0.5
 
 
 def _normalized_text(value: Any) -> str:
@@ -92,6 +125,21 @@ def _normalize_float(value: Any, *, default: float = 0.0) -> float:
 
 def _iso_now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _parse_datetime_text(value: Any) -> datetime | None:
+    text = _normalized_text(value)
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def _copy_json(value: Any, *, default: Any) -> Any:
@@ -228,7 +276,8 @@ def _request_env_label() -> str:
 
 def ensure_agent_orchestration_defaults() -> None:
     ensure_agent_prompt_defaults()
-    if not repo.get_agent_router_config():
+    router_row = repo.get_agent_router_config()
+    if not router_row:
         payload = default_agent_router_payload()
         repo.insert_agent_router_config(
             {
@@ -241,6 +290,33 @@ def ensure_agent_orchestration_defaults() -> None:
                 "last_status": "never_called",
             }
         )
+    else:
+        existing = repo.deserialize_agent_router_config_row(router_row)
+        expected_request_sample = dict(ROUTER_REQUEST_SAMPLE)
+        expected_response_sample = dict(ROUTER_RESPONSE_SAMPLE)
+        if (
+            dict(existing.get("request_sample_json") or {}) != expected_request_sample
+            or dict(existing.get("response_sample_json") or {}) != expected_response_sample
+        ):
+            repo.save_agent_router_config(
+                {
+                    "enabled": bool(existing.get("enabled")),
+                    "webhook_url": _normalized_text(existing.get("webhook_url")),
+                    "signature_token": _normalized_text(existing.get("signature_token")),
+                    "signature_secret": _normalized_text(existing.get("signature_secret")),
+                    "signature_header": _normalized_text(existing.get("signature_header")) or "X-Lobster-Signature",
+                    "timeout_seconds": int(existing.get("timeout_seconds") or 8),
+                    "retry_count": int(existing.get("retry_count") or 1),
+                    "fallback_strategy_json": dict(existing.get("fallback_strategy_json") or {}),
+                    "request_sample_json": expected_request_sample,
+                    "response_sample_json": expected_response_sample,
+                    "last_status": _normalized_text(existing.get("last_status")) or "never_called",
+                    "last_error": _normalized_text(existing.get("last_error")),
+                    "last_called_at": _normalized_text(existing.get("last_called_at")),
+                    "updated_by": _normalized_text(existing.get("updated_by")) or "system",
+                    "updated_source": _normalized_text(existing.get("updated_source")) or "seed",
+                }
+            )
     prompt_rows = {
         _normalized_text(item.get("agent_code")): repo.deserialize_agent_prompt_row(item)
         for item in repo.list_agent_prompt_rows()
@@ -287,7 +363,7 @@ def ensure_agent_orchestration_defaults() -> None:
 
 def _serialize_router_config(row: dict[str, Any] | None) -> dict[str, Any]:
     deserialized = repo.deserialize_agent_router_config_row(row or {})
-    fallback = dict(deserialized.get("fallback_strategy_json") or {})
+    fallback = _router_runtime_strategy(deserialized)
     return {
         "enabled": bool(deserialized.get("enabled")),
         "webhook_url": _normalized_text(deserialized.get("webhook_url")),
@@ -304,8 +380,10 @@ def _serialize_router_config(row: dict[str, Any] | None) -> dict[str, Any]:
         "last_called_at": _normalized_text(deserialized.get("last_called_at")) or "暂无记录",
         "updated_by": _normalized_text(deserialized.get("updated_by")) or "system",
         "updated_source": _normalized_text(deserialized.get("updated_source")) or "seed",
-        "request_sample": deserialized.get("request_sample_json") or dict(ROUTER_REQUEST_SAMPLE),
-        "response_sample": deserialized.get("response_sample_json") or dict(ROUTER_RESPONSE_SAMPLE),
+        # Always show the canonical async ingress/callback samples on the router page,
+        # even if historical rows still contain legacy sync payload examples.
+        "request_sample": dict(ROUTER_REQUEST_SAMPLE),
+        "response_sample": dict(ROUTER_RESPONSE_SAMPLE),
     }
 
 
@@ -330,6 +408,20 @@ def _agent_diff_summary(item: dict[str, Any]) -> list[str]:
 
 def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
     deserialized = repo.deserialize_agent_config_row(row or {})
+    has_unpublished_changes = bool(_agent_diff_summary({
+        "draft": {
+            "role_prompt": _normalized_text(deserialized.get("draft_role_prompt")),
+            "task_prompt": _normalized_text(deserialized.get("draft_task_prompt")),
+            "variables": list(deserialized.get("draft_variables_json") or []),
+            "output_schema": list(deserialized.get("draft_output_schema_json") or []),
+        },
+        "published": {
+            "role_prompt": _normalized_text(deserialized.get("published_role_prompt")),
+            "task_prompt": _normalized_text(deserialized.get("published_task_prompt")),
+            "variables": list(deserialized.get("published_variables_json") or []),
+            "output_schema": list(deserialized.get("published_output_schema_json") or []),
+        },
+    }))
     payload = {
         "agent_code": _normalized_text(deserialized.get("agent_code")),
         "display_name": _normalized_text(deserialized.get("display_name")) or _normalized_text(
@@ -345,6 +437,10 @@ def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
         "last_modified_by": _normalized_text(deserialized.get("last_modified_by")) or "system",
         "last_modified_source": _normalized_text(deserialized.get("last_modified_source")) or "seed",
         "last_change_summary": _normalized_text(deserialized.get("last_change_summary")) or "暂无变更摘要",
+        "has_unpublished_changes": has_unpublished_changes,
+        "submitted_for_publish": bool(deserialized.get("submitted_for_publish")),
+        "submitted_at": _normalized_text(deserialized.get("submitted_at")),
+        "submitted_by": _normalized_text(deserialized.get("submitted_by")),
         "draft": {
             "role_prompt": _normalized_text(deserialized.get("draft_role_prompt")),
             "task_prompt": _normalized_text(deserialized.get("draft_task_prompt")),
@@ -482,6 +578,50 @@ def _load_skill_list() -> list[dict[str, Any]]:
     return [rows.get(skill_code) or _serialize_skill_row({"skill_code": skill_code}) for skill_code in SKILL_REGISTRY_ORDER]
 
 
+def _agent_prompt_bundle_payload(items: list[dict[str, Any]]) -> dict[str, Any]:
+    canonical_items = [
+        {
+            "agent_code": _normalized_text(item.get("agent_code")),
+            "enabled": bool(item.get("enabled")),
+            "draft_version": int(item.get("draft_version") or 1),
+            "published_version": int(item.get("published_version") or 0),
+            "last_modified_at": _normalized_text(item.get("last_modified_at")),
+            "draft": {
+                "role_prompt": _normalized_text(((item.get("draft") or {}).get("role_prompt"))),
+                "task_prompt": _normalized_text(((item.get("draft") or {}).get("task_prompt"))),
+                "variables": list(((item.get("draft") or {}).get("variables")) or []),
+                "output_schema": list(((item.get("draft") or {}).get("output_schema")) or []),
+            },
+            "published": {
+                "role_prompt": _normalized_text(((item.get("published") or {}).get("role_prompt"))),
+                "task_prompt": _normalized_text(((item.get("published") or {}).get("task_prompt"))),
+                "variables": list(((item.get("published") or {}).get("variables")) or []),
+                "output_schema": list(((item.get("published") or {}).get("output_schema")) or []),
+            },
+        }
+        for item in sorted(items, key=lambda value: _normalized_text(value.get("agent_code")))
+    ]
+    version_payload = [
+        {
+            "agent_code": item["agent_code"],
+            "draft_version": item["draft_version"],
+            "published_version": item["published_version"],
+            "last_modified_at": item["last_modified_at"],
+            "enabled": item["enabled"],
+        }
+        for item in canonical_items
+    ]
+    version_text = json.dumps(version_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    bundle_text = json.dumps(canonical_items, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    bundle_hash = hashlib.sha256(bundle_text.encode("utf-8")).hexdigest()
+    bundle_version = f"bundle-{hashlib.sha256(version_text.encode('utf-8')).hexdigest()[:16]}"
+    return {
+        "bundle_version": bundle_version,
+        "bundle_hash": bundle_hash,
+        "generated_at": _iso_now(),
+    }
+
+
 def _build_member_variable_snapshot(external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
     detail = get_member_detail(external_contact_id=external_contact_id, phone=phone)
     profile = dict(detail.get("profile") or {})
@@ -521,6 +661,16 @@ def _enabled_child_agents() -> list[str]:
     ]
 
 
+def _allowed_router_agent_codes() -> list[str]:
+    ordered_codes = []
+    for agent_code in [*_enabled_child_agents(), *sorted(_ROUTER_SPECIAL_AGENT_CODES)]:
+        normalized_agent_code = _normalized_text(agent_code)
+        if not normalized_agent_code or normalized_agent_code in ordered_codes:
+            continue
+        ordered_codes.append(normalized_agent_code)
+    return ordered_codes
+
+
 def _router_message_entry(message: dict[str, Any], *, external_contact_id: str) -> dict[str, Any]:
     sender = _normalized_text(message.get("sender") or message.get("from"))
     role = "customer" if sender == _normalized_text(external_contact_id) else "staff"
@@ -528,9 +678,6 @@ def _router_message_entry(message: dict[str, Any], *, external_contact_id: str) 
         "role": role,
         "content": _normalized_text(message.get("content")),
         "created_at": _normalized_text(message.get("send_time")),
-        "msgtype": _normalized_text(message.get("msgtype")) or "text",
-        "chat_type": _normalized_text(message.get("chat_type")) or "private",
-        "sender": sender,
     }
 
 
@@ -596,23 +743,98 @@ def _touch_router_runtime_status(*, status: str, error_message: str = "", last_c
     )
 
 
-def _validated_router_response(data: Any, *, allowed_agents: list[str]) -> tuple[dict[str, Any], str]:
+def _normalize_json_list(value: Any) -> list[Any]:
+    resolved = _copy_json(value, default=[])
+    return resolved if isinstance(resolved, list) else []
+
+
+def _normalize_json_dict(value: Any) -> dict[str, Any]:
+    resolved = _copy_json(value, default={})
+    return resolved if isinstance(resolved, dict) else {}
+
+
+def _router_decision_target_pool(decision: dict[str, Any]) -> str:
+    structured_result = _normalize_json_dict(decision.get("structured_result"))
+    target_pool = _normalized_text(structured_result.get("target_pool") or decision.get("target_pool"))
+    if target_pool:
+        return target_pool
+    agent_code = _normalized_text(decision.get("agent_code"))
+    if agent_code in _ROUTER_SPECIAL_AGENT_CODES:
+        return agent_code
+    return ""
+
+
+def _router_runtime_strategy(router_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    config = repo.deserialize_agent_router_config_row(router_config or {})
+    strategy = {**ROUTER_FALLBACK_DEFAULT, **dict(config.get("fallback_strategy_json") or {})}
+    min_confidence = _normalize_float(strategy.get("min_confidence"), default=0.5)
+    strategy["min_confidence"] = max(0.0, min(1.0, float(min_confidence)))
+    pending_callback_timeout_minutes = _normalize_int(strategy.get("pending_callback_timeout_minutes"), default=10, minimum=1, maximum=24 * 60)
+    strategy["pending_callback_timeout_minutes"] = pending_callback_timeout_minutes
+    human_review_target_pool = _normalized_text(strategy.get("human_review_target_pool")) or local_projection.POOL_HUMAN_REPLY
+    if human_review_target_pool not in _router_allowed_target_pools():
+        human_review_target_pool = local_projection.POOL_HUMAN_REPLY
+    strategy["human_review_target_pool"] = human_review_target_pool
+    return strategy
+
+
+def validate_router_callback_signature(*, body_text: str, headers: dict[str, Any] | None = None) -> tuple[bool, str]:
+    ensure_agent_orchestration_defaults()
+    router_config = repo.deserialize_agent_router_config_row(repo.get_agent_router_config() or {})
+    secret = _normalized_text(router_config.get("signature_secret"))
+    if not secret:
+        return True, ""
+    header_name = _normalized_text(router_config.get("signature_header")) or "X-Lobster-Signature"
+    provided_signature = _normalized_text((headers or {}).get(header_name))
+    if not provided_signature:
+        return False, "missing callback signature"
+    expected_signature = f"sha256={hmac.new(secret.encode('utf-8'), body_text.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    if not hmac.compare_digest(provided_signature, expected_signature):
+        return False, "invalid callback signature"
+    return True, ""
+
+
+def _validated_router_callback_payload(
+    data: Any,
+    *,
+    expected_request_id: str,
+    expected_external_contact_id: str,
+) -> tuple[dict[str, Any], str]:
     if not isinstance(data, dict):
         return {}, "invalid_schema_response"
-    normalized = {
-        "userid": _normalized_text(data.get("userid")),
-        "external_contact_id": _normalized_text(data.get("external_contact_id")),
-        "agent_code": _normalized_text(data.get("agent_code")),
-        "confidence": _normalize_float(data.get("confidence"), default=0.0),
-        "reason": _normalized_text(data.get("reason")),
-        "target_pool": _normalized_text(data.get("target_pool")),
-        "need_human_review": bool(data.get("need_human_review")),
-        "response_version": _normalized_text(data.get("response_version")) or "router-v1",
-    }
-    if not normalized["agent_code"]:
+    required_keys = {"request_id", "external_contact_id", "target_pool"}
+    if not required_keys.issubset(set(data.keys())):
         return {}, "invalid_schema_response"
-    if normalized["agent_code"] not in allowed_agents:
-        return normalized, "unknown_agent_code"
+    agent_code = _normalized_text(data.get("agent_code"))
+    need_human_review = _normalize_bool(data.get("need_human_review")) or agent_code == local_projection.POOL_HUMAN_REPLY
+    normalized = {
+        "request_id": _normalized_text(data.get("request_id")),
+        "external_contact_id": _normalized_text(data.get("external_contact_id")),
+        "agent_code": agent_code,
+        "target_pool": _normalized_text(data.get("target_pool")) or (agent_code if agent_code in _ROUTER_SPECIAL_AGENT_CODES else ""),
+        "confidence": _normalize_float(data.get("confidence"), default=0.0),
+        "reason": _normalized_text(data.get("reason")) or agent_code,
+        "need_human_review": need_human_review,
+        "completed_at": _normalized_text(data.get("completed_at")),
+        "trace_id": _normalized_text(data.get("trace_id")),
+        "processing_latency_ms": _normalize_int(data.get("processing_latency_ms"), default=0, minimum=0, maximum=86400000),
+        "prompt_version_used": _normalized_text(data.get("prompt_version_used")),
+        "mcp_tools_used": [
+            _normalized_text(item)
+            for item in list(data.get("mcp_tools_used") or [])
+            if _normalized_text(item)
+        ],
+    }
+    if (
+        not normalized["request_id"]
+        or not normalized["external_contact_id"]
+        or not normalized["target_pool"]
+    ):
+        return {}, "invalid_schema_response"
+    if normalized["request_id"] != _normalized_text(expected_request_id):
+        return normalized, "request_id_mismatch"
+    if normalized["external_contact_id"] != _normalized_text(expected_external_contact_id):
+        return normalized, "external_contact_id_mismatch"
     return normalized, ""
 
 
@@ -624,21 +846,193 @@ def _router_fallback_payload(
     request_payload: dict[str, Any],
     raw_response_text: str = "",
 ) -> dict[str, Any]:
-    strategy = {**ROUTER_FALLBACK_DEFAULT, **dict(router_config.get("fallback_strategy_json") or {})}
+    strategy = _router_runtime_strategy(router_config)
+    default_pool = _normalized_text(strategy.get("default_pool")) or "new_user"
     return {
-        "userid": _normalized_text(request_payload.get("userid")),
+        "request_id": _normalized_text(request_payload.get("request_id")),
         "external_contact_id": _normalized_text(request_payload.get("external_contact_id")),
         "agent_code": _normalized_text(strategy.get("default_agent_code")) or "welcome_agent",
         "confidence": 0.0,
         "reason": error_message or reason_code,
-        "target_pool": _normalized_text(strategy.get("default_pool")) or "new_user",
         "need_human_review": bool(strategy.get("need_human_review")),
-        "response_version": "router-fallback-v1",
-        "fallback_reason_code": reason_code,
-        "fallback_alert_channel": _normalized_text(strategy.get("alert_channel")) or "run_center",
-        "fail_closed": bool(strategy.get("fail_closed")),
-        "raw_response_text": raw_response_text,
+        "crm_reads": [],
+        "script_actions": [],
+        "structured_result": {
+            "target_pool": default_pool,
+            "fallback_reason_code": reason_code,
+            "fallback_alert_channel": _normalized_text(strategy.get("alert_channel")) or "run_center",
+            "fail_closed": bool(strategy.get("fail_closed")),
+            "raw_response_text": raw_response_text,
+            "min_confidence": strategy.get("min_confidence"),
+            "human_review_target_pool": _normalized_text(strategy.get("human_review_target_pool")),
+        },
     }
+
+
+def _router_allowed_target_pools() -> set[str]:
+    return {
+        "new_user",
+        "inactive_normal",
+        "inactive_focus",
+        "active_normal",
+        "active_focus",
+        "silent",
+        "won",
+        local_projection.POOL_NO_REPLY,
+        local_projection.POOL_HUMAN_REPLY,
+    }
+
+
+def _append_router_event_output(
+    *,
+    run_id: str,
+    request_id: str,
+    userid: str,
+    external_contact_id: str,
+    output_type: str,
+    rendered_output_text: str,
+    raw_output_text: str = "",
+    normalized_output: dict[str, Any] | None = None,
+    target_agent_code: str = "",
+    target_pool: str = "",
+    confidence: float = 0.0,
+    reason: str = "",
+    need_human_review: bool = False,
+    applied_status: str = "",
+    error_code: str = "",
+    error_message: str = "",
+) -> dict[str, Any]:
+    return append_agent_output(
+        {
+            "run_id": run_id,
+            "request_id": request_id,
+            "userid": userid,
+            "external_contact_id": external_contact_id,
+            "agent_code": "central_router_agent",
+            "output_type": output_type,
+            "raw_output_text": raw_output_text,
+            "normalized_output": normalized_output or {},
+            "rendered_output_text": rendered_output_text,
+            "target_agent_code": target_agent_code,
+            "target_pool": target_pool,
+            "confidence": confidence,
+            "reason": reason or rendered_output_text,
+            "need_human_review": need_human_review,
+            "applied_status": applied_status,
+            "error_code": error_code,
+            "error_message": error_message,
+        }
+    )
+
+
+def _append_router_callback_rejected_output(
+    *,
+    run_id: str,
+    request_id: str,
+    userid: str,
+    external_contact_id: str,
+    raw_output_text: str,
+    normalized_output: dict[str, Any] | None,
+    reason: str,
+    rendered_output_text: str,
+) -> dict[str, Any]:
+    return _append_router_event_output(
+        run_id=run_id,
+        request_id=request_id,
+        userid=userid,
+        external_contact_id=external_contact_id,
+        output_type="callback_rejected",
+        raw_output_text=raw_output_text,
+        normalized_output=normalized_output or {},
+        rendered_output_text=rendered_output_text,
+        applied_status="rejected",
+        reason=reason,
+        error_code=reason,
+        error_message=reason,
+    )
+
+
+def _resolve_request_run(request_id: str) -> dict[str, Any] | None:
+    row = repo.get_agent_run_row_by_request_id(_normalized_text(request_id))
+    return repo.deserialize_agent_run_row(row or {}) if row else None
+
+
+def _latest_request_output(request_id: str, *, output_types: list[str] | None = None) -> dict[str, Any]:
+    row = repo.get_latest_agent_output_row_by_request_id(_normalized_text(request_id), output_types=output_types)
+    return repo.deserialize_agent_output_row(row or {}) if row else {}
+
+
+def _apply_router_decision(
+    *,
+    run_id: str,
+    request_id: str,
+    userid: str,
+    external_contact_id: str,
+    decision: dict[str, Any],
+    output_id: str,
+    adopted_by: str,
+    adopted_action_prefix: str,
+) -> dict[str, Any]:
+    router_config = repo.deserialize_agent_router_config_row(repo.get_agent_router_config() or {})
+    strategy = _router_runtime_strategy(router_config)
+    target_pool = _router_decision_target_pool(decision)
+    if target_pool not in _router_allowed_target_pools():
+        update_agent_run_status(
+            run_id,
+            {
+                "status": "rejected",
+                "error_code": "invalid_target_pool",
+                "error_message": f"invalid target_pool: {target_pool}",
+            },
+        )
+        return record_agent_output_outcome(
+            output_id,
+            outcome_status="rejected",
+            outcome_value=json.dumps(
+                {
+                    "request_id": request_id,
+                    "external_contact_id": external_contact_id,
+                    "target_pool": target_pool,
+                    "reason": "invalid_target_pool",
+                },
+                ensure_ascii=False,
+            ),
+            applied_status="rejected",
+        )
+
+    final_target_pool = _normalized_text(strategy.get("human_review_target_pool")) if bool(decision.get("need_human_review")) else target_pool
+    applied_result = apply_router_target_pool(
+        external_contact_id=external_contact_id,
+        target_pool=final_target_pool,
+        operator_id=adopted_by,
+        operator_type="system",
+    )
+    update_agent_run_status(
+        run_id,
+        {
+            "status": "applied",
+            "error_code": "",
+            "error_message": "",
+        },
+    )
+    return record_agent_output_outcome(
+        output_id,
+        outcome_status="applied",
+        outcome_value=json.dumps(
+            {
+                "request_id": request_id,
+                "external_contact_id": external_contact_id,
+                "requested_target_pool": target_pool,
+                "final_target_pool": final_target_pool,
+                "member_id": ((applied_result.get("member") or {}).get("id")),
+            },
+            ensure_ascii=False,
+        ),
+        adopted_by=adopted_by,
+        adopted_action=f"{adopted_action_prefix}:{final_target_pool}",
+        adopted_at=_iso_now(),
+        applied_status="applied",
+    )
 
 
 def run_agent_router_shadow_decision(
@@ -654,30 +1048,34 @@ def run_agent_router_shadow_decision(
     router_config = repo.deserialize_agent_router_config_row(repo.get_agent_router_config() or {})
     if not bool(router_config.get("enabled")) or not _normalized_text(router_config.get("webhook_url")):
         return {"ok": False, "status": "shadow_disabled", "shadow_called": False}
-
-    detail = member_detail or get_member_detail(external_contact_id=external_contact_id, phone="")
-    if not detail:
+    member_row = repo.get_member_by_external_contact_id(_normalized_text(external_contact_id))
+    detail = member_detail or {
+        "profile": {
+            "owner_staff_id": _normalized_text((member_row or {}).get("owner_staff_id")),
+        },
+        "member_exists": bool(member_row),
+    }
+    if not bool(detail.get("member_exists")) and not member_row:
         return {"ok": False, "status": "member_not_found", "shadow_called": False}
-    owner_value = _normalized_text(owner_userid) or _normalized_text((detail.get("profile") or {}).get("owner_staff_id"))
-    allowed_agents = _enabled_child_agents()
+    owner_value = (
+        _normalized_text(owner_userid)
+        or _normalized_text((detail.get("profile") or {}).get("owner_staff_id"))
+        or _normalized_text((member_row or {}).get("owner_staff_id"))
+    )
     now_text = _iso_now()
     request_id = f"router-shadow-{uuid.uuid4().hex}"
     run_id = f"arun-{uuid.uuid4().hex}"
     history_messages = list(recent_messages or get_recent_messages_by_user(external_contact_id, limit=20))
     request_payload = {
         "request_id": request_id,
-        "batch_id": _normalized_text(batch_id),
-        "tenant": "aicrm",
-        "env": _request_env_label(),
-        "messages": [_router_message_entry(item, external_contact_id=external_contact_id) for item in history_messages[:20]],
-        "userid": owner_value,
         "external_contact_id": _normalized_text(external_contact_id),
-        "member_snapshot": _build_router_member_snapshot(detail),
-        "allowed_agents": allowed_agents,
-        "context_version": "lobster-shadow-v1",
-        "created_at": now_text,
+        "recent_messages": [_router_message_entry(item, external_contact_id=external_contact_id) for item in history_messages[:20]],
     }
-    variables_snapshot = _build_member_variable_snapshot(external_contact_id, _normalized_text((detail.get("profile") or {}).get("phone")))
+    variables_snapshot = {
+        "lobster_mcp_mode": True,
+        "input_protocol_version": "lobster-shadow-ingress-async-v3",
+        "recent_messages_count": len(request_payload["recent_messages"]),
+    }
     create_agent_run(
         {
             "run_id": run_id,
@@ -690,12 +1088,24 @@ def run_agent_router_shadow_decision(
             "provider": "lobster_shadow",
             "input_snapshot": request_payload,
             "variables_snapshot": variables_snapshot,
-            "final_prompt_preview": "shadow_router_webhook",
+            "final_prompt_preview": "shadow_router_ingress_webhook",
             "role_prompt_version": "router-webhook",
-            "task_prompt_version": "shadow-v1",
-            "status": "pending",
+            "task_prompt_version": "lobster-shadow-ingress-async-v3",
+            "status": "queued",
             "source": source,
         }
+    )
+    _append_router_event_output(
+        run_id=run_id,
+        request_id=request_id,
+        userid=owner_value,
+        external_contact_id=_normalized_text(external_contact_id),
+        output_type="route_ingress_sent",
+        raw_output_text=json.dumps(request_payload, ensure_ascii=False),
+        normalized_output=request_payload,
+        rendered_output_text="router ingress queued",
+        applied_status="queued",
+        reason="router ingress queued",
     )
     started_at = time.perf_counter()
     body_text = json.dumps(request_payload, ensure_ascii=False, separators=(",", ":"))
@@ -703,11 +1113,6 @@ def run_agent_router_shadow_decision(
     timeout_seconds = max(1, int(router_config.get("timeout_seconds") or 8))
     retry_count = max(0, int(router_config.get("retry_count") or 1))
     response_text = ""
-    response_payload: dict[str, Any] = {}
-    status = "success"
-    error_code = ""
-    error_message = ""
-    decision: dict[str, Any] = {}
 
     try:
         response = None
@@ -721,147 +1126,121 @@ def run_agent_router_shadow_decision(
                 )
                 break
             except requests.Timeout as exc:
-                error_code = "timeout"
-                error_message = str(exc) or "router webhook timeout"
                 if attempt >= retry_count:
                     raise
             except requests.RequestException as exc:
-                error_code = "request_error"
-                error_message = str(exc) or "router webhook request_error"
                 if attempt >= retry_count:
                     raise
         latency_ms = int((time.perf_counter() - started_at) * 1000)
         if response is None:
-            raise requests.RequestException(error_message or "router webhook request_error")
+            raise requests.RequestException("router webhook request_error")
         response_text = _normalized_text(response.text)
-        if int(response.status_code) >= 400:
-            status = "fallback"
-            error_code = f"http_status_{int(response.status_code)}"
-            error_message = response_text or error_code
-            decision = _router_fallback_payload(
-                reason_code=error_code,
-                error_message=error_message,
-                router_config=router_config,
-                request_payload=request_payload,
-                raw_response_text=response_text,
-            )
-        else:
-            try:
-                payload_data = response.json()
-            except ValueError:
-                payload_data = None
-            normalized_response, schema_error = _validated_router_response(payload_data, allowed_agents=allowed_agents)
-            if schema_error == "unknown_agent_code":
-                status = "fallback"
-                error_code = "unknown_agent_code"
-                error_message = f"unknown agent_code: {normalized_response.get('agent_code')}"
-                decision = _router_fallback_payload(
-                    reason_code=error_code,
-                    error_message=error_message,
-                    router_config=router_config,
-                    request_payload=request_payload,
-                    raw_response_text=response_text or json.dumps(payload_data or {}, ensure_ascii=False),
-                )
-            elif schema_error:
-                status = "fallback"
-                error_code = "invalid_schema_response"
-                error_message = "invalid_schema_response"
-                decision = _router_fallback_payload(
-                    reason_code=error_code,
-                    error_message=error_message,
-                    router_config=router_config,
-                    request_payload=request_payload,
-                    raw_response_text=response_text or json.dumps(payload_data or {}, ensure_ascii=False),
-                )
-            else:
-                response_payload = normalized_response
-                decision = normalized_response
-        output_type = "route_decision" if status == "success" else "fallback_decision"
+        if int(response.status_code) != _ROUTER_ACK_HTTP_STATUS:
+            raise requests.RequestException(response_text or f"http_status_{int(response.status_code)}")
+
         update_agent_run_status(
             run_id,
             {
-                "status": status,
-                "error_code": error_code,
-                "error_message": error_message,
+                "status": "delivered",
+                "error_code": "",
+                "error_message": "",
                 "latency_ms": latency_ms,
             },
         )
-        output = append_agent_output(
+        _append_router_event_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=owner_value,
+            external_contact_id=_normalized_text(external_contact_id),
+            output_type="route_ingress_acked",
+            raw_output_text=response_text,
+            normalized_output={"http_status": int(response.status_code), "accepted": True},
+            rendered_output_text="router ingress acked",
+            applied_status="acked",
+            reason="router ingress acked",
+        )
+        update_agent_run_status(
+            run_id,
             {
-                "run_id": run_id,
-                "request_id": request_id,
-                "userid": owner_value,
-                "external_contact_id": _normalized_text(external_contact_id),
-                "agent_code": "central_router_agent",
-                "output_type": output_type,
-                "raw_output_text": response_text or json.dumps(decision or {}, ensure_ascii=False),
-                "normalized_output": decision,
-                "rendered_output_text": _normalized_text(decision.get("reason")) or response_text or output_type,
-                "target_agent_code": _normalized_text(decision.get("agent_code")),
-                "target_pool": _normalized_text(decision.get("target_pool")),
-                "confidence": decision.get("confidence") or 0,
-                "reason": _normalized_text(decision.get("reason")) or error_message,
-                "need_human_review": bool(decision.get("need_human_review")),
-                "applied_status": "shadow_recorded",
-                "error_code": error_code,
-                "error_message": error_message,
-            }
+                "status": "acked",
+                "error_code": "",
+                "error_message": "",
+                "latency_ms": latency_ms,
+            },
         )
         _touch_router_runtime_status(
-            status="success" if status == "success" else error_code or "fallback",
-            error_message=error_message,
+            status="acked",
+            error_message="",
             last_called_at=now_text,
         )
         get_db().commit()
         return {
-            "ok": status == "success",
-            "status": status,
+            "ok": True,
+            "status": "acked",
             "shadow_called": True,
             "run_id": run_id,
             "request_id": request_id,
-            "output_id": output.get("output_id"),
-            "decision": decision,
             "latency_ms": latency_ms,
         }
     except requests.Timeout as exc:
         latency_ms = int((time.perf_counter() - started_at) * 1000)
-        decision = _router_fallback_payload(
-            reason_code="timeout",
-            error_message=str(exc) or "router webhook timeout",
-            router_config=router_config,
-            request_payload=request_payload,
-        )
+        error_message = str(exc) or "router webhook timeout"
         update_agent_run_status(
             run_id,
             {
-                "status": "fallback",
+                "status": "failed",
                 "error_code": "timeout",
-                "error_message": str(exc) or "router webhook timeout",
+                "error_message": error_message,
                 "latency_ms": latency_ms,
             },
         )
-        output = append_agent_output(
-            {
-                "run_id": run_id,
-                "request_id": request_id,
-                "userid": owner_value,
-                "external_contact_id": _normalized_text(external_contact_id),
-                "agent_code": "central_router_agent",
-                "output_type": "fallback_decision",
-                "raw_output_text": "",
-                "normalized_output": decision,
-                "rendered_output_text": _normalized_text(decision.get("reason")) or "router webhook timeout",
-                "target_agent_code": _normalized_text(decision.get("agent_code")),
-                "target_pool": _normalized_text(decision.get("target_pool")),
-                "confidence": 0,
-                "reason": _normalized_text(decision.get("reason")),
-                "need_human_review": bool(decision.get("need_human_review")),
-                "applied_status": "shadow_recorded",
-                "error_code": "timeout",
-                "error_message": str(exc) or "router webhook timeout",
-            }
+        _append_router_event_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=owner_value,
+            external_contact_id=_normalized_text(external_contact_id),
+            output_type="error_output",
+            rendered_output_text="router ingress timeout",
+            applied_status="failed",
+            reason=error_message,
+            error_code="timeout",
+            error_message=error_message,
         )
-        _touch_router_runtime_status(status="timeout", error_message=str(exc) or "router webhook timeout", last_called_at=now_text)
+        decision = _router_fallback_payload(
+            reason_code="timeout",
+            error_message=error_message,
+            router_config=router_config,
+            request_payload=request_payload,
+        )
+        fallback_output = _append_router_event_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=owner_value,
+            external_contact_id=_normalized_text(external_contact_id),
+            output_type="fallback_decision",
+            raw_output_text="",
+            normalized_output=decision,
+            rendered_output_text=_normalized_text(decision.get("reason")) or "router webhook timeout",
+            target_agent_code=_normalized_text(decision.get("agent_code")),
+            target_pool=_router_decision_target_pool(decision),
+            confidence=0,
+            reason=_normalized_text(decision.get("reason")),
+            need_human_review=bool(decision.get("need_human_review")),
+            applied_status="pending_fallback",
+            error_code="timeout",
+            error_message=error_message,
+        )
+        _apply_router_decision(
+            run_id=run_id,
+            request_id=request_id,
+            userid=owner_value,
+            external_contact_id=_normalized_text(external_contact_id),
+            decision=decision,
+            output_id=_normalized_text(fallback_output.get("output_id")),
+            adopted_by="router_fallback",
+            adopted_action_prefix="fallback_apply",
+        )
+        _touch_router_runtime_status(status="timeout", error_message=error_message, last_called_at=now_text)
         get_db().commit()
         return {
             "ok": False,
@@ -869,49 +1248,73 @@ def run_agent_router_shadow_decision(
             "shadow_called": True,
             "run_id": run_id,
             "request_id": request_id,
-            "output_id": output.get("output_id"),
             "decision": decision,
             "latency_ms": latency_ms,
         }
     except requests.RequestException as exc:
         latency_ms = int((time.perf_counter() - started_at) * 1000)
+        error_message = str(exc) or "router webhook request_error"
+        error_code = "request_error"
+        if error_message.startswith("http_status_"):
+            error_code = error_message
         decision = _router_fallback_payload(
-            reason_code="request_error",
-            error_message=str(exc) or "router webhook request_error",
+            reason_code=error_code,
+            error_message=error_message,
             router_config=router_config,
             request_payload=request_payload,
+            raw_response_text=response_text,
         )
         update_agent_run_status(
             run_id,
             {
-                "status": "fallback",
-                "error_code": "request_error",
-                "error_message": str(exc) or "router webhook request_error",
+                "status": "failed",
+                "error_code": error_code,
+                "error_message": error_message,
                 "latency_ms": latency_ms,
             },
         )
-        output = append_agent_output(
-            {
-                "run_id": run_id,
-                "request_id": request_id,
-                "userid": owner_value,
-                "external_contact_id": _normalized_text(external_contact_id),
-                "agent_code": "central_router_agent",
-                "output_type": "fallback_decision",
-                "raw_output_text": "",
-                "normalized_output": decision,
-                "rendered_output_text": _normalized_text(decision.get("reason")) or "router webhook request_error",
-                "target_agent_code": _normalized_text(decision.get("agent_code")),
-                "target_pool": _normalized_text(decision.get("target_pool")),
-                "confidence": 0,
-                "reason": _normalized_text(decision.get("reason")),
-                "need_human_review": bool(decision.get("need_human_review")),
-                "applied_status": "shadow_recorded",
-                "error_code": "request_error",
-                "error_message": str(exc) or "router webhook request_error",
-            }
+        _append_router_event_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=owner_value,
+            external_contact_id=_normalized_text(external_contact_id),
+            output_type="error_output",
+            rendered_output_text="router ingress failed",
+            raw_output_text=response_text,
+            applied_status="failed",
+            reason=error_message,
+            error_code=error_code,
+            error_message=error_message,
         )
-        _touch_router_runtime_status(status="request_error", error_message=str(exc) or "router webhook request_error", last_called_at=now_text)
+        fallback_output = _append_router_event_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=owner_value,
+            external_contact_id=_normalized_text(external_contact_id),
+            output_type="fallback_decision",
+            raw_output_text=response_text,
+            normalized_output=decision,
+            rendered_output_text=_normalized_text(decision.get("reason")) or "router webhook request_error",
+            target_agent_code=_normalized_text(decision.get("agent_code")),
+            target_pool=_router_decision_target_pool(decision),
+            confidence=0,
+            reason=_normalized_text(decision.get("reason")),
+            need_human_review=bool(decision.get("need_human_review")),
+            applied_status="pending_fallback",
+            error_code=error_code,
+            error_message=error_message,
+        )
+        _apply_router_decision(
+            run_id=run_id,
+            request_id=request_id,
+            userid=owner_value,
+            external_contact_id=_normalized_text(external_contact_id),
+            decision=decision,
+            output_id=_normalized_text(fallback_output.get("output_id")),
+            adopted_by="router_fallback",
+            adopted_action_prefix="fallback_apply",
+        )
+        _touch_router_runtime_status(status=error_code, error_message=error_message, last_called_at=now_text)
         get_db().commit()
         return {
             "ok": False,
@@ -919,10 +1322,359 @@ def run_agent_router_shadow_decision(
             "shadow_called": True,
             "run_id": run_id,
             "request_id": request_id,
-            "output_id": output.get("output_id"),
             "decision": decision,
             "latency_ms": latency_ms,
         }
+
+
+def handle_agent_router_callback(payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    raw_payload = _normalize_json_dict(payload)
+    request_id = _normalized_text(raw_payload.get("request_id"))
+    external_contact_id = _normalized_text(raw_payload.get("external_contact_id"))
+    target_pool = _normalized_text(raw_payload.get("target_pool"))
+    raw_payload_text = json.dumps(raw_payload, ensure_ascii=False)
+    now_text = _iso_now()
+
+    existing_run = _resolve_request_run(request_id)
+    run_id = _normalized_text((existing_run or {}).get("run_id")) or f"arun-{uuid.uuid4().hex}"
+    userid = _normalized_text((existing_run or {}).get("userid"))
+
+    if not existing_run:
+        orphan_run = create_agent_run(
+            {
+                "run_id": run_id,
+                "request_id": request_id,
+                "batch_id": "",
+                "userid": userid,
+                "external_contact_id": external_contact_id,
+                "agent_code": "central_router_agent",
+                "agent_type": "router",
+                "provider": "lobster_shadow",
+                "input_snapshot": {},
+                "variables_snapshot": {"callback_orphan": True},
+                "final_prompt_preview": "router_callback_orphan",
+                "role_prompt_version": "router-webhook",
+                "task_prompt_version": "lobster-shadow-ingress-async-v3",
+                "status": "rejected",
+                "source": "reply_monitor_callback_orphan",
+            }
+        )
+        _append_router_event_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            output_type="callback_received",
+            raw_output_text=raw_payload_text,
+            normalized_output=raw_payload,
+            rendered_output_text="callback received for unknown request",
+            applied_status="rejected",
+            reason="request_not_found",
+            error_code="request_not_found",
+            error_message="request_not_found",
+        )
+        _append_router_callback_rejected_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            raw_output_text=raw_payload_text,
+            normalized_output=raw_payload,
+            reason="request_not_found",
+            rendered_output_text="router callback rejected: request_not_found",
+        )
+        _touch_router_runtime_status(status="callback_rejected", error_message="request_not_found", last_called_at=now_text)
+        get_db().commit()
+        return {
+            "ok": False,
+            "status": "rejected",
+            "error": "request_not_found",
+            "run_id": orphan_run.get("run_id"),
+            "request_id": request_id,
+        }
+
+    terminal_statuses = {"completed", "applied", "rejected", "failed"}
+    current_status = _normalized_text(existing_run.get("status"))
+    if current_status in terminal_statuses:
+        latest_output = _latest_request_output(
+            request_id,
+            output_types=["route_decision", "fallback_decision", "error_output", "callback_validated", "callback_rejected"],
+        )
+        return {
+            "ok": True,
+            "status": "idempotent",
+            "request_id": request_id,
+            "run_id": run_id,
+            "final_status": current_status,
+            "output_id": _normalized_text(latest_output.get("output_id")),
+        }
+
+    _append_router_event_output(
+        run_id=run_id,
+        request_id=request_id,
+        userid=userid,
+        external_contact_id=external_contact_id,
+        output_type="callback_received",
+        raw_output_text=raw_payload_text,
+        normalized_output=raw_payload,
+        rendered_output_text="router callback received",
+        applied_status="received",
+        reason="router callback received",
+    )
+
+    normalized_callback, schema_error = _validated_router_callback_payload(
+        raw_payload,
+        expected_request_id=_normalized_text(existing_run.get("request_id")),
+        expected_external_contact_id=_normalized_text(existing_run.get("external_contact_id")),
+    )
+    if schema_error:
+        update_agent_run_status(
+            run_id,
+            {
+                "status": "rejected",
+                "error_code": schema_error,
+                "error_message": schema_error,
+            },
+        )
+        output = _append_router_callback_rejected_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            raw_output_text=raw_payload_text,
+            normalized_output=raw_payload,
+            rendered_output_text="router callback rejected",
+            reason=schema_error,
+        )
+        _touch_router_runtime_status(status="callback_rejected", error_message=schema_error, last_called_at=now_text)
+        get_db().commit()
+        return {
+            "ok": False,
+            "status": "rejected",
+            "error": schema_error,
+            "request_id": request_id,
+            "run_id": run_id,
+            "output_id": output.get("output_id"),
+        }
+
+    if normalized_callback["target_pool"] not in _router_allowed_target_pools():
+        update_agent_run_status(
+            run_id,
+            {
+                "status": "rejected",
+                "error_code": "invalid_target_pool",
+                "error_message": "invalid_target_pool",
+            },
+        )
+        output = _append_router_callback_rejected_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            raw_output_text=raw_payload_text,
+            normalized_output=normalized_callback,
+            rendered_output_text="router callback rejected: invalid target_pool",
+            reason="invalid_target_pool",
+        )
+        _touch_router_runtime_status(status="callback_rejected", error_message="invalid_target_pool", last_called_at=now_text)
+        get_db().commit()
+        return {
+            "ok": False,
+            "status": "rejected",
+            "error": "invalid_target_pool",
+            "request_id": request_id,
+            "run_id": run_id,
+            "output_id": output.get("output_id"),
+        }
+
+    member = repo.get_member_by_external_contact_id(external_contact_id)
+    if not member:
+        update_agent_run_status(
+            run_id,
+            {
+                "status": "rejected",
+                "error_code": "automation_member_not_found",
+                "error_message": "automation_member_not_found",
+            },
+        )
+        output = _append_router_callback_rejected_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            raw_output_text=raw_payload_text,
+            normalized_output=normalized_callback,
+            rendered_output_text="router callback rejected: automation_member_not_found",
+            reason="automation_member_not_found",
+        )
+        _touch_router_runtime_status(status="callback_rejected", error_message="automation_member_not_found", last_called_at=now_text)
+        get_db().commit()
+        return {
+            "ok": False,
+            "status": "rejected",
+            "error": "automation_member_not_found",
+            "request_id": request_id,
+            "run_id": run_id,
+            "output_id": output.get("output_id"),
+        }
+
+    callback_meta = {
+        "trace_id": _normalized_text(normalized_callback.get("trace_id")),
+        "processing_latency_ms": int(normalized_callback.get("processing_latency_ms") or 0),
+        "prompt_version_used": _normalized_text(normalized_callback.get("prompt_version_used")),
+        "mcp_tools_used": list(normalized_callback.get("mcp_tools_used") or []),
+        "completed_at": _normalized_text(normalized_callback.get("completed_at")) or now_text,
+    }
+    next_variables_snapshot = dict(existing_run.get("variables_snapshot_json") or {})
+    next_variables_snapshot["callback_meta"] = callback_meta
+    update_agent_run_status(
+        run_id,
+        {
+            "status": "completed",
+            "error_code": "",
+            "error_message": "",
+            "variables_snapshot": next_variables_snapshot,
+        },
+    )
+    _append_router_event_output(
+        run_id=run_id,
+        request_id=request_id,
+        userid=userid,
+        external_contact_id=external_contact_id,
+        output_type="callback_validated",
+        raw_output_text=raw_payload_text,
+        normalized_output=normalized_callback,
+        rendered_output_text="router callback validated",
+        target_agent_code=_normalized_text(normalized_callback.get("agent_code")) or normalized_callback["target_pool"],
+        target_pool=normalized_callback["target_pool"],
+        confidence=normalized_callback["confidence"],
+        reason=_normalized_text(normalized_callback.get("reason")) or "router callback validated",
+        need_human_review=bool(normalized_callback.get("need_human_review")),
+        applied_status="validated",
+    )
+
+    decision = {
+        "request_id": request_id,
+        "external_contact_id": external_contact_id,
+        "agent_code": _normalized_text(normalized_callback.get("agent_code")) or normalized_callback["target_pool"],
+        "target_pool": normalized_callback["target_pool"],
+        "confidence": normalized_callback["confidence"],
+        "reason": _normalized_text(normalized_callback.get("reason")) or normalized_callback["target_pool"],
+        "need_human_review": bool(normalized_callback.get("need_human_review")),
+        "structured_result": {
+            "target_pool": normalized_callback["target_pool"],
+            "completed_at": _normalized_text(normalized_callback.get("completed_at")) or now_text,
+            "trace_id": _normalized_text(normalized_callback.get("trace_id")),
+            "processing_latency_ms": int(normalized_callback.get("processing_latency_ms") or 0),
+            "prompt_version_used": _normalized_text(normalized_callback.get("prompt_version_used")),
+            "mcp_tools_used": list(normalized_callback.get("mcp_tools_used") or []),
+        },
+    }
+    decision_output = _append_router_event_output(
+        run_id=run_id,
+        request_id=request_id,
+        userid=userid,
+        external_contact_id=external_contact_id,
+        output_type="route_decision",
+        raw_output_text=raw_payload_text,
+        normalized_output=decision,
+        rendered_output_text=_normalized_text(decision.get("reason")) or normalized_callback["target_pool"],
+        target_agent_code=_normalized_text(decision.get("agent_code")),
+        target_pool=normalized_callback["target_pool"],
+        confidence=normalized_callback["confidence"],
+        reason=_normalized_text(decision.get("reason")),
+        need_human_review=bool(decision.get("need_human_review")),
+        applied_status="pending_apply",
+    )
+
+    if bool(normalized_callback.get("need_human_review")):
+        applied = _apply_router_decision(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            decision=decision,
+            output_id=_normalized_text(decision_output.get("output_id")),
+            adopted_by="lobster_callback",
+            adopted_action_prefix="human_review_apply",
+        )
+        _touch_router_runtime_status(status="callback_applied", error_message="", last_called_at=now_text)
+        get_db().commit()
+        return {
+            "ok": True,
+            "status": "applied",
+            "request_id": request_id,
+            "run_id": run_id,
+            "output_id": applied.get("output_id"),
+        }
+
+    router_config = repo.deserialize_agent_router_config_row(repo.get_agent_router_config() or {})
+    min_callback_confidence = float(_router_runtime_strategy(router_config).get("min_confidence") or 0.5)
+    if float(normalized_callback.get("confidence") or 0) < min_callback_confidence:
+        update_agent_run_status(
+            run_id,
+            {
+                "status": "rejected",
+                "error_code": "confidence_too_low",
+                "error_message": "confidence_too_low",
+            },
+        )
+        _append_router_callback_rejected_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            raw_output_text=raw_payload_text,
+            normalized_output=decision,
+            reason="confidence_too_low",
+            rendered_output_text="router callback rejected: confidence_too_low",
+        )
+        rejected = record_agent_output_outcome(
+            _normalized_text(decision_output.get("output_id")),
+            outcome_status="rejected",
+            outcome_value=json.dumps(
+                {
+                    "request_id": request_id,
+                    "external_contact_id": external_contact_id,
+                    "target_pool": normalized_callback["target_pool"],
+                    "confidence": normalized_callback["confidence"],
+                    "min_confidence": min_callback_confidence,
+                },
+                ensure_ascii=False,
+            ),
+            applied_status="rejected",
+        )
+        _touch_router_runtime_status(status="callback_rejected", error_message="confidence_too_low", last_called_at=now_text)
+        get_db().commit()
+        return {
+            "ok": False,
+            "status": "rejected",
+            "error": "confidence_too_low",
+            "request_id": request_id,
+            "run_id": run_id,
+            "output_id": rejected.get("output_id"),
+        }
+
+    applied = _apply_router_decision(
+        run_id=run_id,
+        request_id=request_id,
+        userid=userid,
+        external_contact_id=external_contact_id,
+        decision=decision,
+        output_id=_normalized_text(decision_output.get("output_id")),
+        adopted_by="lobster_callback",
+        adopted_action_prefix="callback_apply",
+    )
+    _touch_router_runtime_status(status="callback_applied", error_message="", last_called_at=now_text)
+    get_db().commit()
+    return {
+        "ok": True,
+        "status": "applied",
+        "request_id": request_id,
+        "run_id": run_id,
+        "output_id": applied.get("output_id"),
+    }
 
 
 def record_agent_output_outcome(
@@ -955,6 +1707,331 @@ def record_agent_output_outcome(
     return _serialize_agent_output(row)
 
 
+def _resolve_member_detail_for_skill(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    if not _normalized_text(external_contact_id) and not _normalized_text(phone):
+        raise ValueError("external_contact_id or phone is required")
+    return get_member_detail(external_contact_id=_normalized_text(external_contact_id), phone=_normalized_text(phone))
+
+
+def _script_item_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "agent_code": _normalized_text(item.get("agent_code")),
+        "display_name": _normalized_text(item.get("display_name")),
+        "pool_keys": list(item.get("pool_keys") or []),
+        "enabled": bool(item.get("enabled")),
+        "draft_version": int(item.get("draft_version") or 0),
+        "published_version": int(item.get("published_version") or 0),
+        "last_modified_at": _normalized_text(item.get("last_modified_at")),
+        "last_modified_by": _normalized_text(item.get("last_modified_by")),
+        "last_modified_source": _normalized_text(item.get("last_modified_source")),
+        "diff_summary": list(item.get("diff_summary") or []),
+    }
+
+
+def crm_get_member_basic(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    detail = _resolve_member_detail_for_skill(external_contact_id=external_contact_id, phone=phone)
+    profile = dict(detail.get("profile") or {})
+    member = dict(detail.get("member") or {})
+    return {
+        "member_exists": bool(detail.get("member_exists")),
+        "basic": {
+            "customer_name": _normalized_text(profile.get("customer_name")),
+            "external_contact_id": _normalized_text(profile.get("external_contact_id") or member.get("external_contact_id")),
+            "phone": _normalized_text(profile.get("phone") or member.get("phone")),
+            "owner_staff_id": _normalized_text(profile.get("owner_staff_id") or member.get("owner_staff_id")),
+            "owner_display_name": _normalized_text(profile.get("owner_display_name") or profile.get("owner_staff_id")),
+            "unionid": _normalized_text(profile.get("unionid")),
+        },
+    }
+
+
+def crm_get_member_stage(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    detail = _resolve_member_detail_for_skill(external_contact_id=external_contact_id, phone=phone)
+    member = dict(detail.get("member") or {})
+    return {
+        "member_exists": bool(detail.get("member_exists")),
+        "stage": {
+            "external_contact_id": _normalized_text(member.get("external_contact_id")),
+            "current_pool": _normalized_text(member.get("current_pool")),
+            "current_pool_label": _normalized_text(member.get("current_pool_label")),
+            "current_stage": _normalized_text(member.get("current_stage")),
+            "current_stage_label": _normalized_text(member.get("current_stage_label")),
+            "current_target": _normalized_text(member.get("current_target")),
+            "current_target_label": _normalized_text(member.get("current_target_label")),
+            "follow_type": _normalized_text(member.get("follow_type")),
+            "activation_status": _normalized_text(member.get("activation_status")),
+            "decision_source": _normalized_text(member.get("decision_source")),
+            "in_pool": bool(member.get("in_pool")),
+            "updated_at": _normalized_text(member.get("updated_at")),
+        },
+    }
+
+
+def crm_get_member_questionnaire(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    detail = _resolve_member_detail_for_skill(external_contact_id=external_contact_id, phone=phone)
+    questionnaire = dict(detail.get("questionnaire") or {})
+    return {
+        "member_exists": bool(detail.get("member_exists")),
+        "questionnaire": {
+            "status": _normalized_text(questionnaire.get("status")),
+            "status_label": _normalized_text(questionnaire.get("status_label")),
+            "result": _normalized_text(questionnaire.get("result")),
+            "result_label": _normalized_text(questionnaire.get("result_label")),
+            "hit_count": int(questionnaire.get("hit_count") or 0),
+            "matched_questions": list(questionnaire.get("matched_questions") or []),
+            "submitted_at": _normalized_text(questionnaire.get("submitted_at")),
+        },
+    }
+
+
+def crm_get_member_recent_events(*, external_contact_id: str = "", phone: str = "", limit: int = 20) -> dict[str, Any]:
+    detail = _resolve_member_detail_for_skill(external_contact_id=external_contact_id, phone=phone)
+    resolved_external_contact_id = _normalized_text((detail.get("profile") or {}).get("external_contact_id"))
+    safe_limit = max(1, min(100, int(limit or 20)))
+    timeline = (
+        get_customer_timeline(
+            resolved_external_contact_id,
+            {
+                "limit": safe_limit,
+                "offset": 0,
+                "normalized_limit": safe_limit,
+                "normalized_offset": 0,
+            },
+        )
+        if resolved_external_contact_id
+        else None
+    )
+    return {
+        "member_exists": bool(detail.get("member_exists")),
+        "external_contact_id": resolved_external_contact_id,
+        "events": list((timeline or {}).get("items") or []),
+        "total": int((timeline or {}).get("total") or 0),
+    }
+
+
+def crm_get_member_recent_outputs(*, external_contact_id: str = "", phone: str = "", limit: int = 20) -> dict[str, Any]:
+    detail = _resolve_member_detail_for_skill(external_contact_id=external_contact_id, phone=phone)
+    resolved_external_contact_id = _normalized_text((detail.get("profile") or {}).get("external_contact_id"))
+    safe_limit = max(1, min(100, int(limit or 20)))
+    outputs = (
+        get_agent_outputs_by_user(resolved_external_contact_id, limit=safe_limit, visibility="full")
+        if resolved_external_contact_id
+        else {"rows": []}
+    )
+    return {
+        "member_exists": bool(detail.get("member_exists")),
+        "external_contact_id": resolved_external_contact_id,
+        "rows": list(outputs.get("rows") or []),
+        "total": len(list(outputs.get("rows") or [])),
+    }
+
+
+def crm_get_member_snapshot(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    detail = _resolve_member_detail_for_skill(external_contact_id=external_contact_id, phone=phone)
+    profile = dict(detail.get("profile") or {})
+    member = dict(detail.get("member") or {})
+    questionnaire = dict(detail.get("questionnaire") or {})
+    return {
+        "member_exists": bool(detail.get("member_exists")),
+        "basic": {
+            "customer_name": _normalized_text(profile.get("customer_name")),
+            "external_contact_id": _normalized_text(profile.get("external_contact_id") or member.get("external_contact_id")),
+            "phone": _normalized_text(profile.get("phone") or member.get("phone")),
+            "owner_staff_id": _normalized_text(profile.get("owner_staff_id") or member.get("owner_staff_id")),
+            "owner_display_name": _normalized_text(profile.get("owner_display_name") or profile.get("owner_staff_id")),
+            "unionid": _normalized_text(profile.get("unionid")),
+        },
+        "stage": {
+            "external_contact_id": _normalized_text(member.get("external_contact_id")),
+            "current_pool": _normalized_text(member.get("current_pool")),
+            "current_pool_label": _normalized_text(member.get("current_pool_label")),
+            "current_stage": _normalized_text(member.get("current_stage")),
+            "current_stage_label": _normalized_text(member.get("current_stage_label")),
+            "current_target": _normalized_text(member.get("current_target")),
+            "current_target_label": _normalized_text(member.get("current_target_label")),
+            "follow_type": _normalized_text(member.get("follow_type")),
+            "activation_status": _normalized_text(member.get("activation_status")),
+            "decision_source": _normalized_text(member.get("decision_source")),
+            "in_pool": bool(member.get("in_pool")),
+            "updated_at": _normalized_text(member.get("updated_at")),
+        },
+        "questionnaire": {
+            "status": _normalized_text(questionnaire.get("status")),
+            "status_label": _normalized_text(questionnaire.get("status_label")),
+            "result": _normalized_text(questionnaire.get("result")),
+            "result_label": _normalized_text(questionnaire.get("result_label")),
+            "hit_count": int(questionnaire.get("hit_count") or 0),
+            "matched_questions": list(questionnaire.get("matched_questions") or []),
+            "submitted_at": _normalized_text(questionnaire.get("submitted_at")),
+        },
+        "latest_manual_action": dict(detail.get("latest_manual_action") or {}),
+        "last_ai_push_at": _normalized_text(detail.get("last_ai_push_at")),
+        "ai_cooldown_until": _normalized_text(detail.get("ai_cooldown_until")),
+    }
+
+
+def script_list_items(*, query: str = "") -> dict[str, Any]:
+    normalized_query = _normalized_text(query).lower()
+    rows = []
+    for item in _load_agent_list():
+        haystack = " ".join(
+            [
+                _normalized_text(item.get("agent_code")),
+                _normalized_text(item.get("display_name")),
+                " ".join(str(pool_key) for pool_key in item.get("pool_keys") or []),
+            ]
+        ).lower()
+        if normalized_query and normalized_query not in haystack:
+            continue
+        rows.append(_script_item_summary(item))
+    return {"total": len(rows), "rows": rows}
+
+
+def script_get_item(agent_code: str) -> dict[str, Any]:
+    return {
+        "item": get_agent_config_detail(agent_code),
+        "publish_mode": "manual_publish_required",
+    }
+
+
+def script_search_items(keyword: str) -> dict[str, Any]:
+    return script_list_items(query=keyword)
+
+
+def script_create_draft(agent_code: str, *, operator_id: str, from_version: str = "published", change_summary: str = "") -> dict[str, Any]:
+    existing = get_agent_config_detail(agent_code)
+    source_key = "draft" if _normalized_text(from_version) == "draft" else "published"
+    source_payload = dict(existing.get(source_key) or {})
+    saved = save_agent_config_draft(
+        agent_code,
+        {
+            "display_name": existing.get("display_name"),
+            "enabled": bool(existing.get("enabled")),
+            "role_prompt": source_payload.get("role_prompt"),
+            "task_prompt": source_payload.get("task_prompt"),
+            "variables": list(source_payload.get("variables") or []),
+            "output_schema": list(source_payload.get("output_schema") or []),
+            "change_summary": _normalized_text(change_summary) or f"基于 {source_key} 版本创建 Lobster 草稿",
+        },
+        operator_id=operator_id,
+        source="lobster_mcp_script_create",
+    )
+    return {
+        "created": True,
+        "source_version": source_key,
+        "agent": saved.get("agent") or {},
+    }
+
+
+def script_update_draft(
+    agent_code: str,
+    *,
+    operator_id: str,
+    display_name: str | None = None,
+    enabled: Any = None,
+    role_prompt: str | None = None,
+    task_prompt: str | None = None,
+    variables: Any = None,
+    output_schema: Any = None,
+    change_summary: str = "",
+) -> dict[str, Any]:
+    existing = get_agent_config_detail(agent_code)
+    current_draft = dict(existing.get("draft") or {})
+    payload = {
+        "display_name": _normalized_text(display_name) or existing.get("display_name"),
+        "enabled": bool(existing.get("enabled")) if enabled is None else _normalize_bool(enabled),
+        "role_prompt": _normalized_text(role_prompt) or current_draft.get("role_prompt"),
+        "task_prompt": _normalized_text(task_prompt) or current_draft.get("task_prompt"),
+        "variables": list(current_draft.get("variables") or []) if variables is None else _normalize_json_list(variables),
+        "output_schema": list(current_draft.get("output_schema") or []) if output_schema is None else _normalize_json_list(output_schema),
+        "change_summary": _normalized_text(change_summary) or "Lobster MCP 更新话术草稿",
+    }
+    saved = save_agent_config_draft(
+        agent_code,
+        payload,
+        operator_id=operator_id,
+        source="lobster_mcp_script_update",
+    )
+    return {"updated": True, "agent": saved.get("agent") or {}}
+
+
+def script_diff_draft(agent_code: str) -> dict[str, Any]:
+    item = get_agent_config_detail(agent_code)
+    draft = dict(item.get("draft") or {})
+    published = dict(item.get("published") or {})
+    return {
+        "item": _script_item_summary(item),
+        "diff_summary": list(item.get("diff_summary") or []),
+        "fields": {
+            "role_prompt_changed": _normalized_text(draft.get("role_prompt")) != _normalized_text(published.get("role_prompt")),
+            "task_prompt_changed": _normalized_text(draft.get("task_prompt")) != _normalized_text(published.get("task_prompt")),
+            "variables_changed": json.dumps(draft.get("variables") or [], ensure_ascii=False, sort_keys=True)
+            != json.dumps(published.get("variables") or [], ensure_ascii=False, sort_keys=True),
+            "output_schema_changed": json.dumps(draft.get("output_schema") or [], ensure_ascii=False, sort_keys=True)
+            != json.dumps(published.get("output_schema") or [], ensure_ascii=False, sort_keys=True),
+        },
+        "draft": draft,
+        "published": published,
+    }
+
+
+def script_submit_for_publish(agent_code: str, *, operator_id: str, change_summary: str = "", expected_draft_version: Any = None) -> dict[str, Any]:
+    existing = get_agent_config_detail(agent_code)
+    if expected_draft_version not in (None, ""):
+        expected_version = _normalize_int(expected_draft_version, default=int(existing.get("draft_version") or 1), minimum=1, maximum=1000000)
+        current_version = int(existing.get("draft_version") or 1)
+        if expected_version != current_version:
+            raise DraftVersionConflictError(
+                agent_code=agent_code,
+                expected_draft_version=expected_version,
+                current_draft_version=current_version,
+            )
+    current = repo.deserialize_agent_config_row(repo.get_agent_config_row(_normalized_text(agent_code)) or {})
+    saved = repo.update_agent_config_row(
+        _normalized_text(agent_code),
+        {
+            "display_name": _normalized_text(current.get("display_name")),
+            "pool_keys": list(current.get("pool_keys_json") or []),
+            "enabled": bool(current.get("enabled")),
+            "draft_role_prompt": _normalized_text(current.get("draft_role_prompt")),
+            "draft_task_prompt": _normalized_text(current.get("draft_task_prompt")),
+            "draft_variables": list(current.get("draft_variables_json") or []),
+            "draft_output_schema": list(current.get("draft_output_schema_json") or []),
+            "published_role_prompt": _normalized_text(current.get("published_role_prompt")),
+            "published_task_prompt": _normalized_text(current.get("published_task_prompt")),
+            "published_variables": list(current.get("published_variables_json") or []),
+            "published_output_schema": list(current.get("published_output_schema_json") or []),
+            "draft_version": int(current.get("draft_version") or 1),
+            "published_version": int(current.get("published_version") or 0),
+            "published_at": _normalized_text(current.get("published_at")),
+            "published_by": _normalized_text(current.get("published_by")),
+            "submitted_for_publish": True,
+            "submitted_at": _iso_now(),
+            "submitted_by": operator_id,
+            "last_modified_at": _normalized_text(current.get("last_modified_at")) or _iso_now(),
+            "last_modified_by": _normalized_text(current.get("last_modified_by")) or operator_id,
+            "last_modified_source": "lobster_mcp_submit_for_publish",
+            "last_change_summary": _normalized_text(change_summary) or _normalized_text(current.get("last_change_summary")) or f"提交人工发布申请 v{int(current.get('draft_version') or 1)}",
+        },
+    )
+    get_db().commit()
+    return {
+        "submitted": True,
+        "status": "pending_manual_publish",
+        "message": "当前仅提交发布申请，仍需人工在运行中心完成正式发布。",
+        "agent": saved.get("agent") or {},
+    }
+
+
+def script_list_drafts(*, changed_only: bool = True) -> dict[str, Any]:
+    rows = []
+    for item in _load_agent_list():
+        if changed_only and not list(item.get("diff_summary") or []):
+            continue
+        rows.append(_script_item_summary(item))
+    return {"total": len(rows), "rows": rows, "changed_only": bool(changed_only)}
+
+
 def get_agent_orchestration_metrics(*, date_from: str = "", date_to: str = "") -> dict[str, Any]:
     ensure_agent_orchestration_defaults()
     run_filters = {
@@ -982,12 +2059,12 @@ def get_agent_orchestration_metrics(*, date_from: str = "", date_to: str = "") -
         if _normalized_text(item.get("run_id")) in router_run_ids
     ]
     decision_outputs = [item for item in raw_outputs if _normalized_text(item.get("output_type")) in {"route_decision", "fallback_decision"}]
-    success_count = sum(1 for item in router_runs if _normalized_text(item.get("status")) == "success")
+    success_count = sum(1 for item in router_runs if _normalized_text(item.get("status")) in {"acked", "completed", "applied"})
     fallback_count = sum(1 for item in decision_outputs if _normalized_text(item.get("output_type")) == "fallback_decision")
     invalid_schema_count = sum(
         1
         for item in router_runs
-        if _normalized_text(item.get("error_code")) == "invalid_schema_response"
+        if _normalized_text(item.get("error_code")) in {"invalid_schema_response", "invalid_target_pool"}
     )
     latency_values = [int(item.get("latency_ms") or 0) for item in router_runs if int(item.get("latency_ms") or 0) > 0]
     agent_hits: dict[str, int] = {}
@@ -1052,8 +2129,8 @@ def get_agent_orchestration_metrics(*, date_from: str = "", date_to: str = "") -
             for key, value in sorted(error_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
         ],
         "notes": [
-            "当前 metrics 基于 lobster shadow mode 的中央路由调用，不会接管真实生产分流。",
-            "采纳率当前只统计真正进入 applied / adopted / replayed 的输出；shadow 旁路观察不会被算作采纳。",
+            "当前 metrics 基于异步 ingress + callback 账本统计；ingress 只看 ack，真实分池采用以 callback 应用结果为准。",
+            "采纳率当前只统计真正进入 applied / adopted / replayed 的输出；仅 ack 未 callback 的请求不会被算作采纳。",
         ],
     }
 
@@ -1143,6 +2220,20 @@ def get_agent_orchestration_payload(
         ),
         {},
     )
+    router_strategy = _router_runtime_strategy(router_row)
+    pending_timeout_minutes = int(router_strategy.get("pending_callback_timeout_minutes") or 10)
+    pending_callbacks = list_router_pending_callbacks(older_than_minutes=pending_timeout_minutes, limit=10, visibility="masked")
+    pending_alert_total = repo.count_agent_output_rows({"agent_code": "central_router_agent", "output_type": "pending_callback_alert"})
+    pending_alert_rows = [
+        _serialize_agent_output(item, visibility="masked")
+        for item in repo.list_agent_output_rows(
+            filters={"agent_code": "central_router_agent", "output_type": "pending_callback_alert"},
+            limit=10,
+            offset=0,
+        )
+    ]
+    pending_publish = list_pending_agent_prompt_publish_requests(page=1, page_size=10)
+    bundle = _agent_prompt_bundle_payload(agent_items)
     metrics_payload = get_agent_orchestration_metrics(date_from=date_from, date_to=date_to)
 
     return {
@@ -1150,13 +2241,22 @@ def get_agent_orchestration_payload(
         "router": {
             "config": _serialize_router_config(router_row),
             "input_protocol": dict(ROUTER_REQUEST_SAMPLE),
+            "ack_protocol": dict(ROUTER_ACK_SAMPLE),
             "output_protocol": dict(ROUTER_RESPONSE_SAMPLE),
-            "allowed_agents": [item["agent_code"] for item in agent_items],
+            "special_routes": sorted(_ROUTER_SPECIAL_AGENT_CODES),
             "last_route_output": last_route_output,
             "fallback_count": int(fallback_outputs),
+            "pending_callbacks": pending_callbacks,
+            "pending_callback_alerts": {
+                "count": pending_alert_total,
+                "rows": pending_alert_rows,
+            },
             "notes": [
                 "中央路由不再作为普通 Prompt Agent 配置，而是一个外部 webhook / 龙虾路由接入配置。",
-                "当 webhook 超时、返回 schema 无效或 agent_code 不存在时，会按 fallback 策略进入默认 Agent 或人工复核队列。",
+                "当前 ingress 只发送 request_id、external_contact_id 与 recent_messages；CRM 与话术库上下文由龙虾通过 MCP 主动拉取。",
+                "龙虾同步只回 HTTP 200 表示已收到；真实分池结果必须通过 callback 回传 request_id、external_contact_id、target_pool。",
+                "其中 no_reply / human_reply 会作为特殊池子结果入账；need_human_review=true 时会直接落到当前配置的人工复核目标池。",
+                "当 ingress 超时、请求失败或 callback 非法时，会按 fallback 策略或拒绝路径入账，不再依赖同步回包做分池。",
             ],
         },
         "skills": {
@@ -1170,6 +2270,10 @@ def get_agent_orchestration_payload(
         "agents": {
             "items": agent_items,
             "selected": selected_agent,
+            "bundle_version": bundle["bundle_version"],
+            "bundle_hash": bundle["bundle_hash"],
+            "generated_at": bundle["generated_at"],
+            "pending_publish": pending_publish,
             "notes": [
                 "子 Agent 配置已拆成角色提示词、任务提示词、变量配置和输出协议。",
                 "当前支持草稿态与已发布态；回滚仍是最小结构占位，不伪装成完整版本系统。",
@@ -1201,10 +2305,20 @@ def save_agent_router_settings(payload: dict[str, Any], *, operator_id: str, sou
         raise ValueError("router webhook_url must start with http:// or https://")
     timeout_seconds = _normalize_int(payload.get("timeout_seconds"), default=8, minimum=1, maximum=60)
     retry_count = _normalize_int(payload.get("retry_count"), default=1, minimum=0, maximum=5)
-    fallback_strategy = _copy_json(payload.get("fallback_strategy") or {}, default={})
+    fallback_strategy = _router_runtime_strategy({"fallback_strategy_json": _copy_json(payload.get("fallback_strategy") or {}, default={})})
     default_agent_code = _normalized_text(fallback_strategy.get("default_agent_code"))
     if default_agent_code and default_agent_code not in CHILD_AGENT_CONFIG_MAP:
         raise ValueError("fallback default_agent_code is invalid")
+    human_review_target_pool = _normalized_text(fallback_strategy.get("human_review_target_pool")) or local_projection.POOL_HUMAN_REPLY
+    if human_review_target_pool not in _router_allowed_target_pools():
+        raise ValueError("fallback human_review_target_pool is invalid")
+    fallback_strategy["human_review_target_pool"] = human_review_target_pool
+    fallback_strategy["pending_callback_timeout_minutes"] = _normalize_int(
+        fallback_strategy.get("pending_callback_timeout_minutes"),
+        default=10,
+        minimum=1,
+        maximum=24 * 60,
+    )
     signature_token = _normalized_text(payload.get("signature_token")) or _normalized_text(existing.get("signature_token"))
     signature_secret = _normalized_text(payload.get("signature_secret")) or _normalized_text(existing.get("signature_secret"))
     saved = repo.save_agent_router_config(
@@ -1217,8 +2331,8 @@ def save_agent_router_settings(payload: dict[str, Any], *, operator_id: str, sou
             "timeout_seconds": timeout_seconds,
             "retry_count": retry_count,
             "fallback_strategy_json": fallback_strategy,
-            "request_sample_json": payload.get("request_sample") or dict(ROUTER_REQUEST_SAMPLE),
-            "response_sample_json": payload.get("response_sample") or dict(ROUTER_RESPONSE_SAMPLE),
+            "request_sample_json": dict(ROUTER_REQUEST_SAMPLE),
+            "response_sample_json": dict(ROUTER_RESPONSE_SAMPLE),
             "last_status": _normalized_text(existing.get("last_status")) or "configured",
             "last_error": _normalized_text(existing.get("last_error")),
             "last_called_at": _normalized_text(existing.get("last_called_at")),
@@ -1238,6 +2352,109 @@ def get_agent_config_detail(agent_code: str) -> dict[str, Any]:
     return _serialize_agent_config(row)
 
 
+def list_agent_configs(*, enabled_only: bool = False) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    items = [item for item in _load_agent_list() if not enabled_only or bool(item.get("enabled"))]
+    bundle = _agent_prompt_bundle_payload(items)
+    return {
+        "total": len(items),
+        "items": items,
+        "bundle_version": bundle["bundle_version"],
+        "bundle_hash": bundle["bundle_hash"],
+        "generated_at": bundle["generated_at"],
+    }
+
+
+def get_all_agent_prompts(*, enabled_only: bool = False) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    items = []
+    for item in _load_agent_list():
+        if enabled_only and not bool(item.get("enabled")):
+            continue
+        items.append(
+            {
+                "agent_code": _normalized_text(item.get("agent_code")),
+                "display_name": _normalized_text(item.get("display_name")),
+                "enabled": bool(item.get("enabled")),
+                "draft_version": int(item.get("draft_version") or 1),
+                "published_version": int(item.get("published_version") or 0),
+                "draft": dict(item.get("draft") or {}),
+                "published": dict(item.get("published") or {}),
+                "diff_summary": list(item.get("diff_summary") or []),
+                "last_modified_at": _normalized_text(item.get("last_modified_at")),
+                "last_modified_by": _normalized_text(item.get("last_modified_by")),
+                "last_change_summary": _normalized_text(item.get("last_change_summary")),
+            }
+        )
+    bundle = _agent_prompt_bundle_payload(items)
+    return {
+        "total": len(items),
+        "items": items,
+        "bundle_version": bundle["bundle_version"],
+        "bundle_hash": bundle["bundle_hash"],
+        "generated_at": bundle["generated_at"],
+    }
+
+
+def diff_agent_prompt(agent_code: str) -> dict[str, Any]:
+    return script_diff_draft(agent_code)
+
+
+def submit_agent_prompt_for_publish(agent_code: str, *, operator_id: str, change_summary: str = "", expected_draft_version: Any = None) -> dict[str, Any]:
+    return script_submit_for_publish(
+        agent_code,
+        operator_id=operator_id,
+        change_summary=change_summary,
+        expected_draft_version=expected_draft_version,
+    )
+
+
+def list_pending_agent_prompt_publish_requests(
+    *,
+    agent_code: str = "",
+    enabled_only: bool = False,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    normalized_agent_code = _normalized_text(agent_code)
+    items = []
+    for item in _load_agent_list():
+        if normalized_agent_code and _normalized_text(item.get("agent_code")) != normalized_agent_code:
+            continue
+        if enabled_only and not bool(item.get("enabled")):
+            continue
+        if not bool(item.get("has_unpublished_changes")) and not bool(item.get("submitted_for_publish")):
+            continue
+        items.append(
+            {
+                "agent_code": _normalized_text(item.get("agent_code")),
+                "display_name": _normalized_text(item.get("display_name")),
+                "draft_version": int(item.get("draft_version") or 1),
+                "published_version": int(item.get("published_version") or 0),
+                "last_modified_at": _normalized_text(item.get("last_modified_at")),
+                "last_modified_by": _normalized_text(item.get("last_modified_by")),
+                "last_change_summary": _normalized_text(item.get("last_change_summary")),
+                "has_unpublished_changes": bool(item.get("has_unpublished_changes")),
+                "submitted_for_publish": bool(item.get("submitted_for_publish")),
+                "submitted_at": _normalized_text(item.get("submitted_at")),
+                "submitted_by": _normalized_text(item.get("submitted_by")),
+                "enabled": bool(item.get("enabled")),
+            }
+        )
+    items.sort(key=lambda value: (_normalized_text(value.get("submitted_at")) or _normalized_text(value.get("last_modified_at")), _normalized_text(value.get("agent_code"))), reverse=True)
+    resolved_page = max(1, int(page or 1))
+    resolved_page_size = max(1, min(100, int(page_size or 20)))
+    start = (resolved_page - 1) * resolved_page_size
+    end = start + resolved_page_size
+    return {
+        "total": len(items),
+        "page": resolved_page,
+        "page_size": resolved_page_size,
+        "items": items[start:end],
+    }
+
+
 def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operator_id: str, source: str = "admin_console") -> dict[str, Any]:
     ensure_agent_orchestration_defaults()
     normalized_agent_code = _normalized_text(agent_code)
@@ -1246,9 +2463,19 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
     existing = repo.deserialize_agent_config_row(repo.get_agent_config_row(normalized_agent_code) or {})
     if not existing:
         raise LookupError("agent config not found")
+    expected_draft_version = payload.get("expected_draft_version")
+    if expected_draft_version not in (None, ""):
+        expected_version = _normalize_int(expected_draft_version, default=int(existing.get("draft_version") or 1), minimum=1, maximum=1000000)
+        current_version = int(existing.get("draft_version") or 1)
+        if expected_version != current_version:
+            raise DraftVersionConflictError(
+                agent_code=normalized_agent_code,
+                expected_draft_version=expected_version,
+                current_draft_version=current_version,
+            )
     next_display_name = _normalized_text(payload.get("display_name")) or _normalized_text(existing.get("display_name"))
-    next_role_prompt = _normalized_text(payload.get("role_prompt")) or _normalized_text(existing.get("draft_role_prompt"))
-    next_task_prompt = _normalized_text(payload.get("task_prompt")) or _normalized_text(existing.get("draft_task_prompt"))
+    next_role_prompt = _normalized_text(payload.get("role_prompt")) if payload.get("role_prompt") is not None else _normalized_text(existing.get("draft_role_prompt"))
+    next_task_prompt = _normalized_text(payload.get("task_prompt")) if payload.get("task_prompt") is not None else _normalized_text(existing.get("draft_task_prompt"))
     if not next_role_prompt:
         raise ValueError("role_prompt is required")
     if not next_task_prompt:
@@ -1300,6 +2527,9 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
             "published_version": int(existing.get("published_version") or 0),
             "published_at": _normalized_text(existing.get("published_at")),
             "published_by": _normalized_text(existing.get("published_by")),
+            "submitted_for_publish": False,
+            "submitted_at": "",
+            "submitted_by": "",
             "last_modified_at": _iso_now(),
             "last_modified_by": operator_id,
             "last_modified_source": source,
@@ -1355,6 +2585,9 @@ def publish_agent_config(agent_code: str, *, operator_id: str) -> dict[str, Any]
             "published_version": int(existing.get("draft_version") or 1),
             "published_at": _iso_now(),
             "published_by": operator_id,
+            "submitted_for_publish": False,
+            "submitted_at": "",
+            "submitted_by": "",
             "last_modified_at": _iso_now(),
             "last_modified_by": operator_id,
             "last_modified_source": "publish",
@@ -1655,6 +2888,118 @@ def get_agent_replay_payload(
     }
 
 
+def list_router_pending_callbacks(*, older_than_minutes: int = 15, limit: int = 20, visibility: str = "masked") -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    threshold_minutes = max(1, min(24 * 60, int(older_than_minutes or 15)))
+    threshold = datetime.now() - timedelta(minutes=threshold_minutes)
+    candidates = repo.list_agent_run_rows(
+        filters={"agent_code": "central_router_agent"},
+        limit=max(int(limit or 20) * 20, 200),
+        offset=0,
+    )
+    rows: list[dict[str, Any]] = []
+    for item in candidates:
+        row = repo.deserialize_agent_run_row(item)
+        if _normalized_text(row.get("provider")) != "lobster_shadow":
+            continue
+        if _normalized_text(row.get("status")) != "acked":
+            continue
+        last_ack_at = _parse_datetime_text(_normalized_text(row.get("updated_at")) or _normalized_text(row.get("created_at")))
+        if not last_ack_at or last_ack_at > threshold:
+            continue
+        outputs = [repo.deserialize_agent_output_row(output) for output in repo.list_agent_outputs_by_run_id(_normalized_text(row.get("run_id")))]
+        if any(_normalized_text(output.get("output_type")) in {"callback_received", "callback_validated", "callback_rejected", "route_decision"} for output in outputs):
+            continue
+        waited_minutes = max(0, int((datetime.now() - last_ack_at).total_seconds() // 60))
+        rows.append(
+            {
+                "run": _serialize_agent_run(row, visibility=visibility),
+                "waited_minutes": waited_minutes,
+                "acked_at": last_ack_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "latest_ingress_output": _serialize_agent_output(
+                    next(
+                        (output for output in reversed(outputs) if _normalized_text(output.get("output_type")) == "route_ingress_acked"),
+                        {},
+                    ),
+                    visibility=visibility,
+                ) if outputs else {},
+            }
+        )
+        if len(rows) >= max(1, min(100, int(limit or 20))):
+            break
+    return {
+        "older_than_minutes": threshold_minutes,
+        "total": len(rows),
+        "rows": rows,
+    }
+
+
+def run_router_pending_callback_check(
+    *,
+    older_than_minutes: int | None = None,
+    limit: int = 100,
+    operator_id: str = "system",
+) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    router_config = repo.get_agent_router_config() or {}
+    runtime_strategy = _router_runtime_strategy(router_config)
+    threshold_minutes = (
+        max(1, min(24 * 60, int(older_than_minutes)))
+        if older_than_minutes is not None
+        else int(runtime_strategy.get("pending_callback_timeout_minutes") or 10)
+    )
+    pending = list_router_pending_callbacks(older_than_minutes=threshold_minutes, limit=max(1, min(500, int(limit or 100))), visibility="full")
+    alert_channel = _normalized_text(runtime_strategy.get("alert_channel")) or "run_center"
+    alerted_rows: list[dict[str, Any]] = []
+    existing_alert_count = 0
+    checked_count = int(pending.get("total") or 0)
+    for item in pending.get("rows") or []:
+        run_payload = dict(item.get("run") or {})
+        run_id = _normalized_text(run_payload.get("run_id"))
+        if not run_id:
+            continue
+        existing_outputs = [
+            repo.deserialize_agent_output_row(output)
+            for output in repo.list_agent_outputs_by_run_id(run_id)
+        ]
+        if any(_normalized_text(output.get("output_type")) == "pending_callback_alert" for output in existing_outputs):
+            existing_alert_count += 1
+            continue
+        waited_minutes = int(item.get("waited_minutes") or 0)
+        alert_reason = f"request_id={run_payload.get('request_id') or '-'} 已 ack {waited_minutes} 分钟仍未收到 callback"
+        alert_output = _append_router_event_output(
+            run_id=run_id,
+            request_id=_normalized_text(run_payload.get("request_id")),
+            userid=_normalized_text(run_payload.get("userid")),
+            external_contact_id=_normalized_text(run_payload.get("external_contact_id")),
+            output_type="pending_callback_alert",
+            rendered_output_text=alert_reason,
+            raw_output_text=alert_reason,
+            normalized_output={
+                "event": "pending_callback_alert",
+                "threshold_minutes": threshold_minutes,
+                "waited_minutes": waited_minutes,
+                "alert_channel": alert_channel,
+                "operator_id": operator_id,
+            },
+            target_pool="",
+            confidence=0.0,
+            reason=alert_reason,
+            need_human_review=False,
+            applied_status="alerted",
+        )
+        alerted_rows.append(_serialize_agent_output(alert_output, visibility="masked"))
+    return {
+        "ok": True,
+        "status": "checked",
+        "threshold_minutes": threshold_minutes,
+        "checked_count": checked_count,
+        "alerted_count": len(alerted_rows),
+        "existing_alert_count": existing_alert_count,
+        "rows": alerted_rows,
+    }
+
+
 def replay_agent_run(run_id: str, *, operator_id: str) -> dict[str, Any]:
     existing = repo.deserialize_agent_run_row(repo.get_agent_run_row(_normalized_text(run_id)) or {})
     if not existing:
@@ -1719,6 +3064,81 @@ def replay_agent_run(run_id: str, *, operator_id: str) -> dict[str, Any]:
     return {
         "run": _serialize_agent_run(copied_run),
         "outputs": copied_outputs,
+    }
+
+
+def replay_router_callback(run_id: str, *, operator_id: str) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    existing = repo.deserialize_agent_run_row(repo.get_agent_run_row(_normalized_text(run_id)) or {})
+    if not existing:
+        raise LookupError("agent run not found")
+    if _normalized_text(existing.get("agent_code")) != "central_router_agent":
+        raise ValueError("callback replay only supports central_router_agent")
+    outputs = [repo.deserialize_agent_output_row(item) for item in repo.list_agent_outputs_by_run_id(_normalized_text(run_id))]
+    callback_output = next(
+        (
+            item
+            for item in reversed(outputs)
+            if _normalized_text(item.get("output_type")) in {"callback_received", "callback_validated", "callback_rejected"}
+        ),
+        {},
+    )
+    callback_payload = _normalize_json_dict(callback_output.get("normalized_output_json"))
+    if not callback_payload:
+        try:
+            callback_payload = json.loads(_normalized_text(callback_output.get("raw_output_text")) or "{}")
+        except ValueError:
+            callback_payload = {}
+    if not isinstance(callback_payload, dict) or not _normalized_text(callback_payload.get("external_contact_id")):
+        raise ValueError("callback payload not found for replay")
+    replay_request_id = f"{_normalized_text(existing.get('request_id'))}-callback-replay-{uuid.uuid4().hex[:8]}"
+    replay_run_id = f"arun-{uuid.uuid4().hex}"
+    replay_variables = dict(existing.get("variables_snapshot_json") or {})
+    replay_variables["callback_replay"] = {
+        "source_run_id": _normalized_text(existing.get("run_id")),
+        "requested_by": _normalized_text(operator_id),
+        "replay_request_id": replay_request_id,
+    }
+    repo.insert_agent_run(
+        {
+            "run_id": replay_run_id,
+            "request_id": replay_request_id,
+            "batch_id": _normalized_text(existing.get("batch_id")),
+            "userid": _normalized_text(existing.get("userid")),
+            "external_contact_id": _normalized_text(existing.get("external_contact_id")),
+            "agent_code": _normalized_text(existing.get("agent_code")),
+            "agent_type": _normalized_text(existing.get("agent_type")) or "router",
+            "provider": _normalized_text(existing.get("provider")) or "lobster_shadow",
+            "input_snapshot": existing.get("input_snapshot_json") or {},
+            "variables_snapshot": replay_variables,
+            "final_prompt_preview": _normalized_text(existing.get("final_prompt_preview")),
+            "role_prompt_version": _normalized_text(existing.get("role_prompt_version")),
+            "task_prompt_version": _normalized_text(existing.get("task_prompt_version")),
+            "status": "acked",
+            "error_code": "",
+            "error_message": "",
+            "latency_ms": int(existing.get("latency_ms") or 0),
+            "source": f"callback_replay:{operator_id}",
+            "parent_run_id": _normalized_text(existing.get("run_id")),
+            "replay_of_run_id": _normalized_text(existing.get("run_id")),
+        }
+    )
+    replay_payload = {
+        **callback_payload,
+        "request_id": replay_request_id,
+        "external_contact_id": _normalized_text(callback_payload.get("external_contact_id")) or _normalized_text(existing.get("external_contact_id")),
+    }
+    result = handle_agent_router_callback(replay_payload)
+    replay_run = repo.get_agent_run_row(replay_run_id) or {}
+    replay_outputs = [_serialize_agent_output(item) for item in repo.list_agent_outputs_by_run_id(replay_run_id)]
+    return {
+        "replayed": True,
+        "request_id": replay_request_id,
+        "source_run_id": _normalized_text(existing.get("run_id")),
+        "run": _serialize_agent_run(replay_run),
+        "result": result,
+        "callback_payload": replay_payload,
+        "outputs": replay_outputs,
     }
 
 

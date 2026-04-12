@@ -88,6 +88,8 @@ POOL_ACTIVE_FOCUS = SHARED_POOL_ACTIVE_FOCUS
 POOL_SILENT = SHARED_POOL_SILENT
 POOL_WON = local_projection.POOL_WON
 POOL_REMOVED = local_projection.POOL_REMOVED
+POOL_NO_REPLY = local_projection.POOL_NO_REPLY
+POOL_HUMAN_REPLY = local_projection.POOL_HUMAN_REPLY
 
 FOLLOWUP_NORMAL = SHARED_FOLLOWUP_SEGMENT_NORMAL
 FOLLOWUP_FOCUS = SHARED_FOLLOWUP_SEGMENT_FOCUS
@@ -124,6 +126,7 @@ ACTION_LABELS = {
     "message_activity_sync": "消息活跃同步",
     "reply_monitor_capture": "自动接话扫描",
     "reply_monitor_dispatch": "自动接话触发",
+    "router_apply_pool": "龙虾异步回调改池",
     "qrcode_welcome_sent": "扫码欢迎语已发送",
     "qrcode_welcome_failed": "扫码欢迎语发送失败",
 }
@@ -1103,6 +1106,15 @@ def recompute_pool(member: dict[str, Any], context: dict[str, Any], *, action: s
     current_pool = _normalized_text(member.get("current_pool"))
     if current_pool == POOL_WON and action != "unmark_won":
         return POOL_WON
+    if current_pool in {POOL_NO_REPLY, POOL_HUMAN_REPLY} and action not in {
+        "put_in_pool",
+        "set_focus",
+        "set_normal",
+        "mark_won",
+        "unmark_won",
+        "remove_from_pool",
+    }:
+        return current_pool
     if not _normalize_bool(member.get("in_pool")):
         return POOL_REMOVED
     if current_pool == POOL_SILENT and action not in {"put_in_pool", "unmark_won"}:
@@ -1735,37 +1747,19 @@ def _reply_monitor_next_dispatch_dt(config: dict[str, Any], *, now_dt: datetime,
     return next_dt
 
 
-def _reply_monitor_message_entry(message: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "storage_id": int(message.get("id") or 0),
-        "msgid": _normalized_text(message.get("msgid")),
-        "msgtype": _normalized_text(message.get("msgtype")),
-        "content": _normalized_text(message.get("content")),
-        "send_time": _normalized_text(message.get("send_time")),
-        "sender": _normalized_text(message.get("sender")),
-        "receiver": _normalized_text(message.get("receiver")),
-    }
-
-
-def _build_reply_monitor_payload(queue_item: dict[str, Any], member: dict[str, Any], messages: list[dict[str, Any]]) -> dict[str, Any]:
-    serialized = _serialize_member(member)
-    profile = _load_profile(serialized["external_contact_id"], serialized["phone"])
-    base_payload = _build_openclaw_payload(member)
-    return {
-        **base_payload,
-        "trigger_type": REPLY_MONITOR_TRIGGER_TYPE,
-        "queueId": int(queue_item.get("id") or 0),
-        "dedupeKey": f"reply_monitor_queue:{int(queue_item.get('id') or 0)}",
-        "external_userid": serialized["external_contact_id"],
-        "owner_userid": _normalized_text(queue_item.get("owner_userid")) or serialized["owner_staff_id"],
-        "owner_display_name": _normalized_text(profile.get("owner_display_name")) or _normalized_text(profile.get("owner_staff_id")) or serialized["owner_staff_id"],
-        "aggregation_window": {
-            "first_inbound_at": _normalized_text(queue_item.get("first_inbound_at")),
-            "last_inbound_at": _normalized_text(queue_item.get("last_inbound_at")),
-            "message_count": int(queue_item.get("message_count") or 0),
-        },
-        "newMessages": [_reply_monitor_message_entry(message) for message in messages],
-    }
+def _build_reply_monitor_recent_messages(messages: list[dict[str, Any]], *, external_contact_id: str) -> list[dict[str, Any]]:
+    normalized_external_contact_id = _normalized_text(external_contact_id)
+    normalized_messages: list[dict[str, Any]] = []
+    for item in list(messages or [])[-20:]:
+        sender = _normalized_text(item.get("sender"))
+        normalized_messages.append(
+            {
+                "role": "customer" if sender == normalized_external_contact_id else "staff",
+                "content": _normalized_text(item.get("content")),
+                "created_at": _normalized_text(item.get("send_time")),
+            }
+        )
+    return normalized_messages
 
 
 def save_reply_monitor_enabled(*, enabled: bool, operator_id: str = "") -> dict[str, Any]:
@@ -2109,32 +2103,25 @@ def run_due_reply_monitor(
         }
 
     messages = repo.list_archived_messages_by_ids(queue_item.get("message_ids") or [])
-    payload = _build_reply_monitor_payload(queue_item, member, messages)
-    shadow_result: dict[str, Any] = {}
+    recent_messages = _build_reply_monitor_recent_messages(
+        messages,
+        external_contact_id=_normalized_text(queue_item.get("external_userid")),
+    )
+    router_ingress: dict[str, Any] = {}
     try:
         from .orchestration_service import run_agent_router_shadow_decision
 
-        shadow_result = run_agent_router_shadow_decision(
+        router_ingress = run_agent_router_shadow_decision(
             external_contact_id=_normalized_text(queue_item.get("external_userid")),
             owner_userid=_normalized_text(queue_item.get("owner_userid")),
             batch_id=f"reply_monitor_queue:{int(queue_item['id'])}",
             source="reply_monitor_shadow",
-            member_detail=get_member_detail(
-                external_contact_id=_normalized_text(queue_item.get("external_userid")),
-                phone=_normalized_text(member.get("phone")),
-            ),
         )
-    except Exception:  # pragma: no cover - shadow mode must not block primary dispatch
-        current_app.logger.exception("automation router shadow mode failed")
-        shadow_result = {"ok": False, "status": "shadow_error", "shadow_called": False}
-    delivery = send_outbound_webhook(
-        event_type=EVENT_OPENCLAW_FOCUS_MESSAGE,
-        payload=payload,
-        source_key="automation_reply_monitor_queue",
-        source_id=str(int(queue_item["id"])),
-    )
-    delivery_reason = _normalized_text(delivery.get("reason"))
-    delivery_ok = bool(delivery.get("ok"))
+    except Exception:  # pragma: no cover - async ingress must not crash the job runner
+        current_app.logger.exception("automation router ingress failed")
+        router_ingress = {"ok": False, "status": "shadow_error", "shadow_called": False}
+    delivery_reason = _normalized_text(router_ingress.get("status") or router_ingress.get("error"))
+    delivery_ok = bool(router_ingress.get("ok"))
     next_status = REPLY_MONITOR_STATUS_DISPATCHED if delivery_ok else REPLY_MONITOR_STATUS_FAILED
     repo.update_reply_monitor_queue_item(
         int(queue_item["id"]),
@@ -2150,7 +2137,11 @@ def run_due_reply_monitor(
             "not_before": queue_item.get("not_before"),
             "last_dispatch_at": now_text,
             "error_message": "" if delivery_ok else delivery_reason,
-            "payload_snapshot_json": payload,
+            "payload_snapshot_json": {
+                "request_id": _normalized_text(router_ingress.get("request_id")),
+                "external_contact_id": _normalized_text(queue_item.get("external_userid")),
+                "recent_messages": recent_messages,
+            },
         }
     )
     _write_event(
@@ -2163,7 +2154,8 @@ def run_due_reply_monitor(
         remark=(
             f"queue_id={int(queue_item['id'])}; "
             f"trigger_type={REPLY_MONITOR_TRIGGER_TYPE}; "
-            f"status={'success' if delivery_ok else 'failed'}"
+            f"router_request_id={_normalized_text(router_ingress.get('request_id'))}; "
+            f"status={'acked' if delivery_ok else 'failed'}"
         ),
     )
     queue_counts = repo.get_reply_monitor_queue_counts()
@@ -2174,27 +2166,8 @@ def run_due_reply_monitor(
         "pending_count": int(queue_counts.get("pending") or 0),
         "deferred_count": int(queue_counts.get("deferred_quiet_hours") or 0),
         "queue_id": int(queue_item["id"]),
+        "request_id": _normalized_text(router_ingress.get("request_id")),
     }
-    if shadow_result.get("shadow_called") and shadow_result.get("output_id"):
-        try:
-            from .orchestration_service import record_agent_output_outcome
-
-            record_agent_output_outcome(
-                str(shadow_result.get("output_id") or ""),
-                outcome_status="dispatch_success" if delivery_ok else "dispatch_failed",
-                outcome_value=json.dumps(
-                    {
-                        "queue_id": int(queue_item["id"]),
-                        "delivery_ok": delivery_ok,
-                        "delivery_reason": delivery_reason,
-                        "shadow_mode": True,
-                    },
-                    ensure_ascii=False,
-                ),
-                applied_status="shadow_observed",
-            )
-        except Exception:  # pragma: no cover - outcome writeback must not block dispatch
-            current_app.logger.exception("automation router shadow outcome writeback failed")
     _save_reply_monitor_config(
         {
             "last_dispatch_at": now_text,
@@ -2210,7 +2183,8 @@ def run_due_reply_monitor(
         "summary": summary,
         "reply_monitor": _reply_monitor_status_payload(),
         "error": "" if delivery_ok else delivery_reason,
-        "shadow_router": shadow_result,
+        "router_ingress": router_ingress,
+        "shadow_router": router_ingress,
     }
 
 
@@ -3123,6 +3097,7 @@ def _mutate_member(
     action: str,
     operator_id: str,
     operator_type: str = "user",
+    include_detail: bool = True,
     mutate,
 ) -> dict[str, Any]:
     member = _resolve_existing_member(external_contact_id=external_contact_id, phone=phone)
@@ -3155,8 +3130,82 @@ def _mutate_member(
     return {
         "member": after,
         "remark": remark,
-        "detail": get_member_detail(external_contact_id=after["external_contact_id"], phone=after["phone"]),
+        "detail": (
+            get_member_detail(external_contact_id=after["external_contact_id"], phone=after["phone"])
+            if include_detail
+            else {}
+        ),
     }
+
+
+def apply_router_target_pool(
+    *,
+    external_contact_id: str = "",
+    phone: str = "",
+    target_pool: str,
+    operator_id: str = "",
+    operator_type: str = "system",
+) -> dict[str, Any]:
+    normalized_target_pool = _normalized_text(target_pool)
+    allowed_pools = {
+        POOL_NEW_USER,
+        POOL_INACTIVE_NORMAL,
+        POOL_INACTIVE_FOCUS,
+        POOL_ACTIVE_NORMAL,
+        POOL_ACTIVE_FOCUS,
+        POOL_SILENT,
+        POOL_WON,
+        POOL_NO_REPLY,
+        POOL_HUMAN_REPLY,
+    }
+    if normalized_target_pool not in allowed_pools:
+        raise ValueError("invalid target_pool")
+
+    def mutate(current: dict[str, Any], context: dict[str, Any]) -> tuple[dict[str, Any], str, bool]:
+        previous_pool = _normalized_text(current.get("current_pool"))
+        if previous_pool not in {POOL_REMOVED, POOL_WON, POOL_NO_REPLY, POOL_HUMAN_REPLY}:
+            current["last_active_pool"] = previous_pool
+
+        current["source_type"] = SOURCE_TYPE_SYSTEM
+        current["decision_source"] = DECISION_SOURCE_SYSTEM
+        current["joined_at"] = current.get("joined_at") or _iso_now()
+
+        if normalized_target_pool == POOL_WON:
+            current["in_pool"] = False
+            current["current_pool"] = POOL_WON
+            return current, f"router_target_pool={normalized_target_pool}", False
+
+        current["in_pool"] = True
+        current["current_pool"] = normalized_target_pool
+
+        if normalized_target_pool in {POOL_INACTIVE_NORMAL, POOL_ACTIVE_NORMAL}:
+            current["follow_type"] = FOLLOWUP_NORMAL
+            current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
+            current["questionnaire_result"] = QUESTIONNAIRE_RESULT_NORMAL
+        elif normalized_target_pool in {POOL_INACTIVE_FOCUS, POOL_ACTIVE_FOCUS}:
+            current["follow_type"] = FOLLOWUP_FOCUS
+            current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
+            current["questionnaire_result"] = QUESTIONNAIRE_RESULT_FOCUS
+
+        if normalized_target_pool in {POOL_INACTIVE_NORMAL, POOL_INACTIVE_FOCUS}:
+            current["activation_status"] = ACTIVATION_INACTIVE
+        elif normalized_target_pool in {POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}:
+            current["activation_status"] = ACTIVATION_ACTIVE
+        elif normalized_target_pool == POOL_NEW_USER:
+            current["questionnaire_status"] = QUESTIONNAIRE_PENDING
+            current["questionnaire_result"] = QUESTIONNAIRE_RESULT_UNKNOWN
+
+        return current, f"router_target_pool={normalized_target_pool}", False
+
+    return _mutate_member(
+        external_contact_id=external_contact_id,
+        phone=phone,
+        action="router_apply_pool",
+        operator_id=_normalized_text(operator_id) or "lobster_callback",
+        operator_type=_normalized_text(operator_type) or "system",
+        include_detail=False,
+        mutate=mutate,
+    )
 
 
 def put_in_pool(*, external_contact_id: str = "", phone: str = "", operator_id: str = "") -> dict[str, Any]:

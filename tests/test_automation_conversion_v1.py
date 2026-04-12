@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import re
 from io import BytesIO
@@ -14,8 +16,14 @@ from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
     create_agent_run,
     ensure_agent_orchestration_defaults,
+    get_all_agent_prompts,
     get_agent_config_detail,
+    list_agent_configs,
+    list_pending_agent_prompt_publish_requests,
+    run_router_pending_callback_check,
+    save_agent_config_draft,
     save_agent_router_settings,
+    submit_agent_prompt_for_publish,
 )
 from wecom_ability_service.domains.automation_conversion.agents.llm_client import (
     DeepSeekClientError,
@@ -24,6 +32,7 @@ from wecom_ability_service.domains.automation_conversion.agents.llm_client impor
 from wecom_ability_service.domains.automation_conversion.service import (
     ensure_sop_v1_defaults,
     get_member_detail,
+    get_stage_detail_payload,
     get_model_infra_payload,
     record_sop_pool_entry,
     run_due_reply_monitor,
@@ -2293,6 +2302,42 @@ def test_run_center_agent_orchestration_router_subtab_uses_webhook_contract_not_
     assert 'name="prompt_text"' not in html
 
 
+def test_run_center_agent_orchestration_router_subtab_uses_async_samples_even_with_legacy_saved_examples(app, client):
+    with app.app_context():
+        ensure_agent_orchestration_defaults()
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "request_sample": {
+                    "request_id": "legacy-001",
+                    "external_contact_id": "wm_legacy_001",
+                    "member_snapshot": {"current_pool": "active_focus"},
+                    "allowed_agents": ["pricing_agent"],
+                },
+                "response_sample": {
+                    "request_id": "legacy-001",
+                    "external_contact_id": "wm_legacy_001",
+                    "agent_code": "pricing_agent",
+                    "allowed_agents": ["pricing_agent"],
+                },
+            },
+            operator_id="tester-router",
+        )
+
+    response = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={"tab": "agent-orchestration", "subtab": "router"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "recent_messages" in html
+    assert "target_pool" in html
+    assert "member_snapshot" not in html
+    assert "allowed_agents" not in html
+
+
 def test_save_agent_router_settings_keeps_existing_secret_when_form_leaves_it_blank(app):
     with app.app_context():
         ensure_agent_orchestration_defaults()
@@ -2337,6 +2382,46 @@ def test_save_agent_router_settings_keeps_existing_secret_when_form_leaves_it_bl
         "timeout_seconds": 7,
         "retry_count": 1,
     }
+
+
+def test_save_agent_router_settings_persists_callback_policy_and_cleans_legacy_samples(app):
+    with app.app_context():
+        ensure_agent_orchestration_defaults()
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "min_confidence": 0.93,
+                    "human_review_target_pool": "silent",
+                    "need_human_review": True,
+                },
+                "request_sample": {"legacy": True, "member_snapshot": {"current_pool": "active_focus"}},
+                "response_sample": {"legacy": True, "allowed_agents": ["pricing_agent"]},
+            },
+            operator_id="tester-router",
+        )
+        row = get_db().execute(
+            """
+            SELECT fallback_strategy_json, request_sample_json, response_sample_json
+            FROM automation_agent_router_config
+            WHERE config_key = 'default'
+            LIMIT 1
+            """
+        ).fetchone()
+
+    fallback_strategy = json.loads(row["fallback_strategy_json"])
+    request_sample = json.loads(row["request_sample_json"])
+    response_sample = json.loads(row["response_sample_json"])
+
+    assert fallback_strategy["min_confidence"] == pytest.approx(0.93)
+    assert fallback_strategy["human_review_target_pool"] == "silent"
+    assert set(request_sample.keys()) == {"request_id", "external_contact_id", "recent_messages"}
+    assert "member_snapshot" not in request_sample
+    assert set(response_sample.keys()) >= {"request_id", "external_contact_id", "target_pool", "agent_code"}
+    assert "allowed_agents" not in response_sample
 
 
 def test_run_center_agent_orchestration_agents_subtab_shows_split_prompt_layers(app, client):
@@ -2417,7 +2502,7 @@ def test_run_center_agent_orchestration_metrics_subtab_renders_shadow_metrics(ap
     assert "pricing_agent" in html
 
 
-def test_reply_monitor_dispatch_runs_router_shadow_mode_and_records_outcome(app, monkeypatch):
+def test_reply_monitor_dispatch_runs_router_shadow_mode_and_applies_async_callback(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_shadow_001", mobile="13800009181", owner_userid="sales_01", customer_name="shadow")
     _seed_automation_member(app, external_contact_id="wm_reply_shadow_001", phone="13800009181", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
@@ -2437,41 +2522,25 @@ def test_reply_monitor_dispatch_runs_router_shadow_mode_and_records_outcome(app,
 
     captured_router: dict[str, object] = {}
 
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
     class _ShadowRouterResponse:
         status_code = 200
-        text = json.dumps(
-            {
-                "userid": "sales_01",
-                "external_contact_id": "wm_reply_shadow_001",
-                "agent_code": "pricing_agent",
-                "confidence": 0.84,
-                "reason": "客户连续追问价格",
-                "target_pool": "inactive_normal",
-                "need_human_review": False,
-                "response_version": "router-v1",
-            },
-            ensure_ascii=False,
-        )
-
-        def json(self):
-            return json.loads(self.text)
+        text = '{"ok":true,"accepted":true}'
 
     def _fake_router_post(url, data=None, headers=None, timeout=None):
+        body = json.loads((data or b"{}").decode("utf-8"))
         captured_router.update(
             {
                 "url": url,
-                "body": json.loads((data or b"{}").decode("utf-8")),
+                "body": body,
                 "headers": dict(headers or {}),
                 "timeout": timeout,
             }
         )
         return _ShadowRouterResponse()
 
-    def _fake_send_outbound_webhook(*, event_type, payload, source_key, source_id):
-        return {"ok": True, "delivery": {"id": 9911}}
-
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", _fake_router_post)
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook", _fake_send_outbound_webhook)
 
     with app.app_context():
         save_agent_router_settings(
@@ -2494,6 +2563,49 @@ def test_reply_monitor_dispatch_runs_router_shadow_mode_and_records_outcome(app,
         )
         run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
         dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        queued_run = get_db().execute(
+            """
+            SELECT provider, agent_type, status, request_id
+            FROM automation_agent_run
+            WHERE agent_code = 'central_router_agent'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        queued_outputs = get_db().execute(
+            """
+            SELECT output_type, applied_status
+            FROM automation_agent_output
+            WHERE request_id = ?
+            ORDER BY id ASC
+            """
+            ,
+            (dict(queued_run)["request_id"],),
+        ).fetchall()
+
+    callback_payload = {
+        "request_id": dict(queued_run)["request_id"],
+        "external_contact_id": "wm_reply_shadow_001",
+        "target_pool": "inactive_focus",
+        "agent_code": "pricing_agent",
+        "reason": "客户持续追问价格",
+        "confidence": 0.91,
+        "need_human_review": False,
+        "completed_at": "2026-04-09 10:30:00",
+    }
+    callback_body = json.dumps(callback_payload, ensure_ascii=False)
+    callback_signature = f"sha256={hmac.new(b'lobster-secret', callback_body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    callback_response = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=callback_body.encode("utf-8"),
+        content_type="application/json",
+        headers={
+            "Authorization": "Bearer internal-token",
+            "X-Lobster-Signature": callback_signature,
+        },
+    )
+
+    with app.app_context():
         run_row = get_db().execute(
             """
             SELECT provider, agent_type, status, request_id
@@ -2512,28 +2624,515 @@ def test_reply_monitor_dispatch_runs_router_shadow_mode_and_records_outcome(app,
             LIMIT 1
             """
         ).fetchone()
+        member_row = get_db().execute(
+            """
+            SELECT current_pool, follow_type
+            FROM automation_member
+            WHERE external_contact_id = ?
+            LIMIT 1
+            """,
+            ("wm_reply_shadow_001",),
+        ).fetchone()
 
     assert dispatch["ok"] is True
     assert dispatch["shadow_router"]["shadow_called"] is True
+    assert callback_response.status_code == 200
+    assert callback_response.get_json()["status"] == "applied"
     assert captured_router["url"] == "https://lobster.example.com/router"
     assert captured_router["timeout"] == 5
-    assert len(captured_router["body"]["messages"]) == 20
-    assert captured_router["body"]["userid"] == "sales_01"
-    assert captured_router["body"]["member_snapshot"]["current_pool"] in {"new_user", "inactive_normal"}
-    assert "current_stage" in captured_router["body"]["member_snapshot"]
-    assert captured_router["body"]["allowed_agents"]
+    assert len(captured_router["body"]["recent_messages"]) == 20
+    assert captured_router["body"]["external_contact_id"] == "wm_reply_shadow_001"
+    assert set(captured_router["body"].keys()) == {"request_id", "external_contact_id", "recent_messages"}
+    assert "userid" not in captured_router["body"]
+    assert "messages" not in captured_router["body"]
+    assert "member_snapshot" not in captured_router["body"]
+    assert "allowed_agents" not in captured_router["body"]
     assert captured_router["headers"]["Authorization"] == "Bearer lobster-token"
     assert captured_router["headers"]["X-Shadow-Mode"] == "1"
     assert dict(run_row)["provider"] == "lobster_shadow"
     assert dict(run_row)["agent_type"] == "router"
+    assert dict(run_row)["status"] == "applied"
+    assert [dict(item)["output_type"] for item in queued_outputs] == [
+        "route_ingress_sent",
+        "route_ingress_acked",
+    ]
     assert dict(output_row)["output_type"] == "route_decision"
     assert dict(output_row)["target_agent_code"] == "pricing_agent"
-    assert dict(output_row)["confidence"] == pytest.approx(0.84)
-    assert dict(output_row)["reason"] == "客户连续追问价格"
+    assert dict(output_row)["confidence"] == pytest.approx(0.91)
+    assert dict(output_row)["reason"] == "客户持续追问价格"
     assert dict(output_row)["need_human_review"] in {0, False}
-    assert dict(output_row)["applied_status"] == "shadow_observed"
-    assert dict(output_row)["outcome_status"] == "dispatch_success"
-    assert '"shadow_mode": true' in str(dict(output_row)["outcome_value"]).lower()
+    assert dict(output_row)["applied_status"] == "applied"
+    assert dict(output_row)["outcome_status"] == "applied"
+    assert '"final_target_pool": "inactive_focus"' in str(dict(output_row)["outcome_value"])
+    assert dict(member_row) == {
+        "current_pool": "inactive_focus",
+        "follow_type": "focus",
+    }
+
+
+def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_idempotent_001", mobile="13800009182", owner_userid="sales_01", customer_name="idempotent")
+    _seed_automation_member(app, external_contact_id="wm_reply_idempotent_001", phone="13800009182", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-idempotent-001", seq=1, external_userid="wm_reply_idempotent_001", owner_userid="sales_01", sender="wm_reply_idempotent_001", receiver="sales_01", content="我想继续了解", send_time="2026-04-09 11:00:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        request_id = dispatch["router_ingress"]["request_id"]
+
+    first_payload = {
+        "request_id": request_id,
+        "external_contact_id": "wm_reply_idempotent_001",
+        "target_pool": "inactive_focus",
+        "agent_code": "pricing_agent",
+        "reason": "继续咨询价格",
+        "confidence": 0.88,
+        "need_human_review": False,
+    }
+    first_body = json.dumps(first_payload, ensure_ascii=False)
+    signature_1 = f"sha256={hmac.new(b'lobster-secret', first_body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    first = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=first_body.encode("utf-8"),
+        content_type="application/json",
+        headers={"Authorization": "Bearer internal-token", "X-Lobster-Signature": signature_1},
+    )
+    second_payload = {
+        "request_id": request_id,
+        "external_contact_id": "wm_reply_idempotent_001",
+        "target_pool": "active_focus",
+        "agent_code": "closing_agent",
+        "reason": "重复回调",
+        "confidence": 0.95,
+        "need_human_review": False,
+    }
+    second_body = json.dumps(second_payload, ensure_ascii=False)
+    signature_2 = f"sha256={hmac.new(b'lobster-secret', second_body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    second = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=second_body.encode("utf-8"),
+        content_type="application/json",
+        headers={"Authorization": "Bearer internal-token", "X-Lobster-Signature": signature_2},
+    )
+
+    with app.app_context():
+        outputs = get_db().execute(
+            """
+            SELECT output_type
+            FROM automation_agent_output
+            WHERE request_id = ?
+            ORDER BY id ASC
+            """,
+            (request_id,),
+        ).fetchall()
+        member_row = get_db().execute(
+            """
+            SELECT current_pool
+            FROM automation_member
+            WHERE external_contact_id = ?
+            LIMIT 1
+            """,
+            ("wm_reply_idempotent_001",),
+        ).fetchone()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.get_json()["status"] == "idempotent"
+    assert dict(member_row)["current_pool"] == "inactive_focus"
+    assert [dict(item)["output_type"] for item in outputs] == [
+        "route_ingress_sent",
+        "route_ingress_acked",
+        "callback_received",
+        "callback_validated",
+        "route_decision",
+    ]
+
+
+def test_router_callback_rejects_invalid_target_pool_and_records_error(app, client, monkeypatch):
+    _configure_reply_monitor(
+        app,
+        enabled=True,
+        last_capture_cursor=0,
+        quiet_hours_start="02:00",
+        quiet_hours_end="03:00",
+    )
+    _seed_contact(app, external_userid="wm_reply_invalid_pool_001", mobile="13800009183", owner_userid="sales_01", customer_name="invalid-pool")
+    _seed_automation_member(app, external_contact_id="wm_reply_invalid_pool_001", phone="13800009183", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-invalid-pool-001", seq=1, external_userid="wm_reply_invalid_pool_001", owner_userid="sales_01", sender="wm_reply_invalid_pool_001", receiver="sales_01", content="给我个方案", send_time="2026-04-09 12:00:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        request_id = dispatch["router_ingress"]["request_id"]
+
+    payload = {
+        "request_id": request_id,
+        "external_contact_id": "wm_reply_invalid_pool_001",
+        "target_pool": "unknown_pool",
+        "agent_code": "pricing_agent",
+        "reason": "非法池子",
+        "confidence": 0.92,
+        "need_human_review": False,
+    }
+    body = json.dumps(payload, ensure_ascii=False)
+    signature = f"sha256={hmac.new(b'lobster-secret', body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    response = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=body.encode("utf-8"),
+        content_type="application/json",
+        headers={"Authorization": "Bearer internal-token", "X-Lobster-Signature": signature},
+    )
+
+    with app.app_context():
+        run_row = get_db().execute(
+            """
+            SELECT status, error_code
+            FROM automation_agent_run
+            WHERE request_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (request_id,),
+        ).fetchone()
+        member_row = get_db().execute(
+            """
+            SELECT current_pool
+            FROM automation_member
+            WHERE external_contact_id = ?
+            LIMIT 1
+            """,
+            ("wm_reply_invalid_pool_001",),
+        ).fetchone()
+        outputs = get_db().execute(
+            """
+            SELECT output_type
+            FROM automation_agent_output
+            WHERE request_id = ?
+            ORDER BY id ASC
+            """,
+            (request_id,),
+        ).fetchall()
+
+    assert response.status_code == 409
+    assert response.get_json()["error"] == "invalid_target_pool"
+    assert dict(run_row) == {
+        "status": "rejected",
+        "error_code": "invalid_target_pool",
+    }
+    assert [dict(item)["output_type"] for item in outputs] == [
+        "route_ingress_sent",
+        "route_ingress_acked",
+        "callback_received",
+        "callback_rejected",
+    ]
+    assert dict(member_row)["current_pool"] == "inactive_normal"
+
+
+def test_router_pending_callbacks_api_lists_acked_runs_without_callback(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_pending_001", mobile="13800009184", owner_userid="sales_01", customer_name="pending")
+    _seed_automation_member(app, external_contact_id="wm_reply_pending_001", phone="13800009184", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-pending-001", seq=1, external_userid="wm_reply_pending_001", owner_userid="sales_01", sender="wm_reply_pending_001", receiver="sales_01", content="我想再了解一下", send_time="2026-04-09 13:00:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        get_db().execute(
+            "UPDATE automation_agent_run SET updated_at = '2026-04-09 12:00:00' WHERE run_id = ?",
+            (dispatch["router_ingress"]["run_id"],),
+        )
+        get_db().commit()
+
+    response = client.get(
+        "/api/admin/automation-conversion/router-pending-callbacks",
+        query_string={"older_than_minutes": 1, "limit": 10},
+        headers={"Authorization": "Bearer internal-token"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["total"] >= 1
+    assert any(item["run"]["request_id"] == dispatch["router_ingress"]["request_id"] for item in payload["rows"])
+
+
+def test_router_callback_uses_optional_metadata_and_configurable_review_pool(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_meta_001", mobile="13800009185", owner_userid="sales_01", customer_name="meta")
+    _seed_automation_member(app, external_contact_id="wm_reply_meta_001", phone="13800009185", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-meta-001", seq=1, external_userid="wm_reply_meta_001", owner_userid="sales_01", sender="wm_reply_meta_001", receiver="sales_01", content="这个方案需要人工讲一下", send_time="2026-04-09 14:00:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "min_confidence": 0.95,
+                    "human_review_target_pool": "silent",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        request_id = dispatch["router_ingress"]["request_id"]
+
+    callback_payload = {
+        "request_id": request_id,
+        "external_contact_id": "wm_reply_meta_001",
+        "target_pool": "inactive_focus",
+        "agent_code": "pricing_agent",
+        "reason": "建议转人工看方案",
+        "confidence": 0.96,
+        "need_human_review": True,
+        "trace_id": "trace-meta-001",
+        "processing_latency_ms": 1820,
+        "prompt_version_used": "pricing_agent@draft_v3",
+        "mcp_tools_used": ["crm.get_member_basic", "get_all_agent_prompts"],
+        "completed_at": "2026-04-09 14:05:00",
+    }
+    body = json.dumps(callback_payload, ensure_ascii=False)
+    signature = f"sha256={hmac.new(b'lobster-secret', body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    response = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=body.encode("utf-8"),
+        content_type="application/json",
+        headers={"Authorization": "Bearer internal-token", "X-Lobster-Signature": signature},
+    )
+
+    with app.app_context():
+        run_row = get_db().execute(
+            "SELECT variables_snapshot_json FROM automation_agent_run WHERE request_id = ? LIMIT 1",
+            (request_id,),
+        ).fetchone()
+        output_row = get_db().execute(
+            "SELECT normalized_output_json FROM automation_agent_output WHERE request_id = ? AND output_type = 'route_decision' LIMIT 1",
+            (request_id,),
+        ).fetchone()
+        member_row = get_db().execute(
+            "SELECT current_pool FROM automation_member WHERE external_contact_id = ? LIMIT 1",
+            ("wm_reply_meta_001",),
+        ).fetchone()
+
+    assert response.status_code == 200
+    assert dict(member_row)["current_pool"] == "silent"
+    assert json.loads(run_row["variables_snapshot_json"])["callback_meta"] == {
+        "trace_id": "trace-meta-001",
+        "processing_latency_ms": 1820,
+        "prompt_version_used": "pricing_agent@draft_v3",
+        "mcp_tools_used": ["crm.get_member_basic", "get_all_agent_prompts"],
+        "completed_at": "2026-04-09 14:05:00",
+    }
+    structured_result = json.loads(output_row["normalized_output_json"])["structured_result"]
+    assert structured_result["trace_id"] == "trace-meta-001"
+    assert structured_result["processing_latency_ms"] == 1820
+    assert structured_result["prompt_version_used"] == "pricing_agent@draft_v3"
+
+
+def test_router_callback_replay_api_replays_stored_callback_payload(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_replay_001", mobile="13800009186", owner_userid="sales_01", customer_name="replay")
+    _seed_automation_member(app, external_contact_id="wm_reply_replay_001", phone="13800009186", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-replay-001", seq=1, external_userid="wm_reply_replay_001", owner_userid="sales_01", sender="wm_reply_replay_001", receiver="sales_01", content="我要价格", send_time="2026-04-09 15:00:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        request_id = dispatch["router_ingress"]["request_id"]
+        run_id = dispatch["router_ingress"]["run_id"]
+
+    callback_payload = {
+        "request_id": request_id,
+        "external_contact_id": "wm_reply_replay_001",
+        "target_pool": "inactive_focus",
+        "agent_code": "pricing_agent",
+        "reason": "价格意图明确",
+        "confidence": 0.92,
+        "need_human_review": False,
+    }
+    body = json.dumps(callback_payload, ensure_ascii=False)
+    signature = f"sha256={hmac.new(b'lobster-secret', body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    callback_response = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=body.encode("utf-8"),
+        content_type="application/json",
+        headers={"Authorization": "Bearer internal-token", "X-Lobster-Signature": signature},
+    )
+    replay_response = client.post(
+        f"/api/admin/automation-conversion/router-callback-replay/{run_id}",
+        headers={"Authorization": "Bearer internal-token"},
+    )
+
+    assert callback_response.status_code == 200
+    assert replay_response.status_code == 200
+    assert replay_response.get_json()["ok"] is True
+    assert replay_response.get_json()["replayed"] is True
+    assert replay_response.get_json()["result"]["status"] == "applied"
+    assert "callback-replay" in replay_response.get_json()["request_id"]
+
+
+def test_special_router_pools_are_recognized_by_crm_stage_payloads(app, client):
+    _seed_contact(app, external_userid="wm_router_no_reply_001", mobile="13800009801", owner_userid="sales_router", customer_name="无需回复客户")
+    _seed_contact(app, external_userid="wm_router_human_001", mobile="13800009802", owner_userid="sales_router", customer_name="人工回复客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_router_no_reply_001",
+        phone="13800009801",
+        owner_staff_id="sales_router",
+        current_pool="no_reply",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="system",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_router_human_001",
+        phone="13800009802",
+        owner_staff_id="sales_router",
+        current_pool="human_reply",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="system",
+    )
+
+    with app.app_context():
+        no_reply_detail = get_member_detail(external_contact_id="wm_router_no_reply_001")
+        human_reply_detail = get_member_detail(external_contact_id="wm_router_human_001")
+        no_reply_stage = get_stage_detail_payload(route_key="no-reply", limit=10, offset=0)
+        human_reply_stage = get_stage_detail_payload(route_key="human-reply", limit=10, offset=0)
+
+    assert no_reply_detail["member"]["current_pool_label"] == "不回复池"
+    assert no_reply_detail["member"]["current_stage_label"] == "不回复待观察"
+    assert human_reply_detail["member"]["current_pool_label"] == "人工回复池"
+    assert human_reply_detail["member"]["current_target_label"] == "转人工回复"
+    assert no_reply_stage["stage"]["pool"] == "no_reply"
+    assert no_reply_stage["stage"]["label"] == "不回复池"
+    assert no_reply_stage["pagination"]["total"] == 1
+    assert human_reply_stage["stage"]["pool"] == "human_reply"
+    assert human_reply_stage["stage"]["label"] == "人工回复池"
+    assert human_reply_stage["pagination"]["total"] == 1
 
 
 def test_automation_conversion_home_stage_cards_show_view_and_send_actions(app, client):
@@ -2785,16 +3384,38 @@ def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap
     _seed_archived_message(app, msgid="msg-rm-due-001", seq=1, external_userid="wm_reply_due_001", owner_userid="sales_01", sender="wm_reply_due_001", receiver="sales_01", content="白天发送一", send_time="2026-04-09 23:29:01")
     _seed_archived_message(app, msgid="msg-rm-due-002", seq=2, external_userid="wm_reply_due_002", owner_userid="sales_01", sender="wm_reply_due_002", receiver="sales_01", content="白天发送二", send_time="2026-04-09 23:29:02")
     _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_due_001")
-    dispatched_payloads: list[dict[str, object]] = []
+    router_requests: list[dict[str, object]] = []
 
-    def _fake_send_outbound_webhook(*, event_type, payload, source_key, source_id):
-        dispatched_payloads.append({"event_type": event_type, "payload": payload, "source_id": source_id})
-        return {"ok": True, "delivery": {"id": 9100 + len(dispatched_payloads)}}
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook", _fake_send_outbound_webhook)
+    def _fake_router_post(url, data=None, headers=None, timeout=None):
+        router_requests.append({"url": url, "body": json.loads((data or b"{}").decode("utf-8"))})
+        return _AckResponse()
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", _fake_router_post)
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 23:30:00")
     with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
         capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
         queued = get_db().execute(
             """
@@ -2827,7 +3448,7 @@ def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap
     assert throttled["status"] == "throttled"
     assert second["ok"] is True
     assert second["status"] == "success"
-    assert len(dispatched_payloads) == 2
+    assert len(router_requests) == 2
 
 
 def test_reply_monitor_disabled_does_not_create_queue_items(app):
@@ -2900,7 +3521,7 @@ def test_reply_monitor_capture_uses_storage_cursor_instead_of_send_time(app, mon
     }
 
 
-def test_reply_monitor_dispatch_payload_contains_required_fields(app, monkeypatch):
+def test_reply_monitor_dispatch_ingress_payload_contains_only_async_minimal_fields(app, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
     _seed_contact(app, external_userid="wm_reply_payload_001", mobile="13800009161", owner_userid="sales_01", customer_name="payload")
     _seed_automation_member(app, external_contact_id="wm_reply_payload_001", phone="13800009161", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_result="focus", decision_source="manual")
@@ -2908,52 +3529,54 @@ def test_reply_monitor_dispatch_payload_contains_required_fields(app, monkeypatc
     _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_payload_001")
     captured: dict[str, object] = {}
 
-    def _fake_send_outbound_webhook(*, event_type, payload, source_key, source_id):
-        captured.update({
-            "event_type": event_type,
-            "payload": payload,
-            "source_key": source_key,
-            "source_id": source_id,
-        })
-        return {"ok": True, "delivery": {"id": 9201}}
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.send_outbound_webhook", _fake_send_outbound_webhook)
+    def _fake_router_post(url, data=None, headers=None, timeout=None):
+        body = json.loads((data or b"{}").decode("utf-8"))
+        captured.update({
+            "url": url,
+            "payload": body,
+            "headers": dict(headers or {}),
+        })
+        return _AckResponse()
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", _fake_router_post)
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:21:00")
 
     with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
         capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
         dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
 
     assert capture["ok"] is True
     assert dispatch["ok"] is True
-    assert captured["event_type"] == "openclaw_focus_message"
-    assert captured["source_key"] == "automation_reply_monitor_queue"
-    assert set(captured["payload"].keys()) >= {
-        "externalContactId",
-        "external_userid",
-        "owner_userid",
-        "owner_display_name",
-        "currentPool",
-        "currentStage",
-        "currentTarget",
-        "newMessages",
-        "aggregation_window",
-        "trigger_type",
-        "queueId",
-        "dedupeKey",
-    }
-    assert captured["payload"]["external_userid"] == "wm_reply_payload_001"
-    assert captured["payload"]["owner_userid"] == "sales_01"
-    assert captured["payload"]["trigger_type"] == "reply_monitor"
-    assert captured["payload"]["newMessages"] == [
+    assert captured["url"] == "https://lobster.example.com/router"
+    assert set(captured["payload"].keys()) == {"request_id", "external_contact_id", "recent_messages"}
+    assert captured["payload"]["external_contact_id"] == "wm_reply_payload_001"
+    assert captured["payload"]["recent_messages"] == [
         {
-            "storage_id": 1,
-            "msgid": "msg-rm-payload-001",
-            "msgtype": "text",
+            "role": "customer",
             "content": "我要继续了解",
-            "send_time": "2026-04-09 10:20:00",
-            "sender": "wm_reply_payload_001",
-            "receiver": "sales_01",
+            "created_at": "2026-04-09 10:20:00",
         }
     ]
 
@@ -2982,6 +3605,38 @@ def test_reply_monitor_run_due_api_fails_closed_when_token_is_not_configured(app
 
     assert response.status_code == 503
     assert response.get_json()["error"] == "internal token not configured"
+
+
+def test_insert_archived_messages_does_not_trigger_legacy_openclaw_chain_by_default(app, monkeypatch):
+    from wecom_ability_service.domains.archive.service import insert_archived_messages
+
+    captured: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.marketing_automation.service.process_inbound_messages_for_openclaw",
+        lambda rows: captured.append(list(rows)),
+    )
+
+    with app.app_context():
+        inserted_count = insert_archived_messages(
+            [
+                {
+                    "seq": 1,
+                    "msgid": "legacy-openclaw-disabled-001",
+                    "chat_type": "private",
+                    "external_userid": "wm_legacy_disabled_001",
+                    "owner_userid": "sales_01",
+                    "sender": "wm_legacy_disabled_001",
+                    "receiver": "sales_01",
+                    "msgtype": "text",
+                    "content": "这条消息不应再自动倒到旧龙虾链路",
+                    "send_time": "2026-04-10 09:00:00",
+                    "raw_payload": "{}",
+                }
+            ]
+        )
+
+    assert inserted_count == 1
+    assert captured == []
 
 
 def test_process_inbound_messages_for_openclaw_skips_automation_scope_users(app, monkeypatch):
@@ -4126,11 +4781,59 @@ def test_mcp_agent_orchestration_tools_list_and_call_outputs(app, client):
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
     )
     tool_names = {tool["name"] for tool in tools_response.get_json()["result"]["tools"]}
-    assert {"get_pool_snapshot", "get_agent_config", "list_agent_outputs", "get_agent_output", "export_agent_outputs"}.issubset(tool_names)
+    assert {
+        "crm.get_member_basic",
+        "crm.get_member_stage",
+        "crm.get_member_snapshot",
+        "list_agent_configs",
+        "get_all_agent_prompts",
+        "list_pending_agent_prompt_publish_requests",
+        "script.list_items",
+        "script.update_draft",
+        "script.diff_draft",
+        "script.submit_for_publish",
+        "get_pool_snapshot",
+        "get_agent_config",
+        "diff_agent_prompt",
+        "submit_agent_prompt_for_publish",
+        "list_agent_outputs",
+        "get_agent_output",
+        "export_agent_outputs",
+    }.issubset(tool_names)
 
-    snapshot_payload = _mcp_call(client, "get_pool_snapshot", {"pool_key": "inactive_normal", "limit": 5}).get_json()["result"]["structuredContent"]
-    assert snapshot_payload["pool_key"] == "inactive_normal"
-    assert snapshot_payload["member_count"] >= 1
+    basic_payload = _mcp_call(client, "crm.get_member_basic", {"external_contact_id": "wm_agent_tool_001"}).get_json()["result"]["structuredContent"]
+    assert basic_payload["member_exists"] is True
+    assert basic_payload["basic"]["external_contact_id"] == "wm_agent_tool_001"
+
+    stage_payload = _mcp_call(client, "crm.get_member_stage", {"external_contact_id": "wm_agent_tool_001"}).get_json()["result"]["structuredContent"]
+    assert stage_payload["member_exists"] is True
+    assert stage_payload["stage"]["current_pool"] in {"new_user", "inactive_normal"}
+    assert stage_payload["stage"]["current_pool_label"] in {"新用户池", "未激活普通池"}
+    assert stage_payload["stage"]["current_stage_label"] in {"等待提交问卷", "未激活普通跟进"}
+
+    snapshot_payload = _mcp_call(client, "crm.get_member_snapshot", {"external_contact_id": "wm_agent_tool_001"}).get_json()["result"]["structuredContent"]
+    assert snapshot_payload["member_exists"] is True
+    assert snapshot_payload["stage"]["current_pool"] in {"new_user", "inactive_normal"}
+
+    current_pool = snapshot_payload["stage"]["current_pool"] or "inactive_normal"
+    pool_snapshot_payload = _mcp_call(client, "get_pool_snapshot", {"pool_key": current_pool, "limit": 5}).get_json()["result"]["structuredContent"]
+    assert pool_snapshot_payload["pool_key"] == current_pool
+    assert pool_snapshot_payload["member_count"] >= 1
+
+    configs_payload = _mcp_call(client, "list_agent_configs", {"enabled_only": True, "request_id": "req-mcp-list-001"}).get_json()["result"]["structuredContent"]
+    assert configs_payload["total"] >= 1
+    assert any(item["agent_code"] == "pricing_agent" for item in configs_payload["items"])
+    assert configs_payload["bundle_version"].startswith("bundle-")
+    assert len(configs_payload["bundle_hash"]) == 64
+
+    all_prompts_payload = _mcp_call(client, "get_all_agent_prompts", {"enabled_only": True, "request_id": "req-mcp-all-001"}).get_json()["result"]["structuredContent"]
+    pricing_prompt = next(item for item in all_prompts_payload["items"] if item["agent_code"] == "pricing_agent")
+    assert all_prompts_payload["bundle_version"] == configs_payload["bundle_version"]
+    assert all_prompts_payload["bundle_hash"] == configs_payload["bundle_hash"]
+    assert "role_prompt" in pricing_prompt["draft"]
+    assert "task_prompt" in pricing_prompt["draft"]
+    assert isinstance(pricing_prompt["draft"]["variables"], list)
+    assert isinstance(pricing_prompt["draft"]["output_schema"], list)
 
     outputs_payload = _mcp_call(client, "list_agent_outputs", {"external_contact_id": "wm_agent_tool_001", "page": 1, "page_size": 10}).get_json()["result"]["structuredContent"]
     assert outputs_payload["total"] >= 1
@@ -4141,14 +4844,330 @@ def test_mcp_agent_orchestration_tools_list_and_call_outputs(app, client):
     assert output_payload["output"]["output_id"] == output["output_id"]
     assert output_payload["output"]["raw_output_text"] == "建议继续报价解释"
 
+    script_list_payload = _mcp_call(client, "script.list_items", {"query": "pricing"}).get_json()["result"]["structuredContent"]
+    assert any(item["agent_code"] == "pricing_agent" for item in script_list_payload["rows"])
+
+    script_update_payload = _mcp_call(
+        client,
+        "script.update_draft",
+        {
+            "agent_code": "pricing_agent",
+            "task_prompt": "请输出更克制的价格说明",
+            "change_summary": "lobster 调整价格话术草稿",
+            "operator": "lobster_test",
+        },
+    ).get_json()["result"]["structuredContent"]
+    assert script_update_payload["updated"] is True
+    assert script_update_payload["agent"]["draft"]["task_prompt"] == "请输出更克制的价格说明"
+
+    partial_save_payload = _mcp_call(
+        client,
+        "save_agent_prompt_draft",
+        {
+            "agent_code": "pricing_agent",
+            "task_prompt": "请只输出简洁的价格澄清",
+            "change_summary": "partial patch 更新任务提示词",
+            "request_id": "req-mcp-save-001",
+            "operator": "lobster_test",
+            "idempotency_key": "draft-patch-001",
+        },
+    ).get_json()["result"]["structuredContent"]
+    assert partial_save_payload["agent"]["draft"]["task_prompt"] == "请只输出简洁的价格澄清"
+
+    script_diff_payload = _mcp_call(client, "script.diff_draft", {"agent_code": "pricing_agent"}).get_json()["result"]["structuredContent"]
+    assert script_diff_payload["fields"]["task_prompt_changed"] is True
+
+    diff_payload = _mcp_call(client, "diff_agent_prompt", {"agent_code": "pricing_agent", "request_id": "req-mcp-diff-001"}).get_json()["result"]["structuredContent"]
+    assert diff_payload["fields"]["task_prompt_changed"] is True
+
+    script_submit_payload = _mcp_call(
+        client,
+        "script.submit_for_publish",
+        {"agent_code": "pricing_agent", "operator": "lobster_test"},
+    ).get_json()["result"]["structuredContent"]
+    assert script_submit_payload["submitted"] is True
+    assert script_submit_payload["status"] == "pending_manual_publish"
+
+    submit_prompt_payload = _mcp_call(
+        client,
+        "submit_agent_prompt_for_publish",
+        {"agent_code": "pricing_agent", "change_summary": "提交 child agent 草稿", "request_id": "req-mcp-submit-001", "operator": "lobster_test"},
+    ).get_json()["result"]["structuredContent"]
+    assert submit_prompt_payload["submitted"] is True
+    assert submit_prompt_payload["status"] == "pending_manual_publish"
+
+    pending_publish_payload = _mcp_call(
+        client,
+        "list_pending_agent_prompt_publish_requests",
+        {"agent_code": "pricing_agent", "page": 1, "page_size": 10, "request_id": "req-mcp-pending-001"},
+    ).get_json()["result"]["structuredContent"]
+    assert pending_publish_payload["total"] >= 1
+    assert pending_publish_payload["items"][0]["agent_code"] == "pricing_agent"
+    assert pending_publish_payload["items"][0]["submitted_for_publish"] is True
+
     config_payload = _mcp_call(client, "get_agent_config", {"agent_code": "pricing_agent"}).get_json()["result"]["structuredContent"]
     assert config_payload["agent"]["agent_code"] == "pricing_agent"
 
     with app.app_context():
         audit_rows = get_db().execute(
-            "SELECT skill_code, status FROM automation_agent_skill_call_audit ORDER BY id DESC LIMIT 4"
+            "SELECT skill_code, status FROM automation_agent_skill_call_audit ORDER BY id DESC LIMIT 32"
         ).fetchall()
-    assert {row["skill_code"] for row in audit_rows}.issuperset({"get_pool_snapshot", "list_agent_outputs", "get_agent_output", "get_agent_config"})
+    assert {row["skill_code"] for row in audit_rows}.issuperset(
+        {
+            "crm.get_member_basic",
+            "crm.get_member_snapshot",
+            "script.list_items",
+            "script.update_draft",
+            "script.diff_draft",
+            "script.submit_for_publish",
+            "list_agent_configs",
+            "get_all_agent_prompts",
+            "list_pending_agent_prompt_publish_requests",
+            "get_pool_snapshot",
+            "list_agent_outputs",
+            "get_agent_output",
+            "get_agent_config",
+            "save_agent_prompt_draft",
+            "diff_agent_prompt",
+            "submit_agent_prompt_for_publish",
+        }
+    )
+
+
+def test_agent_prompt_bundle_version_is_stable_and_changes_on_child_prompt_update(app):
+    with app.app_context():
+        before_configs = list_agent_configs(enabled_only=True)
+        before_prompts = get_all_agent_prompts(enabled_only=True)
+        assert before_configs["bundle_version"] == before_prompts["bundle_version"]
+        assert before_configs["bundle_hash"] == before_prompts["bundle_hash"]
+
+        repeated_configs = list_agent_configs(enabled_only=True)
+        repeated_prompts = get_all_agent_prompts(enabled_only=True)
+        assert before_configs["bundle_version"] == repeated_configs["bundle_version"]
+        assert before_configs["bundle_hash"] == repeated_configs["bundle_hash"]
+        assert before_prompts["bundle_version"] == repeated_prompts["bundle_version"]
+        assert before_prompts["bundle_hash"] == repeated_prompts["bundle_hash"]
+
+        save_agent_config_draft(
+            "pricing_agent",
+            {
+                "task_prompt": "新的价格提示词 bundle change",
+                "change_summary": "bundle test update",
+            },
+            operator_id="bundle_tester",
+            source="test",
+        )
+
+        after_configs = list_agent_configs(enabled_only=True)
+        after_prompts = get_all_agent_prompts(enabled_only=True)
+
+    assert after_configs["bundle_hash"] != before_configs["bundle_hash"]
+    assert after_configs["bundle_version"] != before_configs["bundle_version"]
+    assert after_prompts["bundle_hash"] == after_configs["bundle_hash"]
+    assert after_prompts["bundle_version"] == after_configs["bundle_version"]
+
+
+def test_save_agent_prompt_draft_rejects_stale_expected_version_and_writes_skill_audit(app, client):
+    with app.app_context():
+        stale_version = int(get_agent_config_detail("pricing_agent")["draft_version"])
+        save_agent_config_draft(
+            "pricing_agent",
+            {
+                "task_prompt": "先把版本推进到下一版",
+                "change_summary": "seed new version",
+            },
+            operator_id="seed_updater",
+            source="test",
+        )
+
+    response = _mcp_call(
+        client,
+        "save_agent_prompt_draft",
+        {
+            "agent_code": "pricing_agent",
+            "task_prompt": "这次保存应该冲突",
+            "expected_draft_version": stale_version,
+            "operator": "lobster_test",
+            "request_id": "req-conflict-save-001",
+            "idempotency_key": "conflict-save-001",
+        },
+    )
+    payload = response.get_json()
+
+    with app.app_context():
+        audit_row = get_db().execute(
+            """
+            SELECT status, error_code, response_payload_json
+            FROM automation_agent_skill_call_audit
+            WHERE skill_code = 'save_agent_prompt_draft'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert response.status_code == 200
+    assert payload["error"]["message"].startswith("draft_version_conflict:")
+    assert dict(audit_row)["status"] == "error"
+    assert dict(audit_row)["error_code"] == "draft_version_conflict"
+    detail = json.loads(audit_row["response_payload_json"])["detail"]
+    assert detail["expected_draft_version"] == stale_version
+    assert detail["current_draft_version"] == stale_version + 1
+
+
+def test_submit_agent_prompt_for_publish_rejects_stale_expected_version_and_writes_skill_audit(app, client):
+    with app.app_context():
+        stale_version = int(get_agent_config_detail("pricing_agent")["draft_version"])
+        save_agent_config_draft(
+            "pricing_agent",
+            {
+                "task_prompt": "推进版本后再提交",
+                "change_summary": "seed publish conflict",
+            },
+            operator_id="seed_updater",
+            source="test",
+        )
+
+    response = _mcp_call(
+        client,
+        "submit_agent_prompt_for_publish",
+        {
+            "agent_code": "pricing_agent",
+            "expected_draft_version": stale_version,
+            "operator": "lobster_test",
+            "request_id": "req-conflict-submit-001",
+            "idempotency_key": "conflict-submit-001",
+        },
+    )
+    payload = response.get_json()
+
+    with app.app_context():
+        audit_row = get_db().execute(
+            """
+            SELECT status, error_code, response_payload_json
+            FROM automation_agent_skill_call_audit
+            WHERE skill_code = 'submit_agent_prompt_for_publish'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert response.status_code == 200
+    assert payload["error"]["message"].startswith("draft_version_conflict:")
+    assert dict(audit_row)["status"] == "error"
+    assert dict(audit_row)["error_code"] == "draft_version_conflict"
+    detail = json.loads(audit_row["response_payload_json"])["detail"]
+    assert detail["expected_draft_version"] == stale_version
+    assert detail["current_draft_version"] == stale_version + 1
+
+
+def test_pending_publish_query_lists_submitted_child_agent_requests(app, client):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+    with app.app_context():
+        save_agent_config_draft(
+            "pricing_agent",
+            {
+                "task_prompt": "待发布查询测试",
+                "change_summary": "pending publish query",
+            },
+            operator_id="pending_tester",
+            source="test",
+        )
+        submit_agent_prompt_for_publish(
+            "pricing_agent",
+            operator_id="pending_tester",
+            change_summary="提交发布申请",
+            expected_draft_version=get_agent_config_detail("pricing_agent")["draft_version"],
+        )
+        payload = list_pending_agent_prompt_publish_requests(agent_code="pricing_agent", page=1, page_size=20)
+
+    assert payload["total"] == 1
+    assert payload["items"][0]["agent_code"] == "pricing_agent"
+    assert payload["items"][0]["submitted_for_publish"] is True
+    assert payload["items"][0]["has_unpublished_changes"] is True
+
+    response = client.get(
+        "/api/admin/automation-conversion/agent-orchestration/pending-publish",
+        query_string={"agent_code": "pricing_agent"},
+        headers={"Authorization": "Bearer internal-token"},
+    )
+    api_payload = response.get_json()
+
+    assert response.status_code == 200
+    assert api_payload["ok"] is True
+    assert api_payload["total"] == 1
+    assert api_payload["items"][0]["submitted_for_publish"] is True
+
+
+def test_router_pending_callback_check_creates_alert_output_without_duplicate_alerts(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_alert_001", mobile="13800009187", owner_userid="sales_01", customer_name="alert")
+    _seed_automation_member(app, external_contact_id="wm_reply_alert_001", phone="13800009187", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-alert-001", seq=1, external_userid="wm_reply_alert_001", owner_userid="sales_01", sender="wm_reply_alert_001", receiver="sales_01", content="今天怎么还没回我", send_time="2026-04-09 16:00:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "pending_callback_timeout_minutes": 1,
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        get_db().execute(
+            "UPDATE automation_agent_run SET updated_at = '2026-04-09 12:00:00' WHERE run_id = ?",
+            (dispatch["router_ingress"]["run_id"],),
+        )
+        get_db().commit()
+
+        result = run_router_pending_callback_check(operator_id="router_checker")
+        rerun_result = run_router_pending_callback_check(operator_id="router_checker")
+        rows = get_db().execute(
+            """
+            SELECT output_type, applied_status, normalized_output_json
+            FROM automation_agent_output
+            WHERE request_id = ? AND output_type = 'pending_callback_alert'
+            ORDER BY id ASC
+            """,
+            (dispatch["router_ingress"]["request_id"],),
+        ).fetchall()
+
+    assert result["alerted_count"] == 1
+    assert rerun_result["alerted_count"] == 0
+    assert rerun_result["existing_alert_count"] >= 1
+    assert len(rows) == 1
+    assert dict(rows[0])["applied_status"] == "alerted"
+    assert json.loads(rows[0]["normalized_output_json"])["threshold_minutes"] == 1
+
+    response = client.post(
+        "/api/admin/automation-conversion/router-pending-callback-check",
+        json={"older_than_minutes": 1, "limit": 10},
+        headers={"Authorization": "Bearer internal-token"},
+    )
+    api_payload = response.get_json()
+
+    assert response.status_code == 200
+    assert api_payload["ok"] is True
+    assert api_payload["alerted_count"] == 0
 
 
 def test_sop_v1_defaults_seed_three_pool_configs_and_day1_only(app):
