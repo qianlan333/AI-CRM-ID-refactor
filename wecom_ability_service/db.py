@@ -1340,6 +1340,14 @@ def _init_sqlite(db) -> None:
             ON automation_agent_output (outcome_status, created_at DESC, id DESC)
             """
         )
+    agent_config_columns = _sqlite_table_columns(db, "automation_agent_config")
+    if agent_config_columns:
+        if "submitted_for_publish" not in agent_config_columns:
+            db.execute("ALTER TABLE automation_agent_config ADD COLUMN submitted_for_publish INTEGER NOT NULL DEFAULT 0")
+        if "submitted_at" not in agent_config_columns:
+            db.execute("ALTER TABLE automation_agent_config ADD COLUMN submitted_at TEXT NOT NULL DEFAULT ''")
+        if "submitted_by" not in agent_config_columns:
+            db.execute("ALTER TABLE automation_agent_config ADD COLUMN submitted_by TEXT NOT NULL DEFAULT ''")
     db.commit()
 
 
@@ -1366,6 +1374,27 @@ def _ensure_postgres_user_ops_page_tables(db) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_automation_message_activity_sync_item_match_key
         ON automation_message_activity_sync_item (phone_match_key, created_at DESC, id DESC)
+        """
+    )
+
+
+def _ensure_postgres_automation_agent_config_tables(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_config
+        ADD COLUMN IF NOT EXISTS submitted_for_publish BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_config
+        ADD COLUMN IF NOT EXISTS submitted_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_config
+        ADD COLUMN IF NOT EXISTS submitted_by TEXT NOT NULL DEFAULT ''
         """
     )
 
@@ -2079,6 +2108,7 @@ def _init_postgres(db) -> None:
     )
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_user_ops_page_tables(db)
+    _ensure_postgres_automation_agent_config_tables(db)
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)
     _ensure_automation_sop_v1_seed_data()

@@ -929,10 +929,13 @@ def insert_agent_config_row(payload: dict[str, Any]) -> dict[str, Any]:
             last_modified_by,
             last_modified_source,
             last_change_summary,
+            submitted_for_publish,
+            submitted_at,
+            submitted_by,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
@@ -956,6 +959,9 @@ def insert_agent_config_row(payload: dict[str, Any]) -> dict[str, Any]:
             _normalized_text(payload.get("last_modified_by")),
             _normalized_text(payload.get("last_modified_source")),
             _normalized_text(payload.get("last_change_summary")),
+            _db_bool(bool(payload.get("submitted_for_publish"))),
+            _normalized_text(payload.get("submitted_at")),
+            _normalized_text(payload.get("submitted_by")),
         ),
     ).fetchone()
     return dict(row) if row else {}
@@ -984,6 +990,9 @@ def update_agent_config_row(agent_code: str, payload: dict[str, Any]) -> dict[st
             last_modified_by = ?,
             last_modified_source = ?,
             last_change_summary = ?,
+            submitted_for_publish = ?,
+            submitted_at = ?,
+            submitted_by = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE agent_code = ?
         RETURNING *
@@ -1008,6 +1017,9 @@ def update_agent_config_row(agent_code: str, payload: dict[str, Any]) -> dict[st
             _normalized_text(payload.get("last_modified_by")),
             _normalized_text(payload.get("last_modified_source")),
             _normalized_text(payload.get("last_change_summary")),
+            _db_bool(bool(payload.get("submitted_for_publish"))),
+            _normalized_text(payload.get("submitted_at")),
+            _normalized_text(payload.get("submitted_by")),
             _normalized_text(agent_code),
         ),
     ).fetchone()
@@ -1247,6 +1259,22 @@ def get_agent_run_row(run_id: str) -> dict[str, Any] | None:
         LIMIT 1
         """,
         (_normalized_text(run_id),),
+    )
+
+
+def get_agent_run_row_by_request_id(request_id: str) -> dict[str, Any] | None:
+    normalized_request_id = _normalized_text(request_id)
+    if not normalized_request_id:
+        return None
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_agent_run
+        WHERE request_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (normalized_request_id,),
     )
 
 
@@ -1510,6 +1538,30 @@ def get_agent_output_row(output_id: str) -> dict[str, Any] | None:
         LIMIT 1
         """,
         (_normalized_text(output_id),),
+    )
+
+
+def get_latest_agent_output_row_by_request_id(request_id: str, *, output_types: list[str] | None = None) -> dict[str, Any] | None:
+    normalized_request_id = _normalized_text(request_id)
+    if not normalized_request_id:
+        return None
+    clauses = ["request_id = ?"]
+    params: list[Any] = [normalized_request_id]
+    normalized_types = [_normalized_text(item) for item in list(output_types or []) if _normalized_text(item)]
+    if normalized_types:
+        placeholders = ",".join("?" for _ in normalized_types)
+        clauses.append(f"output_type IN ({placeholders})")
+        params.extend(normalized_types)
+    where_sql = " AND ".join(clauses)
+    return _fetchone_dict(
+        f"""
+        SELECT *
+        FROM automation_agent_output
+        WHERE {where_sql}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        tuple(params),
     )
 
 
@@ -3058,6 +3110,7 @@ def deserialize_agent_config_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **dict(row or {}),
         "enabled": _row_bool((row or {}).get("enabled")),
+        "submitted_for_publish": _row_bool((row or {}).get("submitted_for_publish")),
         "pool_keys_json": _json_loads((row or {}).get("pool_keys_json"), default=[]),
         "draft_variables_json": _json_loads((row or {}).get("draft_variables_json"), default=[]),
         "draft_output_schema_json": _json_loads((row or {}).get("draft_output_schema_json"), default=[]),

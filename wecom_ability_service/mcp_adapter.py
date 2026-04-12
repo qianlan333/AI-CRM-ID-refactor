@@ -15,15 +15,34 @@ from .db import get_db
 from .domains.admin_config import list_mcp_runtime_tools, mcp_tool_enabled
 from .domains.automation_conversion import (
     audit_agent_skill_call,
+    crm_get_member_basic,
+    crm_get_member_questionnaire,
+    crm_get_member_recent_events,
+    crm_get_member_recent_outputs,
+    crm_get_member_snapshot,
+    crm_get_member_stage,
     create_agent_output_export_job,
+    list_pending_agent_prompt_publish_requests,
     get_agent_config_detail,
+    get_all_agent_prompts,
     get_agent_output_detail,
     get_agent_output_export_job,
     get_agent_outputs_by_request,
     get_agent_outputs_by_user,
     get_pool_snapshot,
+    diff_agent_prompt,
+    list_agent_configs,
     list_agent_outputs,
     save_agent_config_draft,
+    submit_agent_prompt_for_publish,
+    script_create_draft,
+    script_diff_draft,
+    script_get_item,
+    script_list_drafts,
+    script_list_items,
+    script_search_items,
+    script_submit_for_publish,
+    script_update_draft,
     suggest_pool_action,
 )
 from .http.internal_auth import require_internal_api_token
@@ -570,20 +589,86 @@ TOOL_DEFS = [
         },
     },
     {
-        "name": "get_pool_snapshot",
-        "description": "Read a pool/stage snapshot for automation conversion.",
+        "name": "crm.get_member_basic",
+        "description": "Read one automation-conversion member's basic CRM profile.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "pool_key": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                "external_contact_id": {"type": "string"},
+                "phone": {"type": "string"},
             },
-            "required": ["pool_key"],
         },
     },
     {
-        "name": "get_agent_config",
-        "description": "Read one child agent's draft/published configuration.",
+        "name": "crm.get_member_stage",
+        "description": "Read one automation-conversion member's current pool/stage state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_contact_id": {"type": "string"},
+                "phone": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "crm.get_member_questionnaire",
+        "description": "Read one automation-conversion member's questionnaire result and matched rules.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_contact_id": {"type": "string"},
+                "phone": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "crm.get_member_recent_events",
+        "description": "Read one automation-conversion member's recent timeline events.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_contact_id": {"type": "string"},
+                "phone": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+        },
+    },
+    {
+        "name": "crm.get_member_recent_outputs",
+        "description": "Read one automation-conversion member's recent agent outputs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_contact_id": {"type": "string"},
+                "phone": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+        },
+    },
+    {
+        "name": "crm.get_member_snapshot",
+        "description": "Read one automation-conversion member's combined CRM snapshot.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "external_contact_id": {"type": "string"},
+                "phone": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "script.list_items",
+        "description": "List Lobster-editable script items backed by child agent configs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "script.get_item",
+        "description": "Read one script item backed by a child agent config.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -593,8 +678,34 @@ TOOL_DEFS = [
         },
     },
     {
-        "name": "save_agent_prompt_draft",
-        "description": "Save one child agent's draft configuration without publishing.",
+        "name": "script.search_items",
+        "description": "Search script items by keyword.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "keyword": {"type": "string"},
+            },
+            "required": ["keyword"],
+        },
+    },
+    {
+        "name": "script.create_draft",
+        "description": "Create or refresh a script draft without publishing it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "from_version": {"type": "string", "enum": ["published", "draft"]},
+                "change_summary": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "script.update_draft",
+        "description": "Update one script draft without publishing it.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -609,7 +720,163 @@ TOOL_DEFS = [
                 "operator": {"type": "string"},
                 "idempotency_key": {"type": "string"},
             },
-            "required": ["agent_code", "role_prompt", "task_prompt"],
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "script.diff_draft",
+        "description": "Compare one script draft against the current published version.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "script.submit_for_publish",
+        "description": "Submit one script draft for manual publish review without publishing it directly.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "change_summary": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "script.list_drafts",
+        "description": "List script drafts, optionally only the ones that differ from published versions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "changed_only": {"type": "boolean"},
+            },
+        },
+    },
+    {
+        "name": "get_pool_snapshot",
+        "description": "Read a pool/stage snapshot for automation conversion.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pool_key": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            "required": ["pool_key"],
+        },
+    },
+    {
+        "name": "list_agent_configs",
+        "description": "List all child agent configurations without including the central router webhook config.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "enabled_only": {"type": "boolean"},
+                "request_id": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "get_agent_config",
+        "description": "Read one child agent's draft/published configuration.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "request_id": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "get_all_agent_prompts",
+        "description": "Read all child agent prompts at once, split into role_prompt, task_prompt, variables, and output_schema.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "enabled_only": {"type": "boolean"},
+                "request_id": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "save_agent_prompt_draft",
+        "description": "Save one child agent's draft configuration without publishing. Supports partial field patching.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "patch": {"type": "object"},
+                "display_name": {"type": "string"},
+                "enabled": {"type": "boolean"},
+                "role_prompt": {"type": "string"},
+                "task_prompt": {"type": "string"},
+                "variables": {"type": "array"},
+                "output_schema": {"type": "array"},
+                "change_summary": {"type": "string"},
+                "expected_draft_version": {"type": "integer", "minimum": 1},
+                "request_id": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "diff_agent_prompt",
+        "description": "Compare one child agent's draft and published prompt configuration.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "request_id": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "submit_agent_prompt_for_publish",
+        "description": "Submit one child agent draft for manual publish review without publishing it directly.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "change_summary": {"type": "string"},
+                "expected_draft_version": {"type": "integer", "minimum": 1},
+                "request_id": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code"],
+        },
+    },
+    {
+        "name": "list_pending_agent_prompt_publish_requests",
+        "description": "List child-agent drafts that either have unpublished changes or have already been submitted for manual publish review.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "enabled_only": {"type": "boolean"},
+                "page": {"type": "integer", "minimum": 1, "maximum": 100000},
+                "page_size": {"type": "integer", "minimum": 1, "maximum": 100},
+                "request_id": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
         },
     },
     {
@@ -1523,14 +1790,21 @@ def _run_agent_skill(
     try:
         payload = fn()
     except Exception as exc:
+        error_code = str(getattr(exc, "error_code", "") or "runtime_error").strip() or "runtime_error"
+        response_payload = {"ok": False, "error": str(exc)}
+        if hasattr(exc, "to_payload") and callable(getattr(exc, "to_payload")):
+            try:
+                response_payload["detail"] = exc.to_payload()
+            except Exception:
+                pass
         audit_agent_skill_call(
             skill_code=skill_code,
             source="mcp",
             permissions_scope=permission_scope,
             request_payload=arguments,
-            response_payload={"ok": False, "error": str(exc)},
+            response_payload=response_payload,
             status="error",
-            error_code="runtime_error",
+            error_code=error_code,
             error_message=str(exc),
             latency_ms=int((time.perf_counter() - started_at) * 1000),
             idempotency_key=idempotency_key,
@@ -1785,6 +2059,143 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         )
     if name == "get_hourly_followup_candidates":
         return _tool_result(_build_followup_candidates(arguments))
+    if name == "crm.get_member_basic":
+        return _run_agent_skill(
+            "crm.get_member_basic",
+            arguments,
+            permission_scope="crm_read",
+            fn=lambda: crm_get_member_basic(
+                external_contact_id=str(arguments.get("external_contact_id") or "").strip(),
+                phone=str(arguments.get("phone") or "").strip(),
+            ),
+        )
+    if name == "crm.get_member_stage":
+        return _run_agent_skill(
+            "crm.get_member_stage",
+            arguments,
+            permission_scope="crm_read",
+            fn=lambda: crm_get_member_stage(
+                external_contact_id=str(arguments.get("external_contact_id") or "").strip(),
+                phone=str(arguments.get("phone") or "").strip(),
+            ),
+        )
+    if name == "crm.get_member_questionnaire":
+        return _run_agent_skill(
+            "crm.get_member_questionnaire",
+            arguments,
+            permission_scope="crm_read",
+            fn=lambda: crm_get_member_questionnaire(
+                external_contact_id=str(arguments.get("external_contact_id") or "").strip(),
+                phone=str(arguments.get("phone") or "").strip(),
+            ),
+        )
+    if name == "crm.get_member_recent_events":
+        return _run_agent_skill(
+            "crm.get_member_recent_events",
+            arguments,
+            permission_scope="crm_read",
+            fn=lambda: crm_get_member_recent_events(
+                external_contact_id=str(arguments.get("external_contact_id") or "").strip(),
+                phone=str(arguments.get("phone") or "").strip(),
+                limit=int(arguments.get("limit") or 20),
+            ),
+        )
+    if name == "crm.get_member_recent_outputs":
+        return _run_agent_skill(
+            "crm.get_member_recent_outputs",
+            arguments,
+            permission_scope="crm_read",
+            fn=lambda: crm_get_member_recent_outputs(
+                external_contact_id=str(arguments.get("external_contact_id") or "").strip(),
+                phone=str(arguments.get("phone") or "").strip(),
+                limit=int(arguments.get("limit") or 20),
+            ),
+        )
+    if name == "crm.get_member_snapshot":
+        return _run_agent_skill(
+            "crm.get_member_snapshot",
+            arguments,
+            permission_scope="crm_read",
+            fn=lambda: crm_get_member_snapshot(
+                external_contact_id=str(arguments.get("external_contact_id") or "").strip(),
+                phone=str(arguments.get("phone") or "").strip(),
+            ),
+        )
+    if name == "script.list_items":
+        return _run_agent_skill(
+            "script.list_items",
+            arguments,
+            permission_scope="script_read",
+            fn=lambda: script_list_items(query=str(arguments.get("query") or "").strip()),
+        )
+    if name == "script.get_item":
+        return _run_agent_skill(
+            "script.get_item",
+            arguments,
+            permission_scope="script_read",
+            fn=lambda: script_get_item(str(arguments.get("agent_code") or "").strip()),
+        )
+    if name == "script.search_items":
+        return _run_agent_skill(
+            "script.search_items",
+            arguments,
+            permission_scope="script_read",
+            fn=lambda: script_search_items(str(arguments.get("keyword") or "").strip()),
+        )
+    if name == "script.create_draft":
+        return _run_agent_skill(
+            "script.create_draft",
+            arguments,
+            permission_scope="draft_write",
+            fn=lambda: script_create_draft(
+                str(arguments.get("agent_code") or "").strip(),
+                operator_id=str(arguments.get("operator") or "lobster_mcp").strip() or "lobster_mcp",
+                from_version=str(arguments.get("from_version") or "published").strip() or "published",
+                change_summary=str(arguments.get("change_summary") or "").strip(),
+            ),
+        )
+    if name == "script.update_draft":
+        return _run_agent_skill(
+            "script.update_draft",
+            arguments,
+            permission_scope="draft_write",
+            fn=lambda: script_update_draft(
+                str(arguments.get("agent_code") or "").strip(),
+                operator_id=str(arguments.get("operator") or "lobster_mcp").strip() or "lobster_mcp",
+                display_name=arguments.get("display_name"),
+                enabled=arguments.get("enabled"),
+                role_prompt=arguments.get("role_prompt"),
+                task_prompt=arguments.get("task_prompt"),
+                variables=arguments.get("variables"),
+                output_schema=arguments.get("output_schema"),
+                change_summary=str(arguments.get("change_summary") or "").strip(),
+            ),
+        )
+    if name == "script.diff_draft":
+        return _run_agent_skill(
+            "script.diff_draft",
+            arguments,
+            permission_scope="script_read",
+            fn=lambda: script_diff_draft(str(arguments.get("agent_code") or "").strip()),
+        )
+    if name == "script.submit_for_publish":
+        return _run_agent_skill(
+            "script.submit_for_publish",
+            arguments,
+            permission_scope="publish_request",
+            fn=lambda: script_submit_for_publish(
+                str(arguments.get("agent_code") or "").strip(),
+                operator_id=str(arguments.get("operator") or "lobster_mcp").strip() or "lobster_mcp",
+                change_summary=str(arguments.get("change_summary") or "").strip(),
+            ),
+        )
+    if name == "script.list_drafts":
+        return _run_agent_skill(
+            "script.list_drafts",
+            arguments,
+            permission_scope="script_read",
+            fn=lambda: script_list_drafts(changed_only=bool(arguments.get("changed_only", True))),
+        )
     if name == "get_pool_snapshot":
         return _run_agent_skill(
             "get_pool_snapshot",
@@ -1802,6 +2213,20 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             permission_scope="read",
             fn=lambda: {"agent": get_agent_config_detail(str(arguments.get("agent_code") or "").strip())},
         )
+    if name == "list_agent_configs":
+        return _run_agent_skill(
+            "list_agent_configs",
+            arguments,
+            permission_scope="read",
+            fn=lambda: list_agent_configs(enabled_only=bool(arguments.get("enabled_only"))),
+        )
+    if name == "get_all_agent_prompts":
+        return _run_agent_skill(
+            "get_all_agent_prompts",
+            arguments,
+            permission_scope="read",
+            fn=lambda: get_all_agent_prompts(enabled_only=bool(arguments.get("enabled_only"))),
+        )
     if name == "save_agent_prompt_draft":
         return _run_agent_skill(
             "save_agent_prompt_draft",
@@ -1810,16 +2235,55 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             fn=lambda: save_agent_config_draft(
                 str(arguments.get("agent_code") or "").strip(),
                 {
-                    "display_name": arguments.get("display_name"),
-                    "enabled": bool(arguments.get("enabled", True)),
-                    "role_prompt": arguments.get("role_prompt"),
-                    "task_prompt": arguments.get("task_prompt"),
-                    "variables": list(arguments.get("variables") or []),
-                    "output_schema": list(arguments.get("output_schema") or []),
-                    "change_summary": arguments.get("change_summary"),
+                    **(dict(arguments.get("patch") or {}) if isinstance(arguments.get("patch"), dict) else {}),
+                    **{
+                        key: value
+                        for key, value in {
+                            "display_name": arguments.get("display_name"),
+                            "enabled": arguments.get("enabled"),
+                            "role_prompt": arguments.get("role_prompt"),
+                            "task_prompt": arguments.get("task_prompt"),
+                            "variables": arguments.get("variables"),
+                            "output_schema": arguments.get("output_schema"),
+                            "change_summary": arguments.get("change_summary"),
+                            "expected_draft_version": arguments.get("expected_draft_version"),
+                        }.items()
+                        if value is not None
+                    },
                 },
                 operator_id=str(arguments.get("operator") or "mcp").strip() or "mcp",
                 source="mcp",
+            ),
+        )
+    if name == "diff_agent_prompt":
+        return _run_agent_skill(
+            "diff_agent_prompt",
+            arguments,
+            permission_scope="read",
+            fn=lambda: diff_agent_prompt(str(arguments.get("agent_code") or "").strip()),
+        )
+    if name == "submit_agent_prompt_for_publish":
+        return _run_agent_skill(
+            "submit_agent_prompt_for_publish",
+            arguments,
+            permission_scope="draft_write",
+            fn=lambda: submit_agent_prompt_for_publish(
+                str(arguments.get("agent_code") or "").strip(),
+                operator_id=str(arguments.get("operator") or "mcp").strip() or "mcp",
+                change_summary=str(arguments.get("change_summary") or "").strip(),
+                expected_draft_version=arguments.get("expected_draft_version"),
+            ),
+        )
+    if name == "list_pending_agent_prompt_publish_requests":
+        return _run_agent_skill(
+            "list_pending_agent_prompt_publish_requests",
+            arguments,
+            permission_scope="read",
+            fn=lambda: list_pending_agent_prompt_publish_requests(
+                agent_code=str(arguments.get("agent_code") or "").strip(),
+                enabled_only=bool(arguments.get("enabled_only")),
+                page=int(arguments.get("page") or 1),
+                page_size=int(arguments.get("page_size") or 20),
             ),
         )
     if name == "list_agent_outputs":

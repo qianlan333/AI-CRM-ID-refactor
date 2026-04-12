@@ -15,11 +15,15 @@ from ..automation_state.state_defs import (
 
 POOL_WON = "won"
 POOL_REMOVED = "removed"
+POOL_NO_REPLY = "no_reply"
+POOL_HUMAN_REPLY = "human_reply"
 
 POOL_LABELS = {
     **SHARED_POOL_LABELS,
     POOL_WON: "已成交",
     POOL_REMOVED: "已移出",
+    POOL_NO_REPLY: "不回复池",
+    POOL_HUMAN_REPLY: "人工回复池",
 }
 
 MANUAL_SEND_ALLOWED_POOLS = {
@@ -41,6 +45,8 @@ STAGE_BY_POOL = {
     POOL_SILENT: "silent_waiting",
     POOL_WON: "won",
     POOL_REMOVED: "removed",
+    POOL_NO_REPLY: "no_reply_waiting",
+    POOL_HUMAN_REPLY: "human_reply_waiting",
 }
 
 TARGET_BY_POOL = {
@@ -52,6 +58,8 @@ TARGET_BY_POOL = {
     POOL_SILENT: "revive",
     POOL_WON: "post_deal",
     POOL_REMOVED: "none",
+    POOL_NO_REPLY: "no_action",
+    POOL_HUMAN_REPLY: "manual_reply",
 }
 
 STAGE_LABELS = {
@@ -63,6 +71,8 @@ STAGE_LABELS = {
     "silent_waiting": "沉默等待",
     "won": "已成交",
     "removed": "已移出",
+    "no_reply_waiting": "不回复待观察",
+    "human_reply_waiting": "等待人工回复",
 }
 
 TARGET_LABELS = {
@@ -74,6 +84,8 @@ TARGET_LABELS = {
     "revive": "唤醒",
     "post_deal": "成交后维护",
     "none": "无",
+    "no_action": "不自动处理",
+    "manual_reply": "转人工回复",
 }
 
 STAGE_DEFINITIONS = (
@@ -86,8 +98,13 @@ STAGE_DEFINITIONS = (
     {"pool": POOL_WON, "route_key": "won", "label": "已成交", "description": "人工确认成交后进入成交池。"},
 )
 
-ROUTE_KEY_TO_POOL = {item["route_key"]: item["pool"] for item in STAGE_DEFINITIONS}
-POOL_TO_STAGE_DEF = {item["pool"]: item for item in STAGE_DEFINITIONS}
+SPECIAL_STAGE_DEFINITIONS = (
+    {"pool": POOL_NO_REPLY, "route_key": "no-reply", "label": "不回复池", "description": "路由判断为无需回复时，仅记录结果，不触发后续动作。"},
+    {"pool": POOL_HUMAN_REPLY, "route_key": "human-reply", "label": "人工回复池", "description": "路由判断需人工接管时进入该池，等待人工处理。"},
+)
+
+ROUTE_KEY_TO_POOL = {item["route_key"]: item["pool"] for item in (*STAGE_DEFINITIONS, *SPECIAL_STAGE_DEFINITIONS)}
+POOL_TO_STAGE_DEF = {item["pool"]: item for item in (*STAGE_DEFINITIONS, *SPECIAL_STAGE_DEFINITIONS)}
 
 
 def _text(value: Any) -> str:
@@ -118,7 +135,7 @@ def button_state(*, current_pool: Any, in_pool: Any) -> dict[str, Any]:
     normalized_current_pool = _text(current_pool)
     in_pool_bool = bool(in_pool)
     won = normalized_current_pool == POOL_WON
-    ai_enabled = normalized_current_pool != POOL_REMOVED
+    ai_enabled = normalized_current_pool not in {POOL_REMOVED, POOL_NO_REPLY, POOL_HUMAN_REPLY}
     return {
         "put_in_pool": {"enabled": (not in_pool_bool) and (not won)},
         "remove_from_pool": {"enabled": in_pool_bool and not won},

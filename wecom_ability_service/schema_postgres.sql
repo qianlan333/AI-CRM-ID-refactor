@@ -1729,6 +1729,9 @@ CREATE TABLE IF NOT EXISTS automation_agent_config (
     last_modified_by TEXT NOT NULL DEFAULT '',
     last_modified_source TEXT NOT NULL DEFAULT '',
     last_change_summary TEXT NOT NULL DEFAULT '',
+    submitted_for_publish BOOLEAN NOT NULL DEFAULT FALSE,
+    submitted_at TEXT NOT NULL DEFAULT '',
+    submitted_by TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

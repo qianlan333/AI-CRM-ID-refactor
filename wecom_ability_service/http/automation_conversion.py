@@ -22,8 +22,10 @@ from ..domains.automation_conversion import (
     get_agent_output_export_job,
     get_agent_outputs_by_request,
     get_agent_outputs_by_user,
+    list_agent_configs,
     get_agent_replay_payload,
     get_agent_run_detail,
+    get_all_agent_prompts,
     get_debug_payload,
     get_focus_send_batch_detail,
     get_focus_send_batches_payload,
@@ -38,12 +40,17 @@ from ..domains.automation_conversion import (
     get_settings_payload,
     get_stage_detail_payload,
     get_pool_snapshot,
+    handle_agent_router_callback,
+    list_pending_agent_prompt_publish_requests,
+    list_router_pending_callbacks,
     list_agent_outputs,
     mark_won,
     publish_agent_config,
     put_in_pool,
     push_openclaw,
+    replay_router_callback,
     replay_agent_run,
+    run_router_pending_callback_check,
     remove_from_pool,
     run_registered_due_jobs,
     run_due_reply_monitor,
@@ -65,6 +72,7 @@ from ..domains.automation_conversion import (
     test_model_infra_connection,
     unmark_won,
 )
+from ..domains.automation_conversion.orchestration_service import DraftVersionConflictError, validate_router_callback_signature
 from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
 from .admin_console import _breadcrumb_items, _render_admin_template
 from .internal_auth import ensure_admin_console_action_token, require_internal_api_token, validate_admin_console_action_token
@@ -170,7 +178,10 @@ def _build_agent_router_form_payload() -> dict[str, object]:
             "on_unknown_agent_code": str(request.form.get("fallback_on_unknown_agent_code") or "").strip(),
             "default_agent_code": str(request.form.get("fallback_default_agent_code") or "").strip(),
             "default_pool": str(request.form.get("fallback_default_pool") or "").strip(),
+            "pending_callback_timeout_minutes": request.form.get("fallback_pending_callback_timeout_minutes"),
+            "min_confidence": request.form.get("fallback_min_confidence"),
             "need_human_review": str(request.form.get("fallback_need_human_review") or "").strip().lower() in {"1", "true", "yes", "on"},
+            "human_review_target_pool": str(request.form.get("fallback_human_review_target_pool") or "").strip(),
             "alert_channel": str(request.form.get("fallback_alert_channel") or "").strip() or "run_center",
             "fail_closed": str(request.form.get("fallback_fail_closed") or "").strip().lower() in {"1", "true", "yes", "on"},
         },
@@ -200,6 +211,7 @@ def _build_agent_config_form_payload() -> dict[str, object]:
         "variables": variables,
         "output_schema": output_schema,
         "change_summary": str(request.form.get("change_summary") or "").strip(),
+        "expected_draft_version": str(request.form.get("expected_draft_version") or "").strip(),
     }
 
 
@@ -244,7 +256,10 @@ def _apply_agent_router_form_state(payload: dict[str, object]) -> dict[str, obje
             "on_unknown_agent_code": str(request.form.get("fallback_on_unknown_agent_code") or "").strip(),
             "default_agent_code": str(request.form.get("fallback_default_agent_code") or "").strip(),
             "default_pool": str(request.form.get("fallback_default_pool") or "").strip(),
+            "pending_callback_timeout_minutes": str(request.form.get("fallback_pending_callback_timeout_minutes") or "").strip(),
+            "min_confidence": str(request.form.get("fallback_min_confidence") or "").strip(),
             "need_human_review": str(request.form.get("fallback_need_human_review") or "").strip().lower() in {"1", "true", "yes", "on"},
+            "human_review_target_pool": str(request.form.get("fallback_human_review_target_pool") or "").strip(),
             "alert_channel": str(request.form.get("fallback_alert_channel") or "").strip() or "run_center",
             "fail_closed": str(request.form.get("fallback_fail_closed") or "").strip().lower() in {"1", "true", "yes", "on"},
         }
@@ -265,6 +280,7 @@ def _apply_agent_config_form_state(payload: dict[str, object]) -> dict[str, obje
         selected["display_name"] = display_name
     selected["enabled"] = str(request.form.get("enabled") or "").strip().lower() in {"1", "true", "yes", "on"}
     selected["last_change_summary"] = str(request.form.get("change_summary") or "").strip()
+    selected["draft_version"] = str(request.form.get("expected_draft_version") or "").strip() or selected.get("draft_version")
     draft["role_prompt"] = str(request.form.get("role_prompt") or "").strip()
     draft["task_prompt"] = str(request.form.get("task_prompt") or "").strip()
 
@@ -445,6 +461,10 @@ def _run_center_notice() -> str:
         return f"{_query_text('agent_published')} 已发布"
     if _query_text("agent_replayed"):
         return f"{_query_text('agent_replayed')} 已生成回放副本"
+    if _query_text("callback_replayed"):
+        return f"{_query_text('callback_replayed')} 已生成 callback replay 副本"
+    if _query_text("pending_callback_checked") == "1":
+        return f"pending callback 检查已完成，新增告警 {_query_text('pending_callback_alerted') or '0'} 条"
     if _query_text("agent_export_job"):
         return "输出导出任务已创建"
     return _model_infra_notice() or _overview_notice()
@@ -2075,6 +2095,16 @@ def admin_automation_conversion_save_agent_config_draft(agent_code: str):
             ),
             code=302,
         )
+    except DraftVersionConflictError as exc:
+        payload = _apply_agent_config_form_state(get_agent_orchestration_payload(subtab="agents", agent_code=agent_code))
+        return _render_run_center_page(
+            page_error=(
+                f"草稿版本冲突：当前版本 v{exc.current_draft_version}，提交基线 v{exc.expected_draft_version}。"
+                "请先刷新最新配置后再保存。"
+            ),
+            entry_section="agent_orchestration",
+            orchestration_payload=payload,
+        )
     except (ValueError, LookupError) as exc:
         payload = _apply_agent_config_form_state(get_agent_orchestration_payload(subtab="agents", agent_code=agent_code))
         return _render_run_center_page(
@@ -2139,6 +2169,61 @@ def admin_automation_conversion_replay_agent_run(run_id: str):
             entry_section="agent_orchestration",
             orchestration_payload=get_agent_orchestration_payload(subtab="replay", run_id=run_id),
         )
+
+
+def admin_automation_conversion_replay_router_callback(run_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(
+            page_error=action_token_error,
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="router"),
+        )
+    try:
+        replay = replay_router_callback(run_id, operator_id=_operator_from_request())
+        return redirect(
+            url_for(
+                "api.admin_automation_conversion_run_center",
+                tab="agent-orchestration",
+                subtab="router",
+                callback_replayed=str((replay.get("run") or {}).get("run_id") or run_id),
+            ),
+            code=302,
+        )
+    except (LookupError, ValueError) as exc:
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="router"),
+        )
+
+
+def admin_automation_conversion_check_router_pending_callbacks():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(
+            page_error=action_token_error,
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="router"),
+        )
+    try:
+        result = run_router_pending_callback_check(operator_id=_operator_from_request())
+    except ValueError as exc:
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(subtab="router"),
+        )
+    return redirect(
+        url_for(
+            "api.admin_automation_conversion_run_center",
+            tab="agent-orchestration",
+            subtab="router",
+            pending_callback_checked=1,
+            pending_callback_alerted=int(result.get("alerted_count") or 0),
+        ),
+        code=302,
+    )
 
 
 def admin_automation_conversion_export_agent_outputs():
@@ -2386,6 +2471,57 @@ def api_admin_automation_conversion_agent_replay():
     return jsonify({"ok": True, **payload})
 
 
+def api_admin_automation_conversion_router_pending_callbacks():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = list_router_pending_callbacks(
+        older_than_minutes=_query_int("older_than_minutes", default=15, minimum=1, maximum=24 * 60),
+        limit=_query_int("limit", default=20, minimum=1, maximum=100),
+        visibility="full",
+    )
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_router_pending_callback_check():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_router_pending_callback_check(
+        older_than_minutes=payload.get("older_than_minutes"),
+        limit=int(payload.get("limit") or 100),
+        operator_id=_operator_from_request(),
+    )
+    return jsonify(result)
+
+
+def api_admin_automation_conversion_pending_agent_prompt_publish_requests():
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    payload = list_pending_agent_prompt_publish_requests(
+        agent_code=_query_text("agent_code"),
+        enabled_only=_query_text("enabled_only") in {"1", "true", "yes"},
+        page=_query_int("page", default=1, minimum=1, maximum=100000),
+        page_size=_query_int("page_size", default=20, minimum=1, maximum=100),
+    )
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_router_callback_replay(run_id: str):
+    auth_failure = require_internal_api_token()
+    if auth_failure is not None:
+        return auth_failure
+    try:
+        replay = replay_router_callback(run_id, operator_id=_operator_from_request())
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **replay})
+
+
 def api_admin_automation_conversion_agent_outputs_export():
     auth_failure = require_internal_api_token()
     if auth_failure is not None:
@@ -2440,6 +2576,8 @@ def api_admin_automation_conversion_agent_config_save_draft(agent_code: str):
     payload = request.get_json(silent=True) or {}
     try:
         result = save_agent_config_draft(agent_code, payload, operator_id=_operator_from_request(), source="api")
+    except DraftVersionConflictError as exc:
+        return jsonify({"ok": False, "error": exc.error_code, "message": str(exc), **exc.to_payload()}), 409
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except LookupError as exc:
@@ -2673,6 +2811,24 @@ def api_admin_automation_conversion_reply_monitor_run_due():
     return jsonify(result), status_code
 
 
+def api_internal_automation_conversion_lobster_results():
+    auth_failure = require_internal_api_token(token_keys=("AUTOMATION_LOBSTER_CALLBACK_TOKEN",), require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    body_text = request.get_data(cache=True, as_text=True) or ""
+    signature_ok, signature_error = validate_router_callback_signature(body_text=body_text, headers=dict(request.headers))
+    if not signature_ok:
+        return jsonify({"ok": False, "error": signature_error}), 401
+    payload = request.get_json(silent=True) or {}
+    result = handle_agent_router_callback(payload)
+    if result.get("ok") and result.get("status") in {"applied", "idempotent"}:
+        return jsonify(result), 200
+    if result.get("status") == "rejected":
+        status_code = 404 if result.get("error") == "request_not_found" else 409
+        return jsonify(result), status_code
+    return jsonify(result), 400
+
+
 def api_admin_automation_conversion_sop_run_due():
     auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
@@ -2723,6 +2879,8 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft", methods=["POST"])(admin_automation_conversion_save_agent_config_draft)
     bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/publish", methods=["POST"])(admin_automation_conversion_publish_agent_config)
     bp.route("/admin/automation-conversion/agent-orchestration/replay/<run_id>", methods=["POST"])(admin_automation_conversion_replay_agent_run)
+    bp.route("/admin/automation-conversion/agent-orchestration/router/replay-callback/<run_id>", methods=["POST"])(admin_automation_conversion_replay_router_callback)
+    bp.route("/admin/automation-conversion/agent-orchestration/router/check-pending-callbacks", methods=["POST"])(admin_automation_conversion_check_router_pending_callbacks)
     bp.route("/admin/automation-conversion/agent-orchestration/outputs/export", methods=["POST"])(admin_automation_conversion_export_agent_outputs)
     bp.route("/admin/automation-conversion/agent-orchestration/outputs/export/<job_id>", methods=["GET"])(admin_automation_conversion_download_agent_output_export)
     bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
@@ -2755,6 +2913,10 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/agent-outputs/<output_id>", methods=["GET"])(api_admin_automation_conversion_agent_output_detail)
     bp.route("/api/admin/automation-conversion/agent-runs/<run_id>", methods=["GET"])(api_admin_automation_conversion_agent_run_detail)
     bp.route("/api/admin/automation-conversion/agent-replay", methods=["GET"])(api_admin_automation_conversion_agent_replay)
+    bp.route("/api/admin/automation-conversion/router-pending-callbacks", methods=["GET"])(api_admin_automation_conversion_router_pending_callbacks)
+    bp.route("/api/admin/automation-conversion/router-pending-callback-check", methods=["POST"])(api_admin_automation_conversion_router_pending_callback_check)
+    bp.route("/api/admin/automation-conversion/router-callback-replay/<run_id>", methods=["POST"])(api_admin_automation_conversion_router_callback_replay)
+    bp.route("/api/admin/automation-conversion/agent-orchestration/pending-publish", methods=["GET"])(api_admin_automation_conversion_pending_agent_prompt_publish_requests)
     bp.route("/api/admin/automation-conversion/agent-outputs/export", methods=["POST"])(api_admin_automation_conversion_agent_outputs_export)
     bp.route("/api/admin/automation-conversion/agent-outputs/export/<job_id>", methods=["GET"])(api_admin_automation_conversion_agent_output_export_job)
     bp.route("/api/admin/automation-conversion/agent-orchestration/router", methods=["POST"])(api_admin_automation_conversion_agent_router_save)
@@ -2781,6 +2943,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
     bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)
+    bp.route("/api/internal/automation-conversion/lobster-results", methods=["POST"])(api_internal_automation_conversion_lobster_results)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
     bp.route("/api/admin/automation-conversion/jobs/run-due", methods=["POST"])(api_admin_automation_conversion_jobs_run_due)
     bp.route("/api/admin/automation-conversion/debug/member", methods=["GET"])(api_admin_automation_conversion_debug_member)
