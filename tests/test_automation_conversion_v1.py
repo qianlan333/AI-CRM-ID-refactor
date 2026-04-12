@@ -3607,6 +3607,94 @@ def test_reply_monitor_run_due_api_fails_closed_when_token_is_not_configured(app
     assert response.get_json()["error"] == "internal token not configured"
 
 
+def test_router_test_dispatch_api_requires_internal_token(app, client, monkeypatch):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_router_test_dispatch",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_router_test_dispatch should not be called")),
+    )
+
+    response = client.post("/api/internal/automation-conversion/router-test-dispatch", json={"external_contact_id": "wm_test_001"})
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "missing internal token"
+
+
+def test_router_test_dispatch_api_triggers_router_request_id_for_specific_member(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
+    _seed_contact(app, external_userid="wm_router_test_001", mobile="13800009199", owner_userid="sales_01", customer_name="router-test")
+    _seed_automation_member(app, external_contact_id="wm_router_test_001", phone="13800009199", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-router-test-001", seq=1, external_userid="wm_router_test_001", owner_userid="sales_01", sender="wm_router_test_001", receiver="sales_01", content="我想再了解一下方案", send_time="2026-04-09 15:00:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+
+    response = client.post(
+        "/api/internal/automation-conversion/router-test-dispatch",
+        json={
+            "external_contact_id": "wm_router_test_001",
+            "operator": "lobster-smoke",
+            "force_capture": True,
+            "force_run_due": True,
+        },
+        headers={"Authorization": "Bearer internal-token"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["request_id"].startswith("router-shadow-")
+    assert payload["member_id"] > 0
+    assert payload["run_due_result"]["router_ingress"]["request_id"] == payload["request_id"]
+    with app.app_context():
+        run_row = get_db().execute(
+            """
+            SELECT status, request_id
+            FROM automation_agent_run
+            WHERE request_id = ?
+            LIMIT 1
+            """,
+            (payload["request_id"],),
+        ).fetchone()
+        queue_row = get_db().execute(
+            """
+            SELECT status
+            FROM automation_reply_monitor_queue
+            WHERE external_userid = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("wm_router_test_001",),
+        ).fetchone()
+
+    assert dict(run_row)["status"] == "acked"
+    assert dict(queue_row)["status"] == "dispatched"
+
+
 def test_insert_archived_messages_does_not_trigger_legacy_openclaw_chain_by_default(app, monkeypatch):
     from wecom_ability_service.domains.archive.service import insert_archived_messages
 

@@ -57,6 +57,7 @@ from ..domains.automation_conversion import (
     run_due_focus_send_batches,
     run_due_sop,
     run_message_activity_sync,
+    run_router_test_dispatch,
     run_reply_monitor_capture,
     save_agent_config_draft,
     save_agent_router_settings,
@@ -2829,6 +2830,23 @@ def api_internal_automation_conversion_lobster_results():
     return jsonify(result), 400
 
 
+def api_internal_automation_conversion_router_test_dispatch():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_router_test_dispatch(
+        external_contact_id=str(payload.get("external_contact_id") or request.values.get("external_contact_id") or "").strip(),
+        phone=str(payload.get("phone") or request.values.get("phone") or "").strip(),
+        operator_id=str(payload.get("operator") or _operator_from_request() or "").strip(),
+        mode=str(payload.get("mode") or request.values.get("mode") or "").strip(),
+        force_capture=_json_bool(payload.get("force_capture")) or str(request.values.get("force_capture") or "").strip().lower() in {"1", "true", "yes", "on"},
+        force_run_due=_json_bool(payload.get("force_run_due")) or str(request.values.get("force_run_due") or "").strip().lower() in {"1", "true", "yes", "on"},
+    )
+    status_code = 200 if result.get("ok") else (404 if result.get("error") == "member_not_found" else 409)
+    return jsonify(result), status_code
+
+
 def api_admin_automation_conversion_sop_run_due():
     auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
@@ -2944,6 +2962,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
     bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)
     bp.route("/api/internal/automation-conversion/lobster-results", methods=["POST"])(api_internal_automation_conversion_lobster_results)
+    bp.route("/api/internal/automation-conversion/router-test-dispatch", methods=["POST"])(api_internal_automation_conversion_router_test_dispatch)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
     bp.route("/api/admin/automation-conversion/jobs/run-due", methods=["POST"])(api_admin_automation_conversion_jobs_run_due)
     bp.route("/api/admin/automation-conversion/debug/member", methods=["GET"])(api_admin_automation_conversion_debug_member)

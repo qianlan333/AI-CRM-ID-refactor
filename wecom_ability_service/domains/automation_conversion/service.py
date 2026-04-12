@@ -2064,6 +2064,24 @@ def run_due_reply_monitor(
         }
 
     queue_item = due_items[0]
+    return _dispatch_reply_monitor_queue_item(
+        queue_item,
+        operator_id=operator_id,
+        operator_type=operator_type,
+        trigger_action="reply_monitor_dispatch",
+        trigger_source="reply_monitor_shadow",
+    )
+
+
+def _dispatch_reply_monitor_queue_item(
+    queue_item: dict[str, Any],
+    *,
+    operator_id: str = "",
+    operator_type: str = "system",
+    trigger_action: str = "reply_monitor_dispatch",
+    trigger_source: str = "reply_monitor_shadow",
+) -> dict[str, Any]:
+    now_text = _iso_now()
     member = repo.get_member_by_id(int(queue_item.get("member_id") or 0)) if int(queue_item.get("member_id") or 0) > 0 else repo.get_member_by_external_contact_id(queue_item.get("external_userid") or "")
     if not member:
         repo.update_reply_monitor_queue_item(
@@ -2115,7 +2133,7 @@ def run_due_reply_monitor(
             external_contact_id=_normalized_text(queue_item.get("external_userid")),
             owner_userid=_normalized_text(queue_item.get("owner_userid")),
             batch_id=f"reply_monitor_queue:{int(queue_item['id'])}",
-            source="reply_monitor_shadow",
+            source=_normalized_text(trigger_source) or "reply_monitor_shadow",
         )
     except Exception:  # pragma: no cover - async ingress must not crash the job runner
         current_app.logger.exception("automation router ingress failed")
@@ -2146,7 +2164,7 @@ def run_due_reply_monitor(
     )
     _write_event(
         member_id=int(member["id"]),
-        action="reply_monitor_dispatch",
+        action=_normalized_text(trigger_action) or "reply_monitor_dispatch",
         operator_type=_normalized_text(operator_type) or "system",
         operator_id=_normalized_text(operator_id) or "reply_monitor_runner",
         before_snapshot=_member_snapshot(_serialize_member(member)),
@@ -2185,6 +2203,138 @@ def run_due_reply_monitor(
         "error": "" if delivery_ok else delivery_reason,
         "router_ingress": router_ingress,
         "shadow_router": router_ingress,
+    }
+
+
+def run_router_test_dispatch(
+    *,
+    external_contact_id: str = "",
+    phone: str = "",
+    operator_id: str = "",
+    mode: str = "",
+    force_capture: bool = False,
+    force_run_due: bool = False,
+) -> dict[str, Any]:
+    normalized_mode = _normalized_text(mode).lower() or "auto"
+    normalized_phone = _normalized_text(phone)
+    member = _resolve_existing_member(external_contact_id=external_contact_id, phone=normalized_phone)
+    resolved_external_contact_id = (
+        _normalized_text(external_contact_id)
+        or _normalized_text((member or {}).get("external_contact_id"))
+        or repo.find_latest_external_contact_id_by_phone(normalized_phone)
+    )
+    if not resolved_external_contact_id:
+        return {
+            "ok": False,
+            "status": "member_not_found",
+            "error": "member_not_found",
+            "message": "未找到可触发的 external_contact_id，请提供有效 external_contact_id 或 phone。",
+            "capture_result": {},
+            "run_due_result": {},
+            "request_id": "",
+            "queue_id": 0,
+            "member_id": 0,
+        }
+    if not member:
+        member = repo.get_member_by_external_contact_id(resolved_external_contact_id)
+    if not member:
+        return {
+            "ok": False,
+            "status": "member_not_found",
+            "error": "member_not_found",
+            "message": f"成员 {resolved_external_contact_id} 不在自动化成员池中，无法触发 router 测试派发。",
+            "capture_result": {},
+            "run_due_result": {},
+            "request_id": "",
+            "queue_id": 0,
+            "member_id": 0,
+        }
+
+    capture_requested = bool(force_capture) or normalized_mode in {"auto", "capture", "capture_and_run_due", "capture-run-due"}
+    dispatch_requested = bool(force_run_due) or normalized_mode in {"auto", "queue", "run_due", "capture_and_run_due", "capture-run-due"}
+    direct_requested = normalized_mode in {"direct", "router", "shadow"} or not dispatch_requested
+    capture_result: dict[str, Any] = {
+        "ok": True,
+        "status": "skipped",
+        "summary": {"reason": "capture_not_requested"},
+    }
+    if capture_requested:
+        capture_result = run_reply_monitor_capture(
+            operator_id=_normalized_text(operator_id) or "router_test_dispatch",
+            operator_type="system",
+            limit=500,
+        )
+
+    queue_row = repo.get_active_reply_monitor_queue_item(resolved_external_contact_id)
+    queue_item = _serialize_reply_monitor_queue_item(queue_row) if queue_row else {}
+    run_due_result: dict[str, Any] = {
+        "ok": False,
+        "status": "queue_not_found",
+        "summary": {"reason": "queue_not_found"},
+        "reply_monitor": _reply_monitor_status_payload(),
+    }
+    if queue_item and dispatch_requested:
+        run_due_result = _dispatch_reply_monitor_queue_item(
+            queue_item,
+            operator_id=_normalized_text(operator_id) or "router_test_dispatch",
+            operator_type="system",
+            trigger_action="reply_monitor_test_dispatch",
+            trigger_source="router_test_dispatch",
+        )
+
+    router_ingress = dict(run_due_result.get("router_ingress") or {})
+    queue_id = int((run_due_result.get("queue_item") or {}).get("id") or queue_item.get("id") or 0)
+    request_id = _normalized_text(router_ingress.get("request_id"))
+    message = "已通过 reply-monitor 队列触发新的 router ingress。"
+
+    if not request_id and (direct_requested or normalized_mode == "auto"):
+        from .orchestration_service import run_agent_router_shadow_decision
+
+        direct_ingress = run_agent_router_shadow_decision(
+            external_contact_id=resolved_external_contact_id,
+            owner_userid=_normalized_text((member or {}).get("owner_staff_id")),
+            batch_id=f"router_test_dispatch:{resolved_external_contact_id}",
+            source="router_test_dispatch",
+        )
+        router_ingress = dict(direct_ingress or {})
+        request_id = _normalized_text(router_ingress.get("request_id"))
+        run_due_result = {
+            "ok": bool(router_ingress.get("ok")),
+            "status": "success" if bool(router_ingress.get("ok")) else (_normalized_text(router_ingress.get("status")) or "failed"),
+            "summary": {
+                "processed_count": 1 if bool(router_ingress.get("ok")) else 0,
+                "success_count": 1 if bool(router_ingress.get("ok")) else 0,
+                "failed_count": 0 if bool(router_ingress.get("ok")) else 1,
+                "request_id": request_id,
+            },
+            "reply_monitor": _reply_monitor_status_payload(),
+            "error": "" if bool(router_ingress.get("ok")) else (_normalized_text(router_ingress.get("status")) or _normalized_text(router_ingress.get("error"))),
+            "router_ingress": router_ingress,
+            "shadow_router": router_ingress,
+        }
+        message = "未命中可直接派发的 reply-monitor 队列，本次已改为直接触发 router ingress。"
+
+    current_app.logger.info(
+        "router_test_dispatch external_contact_id=%s member_id=%s request_id=%s queue_id=%s mode=%s capture_requested=%s dispatch_requested=%s direct_requested=%s",
+        resolved_external_contact_id,
+        int(member.get("id") or 0),
+        request_id,
+        queue_id,
+        normalized_mode,
+        capture_requested,
+        dispatch_requested,
+        direct_requested,
+    )
+    return {
+        "ok": bool(request_id),
+        "status": "accepted" if request_id else (_normalized_text(run_due_result.get("status")) or "failed"),
+        "capture_result": capture_result,
+        "run_due_result": run_due_result,
+        "request_id": request_id,
+        "queue_id": queue_id,
+        "member_id": int(member.get("id") or 0),
+        "external_contact_id": resolved_external_contact_id,
+        "message": message if request_id else "未触发新的 router ingress，请检查 capture / queue / router 配置。",
     }
 
 
