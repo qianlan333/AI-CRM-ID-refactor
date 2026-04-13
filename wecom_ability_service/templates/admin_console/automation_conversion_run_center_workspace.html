@@ -978,7 +978,7 @@
       <div class="run-center-card__head">
         <div>
           <h2>龙虾路由接入配置</h2>
-          <p>系统会向龙虾发送近 20 条消息、userid、成员快照和 allowed_agents，再由龙虾返回应接手的子 Agent。</p>
+          <p>系统会向龙虾发送最小异步 ingress：`request_id`、`external_contact_id` 和最近 20 条消息；龙虾同步只确认已接收，最终分流与话术结果通过 callback 回写账本。</p>
         </div>
       </div>
       <form class="admin-form-grid admin-form-grid--stacked" method="post" action="{{ url_for('api.admin_automation_conversion_save_agent_router_settings') }}">
@@ -1372,7 +1372,7 @@
       <div class="run-center-card__head">
         <div>
           <h2>输出记录</h2>
-          <p>所有 route_decision、agent draft/final、fallback 和 error_output 都统一入账，支持筛选、导出、API 与 skill 调取。当前页面默认脱敏；导出同样只导出脱敏字段。</p>
+          <p>所有 route_decision、agent draft/final、fallback 和 error_output 都统一入账，支持筛选、导出、API 与 skill 调取。当前页面默认显示历史话术清单；取消“仅看生成话术”后再看全量账本事件。</p>
         </div>
       </div>
     <form class="admin-form-grid admin-form-grid--stacked" method="get" action="{{ url_for('api.admin_automation_conversion_run_center') }}">
@@ -1402,6 +1402,10 @@
         <label class="admin-field">
           <span>output_type</span>
           <input type="text" name="output_type" value="{{ (orchestration_outputs.filters or {}).output_type or '' }}">
+        </label>
+        <label class="admin-checkbox admin-checkbox--inline">
+          <input type="checkbox" name="scripts_only" value="1" {% if (orchestration_outputs.filters or {}).scripts_only %}checked{% endif %}>
+          <span>仅看生成话术</span>
         </label>
         <label class="admin-field">
           <span>当前池子</span>
@@ -1442,6 +1446,8 @@
       </div>
       <div class="admin-toolbar">
         <button class="admin-button admin-button--secondary" type="submit">筛选</button>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', scripts_only=1) }}#run-agent-orchestration">全部历史话术</a>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', scripts_only=0) }}#run-agent-orchestration">查看全量账本</a>
       </div>
     </form>
     <form method="post" action="{{ url_for('api.admin_automation_conversion_export_agent_outputs') }}">
@@ -1466,7 +1472,7 @@
       <div class="run-center-card__head">
         <div>
           <h2>列表区</h2>
-          <p>当前筛选命中 {{ orchestration_outputs.total or 0 }} 条输出。</p>
+          <p>当前筛选命中 {{ orchestration_outputs.total or 0 }} 条输出。{% if (orchestration_outputs.filters or {}).scripts_only %}当前是可复制的话术视图。{% endif %}</p>
         </div>
       </div>
       {% if orchestration_outputs.rows %}
@@ -1483,12 +1489,14 @@
               <th>confidence</th>
               <th>applied_status</th>
               <th>outcome_status</th>
+              <th>话术预览</th>
+              <th>复制</th>
             </tr>
           </thead>
           <tbody>
             {% for item in orchestration_outputs.rows %}
             <tr>
-              <td><a href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', output_id=item.output_id, request_id=(orchestration_outputs.filters or {}).request_id, batch_id=(orchestration_outputs.filters or {}).batch_id, external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, userid=(orchestration_outputs.filters or {}).userid, agent_code=(orchestration_outputs.filters or {}).agent_code, output_type=(orchestration_outputs.filters or {}).output_type, current_pool=(orchestration_outputs.filters or {}).current_pool, target_pool=(orchestration_outputs.filters or {}).target_pool, applied_status=(orchestration_outputs.filters or {}).applied_status, min_confidence=(orchestration_outputs.filters or {}).min_confidence, max_confidence=(orchestration_outputs.filters or {}).max_confidence, has_error=(orchestration_outputs.filters or {}).has_error, date_from=(orchestration_outputs.filters or {}).date_from, date_to=(orchestration_outputs.filters or {}).date_to) }}#run-agent-orchestration">{{ item.created_at or "-" }}</a></td>
+              <td><a href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', output_id=item.output_id, request_id=(orchestration_outputs.filters or {}).request_id, batch_id=(orchestration_outputs.filters or {}).batch_id, external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, userid=(orchestration_outputs.filters or {}).userid, agent_code=(orchestration_outputs.filters or {}).agent_code, output_type=(orchestration_outputs.filters or {}).output_type, current_pool=(orchestration_outputs.filters or {}).current_pool, target_pool=(orchestration_outputs.filters or {}).target_pool, applied_status=(orchestration_outputs.filters or {}).applied_status, min_confidence=(orchestration_outputs.filters or {}).min_confidence, max_confidence=(orchestration_outputs.filters or {}).max_confidence, has_error=(orchestration_outputs.filters or {}).has_error, date_from=(orchestration_outputs.filters or {}).date_from, date_to=(orchestration_outputs.filters or {}).date_to, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) }}#run-agent-orchestration">{{ item.created_at or "-" }}</a></td>
               <td>{{ item.agent_code or "-" }}</td>
               <td>{{ item.output_type or "-" }}</td>
               <td>{{ item.userid or "-" }}</td>
@@ -1497,6 +1505,14 @@
               <td>{{ item.confidence }}</td>
               <td>{{ item.applied_status or "-" }}</td>
               <td>{{ item.outcome_status or "-" }}</td>
+              <td>{{ item.rendered_output_text or "-" }}</td>
+              <td>
+                {% if item.output_type in ['agent_reply_draft', 'agent_reply_final'] and item.rendered_output_text %}
+                <button class="admin-button admin-button--ghost" type="button" onclick="navigator.clipboard.writeText({{ (item.rendered_output_text or '')|tojson }});this.textContent='已复制';">复制</button>
+                {% else %}
+                -
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -1546,6 +1562,11 @@
       <pre class="run-center-code-block">{{ ((((output_detail.output or {}).normalized_output) or {}))|tojson(indent=2) }}</pre>
       <strong>渲染文本</strong>
       <pre class="run-center-code-block">{{ (output_detail.output or {}).rendered_output_text or '无' }}</pre>
+      {% if (output_detail.output or {}).output_type in ['agent_reply_draft', 'agent_reply_final'] and (output_detail.output or {}).rendered_output_text %}
+      <div class="admin-toolbar">
+        <button class="admin-button admin-button--secondary" type="button" onclick="navigator.clipboard.writeText({{ ((output_detail.output or {}).rendered_output_text or '')|tojson }});this.textContent='已复制';">复制当前话术</button>
+      </div>
+      {% endif %}
       {% else %}
       <div class="admin-state admin-state--inline">
         <strong>未选中输出</strong>

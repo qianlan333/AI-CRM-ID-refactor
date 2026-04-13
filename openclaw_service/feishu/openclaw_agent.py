@@ -82,12 +82,8 @@ def _extract_reply_text(payload: dict) -> str:
     if not isinstance(payload, dict):
         return ""
 
-    result = payload.get("result")
-    if not isinstance(result, dict):
-        return ""
-
-    payloads = result.get("payloads")
-    if not isinstance(payloads, list):
+    payloads = _extract_payloads(payload)
+    if not payloads:
         return ""
 
     texts: list[str] = []
@@ -98,3 +94,28 @@ def _extract_reply_text(payload: dict) -> str:
         if text:
             texts.append(text)
     return "\n\n".join(texts).strip()
+
+
+def _extract_payloads(payload: dict) -> list[dict]:
+    result = payload.get("result")
+    if isinstance(result, dict):
+        nested_payloads = result.get("payloads")
+        if isinstance(nested_payloads, list):
+            payloads = [item for item in nested_payloads if isinstance(item, dict)]
+            if payloads:
+                return payloads
+        nested_payload = result.get("payload")
+        if isinstance(nested_payload, dict):
+            return [nested_payload]
+
+    top_level_payloads = payload.get("payloads")
+    if isinstance(top_level_payloads, list):
+        payloads = [item for item in top_level_payloads if isinstance(item, dict)]
+        if payloads:
+            return payloads
+
+    top_level_payload = payload.get("payload")
+    if isinstance(top_level_payload, dict):
+        return [top_level_payload]
+
+    return []
