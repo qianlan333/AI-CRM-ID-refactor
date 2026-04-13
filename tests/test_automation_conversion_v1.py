@@ -19,6 +19,7 @@ from wecom_ability_service.domains.automation_conversion import (
     ensure_agent_orchestration_defaults,
     get_all_agent_prompts,
     get_agent_config_detail,
+    get_agent_output_detail,
     list_agent_configs,
     list_pending_agent_prompt_publish_requests,
     run_router_pending_callback_check,
@@ -5032,6 +5033,96 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
     assert detail_page.status_code == 200
     assert "话术详情" in detail_html
     assert "关闭" in detail_html
+
+
+def test_run_center_output_console_formats_user_datetime_and_unicode_text(app, client):
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-console-001",
+                "request_id": "req-console-001",
+                "userid": "sales_agent",
+                "external_contact_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
+                "agent_code": "pricing_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "input_snapshot": {
+                    "completed_at": "2026-04-13T04:52:22.164229+00:00",
+                    "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                },
+                "variables_snapshot": {
+                    "last_touch_at": "2026-04-13T13:36:14.217516+08:00",
+                    "latest_agent_outputs": ["\\u4f60\\u597d\\uff0c\\u6211\\u5728"],
+                },
+                "role_prompt_version": "published-v5",
+                "task_prompt_version": "draft-v5",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        output = append_agent_output(
+            {
+                "output_id": "aout-console-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
+                "agent_code": "pricing_agent",
+                "output_type": "agent_reply_draft",
+                "raw_output_text": json.dumps(
+                    {
+                        "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                        "completed_at": "2026-04-13T04:52:22.164229+00:00",
+                    },
+                    ensure_ascii=False,
+                ),
+                "normalized_output": {
+                    "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                    "draft_reply": "你好，这里是中文话术。",
+                },
+                "rendered_output_text": "你好，这里是中文话术。",
+                "target_agent_code": "pricing_agent",
+                "target_pool": "active_focus",
+                "confidence": 0.92,
+                "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                "applied_status": "generated",
+            }
+        )
+        get_db().execute(
+            "UPDATE automation_agent_output SET created_at = ? WHERE output_id = ?",
+            ("2026-04-13T14:38:53.831499+08:00", output["output_id"]),
+        )
+        get_db().commit()
+        detail = get_agent_output_detail(output["output_id"], visibility="console")
+
+    assert detail["output"]["external_contact_id"] == "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"
+    assert detail["output"]["created_at"] == "2026-04-13 14:38:53"
+    assert detail["output"]["applied_status_label"] == "已生成未采用"
+    assert "\\u7528" not in detail["output"]["normalized_output_pretty"]
+    assert "用户最近连续在问付费方式" in detail["output"]["normalized_output_pretty"]
+    assert "\\u4f60" not in detail["run"]["variables_snapshot_pretty"]
+    assert "你好，我在" in detail["run"]["variables_snapshot_pretty"]
+    assert "2026-04-13 13:36:14" in detail["run"]["variables_snapshot_pretty"]
+
+    page_response = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={
+            "tab": "agent-orchestration",
+            "subtab": "outputs",
+            "external_contact_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
+            "output_id": output["output_id"],
+            "scripts_only": 1,
+        },
+    )
+    page_html = page_response.get_data(as_text=True)
+    assert page_response.status_code == 200
+    assert "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ" in page_html
+    assert "wmbN***" not in page_html
+    assert ".831499+08:00" not in page_html
+    assert "采用状态" in page_html
+    assert "已生成未采用" in page_html
+    assert "\\u7528" not in page_html
+    assert "用户最近连续在问付费方式" in page_html
 
 
 def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):

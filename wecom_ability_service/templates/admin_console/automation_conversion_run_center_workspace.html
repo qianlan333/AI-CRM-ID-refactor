@@ -1540,22 +1540,22 @@
           <dd>{{ (output_detail.run or {}).role_prompt_version or '-' }} / {{ (output_detail.run or {}).task_prompt_version or '-' }}</dd>
         </div>
         <div>
-          <dt>是否已采用</dt>
-          <dd>{{ (output_detail.output or {}).applied_status or '-' }}</dd>
+          <dt>采用状态</dt>
+          <dd>{{ (output_detail.output or {}).applied_status_label or '-' }}</dd>
         </div>
         <div>
           <dt>结果闭环</dt>
-          <dd>{{ (output_detail.output or {}).outcome_status or '-' }} / {{ (output_detail.output or {}).outcome_value or '-' }}</dd>
+          <dd>{{ (output_detail.output or {}).outcome_status_label or '-' }} / {{ (output_detail.output or {}).outcome_value or '-' }}</dd>
         </div>
       </dl>
       <strong>输入快照</strong>
-      <pre class="run-center-code-block">{{ ((((output_detail.run or {}).input_snapshot) or {}))|tojson(indent=2) }}</pre>
+      <pre class="run-center-code-block">{{ (output_detail.run or {}).input_snapshot_pretty or '无' }}</pre>
       <strong>变量快照</strong>
-      <pre class="run-center-code-block">{{ ((((output_detail.run or {}).variables_snapshot) or {}))|tojson(indent=2) }}</pre>
+      <pre class="run-center-code-block">{{ (output_detail.run or {}).variables_snapshot_pretty or '无' }}</pre>
       <strong>原始输出</strong>
       <pre class="run-center-code-block">{{ (output_detail.output or {}).raw_output_text or '无' }}</pre>
       <strong>结构化输出</strong>
-      <pre class="run-center-code-block">{{ ((((output_detail.output or {}).normalized_output) or {}))|tojson(indent=2) }}</pre>
+      <pre class="run-center-code-block">{{ (output_detail.output or {}).normalized_output_pretty or '无' }}</pre>
     </section>
   </div>
   {% endif %}

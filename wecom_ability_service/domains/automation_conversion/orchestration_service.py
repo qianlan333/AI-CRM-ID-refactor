@@ -96,6 +96,49 @@ _EXPORT_RATE_LIMIT_WINDOW_MINUTES = 10
 _EXPORT_RATE_LIMIT_COUNT = 5
 _ROUTER_ACK_HTTP_STATUS = 200
 _ROUTER_MIN_CALLBACK_CONFIDENCE = 0.5
+_CONSOLE_DATETIME_KEYS = {
+    "created_at",
+    "updated_at",
+    "applied_at",
+    "adopted_at",
+    "completed_at",
+    "last_touch_at",
+    "last_modified_at",
+    "last_called_at",
+    "submitted_at",
+    "published_at",
+    "joined_at",
+    "send_time",
+    "last_activation_at",
+    "oauth_at",
+}
+_APPLIED_STATUS_LABELS = {
+    "": "未处理",
+    "pending": "待处理",
+    "queued": "已排队",
+    "received": "已接收",
+    "validated": "已校验",
+    "pending_apply": "待执行",
+    "pending_fallback": "待兜底处理",
+    "generated": "已生成未采用",
+    "applied": "已采用",
+    "adopted": "已采用",
+    "replayed": "已回放采用",
+    "shadow_recorded": "仅观测记录",
+    "suggested": "仅生成建议",
+    "alerted": "已告警",
+    "rejected": "已拒绝",
+    "failed": "执行失败",
+}
+_OUTCOME_STATUS_LABELS = {
+    "": "未闭环",
+    "pending": "未闭环",
+    "generated": "已生成",
+    "applied": "已执行",
+    "adopted": "已采用",
+    "rejected": "已拒绝",
+    "failed": "失败",
+}
 
 
 def _normalized_text(value: Any) -> str:
@@ -142,6 +185,66 @@ def _parse_datetime_text(value: Any) -> datetime | None:
         return datetime.fromisoformat(text)
     except ValueError:
         return None
+
+
+def _display_datetime_text(value: Any) -> str:
+    text = _normalized_text(value)
+    if not text:
+        return ""
+    parsed = _parse_datetime_text(text)
+    if parsed is None:
+        return text.split(".")[0] if "." in text else text
+    return parsed.replace(tzinfo=None, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _decode_console_text(value: Any) -> str:
+    text = _normalized_text(value)
+    if not text or "\\u" not in text:
+        return text
+    try:
+        decoded = text.encode("utf-8").decode("unicode_escape")
+    except UnicodeDecodeError:
+        return text
+    return decoded if decoded else text
+
+
+def _console_value(value: Any, *, key: str = "") -> Any:
+    normalized_key = _normalized_text(key).lower()
+    if isinstance(value, dict):
+        return {item_key: _console_value(item_value, key=item_key) for item_key, item_value in value.items()}
+    if isinstance(value, list):
+        return [_console_value(item, key=key) for item in value]
+    if isinstance(value, str):
+        text = _decode_console_text(value)
+        if normalized_key in _CONSOLE_DATETIME_KEYS or normalized_key.endswith("_at"):
+            return _display_datetime_text(text)
+        return text
+    return value
+
+
+def _console_json_text(value: Any) -> str:
+    return json.dumps(_console_value(value), ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def _console_text_or_json(value: Any) -> str:
+    text = _decode_console_text(value)
+    if not text:
+        return ""
+    stripped = text.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return text
+        return _console_json_text(parsed)
+    return text
+
+
+def _status_label(value: Any, mapping: dict[str, str], *, default: str = "-") -> str:
+    normalized = _normalized_text(value)
+    if normalized in mapping:
+        return mapping[normalized]
+    return normalized or default
 
 
 def _copy_json(value: Any, *, default: Any) -> Any:
@@ -484,17 +587,22 @@ def _serialize_skill_row(row: dict[str, Any] | None) -> dict[str, Any]:
 
 def _serialize_agent_run(row: dict[str, Any] | None, *, visibility: str = "masked") -> dict[str, Any]:
     deserialized = repo.deserialize_agent_run_row(row or {})
+    show_full_identity = visibility in {"full", "console"}
+    input_snapshot = deserialized.get("input_snapshot_json") or {}
+    variables_snapshot = deserialized.get("variables_snapshot_json") or {}
     return {
         "run_id": _normalized_text(deserialized.get("run_id")),
         "request_id": _normalized_text(deserialized.get("request_id")),
         "batch_id": _normalized_text(deserialized.get("batch_id")),
-        "userid": _normalized_text(deserialized.get("userid")) if visibility == "full" else _mask_external_contact_id(deserialized.get("userid")),
-        "external_contact_id": _normalized_text(deserialized.get("external_contact_id")) if visibility == "full" else _mask_external_contact_id(deserialized.get("external_contact_id")),
+        "userid": _normalized_text(deserialized.get("userid")) if show_full_identity else _mask_external_contact_id(deserialized.get("userid")),
+        "external_contact_id": _normalized_text(deserialized.get("external_contact_id")) if show_full_identity else _mask_external_contact_id(deserialized.get("external_contact_id")),
         "agent_code": _normalized_text(deserialized.get("agent_code")),
         "agent_type": _normalized_text(deserialized.get("agent_type")),
         "provider": _normalized_text(deserialized.get("provider")),
-        "input_snapshot": _mask_snapshot_by_visibility("input_snapshot_json", deserialized.get("input_snapshot_json") or {}, visibility=visibility),
-        "variables_snapshot": _mask_snapshot_by_visibility("variables_snapshot_json", deserialized.get("variables_snapshot_json") or {}, visibility=visibility),
+        "input_snapshot": _console_value(input_snapshot) if visibility == "console" else _mask_snapshot_by_visibility("input_snapshot_json", input_snapshot, visibility=visibility),
+        "variables_snapshot": _console_value(variables_snapshot) if visibility == "console" else _mask_snapshot_by_visibility("variables_snapshot_json", variables_snapshot, visibility=visibility),
+        "input_snapshot_pretty": _console_json_text(input_snapshot) if visibility == "console" else "",
+        "variables_snapshot_pretty": _console_json_text(variables_snapshot) if visibility == "console" else "",
         "final_prompt_preview": _visible_output_text(deserialized.get("final_prompt_preview"), visibility=visibility),
         "role_prompt_version": _normalized_text(deserialized.get("role_prompt_version")),
         "task_prompt_version": _normalized_text(deserialized.get("task_prompt_version")),
@@ -505,41 +613,52 @@ def _serialize_agent_run(row: dict[str, Any] | None, *, visibility: str = "maske
         "source": _normalized_text(deserialized.get("source")),
         "parent_run_id": _normalized_text(deserialized.get("parent_run_id")),
         "replay_of_run_id": _normalized_text(deserialized.get("replay_of_run_id")),
-        "created_at": _normalized_text(deserialized.get("created_at")),
-        "updated_at": _normalized_text(deserialized.get("updated_at")),
+        "created_at": _display_datetime_text(deserialized.get("created_at")) if visibility == "console" else _normalized_text(deserialized.get("created_at")),
+        "updated_at": _display_datetime_text(deserialized.get("updated_at")) if visibility == "console" else _normalized_text(deserialized.get("updated_at")),
     }
 
 
 def _serialize_agent_output(row: dict[str, Any] | None, *, visibility: str = "masked") -> dict[str, Any]:
     deserialized = repo.deserialize_agent_output_row(row or {})
     normalized_output = dict(deserialized.get("normalized_output_json") or {})
+    show_full_identity = visibility in {"full", "console"}
+    normalized_output_value = _console_value(normalized_output) if visibility == "console" else _mask_snapshot_by_visibility("normalized_output_json", normalized_output, visibility=visibility)
+    raw_output_text = _console_text_or_json(deserialized.get("raw_output_text")) if visibility == "console" else _visible_output_text(deserialized.get("raw_output_text"), visibility=visibility)
+    rendered_output_text = _decode_console_text(deserialized.get("rendered_output_text")) if visibility == "console" else _visible_rendered_text(deserialized.get("rendered_output_text"), visibility=visibility)
+    reason_text = _decode_console_text(deserialized.get("reason")) if visibility == "console" else _normalized_text(deserialized.get("reason"))
+    outcome_value = _console_text_or_json(deserialized.get("outcome_value")) if visibility == "console" else _visible_rendered_text(deserialized.get("outcome_value"), visibility=visibility)
+    applied_status = _normalized_text(deserialized.get("applied_status")) or "pending"
+    outcome_status = _normalized_text(deserialized.get("outcome_status"))
     return {
         "output_id": _normalized_text(deserialized.get("output_id")),
         "run_id": _normalized_text(deserialized.get("run_id")),
         "request_id": _normalized_text(deserialized.get("request_id")),
-        "userid": _normalized_text(deserialized.get("userid")) if visibility == "full" else _mask_external_contact_id(deserialized.get("userid")),
-        "external_contact_id": _normalized_text(deserialized.get("external_contact_id")) if visibility == "full" else _mask_external_contact_id(deserialized.get("external_contact_id")),
+        "userid": _normalized_text(deserialized.get("userid")) if show_full_identity else _mask_external_contact_id(deserialized.get("userid")),
+        "external_contact_id": _normalized_text(deserialized.get("external_contact_id")) if show_full_identity else _mask_external_contact_id(deserialized.get("external_contact_id")),
         "agent_code": _normalized_text(deserialized.get("agent_code")),
         "output_type": _normalized_text(deserialized.get("output_type")),
-        "raw_output_text": _visible_output_text(deserialized.get("raw_output_text"), visibility=visibility),
-        "normalized_output": _mask_snapshot_by_visibility("normalized_output_json", normalized_output, visibility=visibility),
-        "rendered_output_text": _visible_rendered_text(deserialized.get("rendered_output_text"), visibility=visibility),
+        "raw_output_text": raw_output_text,
+        "normalized_output": normalized_output_value,
+        "normalized_output_pretty": _console_json_text(normalized_output) if visibility == "console" else "",
+        "rendered_output_text": rendered_output_text,
         "target_agent_code": _normalized_text(deserialized.get("target_agent_code")),
         "target_pool": _normalized_text(deserialized.get("target_pool")),
         "confidence": round(_normalize_float(deserialized.get("confidence"), default=0), 4),
-        "reason": _normalized_text(deserialized.get("reason")),
+        "reason": reason_text,
         "need_human_review": bool(deserialized.get("need_human_review")),
-        "applied_status": _normalized_text(deserialized.get("applied_status")) or "pending",
-        "applied_at": _normalized_text(deserialized.get("applied_at")),
+        "applied_status": applied_status,
+        "applied_status_label": _status_label(applied_status, _APPLIED_STATUS_LABELS),
+        "applied_at": _display_datetime_text(deserialized.get("applied_at")) if visibility == "console" else _normalized_text(deserialized.get("applied_at")),
         "adopted_by": _normalized_text(deserialized.get("adopted_by")),
         "adopted_action": _normalized_text(deserialized.get("adopted_action")),
-        "adopted_at": _normalized_text(deserialized.get("adopted_at")),
-        "outcome_status": _normalized_text(deserialized.get("outcome_status")),
-        "outcome_value": _visible_rendered_text(deserialized.get("outcome_value"), visibility=visibility),
+        "adopted_at": _display_datetime_text(deserialized.get("adopted_at")) if visibility == "console" else _normalized_text(deserialized.get("adopted_at")),
+        "outcome_status": outcome_status,
+        "outcome_status_label": _status_label(outcome_status, _OUTCOME_STATUS_LABELS, default="未闭环"),
+        "outcome_value": outcome_value,
         "revision_of_output_id": _normalized_text(deserialized.get("revision_of_output_id")),
         "error_code": _normalized_text(deserialized.get("error_code")),
-        "error_message": _normalized_text(deserialized.get("error_message")),
-        "created_at": _normalized_text(deserialized.get("created_at")),
+        "error_message": _decode_console_text(deserialized.get("error_message")) if visibility == "console" else _normalized_text(deserialized.get("error_message")),
+        "created_at": _display_datetime_text(deserialized.get("created_at")) if visibility == "console" else _normalized_text(deserialized.get("created_at")),
         "is_error": bool(_normalized_text(deserialized.get("error_code")) or _normalized_text(deserialized.get("error_message"))),
     }
 
