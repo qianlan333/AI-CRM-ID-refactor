@@ -14,10 +14,12 @@ from wecom_ability_service import create_app
 from wecom_ability_service.db import _sqlite_table_columns, get_db, init_db
 from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
+    backfill_missing_child_agent_replies,
     create_agent_run,
     ensure_agent_orchestration_defaults,
     get_all_agent_prompts,
     get_agent_config_detail,
+    get_agent_output_detail,
     list_agent_configs,
     list_pending_agent_prompt_publish_requests,
     run_router_pending_callback_check,
@@ -2951,6 +2953,98 @@ def test_router_callback_generates_child_reply_draft_when_callback_only_routes(a
     assert dict(reply_output)["rendered_output_text"] == "自动补的一条价格说明草稿"
 
 
+def test_backfill_missing_child_agent_replies_generates_once_for_historical_route_decision(app, monkeypatch):
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-backfill-route-001",
+                "request_id": "req-backfill-route-001",
+                "userid": "sales_backfill",
+                "external_contact_id": "wm_backfill_001",
+                "agent_code": "central_router_agent",
+                "agent_type": "router",
+                "provider": "lobster",
+                "status": "completed",
+                "source": "test",
+            }
+        )
+        append_agent_output(
+            {
+                "output_id": "aout-backfill-route-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_backfill",
+                "external_contact_id": "wm_backfill_001",
+                "agent_code": "central_router_agent",
+                "output_type": "route_decision",
+                "raw_output_text": '{"agent_code":"pricing_agent"}',
+                "normalized_output": {
+                    "agent_code": "pricing_agent",
+                    "target_pool": "inactive_focus",
+                    "confidence": 0.92,
+                    "reason": "客户在追问价格",
+                    "need_human_review": False,
+                },
+                "rendered_output_text": "pricing_agent -> inactive_focus",
+                "target_agent_code": "pricing_agent",
+                "target_pool": "inactive_focus",
+                "confidence": 0.92,
+                "reason": "客户在追问价格",
+                "applied_status": "applied",
+            }
+        )
+
+    def _fake_generate_child_agent_reply_output(**kwargs):
+        with app.app_context():
+            return append_agent_output(
+                {
+                    "run_id": "arun-backfill-generated-001",
+                    "request_id": kwargs["request_id"],
+                    "userid": kwargs["userid"],
+                    "external_contact_id": kwargs["external_contact_id"],
+                    "agent_code": kwargs["agent_code"],
+                    "output_type": "agent_reply_draft",
+                    "raw_output_text": "这是历史补生成的话术",
+                    "normalized_output": {
+                        "agent_code": kwargs["agent_code"],
+                        "target_pool": kwargs["target_pool"],
+                        "draft_reply": "这是历史补生成的话术",
+                    },
+                    "rendered_output_text": "这是历史补生成的话术",
+                    "target_agent_code": kwargs["agent_code"],
+                    "target_pool": kwargs["target_pool"],
+                    "confidence": kwargs["confidence"],
+                    "reason": kwargs["reason"],
+                    "applied_status": "generated",
+                }
+            )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.orchestration_service._generate_child_agent_reply_output",
+        _fake_generate_child_agent_reply_output,
+    )
+
+    with app.app_context():
+        first = backfill_missing_child_agent_replies(operator_id="tester-backfill", request_id="req-backfill-route-001", limit=10)
+        second = backfill_missing_child_agent_replies(operator_id="tester-backfill", request_id="req-backfill-route-001", limit=10)
+        rows = get_db().execute(
+            """
+            SELECT output_type, rendered_output_text
+            FROM automation_agent_output
+            WHERE request_id = ?
+            ORDER BY id ASC
+            """,
+            ("req-backfill-route-001",),
+        ).fetchall()
+
+    assert first["created_count"] == 1
+    assert first["failed_count"] == 0
+    assert second["created_count"] == 0
+    assert second["skipped_count"] >= 1
+    assert [dict(row)["output_type"] for row in rows] == ["route_decision", "agent_reply_draft"]
+    assert dict(rows[-1])["rendered_output_text"] == "这是历史补生成的话术"
+
+
 def test_router_callback_rejects_invalid_target_pool_and_records_error(app, client, monkeypatch):
     _configure_reply_monitor(
         app,
@@ -4907,21 +5001,19 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
             "tab": "agent-orchestration",
             "subtab": "outputs",
             "request_id": "req-ledger-001",
-            "batch_id": "batch-ledger-001",
-            "current_pool": "new_user",
-            "min_confidence": "0.9",
-            "has_error": "0",
+            "date_from": "2026-04-10 00:00:00",
+            "date_to": "2026-04-10 23:59:59",
         },
     )
     page_html = page_response.get_data(as_text=True)
     assert page_response.status_code == 200
     assert "输出记录" in page_html
-    assert "batch_id" in page_html
-    assert "当前池子" in page_html
-    assert "confidence ≥" in page_html
-    assert "是否异常" in page_html
+    assert "用户 ID" in page_html
+    assert "查看全部历史话术" in page_html
+    assert "详情区" not in page_html
     assert "req-ledger-001" in page_html
-    assert "敏感内容已隐藏，仅内部 API / Skill 可查看明文" in page_html
+    assert "欢迎联系我" in page_html
+    assert "这里默认直接展示历史生成话术" in page_html
 
     default_scripts_page = client.get(
         "/admin/automation-conversion/run-center",
@@ -4929,9 +5021,108 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
     )
     default_scripts_html = default_scripts_page.get_data(as_text=True)
     assert default_scripts_page.status_code == 200
-    assert "仅看生成话术" in default_scripts_html
-    assert "全部历史话术" in default_scripts_html
+    assert "用户 ID" in default_scripts_html
+    assert "查看全部历史话术" in default_scripts_html
     assert "欢迎联系我" in default_scripts_html
+
+    detail_page = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={"tab": "agent-orchestration", "subtab": "outputs", "output_id": output["output_id"]},
+    )
+    detail_html = detail_page.get_data(as_text=True)
+    assert detail_page.status_code == 200
+    assert "话术详情" in detail_html
+    assert "关闭" in detail_html
+
+
+def test_run_center_output_console_formats_user_datetime_and_unicode_text(app, client):
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-console-001",
+                "request_id": "req-console-001",
+                "userid": "sales_agent",
+                "external_contact_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
+                "agent_code": "pricing_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "input_snapshot": {
+                    "completed_at": "2026-04-13T04:52:22.164229+00:00",
+                    "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                },
+                "variables_snapshot": {
+                    "last_touch_at": "2026-04-13T13:36:14.217516+08:00",
+                    "latest_agent_outputs": ["\\u4f60\\u597d\\uff0c\\u6211\\u5728"],
+                },
+                "role_prompt_version": "published-v5",
+                "task_prompt_version": "draft-v5",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        output = append_agent_output(
+            {
+                "output_id": "aout-console-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
+                "agent_code": "pricing_agent",
+                "output_type": "agent_reply_draft",
+                "raw_output_text": json.dumps(
+                    {
+                        "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                        "completed_at": "2026-04-13T04:52:22.164229+00:00",
+                    },
+                    ensure_ascii=False,
+                ),
+                "normalized_output": {
+                    "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                    "draft_reply": "你好，这里是中文话术。",
+                },
+                "rendered_output_text": "你好，这里是中文话术。",
+                "target_agent_code": "pricing_agent",
+                "target_pool": "active_focus",
+                "confidence": 0.92,
+                "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
+                "applied_status": "generated",
+            }
+        )
+        get_db().execute(
+            "UPDATE automation_agent_output SET created_at = ? WHERE output_id = ?",
+            ("2026-04-13T14:38:53.831499+08:00", output["output_id"]),
+        )
+        get_db().commit()
+        detail = get_agent_output_detail(output["output_id"], visibility="console")
+
+    assert detail["output"]["external_contact_id"] == "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ"
+    assert detail["output"]["created_at"] == "2026-04-13 14:38:53"
+    assert detail["output"]["applied_status_label"] == "已生成未采用"
+    assert "\\u7528" not in detail["output"]["normalized_output_pretty"]
+    assert "用户最近连续在问付费方式" in detail["output"]["normalized_output_pretty"]
+    assert "\\u4f60" not in detail["run"]["variables_snapshot_pretty"]
+    assert "你好，我在" in detail["run"]["variables_snapshot_pretty"]
+    assert "2026-04-13 13:36:14" in detail["run"]["variables_snapshot_pretty"]
+
+    page_response = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={
+            "tab": "agent-orchestration",
+            "subtab": "outputs",
+            "external_contact_id": "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ",
+            "output_id": output["output_id"],
+            "scripts_only": 1,
+        },
+    )
+    page_html = page_response.get_data(as_text=True)
+    assert page_response.status_code == 200
+    assert "wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ" in page_html
+    assert "wmbN***" not in page_html
+    assert ".831499+08:00" not in page_html
+    assert "采用状态" in page_html
+    assert "已生成未采用" in page_html
+    assert "\\u7528" not in page_html
+    assert "用户最近连续在问付费方式" in page_html
 
 
 def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):
