@@ -1475,7 +1475,9 @@
               <th>Agent</th>
               <th>目标池</th>
               <th>话术预览</th>
+              <th>采用状态</th>
               <th>复制</th>
+              <th>采用动作</th>
               <th>详情</th>
             </tr>
           </thead>
@@ -1488,8 +1490,39 @@
               <td>{{ item.target_pool or "-" }}</td>
               <td class="run-center-output-preview">{{ item.rendered_output_text or "-" }}</td>
               <td>
+                <div>{{ item.applied_status_label or "-" }}</div>
+                {% if item.review_note %}
+                <div class="run-center-kpi-card__meta">建议：{{ item.review_note }}</div>
+                {% endif %}
+              </td>
+              <td>
                 {% if item.output_type in ['agent_reply_draft', 'agent_reply_final'] and item.rendered_output_text %}
                 <button class="admin-button admin-button--ghost" type="button" data-copy-text="{{ (item.rendered_output_text or '')|e }}" data-copy-label-default="复制" data-copy-label-success="已复制">复制</button>
+                {% else %}
+                -
+                {% endif %}
+              </td>
+              <td>
+                {% if item.is_reviewable %}
+                <div class="admin-toolbar">
+                  <form method="post" action="{{ url_for('api.admin_automation_conversion_review_agent_output', output_id=item.output_id) }}">
+                    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+                    <input type="hidden" name="decision" value="adopted">
+                    <input type="hidden" name="external_contact_id" value="{{ (orchestration_outputs.filters or {}).external_contact_id or '' }}">
+                    <input type="hidden" name="request_id" value="{{ (orchestration_outputs.filters or {}).request_id or '' }}">
+                    <input type="hidden" name="scripts_only" value="{% if (orchestration_outputs.filters or {}).scripts_only %}1{% else %}0{% endif %}">
+                    <button class="admin-button admin-button--secondary" type="submit">采用</button>
+                  </form>
+                  <form method="post" action="{{ url_for('api.admin_automation_conversion_review_agent_output', output_id=item.output_id) }}" data-output-review-reject-form>
+                    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+                    <input type="hidden" name="decision" value="rejected">
+                    <input type="hidden" name="review_note" value="">
+                    <input type="hidden" name="external_contact_id" value="{{ (orchestration_outputs.filters or {}).external_contact_id or '' }}">
+                    <input type="hidden" name="request_id" value="{{ (orchestration_outputs.filters or {}).request_id or '' }}">
+                    <input type="hidden" name="scripts_only" value="{% if (orchestration_outputs.filters or {}).scripts_only %}1{% else %}0{% endif %}">
+                    <button class="admin-button admin-button--ghost" type="button" data-output-review-reject>不采用</button>
+                  </form>
+                </div>
                 {% else %}
                 -
                 {% endif %}
@@ -1548,6 +1581,37 @@
           <dd>{{ (output_detail.output or {}).outcome_status_label or '-' }} / {{ (output_detail.output or {}).outcome_value or '-' }}</dd>
         </div>
       </dl>
+      {% if (output_detail.output or {}).is_reviewable %}
+      <div class="run-center-output-script">
+        <strong>采用判断</strong>
+        {% if (output_detail.output or {}).review_note %}
+        <p class="run-center-kpi-card__meta">当前修改建议：{{ (output_detail.output or {}).review_note }}</p>
+        {% endif %}
+        <div class="admin-toolbar">
+          <form method="post" action="{{ url_for('api.admin_automation_conversion_review_agent_output', output_id=(output_detail.output or {}).output_id) }}">
+            <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+            <input type="hidden" name="decision" value="adopted">
+            <input type="hidden" name="external_contact_id" value="{{ (orchestration_outputs.filters or {}).external_contact_id or '' }}">
+            <input type="hidden" name="request_id" value="{{ (orchestration_outputs.filters or {}).request_id or '' }}">
+            <input type="hidden" name="scripts_only" value="{% if (orchestration_outputs.filters or {}).scripts_only %}1{% else %}0{% endif %}">
+            <input type="hidden" name="output_id" value="{{ (output_detail.output or {}).output_id or '' }}">
+            <input type="hidden" name="stay_on_detail" value="1">
+            <button class="admin-button admin-button--secondary" type="submit">采用这段话术</button>
+          </form>
+          <form method="post" action="{{ url_for('api.admin_automation_conversion_review_agent_output', output_id=(output_detail.output or {}).output_id) }}" data-output-review-reject-form>
+            <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+            <input type="hidden" name="decision" value="rejected">
+            <input type="hidden" name="review_note" value="{{ (output_detail.output or {}).review_note or '' }}">
+            <input type="hidden" name="external_contact_id" value="{{ (orchestration_outputs.filters or {}).external_contact_id or '' }}">
+            <input type="hidden" name="request_id" value="{{ (orchestration_outputs.filters or {}).request_id or '' }}">
+            <input type="hidden" name="scripts_only" value="{% if (orchestration_outputs.filters or {}).scripts_only %}1{% else %}0{% endif %}">
+            <input type="hidden" name="output_id" value="{{ (output_detail.output or {}).output_id or '' }}">
+            <input type="hidden" name="stay_on_detail" value="1">
+            <button class="admin-button admin-button--ghost" type="button" data-output-review-reject>不采用并填写建议</button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
       <strong>输入快照</strong>
       <pre class="run-center-code-block">{{ (output_detail.run or {}).input_snapshot_pretty or '无' }}</pre>
       <strong>变量快照</strong>

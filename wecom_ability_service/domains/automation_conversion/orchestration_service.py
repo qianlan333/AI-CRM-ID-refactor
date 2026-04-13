@@ -139,6 +139,8 @@ _OUTCOME_STATUS_LABELS = {
     "rejected": "已拒绝",
     "failed": "失败",
 }
+_REPLY_OUTPUT_TYPES = {"agent_reply_draft", "agent_reply_final"}
+_REVIEW_DECISIONS = {"adopted", "rejected"}
 
 
 def _normalized_text(value: Any) -> str:
@@ -245,6 +247,17 @@ def _status_label(value: Any, mapping: dict[str, str], *, default: str = "-") ->
     if normalized in mapping:
         return mapping[normalized]
     return normalized or default
+
+
+def _deserialize_json_object_text(value: Any) -> dict[str, Any]:
+    text = _normalized_text(value)
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _copy_json(value: Any, *, default: Any) -> Any:
@@ -621,6 +634,7 @@ def _serialize_agent_run(row: dict[str, Any] | None, *, visibility: str = "maske
 def _serialize_agent_output(row: dict[str, Any] | None, *, visibility: str = "masked") -> dict[str, Any]:
     deserialized = repo.deserialize_agent_output_row(row or {})
     normalized_output = dict(deserialized.get("normalized_output_json") or {})
+    review_payload = _deserialize_json_object_text(deserialized.get("outcome_value"))
     show_full_identity = visibility in {"full", "console"}
     normalized_output_value = _console_value(normalized_output) if visibility == "console" else _mask_snapshot_by_visibility("normalized_output_json", normalized_output, visibility=visibility)
     raw_output_text = _console_text_or_json(deserialized.get("raw_output_text")) if visibility == "console" else _visible_output_text(deserialized.get("raw_output_text"), visibility=visibility)
@@ -629,6 +643,8 @@ def _serialize_agent_output(row: dict[str, Any] | None, *, visibility: str = "ma
     outcome_value = _console_text_or_json(deserialized.get("outcome_value")) if visibility == "console" else _visible_rendered_text(deserialized.get("outcome_value"), visibility=visibility)
     applied_status = _normalized_text(deserialized.get("applied_status")) or "pending"
     outcome_status = _normalized_text(deserialized.get("outcome_status"))
+    review_note = _decode_console_text(review_payload.get("review_note")) if visibility == "console" else _normalized_text(review_payload.get("review_note"))
+    review_decision = _normalized_text(review_payload.get("review_decision")) or outcome_status
     return {
         "output_id": _normalized_text(deserialized.get("output_id")),
         "run_id": _normalized_text(deserialized.get("run_id")),
@@ -655,6 +671,11 @@ def _serialize_agent_output(row: dict[str, Any] | None, *, visibility: str = "ma
         "outcome_status": outcome_status,
         "outcome_status_label": _status_label(outcome_status, _OUTCOME_STATUS_LABELS, default="未闭环"),
         "outcome_value": outcome_value,
+        "review_decision": review_decision,
+        "review_note": review_note,
+        "reviewed_at": _display_datetime_text(review_payload.get("reviewed_at")) if visibility == "console" else _normalized_text(review_payload.get("reviewed_at")),
+        "reviewed_by": _normalized_text(review_payload.get("reviewed_by")),
+        "is_reviewable": _normalized_text(deserialized.get("output_type")) in _REPLY_OUTPUT_TYPES,
         "revision_of_output_id": _normalized_text(deserialized.get("revision_of_output_id")),
         "error_code": _normalized_text(deserialized.get("error_code")),
         "error_message": _decode_console_text(deserialized.get("error_message")) if visibility == "console" else _normalized_text(deserialized.get("error_message")),
@@ -2265,6 +2286,7 @@ def record_agent_output_outcome(
     adopted_action: str = "",
     adopted_at: str = "",
     applied_status: str = "",
+    applied_at: str = "",
 ) -> dict[str, Any]:
     update_payload: dict[str, Any] = {
         "outcome_status": _normalized_text(outcome_status),
@@ -2278,12 +2300,60 @@ def record_agent_output_outcome(
         update_payload["adopted_at"] = _normalized_text(adopted_at)
     if _normalized_text(applied_status):
         update_payload["applied_status"] = _normalized_text(applied_status)
+    if _normalized_text(applied_at):
+        update_payload["applied_at"] = _normalized_text(applied_at)
     row = repo.update_agent_output(
         _normalized_text(output_id),
         update_payload,
     )
     get_db().commit()
     return _serialize_agent_output(row)
+
+
+def review_agent_reply_output(
+    output_id: str,
+    *,
+    decision: str,
+    operator_id: str,
+    review_note: str = "",
+    source: str = "admin_console",
+) -> dict[str, Any]:
+    row = repo.get_agent_output_row(_normalized_text(output_id))
+    if not row:
+        raise LookupError("未找到对应话术输出")
+    existing = repo.deserialize_agent_output_row(row)
+    output_type = _normalized_text(existing.get("output_type"))
+    if output_type not in _REPLY_OUTPUT_TYPES:
+        raise ValueError("当前只支持对话术草稿/成稿进行采用判断")
+    normalized_decision = _normalized_text(decision).lower()
+    if normalized_decision in {"adopt", "apply", "accepted"}:
+        normalized_decision = "adopted"
+    elif normalized_decision in {"reject", "rejected", "not_adopted", "declined"}:
+        normalized_decision = "rejected"
+    if normalized_decision not in _REVIEW_DECISIONS:
+        raise ValueError("decision 必须是 adopted 或 rejected")
+
+    now_text = _iso_now()
+    existing_review_payload = _deserialize_json_object_text(existing.get("outcome_value"))
+    resolved_review_note = _normalized_text(review_note) or _normalized_text(existing_review_payload.get("review_note"))
+    review_payload = {
+        **existing_review_payload,
+        "review_decision": normalized_decision,
+        "review_note": resolved_review_note,
+        "reviewed_at": now_text,
+        "reviewed_by": _normalized_text(operator_id) or "crm_console",
+        "review_source": _normalized_text(source) or "admin_console",
+    }
+    return record_agent_output_outcome(
+        _normalized_text(output_id),
+        outcome_status=normalized_decision,
+        outcome_value=json.dumps(review_payload, ensure_ascii=False),
+        adopted_by=_normalized_text(operator_id) or "crm_console",
+        adopted_action=f"manual_review:{normalized_decision}",
+        adopted_at=now_text,
+        applied_status=normalized_decision,
+        applied_at=now_text,
+    )
 
 
 def _resolve_member_detail_for_skill(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:

@@ -132,9 +132,29 @@ function bootCopyButtons() {
   });
 }
 
+function bootOutputReviewForms() {
+  document.querySelectorAll("[data-output-review-reject-form]").forEach((form) => {
+    const button = form.querySelector("[data-output-review-reject]");
+    const noteInput = form.querySelector('input[name="review_note"]');
+    if (!button || !noteInput) {
+      return;
+    }
+    button.addEventListener("click", () => {
+      const defaultValue = noteInput.value || "";
+      const note = window.prompt("可选：填写这条话术未被采用的原因或修改建议", defaultValue);
+      if (note === null) {
+        return;
+      }
+      noteInput.value = note.trim();
+      form.submit();
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   bootShellStatusPolling();
   bootLegacyFrames();
   bootOutputModal();
   bootCopyButtons();
+  bootOutputReviewForms();
 });
