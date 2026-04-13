@@ -2653,7 +2653,7 @@ def get_agent_orchestration_payload(
     selected_output = (
         get_agent_output_detail(_normalized_text(output_id), visibility="console")
         if _normalized_text(output_id)
-        else (get_agent_output_detail(output_rows[0]["output_id"], visibility="console") if output_rows else {})
+        else {}
     )
 
     replay_payload = get_agent_replay_payload(

@@ -5012,7 +5012,7 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
     assert "详情区" not in page_html
     assert "req-ledger-001" in page_html
     assert "欢迎联系我" in page_html
-    assert "敏感内容已隐藏，仅内部 API / Skill 可查看明文" in page_html
+    assert "这里默认直接展示历史生成话术" in page_html
 
     default_scripts_page = client.get(
         "/admin/automation-conversion/run-center",
