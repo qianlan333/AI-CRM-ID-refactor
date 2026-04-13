@@ -16,6 +16,7 @@ from ....infra.settings import (
     DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
     get_setting,
 )
+from .registry import CHILD_AGENT_CONFIG_MAP
 from .. import repo
 
 
@@ -84,6 +85,10 @@ def _request_headers(api_key: str) -> dict[str, str]:
     }
 
 
+def _uses_reply_output_types(agent_code: str) -> bool:
+    return _normalized_text(agent_code) in CHILD_AGENT_CONFIG_MAP
+
+
 def _log_call(
     *,
     agent_code: str,
@@ -149,32 +154,48 @@ def call_deepseek_agent(
     user_input: str,
     json_output: bool = False,
     model_name: str = "",
+    request_id: str = "",
+    run_id: str = "",
+    userid: str = "",
+    external_contact_id: str = "",
+    input_snapshot: dict[str, Any] | None = None,
+    variables_snapshot: dict[str, Any] | None = None,
+    source: str = "llm_client",
 ) -> dict[str, Any]:
-    request_id = uuid.uuid4().hex
-    run_id = f"arun-{uuid.uuid4().hex}"
+    request_id = _normalized_text(request_id) or uuid.uuid4().hex
+    run_id = _normalized_text(run_id) or f"arun-{uuid.uuid4().hex}"
     started_at = time.perf_counter()
     config = get_deepseek_runtime_config()
     selected_model = _selected_model(agent_code, explicit_model=model_name)
     role_prompt_version, task_prompt_version = _agent_run_versions(agent_code)
+    resolved_input_snapshot = (
+        input_snapshot
+        if isinstance(input_snapshot, dict)
+        else {
+            "system_prompt": _normalized_text(system_prompt),
+            "user_input": _normalized_text(user_input),
+            "json_output": bool(json_output),
+            "model_name": selected_model,
+        }
+    )
+    resolved_variables_snapshot = variables_snapshot if isinstance(variables_snapshot, dict) else {}
+    final_prompt_preview = f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}"
     repo.insert_agent_run(
         {
             "run_id": run_id,
             "request_id": request_id,
+            "userid": _normalized_text(userid),
+            "external_contact_id": _normalized_text(external_contact_id),
             "agent_code": _normalized_text(agent_code),
             "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
             "provider": "deepseek",
-            "input_snapshot_json": {
-                "system_prompt": _normalized_text(system_prompt),
-                "user_input": _normalized_text(user_input),
-                "json_output": bool(json_output),
-                "model_name": selected_model,
-            },
-            "variables_snapshot_json": {},
-            "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+            "input_snapshot_json": resolved_input_snapshot,
+            "variables_snapshot_json": resolved_variables_snapshot,
+            "final_prompt_preview": final_prompt_preview,
             "role_prompt_version": role_prompt_version,
             "task_prompt_version": task_prompt_version,
             "status": "pending",
-            "source": "llm_client",
+            "source": _normalized_text(source) or "llm_client",
         }
     )
     if not config["enabled"]:
@@ -191,24 +212,21 @@ def call_deepseek_agent(
             run_id,
             {
                 "request_id": request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
                 "provider": "deepseek",
-                "input_snapshot_json": {
-                    "system_prompt": _normalized_text(system_prompt),
-                    "user_input": _normalized_text(user_input),
-                    "json_output": bool(json_output),
-                    "model_name": selected_model,
-                },
-                "variables_snapshot_json": {},
-                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "input_snapshot_json": resolved_input_snapshot,
+                "variables_snapshot_json": resolved_variables_snapshot,
+                "final_prompt_preview": final_prompt_preview,
                 "role_prompt_version": role_prompt_version,
                 "task_prompt_version": task_prompt_version,
                 "status": "disabled",
                 "error_code": "deepseek_disabled",
                 "error_message": "deepseek_disabled",
                 "latency_ms": latency_ms,
-                "source": "llm_client",
+                "source": _normalized_text(source) or "llm_client",
             },
         )
         repo.insert_agent_output(
@@ -216,6 +234,8 @@ def call_deepseek_agent(
                 "output_id": f"aout-{uuid.uuid4().hex}",
                 "run_id": run_id,
                 "request_id": request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "output_type": "error_output",
                 "raw_output_text": "",
@@ -244,24 +264,21 @@ def call_deepseek_agent(
             run_id,
             {
                 "request_id": request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
                 "provider": "deepseek",
-                "input_snapshot_json": {
-                    "system_prompt": _normalized_text(system_prompt),
-                    "user_input": _normalized_text(user_input),
-                    "json_output": bool(json_output),
-                    "model_name": selected_model,
-                },
-                "variables_snapshot_json": {},
-                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "input_snapshot_json": resolved_input_snapshot,
+                "variables_snapshot_json": resolved_variables_snapshot,
+                "final_prompt_preview": final_prompt_preview,
                 "role_prompt_version": role_prompt_version,
                 "task_prompt_version": task_prompt_version,
                 "status": "not_configured",
                 "error_code": "deepseek_api_key_not_configured",
                 "error_message": "deepseek_api_key_not_configured",
                 "latency_ms": latency_ms,
-                "source": "llm_client",
+                "source": _normalized_text(source) or "llm_client",
             },
         )
         repo.insert_agent_output(
@@ -269,6 +286,8 @@ def call_deepseek_agent(
                 "output_id": f"aout-{uuid.uuid4().hex}",
                 "run_id": run_id,
                 "request_id": request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "output_type": "error_output",
                 "raw_output_text": "",
@@ -317,24 +336,21 @@ def call_deepseek_agent(
             run_id,
             {
                 "request_id": request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
                 "provider": "deepseek",
-                "input_snapshot_json": {
-                    "system_prompt": _normalized_text(system_prompt),
-                    "user_input": _normalized_text(user_input),
-                    "json_output": bool(json_output),
-                    "model_name": selected_model,
-                },
-                "variables_snapshot_json": {},
-                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "input_snapshot_json": resolved_input_snapshot,
+                "variables_snapshot_json": resolved_variables_snapshot,
+                "final_prompt_preview": final_prompt_preview,
                 "role_prompt_version": role_prompt_version,
                 "task_prompt_version": task_prompt_version,
                 "status": "request_error",
                 "error_code": "request_error",
                 "error_message": str(exc),
                 "latency_ms": elapsed_ms,
-                "source": "llm_client",
+                "source": _normalized_text(source) or "llm_client",
             },
         )
         repo.insert_agent_output(
@@ -342,6 +358,8 @@ def call_deepseek_agent(
                 "output_id": f"aout-{uuid.uuid4().hex}",
                 "run_id": run_id,
                 "request_id": request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "output_type": "error_output",
                 "raw_output_text": "",
@@ -373,19 +391,21 @@ def call_deepseek_agent(
             run_id,
             {
                 "request_id": response_request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
                 "provider": "deepseek",
-                "input_snapshot_json": request_payload,
-                "variables_snapshot_json": {},
-                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "input_snapshot_json": resolved_input_snapshot,
+                "variables_snapshot_json": resolved_variables_snapshot,
+                "final_prompt_preview": final_prompt_preview,
                 "role_prompt_version": role_prompt_version,
                 "task_prompt_version": task_prompt_version,
                 "status": "invalid_response",
                 "error_code": "invalid_json_response",
                 "error_message": "invalid_json_response",
                 "latency_ms": latency_ms,
-                "source": "llm_client",
+                "source": _normalized_text(source) or "llm_client",
             },
         )
         repo.insert_agent_output(
@@ -393,6 +413,8 @@ def call_deepseek_agent(
                 "output_id": f"aout-{uuid.uuid4().hex}",
                 "run_id": run_id,
                 "request_id": response_request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "output_type": "error_output",
                 "raw_output_text": _normalized_text(response.text),
@@ -422,19 +444,21 @@ def call_deepseek_agent(
             run_id,
             {
                 "request_id": response_request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
                 "provider": "deepseek",
-                "input_snapshot_json": request_payload,
-                "variables_snapshot_json": {},
-                "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                "input_snapshot_json": resolved_input_snapshot,
+                "variables_snapshot_json": resolved_variables_snapshot,
+                "final_prompt_preview": final_prompt_preview,
                 "role_prompt_version": role_prompt_version,
                 "task_prompt_version": task_prompt_version,
                 "status": "http_error",
                 "error_code": f"http_status_{int(response.status_code)}",
                 "error_message": error_message or f"http_status_{int(response.status_code)}",
                 "latency_ms": latency_ms,
-                "source": "llm_client",
+                "source": _normalized_text(source) or "llm_client",
             },
         )
         repo.insert_agent_output(
@@ -442,6 +466,8 @@ def call_deepseek_agent(
                 "output_id": f"aout-{uuid.uuid4().hex}",
                 "run_id": run_id,
                 "request_id": response_request_id,
+                "userid": _normalized_text(userid),
+                "external_contact_id": _normalized_text(external_contact_id),
                 "agent_code": _normalized_text(agent_code),
                 "output_type": "error_output",
                 "raw_output_text": _normalized_text(response.text),
@@ -476,19 +502,21 @@ def call_deepseek_agent(
                 run_id,
                 {
                     "request_id": response_request_id,
+                    "userid": _normalized_text(userid),
+                    "external_contact_id": _normalized_text(external_contact_id),
                     "agent_code": _normalized_text(agent_code),
                     "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
                     "provider": "deepseek",
-                    "input_snapshot_json": request_payload,
-                    "variables_snapshot_json": {},
-                    "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+                    "input_snapshot_json": resolved_input_snapshot,
+                    "variables_snapshot_json": resolved_variables_snapshot,
+                    "final_prompt_preview": final_prompt_preview,
                     "role_prompt_version": role_prompt_version,
                     "task_prompt_version": task_prompt_version,
                     "status": "parse_error",
                     "error_code": "invalid_json_output",
                     "error_message": "invalid_json_output",
                     "latency_ms": latency_ms,
-                    "source": "llm_client",
+                    "source": _normalized_text(source) or "llm_client",
                 },
             )
             repo.insert_agent_output(
@@ -496,6 +524,8 @@ def call_deepseek_agent(
                     "output_id": f"aout-{uuid.uuid4().hex}",
                     "run_id": run_id,
                     "request_id": response_request_id,
+                    "userid": _normalized_text(userid),
+                    "external_contact_id": _normalized_text(external_contact_id),
                     "agent_code": _normalized_text(agent_code),
                     "output_type": "error_output",
                     "raw_output_text": content,
@@ -533,30 +563,51 @@ def call_deepseek_agent(
             reason = _normalized_text(parsed_output.get("reason"))
             need_human_review = bool(parsed_output.get("need_human_review"))
         else:
-            output_type = "next_action_suggestion"
+            draft_reply = _normalized_text(parsed_output.get("draft_reply") or parsed_output.get("draftText") or parsed_output.get("reply_draft"))
+            final_reply = _normalized_text(parsed_output.get("reply_final") or parsed_output.get("final_reply"))
+            explicit_output_type = _normalized_text(parsed_output.get("output_type"))
+            if explicit_output_type in {"agent_reply_draft", "agent_reply_final"} and not _uses_reply_output_types(agent_code):
+                output_type = "next_action_suggestion"
+            elif explicit_output_type in {"agent_reply_draft", "agent_reply_final", "next_action_suggestion"}:
+                output_type = explicit_output_type
+            elif final_reply and _uses_reply_output_types(agent_code):
+                output_type = "agent_reply_final"
+            elif draft_reply and _uses_reply_output_types(agent_code):
+                output_type = "agent_reply_draft"
+            else:
+                output_type = "next_action_suggestion"
             target_pool = _normalized_text(parsed_output.get("target_pool"))
             confidence = float(parsed_output.get("confidence") or 0)
             reason = _normalized_text(parsed_output.get("reason"))
             need_human_review = bool(parsed_output.get("need_human_review"))
     elif not json_output:
         output_type = "agent_reply_final"
+    rendered_output_text = content
+    if isinstance(parsed_output, dict) and output_type in {"agent_reply_draft", "agent_reply_final"}:
+        rendered_output_text = (
+            _normalized_text(parsed_output.get("reply_final") or parsed_output.get("final_reply"))
+            if output_type == "agent_reply_final"
+            else _normalized_text(parsed_output.get("draft_reply") or parsed_output.get("draftText") or parsed_output.get("reply_draft"))
+        ) or content
     repo.update_agent_run(
         run_id,
         {
             "request_id": response_request_id,
+            "userid": _normalized_text(userid),
+            "external_contact_id": _normalized_text(external_contact_id),
             "agent_code": _normalized_text(agent_code),
             "agent_type": "router" if _normalized_text(agent_code) == "central_router_agent" else "child_agent",
             "provider": "deepseek",
-            "input_snapshot_json": request_payload,
-            "variables_snapshot_json": {},
-            "final_prompt_preview": f"[system]\\n{_normalized_text(system_prompt)}\\n\\n[user]\\n{_normalized_text(user_input)}",
+            "input_snapshot_json": resolved_input_snapshot,
+            "variables_snapshot_json": resolved_variables_snapshot,
+            "final_prompt_preview": final_prompt_preview,
             "role_prompt_version": role_prompt_version,
             "task_prompt_version": task_prompt_version,
             "status": "success",
             "error_code": "",
             "error_message": "",
             "latency_ms": latency_ms,
-            "source": "llm_client",
+            "source": _normalized_text(source) or "llm_client",
         },
     )
     repo.insert_agent_output(
@@ -564,11 +615,13 @@ def call_deepseek_agent(
             "output_id": f"aout-{uuid.uuid4().hex}",
             "run_id": run_id,
             "request_id": response_request_id,
+            "userid": _normalized_text(userid),
+            "external_contact_id": _normalized_text(external_contact_id),
             "agent_code": _normalized_text(agent_code),
             "output_type": output_type,
             "raw_output_text": content,
             "normalized_output_json": parsed_output if isinstance(parsed_output, dict) else {},
-            "rendered_output_text": content,
+            "rendered_output_text": rendered_output_text,
             "target_agent_code": target_agent_code,
             "target_pool": target_pool,
             "confidence": confidence,

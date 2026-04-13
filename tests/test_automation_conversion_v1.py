@@ -2774,6 +2774,183 @@ def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatc
     ]
 
 
+def test_router_callback_stores_reply_draft_output_when_payload_contains_reply_text(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_draft_001", mobile="13800009187", owner_userid="sales_01", customer_name="draft")
+    _seed_automation_member(app, external_contact_id="wm_reply_draft_001", phone="13800009187", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-draft-001", seq=1, external_userid="wm_reply_draft_001", owner_userid="sales_01", sender="wm_reply_draft_001", receiver="sales_01", content="价格怎么安排", send_time="2026-04-09 11:30:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        request_id = dispatch["router_ingress"]["request_id"]
+
+    payload = {
+        "request_id": request_id,
+        "external_contact_id": "wm_reply_draft_001",
+        "target_pool": "inactive_focus",
+        "agent_code": "pricing_agent",
+        "reason": "客户在追问价格",
+        "confidence": 0.93,
+        "need_human_review": False,
+        "next_action": "quote_explain",
+        "reply_draft": "我先把课程方案和价格区间给你拆开说明，你可以先看下更关注哪一档。",
+    }
+    body = json.dumps(payload, ensure_ascii=False)
+    signature = f"sha256={hmac.new(b'lobster-secret', body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    response = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=body.encode("utf-8"),
+        content_type="application/json",
+        headers={"Authorization": "Bearer internal-token", "X-Lobster-Signature": signature},
+    )
+
+    with app.app_context():
+        reply_output = get_db().execute(
+            """
+            SELECT agent_code, output_type, rendered_output_text, normalized_output_json, request_id
+            FROM automation_agent_output
+            WHERE request_id = ? AND output_type = 'agent_reply_draft'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (request_id,),
+        ).fetchone()
+
+    assert response.status_code == 200
+    assert reply_output is not None
+    assert dict(reply_output)["agent_code"] == "pricing_agent"
+    assert dict(reply_output)["rendered_output_text"] == "我先把课程方案和价格区间给你拆开说明，你可以先看下更关注哪一档。"
+    assert json.loads(reply_output["normalized_output_json"])["draft_reply"] == "我先把课程方案和价格区间给你拆开说明，你可以先看下更关注哪一档。"
+
+
+def test_router_callback_generates_child_reply_draft_when_callback_only_routes(app, client, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    _seed_contact(app, external_userid="wm_reply_autodraft_001", mobile="13800009188", owner_userid="sales_01", customer_name="auto-draft")
+    _seed_automation_member(app, external_contact_id="wm_reply_autodraft_001", phone="13800009188", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_archived_message(app, msgid="msg-rm-autodraft-001", seq=1, external_userid="wm_reply_autodraft_001", owner_userid="sales_01", sender="wm_reply_autodraft_001", receiver="sales_01", content="能说下价格吗", send_time="2026-04-09 11:45:00")
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+
+    class _AckResponse:
+        status_code = 200
+        text = '{"ok":true,"accepted":true}'
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+
+    def _fake_generate_child_agent_reply_output(**kwargs):
+        with app.app_context():
+            return append_agent_output(
+                {
+                    "run_id": kwargs["request_id"],
+                    "request_id": kwargs["request_id"],
+                    "userid": kwargs["userid"],
+                    "external_contact_id": kwargs["external_contact_id"],
+                    "agent_code": kwargs["agent_code"],
+                    "output_type": "agent_reply_draft",
+                    "raw_output_text": "自动补的一条价格说明草稿",
+                    "normalized_output": {
+                        "agent_code": kwargs["agent_code"],
+                        "target_pool": kwargs["target_pool"],
+                        "draft_reply": "自动补的一条价格说明草稿",
+                        "reason": kwargs["reason"],
+                    },
+                    "rendered_output_text": "自动补的一条价格说明草稿",
+                    "target_agent_code": kwargs["agent_code"],
+                    "target_pool": kwargs["target_pool"],
+                    "confidence": kwargs["confidence"],
+                    "reason": kwargs["reason"],
+                    "applied_status": "generated",
+                }
+            )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.orchestration_service._generate_child_agent_reply_output",
+        _fake_generate_child_agent_reply_output,
+    )
+
+    with app.app_context():
+        save_agent_router_settings(
+            {
+                "enabled": True,
+                "webhook_url": "https://lobster.example.com/router",
+                "signature_token": "lobster-token",
+                "signature_secret": "lobster-secret",
+                "signature_header": "X-Lobster-Signature",
+                "timeout_seconds": 5,
+                "retry_count": 0,
+                "fallback_strategy": {
+                    "default_agent_code": "welcome_agent",
+                    "default_pool": "new_user",
+                    "need_human_review": True,
+                    "fail_closed": True,
+                },
+            },
+            operator_id="tester-router",
+        )
+        run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        request_id = dispatch["router_ingress"]["request_id"]
+
+    payload = {
+        "request_id": request_id,
+        "external_contact_id": "wm_reply_autodraft_001",
+        "target_pool": "inactive_focus",
+        "agent_code": "pricing_agent",
+        "reason": "客户需要价格说明",
+        "confidence": 0.91,
+        "need_human_review": False,
+    }
+    body = json.dumps(payload, ensure_ascii=False)
+    signature = f"sha256={hmac.new(b'lobster-secret', body.encode('utf-8'), hashlib.sha256).hexdigest()}"
+    response = client.post(
+        "/api/internal/automation-conversion/lobster-results",
+        data=body.encode("utf-8"),
+        content_type="application/json",
+        headers={"Authorization": "Bearer internal-token", "X-Lobster-Signature": signature},
+    )
+
+    with app.app_context():
+        reply_output = get_db().execute(
+            """
+            SELECT output_type, rendered_output_text
+            FROM automation_agent_output
+            WHERE request_id = ? AND output_type = 'agent_reply_draft'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (request_id,),
+        ).fetchone()
+
+    assert response.status_code == 200
+    assert response.get_json()["reply_output_id"]
+    assert dict(reply_output)["rendered_output_text"] == "自动补的一条价格说明草稿"
+
+
 def test_router_callback_rejects_invalid_target_pool_and_records_error(app, client, monkeypatch):
     _configure_reply_monitor(
         app,
@@ -4745,6 +4922,16 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
     assert "是否异常" in page_html
     assert "req-ledger-001" in page_html
     assert "敏感内容已隐藏，仅内部 API / Skill 可查看明文" in page_html
+
+    default_scripts_page = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={"tab": "agent-orchestration", "subtab": "outputs"},
+    )
+    default_scripts_html = default_scripts_page.get_data(as_text=True)
+    assert default_scripts_page.status_code == 200
+    assert "仅看生成话术" in default_scripts_html
+    assert "全部历史话术" in default_scripts_html
+    assert "欢迎联系我" in default_scripts_html
 
 
 def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):

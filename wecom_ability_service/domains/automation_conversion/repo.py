@@ -1343,6 +1343,8 @@ def _agent_output_where_sql(filters: dict[str, Any] | None = None) -> tuple[str,
     if _normalized_text(filters.get("output_type")):
         clauses.append("output_type = ?")
         params.append(_normalized_text(filters.get("output_type")))
+    elif bool(filters.get("scripts_only")):
+        clauses.append("output_type IN ('agent_reply_draft', 'agent_reply_final')")
     if _normalized_text(filters.get("userid")):
         clauses.append("userid = ?")
         params.append(_normalized_text(filters.get("userid")))

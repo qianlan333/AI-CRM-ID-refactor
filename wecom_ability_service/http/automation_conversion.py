@@ -100,6 +100,13 @@ def _query_int(name: str, *, default: int, minimum: int = 0, maximum: int = 1000
     return max(minimum, min(value, maximum))
 
 
+def _query_bool(name: str, *, default: bool = False) -> bool:
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return bool(default)
+    return str(raw_value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _operator_from_request() -> str:
     json_payload = request.get_json(silent=True) or {}
     return (
@@ -234,6 +241,7 @@ def _build_agent_output_filters_from_request() -> dict[str, object]:
         "has_error": _query_text("has_error")
         or _query_text("is_error")
         or str(request.form.get("has_error") or request.form.get("is_error") or "").strip(),
+        "scripts_only": _query_bool("scripts_only") or str(request.form.get("scripts_only") or "").strip().lower() in {"1", "true", "yes", "on"},
     }
 
 
@@ -1678,6 +1686,28 @@ def _render_run_center_page(
     resolved_entry_section = _run_center_section_from_query(entry_section)
     orchestration_default_subtab = str((orchestration_payload or {}).get("subtab") or "router").strip() or "router"
     resolved_subtab = _run_center_subtab_from_query(orchestration_default_subtab)
+    default_scripts_only = (
+        resolved_subtab == "outputs"
+        and not any(
+            [
+                _query_text("output_id"),
+                _query_text("request_id"),
+                _query_text("batch_id"),
+                _query_text("external_contact_id"),
+                _query_text("userid"),
+                _query_text("agent_code"),
+                _query_text("output_type"),
+                _query_text("current_pool"),
+                _query_text("target_pool"),
+                _query_text("applied_status"),
+                _query_text("date_from"),
+                _query_text("date_to"),
+                _query_text("min_confidence"),
+                _query_text("max_confidence"),
+                _query_text("has_error") or _query_text("is_error"),
+            ]
+        )
+    )
     settings = settings_payload or get_settings_payload()
     overview = overview_payload or get_overview_payload()
     model_infra = model_infra_payload or get_model_infra_payload()
@@ -1700,6 +1730,7 @@ def _render_run_center_page(
         min_confidence=_query_text("min_confidence"),
         max_confidence=_query_text("max_confidence"),
         has_error=_query_text("has_error") or _query_text("is_error"),
+        scripts_only=_query_bool("scripts_only", default=default_scripts_only),
         page=_query_int("page", default=1, minimum=1, maximum=100000),
         page_size=_query_int("page_size", default=20, minimum=1, maximum=100),
         export_job_id=_query_text("export_job"),

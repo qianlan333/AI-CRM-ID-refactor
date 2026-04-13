@@ -88,6 +88,8 @@ ROUTER_RESPONSE_SAMPLE = {
     "reason": "客户最后一轮持续追问价格与付费方式",
     "confidence": 0.86,
     "need_human_review": False,
+    "next_action": "quote_explain",
+    "reply_draft": "这边我先把课程方案和价格区间给你拆开说明，方便你快速判断哪种更适合你。",
     "completed_at": "2026-04-10 09:15:45",
 }
 

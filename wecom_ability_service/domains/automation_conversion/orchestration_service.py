@@ -32,6 +32,8 @@ from .agents import (
     default_agent_config_payloads,
     default_agent_router_payload,
     default_skill_registry_payloads,
+    call_deepseek_agent,
+    get_deepseek_runtime_config,
 )
 from .service import apply_router_target_pool, ensure_agent_prompt_defaults, get_member_detail, get_stage_detail_payload
 
@@ -226,7 +228,7 @@ def _visible_output_text(value: Any, *, visibility: str) -> str:
 
 def _visible_rendered_text(value: Any, *, visibility: str) -> str:
     text = _normalized_text(value)
-    if visibility == "full":
+    if visibility in {"full", "console"}:
         return text
     return _redact_text_content(text)
 
@@ -824,7 +826,18 @@ def _validated_router_callback_payload(
             for item in list(data.get("mcp_tools_used") or [])
             if _normalized_text(item)
         ],
+        "next_action": _normalized_text(data.get("next_action")),
+        "reply_draft": _normalized_text(data.get("reply_draft") or data.get("draft_reply")),
+        "reply_final": _normalized_text(data.get("reply_final") or data.get("final_reply")),
+        "structured_result": _normalize_json_dict(data.get("structured_result")),
     }
+    structured_result = dict(normalized.get("structured_result") or {})
+    if not normalized["next_action"]:
+        normalized["next_action"] = _normalized_text(structured_result.get("next_action"))
+    if not normalized["reply_draft"]:
+        normalized["reply_draft"] = _normalized_text(structured_result.get("reply_draft") or structured_result.get("draft_reply"))
+    if not normalized["reply_final"]:
+        normalized["reply_final"] = _normalized_text(structured_result.get("reply_final") or structured_result.get("final_reply"))
     if (
         not normalized["request_id"]
         or not normalized["external_contact_id"]
@@ -950,6 +963,207 @@ def _append_router_callback_rejected_output(
         error_code=reason,
         error_message=reason,
     )
+
+
+def _child_reply_payload(
+    *,
+    agent_code: str,
+    target_pool: str,
+    confidence: float,
+    reason: str,
+    need_human_review: bool,
+    next_action: str = "",
+    reply_draft: str = "",
+    reply_final: str = "",
+    source: str = "",
+    prompt_version_used: str = "",
+    mcp_tools_used: list[str] | None = None,
+    structured_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized_output = {
+        "agent_code": _normalized_text(agent_code),
+        "target_pool": _normalized_text(target_pool),
+        "confidence": round(_normalize_float(confidence, default=0.0), 4),
+        "reason": _normalized_text(reason),
+        "next_action": _normalized_text(next_action),
+        "draft_reply": _normalized_text(reply_draft),
+        "reply_final": _normalized_text(reply_final),
+        "need_human_review": bool(need_human_review),
+        "source": _normalized_text(source),
+        "prompt_version_used": _normalized_text(prompt_version_used),
+        "mcp_tools_used": [item for item in list(mcp_tools_used or []) if _normalized_text(item)],
+        "structured_result": _normalize_json_dict(structured_result),
+    }
+    rendered_text = _normalized_text(reply_final) or _normalized_text(reply_draft)
+    output_type = "agent_reply_final" if _normalized_text(reply_final) else "agent_reply_draft"
+    return {
+        "output_type": output_type,
+        "rendered_output_text": rendered_text,
+        "normalized_output": normalized_output,
+    }
+
+
+def _append_child_agent_reply_output(
+    *,
+    run_id: str,
+    request_id: str,
+    userid: str,
+    external_contact_id: str,
+    agent_code: str,
+    target_pool: str,
+    confidence: float,
+    reason: str,
+    need_human_review: bool,
+    next_action: str = "",
+    reply_draft: str = "",
+    reply_final: str = "",
+    source: str = "",
+    prompt_version_used: str = "",
+    mcp_tools_used: list[str] | None = None,
+    structured_result: dict[str, Any] | None = None,
+    applied_status: str = "generated",
+) -> dict[str, Any]:
+    reply_payload = _child_reply_payload(
+        agent_code=agent_code,
+        target_pool=target_pool,
+        confidence=confidence,
+        reason=reason,
+        need_human_review=need_human_review,
+        next_action=next_action,
+        reply_draft=reply_draft,
+        reply_final=reply_final,
+        source=source,
+        prompt_version_used=prompt_version_used,
+        mcp_tools_used=mcp_tools_used,
+        structured_result=structured_result,
+    )
+    return append_agent_output(
+        {
+            "run_id": run_id,
+            "request_id": request_id,
+            "userid": userid,
+            "external_contact_id": external_contact_id,
+            "agent_code": _normalized_text(agent_code),
+            "output_type": reply_payload["output_type"],
+            "raw_output_text": reply_payload["rendered_output_text"],
+            "normalized_output": reply_payload["normalized_output"],
+            "rendered_output_text": reply_payload["rendered_output_text"],
+            "target_agent_code": _normalized_text(agent_code),
+            "target_pool": _normalized_text(target_pool),
+            "confidence": confidence,
+            "reason": _normalized_text(reason),
+            "need_human_review": bool(need_human_review),
+            "applied_status": _normalized_text(applied_status) or "generated",
+        }
+    )
+
+
+def _should_generate_child_reply(agent_code: str) -> bool:
+    return _normalized_text(agent_code) in CHILD_AGENT_CONFIG_MAP
+
+
+def _build_child_agent_generation_request(
+    *,
+    agent_code: str,
+    external_contact_id: str,
+    target_pool: str,
+    reason: str,
+    confidence: float,
+    need_human_review: bool,
+    structured_result: dict[str, Any] | None = None,
+) -> tuple[str, str, dict[str, Any]]:
+    config = get_agent_config_detail(agent_code)
+    published = dict(config.get("published") or {})
+    variable_snapshot = _build_member_variable_snapshot(external_contact_id=external_contact_id)
+    recent_message_rows = get_recent_messages_by_user(_normalized_text(external_contact_id), limit=20)
+    recent_messages = [_router_message_entry(item, external_contact_id=external_contact_id) for item in list(recent_message_rows or [])[:20]]
+    variable_snapshot["router_decision"] = {
+        "agent_code": _normalized_text(agent_code),
+        "target_pool": _normalized_text(target_pool),
+        "confidence": round(_normalize_float(confidence, default=0.0), 4),
+        "reason": _normalized_text(reason),
+        "need_human_review": bool(need_human_review),
+    }
+    if structured_result:
+        variable_snapshot["router_decision"]["structured_result"] = _normalize_json_dict(structured_result)
+    system_prompt = "\n\n".join(
+        part
+        for part in [
+            _normalized_text(published.get("role_prompt")),
+            "你必须只返回 JSON 对象，不要输出 markdown，不要输出额外解释。",
+            (
+                "JSON 至少包含这些字段："
+                'agent_code, target_pool, confidence, reason, next_action, draft_reply, need_human_review。'
+                "如果不适合直接生成回复，也要明确给出 reason，并把 draft_reply 置空。"
+            ),
+        ]
+        if _normalized_text(part)
+    )
+    user_input = json.dumps(
+        {
+            "task_prompt": _normalized_text(published.get("task_prompt")),
+            "recent_messages": recent_messages,
+            "variables": variable_snapshot,
+            "required_output_schema": list(published.get("output_schema") or []),
+        },
+        ensure_ascii=False,
+    )
+    return system_prompt, user_input, variable_snapshot
+
+
+def _generate_child_agent_reply_output(
+    *,
+    request_id: str,
+    userid: str,
+    external_contact_id: str,
+    agent_code: str,
+    target_pool: str,
+    reason: str,
+    confidence: float,
+    need_human_review: bool,
+    structured_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    runtime = get_deepseek_runtime_config()
+    if not bool(runtime.get("enabled")) or not _normalized_text(runtime.get("api_key")):
+        return {}
+    system_prompt, user_input, variable_snapshot = _build_child_agent_generation_request(
+        agent_code=agent_code,
+        external_contact_id=external_contact_id,
+        target_pool=target_pool,
+        reason=reason,
+        confidence=confidence,
+        need_human_review=need_human_review,
+        structured_result=structured_result,
+    )
+    result = call_deepseek_agent(
+        agent_code=agent_code,
+        system_prompt=system_prompt,
+        user_input=user_input,
+        json_output=True,
+        request_id=request_id,
+        userid=userid,
+        external_contact_id=external_contact_id,
+        input_snapshot={
+            "source": "router_callback_child_generation",
+            "router_request_id": request_id,
+            "external_contact_id": external_contact_id,
+            "target_pool": target_pool,
+            "reason": reason,
+            "confidence": confidence,
+            "need_human_review": need_human_review,
+            "structured_result": _normalize_json_dict(structured_result),
+        },
+        variables_snapshot=variable_snapshot,
+        source="router_callback_child_generation",
+    )
+    row = repo.get_latest_agent_output_row_by_request_id(
+        _normalized_text(request_id),
+        output_types=["agent_reply_draft", "agent_reply_final", "next_action_suggestion", "error_output"],
+    )
+    return _serialize_agent_output(row or {}, visibility="full") if row else {
+        "run_id": result.get("run_id"),
+        "request_id": request_id,
+    }
 
 
 def _resolve_request_run(request_id: str) -> dict[str, Any] | None:
@@ -1569,6 +1783,10 @@ def handle_agent_router_callback(payload: dict[str, Any]) -> dict[str, Any]:
             "processing_latency_ms": int(normalized_callback.get("processing_latency_ms") or 0),
             "prompt_version_used": _normalized_text(normalized_callback.get("prompt_version_used")),
             "mcp_tools_used": list(normalized_callback.get("mcp_tools_used") or []),
+            "next_action": _normalized_text(normalized_callback.get("next_action")),
+            "reply_draft": _normalized_text(normalized_callback.get("reply_draft")),
+            "reply_final": _normalized_text(normalized_callback.get("reply_final")),
+            **_normalize_json_dict(normalized_callback.get("structured_result")),
         },
     }
     decision_output = _append_router_event_output(
@@ -1587,6 +1805,30 @@ def handle_agent_router_callback(payload: dict[str, Any]) -> dict[str, Any]:
         need_human_review=bool(decision.get("need_human_review")),
         applied_status="pending_apply",
     )
+
+    child_output = {}
+    reply_draft = _normalized_text(normalized_callback.get("reply_draft"))
+    reply_final = _normalized_text(normalized_callback.get("reply_final"))
+    if _should_generate_child_reply(_normalized_text(decision.get("agent_code"))) and (reply_draft or reply_final):
+        child_output = _append_child_agent_reply_output(
+            run_id=run_id,
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            agent_code=_normalized_text(decision.get("agent_code")),
+            target_pool=normalized_callback["target_pool"],
+            confidence=normalized_callback["confidence"],
+            reason=_normalized_text(decision.get("reason")),
+            need_human_review=bool(decision.get("need_human_review")),
+            next_action=_normalized_text(normalized_callback.get("next_action")),
+            reply_draft=reply_draft,
+            reply_final=reply_final,
+            source="lobster_callback",
+            prompt_version_used=_normalized_text(normalized_callback.get("prompt_version_used")),
+            mcp_tools_used=list(normalized_callback.get("mcp_tools_used") or []),
+            structured_result=_normalize_json_dict(normalized_callback.get("structured_result")),
+            applied_status="generated",
+        )
 
     if bool(normalized_callback.get("need_human_review")):
         applied = _apply_router_decision(
@@ -1656,6 +1898,22 @@ def handle_agent_router_callback(payload: dict[str, Any]) -> dict[str, Any]:
             "output_id": rejected.get("output_id"),
         }
 
+    if (
+        not child_output
+        and _should_generate_child_reply(_normalized_text(decision.get("agent_code")))
+    ):
+        child_output = _generate_child_agent_reply_output(
+            request_id=request_id,
+            userid=userid,
+            external_contact_id=external_contact_id,
+            agent_code=_normalized_text(decision.get("agent_code")),
+            target_pool=normalized_callback["target_pool"],
+            reason=_normalized_text(decision.get("reason")),
+            confidence=normalized_callback["confidence"],
+            need_human_review=bool(decision.get("need_human_review")),
+            structured_result=_normalize_json_dict(normalized_callback.get("structured_result")),
+        )
+
     applied = _apply_router_decision(
         run_id=run_id,
         request_id=request_id,
@@ -1674,6 +1932,7 @@ def handle_agent_router_callback(payload: dict[str, Any]) -> dict[str, Any]:
         "request_id": request_id,
         "run_id": run_id,
         "output_id": applied.get("output_id"),
+        "reply_output_id": _normalized_text(child_output.get("output_id")),
     }
 
 
@@ -2155,6 +2414,7 @@ def get_agent_orchestration_payload(
     min_confidence: str = "",
     max_confidence: str = "",
     has_error: str = "",
+    scripts_only: bool = False,
     page: int = 1,
     page_size: int = 20,
     export_job_id: str = "",
@@ -2183,15 +2443,16 @@ def get_agent_orchestration_payload(
         "min_confidence": min_confidence,
         "max_confidence": max_confidence,
         "has_error": has_error,
+        "scripts_only": bool(scripts_only),
     }
     resolved_page = max(1, int(page or 1))
     resolved_page_size = max(1, min(100, int(page_size or 20)))
     total_outputs = repo.count_agent_output_rows(output_filters)
-    output_rows = [_serialize_agent_output(item, visibility="masked") for item in repo.list_agent_output_rows(filters=output_filters, limit=resolved_page_size, offset=(resolved_page - 1) * resolved_page_size)]
+    output_rows = [_serialize_agent_output(item, visibility="console") for item in repo.list_agent_output_rows(filters=output_filters, limit=resolved_page_size, offset=(resolved_page - 1) * resolved_page_size)]
     selected_output = (
-        get_agent_output_detail(_normalized_text(output_id), visibility="masked")
+        get_agent_output_detail(_normalized_text(output_id), visibility="console")
         if _normalized_text(output_id)
-        else (get_agent_output_detail(output_rows[0]["output_id"], visibility="masked") if output_rows else {})
+        else (get_agent_output_detail(output_rows[0]["output_id"], visibility="console") if output_rows else {})
     )
 
     replay_payload = get_agent_replay_payload(
