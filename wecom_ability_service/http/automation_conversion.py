@@ -411,13 +411,13 @@ def _model_infra_notice() -> str:
 def _overview_notice() -> str:
     reply_monitor_action = _query_text("reply_monitor")
     if reply_monitor_action == "enabled":
-        return "自动接话监控已开启"
+        return "自动接话已开启"
     if reply_monitor_action == "disabled":
-        return "自动接话监控已关闭"
+        return "自动接话已关闭"
     if reply_monitor_action == "captured":
-        return "自动接话监控已完成一次增量扫描"
+        return "自动接话扫描已完成"
     if reply_monitor_action == "dispatched":
-        return "自动接话监控已尝试放行一条到期队列"
+        return "自动接话放行已执行"
     return ""
 
 
@@ -434,7 +434,7 @@ def _member_ops_notice() -> str:
     if manual_send_notice == "empty":
         return "当前阶段没有可发送客户"
     if _query_text("focus_batch_notice") == "created":
-        return "AI 批任务已创建"
+        return "智能触达任务已创建"
     return ""
 
 
@@ -445,50 +445,50 @@ def _normalize_stage_key(value: str) -> str:
 _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
     {
         "key": "overview",
-        "label": "总览",
-        "summary": "经营驾驶舱",
+        "label": "首页",
+        "summary": "结果、待办与下一步动作",
         "endpoint": "api.admin_automation_conversion",
         "params": {},
     },
     {
         "key": "flow_design",
-        "label": "流程设计",
-        "summary": "规则与 SOP 工作台",
+        "label": "流程配置",
+        "summary": "规则、剧本与发布管理",
         "endpoint": "api.admin_automation_conversion_flow_design",
         "params": {"section": "questionnaire"},
     },
     {
         "key": "member_ops",
         "label": "成员运营",
-        "summary": "阶段名单与触达执行",
+        "summary": "阶段名单、详情与触达动作",
         "endpoint": "api.admin_automation_conversion_member_ops",
         "params": {"stage": "new-user", "panel": "members"},
     },
     {
         "key": "run_center",
-        "label": "运行中心",
-        "summary": "同步、监控与调试",
+        "label": "智能配置",
+        "summary": "接入、模型与子助手",
         "endpoint": "api.admin_automation_conversion_run_center",
-        "params": {"tab": "overview"},
+        "params": {},
     },
 )
 
 
 def _run_center_notice() -> str:
     if _query_text("message_activity_sync") == "1":
-        return "消息活跃同步已完成"
+        return "自动化状态已刷新"
     if _query_text("router_saved") == "1":
-        return "路由接入配置已保存"
+        return "智能接入配置已保存"
     if _query_text("agent_draft_saved"):
-        return f"{_query_text('agent_draft_saved')} 草稿已保存"
+        return "子助手草稿已保存"
     if _query_text("agent_published"):
-        return f"{_query_text('agent_published')} 已发布"
+        return "子助手已发布"
     if _query_text("agent_replayed"):
-        return f"{_query_text('agent_replayed')} 已生成回放副本"
+        return "已生成回放副本"
     if _query_text("callback_replayed"):
-        return f"{_query_text('callback_replayed')} 已生成 callback replay 副本"
+        return "已生成回调回放副本"
     if _query_text("pending_callback_checked") == "1":
-        return f"pending callback 检查已完成，新增告警 {_query_text('pending_callback_alerted') or '0'} 条"
+        return f"回调检查已完成，新增告警 {_query_text('pending_callback_alerted') or '0'} 条"
     if _query_text("agent_export_job"):
         return "输出导出任务已创建"
     if _query_text("output_review") == "adopted":
@@ -621,20 +621,20 @@ def _build_overview_dashboard(payload: dict[str, object], settings_payload: dict
         todo_items.append(
             {
                 "tone": "danger",
-                "title": "同步异常",
-                "body": f"消息活跃同步尚未配置{f'，缺少 {missing_keys}' if missing_keys else ''}，当前同步摘要不可靠。",
-                "href": f"{url_for('api.admin_automation_conversion_run_center', tab='sync')}#run-sync",
-                "action": "查看数据同步",
+                "title": "自动化状态无法刷新",
+                "body": f"消息活跃同步尚未配置{f'，缺少 {missing_keys}' if missing_keys else ''}，当前首页摘要可能不是最新结果。",
+                "href": f"{url_for('api.admin_automation_conversion_run_center')}#smart-access",
+                "action": "查看智能配置",
             }
         )
     elif sync_error_message:
         todo_items.append(
             {
                 "tone": "danger",
-                "title": "同步异常",
+                "title": "自动化状态刷新失败",
                 "body": sync_error_message,
-                "href": f"{url_for('api.admin_automation_conversion_run_center', tab='sync')}#run-sync",
-                "action": "处理同步异常",
+                "href": f"{url_for('api.admin_automation_conversion_run_center')}#smart-access",
+                "action": "查看智能配置",
             }
         )
 
@@ -645,18 +645,18 @@ def _build_overview_dashboard(payload: dict[str, object], settings_payload: dict
                 "tone": "danger",
                 "title": "自动接话异常",
                 "body": reply_error_message,
-                "href": f"{url_for('api.admin_automation_conversion_run_center', tab='reply-monitor')}#run-reply-monitor",
-                "action": "查看接话监控",
+                "href": f"{url_for('api.admin_automation_conversion_run_center')}#smart-access",
+                "action": "查看智能配置",
             }
         )
     elif int(reply_queue.get("active_total") or 0) > 0:
         todo_items.append(
             {
                 "tone": "warning",
-                "title": "自动接话待处理",
-                "body": f"当前接话队列还有 {int(reply_queue.get('active_total') or 0)} 条待处理记录，建议到运行中心继续观察。",
-                "href": f"{url_for('api.admin_automation_conversion_run_center', tab='reply-monitor')}#run-reply-monitor",
-                "action": "查看接话监控",
+                "title": "自动接话仍在处理中",
+                "body": f"当前还有 {int(reply_queue.get('active_total') or 0)} 条自动接话待处理记录，建议刷新后再关注异常是否消除。",
+                "href": f"{url_for('api.admin_automation_conversion_run_center')}#smart-access",
+                "action": "查看智能配置",
             }
         )
 
@@ -688,11 +688,11 @@ def _build_overview_dashboard(payload: dict[str, object], settings_payload: dict
     has_danger = any(item["tone"] == "danger" for item in todo_items)
     has_warning = any(item["tone"] == "warning" for item in todo_items)
     if has_danger:
-        current_status = {"label": "存在异常", "tone": "degraded"}
+        current_status = {"label": "有异常", "tone": "degraded"}
     elif has_warning:
-        current_status = {"label": "运行中，需关注", "tone": "staging"}
+        current_status = {"label": "需关注", "tone": "staging"}
     else:
-        current_status = {"label": "稳定运行", "tone": "healthy"}
+        current_status = {"label": "正常", "tone": "healthy"}
 
     latest_update_candidates = [
         str(sync_run.get("finished_at") or "").strip(),
@@ -708,6 +708,7 @@ def _build_overview_dashboard(payload: dict[str, object], settings_payload: dict
     return {
         "todo_items": todo_items,
         "current_status": current_status,
+        "latest_refresh_at": latest_update_at or "暂无记录",
         "latest_update_at": latest_update_at or "暂无记录",
         "largest_stage": largest_stage,
     }
@@ -764,7 +765,7 @@ def _build_flow_design_workspace(
         {
             "label": "激活推进",
             "description": "消息活跃度变化后，成员推进到已激活池继续执行后续剧本。",
-            "summary": "阶段推进依赖活跃结果，但同步动作已下沉到运行中心。",
+            "summary": "阶段推进依赖活跃结果，状态刷新动作已从业务页下沉。",
             "items": _group_items("active-normal", "active-focus"),
         },
         {
@@ -778,7 +779,7 @@ def _build_flow_design_workspace(
     flow_relations = [
         "默认入口或系统入池后先进入新用户池，等待问卷完成。",
         "问卷提交后，依据关键题命中结果和分层阈值进入未激活普通池或未激活重点跟进池。",
-        "活跃状态更新后，成员推进到激活普通池或激活重点跟进池；同步执行动作已迁到运行中心。",
+        "活跃状态更新后，成员推进到激活普通池或激活重点跟进池。",
         "超过沉默阈值进入沉默池；人工确认成交后进入已成交。",
     ]
 
@@ -851,7 +852,7 @@ def _build_flow_design_workspace(
             "recent_changes": [
                 f"当前问卷：{questionnaire_label or '未选择'}",
                 f"关键题规则 {rule_count} 条，重点门槛 {config.get('core_threshold') or 0}，Top 门槛 {config.get('top_threshold') or 0}",
-                f"SOP 已启用 {len(enabled_sop_pools)}/{len(pool_cards) or 0} 个池子，当前定位在 {current_pool.get('pool_label') or '未知池子'} day{current_pool.get('selected_day_index') or 1}",
+                f"SOP 已启用 {len(enabled_sop_pools)}/{len(pool_cards) or 0} 个池子，当前定位在 {current_pool.get('pool_label') or '未知池子'} 第{current_pool.get('selected_day_index') or 1}天",
                 f"默认渠道入口：{channel_status_label}",
             ],
             "history_placeholder": "历史版本、差异对比和回滚接口尚未接通，当前先展示结构占位。",
@@ -948,9 +949,9 @@ def _build_member_ops_workspace(
         )
 
     current_panel_summary = {
-        "label": "批量动作与触达" if str(send_payload.get("mode") or "") == "focus_ai" else "成员列表与单客动作",
-        "detail": "当前阶段为重点池，批量动作会创建 AI 批任务。" if str(send_payload.get("mode") or "") == "focus_ai" else "当前阶段支持官方群发预览和单客手动干预。",
-    }
+            "label": "批量动作与触达" if str(send_payload.get("mode") or "") == "focus_ai" else "成员列表与单客动作",
+            "detail": "当前阶段为重点池，批量动作会创建智能触达任务。" if str(send_payload.get("mode") or "") == "focus_ai" else "当前阶段支持官方群发预览和单客手动干预。",
+        }
 
     return {
         "current_panel": current_panel,
@@ -1015,8 +1016,8 @@ def _build_member_ops_workspace(
         },
         "batch_summary": {
             "mode": str(send_payload.get("mode") or ""),
-            "label": "AI 批量处理" if str(send_payload.get("mode") or "") == "focus_ai" else "普通阶段触达",
-            "description": "当前阶段属于重点池，点击后会创建 AI 批任务并按节奏推进。" if str(send_payload.get("mode") or "") == "focus_ai" else "当前阶段支持文本 / 图片官方群发，可先预览再确认发送。",
+            "label": "智能触达任务" if str(send_payload.get("mode") or "") == "focus_ai" else "普通阶段触达",
+            "description": "当前阶段属于重点池，点击后会创建智能触达任务并按节奏推进。" if str(send_payload.get("mode") or "") == "focus_ai" else "当前阶段支持文本 / 图片官方群发，可先预览再确认发送。",
             "status_actions_placeholder": [
                 "批量设重点",
                 "批量设普通",
@@ -1028,7 +1029,7 @@ def _build_member_ops_workspace(
             "先按阶段切换工作上下文，再在当前阶段内搜索和筛选成员。",
             "单成员详情与手动干预留在当前工作面，不需要跳去独立页面。",
             "批量触达继续复用现有接口，但已经收口到成员运营工作台。",
-            "批量状态动作当前先做结构占位，不伪装成已接通的批量写接口。",
+            "批量状态动作当前先做结构占位，不伪装成已经接通的能力。",
         ],
         "current_panel_href": current_panel_href,
     }
@@ -1063,291 +1064,166 @@ def _build_run_center_workspace(
     sync_status = str(sync_run.get("status_label") or "").strip() or ("未配置" if not sync_db.get("configured") else "暂无记录")
     reply_status = str(reply_monitor.get("status_label") or "").strip() or ("已开启" if reply_monitor.get("enabled") else "已关闭")
     model_status = "已启用" if deepseek.get("enabled") else "未启用"
-    router_status = str(orchestration_router.get("last_status") or "").strip() or ("enabled" if orchestration_router.get("enabled") else "disabled")
-    debug_status = "已选择成员" if debug_lookup.get("external_contact_id") or debug_lookup.get("phone") else "待输入成员"
-    audit_summary = f"SOP {len(sop_batches)} 条 / AI 批次 {len(focus_batches)} 条 / Agent 输出 {int(orchestration_outputs.get('total') or 0)} 条"
+    router_status_raw = str(orchestration_router.get("last_status") or "").strip()
+    router_status = {
+        "success": "正常",
+        "http_error": "请求失败",
+        "timeout": "请求超时",
+        "never_called": "尚未调用",
+        "enabled": "已启用",
+        "disabled": "未启用",
+    }.get(router_status_raw, router_status_raw or ("已启用" if orchestration_router.get("enabled") else "未启用"))
+    fallback_strategy = dict(orchestration_router.get("fallback_strategy") or {})
+    agents_payload = dict(orchestration.get("agents") or {})
+    selected_agent = dict(agents_payload.get("selected") or {})
+    selected_agent_draft = dict(selected_agent.get("draft") or {})
 
     attention_items: list[dict[str, str]] = []
     if not bool(sync_db.get("configured")):
-        missing_keys = "、".join(str(item) for item in (sync_db.get("missing_keys") or []) if str(item).strip())
         attention_items.append(
             {
                 "tone": "danger",
-                "title": "数据同步尚未配置",
-                "body": f"消息活跃同步还不能稳定运行{f'，缺少 {missing_keys}' if missing_keys else ''}。",
-                "href": url_for('api.admin_automation_conversion_run_center', tab='sync'),
-                "action": "处理数据同步",
+                "title": "状态刷新未完成",
+                "body": f"消息活跃同步尚未配置，缺少 {'、'.join(str(item) for item in (sync_db.get('missing_keys') or []) if str(item).strip()) or '必要配置'}。",
             }
         )
     elif str(sync_run.get("error_message") or "").strip():
         attention_items.append(
             {
                 "tone": "danger",
-                "title": "最近一次同步失败",
+                "title": "消息状态刷新失败",
                 "body": str(sync_run.get("error_message") or "").strip(),
-                "href": url_for('api.admin_automation_conversion_run_center', tab='sync'),
-                "action": "查看同步明细",
             }
         )
-
     if str(reply_monitor.get("last_error") or "").strip():
         attention_items.append(
             {
                 "tone": "danger",
                 "title": "自动接话异常",
                 "body": str(reply_monitor.get("last_error") or "").strip(),
-                "href": url_for('api.admin_automation_conversion_run_center', tab='reply-monitor'),
-                "action": "查看监控队列",
             }
         )
     elif int(reply_queue.get("active_total") or 0) > 0:
         attention_items.append(
             {
                 "tone": "warning",
-                "title": "自动接话仍有待处理队列",
-                "body": f"当前还有 {int(reply_queue.get('active_total') or 0)} 条待处理记录，建议继续观察 capture / dispatch 结果。",
-                "href": f"{url_for('api.admin_automation_conversion_run_center', tab='reply-monitor')}#run-reply-monitor",
-                "action": "查看接话监控",
+                "title": "自动接话仍在处理中",
+                "body": f"当前还有 {int(reply_queue.get('active_total') or 0)} 条待处理记录。",
             }
         )
-
     if not bool(deepseek.get("enabled")):
         attention_items.append(
             {
                 "tone": "warning",
-                "title": "模型基础设施未启用",
-                "body": "DeepSeek 当前关闭，涉及模型路由和执行 Agent 的能力不会真实生效。",
-                "href": url_for('api.admin_automation_conversion_run_center', tab='model-infra'),
-                "action": "查看模型配置",
+                "title": "模型能力未启用",
+                "body": "当前模型配置已关闭，智能分流与生成能力不会生效。",
             }
         )
-    if orchestration_router.get("enabled") and router_status not in {"success", "never_called"}:
+    if orchestration_router.get("enabled") and router_status_raw not in {"", "success", "never_called", "enabled"}:
         attention_items.append(
             {
-                "tone": "warning" if router_status != "http_error" else "danger",
-                "title": "中央路由接入需关注",
-                "body": str(orchestration_router.get("last_error") or f"最近一次路由状态为 {router_status}"),
-                "href": url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router'),
-                "action": "查看路由接入",
-            }
-        )
-
-    failed_log_items: list[dict[str, str]] = []
-    for batch in sop_batches:
-        if str(batch.get("status") or "").strip() == "failed":
-            failed_log_items.append(
-                {
-                    "tone": "danger",
-                    "title": "SOP 执行失败",
-                    "body": f"{batch.get('pool_label') or batch.get('pool_key') or '未知池子'} day{batch.get('day_index') or '-'} 批次失败，时间 {batch.get('scheduled_for') or batch.get('created_at') or '暂无记录'}。",
-                }
-            )
-    for batch in focus_batches:
-        if int(batch.get("failed_count") or 0) > 0:
-            failed_log_items.append(
-                {
-                    "tone": "warning",
-                    "title": "AI 批任务存在失败",
-                    "body": f"{batch.get('stage_key') or '未知阶段'} 批次失败 {batch.get('failed_count') or 0} 条，状态 {batch.get('status_label') or batch.get('status') or '未知'}。",
-                }
-            )
-    if str(sync_run.get("error_message") or "").strip():
-        failed_log_items.append(
-            {
-                "tone": "danger",
-                "title": "同步任务失败",
-                "body": str(sync_run.get("error_message") or "").strip(),
+                "tone": "warning" if router_status_raw != "http_error" else "danger",
+                "title": "智能接入需关注",
+                "body": str(orchestration_router.get("last_error") or f"最近一次接入状态为 {router_status}"),
             }
         )
 
     has_danger = any(item["tone"] == "danger" for item in attention_items)
     has_warning = any(item["tone"] == "warning" for item in attention_items)
     if has_danger:
-        current_status = {"label": "存在阻塞项", "tone": "degraded"}
+        current_status = {"label": "有异常", "tone": "degraded"}
     elif has_warning:
-        current_status = {"label": "运行中，需关注", "tone": "staging"}
+        current_status = {"label": "需关注", "tone": "staging"}
     else:
-        current_status = {"label": "运行稳定", "tone": "healthy"}
+        current_status = {"label": "正常", "tone": "healthy"}
 
     latest_update_candidates = [
         str(sync_run.get("finished_at") or "").strip(),
         str(reply_monitor.get("last_capture_at") or "").strip(),
         str(reply_monitor.get("last_dispatch_at") or "").strip(),
         str(deepseek.get("updated_at") or "").strip(),
+        str(selected_agent.get("last_modified_at") or "").strip(),
         str(model_logs[0].get("created_at") or "").strip() if model_logs else "",
     ]
     latest_update_at = max([item for item in latest_update_candidates if item], default="暂无记录")
 
-    section_tabs = [
-        {
-            "key": "overview",
-            "tab": "overview",
-            "label": "运行概况",
-            "badge": current_status["label"],
-            "detail": "先看同步、监控、模型和调试整体是否健康，再决定要进入哪个处理区。",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='overview')}#run-overview",
-        },
-        {
-            "key": "sync",
-            "tab": "sync",
-            "label": "数据同步",
-            "badge": sync_status,
-            "detail": "消息活跃同步配置、最近运行记录和同步明细都收口在这里。",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='sync')}#run-sync",
-        },
-        {
-            "key": "reply_monitor",
-            "tab": "reply-monitor",
-            "label": "自动接话监控",
-            "badge": reply_status,
-            "detail": "监控开关、扫描、放行和队列状态统一放在同一个监控面板。",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='reply-monitor')}#run-reply-monitor",
-        },
-        {
-            "key": "agent_orchestration",
-            "tab": "agent-orchestration",
-            "label": "Agent Orchestration",
-            "badge": f"{len(orchestration_agents)} 个子 Agent / {int(orchestration_outputs.get('total') or 0)} 条输出",
-            "detail": "统一维护龙虾路由接入、Skill Registry、子 Agent 配置、回放调试和输出账本。",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router')}#run-agent-orchestration",
-        },
-        {
-            "key": "model",
-            "tab": "model-infra",
-            "label": "AI / 模型基础设施",
-            "badge": model_status,
-            "detail": "保留 DeepSeek 纯配置和模型调用日志兼容入口；Agent 编排已迁到独立子区。",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='model-infra')}#run-model",
-        },
-        {
-            "key": "debug",
-            "tab": "debug",
-            "label": "单客调试",
-            "badge": debug_status,
-            "detail": "通过 external_contact_id 或手机号查看成员实时状态和最近事件。",
-                "href": url_for('api.admin_automation_conversion_run_center', tab='debug'),
-        },
-        {
-            "key": "logs",
-            "tab": "logs",
-            "label": "执行日志 / 审计",
-            "badge": f"{len(sop_batches)} 条 SOP / {len(focus_batches)} 条 AI 批次",
-            "detail": "汇总最近 SOP 执行、AI 批任务、同步记录和失败提示，统一承接运行日志视图。",
-                "href": url_for('api.admin_automation_conversion_run_center', tab='logs'),
-        },
-    ]
-
-    overview_health_cards = [
-        {
-            "title": "消息活跃同步",
-            "value": sync_status,
-            "detail": f"最近完成：{sync_run.get('finished_at') or '暂无记录'}",
-            "meta": f"更新 {sync_run.get('updated_count') or 0} 人，跳过 {(sync_run.get('skipped_count') or 0)} 人。",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='sync')}#run-sync",
-            "action": "进入数据同步",
-        },
-        {
-            "title": "自动接话监控",
-            "value": reply_status,
-            "detail": f"待处理队列 {reply_queue.get('active_total') or 0} 条，最近扫描 {reply_monitor.get('last_capture_at') or '暂无记录'}",
-            "meta": f"最近放行：{reply_monitor.get('last_dispatch_at') or '暂无记录'}",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='reply-monitor')}#run-reply-monitor",
-            "action": "进入接话监控",
-        },
-        {
-            "title": "AI 模型",
-            "value": model_status,
-            "detail": f"Router：{deepseek.get('router_model') or '-'} / Execution：{deepseek.get('execution_model') or '-'}",
-            "meta": f"最近模型日志：{model_logs[0].get('created_at') if model_logs else '暂无记录'}",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='model-infra')}#run-model",
-            "action": "进入模型配置",
-        },
-        {
-            "title": "Agent 编排",
-            "value": router_status,
-            "detail": f"子 Agent {len(orchestration_agents)} 个，最近输出 {int(orchestration_outputs.get('total') or 0)} 条。",
-            "meta": f"最近路由错误：{orchestration_router.get('last_error') or '无'}",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='router')}#run-agent-orchestration",
-            "action": "进入 Agent 编排",
-        },
-        {
-            "title": "关键任务执行",
-            "value": "存在失败任务" if failed_log_items else "暂无失败任务",
-            "detail": f"SOP {len(sop_batches)} 条，AI 批任务 {len(focus_batches)} 条，最近同步 {sync_status}",
-            "meta": failed_log_items[0]["title"] if failed_log_items else "最近没有新的失败提示",
-            "href": f"{url_for('api.admin_automation_conversion_run_center', tab='logs')}#run-logs",
-            "action": "查看执行日志",
-        },
-    ]
-
-    sop_failed_count = sum(1 for batch in sop_batches if str(batch.get("status") or "").strip() == "failed")
-    focus_failed_count = sum(1 for batch in focus_batches if int(batch.get("failed_count") or 0) > 0)
-
-    logs_summary_cards = [
-        {
-            "label": "最近 SOP 执行摘要",
-            "value": f"{len(sop_batches)} 条",
-            "detail": f"失败 {sop_failed_count} 条，最近一条 {sop_batches[0].get('status_label') if sop_batches else '暂无记录'}",
-        },
-        {
-            "label": "最近 AI 批任务摘要",
-            "value": f"{len(focus_batches)} 条",
-            "detail": f"存在失败的批次 {focus_failed_count} 条，最近一条 {focus_batches[0].get('status_label') if focus_batches else '暂无记录'}",
-        },
-        {
-            "label": "最近同步任务摘要",
-            "value": sync_status,
-            "detail": f"最近完成：{sync_run.get('finished_at') or '暂无记录'}",
-        },
-        {
-            "label": "最近失败任务提示",
-            "value": str(len(failed_log_items)),
-            "detail": failed_log_items[0]["title"] if failed_log_items else "当前没有失败提示",
-        },
-    ]
-
-    summary_items = [
-        {"label": "当前状态", "value": current_status["label"]},
-        {"label": "最近更新时间", "value": latest_update_at},
-        {"label": "当前调试对象", "value": str(debug_lookup.get("external_contact_id") or debug_lookup.get("phone") or "未选择成员")},
-        {"label": "审计概览", "value": audit_summary},
-    ]
-
-    operation_hints = [
-        "业务规则和发布动作留在流程设计，运行中心只承接同步、监控、模型和调试。",
-        "旧 model-infra、debug 页面已并入这里；旧入口仍可访问，但最终都会落到当前工作台。",
-        "执行日志当前优先复用 SOP batch、AI batch、同步记录；全链路统一检索仍是结构占位。",
-    ]
+    advanced_logs: list[dict[str, str]] = []
+    for item in model_logs[:10]:
+        advanced_logs.append(
+            {
+                "time": str(item.get("created_at") or "-"),
+                "name": str(item.get("agent_code") or item.get("model_name") or "-"),
+                "status": str(item.get("status") or "-"),
+                "detail": str(item.get("error_message") or f"{item.get('model_name') or '-'}"),
+            }
+        )
 
     return {
         "current_status": current_status,
         "latest_update_at": latest_update_at,
-        "audit_summary": audit_summary,
-        "section_tabs": section_tabs,
-        "overview_health_cards": overview_health_cards,
-        "summary_items": summary_items,
         "attention_items": attention_items,
-        "operation_hints": operation_hints,
         "sync_status": sync_status,
         "reply_status": reply_status,
         "model_status": model_status,
-        "debug_status": debug_status,
-        "logs_summary_cards": logs_summary_cards,
-        "agent_orchestration_summary": {
-            "router_status": router_status,
-            "agent_count": len(orchestration_agents),
-            "output_count": int(orchestration_outputs.get("total") or 0),
+        "router_status": router_status,
+        "smart_access": {
+            "enabled": bool(orchestration_router.get("enabled")),
+            "webhook_url": str(orchestration_router.get("webhook_url") or ""),
+            "signature_header": str(orchestration_router.get("signature_header") or "X-Lobster-Signature"),
+            "signature_token_configured": bool(orchestration_router.get("signature_token_configured")),
+            "signature_token_masked": str(orchestration_router.get("signature_token_masked") or ""),
+            "signature_secret_configured": bool(orchestration_router.get("signature_secret_configured")),
+            "signature_secret_masked": str(orchestration_router.get("signature_secret_masked") or ""),
+            "timeout_seconds": orchestration_router.get("timeout_seconds") or 8,
+            "retry_count": orchestration_router.get("retry_count") or 1,
+            "fallback_on_timeout": str(fallback_strategy.get("on_timeout") or ""),
+            "fallback_on_invalid_schema": str(fallback_strategy.get("on_invalid_schema") or ""),
+            "fallback_on_unknown_agent_code": str(fallback_strategy.get("on_unknown_agent_code") or ""),
+            "default_agent_code": str(fallback_strategy.get("default_agent_code") or ""),
+            "default_pool": str(fallback_strategy.get("default_pool") or ""),
+            "need_human_review": bool(fallback_strategy.get("need_human_review")),
+            "human_review_target_pool": str(fallback_strategy.get("human_review_target_pool") or ""),
+            "fail_closed": bool(fallback_strategy.get("fail_closed")),
+            "alert_channel": str(fallback_strategy.get("alert_channel") or "run_center"),
+            "pending_callback_timeout_minutes": str(fallback_strategy.get("pending_callback_timeout_minutes") or ""),
+            "min_confidence": str(fallback_strategy.get("min_confidence") or ""),
         },
-        "logs_payload": {
-            "sop_batches": sop_batches,
-            "focus_batches": focus_batches,
-            "sync_run": sync_run,
-            "sync_items": list(sync_payload.get("recent_items") or []),
-            "failed_items": failed_log_items,
+        "model_config": {
+            "enabled": bool(deepseek.get("enabled")),
+            "api_key_configured": bool(deepseek.get("api_key_configured")),
+            "api_key_masked": str(deepseek.get("api_key_masked") or ""),
+            "base_url": str(deepseek.get("base_url") or ""),
+            "router_model": str(deepseek.get("router_model") or ""),
+            "execution_model": str(deepseek.get("execution_model") or ""),
+            "timeout_seconds": deepseek.get("timeout_seconds") or "",
+            "updated_at": str(deepseek.get("updated_at") or "暂无记录"),
         },
-        "placeholder_notes": {
-            "audit": "全量执行链路历史、聚合检索和版本化审计尚未接通，当前先展示真实可用的 SOP batch、AI batch、同步记录与失败提示。",
+        "agents": {
+            "items": list(agents_payload.get("items") or []),
+            "selected": selected_agent,
+            "selected_draft": selected_agent_draft,
         },
+        "advanced_logs": advanced_logs,
+        "hidden_capabilities": [
+            "数据同步执行入口",
+            "自动接话扫描与放行",
+            "调试与回放",
+            "输出记录与审计日志",
+        ],
+        "legacy_tabs_hidden": [
+            "sync",
+            "reply-monitor",
+            "agent-orchestration/metrics",
+            "agent-orchestration/skills",
+            "agent-orchestration/replay",
+            "agent-orchestration/outputs",
+            "debug",
+            "logs",
+        ],
+        "debug_lookup": debug_lookup,
+        "sop_batches_count": len(sop_batches),
+        "focus_batches_count": len(focus_batches),
+        "agent_output_count": int(orchestration_outputs.get("total") or 0),
     }
 
 
@@ -1522,14 +1398,16 @@ def _render_overview_page(*, overview_payload: dict[str, object] | None = None, 
         "automation_conversion_overview_workspace.html",
         active_nav="automation_conversion",
         page_title="自动化转化",
-        page_summary="这是自动化转化的经营驾驶舱，只展示经营结果、阶段卡点、异常待办和最近运行摘要。",
+        page_summary="首页只展示经营结果、阶段分布、待处理事项和下一步动作。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
+        workspace_tabs=_automation_conversion_workspace_tabs("overview"),
         overview_payload=payload,
         settings_payload=settings_payload,
         overview_dashboard=_build_overview_dashboard(payload, settings_payload),
         page_notice=_overview_notice(),
         page_error=page_error,
         show_shell_meta=False,
+        admin_action_token=ensure_admin_console_action_token(),
     )
 
 
@@ -1549,12 +1427,12 @@ def _render_flow_design_page(
     return _render_admin_template(
         "automation_conversion_flow_design_workspace.html",
         active_nav="automation_conversion",
-        page_title="流程设计",
+        page_title="流程配置",
         page_summary="把规则、问卷、SOP、全局规则和渠道入口收敛到一个配置工作台，避免来回跳页。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
-            ("流程设计", None),
+            ("流程配置", None),
         ),
         workspace_tabs=_automation_conversion_workspace_tabs("flow_design"),
         flow_design_entry_section=resolved_entry_section,
@@ -1754,12 +1632,12 @@ def _render_run_center_page(
     return _render_admin_template(
         "automation_conversion_run_center_workspace.html",
         active_nav="automation_conversion",
-        page_title="运行中心",
-        page_summary="把同步、监控、模型基础设施和单客调试统一下沉到运行中心，避免业务首页被技术入口占满。",
+        page_title="智能配置",
+        page_summary="把接入配置、模型配置和子助手配置集中到一个页面，旧技术入口继续兼容但不再暴露。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
-            ("运行中心", None),
+            ("智能配置", None),
         ),
         workspace_tabs=_automation_conversion_workspace_tabs("run_center"),
         run_center_entry_section=resolved_entry_section,
@@ -1877,11 +1755,28 @@ def admin_automation_conversion_reply_monitor_toggle():
 def admin_automation_conversion_reply_monitor_capture():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": action_token_error}), 400
         return _render_run_center_page(page_error=action_token_error, entry_section="reply_monitor")
     result = run_reply_monitor_capture(
         operator_id=_operator_from_request(),
         operator_type="user",
     )
+    if _wants_json_response():
+        status = str(result.get("status") or "").strip()
+        ok = bool(result.get("ok")) or status in {"disabled", "idle", "throttled", "quiet_hours"}
+        status_code = 200 if ok else 400
+        return (
+            jsonify(
+                {
+                    "ok": ok,
+                    "status": status,
+                    "message": str(result.get("message") or result.get("error") or "自动接话扫描已完成"),
+                    "result": result,
+                }
+            ),
+            status_code,
+        )
     if result.get("ok"):
         return redirect(
             url_for("api.admin_automation_conversion_run_center", tab="reply-monitor", reply_monitor="captured"),
@@ -1893,11 +1788,28 @@ def admin_automation_conversion_reply_monitor_capture():
 def admin_automation_conversion_reply_monitor_run_due():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": action_token_error}), 400
         return _render_run_center_page(page_error=action_token_error, entry_section="reply_monitor")
     result = run_due_reply_monitor(
         operator_id=_operator_from_request(),
         operator_type="user",
     )
+    if _wants_json_response():
+        status = str(result.get("status") or "").strip()
+        ok = bool(result.get("ok")) or status in {"disabled", "idle", "throttled", "quiet_hours"}
+        status_code = 200 if ok else 400
+        return (
+            jsonify(
+                {
+                    "ok": ok,
+                    "status": status,
+                    "message": str(result.get("message") or result.get("error") or "自动接话放行已完成"),
+                    "result": result,
+                }
+            ),
+            status_code,
+        )
     if result.get("ok"):
         return redirect(
             url_for("api.admin_automation_conversion_run_center", tab="reply-monitor", reply_monitor="dispatched"),
@@ -1968,7 +1880,7 @@ def admin_automation_conversion_stage_send_submit(stage_key: str):
             )
         return _render_stage_send_page(
             stage_key,
-            page_error=str(result.get("error") or "AI 批任务创建失败"),
+            page_error=str(result.get("error") or "智能触达任务创建失败"),
             focus_batch={"batch": result.get("batch") or {}, "items": result.get("items") or []},
         )
     try:
