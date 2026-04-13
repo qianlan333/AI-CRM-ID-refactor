@@ -328,6 +328,24 @@
     box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
   }
 
+  .run-center-output-script {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.9);
+  }
+
+  .run-center-output-script pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #1f2937;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
   .run-center-output-table td {
     vertical-align: top;
   }
@@ -1493,15 +1511,24 @@
     </section>
   {% set output_detail = orchestration_outputs.selected or {} %}
   {% if output_detail.output %}
-  <div class="run-center-output-modal-backdrop">
-    <section class="run-center-output-modal">
+  <div class="run-center-output-modal-backdrop" data-output-modal-backdrop>
+    <section class="run-center-output-modal" role="dialog" aria-modal="true" aria-label="话术详情">
       <div class="run-center-card__head">
         <div>
           <h2>话术详情</h2>
           <p>这里单独查看输入快照、变量快照、Prompt 版本、结构化输出和采用状态。</p>
         </div>
-        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, request_id=(orchestration_outputs.filters or {}).request_id, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) }}#run-agent-orchestration">关闭</a>
+        <a class="admin-button admin-button--ghost" data-output-modal-close href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, request_id=(orchestration_outputs.filters or {}).request_id, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) }}#run-agent-orchestration">关闭</a>
       </div>
+      {% if (output_detail.output or {}).output_type in ['agent_reply_draft', 'agent_reply_final'] and (output_detail.output or {}).rendered_output_text %}
+      <div class="run-center-output-script">
+        <strong>话术正文</strong>
+        <pre>{{ (output_detail.output or {}).rendered_output_text or '无' }}</pre>
+        <div class="admin-toolbar">
+          <button class="admin-button admin-button--secondary" type="button" onclick="navigator.clipboard.writeText({{ ((output_detail.output or {}).rendered_output_text or '')|tojson }});this.textContent='已复制';">复制这段话术</button>
+        </div>
+      </div>
+      {% endif %}
       <dl class="run-center-definition-grid">
         <div>
           <dt>用户 ID</dt>
@@ -1528,13 +1555,6 @@
       <pre class="run-center-code-block">{{ (output_detail.output or {}).raw_output_text or '无' }}</pre>
       <strong>结构化输出</strong>
       <pre class="run-center-code-block">{{ ((((output_detail.output or {}).normalized_output) or {}))|tojson(indent=2) }}</pre>
-      <strong>渲染文本</strong>
-      <pre class="run-center-code-block">{{ (output_detail.output or {}).rendered_output_text or '无' }}</pre>
-      {% if (output_detail.output or {}).output_type in ['agent_reply_draft', 'agent_reply_final'] and (output_detail.output or {}).rendered_output_text %}
-      <div class="admin-toolbar">
-        <button class="admin-button admin-button--secondary" type="button" onclick="navigator.clipboard.writeText({{ ((output_detail.output or {}).rendered_output_text or '')|tojson }});this.textContent='已复制';">复制当前话术</button>
-      </div>
-      {% endif %}
     </section>
   </div>
   {% endif %}
@@ -2007,4 +2027,26 @@
   </section>
 </section>
 {% endif %}
+
+<script>
+  (function () {
+    const backdrop = document.querySelector('[data-output-modal-backdrop]');
+    if (!backdrop) return;
+    const closeLink = backdrop.querySelector('[data-output-modal-close]');
+    const closeModal = function () {
+      if (!closeLink) return;
+      window.location.href = closeLink.getAttribute('href');
+    };
+    backdrop.addEventListener('click', function (event) {
+      if (event.target === backdrop) {
+        closeModal();
+      }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeModal();
+      }
+    });
+  })();
+</script>
 {% endblock %}
