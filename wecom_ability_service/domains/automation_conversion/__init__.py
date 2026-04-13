@@ -3,6 +3,7 @@ from __future__ import annotations
 from .orchestration_service import (
     append_agent_output,
     audit_agent_skill_call,
+    backfill_missing_child_agent_replies,
     crm_get_member_basic,
     crm_get_member_questionnaire,
     crm_get_member_recent_events,
@@ -108,6 +109,7 @@ __all__ = [
     "append_agent_output",
     "apply_router_target_pool",
     "audit_agent_skill_call",
+    "backfill_missing_child_agent_replies",
     "crm_get_member_basic",
     "crm_get_member_questionnaire",
     "crm_get_member_recent_events",

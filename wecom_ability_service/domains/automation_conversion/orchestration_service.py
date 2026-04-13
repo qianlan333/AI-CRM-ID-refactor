@@ -1122,6 +1122,7 @@ def _generate_child_agent_reply_output(
     confidence: float,
     need_human_review: bool,
     structured_result: dict[str, Any] | None = None,
+    generation_source: str = "router_callback_child_generation",
 ) -> dict[str, Any]:
     runtime = get_deepseek_runtime_config()
     if not bool(runtime.get("enabled")) or not _normalized_text(runtime.get("api_key")):
@@ -1144,7 +1145,7 @@ def _generate_child_agent_reply_output(
         userid=userid,
         external_contact_id=external_contact_id,
         input_snapshot={
-            "source": "router_callback_child_generation",
+            "source": generation_source,
             "router_request_id": request_id,
             "external_contact_id": external_contact_id,
             "target_pool": target_pool,
@@ -1154,7 +1155,7 @@ def _generate_child_agent_reply_output(
             "structured_result": _normalize_json_dict(structured_result),
         },
         variables_snapshot=variable_snapshot,
-        source="router_callback_child_generation",
+        source=generation_source,
     )
     row = repo.get_latest_agent_output_row_by_request_id(
         _normalized_text(request_id),
@@ -1163,6 +1164,206 @@ def _generate_child_agent_reply_output(
     return _serialize_agent_output(row or {}, visibility="full") if row else {
         "run_id": result.get("run_id"),
         "request_id": request_id,
+    }
+
+
+def backfill_missing_child_agent_replies(
+    *,
+    operator_id: str,
+    request_id: str = "",
+    external_contact_id: str = "",
+    limit: int = 200,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    filters: dict[str, Any] = {"output_type": "route_decision"}
+    if _normalized_text(request_id):
+        filters["request_id"] = _normalized_text(request_id)
+    if _normalized_text(external_contact_id):
+        filters["external_contact_id"] = _normalized_text(external_contact_id)
+
+    route_rows = [
+        repo.deserialize_agent_output_row(item)
+        for item in repo.list_agent_output_rows(filters=filters, limit=max(1, int(limit or 200)), offset=0)
+    ]
+    results: list[dict[str, Any]] = []
+    created_count = 0
+    skipped_count = 0
+    failed_count = 0
+    seen_request_ids: set[str] = set()
+
+    for route_output in route_rows:
+        current_request_id = _normalized_text(route_output.get("request_id"))
+        if current_request_id in seen_request_ids:
+            skipped_count += 1
+            results.append(
+                {
+                    "request_id": current_request_id,
+                    "external_contact_id": _normalized_text(route_output.get("external_contact_id")),
+                    "status": "skipped",
+                    "reason": "duplicate_route_decision_for_request",
+                }
+            )
+            continue
+        if current_request_id:
+            seen_request_ids.add(current_request_id)
+        decision_payload = dict(route_output.get("normalized_output_json") or {})
+        current_agent_code = _normalized_text(decision_payload.get("agent_code") or route_output.get("target_agent_code"))
+        current_external_contact_id = _normalized_text(route_output.get("external_contact_id"))
+        current_target_pool = _normalized_text(decision_payload.get("target_pool") or route_output.get("target_pool"))
+        current_reason = _normalized_text(decision_payload.get("reason") or route_output.get("reason"))
+        current_confidence = _normalize_float(decision_payload.get("confidence") or route_output.get("confidence"), default=0.0)
+        current_need_human_review = bool(decision_payload.get("need_human_review") or route_output.get("need_human_review"))
+        current_userid = _normalized_text(route_output.get("userid"))
+
+        if not current_request_id or not current_external_contact_id:
+            skipped_count += 1
+            results.append(
+                {
+                    "request_id": current_request_id,
+                    "external_contact_id": current_external_contact_id,
+                    "status": "skipped",
+                    "reason": "missing_request_or_member",
+                }
+            )
+            continue
+        if not _should_generate_child_reply(current_agent_code):
+            skipped_count += 1
+            results.append(
+                {
+                    "request_id": current_request_id,
+                    "external_contact_id": current_external_contact_id,
+                    "agent_code": current_agent_code,
+                    "status": "skipped",
+                    "reason": "non_child_agent_or_non_reply_pool",
+                }
+            )
+            continue
+        existing_reply = repo.get_latest_agent_output_row_by_request_id(
+            current_request_id,
+            output_types=["agent_reply_draft", "agent_reply_final"],
+        )
+        if existing_reply:
+            skipped_count += 1
+            results.append(
+                {
+                    "request_id": current_request_id,
+                    "external_contact_id": current_external_contact_id,
+                    "agent_code": current_agent_code,
+                    "status": "skipped",
+                    "reason": "reply_output_exists",
+                    "output_id": _normalized_text((existing_reply or {}).get("output_id")),
+                }
+            )
+            continue
+
+        prebuilt_reply_draft = _normalized_text(
+            decision_payload.get("reply_draft")
+            or decision_payload.get("draft_reply")
+            or ((decision_payload.get("structured_result") or {}).get("reply_draft") if isinstance(decision_payload.get("structured_result"), dict) else "")
+            or ((decision_payload.get("structured_result") or {}).get("draft_reply") if isinstance(decision_payload.get("structured_result"), dict) else "")
+        )
+        prebuilt_reply_final = _normalized_text(
+            decision_payload.get("reply_final")
+            or decision_payload.get("final_reply")
+            or ((decision_payload.get("structured_result") or {}).get("reply_final") if isinstance(decision_payload.get("structured_result"), dict) else "")
+            or ((decision_payload.get("structured_result") or {}).get("final_reply") if isinstance(decision_payload.get("structured_result"), dict) else "")
+        )
+
+        if dry_run:
+            created_count += 1
+            results.append(
+                {
+                    "request_id": current_request_id,
+                    "external_contact_id": current_external_contact_id,
+                    "agent_code": current_agent_code,
+                    "target_pool": current_target_pool,
+                    "status": "would_create",
+                    "source": "prebuilt_reply" if (prebuilt_reply_draft or prebuilt_reply_final) else "llm_backfill",
+                }
+            )
+            continue
+
+        try:
+            if prebuilt_reply_draft or prebuilt_reply_final:
+                generated = _append_child_agent_reply_output(
+                    run_id=_normalized_text(route_output.get("run_id")) or f"arun-{uuid.uuid4().hex}",
+                    request_id=current_request_id,
+                    userid=current_userid,
+                    external_contact_id=current_external_contact_id,
+                    agent_code=current_agent_code,
+                    target_pool=current_target_pool,
+                    confidence=current_confidence,
+                    reason=current_reason,
+                    need_human_review=current_need_human_review,
+                    next_action=_normalized_text(decision_payload.get("next_action")),
+                    reply_draft=prebuilt_reply_draft,
+                    reply_final=prebuilt_reply_final,
+                    source=f"history_backfill:{operator_id}",
+                    prompt_version_used=_normalized_text(decision_payload.get("prompt_version_used")),
+                    mcp_tools_used=list(decision_payload.get("mcp_tools_used") or []),
+                    structured_result=_normalize_json_dict(decision_payload.get("structured_result")),
+                    applied_status="generated",
+                )
+            else:
+                generated = _generate_child_agent_reply_output(
+                    request_id=current_request_id,
+                    userid=current_userid,
+                    external_contact_id=current_external_contact_id,
+                    agent_code=current_agent_code,
+                    target_pool=current_target_pool,
+                    reason=current_reason,
+                    confidence=current_confidence,
+                    need_human_review=current_need_human_review,
+                    structured_result=_normalize_json_dict(decision_payload.get("structured_result")),
+                    generation_source=f"history_backfill:{operator_id}",
+                )
+            if _normalized_text(generated.get("output_type")) not in {"agent_reply_draft", "agent_reply_final"}:
+                failed_count += 1
+                results.append(
+                    {
+                        "request_id": current_request_id,
+                        "external_contact_id": current_external_contact_id,
+                        "agent_code": current_agent_code,
+                        "status": "failed",
+                        "reason": "reply_generation_not_created",
+                        "output_type": _normalized_text(generated.get("output_type")),
+                    }
+                )
+                continue
+            created_count += 1
+            results.append(
+                {
+                    "request_id": current_request_id,
+                    "external_contact_id": current_external_contact_id,
+                    "agent_code": current_agent_code,
+                    "target_pool": current_target_pool,
+                    "status": "created",
+                    "output_id": _normalized_text(generated.get("output_id")),
+                    "output_type": _normalized_text(generated.get("output_type")),
+                }
+            )
+        except Exception as exc:
+            failed_count += 1
+            results.append(
+                {
+                    "request_id": current_request_id,
+                    "external_contact_id": current_external_contact_id,
+                    "agent_code": current_agent_code,
+                    "status": "failed",
+                    "reason": str(exc),
+                }
+            )
+
+    return {
+        "ok": True,
+        "dry_run": bool(dry_run),
+        "operator_id": _normalized_text(operator_id),
+        "scanned_count": len(route_rows),
+        "created_count": created_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "items": results,
     }
 
 

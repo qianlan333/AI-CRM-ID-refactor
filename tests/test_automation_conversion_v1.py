@@ -14,6 +14,7 @@ from wecom_ability_service import create_app
 from wecom_ability_service.db import _sqlite_table_columns, get_db, init_db
 from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
+    backfill_missing_child_agent_replies,
     create_agent_run,
     ensure_agent_orchestration_defaults,
     get_all_agent_prompts,
@@ -2949,6 +2950,98 @@ def test_router_callback_generates_child_reply_draft_when_callback_only_routes(a
     assert response.status_code == 200
     assert response.get_json()["reply_output_id"]
     assert dict(reply_output)["rendered_output_text"] == "自动补的一条价格说明草稿"
+
+
+def test_backfill_missing_child_agent_replies_generates_once_for_historical_route_decision(app, monkeypatch):
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-backfill-route-001",
+                "request_id": "req-backfill-route-001",
+                "userid": "sales_backfill",
+                "external_contact_id": "wm_backfill_001",
+                "agent_code": "central_router_agent",
+                "agent_type": "router",
+                "provider": "lobster",
+                "status": "completed",
+                "source": "test",
+            }
+        )
+        append_agent_output(
+            {
+                "output_id": "aout-backfill-route-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_backfill",
+                "external_contact_id": "wm_backfill_001",
+                "agent_code": "central_router_agent",
+                "output_type": "route_decision",
+                "raw_output_text": '{"agent_code":"pricing_agent"}',
+                "normalized_output": {
+                    "agent_code": "pricing_agent",
+                    "target_pool": "inactive_focus",
+                    "confidence": 0.92,
+                    "reason": "客户在追问价格",
+                    "need_human_review": False,
+                },
+                "rendered_output_text": "pricing_agent -> inactive_focus",
+                "target_agent_code": "pricing_agent",
+                "target_pool": "inactive_focus",
+                "confidence": 0.92,
+                "reason": "客户在追问价格",
+                "applied_status": "applied",
+            }
+        )
+
+    def _fake_generate_child_agent_reply_output(**kwargs):
+        with app.app_context():
+            return append_agent_output(
+                {
+                    "run_id": "arun-backfill-generated-001",
+                    "request_id": kwargs["request_id"],
+                    "userid": kwargs["userid"],
+                    "external_contact_id": kwargs["external_contact_id"],
+                    "agent_code": kwargs["agent_code"],
+                    "output_type": "agent_reply_draft",
+                    "raw_output_text": "这是历史补生成的话术",
+                    "normalized_output": {
+                        "agent_code": kwargs["agent_code"],
+                        "target_pool": kwargs["target_pool"],
+                        "draft_reply": "这是历史补生成的话术",
+                    },
+                    "rendered_output_text": "这是历史补生成的话术",
+                    "target_agent_code": kwargs["agent_code"],
+                    "target_pool": kwargs["target_pool"],
+                    "confidence": kwargs["confidence"],
+                    "reason": kwargs["reason"],
+                    "applied_status": "generated",
+                }
+            )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.orchestration_service._generate_child_agent_reply_output",
+        _fake_generate_child_agent_reply_output,
+    )
+
+    with app.app_context():
+        first = backfill_missing_child_agent_replies(operator_id="tester-backfill", request_id="req-backfill-route-001", limit=10)
+        second = backfill_missing_child_agent_replies(operator_id="tester-backfill", request_id="req-backfill-route-001", limit=10)
+        rows = get_db().execute(
+            """
+            SELECT output_type, rendered_output_text
+            FROM automation_agent_output
+            WHERE request_id = ?
+            ORDER BY id ASC
+            """,
+            ("req-backfill-route-001",),
+        ).fetchall()
+
+    assert first["created_count"] == 1
+    assert first["failed_count"] == 0
+    assert second["created_count"] == 0
+    assert second["skipped_count"] >= 1
+    assert [dict(row)["output_type"] for row in rows] == ["route_decision", "agent_reply_draft"]
+    assert dict(rows[-1])["rendered_output_text"] == "这是历史补生成的话术"
 
 
 def test_router_callback_rejects_invalid_target_pool_and_records_error(app, client, monkeypatch):
