@@ -563,9 +563,9 @@
 <section class="admin-card ac-hero flow-design-header">
   <div class="ac-hero__head">
     <div>
-      <div class="ac-eyebrow">流程设计</div>
-      <h2>流程设计</h2>
-      <p>配置自动化转化规则与 SOP。这里统一承接阶段结构、入池分层、SOP 剧本、全局规则、默认渠道入口和发布管理。</p>
+      <div class="ac-eyebrow">流程配置</div>
+      <h2>流程配置</h2>
+      <p>统一配置阶段结构、入池分层、SOP 剧本、全局规则、默认渠道入口和发布管理。</p>
     </div>
     <div class="flow-design-header__meta">
       <div class="flow-design-chip-list">
@@ -581,7 +581,7 @@
         <a class="admin-button admin-button--primary" href="#flow-publish">查看发布管理</a>
         {% endif %}
         <a class="admin-button admin-button--secondary" href="#flow-publish">查看发布管理</a>
-        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='overview') }}">去运行中心校验</a>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center') }}">去智能配置查看</a>
       </div>
     </div>
   </div>
@@ -598,11 +598,11 @@
 <div class="flow-design-shell">
   <aside class="flow-design-sidebar">
     <section class="admin-card flow-design-sidebar__section">
-      <div>
-        <div class="ac-eyebrow">内部导航</div>
-        <h3>流程设计模块</h3>
-      </div>
-      <nav class="flow-design-side-nav" aria-label="流程设计内部导航">
+        <div>
+          <div class="ac-eyebrow">内部导航</div>
+          <h3>流程配置模块</h3>
+        </div>
+      <nav class="flow-design-side-nav" aria-label="流程配置内部导航">
         <a class="flow-design-side-link{% if flow_design_entry_section == 'stage_model' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='stage-model') }}#flow-stage-model">
           <strong>阶段模型</strong>
           <span>先看清用户如何从入池走到沉默或成交。</span>
@@ -613,7 +613,7 @@
         </a>
         <a class="flow-design-side-link{% if flow_design_entry_section == 'sop' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='sop', pool=current_pool.pool_key, day=current_pool.selected_day_index) }}#flow-sop">
           <strong>SOP 剧本</strong>
-          <span>围绕池子和 day 连续编辑，不再单独跳到 SOP 页面。</span>
+          <span>围绕池子和第 N 天连续编辑，不再单独跳到其他页面。</span>
         </a>
         <a class="flow-design-side-link{% if flow_design_entry_section == 'global' %} is-active{% endif %}" href="{{ url_for('api.admin_automation_conversion_flow_design', section='global-rules') }}#flow-global">
           <strong>全局规则</strong>
@@ -834,14 +834,14 @@
           </section>
 
           <details class="admin-debug-details">
-            <summary>高级调试 / 开发模式</summary>
+            <summary>高级信息</summary>
             {% if show_debug_json_editor %}
             <label class="admin-field">
               <span>底层规则数据（只读）</span>
               <textarea rows="12" readonly>{{ question_rules_json }}</textarea>
             </label>
             {% else %}
-            <p class="rule-editor__meta">默认隐藏底层规则数据。需要查看时，可在地址后加 `?debug=1` 进入开发模式。</p>
+            <p class="rule-editor__meta">默认隐藏底层结构数据，避免影响业务配置判断。</p>
             {% endif %}
           </details>
         </div>
@@ -857,7 +857,7 @@
           <article class="ac-subcard">
             <h3 class="ac-subcard__title">规则设计提示</h3>
             <p class="ac-meta">业务上优先通过关键题直接命中重点跟进，再用阈值做补充分层。</p>
-            <p class="ac-meta">消息活跃同步已迁到运行中心，本页不再承载同步执行动作。</p>
+            <p class="ac-meta">状态刷新动作已从业务配置页下沉，本页不再承载执行按钮。</p>
           </article>
         </aside>
       </div>
@@ -867,7 +867,7 @@
       <div class="admin-card-head">
         <div>
           <h2>SOP 剧本</h2>
-          <p>把 SOP 合并进流程设计后，池子选择、池子级配置、Day 模板导航和当前 Day 编辑器都留在同一工作台内。</p>
+          <p>把 SOP 合并进流程配置后，池子选择、池子级配置、第 N 天导航和当前编辑区都留在同一工作台内。</p>
         </div>
       </div>
 
@@ -947,8 +947,8 @@
           <section class="flow-design-block">
             <div class="flow-design-block__head">
               <div>
-                <h3>Day 模板导航</h3>
-                <p>当前池子与 day 上下文持续可见，新增和切换都留在同一工作面中。</p>
+                <h3>第 N 天模板导航</h3>
+                <p>当前池子与天数上下文持续可见，新增和切换都留在同一工作面中。</p>
               </div>
               <button id="add-sop-day-btn" class="admin-button admin-button--secondary" type="button">新增一天</button>
             </div>
@@ -969,25 +969,25 @@
           <section class="flow-design-block">
             <div class="flow-design-block__head">
               <div>
-                <h3>当前 Day 编辑器</h3>
-                <p>当前正在编辑 day{{ current_pool.selected_day_index }}。删除某一天后，后续模板会自动前移一天。</p>
+                <h3>当前天编辑区</h3>
+                <p>当前正在编辑第{{ current_pool.selected_day_index }}天。删除某一天后，后续模板会自动前移一天。</p>
               </div>
-              <span class="admin-chip admin-chip--neutral">{{ current_pool.pool_label }} · day{{ selected_template.day_index }}</span>
+              <span class="admin-chip admin-chip--neutral">{{ current_pool.pool_label }} · 第{{ selected_template.day_index }}天</span>
             </div>
 
             <form id="sop-template-form" class="sop-template-panel admin-form-grid admin-form-grid--stacked">
               <div class="admin-grid-2">
                 <label class="admin-checkbox">
                   <input type="checkbox" name="enabled" value="1" {% if selected_template.enabled %}checked{% endif %}>
-                  <span>启用 day{{ selected_template.day_index }}</span>
+                  <span>启用第{{ selected_template.day_index }}天</span>
                 </label>
                 <div class="admin-state admin-state--inline">
-                  <strong>当前 day</strong>
-                  <span>day{{ selected_template.day_index }}</span>
+                  <strong>当前天数</strong>
+                  <span>第{{ selected_template.day_index }}天</span>
                 </div>
                 <label class="admin-field" style="grid-column: 1 / -1;">
                   <span>文本内容</span>
-                  <textarea id="sop-template-content" name="content" rows="6" placeholder="输入 day{{ selected_template.day_index }} 的发送文本">{{ selected_template.content }}</textarea>
+                  <textarea id="sop-template-content" name="content" rows="6" placeholder="输入第{{ selected_template.day_index }}天的发送文本">{{ selected_template.content }}</textarea>
                 </label>
               </div>
 
@@ -1036,9 +1036,9 @@
               </section>
 
               <div class="admin-toolbar">
-                <button class="admin-button admin-button--primary" type="submit">保存 day{{ selected_template.day_index }} 模板</button>
+                <button class="admin-button admin-button--primary" type="submit">保存第{{ selected_template.day_index }}天模板</button>
                 {% if current_pool.template_count > 1 %}
-                <button id="delete-sop-day-btn" class="admin-button admin-button--ghost" type="button">删除 day{{ selected_template.day_index }}</button>
+                <button id="delete-sop-day-btn" class="admin-button admin-button--ghost" type="button">删除第{{ selected_template.day_index }}天</button>
                 {% endif %}
               </div>
             </form>
@@ -1054,8 +1054,8 @@
                 <dd>{{ current_sop_context.pool_label }}</dd>
               </div>
               <div>
-                <dt>当前 Day</dt>
-                <dd>day{{ current_sop_context.day_index }}</dd>
+                <dt>当前天数</dt>
+                <dd>第{{ current_sop_context.day_index }}天</dd>
               </div>
               <div>
                 <dt>统一发送时间</dt>
@@ -1102,7 +1102,7 @@
             <div class="flow-design-block__head">
               <div>
                 <h3>自动启动时间窗</h3>
-                <p>只定义何时允许自动新启动；消息活跃同步和接话监控的执行已迁到运行中心。</p>
+                <p>只定义何时允许自动新启动；状态刷新和接话执行动作已从这里移出。</p>
               </div>
             </div>
             <div class="admin-grid-2">
@@ -1160,9 +1160,9 @@
             <p class="ac-meta">沉默池阈值覆盖 5 个核心池子。</p>
           </article>
           <article class="ac-subcard">
-            <h3 class="ac-subcard__title">已下沉到运行中心</h3>
-            <p class="ac-meta">消息活跃同步 -> 运行中心 / 数据同步</p>
-            <p class="ac-meta">自动接话监控 -> 运行中心 / 自动接话监控</p>
+            <h3 class="ac-subcard__title">已下沉到智能配置</h3>
+            <p class="ac-meta">消息活跃同步与接话动作已移出流程配置主界面。</p>
+            <p class="ac-meta">流程配置只保留业务规则，不承载状态刷新和技术执行入口。</p>
           </article>
         </aside>
       </div>
@@ -1249,7 +1249,7 @@
           {% if not settings_payload.provider_available %}
           <article class="ac-subcard">
             <h3 class="ac-subcard__title">接入状态</h3>
-            <p class="ac-meta">当前仓库还没有真实二维码 provider，页面结构和入池逻辑已接好，但生成真实二维码仍是占位能力。</p>
+            <p class="ac-meta">当前还没有接通真实二维码服务，页面结构和入池逻辑已接好，但生成真实二维码仍是占位能力。</p>
           </article>
           {% endif %}
         </aside>
@@ -1294,17 +1294,17 @@
       {% else %}
       <div class="admin-state admin-state--inline">
         <strong>当前配置完整度良好</strong>
-        <span>保存后建议到运行中心完成运行验证，再进入正式发布能力。</span>
+        <span>保存后可到智能配置查看接入和模型状态，再决定是否进入正式发布流程。</span>
       </div>
       {% endif %}
 
       <div class="flow-design-action-row">
         <button class="admin-button admin-button--primary" form="flow-design-settings-form" type="submit">保存规则与入口配置</button>
         <button class="admin-button admin-button--secondary" form="sop-config-form" type="submit">保存当前池子配置</button>
-        <button class="admin-button admin-button--secondary" form="sop-template-form" type="submit">保存当前 Day 模板</button>
+        <button class="admin-button admin-button--secondary" form="sop-template-form" type="submit">保存当前天模板</button>
         <button class="admin-button admin-button--ghost" type="button" disabled>发布当前草稿（占位）</button>
         <button class="admin-button admin-button--ghost" type="button" disabled>回滚到历史版本（占位）</button>
-        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='overview') }}">前往运行中心校验</a>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center') }}">前往智能配置</a>
       </div>
     </section>
   </div>
