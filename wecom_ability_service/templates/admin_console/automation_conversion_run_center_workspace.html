@@ -1489,7 +1489,7 @@
               <td class="run-center-output-preview">{{ item.rendered_output_text or "-" }}</td>
               <td>
                 {% if item.output_type in ['agent_reply_draft', 'agent_reply_final'] and item.rendered_output_text %}
-                <button class="admin-button admin-button--ghost" type="button" onclick="navigator.clipboard.writeText({{ (item.rendered_output_text or '')|tojson }});this.textContent='已复制';">复制</button>
+                <button class="admin-button admin-button--ghost" type="button" data-copy-text="{{ (item.rendered_output_text or '')|e }}" data-copy-label-default="复制" data-copy-label-success="已复制">复制</button>
                 {% else %}
                 -
                 {% endif %}
@@ -1511,21 +1511,22 @@
     </section>
   {% set output_detail = orchestration_outputs.selected or {} %}
   {% if output_detail.output %}
-  <div class="run-center-output-modal-backdrop" data-output-modal-backdrop>
+  {% set output_modal_close_url = url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, request_id=(orchestration_outputs.filters or {}).request_id, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) ~ '#run-agent-orchestration' %}
+  <div class="run-center-output-modal-backdrop" data-output-modal-backdrop data-close-url="{{ output_modal_close_url }}">
     <section class="run-center-output-modal" role="dialog" aria-modal="true" aria-label="话术详情">
       <div class="run-center-card__head">
         <div>
           <h2>话术详情</h2>
           <p>这里单独查看输入快照、变量快照、Prompt 版本、结构化输出和采用状态。</p>
         </div>
-        <a class="admin-button admin-button--ghost" data-output-modal-close href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, request_id=(orchestration_outputs.filters or {}).request_id, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) }}#run-agent-orchestration">关闭</a>
+        <a class="admin-button admin-button--ghost" data-output-modal-close href="{{ output_modal_close_url }}">关闭</a>
       </div>
       {% if (output_detail.output or {}).output_type in ['agent_reply_draft', 'agent_reply_final'] and (output_detail.output or {}).rendered_output_text %}
       <div class="run-center-output-script">
         <strong>话术正文</strong>
         <pre>{{ (output_detail.output or {}).rendered_output_text or '无' }}</pre>
         <div class="admin-toolbar">
-          <button class="admin-button admin-button--secondary" type="button" onclick="navigator.clipboard.writeText({{ ((output_detail.output or {}).rendered_output_text or '')|tojson }});this.textContent='已复制';">复制这段话术</button>
+          <button class="admin-button admin-button--secondary" type="button" data-copy-text="{{ ((output_detail.output or {}).rendered_output_text or '')|e }}" data-copy-label-default="复制这段话术" data-copy-label-success="已复制">复制这段话术</button>
         </div>
       </div>
       {% endif %}
@@ -2027,26 +2028,4 @@
   </section>
 </section>
 {% endif %}
-
-<script>
-  (function () {
-    const backdrop = document.querySelector('[data-output-modal-backdrop]');
-    if (!backdrop) return;
-    const closeLink = backdrop.querySelector('[data-output-modal-close]');
-    const closeModal = function () {
-      if (!closeLink) return;
-      window.location.href = closeLink.getAttribute('href');
-    };
-    backdrop.addEventListener('click', function (event) {
-      if (event.target === backdrop) {
-        closeModal();
-      }
-    });
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape') {
-        closeModal();
-      }
-    });
-  })();
-</script>
 {% endblock %}

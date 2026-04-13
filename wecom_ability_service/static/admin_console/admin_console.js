@@ -75,7 +75,66 @@ function bootLegacyFrames() {
   });
 }
 
+function bootOutputModal() {
+  const backdrop = document.querySelector("[data-output-modal-backdrop]");
+  if (!backdrop) {
+    return;
+  }
+
+  const closeUrl = backdrop.getAttribute("data-close-url") || "";
+  const closeModal = () => {
+    if (!closeUrl) {
+      return;
+    }
+    window.location.href = closeUrl;
+  };
+
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      closeModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeModal();
+    }
+  });
+
+  backdrop.querySelectorAll("[data-output-modal-close]").forEach((node) => {
+    node.addEventListener("click", (event) => {
+      if (!closeUrl) {
+        return;
+      }
+      event.preventDefault();
+      closeModal();
+    });
+  });
+}
+
+function bootCopyButtons() {
+  document.querySelectorAll("[data-copy-text]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const text = button.getAttribute("data-copy-text") || "";
+      const defaultLabel = button.getAttribute("data-copy-label-default") || button.textContent || "复制";
+      const successLabel = button.getAttribute("data-copy-label-success") || "已复制";
+      const errorLabel = button.getAttribute("data-copy-label-error") || "复制失败";
+      try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = successLabel;
+      } catch (error) {
+        button.textContent = errorLabel;
+      }
+      window.setTimeout(() => {
+        button.textContent = defaultLabel;
+      }, 1500);
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   bootShellStatusPolling();
   bootLegacyFrames();
+  bootOutputModal();
+  bootCopyButtons();
 });
