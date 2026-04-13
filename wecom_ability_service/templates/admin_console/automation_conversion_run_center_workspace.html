@@ -308,6 +308,38 @@
     color: #475569;
   }
 
+  .run-center-output-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.42);
+  }
+
+  .run-center-output-modal {
+    width: min(960px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    padding: 24px;
+    border-radius: 24px;
+    background: #fff;
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
+  }
+
+  .run-center-output-table td {
+    vertical-align: top;
+  }
+
+  .run-center-output-preview {
+    max-width: 420px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #334155;
+    line-height: 1.6;
+  }
+
   @media (max-width: 1180px) {
     .run-center-header__summary,
     .run-center-definition-grid,
@@ -1372,81 +1404,22 @@
       <div class="run-center-card__head">
         <div>
           <h2>输出记录</h2>
-          <p>所有 route_decision、agent draft/final、fallback 和 error_output 都统一入账，支持筛选、导出、API 与 skill 调取。当前页面默认显示历史话术清单；取消“仅看生成话术”后再看全量账本事件。</p>
+          <p>这里默认直接展示历史生成话术。只保留用户 ID 检索，方便运营按人查找和复制使用。</p>
         </div>
       </div>
     <form class="admin-form-grid admin-form-grid--stacked" method="get" action="{{ url_for('api.admin_automation_conversion_run_center') }}">
       <input type="hidden" name="tab" value="agent-orchestration">
       <input type="hidden" name="subtab" value="outputs">
+      <input type="hidden" name="scripts_only" value="{% if (orchestration_outputs.filters or {}).scripts_only %}1{% else %}0{% endif %}">
       <div class="admin-grid-3">
         <label class="admin-field">
-          <span>request_id</span>
-          <input type="text" name="request_id" value="{{ (orchestration_outputs.filters or {}).request_id or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>batch_id</span>
-          <input type="text" name="batch_id" value="{{ (orchestration_outputs.filters or {}).batch_id or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>external_contact_id</span>
-          <input type="text" name="external_contact_id" value="{{ (orchestration_outputs.filters or {}).external_contact_id or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>userid</span>
-          <input type="text" name="userid" value="{{ (orchestration_outputs.filters or {}).userid or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>agent_code</span>
-          <input type="text" name="agent_code" value="{{ (orchestration_outputs.filters or {}).agent_code or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>output_type</span>
-          <input type="text" name="output_type" value="{{ (orchestration_outputs.filters or {}).output_type or '' }}">
-        </label>
-        <label class="admin-checkbox admin-checkbox--inline">
-          <input type="checkbox" name="scripts_only" value="1" {% if (orchestration_outputs.filters or {}).scripts_only %}checked{% endif %}>
-          <span>仅看生成话术</span>
-        </label>
-        <label class="admin-field">
-          <span>当前池子</span>
-          <input type="text" name="current_pool" value="{{ (orchestration_outputs.filters or {}).current_pool or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>target_pool</span>
-          <input type="text" name="target_pool" value="{{ (orchestration_outputs.filters or {}).target_pool or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>applied_status</span>
-          <input type="text" name="applied_status" value="{{ (orchestration_outputs.filters or {}).applied_status or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>confidence ≥</span>
-          <input type="text" name="min_confidence" value="{{ (orchestration_outputs.filters or {}).min_confidence or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>confidence ≤</span>
-          <input type="text" name="max_confidence" value="{{ (orchestration_outputs.filters or {}).max_confidence or '' }}">
-        </label>
-        <label class="admin-field">
-          <span>开始时间</span>
-          <input type="text" name="date_from" value="{{ (orchestration_outputs.filters or {}).date_from or '' }}" placeholder="2026-04-10 00:00:00">
-        </label>
-        <label class="admin-field">
-          <span>结束时间</span>
-          <input type="text" name="date_to" value="{{ (orchestration_outputs.filters or {}).date_to or '' }}" placeholder="2026-04-10 23:59:59">
-        </label>
-        <label class="admin-field">
-          <span>是否异常</span>
-          <select name="has_error">
-            <option value="" {% if not (orchestration_outputs.filters or {}).has_error %}selected{% endif %}>全部</option>
-            <option value="1" {% if (orchestration_outputs.filters or {}).has_error in ['1', 'true', 'yes', 'on'] %}selected{% endif %}>仅异常</option>
-            <option value="0" {% if (orchestration_outputs.filters or {}).has_error in ['0', 'false', 'no', 'off'] %}selected{% endif %}>仅正常</option>
-          </select>
+          <span>用户 ID</span>
+          <input type="text" name="external_contact_id" value="{{ (orchestration_outputs.filters or {}).external_contact_id or '' }}" placeholder="输入 external_contact_id，例如 wmbNXyCwAAXhagLBNjtlFj2jbQevWinQ">
         </label>
       </div>
       <div class="admin-toolbar">
-        <button class="admin-button admin-button--secondary" type="submit">筛选</button>
-        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', scripts_only=1) }}#run-agent-orchestration">全部历史话术</a>
+        <button class="admin-button admin-button--secondary" type="submit">搜索</button>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', scripts_only=1) }}#run-agent-orchestration">查看全部历史话术</a>
         <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', scripts_only=0) }}#run-agent-orchestration">查看全量账本</a>
       </div>
     </form>
@@ -1467,51 +1440,44 @@
     </div>
     {% endif %}
   </section>
-  <section class="run-center-agent-columns">
     <section class="admin-card run-center-card">
       <div class="run-center-card__head">
         <div>
           <h2>列表区</h2>
-          <p>当前筛选命中 {{ orchestration_outputs.total or 0 }} 条输出。{% if (orchestration_outputs.filters or {}).scripts_only %}当前是可复制的话术视图。{% endif %}</p>
+          <p>当前共 {{ orchestration_outputs.total or 0 }} 条{% if (orchestration_outputs.filters or {}).scripts_only %}历史话术{% else %}输出记录{% endif %}。默认不带时间窗口，直接展示全部历史。</p>
         </div>
       </div>
       {% if orchestration_outputs.rows %}
       <div class="run-center-log-table">
-        <table class="admin-table">
+        <table class="admin-table run-center-output-table">
           <thead>
             <tr>
               <th>时间</th>
-              <th>agent_code</th>
-              <th>output_type</th>
-              <th>userid</th>
-              <th>target_agent_code</th>
-              <th>target_pool</th>
-              <th>confidence</th>
-              <th>applied_status</th>
-              <th>outcome_status</th>
+              <th>用户 ID</th>
+              <th>Agent</th>
+              <th>目标池</th>
               <th>话术预览</th>
               <th>复制</th>
+              <th>详情</th>
             </tr>
           </thead>
           <tbody>
             {% for item in orchestration_outputs.rows %}
             <tr>
-              <td><a href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', output_id=item.output_id, request_id=(orchestration_outputs.filters or {}).request_id, batch_id=(orchestration_outputs.filters or {}).batch_id, external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, userid=(orchestration_outputs.filters or {}).userid, agent_code=(orchestration_outputs.filters or {}).agent_code, output_type=(orchestration_outputs.filters or {}).output_type, current_pool=(orchestration_outputs.filters or {}).current_pool, target_pool=(orchestration_outputs.filters or {}).target_pool, applied_status=(orchestration_outputs.filters or {}).applied_status, min_confidence=(orchestration_outputs.filters or {}).min_confidence, max_confidence=(orchestration_outputs.filters or {}).max_confidence, has_error=(orchestration_outputs.filters or {}).has_error, date_from=(orchestration_outputs.filters or {}).date_from, date_to=(orchestration_outputs.filters or {}).date_to, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) }}#run-agent-orchestration">{{ item.created_at or "-" }}</a></td>
+              <td>{{ item.created_at or "-" }}</td>
+              <td>{{ item.external_contact_id or "-" }}</td>
               <td>{{ item.agent_code or "-" }}</td>
-              <td>{{ item.output_type or "-" }}</td>
-              <td>{{ item.userid or "-" }}</td>
-              <td>{{ item.target_agent_code or "-" }}</td>
               <td>{{ item.target_pool or "-" }}</td>
-              <td>{{ item.confidence }}</td>
-              <td>{{ item.applied_status or "-" }}</td>
-              <td>{{ item.outcome_status or "-" }}</td>
-              <td>{{ item.rendered_output_text or "-" }}</td>
+              <td class="run-center-output-preview">{{ item.rendered_output_text or "-" }}</td>
               <td>
                 {% if item.output_type in ['agent_reply_draft', 'agent_reply_final'] and item.rendered_output_text %}
                 <button class="admin-button admin-button--ghost" type="button" onclick="navigator.clipboard.writeText({{ (item.rendered_output_text or '')|tojson }});this.textContent='已复制';">复制</button>
                 {% else %}
                 -
                 {% endif %}
+              </td>
+              <td>
+                <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', output_id=item.output_id, external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, request_id=(orchestration_outputs.filters or {}).request_id, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) }}#run-agent-orchestration">详情</a>
               </td>
             </tr>
             {% endfor %}
@@ -1521,20 +1487,26 @@
       {% else %}
       <div class="admin-state admin-state--inline">
         <strong>暂无输出记录</strong>
-        <span>当前筛选条件下还没有入账输出。</span>
+        <span>{% if (orchestration_outputs.filters or {}).external_contact_id %}这个用户还没有入账话术。{% else %}当前还没有历史话术，等下一次生成后会直接出现在这里。{% endif %}</span>
       </div>
       {% endif %}
     </section>
-    <section class="admin-card run-center-card">
+  {% set output_detail = orchestration_outputs.selected or {} %}
+  {% if output_detail.output %}
+  <div class="run-center-output-modal-backdrop">
+    <section class="run-center-output-modal">
       <div class="run-center-card__head">
         <div>
-          <h2>详情区</h2>
-          <p>统一查看输入快照、变量快照、Prompt 版本、原始输出、结构化输出和采用状态。</p>
+          <h2>话术详情</h2>
+          <p>这里单独查看输入快照、变量快照、Prompt 版本、结构化输出和采用状态。</p>
         </div>
+        <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_conversion_run_center', tab='agent-orchestration', subtab='outputs', external_contact_id=(orchestration_outputs.filters or {}).external_contact_id, request_id=(orchestration_outputs.filters or {}).request_id, scripts_only=(1 if (orchestration_outputs.filters or {}).scripts_only else 0)) }}#run-agent-orchestration">关闭</a>
       </div>
-      {% set output_detail = orchestration_outputs.selected or {} %}
-      {% if output_detail.output %}
       <dl class="run-center-definition-grid">
+        <div>
+          <dt>用户 ID</dt>
+          <dd>{{ (output_detail.output or {}).external_contact_id or '-' }}</dd>
+        </div>
         <div>
           <dt>Prompt 版本</dt>
           <dd>{{ (output_detail.run or {}).role_prompt_version or '-' }} / {{ (output_detail.run or {}).task_prompt_version or '-' }}</dd>
@@ -1542,10 +1514,6 @@
         <div>
           <dt>是否已采用</dt>
           <dd>{{ (output_detail.output or {}).applied_status or '-' }}</dd>
-        </div>
-        <div>
-          <dt>采纳人 / 动作</dt>
-          <dd>{{ (output_detail.output or {}).adopted_by or '-' }} / {{ (output_detail.output or {}).adopted_action or '-' }}</dd>
         </div>
         <div>
           <dt>结果闭环</dt>
@@ -1567,14 +1535,9 @@
         <button class="admin-button admin-button--secondary" type="button" onclick="navigator.clipboard.writeText({{ ((output_detail.output or {}).rendered_output_text or '')|tojson }});this.textContent='已复制';">复制当前话术</button>
       </div>
       {% endif %}
-      {% else %}
-      <div class="admin-state admin-state--inline">
-        <strong>未选中输出</strong>
-        <span>从左侧列表选择一条输出，即可查看 run 级上下文与结构化结果。</span>
-      </div>
-      {% endif %}
     </section>
-  </section>
+  </div>
+  {% endif %}
   {% endif %}
 </section>
 {% elif run_center_entry_section == 'model' %}

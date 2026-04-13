@@ -1686,25 +1686,14 @@ def _render_run_center_page(
     resolved_entry_section = _run_center_section_from_query(entry_section)
     orchestration_default_subtab = str((orchestration_payload or {}).get("subtab") or "router").strip() or "router"
     resolved_subtab = _run_center_subtab_from_query(orchestration_default_subtab)
+    output_external_contact_id = _query_text("external_contact_id") or _query_text("user_id")
     default_scripts_only = (
         resolved_subtab == "outputs"
         and not any(
             [
                 _query_text("output_id"),
                 _query_text("request_id"),
-                _query_text("batch_id"),
-                _query_text("external_contact_id"),
-                _query_text("userid"),
-                _query_text("agent_code"),
-                _query_text("output_type"),
-                _query_text("current_pool"),
-                _query_text("target_pool"),
-                _query_text("applied_status"),
-                _query_text("date_from"),
-                _query_text("date_to"),
-                _query_text("min_confidence"),
-                _query_text("max_confidence"),
-                _query_text("has_error") or _query_text("is_error"),
+                output_external_contact_id,
             ]
         )
     )
@@ -1716,23 +1705,23 @@ def _render_run_center_page(
         agent_code=_query_text("agent"),
         skill_code=_query_text("skill"),
         output_id=_query_text("output_id"),
-        run_id=_query_text("run_id"),
-        request_id=_query_text("request_id"),
-        batch_id=_query_text("batch_id"),
-        external_contact_id=_query_text("external_contact_id"),
-        userid=_query_text("userid"),
-        date_from=_query_text("date_from"),
-        date_to=_query_text("date_to"),
-        output_type=_query_text("output_type"),
-        current_pool=_query_text("current_pool"),
-        target_pool=_query_text("target_pool"),
-        applied_status=_query_text("applied_status"),
-        min_confidence=_query_text("min_confidence"),
-        max_confidence=_query_text("max_confidence"),
-        has_error=_query_text("has_error") or _query_text("is_error"),
+        run_id=_query_text("run_id") if resolved_subtab != "outputs" else "",
+        request_id=_query_text("request_id") if resolved_subtab == "outputs" else _query_text("request_id"),
+        batch_id=_query_text("batch_id") if resolved_subtab != "outputs" else "",
+        external_contact_id=output_external_contact_id if resolved_subtab == "outputs" else _query_text("external_contact_id"),
+        userid=_query_text("userid") if resolved_subtab != "outputs" else "",
+        date_from=_query_text("date_from") if resolved_subtab != "outputs" else "",
+        date_to=_query_text("date_to") if resolved_subtab != "outputs" else "",
+        output_type=_query_text("output_type") if resolved_subtab != "outputs" else "",
+        current_pool=_query_text("current_pool") if resolved_subtab != "outputs" else "",
+        target_pool=_query_text("target_pool") if resolved_subtab != "outputs" else "",
+        applied_status=_query_text("applied_status") if resolved_subtab != "outputs" else "",
+        min_confidence=_query_text("min_confidence") if resolved_subtab != "outputs" else "",
+        max_confidence=_query_text("max_confidence") if resolved_subtab != "outputs" else "",
+        has_error=(_query_text("has_error") or _query_text("is_error")) if resolved_subtab != "outputs" else "",
         scripts_only=_query_bool("scripts_only", default=default_scripts_only),
         page=_query_int("page", default=1, minimum=1, maximum=100000),
-        page_size=_query_int("page_size", default=20, minimum=1, maximum=100),
+        page_size=_query_int("page_size", default=100 if resolved_subtab == "outputs" else 20, minimum=1, maximum=200),
         export_job_id=_query_text("export_job"),
     )
     sop_batches = get_sop_v1_batches_payload(limit=8)

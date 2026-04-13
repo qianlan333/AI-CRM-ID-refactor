@@ -4907,20 +4907,18 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
             "tab": "agent-orchestration",
             "subtab": "outputs",
             "request_id": "req-ledger-001",
-            "batch_id": "batch-ledger-001",
-            "current_pool": "new_user",
-            "min_confidence": "0.9",
-            "has_error": "0",
+            "date_from": "2026-04-10 00:00:00",
+            "date_to": "2026-04-10 23:59:59",
         },
     )
     page_html = page_response.get_data(as_text=True)
     assert page_response.status_code == 200
     assert "输出记录" in page_html
-    assert "batch_id" in page_html
-    assert "当前池子" in page_html
-    assert "confidence ≥" in page_html
-    assert "是否异常" in page_html
+    assert "用户 ID" in page_html
+    assert "查看全部历史话术" in page_html
+    assert "详情区" not in page_html
     assert "req-ledger-001" in page_html
+    assert "欢迎联系我" in page_html
     assert "敏感内容已隐藏，仅内部 API / Skill 可查看明文" in page_html
 
     default_scripts_page = client.get(
@@ -4929,9 +4927,18 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
     )
     default_scripts_html = default_scripts_page.get_data(as_text=True)
     assert default_scripts_page.status_code == 200
-    assert "仅看生成话术" in default_scripts_html
-    assert "全部历史话术" in default_scripts_html
+    assert "用户 ID" in default_scripts_html
+    assert "查看全部历史话术" in default_scripts_html
     assert "欢迎联系我" in default_scripts_html
+
+    detail_page = client.get(
+        "/admin/automation-conversion/run-center",
+        query_string={"tab": "agent-orchestration", "subtab": "outputs", "output_id": output["output_id"]},
+    )
+    detail_html = detail_page.get_data(as_text=True)
+    assert detail_page.status_code == 200
+    assert "话术详情" in detail_html
+    assert "关闭" in detail_html
 
 
 def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):
