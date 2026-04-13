@@ -5125,6 +5125,103 @@ def test_run_center_output_console_formats_user_datetime_and_unicode_text(app, c
     assert "用户最近连续在问付费方式" in page_html
 
 
+def test_admin_can_review_generated_reply_and_feedback_is_visible_in_output_queries(app, client):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "agent-token"
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-review-001",
+                "request_id": "req-review-001",
+                "userid": "sales_agent",
+                "external_contact_id": "wm_review_target_001",
+                "agent_code": "pricing_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        output = append_agent_output(
+            {
+                "output_id": "aout-review-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wm_review_target_001",
+                "agent_code": "pricing_agent",
+                "output_type": "agent_reply_draft",
+                "raw_output_text": "建议先确认价格问题。",
+                "normalized_output": {"draft_reply": "建议先确认价格问题。"},
+                "rendered_output_text": "建议先确认价格问题。",
+                "target_agent_code": "pricing_agent",
+                "target_pool": "active_focus",
+                "confidence": 0.88,
+                "reason": "用户在问价格",
+                "applied_status": "generated",
+            }
+        )
+
+    action_token = _admin_action_token(
+        client,
+        "/admin/automation-conversion/run-center?tab=agent-orchestration&subtab=outputs&external_contact_id=wm_review_target_001&scripts_only=1",
+    )
+    rejected_response = client.post(
+        f"/admin/automation-conversion/agent-orchestration/outputs/{output['output_id']}/review",
+        data={
+            "admin_action_token": action_token,
+            "decision": "rejected",
+            "review_note": "这条话术太硬了，改得更自然一点",
+            "external_contact_id": "wm_review_target_001",
+            "scripts_only": "1",
+        },
+        follow_redirects=True,
+    )
+    rejected_html = rejected_response.get_data(as_text=True)
+    assert rejected_response.status_code == 200
+    assert "话术已标记为不采用" in rejected_html
+    assert "已拒绝" in rejected_html
+    assert "这条话术太硬了，改得更自然一点" in rejected_html
+
+    detail_response = client.get(
+        f"/api/admin/automation-conversion/agent-outputs/{output['output_id']}",
+        headers={"Authorization": "Bearer agent-token"},
+    )
+    detail_payload = detail_response.get_json()
+    assert detail_response.status_code == 200
+    assert detail_payload["output"]["applied_status"] == "rejected"
+    assert detail_payload["output"]["review_note"] == "这条话术太硬了，改得更自然一点"
+    assert detail_payload["output"]["review_decision"] == "rejected"
+
+    action_token = _admin_action_token(
+        client,
+        "/admin/automation-conversion/run-center?tab=agent-orchestration&subtab=outputs&external_contact_id=wm_review_target_001&scripts_only=1",
+    )
+    adopted_response = client.post(
+        f"/admin/automation-conversion/agent-orchestration/outputs/{output['output_id']}/review",
+        data={
+            "admin_action_token": action_token,
+            "decision": "adopted",
+            "external_contact_id": "wm_review_target_001",
+            "scripts_only": "1",
+        },
+        follow_redirects=True,
+    )
+    adopted_html = adopted_response.get_data(as_text=True)
+    assert adopted_response.status_code == 200
+    assert "话术已标记为采用" in adopted_html
+    assert "已采用" in adopted_html
+
+    outputs_by_user = _mcp_call(
+        client,
+        "get_agent_outputs_by_user",
+        {"userid": "wm_review_target_001", "limit": 10},
+    )
+    outputs_payload = json.loads(outputs_by_user.get_json()["result"]["content"][0]["text"])
+    assert outputs_by_user.status_code == 200
+    assert outputs_payload["rows"][0]["applied_status"] == "adopted"
+    assert outputs_payload["rows"][0]["review_note"] == "这条话术太硬了，改得更自然一点"
+
+
 def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):
     with app.app_context():
         create_agent_run(

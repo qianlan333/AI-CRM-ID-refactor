@@ -48,6 +48,7 @@ from ..domains.automation_conversion import (
     publish_agent_config,
     put_in_pool,
     push_openclaw,
+    review_agent_reply_output,
     replay_router_callback,
     replay_agent_run,
     run_router_pending_callback_check,
@@ -243,6 +244,20 @@ def _build_agent_output_filters_from_request() -> dict[str, object]:
         or str(request.form.get("has_error") or request.form.get("is_error") or "").strip(),
         "scripts_only": _query_bool("scripts_only") or str(request.form.get("scripts_only") or "").strip().lower() in {"1", "true", "yes", "on"},
     }
+
+
+def _agent_outputs_redirect_params(*, include_output_id: bool = False) -> dict[str, object]:
+    filters = _build_agent_output_filters_from_request()
+    params: dict[str, object] = {
+        "tab": "agent-orchestration",
+        "subtab": "outputs",
+        "external_contact_id": str(filters.get("external_contact_id") or ""),
+        "request_id": str(filters.get("request_id") or ""),
+        "scripts_only": 1 if bool(filters.get("scripts_only")) else 0,
+    }
+    if include_output_id:
+        params["output_id"] = str(request.form.get("output_id") or request.values.get("output_id") or "").strip()
+    return params
 
 
 def _apply_agent_router_form_state(payload: dict[str, object]) -> dict[str, object]:
@@ -476,6 +491,10 @@ def _run_center_notice() -> str:
         return f"pending callback 检查已完成，新增告警 {_query_text('pending_callback_alerted') or '0'} 条"
     if _query_text("agent_export_job"):
         return "输出导出任务已创建"
+    if _query_text("output_review") == "adopted":
+        return "话术已标记为采用"
+    if _query_text("output_review") == "rejected":
+        return "话术已标记为不采用"
     return _model_infra_notice() or _overview_notice()
 
 
@@ -2288,6 +2307,53 @@ def admin_automation_conversion_export_agent_outputs():
     )
 
 
+def admin_automation_conversion_review_agent_output(output_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(
+            page_error=action_token_error,
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(
+                subtab="outputs",
+                output_id=str(request.form.get("output_id") or "").strip(),
+                external_contact_id=str(request.form.get("external_contact_id") or "").strip(),
+                request_id=str(request.form.get("request_id") or "").strip(),
+                scripts_only=str(request.form.get("scripts_only") or "").strip().lower() in {"1", "true", "yes", "on"},
+            ),
+        )
+    decision = str(request.form.get("decision") or "").strip().lower()
+    review_note = str(request.form.get("review_note") or "").strip()
+    stay_on_detail = str(request.form.get("stay_on_detail") or "").strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        review_agent_reply_output(
+            output_id,
+            decision=decision,
+            operator_id=_operator_from_request(),
+            review_note=review_note,
+            source="admin_console",
+        )
+    except (LookupError, ValueError) as exc:
+        return _render_run_center_page(
+            page_error=str(exc),
+            entry_section="agent_orchestration",
+            orchestration_payload=get_agent_orchestration_payload(
+                subtab="outputs",
+                output_id=str(output_id or "").strip() if stay_on_detail else "",
+                external_contact_id=str(request.form.get("external_contact_id") or "").strip(),
+                request_id=str(request.form.get("request_id") or "").strip(),
+                scripts_only=str(request.form.get("scripts_only") or "").strip().lower() in {"1", "true", "yes", "on"},
+            ),
+        )
+    notice_value = "adopted" if decision == "adopted" else "rejected"
+    return _redirect_to(
+        "api.admin_automation_conversion_run_center",
+        **{
+            **_agent_outputs_redirect_params(include_output_id=stay_on_detail),
+            "output_review": notice_value,
+        },
+    )
+
+
 def admin_automation_conversion_download_agent_output_export(job_id: str):
     payload = get_agent_output_export_file(job_id)
     if not payload:
@@ -2919,6 +2985,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/agent-orchestration/replay/<run_id>", methods=["POST"])(admin_automation_conversion_replay_agent_run)
     bp.route("/admin/automation-conversion/agent-orchestration/router/replay-callback/<run_id>", methods=["POST"])(admin_automation_conversion_replay_router_callback)
     bp.route("/admin/automation-conversion/agent-orchestration/router/check-pending-callbacks", methods=["POST"])(admin_automation_conversion_check_router_pending_callbacks)
+    bp.route("/admin/automation-conversion/agent-orchestration/outputs/<output_id>/review", methods=["POST"])(admin_automation_conversion_review_agent_output)
     bp.route("/admin/automation-conversion/agent-orchestration/outputs/export", methods=["POST"])(admin_automation_conversion_export_agent_outputs)
     bp.route("/admin/automation-conversion/agent-orchestration/outputs/export/<job_id>", methods=["GET"])(admin_automation_conversion_download_agent_output_export)
     bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
