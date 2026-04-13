@@ -16,6 +16,7 @@ from ....infra.settings import (
     DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
     get_setting,
 )
+from .registry import CHILD_AGENT_CONFIG_MAP
 from .. import repo
 
 
@@ -82,6 +83,10 @@ def _request_headers(api_key: str) -> dict[str, str]:
         "Authorization": f"Bearer {_normalized_text(api_key)}",
         "Content-Type": "application/json",
     }
+
+
+def _uses_reply_output_types(agent_code: str) -> bool:
+    return _normalized_text(agent_code) in CHILD_AGENT_CONFIG_MAP
 
 
 def _log_call(
@@ -561,11 +566,13 @@ def call_deepseek_agent(
             draft_reply = _normalized_text(parsed_output.get("draft_reply") or parsed_output.get("draftText") or parsed_output.get("reply_draft"))
             final_reply = _normalized_text(parsed_output.get("reply_final") or parsed_output.get("final_reply"))
             explicit_output_type = _normalized_text(parsed_output.get("output_type"))
-            if explicit_output_type in {"agent_reply_draft", "agent_reply_final", "next_action_suggestion"}:
+            if explicit_output_type in {"agent_reply_draft", "agent_reply_final"} and not _uses_reply_output_types(agent_code):
+                output_type = "next_action_suggestion"
+            elif explicit_output_type in {"agent_reply_draft", "agent_reply_final", "next_action_suggestion"}:
                 output_type = explicit_output_type
-            elif final_reply:
+            elif final_reply and _uses_reply_output_types(agent_code):
                 output_type = "agent_reply_final"
-            elif draft_reply:
+            elif draft_reply and _uses_reply_output_types(agent_code):
                 output_type = "agent_reply_draft"
             else:
                 output_type = "next_action_suggestion"
