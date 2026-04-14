@@ -1837,10 +1837,10 @@ def _ensure_postgres_automation_agent_config_tables(db) -> None:
                 WHERE c.contype = 'c'
                   AND n.nspname = current_schema()
                   AND t.relname = 'automation_agent_pool'
-                  AND pg_get_constraintdef(c.oid) ILIKE '%pool_type%'
+                  AND pg_get_constraintdef(c.oid) ILIKE '%%pool_type%%'
             LOOP
                 EXECUTE format(
-                    'ALTER TABLE %I.%I DROP CONSTRAINT IF EXISTS %I',
+                    'ALTER TABLE %%I.%%I DROP CONSTRAINT IF EXISTS %%I',
                     current_schema(),
                     'automation_agent_pool',
                     constraint_name
@@ -2231,6 +2231,18 @@ def _init_postgres(db) -> None:
             ADD COLUMN IF NOT EXISTS tenant_key TEXT NOT NULL DEFAULT 'aicrm'
             """
         )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS current_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS current_audience_entered_at TEXT NOT NULL DEFAULT ''
+        """
+    )
 
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
