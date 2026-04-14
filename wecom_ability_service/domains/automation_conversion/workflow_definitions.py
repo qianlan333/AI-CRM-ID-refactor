@@ -15,15 +15,10 @@ GENERATION_MODE_MANUAL_LAYERED = "manual_layered"
 GENERATION_MODE_AUTO_LAYERED_REWRITE = "auto_layered_rewrite"
 GENERATION_MODE_PERSONALIZED_SINGLE = "personalized_single"
 
-AGENT_POOL_TYPE_SHARED = "shared"
-AGENT_POOL_TYPE_REPLY = "reply"
-AGENT_POOL_TYPE_REWRITE = "rewrite"
-AGENT_POOL_TYPE_PERSONALIZED = "personalized"
-
-AGENT_POOL_BINDING_SCOPE_DEFAULT = "default"
-AGENT_POOL_BINDING_SCOPE_PROFILE_CATEGORY = "profile_category"
-AGENT_POOL_BINDING_SCOPE_BEHAVIOR_TIER = "behavior_tier"
-AGENT_POOL_BINDING_SCOPE_PERSONALIZED = "personalized"
+AGENT_BINDING_SCOPE_DEFAULT = "default"
+AGENT_BINDING_SCOPE_PROFILE_CATEGORY = "profile_category"
+AGENT_BINDING_SCOPE_BEHAVIOR_TIER = "behavior_tier"
+AGENT_BINDING_SCOPE_PERSONALIZED = "personalized"
 
 NODE_CONTENT_VARIANT_SCOPE_PROFILE_CATEGORY = "profile_category"
 NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER = "behavior_tier"
@@ -108,63 +103,38 @@ def list_supported_generation_modes() -> list[dict[str, str]]:
         {
             "mode_code": GENERATION_MODE_MANUAL_LAYERED,
             "label": "手动分层录入",
-            "description": "不同分层直接录入不同内容，不依赖 Agent 池。",
+            "description": "不同分层直接录入不同内容，不依赖 Agent。",
         },
         {
             "mode_code": GENERATION_MODE_AUTO_LAYERED_REWRITE,
             "label": "标准版自动分层改写",
-            "description": "以标准版内容为底稿，按分层类别绑定对应 Agent 池进行改写。",
+            "description": "以标准版内容为底稿，按分层类别直接绑定对应 Agent 改写。",
         },
         {
             "mode_code": GENERATION_MODE_PERSONALIZED_SINGLE,
             "label": "单人定制化生成",
-            "description": "每个任务流只绑定 1 个 Agent 池进行单人定制生成。",
+            "description": "每个任务流只绑定 1 个 Agent 进行单人定制生成。",
         },
     ]
 
 
-def list_supported_agent_pool_types() -> list[dict[str, str]]:
+def list_supported_agent_binding_scopes() -> list[dict[str, str]]:
     return [
+        {"binding_scope": AGENT_BINDING_SCOPE_DEFAULT, "label": "默认绑定", "description": "标准内容或默认兜底使用。"},
         {
-            "pool_type": AGENT_POOL_TYPE_SHARED,
-            "label": "共享池",
-            "description": "可同时服务自动化应答和自动化运营。",
-        },
-        {
-            "pool_type": AGENT_POOL_TYPE_REPLY,
-            "label": "应答池",
-            "description": "主要服务旧自动化应答链路。",
-        },
-        {
-            "pool_type": AGENT_POOL_TYPE_REWRITE,
-            "label": "改写池",
-            "description": "用于标准版自动分层改写。",
-        },
-        {
-            "pool_type": AGENT_POOL_TYPE_PERSONALIZED,
-            "label": "个性化池",
-            "description": "用于单人定制化生成。",
-        },
-    ]
-
-
-def list_supported_agent_pool_binding_scopes() -> list[dict[str, str]]:
-    return [
-        {"binding_scope": AGENT_POOL_BINDING_SCOPE_DEFAULT, "label": "默认绑定", "description": "标准内容或默认兜底使用。"},
-        {
-            "binding_scope": AGENT_POOL_BINDING_SCOPE_PROFILE_CATEGORY,
+            "binding_scope": AGENT_BINDING_SCOPE_PROFILE_CATEGORY,
             "label": "画像分类绑定",
-            "description": "按基础画像分类命中到对应 Agent 池。",
+            "description": "按基础画像分类命中到对应 Agent。",
         },
         {
-            "binding_scope": AGENT_POOL_BINDING_SCOPE_BEHAVIOR_TIER,
+            "binding_scope": AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
             "label": "行为层级绑定",
-            "description": "按固定行为层级命中到对应 Agent 池。",
+            "description": "按固定行为层级命中到对应 Agent。",
         },
         {
-            "binding_scope": AGENT_POOL_BINDING_SCOPE_PERSONALIZED,
+            "binding_scope": AGENT_BINDING_SCOPE_PERSONALIZED,
             "label": "单人定制绑定",
-            "description": "任务流只绑定一组用于单人生成的 Agent 池。",
+            "description": "任务流只绑定 1 个用于单人生成的 Agent。",
         },
     ]
 

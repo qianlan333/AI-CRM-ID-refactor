@@ -49,13 +49,13 @@ def test_run_automation_conversion_due_jobs_posts_registered_endpoint(monkeypatc
 
     body = module.run()
 
-    assert captured["url"] == "http://automation.local:5001/api/admin/automation-conversion/sop/run-due"
+    assert captured["url"] == "http://automation.local:5001/api/admin/automation-conversion/jobs/run-due"
     assert captured["timeout"] == 180
     assert captured["headers"]["authorization"] == "Bearer runner-token"
-    assert captured["body"] == {"operator": "automation_conversion_due_runner"}
+    assert captured["body"] == {"operator": "automation_conversion_due_runner", "jobs": ["conversion_workflow"]}
     assert json.loads(body) == {
         "ok": True,
-        "requested_job_codes": ["sop"],
+        "requested_job_codes": ["conversion_workflow"],
         "executed_job_count": 1,
         "failed_job_count": 0,
         "total_success_count": 7,
@@ -64,8 +64,8 @@ def test_run_automation_conversion_due_jobs_posts_registered_endpoint(monkeypatc
         "batch_ids": [9],
         "jobs": [
             {
-                "job_code": "sop",
-                "label": "SOP 池运营",
+                "job_code": "conversion_workflow",
+                "label": "自动化转化任务流",
                 "ok": True,
                 "result": {"ok": True, "total_success_count": 7, "batch_ids": [9]},
             }
@@ -85,9 +85,9 @@ def test_run_automation_conversion_due_jobs_respects_job_filter(monkeypatch):
     monkeypatch.setenv("AUTOMATION_CONVERSION_DUE_OPERATOR", "quarter-hour-runner")
     monkeypatch.setattr(module.urllib.request, "urlopen", fake_urlopen)
 
-    module.run(jobs=["sop"])
+    module.run(jobs=["conversion_workflow"])
 
-    assert captured == ["http://127.0.0.1:5000/api/admin/automation-conversion/sop/run-due"]
+    assert captured == ["http://127.0.0.1:5000/api/admin/automation-conversion/jobs/run-due"]
 
 
 def test_run_automation_conversion_due_jobs_rejects_unknown_job_code():

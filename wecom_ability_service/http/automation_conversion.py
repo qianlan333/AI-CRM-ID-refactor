@@ -5,7 +5,6 @@ from flask import jsonify, redirect, request, url_for
 from ..domains.automation_conversion import (
     activate_conversion_workflow,
     build_rejected_feedback_clipboard_payload,
-    create_conversion_agent_pool,
     create_conversion_profile_segment_template,
     create_conversion_workflow,
     create_conversion_workflow_node,
@@ -15,15 +14,16 @@ from ..domains.automation_conversion import (
     get_conversion_workflow_execution_detail,
     get_conversion_workflow_execution_item_detail,
     list_agent_configs,
+    list_conversion_agent_options,
     list_recent_reviewable_agent_outputs,
-    get_conversion_agent_pool_bundle,
     get_conversion_profile_segment_template_bundle,
     get_conversion_workflow_model_bundle,
     get_member_detail,
     get_overview_payload,
+    get_agent_config_detail,
+    get_default_channel_settings_payload,
+    get_model_infra_payload,
     handle_agent_router_callback,
-    list_conversion_agent_pools,
-    list_conversion_agent_pool_options,
     list_conversion_profile_segment_catalog,
     list_conversion_profile_segment_templates,
     list_conversion_profile_segment_template_options,
@@ -42,15 +42,20 @@ from ..domains.automation_conversion import (
     run_router_test_dispatch,
     run_reply_monitor_capture,
     review_agent_reply_output,
+    publish_agent_config,
+    generate_default_channel_qr,
     save_reply_monitor_enabled,
+    save_agent_config_draft,
+    save_default_channel_settings,
+    save_model_infra_settings,
     pause_conversion_workflow,
     set_follow_type,
     unmark_won,
-    update_conversion_agent_pool,
     update_conversion_profile_segment_template,
     update_conversion_workflow,
     update_conversion_workflow_node,
     delete_conversion_workflow_node,
+    test_model_infra_connection,
 )
 from ..domains.automation_conversion.orchestration_service import validate_router_callback_signature
 from .admin_console import _breadcrumb_items, _render_admin_template
@@ -124,7 +129,7 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
     {
         "key": "agent_config",
         "label": "模型 / Agent 配置",
-        "summary": "通用 Agent 池与基础画像分层模板配置",
+        "summary": "可用 Agent 与基础画像分层模板配置",
         "endpoint": "api.admin_automation_conversion_agent_config",
         "params": {},
     },
@@ -149,7 +154,7 @@ def _build_operations_workspace() -> dict[str, object]:
             "workflow_delete_base": url_for("api.api_admin_automation_conversion_workflow_delete", workflow_id=0),
             "workflow_nodes_base": url_for("api.api_admin_automation_conversion_workflow_nodes", workflow_id=0),
             "workflow_node_base": url_for("api.api_admin_automation_conversion_workflow_node_update", node_id=0),
-            "agent_pools_options": url_for("api.api_admin_automation_conversion_agent_pool_options", enabled_only=0),
+            "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
             "profile_segment_templates_options": url_for("api.api_admin_automation_conversion_profile_segment_template_options", enabled_only=0),
             "profile_segment_templates_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
             "profile_segment_template_detail_base": url_for("api.api_admin_automation_conversion_profile_segment_template_detail", template_id=0),
@@ -199,47 +204,32 @@ def _build_auto_reply_workspace() -> dict[str, object]:
 
 
 def _build_agent_config_workspace() -> dict[str, object]:
+    initial_templates = list(list_conversion_profile_segment_templates(enabled_only=False).get("items") or [])
+    initial_catalog = list(list_conversion_profile_segment_catalog().get("items") or [])
     return {
         "api_urls": {
             "registry": url_for("api.api_admin_automation_conversion_workflow_registry"),
-            "agent_pools": url_for("api.api_admin_automation_conversion_agent_pools", enabled_only=0),
-            "agent_pool_detail_base": url_for("api.api_admin_automation_conversion_agent_pool_detail", agent_pool_id=0),
+            "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
+            "agent_detail_base": url_for("api.api_admin_automation_conversion_agent_detail", agent_code="__AGENT_CODE__"),
+            "agent_draft_base": url_for("api.api_admin_automation_conversion_agent_draft", agent_code="__AGENT_CODE__"),
+            "agent_publish_base": url_for("api.api_admin_automation_conversion_agent_publish", agent_code="__AGENT_CODE__"),
+            "default_channel_settings": url_for("api.api_admin_automation_conversion_default_channel_settings"),
+            "default_channel_generate_qr": url_for("api.api_admin_automation_conversion_default_channel_generate_qr"),
+            "model_settings": url_for("api.api_admin_automation_conversion_model_settings"),
+            "model_settings_test": url_for("api.api_admin_automation_conversion_model_settings_test"),
             "profile_segment_templates": url_for("api.api_admin_automation_conversion_profile_segment_templates", enabled_only=0),
             "profile_segment_template_detail_base": url_for("api.api_admin_automation_conversion_profile_segment_template_detail", template_id=0),
             "profile_segment_template_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
         },
-        "selected_agent_pool_id": _query_int("agent_pool_id", default=0, minimum=0, maximum=100000000) or None,
+        "entry_urls": {
+            "operations": url_for("api.admin_automation_conversion_operations"),
+            "auto_reply": url_for("api.admin_automation_conversion_auto_reply"),
+        },
         "selected_template_id": _query_int("template_id", default=0, minimum=0, maximum=100000000) or None,
-        "available_agents": list(list_agent_configs().get("items") or []),
+        "available_agents": list(list_conversion_agent_options(enabled_only=False).get("items") or []),
+        "initial_templates": initial_templates,
+        "initial_template_catalog": initial_catalog,
     }
-
-
-def _render_retired_page(
-    *,
-    page_title: str,
-    page_summary: str,
-    target_endpoint: str,
-    target_label: str,
-):
-    return (
-        _render_admin_template(
-            "placeholder.html",
-            active_nav="automation_conversion",
-            page_title=page_title,
-            page_summary=page_summary,
-            breadcrumbs=_breadcrumb_items(
-                ("客户管理后台", url_for("api.admin_console_home")),
-                ("自动化转化", url_for("api.admin_automation_conversion")),
-                (page_title, None),
-            ),
-            actions=[{"label": target_label, "href": url_for(target_endpoint), "variant": "secondary"}],
-            state_title="页面已下线",
-            state_body="这个旧页面已经下线，请从自动化转化模块的新主入口进入。",
-            state_items=["当前模块主入口只保留：数据概览、自动化运营、自动化应答、模型 / Agent 配置。"],
-            page_error="页面已下线",
-        ),
-        404,
-    )
 
 
 def _automation_conversion_workspace_tabs(active_key: str) -> list[dict[str, object]]:
@@ -286,7 +276,7 @@ def _render_operations_page(*, page_error: str = ""):
         "automation_conversion_operations_workspace.html",
         active_nav="automation_conversion",
         page_title="自动化运营",
-        page_summary="这一层先只收口任务流列表、节点摘要和最近执行。",
+        page_summary="模块内自动化运营工作面，先统一任务流、节点和执行入口，不再暴露旧运营概念。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
@@ -296,7 +286,7 @@ def _render_operations_page(*, page_error: str = ""):
         operations_workspace=_build_operations_workspace(),
         admin_action_token=ensure_admin_console_action_token(),
         page_error=page_error,
-        page_notice="任务流 CRUD、节点 CRUD 和执行记录接口已接通，表单细节后续批次再补。",
+        page_notice="当前先以模块壳子、一级导航和稳定入口为主。",
     )
 
 
@@ -324,7 +314,7 @@ def _render_agent_config_page(*, page_error: str = ""):
         "automation_conversion_agent_config_workspace.html",
         active_nav="automation_conversion",
         page_title="模型 / Agent 配置",
-        page_summary="当前页面只保留自动化转化模块直接需要的通用 Agent 池和基础画像分层模板配置。",
+        page_summary="当前页面只保留自动化转化模块直接需要的 Agent 可用项与基础画像分层模板，不替代 Lobster 原有完整编辑链。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
@@ -333,6 +323,7 @@ def _render_agent_config_page(*, page_error: str = ""):
         workspace_tabs=_automation_conversion_workspace_tabs("agent_config"),
         agent_config_workspace=_build_agent_config_workspace(),
         page_error=page_error,
+        admin_action_token=ensure_admin_console_action_token(),
     )
 
 
@@ -452,60 +443,6 @@ def admin_automation_conversion_reply_monitor_run_due():
     return _render_auto_reply_page(page_error=str(result.get("error") or "自动接话监控放行失败"))
 
 
-def admin_automation_conversion_sop():
-    return _render_retired_page(
-        page_title="旧 SOP 页面",
-        page_summary="旧 SOP 页面已经下线。",
-        target_endpoint="api.admin_automation_conversion_operations",
-        target_label="进入自动化运营",
-    )
-
-
-def admin_automation_conversion_stage_detail(stage_key: str):
-    return _render_retired_page(
-        page_title="旧阶段详情页",
-        page_summary="旧阶段详情页已经下线。",
-        target_endpoint="api.admin_automation_conversion_operations",
-        target_label="进入自动化运营",
-    )
-
-
-def admin_automation_conversion_stage_send(stage_key: str):
-    return _render_retired_page(
-        page_title="旧阶段发送页",
-        page_summary="旧阶段发送页已经下线。",
-        target_endpoint="api.admin_automation_conversion_operations",
-        target_label="进入自动化运营",
-    )
-
-
-def admin_automation_conversion_stage_send_submit(stage_key: str):
-    return _render_retired_page(
-        page_title="旧阶段发送页",
-        page_summary="旧阶段发送页已经下线。",
-        target_endpoint="api.admin_automation_conversion_operations",
-        target_label="进入自动化运营",
-    )
-
-
-def admin_automation_conversion_settings():
-    return _render_retired_page(
-        page_title="旧设置页",
-        page_summary="旧设置页已经下线。",
-        target_endpoint="api.admin_automation_conversion_overview",
-        target_label="进入数据概览",
-    )
-
-
-def admin_automation_conversion_model_infra():
-    return _render_retired_page(
-        page_title="旧模型基础设施页",
-        page_summary="旧模型基础设施页已经下线。",
-        target_endpoint="api.admin_automation_conversion_agent_config",
-        target_label="进入模型 / Agent 配置",
-    )
-
-
 def admin_automation_conversion_run_message_activity_sync():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
@@ -541,24 +478,6 @@ def admin_automation_conversion_run_message_activity_sync():
         missing_keys = "、".join(result.get("missing_keys") or [])
         return _render_overview_page(page_error=f"消息库尚未配置，请先补齐 {missing_keys}")
     return _render_overview_page(page_error=str(result.get("error") or "消息活跃同步失败"))
-
-
-def admin_automation_conversion_debug():
-    return _render_retired_page(
-        page_title="旧调试页",
-        page_summary="旧调试页已经下线。",
-        target_endpoint="api.admin_automation_conversion_overview",
-        target_label="进入数据概览",
-    )
-
-
-def admin_automation_conversion_preview():
-    return _render_retired_page(
-        page_title="旧预览页",
-        page_summary="旧预览页已经下线。",
-        target_endpoint="api.admin_automation_conversion_overview",
-        target_label="进入数据概览",
-    )
 
 
 def api_admin_automation_conversion_member():
@@ -628,42 +547,108 @@ def api_admin_automation_conversion_push_openclaw():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
-def api_admin_automation_conversion_agent_pools():
-    payload = list_conversion_agent_pools(
-        enabled_only=_query_bool("enabled_only", default=False),
-        pool_type=_query_text("pool_type"),
+def api_admin_automation_conversion_agent_options():
+    return jsonify(
+        {
+            "ok": True,
+            **list_conversion_agent_options(
+                enabled_only=_query_bool("enabled_only", default=True),
+            ),
+        }
     )
-    return jsonify({"ok": True, **payload})
 
 
-def api_admin_automation_conversion_agent_pool_detail(agent_pool_id: int):
+def api_admin_automation_conversion_agent_detail(agent_code: str):
     try:
-        payload = get_conversion_agent_pool_bundle(agent_pool_id=int(agent_pool_id))
+        payload = get_agent_config_detail(agent_code)
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
-    return jsonify({"ok": True, "agent_pool": payload})
+    return jsonify({"ok": True, "item": payload})
 
 
-def api_admin_automation_conversion_agent_pool_create():
+def api_admin_automation_conversion_agent_draft(agent_code: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
     payload = request.get_json(silent=True) or {}
     try:
-        result = create_conversion_agent_pool(payload, operator_id=_operator_from_request())
-    except LookupError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 404
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify({"ok": True, **result}), 201
-
-
-def api_admin_automation_conversion_agent_pool_update(agent_pool_id: int):
-    payload = request.get_json(silent=True) or {}
-    try:
-        result = update_conversion_agent_pool(int(agent_pool_id), payload, operator_id=_operator_from_request())
+        result = save_agent_config_draft(
+            agent_code,
+            payload,
+            operator_id=_operator_from_request(),
+            source="automation_conversion_agent_config",
+        )
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_agent_publish(agent_code: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        result = publish_agent_config(
+            agent_code,
+            operator_id=_operator_from_request(),
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_default_channel_settings():
+    return jsonify({"ok": True, **get_default_channel_settings_payload()})
+
+
+def api_admin_automation_conversion_default_channel_settings_save():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_default_channel_settings(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_default_channel_generate_qr():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    result = generate_default_channel_qr(operator=_operator_from_request())
+    status_code = int(result.get("status_code") or (200 if result.get("generated") else 400))
+    return jsonify({"ok": bool(result.get("generated")), **result}), status_code
+
+
+def api_admin_automation_conversion_model_settings():
+    return jsonify({"ok": True, **get_model_infra_payload(limit_logs=10)})
+
+
+def api_admin_automation_conversion_model_settings_save():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_model_infra_settings(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_conversion_model_settings_test():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    result = test_model_infra_connection()
+    status_code = 200 if result.get("ok") else 400
+    return jsonify(result), status_code
 
 
 def api_admin_automation_conversion_profile_segment_catalog():
@@ -861,17 +846,6 @@ def api_admin_automation_conversion_execution_item_detail(execution_item_id: int
     return jsonify({"ok": True, **payload})
 
 
-def api_admin_automation_conversion_agent_pool_options():
-    return jsonify(
-        {
-            "ok": True,
-            **list_conversion_agent_pool_options(
-                enabled_only=_query_bool("enabled_only", default=True),
-            ),
-        }
-    )
-
-
 def api_admin_automation_conversion_profile_segment_template_options():
     return jsonify(
         {
@@ -1029,18 +1003,10 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/flow-design", methods=["GET"])(admin_automation_conversion_flow_design)
     bp.route("/admin/automation-conversion/member-ops", methods=["GET"])(admin_automation_conversion_member_ops)
     bp.route("/admin/automation-conversion/run-center", methods=["GET"])(admin_automation_conversion_run_center)
-    bp.route("/admin/automation-conversion/model-infra", methods=["GET"])(admin_automation_conversion_model_infra)
-    bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
     bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/reply-monitor/toggle", methods=["POST"])(admin_automation_conversion_reply_monitor_toggle)
     bp.route("/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(admin_automation_conversion_reply_monitor_capture)
     bp.route("/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(admin_automation_conversion_reply_monitor_run_due)
-    bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage_detail)
-    bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET"])(admin_automation_conversion_stage_send)
-    bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["POST"])(admin_automation_conversion_stage_send_submit)
-    bp.route("/admin/automation-conversion/settings", methods=["GET"])(admin_automation_conversion_settings)
-    bp.route("/admin/automation-conversion/debug", methods=["GET"])(admin_automation_conversion_debug)
-    bp.route("/admin/automation-conversion/preview", methods=["GET"])(admin_automation_conversion_preview)
 
     bp.route("/api/admin/automation-conversion/member", methods=["GET"])(api_admin_automation_conversion_member)
     bp.route("/api/admin/automation-conversion/member/put-in-pool", methods=["POST"])(api_admin_automation_conversion_put_in_pool)
@@ -1051,11 +1017,16 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/member/unmark-won", methods=["POST"])(api_admin_automation_conversion_unmark_won)
     bp.route("/api/admin/automation-conversion/member/push-openclaw", methods=["POST"])(api_admin_automation_conversion_push_openclaw)
     bp.route("/api/admin/automation-conversion/dashboard", methods=["GET"])(api_admin_automation_conversion_dashboard)
-    bp.route("/api/admin/automation-conversion/agent-pools", methods=["GET"])(api_admin_automation_conversion_agent_pools)
-    bp.route("/api/admin/automation-conversion/agent-pools/options", methods=["GET"])(api_admin_automation_conversion_agent_pool_options)
-    bp.route("/api/admin/automation-conversion/agent-pools/<int:agent_pool_id>", methods=["GET"])(api_admin_automation_conversion_agent_pool_detail)
-    bp.route("/api/admin/automation-conversion/agent-pools", methods=["POST"])(api_admin_automation_conversion_agent_pool_create)
-    bp.route("/api/admin/automation-conversion/agent-pools/<int:agent_pool_id>", methods=["PUT"])(api_admin_automation_conversion_agent_pool_update)
+    bp.route("/api/admin/automation-conversion/agents/options", methods=["GET"])(api_admin_automation_conversion_agent_options)
+    bp.route("/api/admin/automation-conversion/agents/<agent_code>", methods=["GET"])(api_admin_automation_conversion_agent_detail)
+    bp.route("/api/admin/automation-conversion/agents/<agent_code>/draft", methods=["POST"])(api_admin_automation_conversion_agent_draft)
+    bp.route("/api/admin/automation-conversion/agents/<agent_code>/publish", methods=["POST"])(api_admin_automation_conversion_agent_publish)
+    bp.route("/api/admin/automation-conversion/default-channel-settings", methods=["GET"])(api_admin_automation_conversion_default_channel_settings)
+    bp.route("/api/admin/automation-conversion/default-channel-settings", methods=["PUT"])(api_admin_automation_conversion_default_channel_settings_save)
+    bp.route("/api/admin/automation-conversion/default-channel-settings/generate-qr", methods=["POST"])(api_admin_automation_conversion_default_channel_generate_qr)
+    bp.route("/api/admin/automation-conversion/model-settings", methods=["GET"])(api_admin_automation_conversion_model_settings)
+    bp.route("/api/admin/automation-conversion/model-settings", methods=["PUT"])(api_admin_automation_conversion_model_settings_save)
+    bp.route("/api/admin/automation-conversion/model-settings/test", methods=["POST"])(api_admin_automation_conversion_model_settings_test)
     bp.route("/api/admin/automation-conversion/profile-segment-templates/catalog", methods=["GET"])(api_admin_automation_conversion_profile_segment_catalog)
     bp.route("/api/admin/automation-conversion/profile-segment-templates", methods=["GET"])(api_admin_automation_conversion_profile_segment_templates)
     bp.route("/api/admin/automation-conversion/profile-segment-templates/options", methods=["GET"])(api_admin_automation_conversion_profile_segment_template_options)
