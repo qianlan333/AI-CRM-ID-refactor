@@ -139,6 +139,20 @@ def _questionnaire_exists_by_slug(slug: str, *, exclude_id: int | None = None) -
     return row is not None
 
 
+def _dedupe_questionnaire_slug(slug: str, *, exclude_id: int | None = None) -> str:
+    candidate = _slugify_questionnaire(slug)
+    if not _questionnaire_exists_by_slug(candidate, exclude_id=exclude_id):
+        return candidate
+
+    while True:
+        suffix = uuid4().hex[:6]
+        prefix = candidate[: max(120 - len(suffix) - 1, 1)].rstrip("-")
+        fallback_prefix = datetime.utcnow().strftime("q-%Y%m%d%H%M%S")
+        deduped = f"{prefix or fallback_prefix}-{suffix}"[:120]
+        if not _questionnaire_exists_by_slug(deduped, exclude_id=exclude_id):
+            return deduped
+
+
 def _normalize_tag_codes(value: Any) -> list[str]:
     # The questionnaire schema keeps the historical field name `tag_codes`,
     # but values are treated end-to-end as the exact WeCom tag identifiers
@@ -163,6 +177,8 @@ def _normalize_questionnaire_payload(
     questionnaire_id: int | None = None,
     existing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    raw_slug = payload.get("slug")
+    has_explicit_slug = raw_slug not in (None, "")
     name = str(payload.get("name") or "").strip()
     title = str(payload.get("title") or "").strip()
     description = str(payload.get("description") or "").strip()
@@ -171,7 +187,7 @@ def _normalize_questionnaire_payload(
         payload.get("external_push_enabled", (existing or {}).get("external_push_enabled"))
     )
     external_push_url = str(payload.get("external_push_url") or "").strip()
-    slug_source = str(payload.get("slug") or (existing or {}).get("slug") or name or title).strip()
+    slug_source = str(raw_slug or (existing or {}).get("slug") or name or title).strip()
     slug = _slugify_questionnaire(slug_source)
 
     if not name:
@@ -181,7 +197,9 @@ def _normalize_questionnaire_payload(
     if external_push_enabled and not external_push_url:
         raise ValueError("external_push_url is required when external_push_enabled is enabled")
     if _questionnaire_exists_by_slug(slug, exclude_id=questionnaire_id):
-        raise ValueError("slug already exists")
+        if has_explicit_slug:
+            raise ValueError("slug already exists")
+        slug = _dedupe_questionnaire_slug(slug_source, exclude_id=questionnaire_id)
 
     raw_questions = payload.get("questions", [])
     if raw_questions is None:

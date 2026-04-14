@@ -10,6 +10,7 @@ from ...db import get_db
 from ...infra.settings import (
     DEFAULT_DEEPSEEK_BASE_URL,
     DEFAULT_DEEPSEEK_EXECUTION_MODEL,
+    DEFAULT_DEEPSEEK_REASONER_MODEL,
     DEFAULT_DEEPSEEK_ROUTER_MODEL,
     DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
     get_setting,
@@ -74,6 +75,7 @@ DEEPSEEK_SETTING_KEYS = (
     "DEEPSEEK_BASE_URL",
     "DEEPSEEK_ROUTER_MODEL",
     "DEEPSEEK_EXECUTION_MODEL",
+    "DEEPSEEK_REASONER_MODEL",
     "DEEPSEEK_TIMEOUT_SECONDS",
 )
 CHANNEL_STATUS_NOT_GENERATED = "not_generated"
@@ -2717,6 +2719,7 @@ def _deepseek_settings_payload() -> dict[str, Any]:
         "base_url": _normalized_text(config.get("base_url")) or DEFAULT_DEEPSEEK_BASE_URL,
         "router_model": _normalized_text(config.get("router_model")) or DEFAULT_DEEPSEEK_ROUTER_MODEL,
         "execution_model": _normalized_text(config.get("execution_model")) or DEFAULT_DEEPSEEK_EXECUTION_MODEL,
+        "reasoner_model": _normalized_text(config.get("reasoner_model")) or DEFAULT_DEEPSEEK_REASONER_MODEL,
         "timeout_seconds": int(config.get("timeout_seconds") or DEFAULT_DEEPSEEK_TIMEOUT_SECONDS),
         "updated_at": latest_updated_at,
     }
@@ -2753,6 +2756,7 @@ def save_model_infra_settings(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("DEEPSEEK_BASE_URL must start with http:// or https://")
     next_router_model = _normalized_text(payload.get("router_model")) or DEFAULT_DEEPSEEK_ROUTER_MODEL
     next_execution_model = _normalized_text(payload.get("execution_model")) or DEFAULT_DEEPSEEK_EXECUTION_MODEL
+    next_reasoner_model = _normalized_text(payload.get("reasoner_model")) or DEFAULT_DEEPSEEK_REASONER_MODEL
     try:
         next_timeout_seconds = max(1, int(payload.get("timeout_seconds") or DEFAULT_DEEPSEEK_TIMEOUT_SECONDS))
     except (TypeError, ValueError):
@@ -2764,10 +2768,61 @@ def save_model_infra_settings(payload: dict[str, Any]) -> dict[str, Any]:
             "DEEPSEEK_BASE_URL": next_base_url,
             "DEEPSEEK_ROUTER_MODEL": next_router_model,
             "DEEPSEEK_EXECUTION_MODEL": next_execution_model,
+            "DEEPSEEK_REASONER_MODEL": next_reasoner_model,
             "DEEPSEEK_TIMEOUT_SECONDS": str(next_timeout_seconds),
         }
     )
     return get_model_infra_payload()
+
+
+def get_default_channel_settings_payload() -> dict[str, Any]:
+    payload = get_settings_payload()
+    return {
+        "default_channel": dict(payload.get("default_channel") or {}),
+        "provider_available": bool(payload.get("provider_available")),
+    }
+
+
+def save_default_channel_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    existing = repo.get_default_channel() or {}
+    next_channel_name = _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
+    next_welcome_message = (
+        _normalized_text(payload.get("welcome_message"))
+        if "welcome_message" in payload
+        else _normalized_text(existing.get("welcome_message"))
+    )
+    next_auto_accept_friend = (
+        _normalize_bool(payload.get("auto_accept_friend"))
+        if "auto_accept_friend" in payload
+        else _normalize_bool(existing.get("auto_accept_friend"))
+    )
+    current_channel_name = _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
+    current_welcome_message = _normalized_text(existing.get("welcome_message"))
+    current_auto_accept_friend = _normalize_bool(existing.get("auto_accept_friend"))
+    channel_settings_changed = (
+        next_channel_name != current_channel_name
+        or next_welcome_message != current_welcome_message
+        or next_auto_accept_friend != current_auto_accept_friend
+    )
+    repo.save_channel(
+        {
+            "channel_code": DEFAULT_CHANNEL_CODE,
+            "channel_name": next_channel_name,
+            "qr_url": _normalized_text(payload.get("qr_url")) or _normalized_text(existing.get("qr_url")),
+            "qr_ticket": _normalized_text(payload.get("qr_ticket")) or _normalized_text(existing.get("qr_ticket")),
+            "scene_value": _normalized_text(payload.get("scene_value")) or _normalized_text(existing.get("scene_value")),
+            "welcome_message": next_welcome_message,
+            "auto_accept_friend": next_auto_accept_friend,
+            "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
+            "status": (
+                CHANNEL_STATUS_CONFIGURED
+                if channel_settings_changed
+                else (_normalized_text(payload.get("channel_status")) or _normalized_text(existing.get("status")) or CHANNEL_STATUS_CONFIGURED)
+            ),
+        }
+    )
+    get_db().commit()
+    return get_default_channel_settings_payload()
 
 
 def save_model_infra_prompt(*, agent_code: str, display_name: str, prompt_text: str, enabled: bool) -> dict[str, Any]:

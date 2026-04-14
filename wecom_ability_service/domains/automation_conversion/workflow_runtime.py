@@ -12,9 +12,9 @@ from . import repo as legacy_repo
 from .agents import DeepSeekClientError, call_deepseek_agent
 from .orchestration_service import get_agent_config_detail
 from .workflow_definitions import (
-    AGENT_POOL_BINDING_SCOPE_BEHAVIOR_TIER,
-    AGENT_POOL_BINDING_SCOPE_PERSONALIZED,
-    AGENT_POOL_BINDING_SCOPE_PROFILE_CATEGORY,
+    AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
+    AGENT_BINDING_SCOPE_PERSONALIZED,
+    AGENT_BINDING_SCOPE_PROFILE_CATEGORY,
     AUDIENCE_CONVERTED,
     AUDIENCE_OPERATING,
     AUDIENCE_PENDING_QUESTIONNAIRE,
@@ -332,20 +332,20 @@ def _resolve_workflow_segment_match(
     return {"matched": False, "reason": "segmentation_none"}
 
 
-def _select_agent_pool_binding(
+def _select_agent_binding(
     *,
     workflow_bundle: dict[str, Any],
     segment_match: dict[str, Any],
 ) -> dict[str, Any] | None:
     workflow = dict(workflow_bundle.get("workflow") or {})
     generation_mode = _normalized_text(workflow.get("generation_mode"))
-    bindings = [dict(item) for item in workflow_bundle.get("agent_pool_bindings") or []]
+    bindings = [dict(item) for item in workflow_bundle.get("agent_bindings") or []]
     if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
         return next(
             (
                 item
                 for item in bindings
-                if _normalized_text(item.get("binding_scope")) == AGENT_POOL_BINDING_SCOPE_PERSONALIZED
+                if _normalized_text(item.get("binding_scope")) == AGENT_BINDING_SCOPE_PERSONALIZED
             ),
             None,
         )
@@ -353,9 +353,9 @@ def _select_agent_pool_binding(
         return None
     segment_key = _normalized_text(segment_match.get("segment_key"))
     binding_scope = (
-        AGENT_POOL_BINDING_SCOPE_PROFILE_CATEGORY
+        AGENT_BINDING_SCOPE_PROFILE_CATEGORY
         if _normalized_text((workflow.get("segmentation_basis"))) == SEGMENTATION_BASIS_PROFILE
-        else AGENT_POOL_BINDING_SCOPE_BEHAVIOR_TIER
+        else AGENT_BINDING_SCOPE_BEHAVIOR_TIER
     )
     return next(
         (
@@ -498,29 +498,37 @@ def _build_agent_generation_request(
     return system_prompt, user_input
 
 
-def _generate_content_with_agent_pool(
+def _generate_content_with_agent(
     *,
     member: dict[str, Any],
     workflow_bundle: dict[str, Any],
     node: dict[str, Any],
-    agent_pool_binding: dict[str, Any] | None,
+    agent_binding: dict[str, Any] | None,
     standard_content_text: str,
     segment_match: dict[str, Any],
     behavior_match: dict[str, Any],
     request_id: str,
     generation_source: str,
 ) -> dict[str, Any]:
-    if not agent_pool_binding:
+    if not agent_binding:
         return {
             "content_text": _normalized_text(standard_content_text),
             "content_source": "standard_content",
-            "fallback_reason": "agent_pool_binding_missing",
-            "agent_pool_id": None,
+            "fallback_reason": "agent_binding_missing",
             "agent_run_id": "",
             "agent_output_id": "",
             "agent_code": "",
         }
-    agent_pool = dict(agent_pool_binding.get("agent_pool") or {})
+    agent_code = _normalized_text(agent_binding.get("agent_code"))
+    if not agent_code:
+        return {
+            "content_text": _normalized_text(standard_content_text),
+            "content_source": "standard_content",
+            "fallback_reason": "agent_code_missing",
+            "agent_run_id": "",
+            "agent_output_id": "",
+            "agent_code": "",
+        }
     variables_snapshot = _build_generation_variables(
         member=member,
         workflow_bundle=workflow_bundle,
@@ -530,70 +538,62 @@ def _generate_content_with_agent_pool(
         behavior_match=behavior_match,
     )
     last_error = ""
-    for agent in agent_pool.get("agents") or []:
-        agent_code = _normalized_text(agent.get("agent_code"))
-        if not agent_code:
-            continue
-        try:
-            system_prompt, user_input = _build_agent_generation_request(
-                agent_code=agent_code,
-                standard_content_text=standard_content_text,
-                variables_snapshot=variables_snapshot,
+    try:
+        system_prompt, user_input = _build_agent_generation_request(
+            agent_code=agent_code,
+            standard_content_text=standard_content_text,
+            variables_snapshot=variables_snapshot,
+        )
+        result = call_deepseek_agent(
+            agent_code=agent_code,
+            system_prompt=system_prompt,
+            user_input=user_input,
+            json_output=True,
+            request_id=request_id,
+            userid=_normalized_text(member.get("owner_staff_id")) or DEFAULT_AUTOMATION_SENDER,
+            external_contact_id=_normalized_text(member.get("external_contact_id")),
+            input_snapshot={
+                "source": generation_source,
+                "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
+                "node_code": _normalized_text(node.get("node_code")),
+                "agent_code": agent_code,
+            },
+            variables_snapshot=variables_snapshot,
+            source=generation_source,
+        )
+        latest_output = legacy_repo.deserialize_agent_output_row(
+            legacy_repo.get_latest_agent_output_row_by_request_id(
+                _normalized_text(result.get("request_id") or request_id),
+                output_types=["agent_reply_final", "agent_reply_draft", "next_action_suggestion", "error_output"],
             )
-            result = call_deepseek_agent(
-                agent_code=agent_code,
-                system_prompt=system_prompt,
-                user_input=user_input,
-                json_output=True,
-                request_id=request_id,
-                userid=_normalized_text(member.get("owner_staff_id")) or DEFAULT_AUTOMATION_SENDER,
-                external_contact_id=_normalized_text(member.get("external_contact_id")),
-                input_snapshot={
-                    "source": generation_source,
-                    "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
-                    "node_code": _normalized_text(node.get("node_code")),
-                    "agent_pool_code": _normalized_text(agent_pool.get("pool_code")),
-                },
-                variables_snapshot=variables_snapshot,
-                source=generation_source,
-            )
-            latest_output = legacy_repo.deserialize_agent_output_row(
-                legacy_repo.get_latest_agent_output_row_by_request_id(
-                    _normalized_text(result.get("request_id") or request_id),
-                    output_types=["agent_reply_final", "agent_reply_draft", "next_action_suggestion", "error_output"],
-                )
-                or {}
-            )
-            parsed_output = dict(result.get("parsed_output") or {})
-            generated_text = (
-                _normalized_text(parsed_output.get("reply_final"))
-                or _normalized_text(parsed_output.get("final_reply"))
-                or _normalized_text(parsed_output.get("draft_reply"))
-                or _normalized_text(parsed_output.get("reply_draft"))
-                or _normalized_text(latest_output.get("rendered_output_text"))
-            )
-            if generated_text:
-                return {
-                    "content_text": generated_text,
-                    "content_source": "agent_generated",
-                    "fallback_reason": "",
-                    "agent_pool_id": int(agent_pool.get("id") or 0) or None,
-                    "agent_run_id": _normalized_text(result.get("run_id")) or _normalized_text(latest_output.get("run_id")),
-                    "agent_output_id": _normalized_text(latest_output.get("output_id")),
-                    "agent_code": agent_code,
-                }
-            last_error = "agent_generated_content_empty"
-        except (LookupError, ValueError, DeepSeekClientError) as exc:
-            last_error = str(exc)
-            continue
-        except Exception as exc:
-            last_error = str(exc)
-            continue
+            or {}
+        )
+        parsed_output = dict(result.get("parsed_output") or {})
+        generated_text = (
+            _normalized_text(parsed_output.get("reply_final"))
+            or _normalized_text(parsed_output.get("final_reply"))
+            or _normalized_text(parsed_output.get("draft_reply"))
+            or _normalized_text(parsed_output.get("reply_draft"))
+            or _normalized_text(latest_output.get("rendered_output_text"))
+        )
+        if generated_text:
+            return {
+                "content_text": generated_text,
+                "content_source": "agent_generated",
+                "fallback_reason": "",
+                "agent_run_id": _normalized_text(result.get("run_id")) or _normalized_text(latest_output.get("run_id")),
+                "agent_output_id": _normalized_text(latest_output.get("output_id")),
+                "agent_code": agent_code,
+            }
+        last_error = "agent_generated_content_empty"
+    except (LookupError, ValueError, DeepSeekClientError) as exc:
+        last_error = str(exc)
+    except Exception as exc:
+        last_error = str(exc)
     return {
         "content_text": _normalized_text(standard_content_text),
         "content_source": "standard_content",
         "fallback_reason": last_error or "agent_generation_failed",
-        "agent_pool_id": int(agent_pool.get("id") or 0) or None,
         "agent_run_id": "",
         "agent_output_id": "",
         "agent_code": "",
@@ -675,18 +675,17 @@ def _render_node_content(
             **content,
             "segment_match": segment_match,
             "behavior_match": behavior_match,
-            "agent_pool_id": None,
             "agent_run_id": "",
             "agent_output_id": "",
             "agent_code": "",
         }
 
-    binding = _select_agent_pool_binding(workflow_bundle=workflow_bundle, segment_match=segment_match if _normalized_text(workflow.get("segmentation_basis")) != SEGMENTATION_BASIS_BEHAVIOR else behavior_match)
-    generated = _generate_content_with_agent_pool(
+    binding = _select_agent_binding(workflow_bundle=workflow_bundle, segment_match=segment_match if _normalized_text(workflow.get("segmentation_basis")) != SEGMENTATION_BASIS_BEHAVIOR else behavior_match)
+    generated = _generate_content_with_agent(
         member=member,
         workflow_bundle=workflow_bundle,
         node=node,
-        agent_pool_binding=binding,
+        agent_binding=binding,
         standard_content_text=standard_content_text,
         segment_match=segment_match,
         behavior_match=behavior_match,
@@ -740,6 +739,7 @@ def _process_execution_item(
         "rendered_content_text": final_content,
         "content_source": _normalized_text(rendered.get("content_source")),
         "fallback_reason": _normalized_text(rendered.get("fallback_reason")),
+        "agent_code": _normalized_text(rendered.get("agent_code")),
         "segment_match": dict(rendered.get("segment_match") or {}),
         "behavior_match": dict(rendered.get("behavior_match") or {}),
     }
@@ -752,7 +752,7 @@ def _process_execution_item(
                 "error_message": "missing_external_contact_id",
                 "content_snapshot_json": snapshot,
                 "rendered_content_text": final_content,
-                "agent_pool_id": rendered.get("agent_pool_id"),
+                "agent_code": rendered.get("agent_code"),
                 "agent_run_id": rendered.get("agent_run_id"),
                 "agent_output_id": rendered.get("agent_output_id"),
                 "send_record_id": None,
@@ -768,7 +768,7 @@ def _process_execution_item(
                 "error_message": "rendered_content_empty",
                 "content_snapshot_json": snapshot,
                 "rendered_content_text": "",
-                "agent_pool_id": rendered.get("agent_pool_id"),
+                "agent_code": rendered.get("agent_code"),
                 "agent_run_id": rendered.get("agent_run_id"),
                 "agent_output_id": rendered.get("agent_output_id"),
                 "send_record_id": None,
@@ -795,7 +795,7 @@ def _process_execution_item(
             "error_message": _normalized_text(send_result.get("error_message")),
             "content_snapshot_json": snapshot,
             "rendered_content_text": final_content,
-            "agent_pool_id": rendered.get("agent_pool_id"),
+            "agent_code": rendered.get("agent_code"),
             "agent_run_id": rendered.get("agent_run_id"),
             "agent_output_id": rendered.get("agent_output_id"),
             "send_record_id": int(send_result.get("record_id") or 0) or None,
@@ -832,7 +832,7 @@ def _upsert_node_execution_candidates(
                 "external_contact_id": _normalized_text((row.get("member") or {}).get("external_contact_id")),
                 "rendered_content_text": "",
                 "content_snapshot_json": {},
-                "agent_pool_id": None,
+                "agent_code": "",
                 "agent_run_id": "",
                 "agent_output_id": "",
                 "status": "pending",

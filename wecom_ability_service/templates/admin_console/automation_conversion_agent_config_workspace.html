@@ -3,15 +3,19 @@
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
 <style>
+  [hidden] {
+    display: none !important;
+  }
+
   .ac-config-shell,
   .ac-config-top,
-  .ac-config-detail-grid,
-  .ac-config-list-panel,
-  .ac-config-form-panel,
+  .ac-config-main,
+  .ac-config-panel,
   .ac-config-summary-grid,
-  .ac-config-checkbox-grid,
+  .ac-config-form-grid,
   .ac-config-category-list,
-  .ac-config-category-options {
+  .ac-config-option-grid,
+  .ac-config-action-stack {
     display: grid;
     gap: 18px;
   }
@@ -20,15 +24,13 @@
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
-  .ac-config-detail-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  .ac-config-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
     align-items: start;
   }
 
   .ac-config-panel,
   .ac-config-summary-card,
-  .ac-config-list-panel,
-  .ac-config-form-panel,
   .ac-config-category-card {
     padding: 18px;
     border: 1px solid rgba(15, 23, 42, 0.08);
@@ -37,8 +39,6 @@
   }
 
   .ac-config-panel,
-  .ac-config-list-panel,
-  .ac-config-form-panel,
   .ac-config-category-card {
     display: grid;
     gap: 16px;
@@ -56,6 +56,18 @@
     margin: 0;
     color: #64748b;
     line-height: 1.6;
+  }
+
+  .ac-config-summary-card strong {
+    display: block;
+    font-size: 26px;
+    line-height: 1;
+    color: #1f2937;
+  }
+
+  .ac-config-summary-card span {
+    color: #64748b;
+    font-size: 12px;
   }
 
   .ac-config-table-wrap {
@@ -96,30 +108,17 @@
     background: rgba(248, 242, 233, 0.62);
   }
 
-  .ac-config-summary-card {
-    display: grid;
-    gap: 8px;
+  .ac-config-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .ac-config-summary-card strong {
-    font-size: 26px;
-    line-height: 1;
-    color: #1f2937;
+  .ac-config-form-grid--single {
+    grid-template-columns: 1fr;
   }
 
-  .ac-config-summary-card span {
-    color: #64748b;
-    font-size: 12px;
-  }
-
-  .ac-config-feedback[hidden],
-  .ac-config-loading[hidden],
-  .ac-config-empty[hidden],
-  .ac-config-form-panel[hidden] {
-    display: none;
-  }
-
-  .ac-config-feedback {
+  .ac-config-feedback,
+  .ac-config-loading,
+  .ac-config-empty {
     padding: 14px 16px;
     border-radius: 14px;
     background: rgba(15, 23, 42, 0.04);
@@ -136,37 +135,43 @@
     color: #166534;
   }
 
-  .ac-config-loading,
-  .ac-config-empty {
-    padding: 14px 16px;
-    border-radius: 14px;
-    background: rgba(15, 23, 42, 0.04);
+  .ac-config-code {
+    margin: 0;
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .ac-config-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(248, 250, 252, 0.96);
     color: #334155;
+    font-size: 12px;
+    font-weight: 600;
   }
 
-  .ac-config-field-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
+  .ac-config-status-badge.is-published {
+    background: rgba(220, 252, 231, 0.96);
+    color: #166534;
   }
 
-  .ac-config-checkbox-grid {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  .ac-config-status-badge.is-draft {
+    background: rgba(254, 249, 195, 0.96);
+    color: #854d0e;
   }
 
-  .ac-config-checkbox-item {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(248, 250, 252, 0.82);
+  .ac-config-status-badge.is-disabled {
+    background: rgba(241, 245, 249, 0.96);
+    color: #475569;
   }
 
   .ac-config-summary-meta {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 12px;
   }
 
@@ -189,19 +194,95 @@
     color: #1f2937;
   }
 
-  .ac-config-category-options {
+  .ac-config-option-grid {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 10px;
   }
 
-  @media (max-width: 1100px) {
-    .ac-config-detail-grid {
+  .ac-config-option-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(248, 250, 252, 0.82);
+  }
+
+  .ac-config-row-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .ac-config-editor-shell {
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+    padding-top: 16px;
+  }
+
+  .ac-config-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .ac-config-stack {
+    display: grid;
+    gap: 12px;
+  }
+
+  .ac-config-qr-card {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(248, 250, 252, 0.82);
+  }
+
+  .ac-config-qr-preview {
+    width: 132px;
+    height: 132px;
+    border-radius: 16px;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    object-fit: contain;
+    padding: 8px;
+  }
+
+  .ac-config-field-status-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .ac-config-field-status-item {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(248, 250, 252, 0.92);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .ac-config-field-status-item strong {
+    display: inline-block;
+    margin-right: 8px;
+  }
+
+  .ac-config-field-status-item p {
+    margin: 6px 0 0;
+    color: #64748b;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 1180px) {
+    .ac-config-main {
       grid-template-columns: 1fr;
     }
   }
 
   @media (max-width: 760px) {
-    .ac-config-field-grid {
+    .ac-config-form-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -210,130 +291,170 @@
 
 {% block content %}
 {% set workspace = agent_config_workspace or {} %}
+{% set initial_agents = workspace.available_agents or [] %}
+{% set initial_templates = workspace.initial_templates or [] %}
+{% set initial_catalog = workspace.initial_template_catalog or [] %}
 
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
-<div id="automation-agent-config-root" class="ac-config-shell" data-api-urls='{{ (workspace.api_urls or {})|tojson }}' data-selected-agent-pool-id="{{ workspace.selected_agent_pool_id or '' }}" data-selected-template-id="{{ workspace.selected_template_id or '' }}">
-  <script type="application/json" id="agent-config-available-agents">{{ (workspace.available_agents or [])|tojson }}</script>
+<div
+  id="automation-agent-config-root"
+  class="ac-config-shell"
+  data-api-urls='{{ (workspace.api_urls or {})|tojson }}'
+  data-selected-template-id="{{ workspace.selected_template_id or '' }}"
+  data-admin-action-token="{{ admin_action_token }}"
+>
+  <script type="application/json" id="automation-agent-config-initial-agents">{{ initial_agents|tojson }}</script>
+  <script type="application/json" id="automation-agent-config-initial-templates">{{ initial_templates|tojson }}</script>
+  <script type="application/json" id="automation-agent-config-initial-catalog">{{ initial_catalog|tojson }}</script>
 
   <section class="ac-config-panel">
     <div class="ac-config-head">
       <div>
         <div class="ac-eyebrow">模型 / Agent 配置</div>
-        <h2>通用 Agent 池 + 基础画像分层模板</h2>
-        <p class="ac-config-muted">自动化转化模块当前只暴露真正可配置的对象：通用 Agent 池和基础画像分层模板。</p>
+        <h2>Agent 直绑 + 基础画像分层模板</h2>
+        <p class="ac-config-muted">任务流后续直接绑定 Agent。这个页面只处理自动化转化模块真正需要的 Agent 与分层模板，不再展示 Agent 池，也不再跳去一个没有编辑动作的壳页。</p>
+      </div>
+      <div class="ac-config-row-actions">
+        <a class="admin-button admin-button--secondary" href="{{ (workspace.entry_urls or {}).operations }}">查看任务流绑定</a>
       </div>
     </div>
+
     <div class="ac-config-feedback" id="agent-config-feedback" hidden></div>
-    <div class="ac-config-loading" id="agent-config-loading">正在加载 Agent 池和分层模板数据...</div>
-    <div class="ac-config-top" id="agent-config-summary-grid" hidden>
+    <div class="ac-config-loading" id="agent-config-loading" hidden>正在加载 Agent 与分层模板数据...</div>
+
+    <div class="ac-config-top" id="agent-config-summary-grid">
       <article class="ac-config-summary-card">
-        <span>通用 Agent 池</span>
-        <strong id="agent-pool-total">0</strong>
+        <span>可用 Agent</span>
+        <strong id="agent-total">{{ initial_agents|length }}</strong>
       </article>
       <article class="ac-config-summary-card">
-        <span>启用中的 Agent 池</span>
-        <strong id="agent-pool-enabled-total">0</strong>
+        <span>已发布 Agent</span>
+        <strong id="agent-published-total">{{ initial_agents|selectattr('status', 'equalto', 'published')|list|length }}</strong>
       </article>
       <article class="ac-config-summary-card">
         <span>基础画像分层模板</span>
-        <strong id="profile-template-total">0</strong>
+        <strong id="template-total">{{ initial_templates|length }}</strong>
       </article>
       <article class="ac-config-summary-card">
-        <span>可绑定 Agent</span>
-        <strong id="available-agent-total">0</strong>
+        <span>问卷目录</span>
+        <strong id="catalog-total">{{ initial_catalog|length }}</strong>
       </article>
     </div>
   </section>
 
-  <div class="ac-config-detail-grid">
-    <section class="ac-config-list-panel">
+  <div class="ac-config-main">
+    <section class="ac-config-panel">
       <div class="ac-config-head">
         <div>
-          <h3>通用 Agent 池列表</h3>
-          <p class="ac-config-muted">供自动化运营和自动化应答共用。</p>
+          <h3>可用 Agent 列表</h3>
+          <p class="ac-config-muted">表头只保留新增入口，每个 Agent 单独编辑。说明和更新时间不再占表格位置，状态统一显示中文。</p>
         </div>
-        <button class="admin-button admin-button--primary" id="agent-pool-create-button" type="button">新建 Agent 池</button>
+        <div class="ac-config-row-actions">
+          <button class="admin-button admin-button--primary" id="agent-create-button" type="button">新增 Agent</button>
+        </div>
       </div>
+
       <div class="ac-config-table-wrap">
         <table class="ac-config-table">
           <thead>
             <tr>
-              <th>池名</th>
-              <th>pool_type</th>
-              <th>绑定 Agent</th>
+              <th>Agent</th>
               <th>状态</th>
-              <th>更新时间</th>
+              <th>操作</th>
             </tr>
           </thead>
-          <tbody id="agent-pool-table-body"></tbody>
+          <tbody id="agent-table-body">
+            {% for item in initial_agents %}
+            {% set raw_status = item.status or 'draft' %}
+            {% set status_label = '已发布' if raw_status == 'published' else '草稿' if raw_status == 'draft' else '停用' if raw_status == 'disabled' else raw_status %}
+            <tr data-agent-code="{{ item.agent_code or '' }}">
+              <td>
+                <strong>{{ item.agent_name or item.agent_code or '-' }}</strong>
+                <div class="ac-config-code">{{ item.agent_code or '' }}</div>
+              </td>
+              <td>
+                <span class="ac-config-status-badge {% if raw_status == 'published' %}is-published{% elif raw_status == 'disabled' %}is-disabled{% else %}is-draft{% endif %}">{{ status_label }}</span>
+              </td>
+              <td>
+                <div class="ac-config-row-actions">
+                  <button class="admin-button admin-button--secondary" type="button" data-agent-edit="{{ item.agent_code or '' }}">编辑</button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
         </table>
       </div>
-      <div class="ac-config-empty" id="agent-pool-empty" hidden>当前还没有通用 Agent 池。</div>
 
-      <section class="ac-config-panel" id="agent-pool-detail-panel" hidden>
+      <div class="ac-config-empty" id="agent-empty" {% if initial_agents %}hidden{% endif %}>当前没有可用 Agent。</div>
+
+      <section class="ac-config-panel ac-config-editor-shell" id="agent-form-panel" hidden>
         <div class="ac-config-head">
           <div>
-            <h4 id="agent-pool-detail-title">Agent 池详情</h4>
-            <p class="ac-config-muted" id="agent-pool-detail-code"></p>
+            <h4 id="agent-form-title">新增 / 编辑 Agent</h4>
+            <p class="ac-config-muted">这里直接编辑当前 Agent 的显示名、启用状态、角色提示词和任务提示词。</p>
           </div>
-          <button class="admin-button admin-button--secondary" id="agent-pool-edit-button" type="button">编辑 Agent 池</button>
+          <button class="admin-button admin-button--ghost" id="agent-form-cancel" type="button">收起</button>
         </div>
-        <dl class="ac-config-summary-meta" id="agent-pool-detail-summary"></dl>
-      </section>
 
-      <section class="ac-config-form-panel" id="agent-pool-form-panel" hidden>
-        <div class="ac-config-head">
-          <div>
-            <h4 id="agent-pool-form-title">新建 Agent 池</h4>
-            <p class="ac-config-muted">池子用途字段统一使用 `pool_type`。</p>
-          </div>
-          <button class="admin-button admin-button--ghost" id="agent-pool-form-cancel" type="button">收起</button>
-        </div>
-        <form id="agent-pool-form" class="admin-form-grid admin-form-grid--stacked">
-          <input type="hidden" name="agent_pool_id" value="">
-          <div class="ac-config-field-grid">
+        <div class="ac-config-feedback" id="agent-form-feedback" hidden></div>
+
+        <form id="agent-form" class="admin-form-grid admin-form-grid--stacked">
+          <input type="hidden" name="expected_draft_version" value="">
+
+          <div class="ac-config-form-grid">
             <label class="admin-field">
-              <span>池名称</span>
-              <input type="text" name="pool_name" placeholder="例如：运营改写池 A">
+              <span>Agent</span>
+              <select name="agent_code"></select>
             </label>
             <label class="admin-field">
-              <span>pool_type</span>
-              <select name="pool_type"></select>
+              <span>显示名称</span>
+              <input type="text" name="display_name" placeholder="例如：成交推进 Agent">
             </label>
           </div>
-          <label class="admin-field">
-            <span>pool_code</span>
-            <input type="text" name="pool_code" placeholder="可选，不填则后端自动生成">
-          </label>
-          <label class="admin-field">
-            <span>说明</span>
-            <textarea name="description" rows="3" placeholder="补充这个 Agent 池的用途"></textarea>
-          </label>
+
           <label class="admin-checkbox">
-            <input type="checkbox" name="enabled" value="1" checked>
-            <span>启用当前 Agent 池</span>
+            <input type="checkbox" name="enabled" value="1">
+            <span>启用当前 Agent</span>
           </label>
-          <div class="admin-field">
-            <span>绑定 Agent</span>
-            <div class="ac-config-checkbox-grid" id="agent-pool-agent-options"></div>
-          </div>
-          <div class="ac-config-feedback" id="agent-pool-form-feedback" hidden></div>
-          <div class="ac-config-head">
-            <button class="admin-button admin-button--primary" type="submit">保存 Agent 池</button>
+
+          <dl class="ac-config-summary-meta" id="agent-form-meta">
+            <div><dt>当前状态</dt><dd id="agent-meta-status">-</dd></div>
+            <div><dt>草稿版本</dt><dd id="agent-meta-draft-version">-</dd></div>
+            <div><dt>已发布版本</dt><dd id="agent-meta-published-version">-</dd></div>
+            <div><dt>最近变更</dt><dd id="agent-meta-change-summary">-</dd></div>
+          </dl>
+
+          <label class="admin-field">
+            <span>角色提示词</span>
+            <textarea name="role_prompt" rows="6" placeholder="填写角色提示词"></textarea>
+          </label>
+
+          <label class="admin-field">
+            <span>任务提示词</span>
+            <textarea name="task_prompt" rows="10" placeholder="填写任务提示词"></textarea>
+          </label>
+
+          <div class="admin-form-actions">
+            <button class="admin-button admin-button--primary" id="agent-form-submit" type="submit">保存草稿</button>
+            <button class="admin-button admin-button--secondary" id="agent-publish-button" type="button">发布</button>
           </div>
         </form>
       </section>
     </section>
 
-    <section class="ac-config-list-panel">
+    <section class="ac-config-panel">
       <div class="ac-config-head">
         <div>
           <h3>基础画像分层模板</h3>
-          <p class="ac-config-muted">选择问卷题目，并为多个分类绑定多个选项映射。</p>
+          <p class="ac-config-muted">选择问卷中的一道题作为分层依据，并为多个分类绑定多个选项。未命中时后续直接回落到标准版原文。</p>
         </div>
-        <button class="admin-button admin-button--primary" id="template-create-button" type="button">新建分层模板</button>
+        <div class="ac-config-row-actions">
+          <button class="admin-button admin-button--primary" id="template-create-button" type="button">新建分层模板</button>
+        </div>
       </div>
+
       <div class="ac-config-table-wrap">
         <table class="ac-config-table">
           <thead>
@@ -345,16 +466,34 @@
               <th>更新时间</th>
             </tr>
           </thead>
-          <tbody id="template-table-body"></tbody>
+          <tbody id="template-table-body">
+            {% for item in initial_templates %}
+            {% set template = item.template or {} %}
+            {% set questionnaire = item.questionnaire or {} %}
+            {% set question = item.segmentation_question or {} %}
+            {% set template_status = '启用' if template.enabled else '停用' %}
+            <tr class="is-clickable" data-template-id="{{ template.id or '' }}">
+              <td>
+                <strong>{{ template.template_name or template.template_code or '-' }}</strong>
+                <div class="ac-config-code">{{ template.template_code or '' }}</div>
+              </td>
+              <td>{{ questionnaire.name or '-' }} / {{ question.title or '-' }}</td>
+              <td>{{ (item.categories or [])|length }}</td>
+              <td>{{ template_status }}</td>
+              <td>{{ template.updated_at or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
         </table>
       </div>
-      <div class="ac-config-empty" id="template-empty" hidden>当前还没有基础画像分层模板。</div>
+
+      <div class="ac-config-empty" id="template-empty" {% if initial_templates %}hidden{% endif %}>当前还没有基础画像分层模板。</div>
 
       <section class="ac-config-panel" id="template-detail-panel" hidden>
         <div class="ac-config-head">
           <div>
-            <h4 id="template-detail-title">分层模板详情</h4>
-            <p class="ac-config-muted" id="template-detail-code"></p>
+            <h4 id="template-detail-title">模板详情</h4>
+            <p class="ac-config-code" id="template-detail-code"></p>
           </div>
           <button class="admin-button admin-button--secondary" id="template-edit-button" type="button">编辑模板</button>
         </div>
@@ -362,35 +501,37 @@
         <div id="template-detail-categories"></div>
       </section>
 
-      <section class="ac-config-form-panel" id="template-form-panel" hidden>
+      <section class="ac-config-panel" id="template-form-panel" hidden>
         <div class="ac-config-head">
           <div>
             <h4 id="template-form-title">新建分层模板</h4>
-            <p class="ac-config-muted">未命中分类时，后续发送会自动回落到标准版原文。</p>
+            <p class="ac-config-muted">点开后直接展开表单，保存成功或失败都会有明确反馈。</p>
           </div>
           <button class="admin-button admin-button--ghost" id="template-form-cancel" type="button">收起</button>
         </div>
+
+        <div class="ac-config-feedback" id="template-form-feedback" hidden></div>
+
         <form id="template-form" class="admin-form-grid admin-form-grid--stacked">
           <input type="hidden" name="template_id" value="">
-          <div class="ac-config-field-grid">
+
+          <div class="ac-config-form-grid">
             <label class="admin-field">
               <span>模板名称</span>
-              <input type="text" name="template_name" placeholder="例如：问卷基础画像模板">
+              <input type="text" name="template_name" placeholder="例如：基础画像首轮分层">
             </label>
             <label class="admin-field">
               <span>template_code</span>
               <input type="text" name="template_code" placeholder="可选，不填则后端自动生成">
             </label>
           </div>
+
           <label class="admin-field">
-            <span>模板说明</span>
-            <textarea name="description" rows="3" placeholder="补充这个分层模板的使用场景"></textarea>
+            <span>说明</span>
+            <textarea name="description" rows="3" placeholder="补充模板用途"></textarea>
           </label>
-          <label class="admin-checkbox">
-            <input type="checkbox" name="enabled" value="1" checked>
-            <span>启用当前模板</span>
-          </label>
-          <div class="ac-config-field-grid">
+
+          <div class="ac-config-form-grid">
             <label class="admin-field">
               <span>问卷</span>
               <select name="questionnaire_id"></select>
@@ -400,22 +541,146 @@
               <select name="segmentation_question_id"></select>
             </label>
           </div>
-          <section class="ac-config-panel">
-            <div class="ac-config-head">
-              <div>
-                <h4>分类与选项映射</h4>
-                <p class="ac-config-muted">分类数不限，一个分类可绑定多个问卷选项。</p>
-              </div>
-              <button class="admin-button admin-button--secondary" id="template-category-add-button" type="button">新增分类</button>
-            </div>
-            <div class="ac-config-category-list" id="template-category-list"></div>
-          </section>
-          <div class="ac-config-feedback" id="template-form-feedback" hidden></div>
+
+          <label class="admin-checkbox">
+            <input type="checkbox" name="enabled" value="1" checked>
+            <span>启用当前模板</span>
+          </label>
+
           <div class="ac-config-head">
-            <button class="admin-button admin-button--primary" type="submit">保存模板</button>
+            <div>
+              <strong>分类与选项映射</strong>
+              <p class="ac-config-muted">未命中的用户不进入默认分类，后续直接回落到标准版原文。</p>
+            </div>
+            <button class="admin-button admin-button--secondary" id="category-add-button" type="button">新增分类</button>
+          </div>
+
+          <div class="ac-config-category-list" id="template-category-list"></div>
+
+          <div class="admin-form-actions">
+            <button class="admin-button admin-button--primary" id="template-form-submit" type="submit">保存模板</button>
           </div>
         </form>
       </section>
+    </section>
+  </div>
+
+  <div class="ac-config-main">
+    <section class="ac-config-panel">
+      <div class="ac-config-head">
+        <div>
+          <h3>欢迎语 / 自动通过 / 二维码</h3>
+          <p class="ac-config-muted">这里保留自动化转化模块真实需要的默认渠道底层配置：欢迎语、是否免验证通过，以及当前默认二维码。</p>
+        </div>
+        <div class="ac-config-row-actions">
+          <button class="admin-button admin-button--secondary" id="default-channel-generate-button" type="button">重新生成二维码</button>
+        </div>
+      </div>
+
+      <div class="ac-config-feedback" id="default-channel-feedback" hidden></div>
+
+      <div class="ac-config-qr-card">
+        <img class="ac-config-qr-preview" id="default-channel-qr-image" src="" alt="默认二维码" hidden>
+        <div class="ac-config-stack">
+          <div class="ac-config-empty" id="default-channel-qr-empty">当前还没有可用二维码，保存配置后可重新生成。</div>
+          <dl class="ac-config-summary-meta">
+            <div><dt>渠道名称</dt><dd id="default-channel-name">-</dd></div>
+            <div><dt>当前状态</dt><dd id="default-channel-status">-</dd></div>
+            <div><dt>Provider</dt><dd id="default-channel-provider">-</dd></div>
+            <div><dt>默认负责人</dt><dd id="default-channel-owner">-</dd></div>
+          </dl>
+          <p class="ac-config-code" id="default-channel-qr-link"></p>
+        </div>
+      </div>
+
+      <div class="ac-config-field-status-list" id="default-channel-field-statuses"></div>
+
+      <form id="default-channel-form" class="admin-form-grid admin-form-grid--stacked">
+        <div class="ac-config-form-grid">
+          <label class="admin-field">
+            <span>渠道名称</span>
+            <input type="text" name="channel_name" placeholder="默认渠道二维码">
+          </label>
+          <label class="admin-field">
+            <span>自动通过</span>
+            <select name="auto_accept_friend">
+              <option value="0">关闭，走好友验证</option>
+              <option value="1">开启，自动通过</option>
+            </select>
+          </label>
+        </div>
+        <label class="admin-field">
+          <span>欢迎语</span>
+          <textarea name="welcome_message" rows="5" placeholder="扫码加好友后的默认欢迎语"></textarea>
+        </label>
+        <div class="admin-form-actions">
+          <button class="admin-button admin-button--primary" type="submit">保存渠道配置</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="ac-config-panel">
+      <div class="ac-config-head">
+        <div>
+          <h3>大模型 / API 配置</h3>
+          <p class="ac-config-muted">这里承接原来模型基础设施页的核心能力：模型开关、API Key、Base URL、模型名与连通性测试。</p>
+        </div>
+        <div class="ac-config-row-actions">
+          <button class="admin-button admin-button--secondary" id="model-settings-test-button" type="button">测试连接</button>
+        </div>
+      </div>
+
+      <div class="ac-config-feedback" id="model-settings-feedback" hidden></div>
+
+      <dl class="ac-config-summary-meta">
+        <div><dt>当前状态</dt><dd id="model-settings-enabled-label">-</dd></div>
+        <div><dt>API Key</dt><dd id="model-settings-api-key-mask">-</dd></div>
+        <div><dt>最近更新</dt><dd id="model-settings-updated-at">-</dd></div>
+        <div><dt>最近测试</dt><dd id="model-settings-test-result">未测试</dd></div>
+      </dl>
+
+      <form id="model-settings-form" class="admin-form-grid admin-form-grid--stacked">
+        <div class="ac-config-form-grid">
+          <label class="admin-field">
+            <span>模型开关</span>
+            <select name="enabled">
+              <option value="true">开启</option>
+              <option value="false">关闭</option>
+            </select>
+          </label>
+          <label class="admin-field">
+            <span>DeepSeek API Key</span>
+            <input type="password" name="api_key" placeholder="留空表示保持当前值">
+          </label>
+        </div>
+        <div class="ac-config-form-grid">
+          <label class="admin-field">
+            <span>Base URL</span>
+            <input type="url" name="base_url" placeholder="https://api.deepseek.com">
+          </label>
+          <label class="admin-field">
+            <span>超时时间（秒）</span>
+            <input type="number" name="timeout_seconds" min="1" step="1" placeholder="60">
+          </label>
+        </div>
+        <div class="ac-config-form-grid">
+          <label class="admin-field">
+            <span>Router Model</span>
+            <input type="text" name="router_model" placeholder="deepseek-chat">
+          </label>
+          <label class="admin-field">
+            <span>Execution Model</span>
+            <input type="text" name="execution_model" placeholder="deepseek-chat">
+          </label>
+        </div>
+        <label class="admin-field">
+          <span>Reasoner Model</span>
+          <input type="text" name="reasoner_model" placeholder="deepseek-reasoner">
+        </label>
+        <div class="admin-form-actions">
+          <button class="admin-button admin-button--primary" type="submit">保存模型配置</button>
+        </div>
+      </form>
     </section>
   </div>
 </div>
@@ -424,35 +689,38 @@
 {% block scripts_extra %}
 {{ super() }}
 <script>
-  (() => {
+  (function () {
     const root = document.getElementById('automation-agent-config-root');
     if (!root) return;
 
     const apiUrls = JSON.parse(root.dataset.apiUrls || '{}');
-    const availableAgents = JSON.parse(document.getElementById('agent-config-available-agents').textContent || '[]');
+    const adminActionToken = String(root.dataset.adminActionToken || '').trim();
+    const initialSelectedTemplateId = Number(root.dataset.selectedTemplateId || 0) || null;
+    const initialAgentPayload = JSON.parse((document.getElementById('automation-agent-config-initial-agents') || {}).textContent || '[]');
+    const initialTemplatePayload = JSON.parse((document.getElementById('automation-agent-config-initial-templates') || {}).textContent || '[]');
+    const initialCatalogPayload = JSON.parse((document.getElementById('automation-agent-config-initial-catalog') || {}).textContent || '[]');
 
     const elements = {
       feedback: document.getElementById('agent-config-feedback'),
       loading: document.getElementById('agent-config-loading'),
       summaryGrid: document.getElementById('agent-config-summary-grid'),
-      agentPoolTotal: document.getElementById('agent-pool-total'),
-      agentPoolEnabledTotal: document.getElementById('agent-pool-enabled-total'),
-      profileTemplateTotal: document.getElementById('profile-template-total'),
-      availableAgentTotal: document.getElementById('available-agent-total'),
-      agentPoolTableBody: document.getElementById('agent-pool-table-body'),
-      agentPoolEmpty: document.getElementById('agent-pool-empty'),
-      agentPoolDetailPanel: document.getElementById('agent-pool-detail-panel'),
-      agentPoolDetailTitle: document.getElementById('agent-pool-detail-title'),
-      agentPoolDetailCode: document.getElementById('agent-pool-detail-code'),
-      agentPoolDetailSummary: document.getElementById('agent-pool-detail-summary'),
-      agentPoolCreateButton: document.getElementById('agent-pool-create-button'),
-      agentPoolEditButton: document.getElementById('agent-pool-edit-button'),
-      agentPoolFormPanel: document.getElementById('agent-pool-form-panel'),
-      agentPoolFormTitle: document.getElementById('agent-pool-form-title'),
-      agentPoolFormCancel: document.getElementById('agent-pool-form-cancel'),
-      agentPoolForm: document.getElementById('agent-pool-form'),
-      agentPoolAgentOptions: document.getElementById('agent-pool-agent-options'),
-      agentPoolFormFeedback: document.getElementById('agent-pool-form-feedback'),
+      agentTotal: document.getElementById('agent-total'),
+      agentPublishedTotal: document.getElementById('agent-published-total'),
+      templateTotal: document.getElementById('template-total'),
+      catalogTotal: document.getElementById('catalog-total'),
+      agentTableBody: document.getElementById('agent-table-body'),
+      agentEmpty: document.getElementById('agent-empty'),
+      agentCreateButton: document.getElementById('agent-create-button'),
+      agentFormPanel: document.getElementById('agent-form-panel'),
+      agentFormTitle: document.getElementById('agent-form-title'),
+      agentFormFeedback: document.getElementById('agent-form-feedback'),
+      agentForm: document.getElementById('agent-form'),
+      agentFormCancel: document.getElementById('agent-form-cancel'),
+      agentPublishButton: document.getElementById('agent-publish-button'),
+      agentMetaStatus: document.getElementById('agent-meta-status'),
+      agentMetaDraftVersion: document.getElementById('agent-meta-draft-version'),
+      agentMetaPublishedVersion: document.getElementById('agent-meta-published-version'),
+      agentMetaChangeSummary: document.getElementById('agent-meta-change-summary'),
       templateTableBody: document.getElementById('template-table-body'),
       templateEmpty: document.getElementById('template-empty'),
       templateDetailPanel: document.getElementById('template-detail-panel'),
@@ -464,28 +732,79 @@
       templateEditButton: document.getElementById('template-edit-button'),
       templateFormPanel: document.getElementById('template-form-panel'),
       templateFormTitle: document.getElementById('template-form-title'),
-      templateFormCancel: document.getElementById('template-form-cancel'),
       templateForm: document.getElementById('template-form'),
-      templateCategoryAddButton: document.getElementById('template-category-add-button'),
-      templateCategoryList: document.getElementById('template-category-list'),
       templateFormFeedback: document.getElementById('template-form-feedback'),
+      templateFormCancel: document.getElementById('template-form-cancel'),
+      categoryAddButton: document.getElementById('category-add-button'),
+      categoryList: document.getElementById('template-category-list'),
+      defaultChannelFeedback: document.getElementById('default-channel-feedback'),
+      defaultChannelGenerateButton: document.getElementById('default-channel-generate-button'),
+      defaultChannelQrImage: document.getElementById('default-channel-qr-image'),
+      defaultChannelQrEmpty: document.getElementById('default-channel-qr-empty'),
+      defaultChannelName: document.getElementById('default-channel-name'),
+      defaultChannelStatus: document.getElementById('default-channel-status'),
+      defaultChannelProvider: document.getElementById('default-channel-provider'),
+      defaultChannelOwner: document.getElementById('default-channel-owner'),
+      defaultChannelQrLink: document.getElementById('default-channel-qr-link'),
+      defaultChannelFieldStatuses: document.getElementById('default-channel-field-statuses'),
+      defaultChannelForm: document.getElementById('default-channel-form'),
+      modelSettingsFeedback: document.getElementById('model-settings-feedback'),
+      modelSettingsEnabledLabel: document.getElementById('model-settings-enabled-label'),
+      modelSettingsApiKeyMask: document.getElementById('model-settings-api-key-mask'),
+      modelSettingsUpdatedAt: document.getElementById('model-settings-updated-at'),
+      modelSettingsTestResult: document.getElementById('model-settings-test-result'),
+      modelSettingsForm: document.getElementById('model-settings-form'),
+      modelSettingsTestButton: document.getElementById('model-settings-test-button'),
+    };
+
+    const agentFields = {
+      expectedDraftVersion: elements.agentForm ? elements.agentForm.querySelector('[name="expected_draft_version"]') : null,
+      agentCode: elements.agentForm ? elements.agentForm.querySelector('[name="agent_code"]') : null,
+      displayName: elements.agentForm ? elements.agentForm.querySelector('[name="display_name"]') : null,
+      enabled: elements.agentForm ? elements.agentForm.querySelector('[name="enabled"]') : null,
+      rolePrompt: elements.agentForm ? elements.agentForm.querySelector('[name="role_prompt"]') : null,
+      taskPrompt: elements.agentForm ? elements.agentForm.querySelector('[name="task_prompt"]') : null,
+    };
+
+    const templateFields = {
+      templateId: elements.templateForm ? elements.templateForm.querySelector('[name="template_id"]') : null,
+      templateName: elements.templateForm ? elements.templateForm.querySelector('[name="template_name"]') : null,
+      templateCode: elements.templateForm ? elements.templateForm.querySelector('[name="template_code"]') : null,
+      description: elements.templateForm ? elements.templateForm.querySelector('[name="description"]') : null,
+      questionnaireId: elements.templateForm ? elements.templateForm.querySelector('[name="questionnaire_id"]') : null,
+      segmentationQuestionId: elements.templateForm ? elements.templateForm.querySelector('[name="segmentation_question_id"]') : null,
+      enabled: elements.templateForm ? elements.templateForm.querySelector('[name="enabled"]') : null,
+    };
+
+    const defaultChannelFields = {
+      channelName: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="channel_name"]') : null,
+      autoAcceptFriend: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="auto_accept_friend"]') : null,
+      welcomeMessage: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="welcome_message"]') : null,
+    };
+
+    const modelSettingsFields = {
+      enabled: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="enabled"]') : null,
+      apiKey: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="api_key"]') : null,
+      baseUrl: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="base_url"]') : null,
+      timeoutSeconds: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="timeout_seconds"]') : null,
+      routerModel: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="router_model"]') : null,
+      executionModel: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="execution_model"]') : null,
+      reasonerModel: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="reasoner_model"]') : null,
     };
 
     const state = {
-      registry: null,
-      agentPools: [],
+      agents: [],
+      agentDetails: {},
+      selectedAgentCode: null,
       templates: [],
-      catalog: [],
-      categoriesDraft: [],
-      selectedAgentPoolId: Number(root.dataset.selectedAgentPoolId || 0) || null,
-      selectedTemplateId: Number(root.dataset.selectedTemplateId || 0) || null,
-      selectedAgentPoolDetail: null,
+      templateCatalog: [],
+      selectedTemplateId: initialSelectedTemplateId,
       selectedTemplateDetail: null,
+      categoryDrafts: [],
+      defaultChannel: null,
+      providerAvailable: false,
+      modelSettings: null,
     };
-
-    function withId(base, id) {
-      return String(base || '').replace(/\/0(?=\/|$|\?)/, '/' + encodeURIComponent(String(id)));
-    }
 
     function escapeHtml(value) {
       return String(value == null ? '' : value)
@@ -496,17 +815,12 @@
         .replace(/'/g, '&#39;');
     }
 
-    function showFeedback(target, message, tone) {
-      if (!target) return;
-      if (!message) {
-        target.hidden = true;
-        target.textContent = '';
-        target.className = 'ac-config-feedback';
-        return;
-      }
-      target.hidden = false;
-      target.textContent = message;
-      target.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
+    function withId(base, id) {
+      return String(base || '').replace(/\/0(?=\/|$|\?)/, '/' + encodeURIComponent(String(id)));
+    }
+
+    function withCode(base, code) {
+      return String(base || '').replace('__AGENT_CODE__', encodeURIComponent(String(code || '').trim()));
     }
 
     async function requestJson(url, options) {
@@ -518,164 +832,230 @@
       return payload;
     }
 
-    function labelFromRegistry(groupKey, code, fallback) {
-      const items = Array.isArray((state.registry || {})[groupKey]) ? state.registry[groupKey] : [];
-      const keyName = groupKey === 'agent_pool_types' ? 'pool_type' : 'status_code';
-      const match = items.find((item) => String(item[keyName] || '') === String(code || ''));
-      return match ? (match.label || fallback || code) : (fallback || code || '-');
+    function statusLabel(status) {
+      const normalized = String(status || '').trim();
+      if (normalized === 'published') return '已发布';
+      if (normalized === 'disabled') return '停用';
+      if (normalized === 'draft') return '草稿';
+      return normalized || '-';
     }
 
-    function renderAgentSummary() {
-      elements.loading.hidden = true;
-      elements.summaryGrid.hidden = false;
-      elements.agentPoolTotal.textContent = String(state.agentPools.length);
-      elements.agentPoolEnabledTotal.textContent = String(state.agentPools.filter((item) => item.enabled).length);
-      elements.profileTemplateTotal.textContent = String(state.templates.length);
-      elements.availableAgentTotal.textContent = String(availableAgents.length);
+    function statusBadgeClass(status) {
+      const normalized = String(status || '').trim();
+      if (normalized === 'published') return 'ac-config-status-badge is-published';
+      if (normalized === 'disabled') return 'ac-config-status-badge is-disabled';
+      return 'ac-config-status-badge is-draft';
     }
 
-    function renderAgentOptions(selectedCodes) {
-      const selected = new Set(selectedCodes || []);
-      elements.agentPoolAgentOptions.innerHTML = availableAgents.map((item) => `
-        <label class="ac-config-checkbox-item">
-          <input type="checkbox" name="agent_codes" value="${escapeHtml(item.agent_code)}" ${selected.has(item.agent_code) ? 'checked' : ''}>
-          <span>
-            <strong>${escapeHtml(item.display_name || item.agent_code)}</strong><br>
-            <span class="ac-config-muted">${escapeHtml(item.agent_code || '')}</span>
-          </span>
-        </label>
-      `).join('');
-    }
-
-    function renderAgentPoolTypeOptions() {
-      elements.agentPoolForm.elements.pool_type.innerHTML = (state.registry.agent_pool_types || []).map((item) => `<option value="${escapeHtml(item.pool_type)}">${escapeHtml(item.label || item.pool_type)}</option>`).join('');
-    }
-
-    function renderAgentPoolTable() {
-      elements.agentPoolTableBody.innerHTML = state.agentPools.map((item) => `
-        <tr class="is-clickable${Number(item.id || 0) === Number(state.selectedAgentPoolId || 0) ? ' is-active' : ''}" data-agent-pool-id="${escapeHtml(item.id)}">
-          <td><strong>${escapeHtml(item.pool_name || item.pool_code || '-')}</strong><div class="ac-config-muted">${escapeHtml(item.pool_code || '')}</div></td>
-          <td>${escapeHtml(labelFromRegistry('agent_pool_types', item.pool_type, item.pool_type))}</td>
-          <td>${escapeHtml((item.agents || []).map((agent) => agent.agent_name || agent.agent_code).join(' / ') || '未绑定')}</td>
-          <td>${escapeHtml(item.status || '-')}</td>
-          <td>${escapeHtml(item.updated_at || '-')}</td>
-        </tr>
-      `).join('');
-      elements.agentPoolEmpty.hidden = state.agentPools.length > 0;
-    }
-
-    function findAgentPool(agentPoolId) {
-      return state.agentPools.find((item) => Number(item.id || 0) === Number(agentPoolId || 0)) || null;
-    }
-
-    function renderAgentPoolDetail() {
-      const pool = state.selectedAgentPoolDetail || findAgentPool(state.selectedAgentPoolId);
-      if (!pool) {
-        elements.agentPoolDetailPanel.hidden = true;
+    function showFeedback(message, tone) {
+      if (!message) {
+        elements.feedback.hidden = true;
+        elements.feedback.textContent = '';
+        elements.feedback.className = 'ac-config-feedback';
         return;
       }
-      elements.agentPoolDetailPanel.hidden = false;
-      elements.agentPoolDetailTitle.textContent = pool.pool_name || pool.pool_code || 'Agent 池详情';
-      elements.agentPoolDetailCode.textContent = 'pool_code=' + (pool.pool_code || '-');
-      elements.agentPoolDetailSummary.innerHTML = `
-        <div><dt>pool_type</dt><dd>${escapeHtml(labelFromRegistry('agent_pool_types', pool.pool_type, pool.pool_type))}</dd></div>
-        <div><dt>状态</dt><dd>${escapeHtml(pool.status || '-')}</dd></div>
-        <div><dt>绑定 Agent</dt><dd>${escapeHtml((pool.agents || []).map((item) => item.agent_name || item.agent_code).join(' / ') || '未绑定')}</dd></div>
-        <div><dt>说明</dt><dd>${escapeHtml(pool.description || '暂无说明')}</dd></div>
-      `;
+      elements.feedback.hidden = false;
+      elements.feedback.textContent = message;
+      elements.feedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
     }
 
-    function openAgentPoolForm(pool) {
-      elements.agentPoolFormPanel.hidden = false;
-      showFeedback(elements.agentPoolFormFeedback, '', '');
-      elements.agentPoolForm.reset();
-      renderAgentPoolTypeOptions();
-      if (pool) {
-        elements.agentPoolFormTitle.textContent = '编辑 Agent 池';
-        elements.agentPoolForm.elements.agent_pool_id.value = String(pool.id || '');
-        elements.agentPoolForm.elements.pool_name.value = pool.pool_name || '';
-        elements.agentPoolForm.elements.pool_code.value = pool.pool_code || '';
-        elements.agentPoolForm.elements.pool_type.value = pool.pool_type || 'shared';
-        elements.agentPoolForm.elements.description.value = pool.description || '';
-        elements.agentPoolForm.elements.enabled.checked = !!pool.enabled;
-        renderAgentOptions((pool.agents || []).map((item) => item.agent_code));
-      } else {
-        elements.agentPoolFormTitle.textContent = '新建 Agent 池';
-        elements.agentPoolForm.elements.enabled.checked = true;
-        elements.agentPoolForm.elements.pool_type.value = 'shared';
-        renderAgentOptions([]);
+    function showAgentFormFeedback(message, tone) {
+      if (!message) {
+        elements.agentFormFeedback.hidden = true;
+        elements.agentFormFeedback.textContent = '';
+        elements.agentFormFeedback.className = 'ac-config-feedback';
+        return;
       }
+      elements.agentFormFeedback.hidden = false;
+      elements.agentFormFeedback.textContent = message;
+      elements.agentFormFeedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
     }
 
-    function closeAgentPoolForm() {
-      elements.agentPoolFormPanel.hidden = true;
-      showFeedback(elements.agentPoolFormFeedback, '', '');
+    function showTemplateFormFeedback(message, tone) {
+      if (!message) {
+        elements.templateFormFeedback.hidden = true;
+        elements.templateFormFeedback.textContent = '';
+        elements.templateFormFeedback.className = 'ac-config-feedback';
+        return;
+      }
+      elements.templateFormFeedback.hidden = false;
+      elements.templateFormFeedback.textContent = message;
+      elements.templateFormFeedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
     }
 
-    function buildAgentPoolPayload() {
-      const poolName = String(elements.agentPoolForm.elements.pool_name.value || '').trim();
-      const agentCodes = Array.from(elements.agentPoolForm.querySelectorAll('input[name="agent_codes"]:checked')).map((input, index) => ({
-        agent_code: input.value,
-        role_code: 'primary',
-        position_index: index,
-      }));
-      if (!poolName) throw new Error('Agent 池名称不能为空');
+    function showDefaultChannelFeedback(message, tone) {
+      if (!message) {
+        elements.defaultChannelFeedback.hidden = true;
+        elements.defaultChannelFeedback.textContent = '';
+        elements.defaultChannelFeedback.className = 'ac-config-feedback';
+        return;
+      }
+      elements.defaultChannelFeedback.hidden = false;
+      elements.defaultChannelFeedback.textContent = message;
+      elements.defaultChannelFeedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
+    }
+
+    function showModelSettingsFeedback(message, tone) {
+      if (!message) {
+        elements.modelSettingsFeedback.hidden = true;
+        elements.modelSettingsFeedback.textContent = '';
+        elements.modelSettingsFeedback.className = 'ac-config-feedback';
+        return;
+      }
+      elements.modelSettingsFeedback.hidden = false;
+      elements.modelSettingsFeedback.textContent = message;
+      elements.modelSettingsFeedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
+    }
+
+    function normalizeAgentItem(item) {
+      const status = String(item.status || item.status_code || '').trim() || 'draft';
       return {
-        pool_name: poolName,
-        pool_code: String(elements.agentPoolForm.elements.pool_code.value || '').trim() || undefined,
-        pool_type: String(elements.agentPoolForm.elements.pool_type.value || '').trim() || 'shared',
-        description: String(elements.agentPoolForm.elements.description.value || '').trim(),
-        enabled: !!elements.agentPoolForm.elements.enabled.checked,
-        agents: agentCodes,
+        agent_code: String(item.agent_code || '').trim(),
+        agent_name: String(item.agent_name || item.display_name || item.agent_code || '').trim(),
+        status,
       };
     }
 
-    async function saveAgentPool(event) {
-      event.preventDefault();
-      try {
-        const payload = buildAgentPoolPayload();
-        const agentPoolId = Number(elements.agentPoolForm.elements.agent_pool_id.value || 0);
-        const result = await requestJson(agentPoolId ? withId(apiUrls.agent_pool_detail_base, agentPoolId) : apiUrls.agent_pools.replace(/[?].*$/, ''), {
-          method: agentPoolId ? 'PUT' : 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        await loadAgentPools();
-        state.selectedAgentPoolId = Number(((result.agent_pool || {}).id) || agentPoolId || 0);
-        await loadAgentPoolDetail(state.selectedAgentPoolId);
-        renderAgentPoolTable();
-        renderAgentPoolDetail();
-        closeAgentPoolForm();
-        showFeedback(elements.feedback, agentPoolId ? 'Agent 池已更新' : 'Agent 池已创建', 'success');
-      } catch (error) {
-        showFeedback(elements.agentPoolFormFeedback, error.message || '保存 Agent 池失败', 'error');
+    function selectedCatalogQuestionnaire() {
+      const questionnaireId = Number((templateFields.questionnaireId || {}).value || 0);
+      return state.templateCatalog.find((item) => Number(item.id || 0) === questionnaireId) || null;
+    }
+
+    function selectedCatalogQuestion() {
+      const questionnaire = selectedCatalogQuestionnaire();
+      const questionId = Number((templateFields.segmentationQuestionId || {}).value || 0);
+      return ((questionnaire || {}).questions || []).find((item) => Number(item.id || 0) === questionId) || null;
+    }
+
+    function currentQuestionOptions() {
+      return (selectedCatalogQuestion() || {}).options || [];
+    }
+
+    function renderSummary() {
+      elements.loading.hidden = true;
+      elements.summaryGrid.hidden = false;
+      elements.agentTotal.textContent = String(state.agents.length);
+      elements.agentPublishedTotal.textContent = String(state.agents.filter((item) => item.status === 'published').length);
+      elements.templateTotal.textContent = String(state.templates.length);
+      elements.catalogTotal.textContent = String(state.templateCatalog.length);
+    }
+
+    function renderAgentSelectOptions() {
+      if (!agentFields.agentCode) return;
+      const options = state.agents.map((item) => (
+        `<option value="${escapeHtml(item.agent_code)}">${escapeHtml(item.agent_name || item.agent_code)}</option>`
+      )).join('');
+      agentFields.agentCode.innerHTML = options || '<option value="">暂无可用 Agent</option>';
+      if (state.selectedAgentCode) {
+        agentFields.agentCode.value = state.selectedAgentCode;
       }
     }
 
-    function questionnaireOptions() {
-      return state.catalog.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || item.slug || item.id)}</option>`).join('');
+    function renderAgents() {
+      elements.agentTableBody.innerHTML = state.agents.map((item) => {
+        const isActive = item.agent_code === state.selectedAgentCode;
+        return `
+          <tr data-agent-code="${escapeHtml(item.agent_code)}"${isActive ? ' class="is-active"' : ''}>
+            <td>
+              <strong>${escapeHtml(item.agent_name || item.agent_code || '-')}</strong>
+              <div class="ac-config-code">${escapeHtml(item.agent_code || '')}</div>
+            </td>
+            <td>
+              <span class="${statusBadgeClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
+            </td>
+            <td>
+              <div class="ac-config-row-actions">
+                <button class="admin-button admin-button--secondary" type="button" data-agent-edit="${escapeHtml(item.agent_code)}">编辑</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      elements.agentEmpty.hidden = state.agents.length > 0;
+      renderAgentSelectOptions();
     }
 
-    function findQuestionnaire(questionnaireId) {
-      return state.catalog.find((item) => Number(item.id || 0) === Number(questionnaireId || 0)) || null;
+    function renderQuestionnaireOptions() {
+      const select = templateFields.questionnaireId;
+      if (!select) return;
+      select.innerHTML = '<option value="">请选择问卷</option>' + state.templateCatalog.map((item) => (
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || item.slug || item.id)}</option>`
+      )).join('');
     }
 
-    function findTemplate(templateId) {
-      return state.templates.find((item) => Number(((item.template || {}).id) || 0) === Number(templateId || 0)) || null;
+    function renderQuestionOptions() {
+      const questionnaire = selectedCatalogQuestionnaire();
+      const select = templateFields.segmentationQuestionId;
+      if (!select) return;
+      const questions = ((questionnaire || {}).questions || []).filter((item) => ['single_choice', 'multi_choice'].includes(String(item.type || '')));
+      select.innerHTML = '<option value="">请选择分层题目</option>' + questions.map((item) => (
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title || item.id)} · ${escapeHtml(item.type || '')}</option>`
+      )).join('');
+    }
+
+    function renderCategoryDrafts() {
+      const options = currentQuestionOptions();
+      elements.categoryList.innerHTML = state.categoryDrafts.map((category, index) => `
+        <section class="ac-config-category-card" data-category-index="${escapeHtml(index)}">
+          <div class="ac-config-head">
+            <div>
+              <strong>分类 ${escapeHtml(index + 1)}</strong>
+              <p class="ac-config-muted">一个分类可绑定多个问卷选项。</p>
+            </div>
+            <button class="admin-button admin-button--ghost" type="button" data-category-remove="${escapeHtml(index)}">删除</button>
+          </div>
+          <div class="ac-config-form-grid">
+            <label class="admin-field">
+              <span>分类名称</span>
+              <input type="text" data-field="category_name" data-index="${escapeHtml(index)}" value="${escapeHtml(category.category_name || '')}" placeholder="例如：高意向用户">
+            </label>
+            <label class="admin-field">
+              <span>category_key</span>
+              <input type="text" data-field="category_key" data-index="${escapeHtml(index)}" value="${escapeHtml(category.category_key || '')}" placeholder="可选，不填则后端自动生成">
+            </label>
+          </div>
+          <label class="admin-field">
+            <span>说明</span>
+            <textarea rows="3" data-field="description" data-index="${escapeHtml(index)}" placeholder="补充分类说明">${escapeHtml(category.description || '')}</textarea>
+          </label>
+          <label class="admin-checkbox">
+            <input type="checkbox" data-field="enabled" data-index="${escapeHtml(index)}" ${category.enabled === false ? '' : 'checked'}>
+            <span>启用该分类</span>
+          </label>
+          <div class="ac-config-option-grid">
+            ${options.map((option) => `
+              <label class="ac-config-option-item">
+                <input
+                  type="checkbox"
+                  data-field="option_ids"
+                  data-index="${escapeHtml(index)}"
+                  value="${escapeHtml(option.id)}"
+                  ${(category.option_ids || []).includes(Number(option.id || 0)) ? 'checked' : ''}
+                >
+                <span>${escapeHtml(option.option_text || option.id)}</span>
+              </label>
+            `).join('') || '<div class="ac-config-empty">请先选择可分层的单选题或多选题。</div>'}
+          </div>
+        </section>
+      `).join('') || '<div class="ac-config-empty">当前还没有分类，请先新增分类。</div>';
     }
 
     function renderTemplateTable() {
       elements.templateTableBody.innerHTML = state.templates.map((item) => {
         const template = item.template || {};
-        const question = item.segmentation_question || {};
         const questionnaire = item.questionnaire || {};
+        const question = item.segmentation_question || {};
+        const isActive = Number(template.id || 0) === Number(state.selectedTemplateId || 0);
+        const status = template.enabled ? '启用' : '停用';
         return `
-          <tr class="is-clickable${Number(template.id || 0) === Number(state.selectedTemplateId || 0) ? ' is-active' : ''}" data-template-id="${escapeHtml(template.id)}">
-            <td><strong>${escapeHtml(template.template_name || template.template_code || '-')}</strong><div class="ac-config-muted">${escapeHtml(template.template_code || '')}</div></td>
+          <tr class="is-clickable${isActive ? ' is-active' : ''}" data-template-id="${escapeHtml(template.id)}">
+            <td>
+              <strong>${escapeHtml(template.template_name || template.template_code || '-')}</strong>
+              <div class="ac-config-code">${escapeHtml(template.template_code || '')}</div>
+            </td>
             <td>${escapeHtml(questionnaire.name || '-')} / ${escapeHtml(question.title || '-')}</td>
             <td>${escapeHtml((item.categories || []).length)}</td>
-            <td>${escapeHtml(template.status || '-')}</td>
+            <td>${escapeHtml(status)}</td>
             <td>${escapeHtml(template.updated_at || '-')}</td>
           </tr>
         `;
@@ -684,345 +1064,678 @@
     }
 
     function renderTemplateDetail() {
-      const bundle = state.selectedTemplateDetail || findTemplate(state.selectedTemplateId);
-      if (!bundle) {
+      const detail = state.selectedTemplateDetail;
+      if (!detail) {
         elements.templateDetailPanel.hidden = true;
         return;
       }
-      const template = bundle.template || {};
-      const questionnaire = bundle.questionnaire || {};
-      const question = bundle.segmentation_question || {};
+      const template = detail.template || {};
+      const questionnaire = detail.questionnaire || {};
+      const question = detail.segmentation_question || {};
       elements.templateDetailPanel.hidden = false;
       elements.templateDetailTitle.textContent = template.template_name || template.template_code || '模板详情';
       elements.templateDetailCode.textContent = 'template_code=' + (template.template_code || '-');
       elements.templateDetailSummary.innerHTML = `
         <div><dt>问卷</dt><dd>${escapeHtml(questionnaire.name || '-')}</dd></div>
         <div><dt>分层题目</dt><dd>${escapeHtml(question.title || '-')}</dd></div>
-        <div><dt>分类数</dt><dd>${escapeHtml((bundle.categories || []).length)}</dd></div>
-        <div><dt>状态</dt><dd>${escapeHtml(template.status || '-')}</dd></div>
-        <div><dt>说明</dt><dd>${escapeHtml(template.description || '暂无说明')}</dd></div>
+        <div><dt>分类数</dt><dd>${escapeHtml((detail.categories || []).length)}</dd></div>
+        <div><dt>状态</dt><dd>${escapeHtml(template.enabled ? '启用' : '停用')}</dd></div>
+        <div><dt>版本</dt><dd>${escapeHtml(template.version || 1)}</dd></div>
+        <div><dt>说明</dt><dd>${escapeHtml(template.description || '暂无描述')}</dd></div>
       `;
-      elements.templateDetailCategories.innerHTML = (bundle.categories || []).map((item) => `
-        <article class="ac-config-category-card">
-          <strong>${escapeHtml(item.category_name || item.category_key)}</strong>
-          <div class="ac-config-muted">${escapeHtml(item.description || '暂无说明')}</div>
-          <div class="ac-config-muted">绑定选项：${escapeHtml((item.option_mappings || []).map((mapping) => ((mapping.option || {}).option_text) || mapping.option_id).join(' / ') || '无')}</div>
-        </article>
+      elements.templateDetailCategories.innerHTML = (detail.categories || []).map((category) => `
+        <section class="ac-config-category-card">
+          <div>
+            <strong>${escapeHtml(category.category_name || category.category_key || '-')}</strong>
+            <p class="ac-config-code">${escapeHtml(category.category_key || '')}</p>
+            <p class="ac-config-muted">${escapeHtml(category.description || '暂无说明')}</p>
+          </div>
+          <div class="ac-config-option-grid">
+            ${(category.option_mappings || []).map((mapping) => `
+              <div class="ac-config-option-item">
+                <span>${escapeHtml((((mapping || {}).option) || {}).option_text || String(mapping.option_id || '-'))}</span>
+              </div>
+            `).join('') || '<div class="ac-config-empty">当前分类未绑定选项。</div>'}
+          </div>
+        </section>
       `).join('') || '<div class="ac-config-empty">当前模板还没有分类。</div>';
     }
 
-    function renderQuestionSelect() {
-      const questionnaireId = Number(elements.templateForm.elements.questionnaire_id.value || 0);
-      const questionnaire = findQuestionnaire(questionnaireId);
-      const questions = ((questionnaire || {}).questions || []).filter((item) => ['single_choice', 'multi_choice'].includes(String(item.type || '')));
-      elements.templateForm.elements.segmentation_question_id.innerHTML = questions.length
-        ? questions.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title || item.id)}</option>`).join('')
-        : '<option value="">当前问卷没有可用于分层的单选/多选题</option>';
+    function channelFieldStatusLabel(status) {
+      const normalized = String(status || '').trim();
+      if (normalized === 'applied') return '已生效';
+      if (normalized === 'pending') return '待重新生成二维码后生效';
+      if (normalized === 'unsupported') return '当前 provider 不支持';
+      if (normalized === 'not_set') return '未配置';
+      return normalized || '-';
     }
 
-    function questionOptions() {
-      const questionnaireId = Number(elements.templateForm.elements.questionnaire_id.value || 0);
-      const questionId = Number(elements.templateForm.elements.segmentation_question_id.value || 0);
-      const questionnaire = findQuestionnaire(questionnaireId);
-      const question = ((questionnaire || {}).questions || []).find((item) => Number(item.id || 0) === questionId) || null;
-      return (question && Array.isArray(question.options)) ? question.options : [];
+    function renderDefaultChannel() {
+      const channel = state.defaultChannel || {};
+      const qrUrl = String(channel.qr_url || '').trim();
+      elements.defaultChannelName.textContent = channel.channel_name || '-';
+      elements.defaultChannelStatus.textContent = channel.status || '-';
+      elements.defaultChannelProvider.textContent = state.providerAvailable ? '已接入' : '未接入';
+      elements.defaultChannelOwner.textContent = channel.owner_staff_id || '-';
+
+      if (defaultChannelFields.channelName) defaultChannelFields.channelName.value = channel.channel_name || '';
+      if (defaultChannelFields.autoAcceptFriend) defaultChannelFields.autoAcceptFriend.value = channel.auto_accept_friend ? '1' : '0';
+      if (defaultChannelFields.welcomeMessage) defaultChannelFields.welcomeMessage.value = channel.welcome_message || '';
+
+      if (qrUrl) {
+        elements.defaultChannelQrImage.hidden = false;
+        elements.defaultChannelQrImage.src = qrUrl;
+        elements.defaultChannelQrEmpty.hidden = true;
+        elements.defaultChannelQrLink.innerHTML = `<a href="${escapeHtml(qrUrl)}" target="_blank" rel="noreferrer">打开当前二维码链接</a>`;
+      } else {
+        elements.defaultChannelQrImage.hidden = true;
+        elements.defaultChannelQrImage.removeAttribute('src');
+        elements.defaultChannelQrEmpty.hidden = false;
+        elements.defaultChannelQrLink.textContent = '';
+      }
+
+      const fieldStatuses = channel.field_statuses || {};
+      elements.defaultChannelFieldStatuses.innerHTML = [
+        {
+          key: 'welcome_message',
+          label: '欢迎语',
+        },
+        {
+          key: 'auto_accept_friend',
+          label: '自动通过',
+        },
+      ].map((item) => {
+        const statusItem = fieldStatuses[item.key] || {};
+        return `
+          <div class="ac-config-field-status-item">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span class="${statusBadgeClass(statusItem.status === 'applied' ? 'published' : statusItem.status === 'unsupported' ? 'disabled' : 'draft')}">${escapeHtml(channelFieldStatusLabel(statusItem.status))}</span>
+            <p>${escapeHtml(statusItem.detail || '暂无说明')}</p>
+          </div>
+        `;
+      }).join('');
     }
 
-    function renderCategoryDraft() {
-      const options = questionOptions();
-      elements.templateCategoryList.innerHTML = state.categoriesDraft.map((item, index) => `
-        <article class="ac-config-category-card" data-category-index="${index}">
-          <div class="ac-config-head">
-            <div>
-              <strong>分类 ${index + 1}</strong>
-              <div class="ac-config-muted">一个分类可以绑定多个问卷选项。</div>
-            </div>
-            <button class="admin-button admin-button--ghost" type="button" data-category-action="remove" data-category-index="${index}">删除</button>
-          </div>
-          <div class="ac-config-field-grid">
-            <label class="admin-field">
-              <span>分类名称</span>
-              <input type="text" data-category-field="category_name" data-category-index="${index}" value="${escapeHtml(item.category_name || '')}">
-            </label>
-            <label class="admin-field">
-              <span>category_key</span>
-              <input type="text" data-category-field="category_key" data-category-index="${index}" value="${escapeHtml(item.category_key || '')}" placeholder="可选，不填则按名称生成">
-            </label>
-          </div>
-          <label class="admin-field">
-            <span>分类说明</span>
-            <input type="text" data-category-field="description" data-category-index="${index}" value="${escapeHtml(item.description || '')}">
-          </label>
-          <label class="admin-checkbox">
-            <input type="checkbox" data-category-field="enabled" data-category-index="${index}" ${item.enabled === false ? '' : 'checked'}>
-            <span>启用当前分类</span>
-          </label>
-          <div class="ac-config-category-options">
-            ${options.map((option) => `
-              <label class="ac-config-checkbox-item">
-                <input type="checkbox" data-category-option-id="${escapeHtml(option.id)}" data-category-index="${index}" ${((item.option_ids || []).includes(option.id)) ? 'checked' : ''}>
-                <span>${escapeHtml(option.option_text || option.id)}</span>
-              </label>
-            `).join('')}
-          </div>
-        </article>
-      `).join('') || '<div class="ac-config-empty">请至少新增一个分类。</div>';
+    function renderModelSettings() {
+      const payload = state.modelSettings || {};
+      const deepseek = payload.deepseek || {};
+      elements.modelSettingsEnabledLabel.textContent = deepseek.enabled ? '开启中' : '已关闭';
+      elements.modelSettingsApiKeyMask.textContent = deepseek.api_key_masked || (deepseek.api_key_configured ? '已配置' : '未配置');
+      elements.modelSettingsUpdatedAt.textContent = deepseek.updated_at || '-';
+
+      if (modelSettingsFields.enabled) modelSettingsFields.enabled.value = deepseek.enabled ? 'true' : 'false';
+      if (modelSettingsFields.apiKey) modelSettingsFields.apiKey.value = '';
+      if (modelSettingsFields.baseUrl) modelSettingsFields.baseUrl.value = deepseek.base_url || '';
+      if (modelSettingsFields.timeoutSeconds) modelSettingsFields.timeoutSeconds.value = String(deepseek.timeout_seconds || '');
+      if (modelSettingsFields.routerModel) modelSettingsFields.routerModel.value = deepseek.router_model || '';
+      if (modelSettingsFields.executionModel) modelSettingsFields.executionModel.value = deepseek.execution_model || '';
+      if (modelSettingsFields.reasonerModel) modelSettingsFields.reasonerModel.value = deepseek.reasoner_model || '';
     }
 
-    function openTemplateForm(bundle) {
-      elements.templateFormPanel.hidden = false;
-      showFeedback(elements.templateFormFeedback, '', '');
+    function syncInitialState() {
+      state.agents = Array.isArray(initialAgentPayload) ? initialAgentPayload.map(normalizeAgentItem) : [];
+      state.templates = Array.isArray(initialTemplatePayload) ? initialTemplatePayload : [];
+      state.templateCatalog = Array.isArray(initialCatalogPayload) ? initialCatalogPayload : [];
+      if (!state.selectedAgentCode && state.agents.length) {
+        state.selectedAgentCode = state.agents[0].agent_code;
+      }
+      renderSummary();
+      renderAgents();
+      renderTemplateTable();
+      renderQuestionnaireOptions();
+      renderQuestionOptions();
+      if (state.templates.length) {
+        const matched = state.templates.find((item) => Number((((item || {}).template) || {}).id || 0) === Number(state.selectedTemplateId || 0));
+        state.selectedTemplateDetail = matched || state.templates[0] || null;
+        state.selectedTemplateId = Number((((state.selectedTemplateDetail || {}).template) || {}).id || 0) || null;
+        renderTemplateTable();
+        renderTemplateDetail();
+      } else {
+        state.selectedTemplateDetail = null;
+        state.selectedTemplateId = null;
+        renderTemplateDetail();
+      }
+    }
+
+    async function refreshAgents() {
+      const result = await requestJson(apiUrls.agents_options, { credentials: 'same-origin' });
+      state.agents = (result.items || []).map(normalizeAgentItem);
+      if (state.selectedAgentCode && !state.agents.some((item) => item.agent_code === state.selectedAgentCode)) {
+        state.selectedAgentCode = state.agents.length ? state.agents[0].agent_code : null;
+      }
+      renderSummary();
+      renderAgents();
+    }
+
+    function fillAgentForm(detail) {
+      const item = detail || {};
+      const draft = item.draft || {};
+      const publishedVersion = Number(item.published_version || 0);
+      const hasUnpublishedChanges = !!item.has_unpublished_changes;
+      const derivedStatus = !item.enabled ? 'disabled' : publishedVersion > 0 && !hasUnpublishedChanges ? 'published' : 'draft';
+
+      state.selectedAgentCode = item.agent_code || state.selectedAgentCode;
+      renderAgents();
+      renderAgentSelectOptions();
+
+      if (agentFields.agentCode) agentFields.agentCode.value = item.agent_code || '';
+      if (agentFields.displayName) agentFields.displayName.value = item.display_name || '';
+      if (agentFields.enabled) agentFields.enabled.checked = !!item.enabled;
+      if (agentFields.rolePrompt) agentFields.rolePrompt.value = draft.role_prompt || '';
+      if (agentFields.taskPrompt) agentFields.taskPrompt.value = draft.task_prompt || '';
+      if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = String(item.draft_version || 1);
+
+      elements.agentMetaStatus.textContent = item.enabled
+        ? (hasUnpublishedChanges && publishedVersion > 0 ? '已发布，当前有未发布草稿' : statusLabel(derivedStatus))
+        : '停用';
+      elements.agentMetaDraftVersion.textContent = String(item.draft_version || 1);
+      elements.agentMetaPublishedVersion.textContent = String(item.published_version || 0);
+      elements.agentMetaChangeSummary.textContent = item.last_change_summary || '暂无变更摘要';
+    }
+
+    async function loadAgentDetail(agentCode) {
+      const normalizedCode = String(agentCode || '').trim();
+      if (!normalizedCode) {
+        throw new Error('请选择 Agent');
+      }
+      const result = await requestJson(withCode(apiUrls.agent_detail_base, normalizedCode), { credentials: 'same-origin' });
+      state.agentDetails[normalizedCode] = result.item || {};
+      fillAgentForm(state.agentDetails[normalizedCode]);
+      return state.agentDetails[normalizedCode];
+    }
+
+    async function openAgentForm(agentCode) {
+      if (!state.agents.length) {
+        showFeedback('当前没有可编辑的 Agent。', 'error');
+        return;
+      }
+      elements.agentFormPanel.hidden = false;
+      elements.agentFormTitle.textContent = '新增 / 编辑 Agent';
+      showAgentFormFeedback('', '');
+      const targetCode = String(agentCode || state.selectedAgentCode || state.agents[0].agent_code || '').trim();
+      await loadAgentDetail(targetCode);
+      elements.agentFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (agentFields.displayName) {
+        requestAnimationFrame(() => agentFields.displayName.focus());
+      }
+    }
+
+    function closeAgentForm() {
+      elements.agentFormPanel.hidden = true;
+      showAgentFormFeedback('', '');
+    }
+
+    function collectAgentPayload() {
+      const agentCode = String((agentFields.agentCode || {}).value || '').trim();
+      const displayName = String((agentFields.displayName || {}).value || '').trim();
+      const rolePrompt = String((agentFields.rolePrompt || {}).value || '').trim();
+      const taskPrompt = String((agentFields.taskPrompt || {}).value || '').trim();
+      if (!agentCode) throw new Error('请选择 Agent');
+      if (!displayName) throw new Error('显示名称不能为空');
+      if (!rolePrompt) throw new Error('角色提示词不能为空');
+      if (!taskPrompt) throw new Error('任务提示词不能为空');
+      return {
+        admin_action_token: adminActionToken,
+        display_name: displayName,
+        enabled: !!((agentFields.enabled || {}).checked),
+        role_prompt: rolePrompt,
+        task_prompt: taskPrompt,
+        expected_draft_version: Number((agentFields.expectedDraftVersion || {}).value || 1) || 1,
+        change_summary: '自动化转化模块内更新 Agent 配置',
+      };
+    }
+
+    async function refreshTemplates() {
+      const [templateResult, catalogResult] = await Promise.all([
+        requestJson(apiUrls.profile_segment_templates, { credentials: 'same-origin' }),
+        requestJson(apiUrls.profile_segment_template_catalog, { credentials: 'same-origin' }),
+      ]);
+      state.templates = templateResult.items || [];
+      state.templateCatalog = catalogResult.items || [];
+      renderSummary();
+      renderTemplateTable();
+      renderQuestionnaireOptions();
+      renderQuestionOptions();
+      if (state.templates.length) {
+        const targetId = state.templates.some((item) => Number((((item || {}).template) || {}).id || 0) === Number(state.selectedTemplateId || 0))
+          ? state.selectedTemplateId
+          : Number((((state.templates[0] || {}).template) || {}).id || 0);
+        if (targetId) {
+          await loadTemplateDetail(targetId);
+        }
+      } else {
+        state.selectedTemplateId = null;
+        state.selectedTemplateDetail = null;
+        renderTemplateDetail();
+      }
+    }
+
+    async function refreshDefaultChannel() {
+      const result = await requestJson(apiUrls.default_channel_settings, { credentials: 'same-origin' });
+      state.defaultChannel = result.default_channel || {};
+      state.providerAvailable = !!result.provider_available;
+      renderDefaultChannel();
+    }
+
+    async function refreshModelSettings() {
+      const result = await requestJson(apiUrls.model_settings, { credentials: 'same-origin' });
+      state.modelSettings = result || {};
+      renderModelSettings();
+    }
+
+    function collectDefaultChannelPayload() {
+      return {
+        admin_action_token: adminActionToken,
+        channel_name: String((defaultChannelFields.channelName || {}).value || '').trim(),
+        auto_accept_friend: String((defaultChannelFields.autoAcceptFriend || {}).value || '0') === '1',
+        welcome_message: String((defaultChannelFields.welcomeMessage || {}).value || '').trim(),
+      };
+    }
+
+    function collectModelSettingsPayload() {
+      return {
+        admin_action_token: adminActionToken,
+        enabled: String((modelSettingsFields.enabled || {}).value || 'false') === 'true',
+        api_key: String((modelSettingsFields.apiKey || {}).value || '').trim(),
+        base_url: String((modelSettingsFields.baseUrl || {}).value || '').trim(),
+        timeout_seconds: Number((modelSettingsFields.timeoutSeconds || {}).value || 0) || '',
+        router_model: String((modelSettingsFields.routerModel || {}).value || '').trim(),
+        execution_model: String((modelSettingsFields.executionModel || {}).value || '').trim(),
+        reasoner_model: String((modelSettingsFields.reasonerModel || {}).value || '').trim(),
+      };
+    }
+
+    function resetTemplateForm() {
       elements.templateForm.reset();
-      elements.templateForm.elements.questionnaire_id.innerHTML = '<option value="">请选择问卷</option>' + questionnaireOptions();
-      if (bundle) {
-        const template = bundle.template || {};
-        elements.templateFormTitle.textContent = '编辑分层模板';
-        elements.templateForm.elements.template_id.value = String(template.id || '');
-        elements.templateForm.elements.template_name.value = template.template_name || '';
-        elements.templateForm.elements.template_code.value = template.template_code || '';
-        elements.templateForm.elements.description.value = template.description || '';
-        elements.templateForm.elements.enabled.checked = !!template.enabled;
-        elements.templateForm.elements.questionnaire_id.value = template.questionnaire_id || '';
-        renderQuestionSelect();
-        elements.templateForm.elements.segmentation_question_id.value = template.segmentation_question_id || '';
-        state.categoriesDraft = (bundle.categories || []).map((item) => ({
-          category_name: item.category_name || '',
+      if (templateFields.templateId) templateFields.templateId.value = '';
+      renderQuestionnaireOptions();
+      renderQuestionOptions();
+      state.categoryDrafts = [];
+      renderCategoryDrafts();
+      showTemplateFormFeedback('', '');
+    }
+
+    function openTemplateForm(mode, detail) {
+      elements.templateFormPanel.hidden = false;
+      elements.templateFormTitle.textContent = mode === 'edit' ? '编辑分层模板' : '新建分层模板';
+      resetTemplateForm();
+      if (mode === 'edit' && detail) {
+        const template = detail.template || {};
+        if (templateFields.templateId) templateFields.templateId.value = String(template.id || '');
+        if (templateFields.templateName) templateFields.templateName.value = template.template_name || '';
+        if (templateFields.templateCode) templateFields.templateCode.value = template.template_code || '';
+        if (templateFields.description) templateFields.description.value = template.description || '';
+        if (templateFields.questionnaireId) templateFields.questionnaireId.value = template.questionnaire_id || '';
+        renderQuestionOptions();
+        if (templateFields.segmentationQuestionId) templateFields.segmentationQuestionId.value = template.segmentation_question_id || '';
+        if (templateFields.enabled) templateFields.enabled.checked = !!template.enabled;
+        state.categoryDrafts = (detail.categories || []).map((item) => ({
           category_key: item.category_key || '',
+          category_name: item.category_name || '',
           description: item.description || '',
           enabled: item.enabled !== false,
-          option_ids: (item.option_ids || []).map((value) => Number(value)),
+          option_ids: Array.isArray(item.option_ids) ? item.option_ids.map((value) => Number(value || 0)).filter(Boolean) : [],
         }));
-      } else {
-        elements.templateFormTitle.textContent = '新建分层模板';
-        elements.templateForm.elements.enabled.checked = true;
-        renderQuestionSelect();
-        state.categoriesDraft = [];
+      } else if (templateFields.enabled) {
+        templateFields.enabled.checked = true;
       }
-      renderCategoryDraft();
+      renderCategoryDrafts();
+      elements.templateFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (templateFields.templateName) {
+        requestAnimationFrame(() => templateFields.templateName.focus());
+      }
     }
 
     function closeTemplateForm() {
       elements.templateFormPanel.hidden = true;
-      showFeedback(elements.templateFormFeedback, '', '');
+      showTemplateFormFeedback('', '');
     }
 
-    function buildTemplatePayload() {
-      const templateName = String(elements.templateForm.elements.template_name.value || '').trim();
-      const questionnaireId = Number(elements.templateForm.elements.questionnaire_id.value || 0);
-      const questionId = Number(elements.templateForm.elements.segmentation_question_id.value || 0);
-      if (!templateName) throw new Error('模板名称不能为空');
-      if (!questionnaireId) throw new Error('请选择问卷');
-      if (!questionId) throw new Error('请选择分层题目');
-      const categories = state.categoriesDraft.map((item, index) => ({
+    function collectTemplatePayload() {
+      const questionnaireId = Number((templateFields.questionnaireId || {}).value || 0);
+      const questionId = Number((templateFields.segmentationQuestionId || {}).value || 0);
+      const categories = state.categoryDrafts.map((item) => ({
+        category_key: String(item.category_key || '').trim(),
         category_name: String(item.category_name || '').trim(),
-        category_key: String(item.category_key || '').trim() || undefined,
         description: String(item.description || '').trim(),
         enabled: item.enabled !== false,
-        sort_order: index + 1,
-        option_ids: Array.from(new Set((item.option_ids || []).map((value) => Number(value)).filter((value) => value > 0))),
+        option_ids: Array.isArray(item.option_ids) ? item.option_ids.map((value) => Number(value || 0)).filter(Boolean) : [],
       }));
-      if (!categories.length) throw new Error('请至少新增一个分类');
-      categories.forEach((item, index) => {
-        if (!item.category_name) throw new Error(`第 ${index + 1} 个分类缺少名称`);
-      });
-      return {
-        template_name: templateName,
-        template_code: String(elements.templateForm.elements.template_code.value || '').trim() || undefined,
-        description: String(elements.templateForm.elements.description.value || '').trim(),
-        enabled: !!elements.templateForm.elements.enabled.checked,
+      const payload = {
+        template_name: String((templateFields.templateName || {}).value || '').trim(),
+        template_code: String((templateFields.templateCode || {}).value || '').trim(),
+        description: String((templateFields.description || {}).value || '').trim(),
         questionnaire_id: questionnaireId,
         segmentation_question_id: questionId,
+        enabled: !!((templateFields.enabled || {}).checked),
         categories,
       };
-    }
-
-    async function saveTemplate(event) {
-      event.preventDefault();
-      try {
-        const payload = buildTemplatePayload();
-        const templateId = Number(elements.templateForm.elements.template_id.value || 0);
-        const result = await requestJson(templateId ? withId(apiUrls.profile_segment_template_detail_base, templateId) : apiUrls.profile_segment_templates.replace(/[?].*$/, ''), {
-          method: templateId ? 'PUT' : 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        await loadTemplates();
-        state.selectedTemplateId = Number((((result || {}).template_bundle || {}).template || {}).id || templateId || 0);
-        await loadTemplateDetail(state.selectedTemplateId);
-        renderTemplateTable();
-        renderTemplateDetail();
-        closeTemplateForm();
-        showFeedback(elements.feedback, templateId ? '分层模板已更新' : '分层模板已创建', 'success');
-      } catch (error) {
-        showFeedback(elements.templateFormFeedback, error.message || '保存分层模板失败', 'error');
-      }
-    }
-
-    async function loadAgentPools() {
-      const payload = await requestJson(apiUrls.agent_pools, { credentials: 'same-origin' });
-      state.agentPools = payload.items || [];
-      renderAgentSummary();
-      renderAgentPoolTable();
-      if (!state.selectedAgentPoolId && state.agentPools.length) {
-        state.selectedAgentPoolId = Number((state.agentPools[0] || {}).id || 0);
-      }
-      if (!state.selectedAgentPoolId) {
-        state.selectedAgentPoolDetail = null;
-        renderAgentPoolDetail();
-        return;
-      }
-      await loadAgentPoolDetail(state.selectedAgentPoolId);
-    }
-
-    async function loadTemplates() {
-      const payload = await requestJson(apiUrls.profile_segment_templates, { credentials: 'same-origin' });
-      state.templates = payload.items || [];
-      renderAgentSummary();
-      renderTemplateTable();
-      if (!state.selectedTemplateId && state.templates.length) {
-        state.selectedTemplateId = Number((((state.templates[0] || {}).template) || {}).id || 0);
-      }
-      if (!state.selectedTemplateId) {
-        state.selectedTemplateDetail = null;
-        renderTemplateDetail();
-        return;
-      }
-      await loadTemplateDetail(state.selectedTemplateId);
-    }
-
-    async function loadAgentPoolDetail(agentPoolId) {
-      if (!agentPoolId) {
-        state.selectedAgentPoolDetail = null;
-        renderAgentPoolDetail();
-        return;
-      }
-      const payload = await requestJson(withId(apiUrls.agent_pool_detail_base, agentPoolId), { credentials: 'same-origin' });
-      state.selectedAgentPoolDetail = payload.agent_pool || null;
-      renderAgentPoolDetail();
+      if (!payload.template_name) throw new Error('模板名称不能为空');
+      if (!payload.questionnaire_id) throw new Error('请选择问卷');
+      if (!payload.segmentation_question_id) throw new Error('请选择分层题目');
+      if (!categories.length) throw new Error('请至少配置一个分类');
+      categories.forEach((item, index) => {
+        if (!item.category_name) throw new Error(`分类 ${index + 1} 的名称不能为空`);
+        if (!item.option_ids.length) throw new Error(`分类 ${index + 1} 至少要绑定一个问卷选项`);
+      });
+      return payload;
     }
 
     async function loadTemplateDetail(templateId) {
-      if (!templateId) {
+      const normalizedId = Number(templateId || 0);
+      if (!normalizedId) {
+        state.selectedTemplateId = null;
         state.selectedTemplateDetail = null;
+        renderTemplateTable();
         renderTemplateDetail();
         return;
       }
-      const payload = await requestJson(withId(apiUrls.profile_segment_template_detail_base, templateId), { credentials: 'same-origin' });
-      state.selectedTemplateDetail = payload || null;
+      const payload = await requestJson(withId(apiUrls.profile_segment_template_detail_base, normalizedId), { credentials: 'same-origin' });
+      state.selectedTemplateId = normalizedId;
+      state.selectedTemplateDetail = payload.template_bundle;
+      renderTemplateTable();
       renderTemplateDetail();
     }
 
-    async function initialize() {
-      try {
-        const [registryPayload, agentPoolsPayload, templatesPayload, catalogPayload] = await Promise.all([
-          requestJson(apiUrls.registry, { credentials: 'same-origin' }),
-          requestJson(apiUrls.agent_pools, { credentials: 'same-origin' }),
-          requestJson(apiUrls.profile_segment_templates, { credentials: 'same-origin' }),
-          requestJson(apiUrls.profile_segment_template_catalog, { credentials: 'same-origin' }),
-        ]);
-        state.registry = registryPayload;
-        state.agentPools = agentPoolsPayload.items || [];
-        state.templates = templatesPayload.items || [];
-        state.catalog = catalogPayload.items || [];
-        elements.loading.hidden = true;
-        renderAgentSummary();
-        renderAgentPoolTypeOptions();
-        renderAgentPoolTable();
-        renderTemplateTable();
-        if (!state.selectedAgentPoolId && state.agentPools.length) {
-          state.selectedAgentPoolId = Number((state.agentPools[0] || {}).id || 0);
-        }
-        if (!state.selectedTemplateId && state.templates.length) {
-          state.selectedTemplateId = Number((((state.templates[0] || {}).template) || {}).id || 0);
-        }
-        await Promise.all([
-          loadAgentPoolDetail(state.selectedAgentPoolId),
-          loadTemplateDetail(state.selectedTemplateId),
-        ]);
-      } catch (error) {
-        elements.loading.hidden = true;
-        showFeedback(elements.feedback, error.message || '加载模型 / Agent 配置失败', 'error');
-      }
+    if (elements.agentCreateButton) {
+      elements.agentCreateButton.addEventListener('click', function () {
+        openAgentForm().catch((error) => {
+          showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
+        });
+      });
     }
 
-    elements.agentPoolCreateButton.addEventListener('click', () => openAgentPoolForm(null));
-    elements.agentPoolEditButton.addEventListener('click', () => openAgentPoolForm(state.selectedAgentPoolDetail || findAgentPool(state.selectedAgentPoolId)));
-    elements.agentPoolFormCancel.addEventListener('click', closeAgentPoolForm);
-    elements.agentPoolForm.addEventListener('submit', saveAgentPool);
-    elements.agentPoolTableBody.addEventListener('click', async (event) => {
-      const row = event.target.closest('tr[data-agent-pool-id]');
-      if (!row) return;
-      state.selectedAgentPoolId = Number(row.dataset.agentPoolId || 0);
-      renderAgentPoolTable();
-      try {
-        await loadAgentPoolDetail(state.selectedAgentPoolId);
-      } catch (error) {
-        showFeedback(elements.feedback, error.message || '加载 Agent 池详情失败', 'error');
-      }
-    });
+    if (agentFields.agentCode) {
+      agentFields.agentCode.addEventListener('change', function () {
+        const nextCode = String(agentFields.agentCode.value || '').trim();
+        if (!nextCode) return;
+        loadAgentDetail(nextCode).catch((error) => {
+          showAgentFormFeedback(error.message || '加载 Agent 详情失败', 'error');
+        });
+      });
+    }
 
-    elements.templateCreateButton.addEventListener('click', () => openTemplateForm(null));
-    elements.templateEditButton.addEventListener('click', () => openTemplateForm(state.selectedTemplateDetail || findTemplate(state.selectedTemplateId)));
-    elements.templateFormCancel.addEventListener('click', closeTemplateForm);
-    elements.templateForm.addEventListener('submit', saveTemplate);
-    elements.templateForm.elements.questionnaire_id.addEventListener('change', () => {
-      renderQuestionSelect();
-      state.categoriesDraft = state.categoriesDraft.map((item) => ({ ...item, option_ids: [] }));
-      renderCategoryDraft();
-    });
-    elements.templateForm.elements.segmentation_question_id.addEventListener('change', () => {
-      state.categoriesDraft = state.categoriesDraft.map((item) => ({ ...item, option_ids: [] }));
-      renderCategoryDraft();
-    });
-    elements.templateCategoryAddButton.addEventListener('click', () => {
-      state.categoriesDraft.push({ category_name: '', category_key: '', description: '', enabled: true, option_ids: [] });
-      renderCategoryDraft();
-    });
-    elements.templateCategoryList.addEventListener('input', (event) => {
-      const index = Number(event.target.dataset.categoryIndex || -1);
-      if (index < 0 || !state.categoriesDraft[index]) return;
-      const field = event.target.dataset.categoryField;
-      if (field === 'category_name' || field === 'category_key' || field === 'description') {
-        state.categoriesDraft[index][field] = event.target.value;
-      }
-    });
-    elements.templateCategoryList.addEventListener('change', (event) => {
-      const index = Number(event.target.dataset.categoryIndex || -1);
-      if (index < 0 || !state.categoriesDraft[index]) return;
-      if (event.target.dataset.categoryField === 'enabled') {
-        state.categoriesDraft[index].enabled = !!event.target.checked;
-        return;
-      }
-      if (event.target.dataset.categoryOptionId) {
-        const optionId = Number(event.target.dataset.categoryOptionId || 0);
-        const optionIds = new Set(state.categoriesDraft[index].option_ids || []);
-        if (event.target.checked) optionIds.add(optionId);
-        else optionIds.delete(optionId);
-        state.categoriesDraft[index].option_ids = Array.from(optionIds);
-      }
-    });
-    elements.templateCategoryList.addEventListener('click', (event) => {
-      const button = event.target.closest('button[data-category-action="remove"]');
-      if (!button) return;
-      const index = Number(button.dataset.categoryIndex || -1);
-      if (index < 0) return;
-      state.categoriesDraft.splice(index, 1);
-      renderCategoryDraft();
-    });
-    elements.templateTableBody.addEventListener('click', async (event) => {
-      const row = event.target.closest('tr[data-template-id]');
-      if (!row) return;
-      state.selectedTemplateId = Number(row.dataset.templateId || 0);
-      renderTemplateTable();
-      try {
-        await loadTemplateDetail(state.selectedTemplateId);
-      } catch (error) {
-        showFeedback(elements.feedback, error.message || '加载分层模板详情失败', 'error');
-      }
-    });
+    if (elements.agentTableBody) {
+      elements.agentTableBody.addEventListener('click', function (event) {
+        const button = event.target.closest('button[data-agent-edit]');
+        if (!button) return;
+        openAgentForm(button.dataset.agentEdit || '').catch((error) => {
+          showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
+        });
+      });
+    }
 
-    initialize();
+    if (elements.agentFormCancel) {
+      elements.agentFormCancel.addEventListener('click', function () {
+        closeAgentForm();
+      });
+    }
+
+    if (elements.agentForm) {
+      elements.agentForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        try {
+          const agentCode = String((agentFields.agentCode || {}).value || '').trim();
+          const payload = collectAgentPayload();
+          const result = await requestJson(withCode(apiUrls.agent_draft_base, agentCode), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          showAgentFormFeedback('Agent 草稿已保存', 'success');
+          await refreshAgents();
+          await loadAgentDetail(((result || {}).agent || {}).agent_code || agentCode);
+          showFeedback('Agent 草稿已保存', 'success');
+        } catch (error) {
+          showAgentFormFeedback(error.message || '保存 Agent 草稿失败', 'error');
+        }
+      });
+    }
+
+    if (elements.agentPublishButton) {
+      elements.agentPublishButton.addEventListener('click', async function () {
+        try {
+          const agentCode = String((agentFields.agentCode || {}).value || '').trim();
+          if (!agentCode) throw new Error('请选择 Agent');
+          const result = await requestJson(withCode(apiUrls.agent_publish_base, agentCode), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ admin_action_token: adminActionToken }),
+          });
+          showAgentFormFeedback('Agent 已发布', 'success');
+          await refreshAgents();
+          await loadAgentDetail(((result || {}).agent || {}).agent_code || agentCode);
+          showFeedback('Agent 已发布', 'success');
+        } catch (error) {
+          showAgentFormFeedback(error.message || '发布 Agent 失败', 'error');
+        }
+      });
+    }
+
+    if (elements.templateCreateButton) {
+      elements.templateCreateButton.addEventListener('click', function () {
+        openTemplateForm('create');
+      });
+    }
+
+    if (elements.templateEditButton) {
+      elements.templateEditButton.addEventListener('click', function () {
+        if (!state.selectedTemplateDetail) return;
+        openTemplateForm('edit', state.selectedTemplateDetail);
+      });
+    }
+
+    if (elements.templateFormCancel) {
+      elements.templateFormCancel.addEventListener('click', function () {
+        closeTemplateForm();
+      });
+    }
+
+    if (elements.categoryAddButton) {
+      elements.categoryAddButton.addEventListener('click', function () {
+        state.categoryDrafts.push({
+          category_key: '',
+          category_name: '',
+          description: '',
+          enabled: true,
+          option_ids: [],
+        });
+        renderCategoryDrafts();
+      });
+    }
+
+    if (elements.templateTableBody) {
+      elements.templateTableBody.addEventListener('click', function (event) {
+        const row = event.target.closest('tr[data-template-id]');
+        if (!row) return;
+        loadTemplateDetail(Number(row.dataset.templateId || 0)).catch((error) => {
+          showFeedback(error.message || '加载模板详情失败', 'error');
+        });
+      });
+    }
+
+    if (templateFields.questionnaireId) {
+      templateFields.questionnaireId.addEventListener('change', function () {
+        renderQuestionOptions();
+        state.categoryDrafts = state.categoryDrafts.map((item) => ({ ...item, option_ids: [] }));
+        renderCategoryDrafts();
+      });
+    }
+
+    if (templateFields.segmentationQuestionId) {
+      templateFields.segmentationQuestionId.addEventListener('change', function () {
+        state.categoryDrafts = state.categoryDrafts.map((item) => ({ ...item, option_ids: [] }));
+        renderCategoryDrafts();
+      });
+    }
+
+    if (elements.categoryList) {
+      elements.categoryList.addEventListener('click', function (event) {
+        const button = event.target.closest('button[data-category-remove]');
+        if (!button) return;
+        const index = Number(button.dataset.categoryRemove || -1);
+        if (index < 0) return;
+        state.categoryDrafts.splice(index, 1);
+        renderCategoryDrafts();
+      });
+
+      elements.categoryList.addEventListener('input', function (event) {
+        const target = event.target;
+        const index = Number(target.dataset.index || -1);
+        const field = String(target.dataset.field || '');
+        if (index < 0 || !field || !state.categoryDrafts[index]) return;
+        if (field === 'enabled') {
+          state.categoryDrafts[index].enabled = !!target.checked;
+          return;
+        }
+        if (field === 'option_ids') {
+          const nextSet = new Set(state.categoryDrafts[index].option_ids || []);
+          const optionId = Number(target.value || 0);
+          if (target.checked) nextSet.add(optionId);
+          else nextSet.delete(optionId);
+          state.categoryDrafts[index].option_ids = Array.from(nextSet);
+          return;
+        }
+        state.categoryDrafts[index][field] = target.value;
+      });
+
+      elements.categoryList.addEventListener('change', function (event) {
+        const target = event.target;
+        const index = Number(target.dataset.index || -1);
+        const field = String(target.dataset.field || '');
+        if (index < 0 || !field || !state.categoryDrafts[index]) return;
+        if (field === 'enabled') {
+          state.categoryDrafts[index].enabled = !!target.checked;
+        }
+        if (field === 'option_ids') {
+          const nextSet = new Set(state.categoryDrafts[index].option_ids || []);
+          const optionId = Number(target.value || 0);
+          if (target.checked) nextSet.add(optionId);
+          else nextSet.delete(optionId);
+          state.categoryDrafts[index].option_ids = Array.from(nextSet);
+        }
+      });
+    }
+
+    if (elements.templateForm) {
+      elements.templateForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        try {
+          const templateId = Number((templateFields.templateId || {}).value || 0);
+          const payload = collectTemplatePayload();
+          const url = templateId ? withId(apiUrls.profile_segment_template_detail_base, templateId) : apiUrls.profile_segment_templates;
+          const result = await requestJson(url, {
+            method: templateId ? 'PUT' : 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const savedId = Number((((result || {}).template_bundle || {}).template || {}).id || templateId || 0);
+          showTemplateFormFeedback(templateId ? '模板已更新' : '模板已创建', 'success');
+          await refreshTemplates();
+          if (savedId) {
+            await loadTemplateDetail(savedId);
+          }
+          closeTemplateForm();
+          showFeedback(templateId ? '模板已更新' : '模板已创建', 'success');
+        } catch (error) {
+          showTemplateFormFeedback(error.message || '保存模板失败', 'error');
+        }
+      });
+    }
+
+    if (elements.defaultChannelForm) {
+      elements.defaultChannelForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        try {
+          const result = await requestJson(apiUrls.default_channel_settings, {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(collectDefaultChannelPayload()),
+          });
+          state.defaultChannel = result.default_channel || {};
+          state.providerAvailable = !!result.provider_available;
+          renderDefaultChannel();
+          showDefaultChannelFeedback('渠道配置已保存', 'success');
+          showFeedback('渠道配置已保存', 'success');
+        } catch (error) {
+          showDefaultChannelFeedback(error.message || '保存渠道配置失败', 'error');
+        }
+      });
+    }
+
+    if (elements.defaultChannelGenerateButton) {
+      elements.defaultChannelGenerateButton.addEventListener('click', async function () {
+        try {
+          const result = await requestJson(apiUrls.default_channel_generate_qr, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ admin_action_token: adminActionToken }),
+          });
+          state.defaultChannel = result.channel || state.defaultChannel || {};
+          if (result.field_statuses && state.defaultChannel) {
+            state.defaultChannel.field_statuses = result.field_statuses;
+          }
+          renderDefaultChannel();
+          showDefaultChannelFeedback('默认二维码已重新生成', 'success');
+          showFeedback('默认二维码已重新生成', 'success');
+        } catch (error) {
+          showDefaultChannelFeedback(error.message || '生成二维码失败', 'error');
+        }
+      });
+    }
+
+    if (elements.modelSettingsForm) {
+      elements.modelSettingsForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        try {
+          const result = await requestJson(apiUrls.model_settings, {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(collectModelSettingsPayload()),
+          });
+          state.modelSettings = result || {};
+          renderModelSettings();
+          showModelSettingsFeedback('模型配置已保存', 'success');
+          showFeedback('模型配置已保存', 'success');
+        } catch (error) {
+          showModelSettingsFeedback(error.message || '保存模型配置失败', 'error');
+        }
+      });
+    }
+
+    if (elements.modelSettingsTestButton) {
+      elements.modelSettingsTestButton.addEventListener('click', async function () {
+        try {
+          const result = await requestJson(apiUrls.model_settings_test, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ admin_action_token: adminActionToken }),
+          });
+          elements.modelSettingsTestResult.textContent = `成功 · ${result.model_name || '-'} · ${result.latency_ms || 0}ms`;
+          showModelSettingsFeedback('模型连通性测试成功', 'success');
+        } catch (error) {
+          elements.modelSettingsTestResult.textContent = '失败';
+          showModelSettingsFeedback(error.message || '模型连通性测试失败', 'error');
+        }
+      });
+    }
+
+    (async function initialize() {
+      try {
+        syncInitialState();
+        await Promise.all([refreshAgents(), refreshTemplates(), refreshDefaultChannel(), refreshModelSettings()]);
+      } catch (error) {
+        elements.loading.hidden = true;
+        showFeedback(error.message || '加载模型 / Agent 配置失败', 'error');
+      }
+    })();
   })();
 </script>
 {% endblock %}

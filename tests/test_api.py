@@ -3767,6 +3767,37 @@ def test_questionnaire_external_push_requires_url_when_enabled(client):
     }
 
 
+def test_questionnaire_create_auto_dedupes_generated_slug_when_name_collides(client):
+    payload = {
+        "name": "黄小璨AI激活问卷",
+        "title": "填写问卷激活黄小璨AI",
+        "description": "您在问卷中填写的信息会被录入黄小璨进行对黄小璨的初始设置",
+        "redirect_url": "",
+        "questions": [
+            {
+                "type": "mobile",
+                "title": "请输入手机号",
+                "required": True,
+                "sort_order": 1,
+                "placeholder_text": "请输入登录AI分身的唯一手机号码",
+            }
+        ],
+        "score_rules": [],
+    }
+
+    first_response = client.post("/api/admin/questionnaires", json=payload)
+    second_response = client.post("/api/admin/questionnaires", json=payload)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_slug = first_response.get_json()["questionnaire"]["slug"]
+    second_slug = second_response.get_json()["questionnaire"]["slug"]
+    assert first_slug == "ai"
+    assert second_slug != first_slug
+    assert second_slug.startswith("ai-")
+
+
 def test_questionnaire_external_push_failed_log_can_be_retried_and_reuses_original_payload(client, app, monkeypatch):
     create_response = client.post(
         "/api/admin/questionnaires",

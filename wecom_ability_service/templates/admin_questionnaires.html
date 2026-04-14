@@ -1193,6 +1193,7 @@
       if (message === 'option_text is required') return '请输入选项文案';
       if (message === 'score rule min_score cannot be greater than max_score') return '请检查分数规则：最低分不能大于最高分';
       if (message === 'score rule tag_codes must be an array') return '分数规则标签格式不正确，请重新选择标签';
+      if (message === 'slug already exists') return '分享标识已存在，请修改右侧分享标识后再保存';
 
       let matched = message.match(/^([a-z_]+) is required$/i);
       if (matched) return `请输入${fieldLabel(matched[1])}`;

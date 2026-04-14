@@ -107,6 +107,10 @@ def _sqlite_table_sql(db, table_name: str) -> str:
     return str((row or {}).get("sql") or "")
 
 
+def _sqlite_table_exists(db, table_name: str) -> bool:
+    return bool(_sqlite_table_sql(db, table_name))
+
+
 def _ensure_sqlite_questionnaire_question_fields(db) -> None:
     create_sql = _sqlite_table_sql(db, "questionnaire_questions").lower()
     if not create_sql:
@@ -930,95 +934,6 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         """
-        CREATE TABLE IF NOT EXISTS automation_agent_pool (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pool_code TEXT NOT NULL UNIQUE,
-            display_name TEXT NOT NULL DEFAULT '',
-            description TEXT NOT NULL DEFAULT '',
-            pool_type TEXT NOT NULL DEFAULT 'shared'
-                CHECK (pool_type IN ('shared', 'reply', 'rewrite', 'personalized')),
-            enabled INTEGER NOT NULL DEFAULT 1,
-            created_by TEXT NOT NULL DEFAULT '',
-            updated_by TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    agent_pool_columns = _sqlite_table_columns(db, "automation_agent_pool")
-    agent_pool_sql = _sqlite_table_sql(db, "automation_agent_pool").lower()
-    if agent_pool_columns and ("purpose_code" in agent_pool_columns or "'reply'" not in agent_pool_sql):
-        db.execute("PRAGMA foreign_keys = OFF")
-        db.execute("DROP TABLE IF EXISTS automation_agent_pool__new")
-        db.execute(
-            """
-            CREATE TABLE automation_agent_pool__new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                pool_code TEXT NOT NULL UNIQUE,
-                display_name TEXT NOT NULL DEFAULT '',
-                description TEXT NOT NULL DEFAULT '',
-                pool_type TEXT NOT NULL DEFAULT 'shared'
-                    CHECK (pool_type IN ('shared', 'reply', 'rewrite', 'personalized')),
-                enabled INTEGER NOT NULL DEFAULT 1,
-                created_by TEXT NOT NULL DEFAULT '',
-                updated_by TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        db.execute(
-            f"""
-            INSERT INTO automation_agent_pool__new (
-                id,
-                pool_code,
-                display_name,
-                description,
-                pool_type,
-                enabled,
-                created_by,
-                updated_by,
-                created_at,
-                updated_at
-            )
-            SELECT
-                id,
-                pool_code,
-                COALESCE(display_name, ''),
-                COALESCE(description, ''),
-                CASE
-                    WHEN lower(COALESCE(pool_type, '')) IN ('shared', 'reply', 'rewrite', 'personalized')
-                        THEN lower(COALESCE(pool_type, 'shared'))
-                    WHEN lower(COALESCE({"purpose_code" if "purpose_code" in agent_pool_columns else "''"}, '')) IN ('shared', 'reply', 'rewrite', 'personalized')
-                        THEN lower(COALESCE({"purpose_code" if "purpose_code" in agent_pool_columns else "''"}, 'shared'))
-                    ELSE 'shared'
-                END AS pool_type,
-                COALESCE(enabled, 1),
-                COALESCE(created_by, ''),
-                COALESCE(updated_by, ''),
-                COALESCE(created_at, CURRENT_TIMESTAMP),
-                COALESCE(updated_at, CURRENT_TIMESTAMP)
-            FROM automation_agent_pool
-            """
-        )
-        db.execute("DROP TABLE automation_agent_pool")
-        db.execute("ALTER TABLE automation_agent_pool__new RENAME TO automation_agent_pool")
-        db.execute("PRAGMA foreign_keys = ON")
-    db.execute(
-        """
-        CREATE TABLE IF NOT EXISTS automation_agent_pool_agent (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_pool_id INTEGER NOT NULL REFERENCES automation_agent_pool(id) ON DELETE CASCADE,
-            agent_code TEXT NOT NULL REFERENCES automation_agent_config(agent_code) ON DELETE CASCADE,
-            role_code TEXT NOT NULL DEFAULT 'primary'
-                CHECK (role_code IN ('primary', 'fallback', 'supporting')),
-            position_index INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    db.execute(
-        """
         CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             template_code TEXT NOT NULL UNIQUE,
@@ -1117,13 +1032,14 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         """
-        CREATE TABLE IF NOT EXISTS automation_workflow_agent_pool_binding (
+        CREATE TABLE IF NOT EXISTS automation_workflow_agent_binding (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             workflow_id INTEGER NOT NULL REFERENCES automation_workflow(id) ON DELETE CASCADE,
-            agent_pool_id INTEGER NOT NULL REFERENCES automation_agent_pool(id) ON DELETE CASCADE,
+            node_id INTEGER REFERENCES automation_workflow_node(id) ON DELETE CASCADE,
             binding_scope TEXT NOT NULL DEFAULT 'default'
                 CHECK (binding_scope IN ('default', 'profile_category', 'behavior_tier', 'personalized')),
             segment_key TEXT NOT NULL DEFAULT '',
+            agent_code TEXT NOT NULL REFERENCES automation_agent_config(agent_code) ON DELETE CASCADE,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -1213,7 +1129,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             external_contact_id TEXT NOT NULL DEFAULT '',
             rendered_content_text TEXT NOT NULL DEFAULT '',
             content_snapshot_json TEXT NOT NULL DEFAULT '{}',
-            agent_pool_id INTEGER REFERENCES automation_agent_pool(id) ON DELETE SET NULL,
+            agent_code TEXT NOT NULL DEFAULT '',
             agent_run_id TEXT NOT NULL DEFAULT '',
             agent_output_id TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'pending'
@@ -1225,15 +1141,6 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
-    )
-    db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_automation_agent_pool_enabled ON automation_agent_pool (enabled, updated_at DESC, id DESC)"
-    )
-    db.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_agent_pool_agent_unique ON automation_agent_pool_agent (agent_pool_id, agent_code)"
-    )
-    db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_automation_agent_pool_agent_position ON automation_agent_pool_agent (agent_pool_id, position_index ASC, id ASC)"
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_enabled ON automation_profile_segment_template (enabled, updated_at DESC, id DESC)"
@@ -1272,10 +1179,10 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_member_audience_entry_current ON automation_member_audience_entry (member_id) WHERE is_current = 1"
     )
     db.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_agent_pool_binding_unique ON automation_workflow_agent_pool_binding (workflow_id, binding_scope, segment_key)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_agent_binding_unique ON automation_workflow_agent_binding (workflow_id, COALESCE(node_id, 0), binding_scope, segment_key)"
     )
     db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_agent_pool_binding_pool ON automation_workflow_agent_pool_binding (agent_pool_id, updated_at DESC, id DESC)"
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_agent_binding_agent ON automation_workflow_agent_binding (agent_code, updated_at DESC, id DESC)"
     )
     db.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_node_code ON automation_workflow_node (workflow_id, node_code)"
@@ -1392,6 +1299,191 @@ def _ensure_sqlite_automation_sop_v2_columns(db) -> None:
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_member_day_snapshot ON automation_sop_batch_item (member_id, pool_key, day_index_snapshot, id DESC)"
     )
+
+
+def _migrate_sqlite_conversion_agent_pools_to_bindings(db) -> None:
+    if not _sqlite_table_exists(db, "automation_workflow_agent_binding"):
+        return
+    if _sqlite_table_exists(db, "automation_workflow_agent_pool_binding") and _sqlite_table_exists(db, "automation_agent_pool_agent"):
+        db.execute(
+            """
+            INSERT OR REPLACE INTO automation_workflow_agent_binding (
+                workflow_id,
+                node_id,
+                binding_scope,
+                segment_key,
+                agent_code,
+                created_at,
+                updated_at
+            )
+            SELECT
+                binding.workflow_id,
+                NULL,
+                binding.binding_scope,
+                COALESCE(binding.segment_key, ''),
+                COALESCE(
+                    (
+                        SELECT member.agent_code
+                        FROM automation_agent_pool_agent member
+                        WHERE member.agent_pool_id = binding.agent_pool_id
+                        ORDER BY CASE WHEN lower(COALESCE(member.role_code, '')) = 'primary' THEN 0 ELSE 1 END,
+                                 member.position_index ASC,
+                                 member.id ASC
+                        LIMIT 1
+                    ),
+                    ''
+                ) AS agent_code,
+                COALESCE(binding.created_at, CURRENT_TIMESTAMP),
+                COALESCE(binding.updated_at, CURRENT_TIMESTAMP)
+            FROM automation_workflow_agent_pool_binding binding
+            WHERE COALESCE(
+                (
+                    SELECT member.agent_code
+                    FROM automation_agent_pool_agent member
+                    WHERE member.agent_pool_id = binding.agent_pool_id
+                    ORDER BY CASE WHEN lower(COALESCE(member.role_code, '')) = 'primary' THEN 0 ELSE 1 END,
+                             member.position_index ASC,
+                             member.id ASC
+                    LIMIT 1
+                ),
+                ''
+            ) <> ''
+            """
+        )
+
+    execution_item_columns = _sqlite_table_columns(db, "automation_workflow_execution_item")
+    if execution_item_columns and ("agent_pool_id" in execution_item_columns or "agent_code" not in execution_item_columns):
+        agent_code_sql = (
+            """
+            CASE
+                WHEN TRIM(COALESCE(agent_code, '')) <> '' THEN agent_code
+                ELSE COALESCE(
+                    (
+                        SELECT member.agent_code
+                        FROM automation_agent_pool_agent member
+                        WHERE member.agent_pool_id = automation_workflow_execution_item.agent_pool_id
+                        ORDER BY CASE WHEN lower(COALESCE(member.role_code, '')) = 'primary' THEN 0 ELSE 1 END,
+                                 member.position_index ASC,
+                                 member.id ASC
+                        LIMIT 1
+                    ),
+                    ''
+                )
+            END
+            """
+            if "agent_code" in execution_item_columns and "agent_pool_id" in execution_item_columns
+            else (
+                """
+                COALESCE(
+                    (
+                        SELECT member.agent_code
+                        FROM automation_agent_pool_agent member
+                        WHERE member.agent_pool_id = automation_workflow_execution_item.agent_pool_id
+                        ORDER BY CASE WHEN lower(COALESCE(member.role_code, '')) = 'primary' THEN 0 ELSE 1 END,
+                                 member.position_index ASC,
+                                 member.id ASC
+                        LIMIT 1
+                    ),
+                    ''
+                )
+                """
+                if "agent_pool_id" in execution_item_columns
+                else "COALESCE(agent_code, '')"
+            )
+        )
+        db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("DROP TABLE IF EXISTS automation_workflow_execution_item__new")
+        db.execute(
+            """
+            CREATE TABLE automation_workflow_execution_item__new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id INTEGER NOT NULL REFERENCES automation_workflow_execution(id) ON DELETE CASCADE,
+                workflow_id INTEGER REFERENCES automation_workflow(id) ON DELETE SET NULL,
+                node_id INTEGER REFERENCES automation_workflow_node(id) ON DELETE SET NULL,
+                member_id INTEGER REFERENCES automation_member(id) ON DELETE SET NULL,
+                audience_entry_id INTEGER REFERENCES automation_member_audience_entry(id) ON DELETE SET NULL,
+                external_contact_id TEXT NOT NULL DEFAULT '',
+                rendered_content_text TEXT NOT NULL DEFAULT '',
+                content_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                agent_code TEXT NOT NULL DEFAULT '',
+                agent_run_id TEXT NOT NULL DEFAULT '',
+                agent_output_id TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'prepared', 'sent', 'skipped', 'failed')),
+                error_message TEXT NOT NULL DEFAULT '',
+                send_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+                sent_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            f"""
+            INSERT INTO automation_workflow_execution_item__new (
+                id,
+                execution_id,
+                workflow_id,
+                node_id,
+                member_id,
+                audience_entry_id,
+                external_contact_id,
+                rendered_content_text,
+                content_snapshot_json,
+                agent_code,
+                agent_run_id,
+                agent_output_id,
+                status,
+                error_message,
+                send_record_id,
+                sent_at,
+                created_at,
+                updated_at
+            )
+            SELECT
+                id,
+                execution_id,
+                workflow_id,
+                node_id,
+                member_id,
+                audience_entry_id,
+                COALESCE(external_contact_id, ''),
+                COALESCE(rendered_content_text, ''),
+                COALESCE(content_snapshot_json, '{{}}'),
+                {agent_code_sql},
+                COALESCE(agent_run_id, ''),
+                COALESCE(agent_output_id, ''),
+                COALESCE(status, 'pending'),
+                COALESCE(error_message, ''),
+                send_record_id,
+                COALESCE(sent_at, ''),
+                COALESCE(created_at, CURRENT_TIMESTAMP),
+                COALESCE(updated_at, CURRENT_TIMESTAMP)
+            FROM automation_workflow_execution_item
+            """
+        )
+        db.execute("DROP TABLE automation_workflow_execution_item")
+        db.execute("ALTER TABLE automation_workflow_execution_item__new RENAME TO automation_workflow_execution_item")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_item_execution ON automation_workflow_execution_item (execution_id, id ASC)"
+        )
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_execution_item_member_unique ON automation_workflow_execution_item (execution_id, member_id)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_item_member ON automation_workflow_execution_item (member_id, created_at DESC, id DESC)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_item_send_record ON automation_workflow_execution_item (send_record_id, created_at DESC, id DESC)"
+        )
+        db.execute("PRAGMA foreign_keys = ON")
+
+    if _sqlite_table_exists(db, "automation_workflow_agent_pool_binding"):
+        db.execute("DROP TABLE automation_workflow_agent_pool_binding")
+    if _sqlite_table_exists(db, "automation_agent_pool_agent"):
+        db.execute("DROP TABLE automation_agent_pool_agent")
+    if _sqlite_table_exists(db, "automation_agent_pool"):
+        db.execute("DROP TABLE automation_agent_pool")
 
 
 def _ensure_sqlite_customer_pulse_tables(db) -> None:
@@ -1672,6 +1764,7 @@ def _init_sqlite(db) -> None:
     _ensure_sqlite_customer_value_segment_tables(db)
     _ensure_sqlite_customer_marketing_state_tables(db)
     _ensure_sqlite_automation_conversion_tables(db)
+    _migrate_sqlite_conversion_agent_pools_to_bindings(db)
     _ensure_sqlite_automation_sop_v2_columns(db)
     _ensure_sqlite_customer_pulse_tables(db)
     _ensure_automation_sop_v1_seed_data()
@@ -1808,54 +1901,86 @@ def _ensure_postgres_automation_agent_config_tables(db) -> None:
         ADD COLUMN IF NOT EXISTS segmentation_question_id BIGINT REFERENCES questionnaire_questions(id) ON DELETE SET NULL
         """
     )
+
+
+def _migrate_postgres_conversion_agent_pools_to_bindings(db) -> None:
     db.execute(
         """
-        ALTER TABLE IF EXISTS automation_agent_pool
-        ADD COLUMN IF NOT EXISTS pool_type TEXT NOT NULL DEFAULT 'shared'
-        """
-    )
-    db.execute(
-        """
-        UPDATE automation_agent_pool
-        SET pool_type = CASE
-            WHEN lower(COALESCE(pool_type, '')) IN ('shared', 'reply', 'rewrite', 'personalized')
-                THEN lower(COALESCE(pool_type, 'shared'))
-            ELSE 'shared'
-        END
+        ALTER TABLE IF EXISTS automation_workflow_execution_item
+        ADD COLUMN IF NOT EXISTS agent_code TEXT NOT NULL DEFAULT ''
         """
     )
     db.execute(
         """
         DO $$
-        DECLARE constraint_name TEXT;
         BEGIN
-            FOR constraint_name IN
-                SELECT c.conname
-                FROM pg_constraint c
-                JOIN pg_class t ON t.oid = c.conrelid
-                JOIN pg_namespace n ON n.oid = t.relnamespace
-                WHERE c.contype = 'c'
-                  AND n.nspname = current_schema()
-                  AND t.relname = 'automation_agent_pool'
-                  AND pg_get_constraintdef(c.oid) ILIKE '%%pool_type%%'
-            LOOP
-                EXECUTE format(
-                    'ALTER TABLE %%I.%%I DROP CONSTRAINT IF EXISTS %%I',
-                    current_schema(),
-                    'automation_agent_pool',
-                    constraint_name
-                );
-            END LOOP;
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_name = 'automation_workflow_agent_pool_binding'
+            ) AND EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_name = 'automation_agent_pool_agent'
+            ) THEN
+                DELETE FROM automation_workflow_agent_binding
+                WHERE workflow_id IN (SELECT workflow_id FROM automation_workflow_agent_pool_binding);
+
+                INSERT INTO automation_workflow_agent_binding (
+                    workflow_id,
+                    node_id,
+                    binding_scope,
+                    segment_key,
+                    agent_code,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    binding.workflow_id,
+                    NULL,
+                    binding.binding_scope,
+                    COALESCE(binding.segment_key, ''),
+                    selected.agent_code,
+                    COALESCE(binding.created_at, CURRENT_TIMESTAMP),
+                    COALESCE(binding.updated_at, CURRENT_TIMESTAMP)
+                FROM automation_workflow_agent_pool_binding binding
+                JOIN LATERAL (
+                    SELECT member.agent_code
+                    FROM automation_agent_pool_agent member
+                    WHERE member.agent_pool_id = binding.agent_pool_id
+                    ORDER BY CASE WHEN lower(COALESCE(member.role_code, '')) = 'primary' THEN 0 ELSE 1 END,
+                             member.position_index ASC,
+                             member.id ASC
+                    LIMIT 1
+                ) AS selected ON TRUE;
+
+                UPDATE automation_workflow_execution_item item
+                SET agent_code = COALESCE((
+                    SELECT member.agent_code
+                    FROM automation_agent_pool_agent member
+                    WHERE member.agent_pool_id = item.agent_pool_id
+                    ORDER BY CASE WHEN lower(COALESCE(member.role_code, '')) = 'primary' THEN 0 ELSE 1 END,
+                             member.position_index ASC,
+                             member.id ASC
+                    LIMIT 1
+                ), '')
+                WHERE COALESCE(item.agent_code, '') = ''
+                  AND item.agent_pool_id IS NOT NULL;
+            END IF;
         END $$;
         """
     )
     db.execute(
         """
-        ALTER TABLE automation_agent_pool
-        ADD CONSTRAINT automation_agent_pool_pool_type_check
-        CHECK (pool_type IN ('shared', 'reply', 'rewrite', 'personalized'))
+        ALTER TABLE IF EXISTS automation_workflow_execution_item
+        DROP COLUMN IF EXISTS agent_pool_id
         """
     )
+    db.execute("DROP TABLE IF EXISTS automation_workflow_agent_pool_binding")
+    db.execute("DROP TABLE IF EXISTS automation_agent_pool_agent")
+    db.execute("DROP TABLE IF EXISTS automation_agent_pool")
 
 
 def _ensure_postgres_questionnaire_external_push_tables(db) -> None:
@@ -2580,6 +2705,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_automation_agent_config_tables(db)
+    _migrate_postgres_conversion_agent_pools_to_bindings(db)
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)
     _ensure_automation_sop_v1_seed_data()

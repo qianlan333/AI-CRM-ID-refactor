@@ -36,7 +36,6 @@ from .agents import (
     get_deepseek_runtime_config,
 )
 from .service import apply_router_target_pool, ensure_agent_prompt_defaults, get_member_detail, get_stage_detail_payload
-from .workflow_service import ensure_default_conversion_agent_pools, list_conversion_agent_pools_for_agent
 
 _EXPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-output-export")
 
@@ -477,7 +476,6 @@ def ensure_agent_orchestration_defaults() -> None:
         if skill_code in existing_skill_codes:
             continue
         repo.insert_agent_skill_row(payload)
-    ensure_default_conversion_agent_pools()
     get_db().commit()
 
 
@@ -575,7 +573,6 @@ def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
             "output_schema": list(deserialized.get("published_output_schema_json") or []),
         },
     }
-    payload["agent_pools"] = list_conversion_agent_pools_for_agent(agent_code) if agent_code else []
     payload["diff_summary"] = _agent_diff_summary(payload)
     return payload
 
