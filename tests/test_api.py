@@ -1274,6 +1274,7 @@ def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client
     assert "重置当前" in text
     assert "题型 / 组件区" in text
     assert "手工填写 tag_id 兜底" in text
+    assert "填写提示词" in text
     assert "企微标签加载失败，可稍后重试或手工填写 tag_id" in text
     assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
@@ -2629,6 +2630,27 @@ def test_questionnaire_admin_routes_and_public_h5(client):
     enable_response = client.post(f"/api/admin/questionnaires/{questionnaire_id}/disable", json={"is_disabled": False})
     assert enable_response.status_code == 200
     assert enable_response.get_json()["questionnaire"]["is_disabled"] is False
+
+
+def test_questionnaire_open_questions_support_placeholder_text(client):
+    payload = _build_questionnaire_payload_with_mobile()
+    payload["questions"][2]["placeholder_text"] = "请补充你的实际需求，便于老师了解"
+    payload["questions"][3]["placeholder_text"] = "请输入手机号，方便后续联系"
+
+    create_response = client.post("/api/admin/questionnaires", json=payload)
+    assert create_response.status_code == 200
+    questionnaire = create_response.get_json()["questionnaire"]
+    slug = questionnaire["slug"]
+
+    questions_by_type = {item["type"]: item for item in questionnaire["questions"]}
+    assert questions_by_type["textarea"]["placeholder_text"] == "请补充你的实际需求，便于老师了解"
+    assert questions_by_type["mobile"]["placeholder_text"] == "请输入手机号，方便后续联系"
+
+    public_response = client.get(f"/api/h5/questionnaires/{slug}", headers=WECHAT_BROWSER_HEADERS)
+    assert public_response.status_code == 200
+    public_questions_by_type = {item["type"]: item for item in public_response.get_json()["questionnaire"]["questions"]}
+    assert public_questions_by_type["textarea"]["placeholder_text"] == "请补充你的实际需求，便于老师了解"
+    assert public_questions_by_type["mobile"]["placeholder_text"] == "请输入手机号，方便后续联系"
 
 
 def test_admin_delete_questionnaire_requires_disabled_state(client):

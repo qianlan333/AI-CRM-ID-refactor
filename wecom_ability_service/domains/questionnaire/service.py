@@ -203,10 +203,13 @@ def _normalize_questionnaire_payload(
             "id": int(item["id"]) if item.get("id") not in (None, "") else None,
             "type": question_type,
             "title": question_title,
+            "placeholder_text": "",
             "required": _normalize_bool(item.get("required")),
             "sort_order": _normalize_int(item.get("sort_order"), index),
             "options": [],
         }
+        if question_type in {"textarea", "mobile"}:
+            question_payload["placeholder_text"] = str(item.get("placeholder_text") or "").strip()
         raw_options = item.get("options") or []
         if question_type in {"single_choice", "multi_choice"}:
             if not isinstance(raw_options, list) or not raw_options:
@@ -301,7 +304,7 @@ def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
 def _load_questionnaire_questions(questionnaire_id: int) -> list[dict[str, Any]]:
     question_rows = get_db().execute(
         """
-        SELECT id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+        SELECT id, questionnaire_id, type, title, placeholder_text, required, sort_order, created_at, updated_at
         FROM questionnaire_questions
         WHERE questionnaire_id = ?
         ORDER BY sort_order ASC, id ASC
@@ -341,6 +344,7 @@ def _load_questionnaire_questions(questionnaire_id: int) -> list[dict[str, Any]]
             "questionnaire_id": int(row["questionnaire_id"]),
             "type": row.get("type", ""),
             "title": row.get("title", ""),
+            "placeholder_text": row.get("placeholder_text", "") or "",
             "required": _normalize_bool(row.get("required")),
             "sort_order": int(row.get("sort_order") or 0),
             "created_at": row.get("created_at", ""),
@@ -427,15 +431,16 @@ def _sync_questionnaire_questions(questionnaire_id: int, questions: list[dict[st
         row = db.execute(
             """
             INSERT INTO questionnaire_questions (
-                questionnaire_id, type, title, required, sort_order, created_at, updated_at
+                questionnaire_id, type, title, placeholder_text, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (
                 int(questionnaire_id),
                 item["type"],
                 item["title"],
+                item.get("placeholder_text", "") or "",
                 item["required"],
                 item["sort_order"],
             ),
@@ -822,6 +827,7 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
             "id": question["id"],
             "type": question["type"],
             "title": question["title"],
+            "placeholder_text": question.get("placeholder_text", "") or "",
             "required": question["required"],
             "sort_order": question["sort_order"],
             "options": [

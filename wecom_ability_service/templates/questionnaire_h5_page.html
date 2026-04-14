@@ -188,6 +188,18 @@
       resize: vertical;
       background: #fff;
     }
+    input[type="tel"] {
+      width: 100%;
+      border-radius: 18px;
+      border: 1px solid rgba(47, 106, 76, 0.18);
+      padding: 14px 16px;
+      font: inherit;
+      background: #fff;
+    }
+    textarea::placeholder,
+    input[type="tel"]::placeholder {
+      color: #97a69d;
+    }
     .submit-btn {
       width: 100%;
       border: 0;
@@ -304,6 +316,7 @@
           if (question.type === 'textarea') {
             const textarea = document.createElement('textarea');
             textarea.name = `q_${question.id}`;
+            textarea.placeholder = question.placeholder_text || '';
             wrapper.appendChild(textarea);
           } else if (question.type === 'mobile') {
             const input = document.createElement('input');
@@ -311,14 +324,8 @@
             input.name = `q_${question.id}`;
             input.inputMode = 'numeric';
             input.autocomplete = 'tel';
-            input.placeholder = '请输入手机号';
+            input.placeholder = question.placeholder_text || '请输入手机号';
             input.maxLength = 20;
-            input.style.width = '100%';
-            input.style.borderRadius = '18px';
-            input.style.border = '1px solid rgba(47, 106, 76, 0.18)';
-            input.style.padding = '14px 16px';
-            input.style.font = 'inherit';
-            input.style.background = '#fff';
             wrapper.appendChild(input);
           } else {
             const type = question.type === 'single_choice' ? 'radio' : 'checkbox';
