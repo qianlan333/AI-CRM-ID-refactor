@@ -555,6 +555,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             decision_source TEXT NOT NULL DEFAULT 'system',
             source_type TEXT NOT NULL DEFAULT 'system',
             source_channel_id INTEGER REFERENCES automation_channel(id) ON DELETE SET NULL,
+            current_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
+                CHECK (current_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            current_audience_entered_at TEXT NOT NULL DEFAULT '',
             last_active_pool TEXT NOT NULL DEFAULT '',
             joined_at TEXT NOT NULL DEFAULT '',
             last_ai_push_at TEXT NOT NULL DEFAULT '',
@@ -564,6 +567,13 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         )
         """
     )
+    member_columns = _sqlite_table_columns(db, "automation_member")
+    if "current_audience_code" not in member_columns:
+        db.execute(
+            "ALTER TABLE automation_member ADD COLUMN current_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'"
+        )
+    if "current_audience_entered_at" not in member_columns:
+        db.execute("ALTER TABLE automation_member ADD COLUMN current_audience_entered_at TEXT NOT NULL DEFAULT ''")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS automation_event (
@@ -819,6 +829,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_pool ON automation_member (current_pool, in_pool)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_owner ON automation_member (owner_staff_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_channel ON automation_member (source_channel_id)")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_member_audience ON automation_member (current_audience_code, updated_at DESC, id DESC)"
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_event_member_created ON automation_event (member_id, created_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_event_action_created ON automation_event (action, created_at DESC, id DESC)")
     db.execute(
@@ -914,6 +927,388 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         CREATE INDEX IF NOT EXISTS idx_automation_agent_llm_call_log_status_created
         ON automation_agent_llm_call_log (status, created_at DESC, id DESC)
         """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_agent_pool (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pool_code TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            pool_type TEXT NOT NULL DEFAULT 'shared'
+                CHECK (pool_type IN ('shared', 'reply', 'rewrite', 'personalized')),
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    agent_pool_columns = _sqlite_table_columns(db, "automation_agent_pool")
+    agent_pool_sql = _sqlite_table_sql(db, "automation_agent_pool").lower()
+    if agent_pool_columns and ("purpose_code" in agent_pool_columns or "'reply'" not in agent_pool_sql):
+        db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("DROP TABLE IF EXISTS automation_agent_pool__new")
+        db.execute(
+            """
+            CREATE TABLE automation_agent_pool__new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pool_code TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                pool_type TEXT NOT NULL DEFAULT 'shared'
+                    CHECK (pool_type IN ('shared', 'reply', 'rewrite', 'personalized')),
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_by TEXT NOT NULL DEFAULT '',
+                updated_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            f"""
+            INSERT INTO automation_agent_pool__new (
+                id,
+                pool_code,
+                display_name,
+                description,
+                pool_type,
+                enabled,
+                created_by,
+                updated_by,
+                created_at,
+                updated_at
+            )
+            SELECT
+                id,
+                pool_code,
+                COALESCE(display_name, ''),
+                COALESCE(description, ''),
+                CASE
+                    WHEN lower(COALESCE(pool_type, '')) IN ('shared', 'reply', 'rewrite', 'personalized')
+                        THEN lower(COALESCE(pool_type, 'shared'))
+                    WHEN lower(COALESCE({"purpose_code" if "purpose_code" in agent_pool_columns else "''"}, '')) IN ('shared', 'reply', 'rewrite', 'personalized')
+                        THEN lower(COALESCE({"purpose_code" if "purpose_code" in agent_pool_columns else "''"}, 'shared'))
+                    ELSE 'shared'
+                END AS pool_type,
+                COALESCE(enabled, 1),
+                COALESCE(created_by, ''),
+                COALESCE(updated_by, ''),
+                COALESCE(created_at, CURRENT_TIMESTAMP),
+                COALESCE(updated_at, CURRENT_TIMESTAMP)
+            FROM automation_agent_pool
+            """
+        )
+        db.execute("DROP TABLE automation_agent_pool")
+        db.execute("ALTER TABLE automation_agent_pool__new RENAME TO automation_agent_pool")
+        db.execute("PRAGMA foreign_keys = ON")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_agent_pool_agent (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_pool_id INTEGER NOT NULL REFERENCES automation_agent_pool(id) ON DELETE CASCADE,
+            agent_code TEXT NOT NULL REFERENCES automation_agent_config(agent_code) ON DELETE CASCADE,
+            role_code TEXT NOT NULL DEFAULT 'primary'
+                CHECK (role_code IN ('primary', 'fallback', 'supporting')),
+            position_index INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_code TEXT NOT NULL UNIQUE,
+            template_name TEXT NOT NULL DEFAULT '',
+            questionnaire_id INTEGER REFERENCES questionnaires(id) ON DELETE SET NULL,
+            segmentation_question_id INTEGER REFERENCES questionnaire_questions(id) ON DELETE SET NULL,
+            description TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_profile_segment_category (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id INTEGER NOT NULL REFERENCES automation_profile_segment_template(id) ON DELETE CASCADE,
+            category_key TEXT NOT NULL DEFAULT '',
+            category_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_profile_segment_option_mapping (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id INTEGER NOT NULL REFERENCES automation_profile_segment_template(id) ON DELETE CASCADE,
+            category_id INTEGER NOT NULL REFERENCES automation_profile_segment_category(id) ON DELETE CASCADE,
+            question_id INTEGER NOT NULL REFERENCES questionnaire_questions(id) ON DELETE CASCADE,
+            option_id INTEGER NOT NULL REFERENCES questionnaire_options(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_code TEXT NOT NULL UNIQUE,
+            workflow_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+            segmentation_basis TEXT NOT NULL DEFAULT 'none'
+                CHECK (segmentation_basis IN ('none', 'profile', 'behavior')),
+            generation_mode TEXT NOT NULL DEFAULT 'manual_layered'
+                CHECK (generation_mode IN ('manual_layered', 'auto_layered_rewrite', 'personalized_single')),
+            profile_segment_template_id INTEGER REFERENCES automation_profile_segment_template(id) ON DELETE SET NULL,
+            behavior_tier_scheme TEXT NOT NULL DEFAULT 'fixed_v1',
+            fallback_to_standard_content INTEGER NOT NULL DEFAULT 1,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_audience (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id INTEGER NOT NULL REFERENCES automation_workflow(id) ON DELETE CASCADE,
+            audience_code TEXT NOT NULL
+                CHECK (audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_member_audience_entry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
+            audience_code TEXT NOT NULL
+                CHECK (audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            entered_at TEXT NOT NULL DEFAULT '',
+            exited_at TEXT NOT NULL DEFAULT '',
+            is_current INTEGER NOT NULL DEFAULT 1,
+            entry_source TEXT NOT NULL DEFAULT 'system',
+            entry_reason TEXT NOT NULL DEFAULT '',
+            source_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_agent_pool_binding (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id INTEGER NOT NULL REFERENCES automation_workflow(id) ON DELETE CASCADE,
+            agent_pool_id INTEGER NOT NULL REFERENCES automation_agent_pool(id) ON DELETE CASCADE,
+            binding_scope TEXT NOT NULL DEFAULT 'default'
+                CHECK (binding_scope IN ('default', 'profile_category', 'behavior_tier', 'personalized')),
+            segment_key TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_node (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id INTEGER NOT NULL REFERENCES automation_workflow(id) ON DELETE CASCADE,
+            node_code TEXT NOT NULL DEFAULT '',
+            node_name TEXT NOT NULL DEFAULT '',
+            target_audience_code TEXT NOT NULL
+                CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            day_offset INTEGER NOT NULL DEFAULT 1,
+            send_time TEXT NOT NULL DEFAULT '09:00',
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+            position_index INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_node_content (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            node_id INTEGER NOT NULL UNIQUE REFERENCES automation_workflow_node(id) ON DELETE CASCADE,
+            standard_content_text TEXT NOT NULL DEFAULT '',
+            standard_content_payload_json TEXT NOT NULL DEFAULT '{}',
+            fallback_to_standard_content INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_node_content_variant (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            node_content_id INTEGER NOT NULL REFERENCES automation_workflow_node_content(id) ON DELETE CASCADE,
+            variant_scope TEXT NOT NULL
+                CHECK (variant_scope IN ('profile_category', 'behavior_tier', 'personalized')),
+            segment_key TEXT NOT NULL DEFAULT '',
+            content_text TEXT NOT NULL DEFAULT '',
+            content_payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_execution (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id TEXT NOT NULL UNIQUE,
+            workflow_id INTEGER REFERENCES automation_workflow(id) ON DELETE SET NULL,
+            node_id INTEGER REFERENCES automation_workflow_node(id) ON DELETE SET NULL,
+            trigger_type TEXT NOT NULL DEFAULT 'scheduled_poll'
+                CHECK (trigger_type IN ('scheduled_poll', 'manual_replay', 'debug')),
+            audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
+                CHECK (audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            scheduled_for TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'running', 'finished', 'partial_failed', 'failed')),
+            total_count INTEGER NOT NULL DEFAULT 0,
+            success_count INTEGER NOT NULL DEFAULT 0,
+            skipped_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_workflow_execution_item (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id INTEGER NOT NULL REFERENCES automation_workflow_execution(id) ON DELETE CASCADE,
+            workflow_id INTEGER REFERENCES automation_workflow(id) ON DELETE SET NULL,
+            node_id INTEGER REFERENCES automation_workflow_node(id) ON DELETE SET NULL,
+            member_id INTEGER REFERENCES automation_member(id) ON DELETE SET NULL,
+            audience_entry_id INTEGER REFERENCES automation_member_audience_entry(id) ON DELETE SET NULL,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            rendered_content_text TEXT NOT NULL DEFAULT '',
+            content_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            agent_pool_id INTEGER REFERENCES automation_agent_pool(id) ON DELETE SET NULL,
+            agent_run_id TEXT NOT NULL DEFAULT '',
+            agent_output_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'prepared', 'sent', 'skipped', 'failed')),
+            error_message TEXT NOT NULL DEFAULT '',
+            send_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+            sent_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_agent_pool_enabled ON automation_agent_pool (enabled, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_agent_pool_agent_unique ON automation_agent_pool_agent (agent_pool_id, agent_code)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_agent_pool_agent_position ON automation_agent_pool_agent (agent_pool_id, position_index ASC, id ASC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_enabled ON automation_profile_segment_template (enabled, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_profile_segment_category_template_key ON automation_profile_segment_category (template_id, category_key)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_category_template_sort ON automation_profile_segment_category (template_id, sort_order ASC, id ASC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_profile_segment_option_mapping_unique ON automation_profile_segment_option_mapping (category_id, question_id, option_id)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_option_mapping_template ON automation_profile_segment_option_mapping (template_id, question_id, option_id, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_status ON automation_workflow (status, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_enabled ON automation_workflow (enabled, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_audience_unique ON automation_workflow_audience (workflow_id, audience_code)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_audience_code ON automation_workflow_audience (audience_code, workflow_id)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_member_audience_entry_member_entered ON automation_member_audience_entry (member_id, entered_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_member_audience_entry_audience_current ON automation_member_audience_entry (audience_code, is_current, entered_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_member_audience_entry_current ON automation_member_audience_entry (member_id) WHERE is_current = 1"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_agent_pool_binding_unique ON automation_workflow_agent_pool_binding (workflow_id, binding_scope, segment_key)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_agent_pool_binding_pool ON automation_workflow_agent_pool_binding (agent_pool_id, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_node_code ON automation_workflow_node (workflow_id, node_code)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_position ON automation_workflow_node (workflow_id, position_index ASC, id ASC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_schedule ON automation_workflow_node (target_audience_code, day_offset, send_time, enabled, id ASC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_node_content_variant_unique ON automation_workflow_node_content_variant (node_content_id, variant_scope, segment_key)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_content_variant_scope ON automation_workflow_node_content_variant (variant_scope, segment_key, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_due ON automation_workflow_execution (status, scheduled_for, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_workflow ON automation_workflow_execution (workflow_id, created_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_item_execution ON automation_workflow_execution_item (execution_id, id ASC)"
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_execution_item_member_unique ON automation_workflow_execution_item (execution_id, member_id)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_item_member ON automation_workflow_execution_item (member_id, created_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_item_send_record ON automation_workflow_execution_item (send_record_id, created_at DESC, id DESC)"
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_stage_status ON automation_focus_send_batch (stage_key, status, id DESC)"
@@ -1347,6 +1742,9 @@ def _init_sqlite(db) -> None:
             ON automation_agent_output (outcome_status, created_at DESC, id DESC)
             """
         )
+    profile_template_columns = _sqlite_table_columns(db, "automation_profile_segment_template")
+    if profile_template_columns and "segmentation_question_id" not in profile_template_columns:
+        db.execute("ALTER TABLE automation_profile_segment_template ADD COLUMN segmentation_question_id INTEGER")
     agent_config_columns = _sqlite_table_columns(db, "automation_agent_config")
     if agent_config_columns:
         if "submitted_for_publish" not in agent_config_columns:
@@ -1402,6 +1800,60 @@ def _ensure_postgres_automation_agent_config_tables(db) -> None:
         """
         ALTER TABLE IF EXISTS automation_agent_config
         ADD COLUMN IF NOT EXISTS submitted_by TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_profile_segment_template
+        ADD COLUMN IF NOT EXISTS segmentation_question_id BIGINT REFERENCES questionnaire_questions(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_agent_pool
+        ADD COLUMN IF NOT EXISTS pool_type TEXT NOT NULL DEFAULT 'shared'
+        """
+    )
+    db.execute(
+        """
+        UPDATE automation_agent_pool
+        SET pool_type = CASE
+            WHEN lower(COALESCE(pool_type, '')) IN ('shared', 'reply', 'rewrite', 'personalized')
+                THEN lower(COALESCE(pool_type, 'shared'))
+            ELSE 'shared'
+        END
+        """
+    )
+    db.execute(
+        """
+        DO $$
+        DECLARE constraint_name TEXT;
+        BEGIN
+            FOR constraint_name IN
+                SELECT c.conname
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE c.contype = 'c'
+                  AND n.nspname = current_schema()
+                  AND t.relname = 'automation_agent_pool'
+                  AND pg_get_constraintdef(c.oid) ILIKE '%pool_type%'
+            LOOP
+                EXECUTE format(
+                    'ALTER TABLE %I.%I DROP CONSTRAINT IF EXISTS %I',
+                    current_schema(),
+                    'automation_agent_pool',
+                    constraint_name
+                );
+            END LOOP;
+        END $$;
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE automation_agent_pool
+        ADD CONSTRAINT automation_agent_pool_pool_type_check
+        CHECK (pool_type IN ('shared', 'reply', 'rewrite', 'personalized'))
         """
     )
 
@@ -2175,6 +2627,24 @@ def _init_postgres(db) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_automation_sop_batch_item_member_day_snapshot
         ON automation_sop_batch_item (member_id, pool_key, day_index_snapshot, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS current_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS current_audience_entered_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_member_audience
+        ON automation_member (current_audience_code, updated_at DESC, id DESC)
         """
     )
     db.execute(

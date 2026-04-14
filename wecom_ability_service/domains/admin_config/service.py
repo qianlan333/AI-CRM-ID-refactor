@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 
 from flask import current_app
 
-from ...customer_center.service import list_customers
 from ...infra.constants import USER_OPS_CLASS_TERM_TAG_GROUP_NAME
 from ...infra.settings import get_setting, mask_value
 from ..routing_config import (
@@ -589,12 +588,12 @@ def build_config_home_payload() -> dict[str, Any]:
                 "description": USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
                 "href": "/admin/config/class-term-tags",
             },
-            {
-                "label": "自动化转化",
-                "value": "问卷初判 + 6 池子",
-                "description": "维护自动化转化问卷初判、沉默池规则和最近处理情况",
-                "href": "/admin/automation-conversion",
-            },
+        {
+            "label": "自动化转化",
+            "value": "3 类人群 + 4 入口",
+            "description": "维护自动化转化的数据概览、自动化运营、自动化应答和模型 / Agent 配置",
+            "href": "/admin/automation-conversion",
+        },
             {
                 "label": "系统设置",
                 "value": len(app_rows["rows"]),
@@ -651,122 +650,6 @@ def automation_conversion_segment_cards() -> dict[str, Any]:
             if unclassified_count
             else ""
         ),
-    }
-
-
-def automation_conversion_stage_columns() -> list[dict[str, Any]]:
-    rows = repo.list_automation_conversion_stage_snapshot_rows()
-    today_string = _automation_today_string()
-    columns_by_stage: dict[str, dict[str, Any]] = {
-        _automation_stage_key(item["main_stage"], item.get("sub_stage", "")): {
-            "key": item["key"],
-            "label": item["label"],
-            "description": item["description"],
-            "main_stage": item["main_stage"],
-            "sub_stage": item.get("sub_stage", ""),
-            "total_count": 0,
-            "focus_count": 0,
-            "normal_count": 0,
-            "today_new_count": 0,
-        }
-        for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS
-    }
-    for row in rows:
-        stage_key = _automation_stage_key(_normalized_text(row.get("main_stage")), _normalized_text(row.get("sub_stage")))
-        column = columns_by_stage.get(stage_key)
-        if not column:
-            continue
-        segment = _normalized_text(row.get("segment")).lower() or "unknown"
-        entered_at = _normalized_text(row.get("entered_at")) or _normalized_text(row.get("updated_at"))
-        column["total_count"] += 1
-        if segment == "focus":
-            column["focus_count"] += 1
-        if segment == "normal":
-            column["normal_count"] += 1
-        if entered_at[:10] == today_string:
-            column["today_new_count"] += 1
-    return [
-        {
-            **columns_by_stage[_automation_stage_key(item["main_stage"], item.get("sub_stage", ""))],
-            "route_key": item["route_key"],
-            "value": int(columns_by_stage[_automation_stage_key(item["main_stage"], item.get("sub_stage", ""))]["total_count"] or 0),
-        }
-        for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS
-    ]
-
-
-def get_automation_conversion_stage_definition(stage_key: str) -> dict[str, Any] | None:
-    normalized_stage_key = _normalized_text(stage_key)
-    for item in AUTOMATION_CONVERSION_STAGE_DEFINITIONS:
-        if item["route_key"] == normalized_stage_key:
-            return dict(item)
-    return None
-
-
-def build_automation_conversion_stage_detail_payload(
-    *,
-    stage_key: str,
-    keyword: str = "",
-    offset: int = 0,
-    limit: int = 50,
-) -> dict[str, Any]:
-    stage_definition = get_automation_conversion_stage_definition(stage_key)
-    if not stage_definition:
-        raise ValueError("stage not found")
-    stage_columns = automation_conversion_stage_columns()
-    current_stage = next(
-        (item for item in stage_columns if item["route_key"] == stage_definition["route_key"]),
-        {
-            "label": stage_definition["label"],
-            "description": stage_definition["description"],
-            "main_stage": stage_definition["main_stage"],
-            "sub_stage": stage_definition.get("sub_stage", ""),
-            "route_key": stage_definition["route_key"],
-            "total_count": 0,
-            "focus_count": 0,
-            "normal_count": 0,
-            "today_new_count": 0,
-        },
-    )
-    normalized_offset = max(0, int(offset or 0))
-    normalized_limit = max(1, min(int(limit or 50), 100))
-    payload = list_customers(
-        {
-            "keyword": _normalized_text(keyword),
-            "marketing_main_stage": stage_definition["main_stage"],
-            "marketing_sub_stage": stage_definition.get("sub_stage", ""),
-            "limit": str(normalized_limit),
-            "offset": str(normalized_offset),
-        }
-    )
-    rows = payload.get("items") or payload.get("customers") or []
-    customers = [
-        {
-            "external_userid": _normalized_text(item.get("external_userid")),
-            "customer_name": _normalized_text(item.get("customer_name")) or _normalized_text(item.get("external_userid")) or "未命名客户",
-            "owner_userid": _normalized_text(item.get("owner_userid")),
-            "owner_display_name": _normalized_text(item.get("owner_display_name")) or _normalized_text(item.get("owner_userid")) or "暂无",
-            "mobile": _normalized_text(item.get("mobile")),
-            "last_touch_at": _normalized_text(item.get("last_touch_at")) or _normalized_text(item.get("updated_at")),
-        }
-        for item in rows
-    ]
-    total = int(payload.get("total") or payload.get("count") or len(customers))
-    return {
-        "stage": current_stage,
-        "filters": {
-            "keyword": _normalized_text(keyword),
-        },
-        "customers": customers,
-        "pagination": {
-            "total": total,
-            "offset": normalized_offset,
-            "limit": normalized_limit,
-            "has_prev": normalized_offset > 0,
-            "has_next": normalized_offset + normalized_limit < total,
-            "prev_offset": max(0, normalized_offset - normalized_limit),
-            "next_offset": normalized_offset + normalized_limit,
-        },
     }
 
 

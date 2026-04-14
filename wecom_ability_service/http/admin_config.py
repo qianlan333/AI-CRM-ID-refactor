@@ -3,11 +3,6 @@ from __future__ import annotations
 from flask import jsonify, redirect, request, url_for
 
 from ..domains.admin_config import (
-    automation_conversion_dispatch_filter_options,
-    automation_conversion_recent_activity,
-    automation_conversion_segment_cards,
-    automation_conversion_stage_columns,
-    build_automation_conversion_stage_detail_payload,
     build_config_home_payload,
     config_tabs,
     list_admin_app_settings,
@@ -16,7 +11,6 @@ from ..domains.admin_config import (
     list_mcp_tool_settings,
     list_owner_routing_settings,
     list_signup_tag_settings,
-    normalize_automation_conversion_dispatch_filter,
     save_admin_app_settings,
     save_class_term_tag_mapping,
     save_mcp_tool_setting,
@@ -25,9 +19,6 @@ from ..domains.admin_config import (
     save_signup_tag_setting,
 )
 from ..services import (
-    get_signup_conversion_config,
-    get_questionnaire_detail,
-    list_questionnaires,
     preview_signup_conversion_customer,
     recompute_signup_conversion_customers,
     save_signup_conversion_config,
@@ -390,90 +381,6 @@ def _automation_conversion_status_cards(config: dict[str, object], selected_ques
             "description": f"按 {str(config.get('timezone') or 'Asia/Shanghai').strip() or 'Asia/Shanghai'} 时区执行，夜间不会新启动自动化转化。",
         },
     ]
-
-
-def admin_automation_conversion():
-    config = get_signup_conversion_config()
-    questionnaires = list_questionnaires()
-    questionnaire_id = config.get("questionnaire_id")
-    selected_questionnaire = None
-    if questionnaire_id not in (None, ""):
-        selected_questionnaire = get_questionnaire_detail(int(questionnaire_id))
-    dispatch_filter = normalize_automation_conversion_dispatch_filter(_query_text("status"))
-    dispatch_history = automation_conversion_recent_activity(filter_value=dispatch_filter, limit=50)
-    return _render_admin_template(
-        "automation_conversion.html",
-        active_nav="automation_conversion",
-        page_title="自动化转化",
-        page_summary="用业务步骤维护自动化转化的问卷初判，查看客户所处阶段，并追踪最近交给 AI 的处理情况。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("自动化转化", None),
-        ),
-        current_status_cards=_automation_conversion_status_cards(config, selected_questionnaire),
-        marketing_config=config,
-        questionnaires=questionnaires,
-        selected_questionnaire=selected_questionnaire,
-        priority_distribution=automation_conversion_segment_cards(),
-        stage_columns=automation_conversion_stage_columns(),
-        dispatch_history=dispatch_history,
-        dispatch_status_options=automation_conversion_dispatch_filter_options(),
-    )
-
-
-def admin_automation_conversion_stage_detail(stage_key: str):
-    try:
-        payload = build_automation_conversion_stage_detail_payload(
-            stage_key=stage_key,
-            keyword=_query_text("keyword"),
-            offset=_query_int("offset", default=0, minimum=0, maximum=100000),
-            limit=_query_int("limit", default=50, minimum=1, maximum=100),
-        )
-    except ValueError:
-        return _render_admin_template(
-            "placeholder.html",
-            active_nav="automation_conversion",
-            page_title="阶段不存在",
-            page_summary="当前阶段没有对应页面，请返回自动化转化首页重新选择。",
-            breadcrumbs=_breadcrumb_items(
-                ("客户管理后台", url_for("api.admin_console_home")),
-                ("自动化转化", url_for("api.admin_automation_conversion")),
-                ("阶段不存在", None),
-            ),
-            actions=[{"label": "返回自动化转化首页", "href": url_for("api.admin_automation_conversion"), "variant": "secondary"}],
-            state_title="阶段不存在",
-            state_body="请检查链接是否正确，或重新点击阶段看板进入。",
-            state_items=["支持的阶段包括：新用户池、未激活普通池、未激活重点跟进池、激活普通池、激活重点跟进池、沉默池、已确认成交"],
-            page_error="未找到对应阶段",
-        ), 404
-
-    stage = payload["stage"]
-    return _render_admin_template(
-        "automation_conversion_stage.html",
-        active_nav="automation_conversion",
-        page_title=f"{stage['label']}客户",
-        page_summary="按阶段查看客户名单，支持继续按姓名、手机号或客户编号缩小范围。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("自动化转化", url_for("api.admin_automation_conversion")),
-            (stage["label"], None),
-        ),
-        stage_payload=payload,
-    )
-
-
-def admin_automation_conversion_preview_page():
-    return _render_admin_template(
-        "automation_conversion_preview.html",
-        active_nav="automation_conversion",
-        page_title="客户试运行",
-        page_summary="输入手机号、客户姓名或客户编号，查看系统当前会不会把这位客户放进自动化转化。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("自动化转化", url_for("api.admin_automation_conversion")),
-            ("客户试运行", None),
-        ),
-    )
 
 
 def admin_marketing_automation_ui():

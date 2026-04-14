@@ -18,7 +18,7 @@ from flask import current_app
 from ...customer_timeline.service import get_customer_timeline
 from ...db import get_db
 from ...infra.settings import mask_value
-from ...services import get_recent_messages_by_user
+from ...services import get_recent_messages_by_user, get_signup_conversion_config
 from . import local_projection, repo
 from .agents import (
     AGENT_OUTPUT_TYPE_OPTIONS,
@@ -36,6 +36,7 @@ from .agents import (
     get_deepseek_runtime_config,
 )
 from .service import apply_router_target_pool, ensure_agent_prompt_defaults, get_member_detail, get_stage_detail_payload
+from .workflow_service import ensure_default_conversion_agent_pools, list_conversion_agent_pools_for_agent
 
 _EXPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-output-export")
 
@@ -476,6 +477,7 @@ def ensure_agent_orchestration_defaults() -> None:
         if skill_code in existing_skill_codes:
             continue
         repo.insert_agent_skill_row(payload)
+    ensure_default_conversion_agent_pools()
     get_db().commit()
 
 
@@ -526,6 +528,7 @@ def _agent_diff_summary(item: dict[str, Any]) -> list[str]:
 
 def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
     deserialized = repo.deserialize_agent_config_row(row or {})
+    agent_code = _normalized_text(deserialized.get("agent_code"))
     has_unpublished_changes = bool(_agent_diff_summary({
         "draft": {
             "role_prompt": _normalized_text(deserialized.get("draft_role_prompt")),
@@ -541,9 +544,9 @@ def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
         },
     }))
     payload = {
-        "agent_code": _normalized_text(deserialized.get("agent_code")),
+        "agent_code": agent_code,
         "display_name": _normalized_text(deserialized.get("display_name")) or _normalized_text(
-            (CHILD_AGENT_CONFIG_MAP.get(_normalized_text(deserialized.get("agent_code"))) or {}).get("display_name")
+            (CHILD_AGENT_CONFIG_MAP.get(agent_code) or {}).get("display_name")
         ),
         "pool_keys": list(deserialized.get("pool_keys_json") or []),
         "enabled": bool(deserialized.get("enabled")),
@@ -572,6 +575,7 @@ def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
             "output_schema": list(deserialized.get("published_output_schema_json") or []),
         },
     }
+    payload["agent_pools"] = list_conversion_agent_pools_for_agent(agent_code) if agent_code else []
     payload["diff_summary"] = _agent_diff_summary(payload)
     return payload
 
@@ -2354,6 +2358,132 @@ def review_agent_reply_output(
         applied_status=normalized_decision,
         applied_at=now_text,
     )
+
+
+def _question_answer_text(answer_row: dict[str, Any]) -> str:
+    option_texts = repo._json_loads((answer_row or {}).get("selected_option_texts_snapshot"), default=[])
+    if isinstance(option_texts, list):
+        normalized = [_normalized_text(item) for item in option_texts if _normalized_text(item)]
+        if normalized:
+            return " / ".join(normalized)
+    text_value = _normalized_text((answer_row or {}).get("text_value"))
+    return text_value or "未填写"
+
+
+def _feedback_tags_from_member_snapshot(snapshot: dict[str, Any]) -> list[str]:
+    stage = dict((snapshot or {}).get("stage") or {})
+    tags: list[str] = []
+    for value in (
+        stage.get("current_pool_label"),
+        stage.get("current_stage_label"),
+        stage.get("current_target_label"),
+        stage.get("follow_type"),
+        stage.get("activation_status"),
+    ):
+        text = _normalized_text(value)
+        if text and text not in tags:
+            tags.append(text)
+    return tags
+
+
+def _feedback_questionnaire_items(*, external_contact_id: str, phone: str, snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    settings = get_signup_conversion_config()
+    questionnaire_id = int(settings.get("questionnaire_id") or 0)
+    if questionnaire_id > 0 and (_normalized_text(external_contact_id) or _normalized_text(phone)):
+        submission = repo.get_latest_questionnaire_submission(
+            questionnaire_id=questionnaire_id,
+            external_contact_ids=[_normalized_text(external_contact_id)] if _normalized_text(external_contact_id) else None,
+            phone=_normalized_text(phone),
+        )
+        if submission:
+            return [
+                {
+                    "question": _normalized_text(item.get("question_title_snapshot")) or f"问题 {int(item.get('question_id') or 0)}",
+                    "answer": _question_answer_text(item),
+                }
+                for item in repo.list_questionnaire_submission_answers(int(submission["id"]))
+            ]
+    questionnaire = dict((snapshot or {}).get("questionnaire") or {})
+    fallback_items: list[dict[str, Any]] = []
+    if _normalized_text(questionnaire.get("status_label")):
+        fallback_items.append({"question": "问卷状态", "answer": _normalized_text(questionnaire.get("status_label"))})
+    if _normalized_text(questionnaire.get("result_label")):
+        fallback_items.append({"question": "问卷结果", "answer": _normalized_text(questionnaire.get("result_label"))})
+    matched_questions = [str(item).strip() for item in list(questionnaire.get("matched_questions") or []) if str(item).strip()]
+    if matched_questions:
+        fallback_items.append({"question": "命中问题", "answer": " / ".join(matched_questions)})
+    return fallback_items
+
+
+def build_rejected_feedback_payload(output_id: str, *, not_adopted_reason: str) -> dict[str, Any]:
+    row = repo.get_agent_output_row(_normalized_text(output_id))
+    if not row:
+        raise LookupError("未找到对应话术输出")
+    output = repo.deserialize_agent_output_row(row)
+    external_contact_id = _normalized_text(output.get("external_contact_id"))
+    snapshot = crm_get_member_snapshot(external_contact_id=external_contact_id, phone="") if external_contact_id else {}
+    basic = dict((snapshot or {}).get("basic") or {})
+    resolved_phone = _normalized_text(basic.get("phone"))
+    recent_message_rows = get_recent_messages_by_user(external_contact_id, limit=20) if external_contact_id else []
+    recent_chats = [_router_message_entry(item, external_contact_id=external_contact_id) for item in list(recent_message_rows or [])[:20]]
+    return {
+        "recent_chats": recent_chats,
+        "tags": _feedback_tags_from_member_snapshot(snapshot),
+        "questionnaire": _feedback_questionnaire_items(
+            external_contact_id=external_contact_id,
+            phone=resolved_phone,
+            snapshot=snapshot,
+        ),
+        "not_adopted_reason": _normalized_text(not_adopted_reason),
+    }
+
+
+def build_rejected_feedback_clipboard_payload(output_id: str, *, not_adopted_reason: str) -> str:
+    return json.dumps(
+        build_rejected_feedback_payload(
+            output_id,
+            not_adopted_reason=not_adopted_reason,
+        ),
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def list_recent_reviewable_agent_outputs(*, limit: int = 20) -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    safe_limit = max(1, min(50, int(limit or 20)))
+    scan_limit = min(200, max(50, safe_limit * 5))
+    rows = repo.list_agent_output_rows(filters=None, limit=scan_limit, offset=0)
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        serialized = _serialize_agent_output(row, visibility="console")
+        if not bool(serialized.get("is_reviewable")):
+            continue
+        items.append(
+            {
+                "output_id": _normalized_text(serialized.get("output_id")),
+                "request_id": _normalized_text(serialized.get("request_id")),
+                "external_contact_id": _normalized_text(serialized.get("external_contact_id")),
+                "agent_code": _normalized_text(serialized.get("agent_code")),
+                "output_type": _normalized_text(serialized.get("output_type")),
+                "rendered_output_text": _normalized_text(serialized.get("rendered_output_text")),
+                "rendered_content_preview": _normalized_text(serialized.get("rendered_output_text"))[:120],
+                "reason": _normalized_text(serialized.get("reason")),
+                "outcome_status": _normalized_text(serialized.get("outcome_status")),
+                "outcome_status_label": _normalized_text(serialized.get("outcome_status_label")),
+                "review_note": _normalized_text(serialized.get("review_note")),
+                "reviewed_at": _normalized_text(serialized.get("reviewed_at")),
+                "created_at": _normalized_text(serialized.get("created_at")),
+                "is_reviewable": True,
+            }
+        )
+        if len(items) >= safe_limit:
+            break
+    return {
+        "rows": items,
+        "total": len(items),
+        "limit": safe_limit,
+    }
 
 
 def _resolve_member_detail_for_skill(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
