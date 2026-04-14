@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 
 from flask import current_app
 
-from ...customer_center.service import list_customers
 from ...infra.constants import USER_OPS_CLASS_TERM_TAG_GROUP_NAME
 from ...infra.settings import get_setting, mask_value
 from ..routing_config import (
