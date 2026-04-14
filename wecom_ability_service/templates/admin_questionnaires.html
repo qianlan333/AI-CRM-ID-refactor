@@ -1332,6 +1332,7 @@
         local_key: question.local_key || nextLocalKey('question'),
         type: normalizedType,
         title: question.title || '',
+        placeholder_text: question.placeholder_text || '',
         required: Boolean(question.required),
         sort_order: question.sort_order ?? (index + 1),
         options: ['textarea', 'mobile'].includes(normalizedType)
@@ -1460,6 +1461,9 @@
             required: Boolean(question.required),
             sort_order: Number(question.sort_order || (index + 1)),
           };
+          if (['textarea', 'mobile'].includes(question.type)) {
+            payload.placeholder_text = question.placeholder_text || '';
+          }
           if (!['textarea', 'mobile'].includes(question.type)) {
             payload.options = question.options.map((option, optionIndex) => ({
               option_text: option.option_text,
@@ -1762,9 +1766,9 @@
           const card = document.createElement('article');
           card.className = `preview-question${state.selection.kind === 'question' && state.selection.key === question.local_key ? ' active' : ''}`;
           const optionPreview = question.type === 'textarea'
-            ? '<div class="option-pill">多行文本输入框</div>'
+            ? `<div class="option-pill">多行文本输入框${question.placeholder_text ? ` · 提示词：${escapeHtml(question.placeholder_text)}` : ''}</div>`
             : question.type === 'mobile'
-              ? '<div class="option-pill">手机号单行输入框</div>'
+              ? `<div class="option-pill">手机号单行输入框 · 提示词：${escapeHtml(question.placeholder_text || '请输入手机号')}</div>`
               : (question.options || []).map((option) => `<div class="option-pill">${escapeHtml(option.option_text || '未填写选项')} · ${escapeHtml(String(option.score ?? 0))} 分</div>`).join('');
           card.innerHTML = `
             <span class="question-type">${escapeHtml(formatQuestionType(question.type))}${question.required ? ' · 必填' : ''}</span>
@@ -1968,6 +1972,15 @@
           <label class="field">题目标题
             <input id="question-title" type="text" value="${escapeHtml(question.title)}">
           </label>
+          <label class="field${['textarea', 'mobile'].includes(question.type) ? '' : ' hidden'}" id="question-placeholder-field">填写提示词
+            <input
+              id="question-placeholder-text"
+              type="text"
+              value="${escapeHtml(question.placeholder_text || '')}"
+              placeholder="${escapeHtml(question.type === 'mobile' ? '例如：请输入手机号，便于老师联系你' : '例如：可填写你的学习目标、当前难点等')}"
+            >
+          </label>
+          <div class="helper-note${['textarea', 'mobile'].includes(question.type) ? '' : ' hidden'}" id="question-placeholder-note">用户未输入时显示灰色提示文案，有输入后会自动消失。</div>
           <label class="field" style="margin-bottom:0;">
             <input id="question-required" type="checkbox" ${question.required ? 'checked' : ''}> 必填
           </label>
@@ -1991,6 +2004,13 @@
         question.title = event.target.value;
         renderPreview();
       });
+      const questionPlaceholderInput = inspectorBodyEl.querySelector('#question-placeholder-text');
+      if (questionPlaceholderInput) {
+        questionPlaceholderInput.addEventListener('input', (event) => {
+          question.placeholder_text = event.target.value;
+          renderPreview();
+        });
+      }
       inspectorBodyEl.querySelector('#question-sort-order').addEventListener('input', (event) => {
         question.sort_order = event.target.value;
         renderPreview();

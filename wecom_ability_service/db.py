@@ -107,9 +107,15 @@ def _sqlite_table_sql(db, table_name: str) -> str:
     return str((row or {}).get("sql") or "")
 
 
-def _ensure_sqlite_questionnaire_mobile_type(db) -> None:
+def _ensure_sqlite_questionnaire_question_fields(db) -> None:
     create_sql = _sqlite_table_sql(db, "questionnaire_questions").lower()
-    if not create_sql or "'mobile'" in create_sql:
+    if not create_sql:
+        return
+    columns = _sqlite_table_columns(db, "questionnaire_questions")
+    if "placeholder_text" not in columns:
+        db.execute("ALTER TABLE questionnaire_questions ADD COLUMN placeholder_text TEXT NOT NULL DEFAULT ''")
+        columns.add("placeholder_text")
+    if "'mobile'" in create_sql:
         return
     db.execute("PRAGMA foreign_keys = OFF")
     db.execute(
@@ -119,6 +125,7 @@ def _ensure_sqlite_questionnaire_mobile_type(db) -> None:
             questionnaire_id INTEGER NOT NULL REFERENCES questionnaires(id) ON DELETE CASCADE,
             type TEXT NOT NULL CHECK (type IN ('single_choice', 'multi_choice', 'textarea', 'mobile')),
             title TEXT NOT NULL,
+            placeholder_text TEXT NOT NULL DEFAULT '',
             required INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -129,9 +136,9 @@ def _ensure_sqlite_questionnaire_mobile_type(db) -> None:
     db.execute(
         """
         INSERT INTO questionnaire_questions__new (
-            id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+            id, questionnaire_id, type, title, placeholder_text, required, sort_order, created_at, updated_at
         )
-        SELECT id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+        SELECT id, questionnaire_id, type, title, COALESCE(placeholder_text, ''), required, sort_order, created_at, updated_at
         FROM questionnaire_questions
         """
     )
@@ -1264,7 +1271,7 @@ def _ensure_sqlite_customer_pulse_tables(db) -> None:
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
-    _ensure_sqlite_questionnaire_mobile_type(db)
+    _ensure_sqlite_questionnaire_question_fields(db)
     _ensure_sqlite_questionnaire_external_push_tables(db)
     _ensure_sqlite_user_ops_page_tables(db)
     _ensure_sqlite_customer_value_segment_tables(db)
@@ -2119,6 +2126,12 @@ def _init_postgres(db) -> None:
         ALTER TABLE questionnaire_questions
         ADD CONSTRAINT questionnaire_questions_type_check
         CHECK (type IN ('single_choice', 'multi_choice', 'textarea', 'mobile'))
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE questionnaire_questions
+        ADD COLUMN IF NOT EXISTS placeholder_text TEXT NOT NULL DEFAULT ''
         """
     )
     db.execute(

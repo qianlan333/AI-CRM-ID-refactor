@@ -1310,6 +1310,7 @@ CREATE TABLE IF NOT EXISTS questionnaire_questions (
     questionnaire_id BIGINT NOT NULL REFERENCES questionnaires(id) ON DELETE CASCADE,
     type VARCHAR(32) NOT NULL CHECK (type IN ('single_choice', 'multi_choice', 'textarea', 'mobile')),
     title TEXT NOT NULL,
+    placeholder_text TEXT NOT NULL DEFAULT '',
     required BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
