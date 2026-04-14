@@ -359,7 +359,7 @@ def list_questionnaire_rows() -> list[dict[str, Any]]:
         """
         SELECT id, name, title, slug, created_at, updated_at
         FROM questionnaires
-        WHERE COALESCE(is_disabled, 0) = 0
+        WHERE COALESCE(is_disabled, FALSE) = FALSE
         ORDER BY updated_at DESC, id DESC
         """
     )
