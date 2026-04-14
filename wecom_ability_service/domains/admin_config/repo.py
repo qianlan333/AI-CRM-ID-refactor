@@ -418,61 +418,6 @@ def get_automation_conversion_segment_counts() -> dict[str, int]:
     return counts
 
 
-def get_automation_conversion_stage_counts() -> dict[str, int]:
-    rows = get_db().execute(
-        """
-        SELECT main_stage, sub_stage, COUNT(*) AS total
-        FROM customer_marketing_state_current
-        GROUP BY main_stage, sub_stage
-        """
-    ).fetchall()
-    result: dict[str, int] = {}
-    for row in rows:
-        main_stage = str(row.get("main_stage") or "").strip()
-        sub_stage = str(row.get("sub_stage") or "").strip()
-        key = f"{main_stage}/{sub_stage}" if main_stage and sub_stage else main_stage or sub_stage
-        if not key:
-            continue
-        result[key] = int(row.get("total") or 0)
-    return result
-
-
-def list_automation_conversion_stage_snapshot_rows() -> list[dict[str, Any]]:
-    if get_db_backend() == "postgres":
-        rows = get_db().execute(
-            """
-            SELECT
-                s.main_stage,
-                s.sub_stage,
-                COALESCE(s.entered_at::text, s.updated_at::text, '') AS entered_at,
-                s.updated_at,
-                s.state_payload_json
-            FROM customer_marketing_state_current s
-            """
-        ).fetchall()
-    else:
-        rows = get_db().execute(
-            """
-            SELECT
-                s.main_stage,
-                s.sub_stage,
-                COALESCE(NULLIF(s.entered_at, ''), NULLIF(s.updated_at, ''), '') AS entered_at,
-                s.updated_at,
-                s.state_payload_json
-            FROM customer_marketing_state_current s
-            """
-        ).fetchall()
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        payload = _json_loads(row.get("state_payload_json"), default={})
-        if not isinstance(payload, dict):
-            payload = {}
-        item["segment"] = str(payload.get("followup_segment") or payload.get("current_segment") or "").strip().lower() or "unknown"
-        result.append(item)
-    return result
-
-
 def list_automation_conversion_dispatch_history(*, status: str = "", limit: int = 50) -> list[dict[str, Any]]:
     normalized_status = str(status or "").strip()
     filters: list[str] = []

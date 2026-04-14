@@ -3,252 +3,355 @@
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
 <style>
-  .overview-hero {
+  .ac-overview-shell,
+  .ac-overview-top,
+  .ac-overview-summary-grid,
+  .ac-overview-status-row,
+  .ac-overview-section,
+  .ac-overview-actions {
     display: grid;
-    gap: 20px;
+    gap: 18px;
   }
 
-  .overview-hero__top {
+  .ac-overview-top {
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 360px);
+    align-items: start;
+  }
+
+  .ac-overview-summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .ac-overview-card,
+  .ac-overview-section,
+  .ac-overview-action-card,
+  .ac-overview-stat {
+    padding: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.88);
+  }
+
+  .ac-overview-card,
+  .ac-overview-section,
+  .ac-overview-action-card {
+    display: grid;
+    gap: 14px;
+  }
+
+  .ac-overview-head {
     display: flex;
     justify-content: space-between;
-    gap: 18px;
+    gap: 14px;
     align-items: flex-start;
     flex-wrap: wrap;
   }
 
-  .overview-hero__actions {
-    display: grid;
-    gap: 12px;
-    justify-items: end;
-  }
-
-  .overview-refresh-box {
-    display: grid;
-    gap: 10px;
-    min-width: min(320px, 100%);
-    padding: 18px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 20px;
-    background: rgba(255, 251, 245, 0.9);
-  }
-
-  .overview-refresh-meta {
+  .ac-overview-muted {
+    margin: 0;
     color: #64748b;
-    font-size: 13px;
     line-height: 1.6;
   }
 
-  .overview-status-row,
-  .overview-entry-grid {
-    display: flex;
-    flex-wrap: wrap;
+  .ac-overview-status-row {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    justify-content: start;
     gap: 10px;
+    overflow: auto;
   }
 
-  .overview-entry-grid {
+  .ac-overview-stat {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
   }
 
-  .overview-entry-card {
-    display: grid;
-    gap: 10px;
-    padding: 18px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.84);
+  .ac-overview-stat strong {
+    font-size: 28px;
+    line-height: 1;
+    color: #1f2937;
+  }
+
+  .ac-overview-stat span {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .ac-overview-actions {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .ac-overview-action-card {
     color: inherit;
     text-decoration: none;
   }
 
-  .overview-entry-card:hover {
+  .ac-overview-action-card:hover {
     border-color: rgba(157, 99, 48, 0.26);
     box-shadow: 0 16px 28px rgba(99, 67, 26, 0.08);
+  }
+
+  .ac-overview-table-wrap {
+    overflow: auto;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    background: #fff;
+  }
+
+  .ac-overview-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .ac-overview-table th,
+  .ac-overview-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .ac-overview-table th {
+    background: rgba(248, 250, 252, 0.94);
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .ac-overview-feedback[hidden],
+  .ac-overview-loading[hidden] {
+    display: none;
+  }
+
+  .ac-overview-feedback {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.04);
+    color: #334155;
+  }
+
+  .ac-overview-feedback.is-error {
+    background: rgba(254, 242, 242, 0.96);
+    color: #991b1b;
+  }
+
+  .ac-overview-feedback.is-success {
+    background: rgba(240, 253, 244, 0.96);
+    color: #166534;
+  }
+
+  .ac-overview-loading {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.04);
+    color: #334155;
+  }
+
+  @media (max-width: 980px) {
+    .ac-overview-top {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-{% set dashboard = overview_dashboard or {} %}
-{% set todo_items = dashboard.todo_items or [] %}
-{% set largest_stage = dashboard.largest_stage or {} %}
+{% set workspace = overview_workspace or {} %}
 
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
-<section class="admin-card overview-hero">
-  <div class="overview-hero__top">
-    <div>
-      <div class="ac-eyebrow">首页</div>
-      <h2>自动化转化首页</h2>
-      <p>这里只看业务结果、阶段分布、待处理事项和下一步动作，不展示环境、版本或技术运行拼盘。</p>
-      <div class="overview-status-row">
-        <span class="admin-chip admin-chip--{{ dashboard.current_status.tone }}">{{ dashboard.current_status.label }}</span>
-        <span class="admin-chip admin-chip--neutral">最近刷新时间 {{ dashboard.latest_refresh_at }}</span>
+<div id="automation-overview-root" class="ac-overview-shell" data-api-urls='{{ (workspace.api_urls or {})|tojson }}'>
+  <section class="ac-overview-top">
+    <article class="ac-overview-card">
+      <div class="ac-overview-head">
+        <div>
+          <div class="ac-eyebrow">数据概览</div>
+          <h2>自动化转化当前运行状态</h2>
+          <p class="ac-overview-muted">先看三类大人群规模、启用中任务流、最近执行和最近发送结果，不做复杂 BI。</p>
+        </div>
+        <div class="ac-overview-status-row">
+          <span class="admin-chip admin-chip--neutral" id="overview-last-updated">最近刷新：加载中</span>
+          <span class="admin-chip admin-chip--neutral" id="overview-active-workflow-chip">启用任务流 0</span>
+        </div>
       </div>
-    </div>
-    <div class="overview-hero__actions">
-      <div class="overview-refresh-box">
-        <strong>自动化状态大刷新</strong>
-        <div class="overview-refresh-meta">顺序执行消息活跃同步、自动接话扫描、自动接话放行，完成后自动刷新页面。</div>
-        <button class="admin-button admin-button--primary" type="button" id="automation-refresh-button">刷新自动化状态</button>
-        <div class="overview-refresh-meta" id="automation-refresh-status">60 秒内仅允许触发一次。</div>
+      <div class="ac-overview-feedback" id="overview-feedback" hidden></div>
+      <div class="ac-overview-loading" id="overview-loading">正在加载自动化转化概览数据...</div>
+      <div class="ac-overview-summary-grid" id="overview-summary-grid" hidden>
+        <article class="ac-overview-stat">
+          <span>未填问卷人群</span>
+          <strong id="overview-pending-questionnaire">0</strong>
+        </article>
+        <article class="ac-overview-stat">
+          <span>运营中人群</span>
+          <strong id="overview-operating">0</strong>
+        </article>
+        <article class="ac-overview-stat">
+          <span>已转化人群</span>
+          <strong id="overview-converted">0</strong>
+        </article>
+        <article class="ac-overview-stat">
+          <span>当前启用中的任务流</span>
+          <strong id="overview-active-workflow-count">0</strong>
+        </article>
       </div>
-    </div>
-  </div>
-
-  <div class="overview-entry-grid">
-    <a class="overview-entry-card" href="{{ url_for('api.admin_automation_conversion_flow_design', section='questionnaire') }}">
-      <strong>进入流程配置</strong>
-      <div class="overview-refresh-meta">调整阶段模型、问卷规则、SOP 剧本、全局规则与发布管理。</div>
-    </a>
-    <a class="overview-entry-card" href="{{ url_for('api.admin_automation_conversion_member_ops', stage='new-user', panel='members') }}">
-      <strong>进入成员运营</strong>
-      <div class="overview-refresh-meta">查看阶段名单、单成员详情、批量动作与最近业务事件。</div>
-    </a>
-    <a class="overview-entry-card" href="{{ url_for('api.admin_automation_conversion_run_center') }}">
-      <strong>进入智能配置</strong>
-      <div class="overview-refresh-meta">统一维护智能接入、模型配置和子助手配置。</div>
-    </a>
-  </div>
-</section>
-
-<section class="admin-card" id="overview-summary">
-  <div class="admin-card-head">
-    <div>
-      <h2>经营摘要</h2>
-      <p>只保留结果型摘要，方便业务侧判断当前盘面是否健康。</p>
-    </div>
-  </div>
-  <div class="admin-card-grid">
-    {% for item in overview_payload.cards %}
-    <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">{{ item.label }}</div>
-      <div class="admin-card-value admin-card-value--compact">{{ item.value }}</div>
-      <p class="admin-card-copy">{{ item.description }}</p>
     </article>
-    {% endfor %}
-  </div>
-</section>
 
-<section class="admin-card" id="overview-funnel">
-  <div class="admin-card-head">
-    <div>
-      <h2>阶段分布 / 阶段漏斗</h2>
-      <p>
-        {% if largest_stage %}
-        当前人数最多的阶段是 <strong>{{ largest_stage.label }}</strong>（{{ largest_stage.total_count }}）。
-        {% else %}
-        当前还没有可展示的阶段数据。
-        {% endif %}
-      </p>
-    </div>
-  </div>
-  <div class="ac-funnel-grid">
-    {% for item in overview_payload.stage_columns %}
-    <a class="ac-funnel-card ac-funnel-card--link" href="{{ url_for('api.admin_automation_conversion_member_ops', stage=item.route_key, panel='members') }}#member-listing">
-      <div class="ac-funnel-card__topline">
+    <article class="ac-overview-card">
+      <div class="ac-overview-head">
         <div>
-          <strong>{{ item.label }}</strong>
-          <p class="admin-card-copy">{{ item.description }}</p>
+          <h3>运行动作</h3>
+          <p class="ac-overview-muted">只保留和当前模块直接相关的状态刷新动作。</p>
         </div>
-        <span class="ac-funnel-card__action">进入成员运营</span>
       </div>
-      <div class="admin-card-value admin-card-value--compact">{{ item.total_count }}</div>
-      <dl class="ac-funnel-card__metrics">
-        <div>
-          <dt>今日新增</dt>
-          <dd>{{ item.today_new_count }}</dd>
-        </div>
-        <div>
-          <dt>重点跟进</dt>
-          <dd>{{ item.focus_count }}</dd>
-        </div>
-        <div>
-          <dt>普通跟进</dt>
-          <dd>{{ item.normal_count }}</dd>
-        </div>
-      </dl>
-    </a>
-    {% endfor %}
-  </div>
-</section>
+      <button class="admin-button admin-button--primary" type="button" id="overview-refresh-button">刷新模块状态</button>
+      <div class="ac-overview-muted" id="overview-refresh-status">顺序执行消息活跃同步、自动接话扫描、自动接话放行。</div>
+      <div class="ac-overview-actions">
+        <a class="ac-overview-action-card" href="{{ (workspace.entry_urls or {}).operations }}">
+          <strong>进入自动化运营</strong>
+          <span class="ac-overview-muted">查看任务流、节点和执行记录。</span>
+        </a>
+        <a class="ac-overview-action-card" href="{{ (workspace.entry_urls or {}).auto_reply }}">
+          <strong>进入自动化应答</strong>
+          <span class="ac-overview-muted">查看自动接话监控和待处理队列。</span>
+        </a>
+        <a class="ac-overview-action-card" href="{{ (workspace.entry_urls or {}).agent_config }}">
+          <strong>进入模型 / Agent 配置</strong>
+          <span class="ac-overview-muted">配置通用 Agent 池和基础画像分层模板。</span>
+        </a>
+      </div>
+    </article>
+  </section>
 
-<section class="admin-card" id="overview-todo">
-  <div class="admin-card-head">
-    <div>
-      <h2>待处理事项</h2>
-      <p>只保留能够直接决定下一步动作的问题项。</p>
-    </div>
-  </div>
-  {% if todo_items %}
-  <div class="ac-todo-list">
-    {% for item in todo_items %}
-    <a class="ac-todo-item{% if item.tone == 'danger' %} is-danger{% elif item.tone == 'warning' %} is-warning{% endif %}" href="{{ item.href }}">
+  <section class="ac-overview-section">
+    <div class="ac-overview-head">
       <div>
-        <strong>{{ item.title }}</strong>
-        <p class="admin-card-copy">{{ item.body }}</p>
+        <h3>最近执行节点摘要</h3>
+        <p class="ac-overview-muted">让人一进来就能知道当前自动化运营最近有没有正常跑起来。</p>
       </div>
-      <span class="ac-todo-item__action">{{ item.action }}</span>
-    </a>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="admin-state admin-state--inline">
-    <strong>当前没有待处理事项</strong>
-    <span>当前盘面稳定，可继续进入流程配置、成员运营或智能配置做下一步动作。</span>
-  </div>
-  {% endif %}
-</section>
+    </div>
+    <div class="ac-overview-table-wrap">
+      <table class="ac-overview-table">
+        <thead>
+          <tr>
+            <th>任务流</th>
+            <th>节点</th>
+            <th>批次时间</th>
+            <th>状态</th>
+            <th>命中</th>
+            <th>成功</th>
+            <th>失败</th>
+            <th>跳过</th>
+          </tr>
+        </thead>
+        <tbody id="overview-execution-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="ac-overview-section">
+    <div class="ac-overview-head">
+      <div>
+        <h3>最近发送成功 / 失败摘要</h3>
+        <p class="ac-overview-muted">只展示最关键的结果型信息，不做复杂图表。</p>
+      </div>
+    </div>
+    <div class="ac-overview-summary-grid">
+      <article class="ac-overview-stat">
+        <span>最近成功数</span>
+        <strong id="overview-send-success">0</strong>
+      </article>
+      <article class="ac-overview-stat">
+        <span>最近失败数</span>
+        <strong id="overview-send-failed">0</strong>
+      </article>
+      <article class="ac-overview-stat">
+        <span>最近跳过数</span>
+        <strong id="overview-send-skipped">0</strong>
+      </article>
+      <article class="ac-overview-stat">
+        <span>最近成功 / 失败时间</span>
+        <strong id="overview-send-times">-</strong>
+      </article>
+    </div>
+  </section>
+</div>
 {% endblock %}
 
 {% block scripts_extra %}
 {{ super() }}
 <script>
   (() => {
-    const button = document.getElementById('automation-refresh-button');
-    const status = document.getElementById('automation-refresh-status');
-    if (!button || !status) return;
+    const root = document.getElementById('automation-overview-root');
+    if (!root) return;
+    const apiUrls = JSON.parse(root.dataset.apiUrls || '{}');
+    const feedback = document.getElementById('overview-feedback');
+    const loading = document.getElementById('overview-loading');
+    const summaryGrid = document.getElementById('overview-summary-grid');
+    const refreshButton = document.getElementById('overview-refresh-button');
+    const refreshStatus = document.getElementById('overview-refresh-status');
 
-    const cooldownMs = 60 * 1000;
-    const storageKey = 'automation_conversion_refresh_last_run_at';
-    let isRunning = false;
-    const refreshSteps = [
-      { url: "{{ url_for('api.admin_automation_conversion_run_message_activity_sync') }}", label: '消息活跃同步', acceptedStatuses: [] },
-      { url: "{{ url_for('api.admin_automation_conversion_reply_monitor_capture') }}", label: '自动接话扫描', acceptedStatuses: ['disabled', 'idle', 'throttled', 'quiet_hours'] },
-      { url: "{{ url_for('api.admin_automation_conversion_reply_monitor_run_due') }}", label: '自动接话放行', acceptedStatuses: ['disabled', 'idle', 'throttled', 'quiet_hours'] },
-    ];
-
-    function getLastRunAt() {
-      const raw = window.localStorage.getItem(storageKey) || '';
-      const value = Number(raw);
-      return Number.isFinite(value) ? value : 0;
-    }
-
-    function remainingSeconds() {
-      const elapsed = Date.now() - getLastRunAt();
-      return Math.max(0, Math.ceil((cooldownMs - elapsed) / 1000));
-    }
-
-    function renderCooldown(message) {
-      const remaining = remainingSeconds();
-      if (isRunning) {
-        button.disabled = true;
-        status.textContent = message || '正在刷新自动化状态，请稍候...';
+    function showFeedback(message, tone) {
+      if (!message) {
+        feedback.hidden = true;
+        feedback.textContent = '';
+        feedback.className = 'ac-overview-feedback';
         return;
       }
-      if (remaining > 0) {
-        button.disabled = true;
-        status.textContent = message || `${remaining} 秒后可再次刷新`;
-        return;
-      }
-      button.disabled = false;
-      status.textContent = message || '60 秒内仅允许触发一次。';
+      feedback.hidden = false;
+      feedback.textContent = message;
+      feedback.className = 'ac-overview-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
     }
 
-    async function postStep(step) {
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || payload.message || '请求失败');
+      }
+      return payload;
+    }
+
+    function renderDashboard(dashboard) {
+      const audience = dashboard.audience_overview || {};
+      const recentExecution = (dashboard.recent_execution_summary || {}).items || [];
+      const recentSend = dashboard.recent_send_summary || {};
+      loading.hidden = true;
+      summaryGrid.hidden = false;
+      document.getElementById('overview-pending-questionnaire').textContent = String(audience.pending_questionnaire_count || 0);
+      document.getElementById('overview-operating').textContent = String(audience.operating_count || 0);
+      document.getElementById('overview-converted').textContent = String(audience.converted_count || 0);
+      document.getElementById('overview-active-workflow-count').textContent = String(dashboard.active_workflow_count || 0);
+      document.getElementById('overview-active-workflow-chip').textContent = '启用任务流 ' + String(dashboard.active_workflow_count || 0);
+      document.getElementById('overview-last-updated').textContent = '最近刷新：' + new Date().toLocaleString();
+      document.getElementById('overview-send-success').textContent = String(recentSend.success_count || 0);
+      document.getElementById('overview-send-failed').textContent = String(recentSend.failed_count || 0);
+      document.getElementById('overview-send-skipped').textContent = String(recentSend.skipped_count || 0);
+      document.getElementById('overview-send-times').textContent = (recentSend.latest_sent_at || '暂无成功') + ' / ' + (recentSend.latest_failed_at || '暂无失败');
+      document.getElementById('overview-execution-body').innerHTML = recentExecution.length
+        ? recentExecution.map((item) => `
+          <tr>
+            <td>${(item.workflow || {}).workflow_name || '-'}</td>
+            <td>${(item.node || {}).node_name || '-'}</td>
+            <td>${item.scheduled_for || item.updated_at || '-'}</td>
+            <td>${item.status || '-'}</td>
+            <td>${item.hit_count || 0}</td>
+            <td>${item.sent_count || 0}</td>
+            <td>${item.failed_count || 0}</td>
+            <td>${item.skipped_count || 0}</td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="8">当前还没有最近执行节点摘要。</td></tr>';
+    }
+
+    async function loadDashboard() {
+      showFeedback('', '');
+      const payload = await requestJson(apiUrls.dashboard, { credentials: 'same-origin' });
+      renderDashboard(payload.dashboard || {});
+    }
+
+    async function postAdminAction(url) {
       const formData = new FormData();
       formData.append('admin_action_token', "{{ admin_action_token }}");
-      const response = await fetch(step.url, {
+      const response = await fetch(url, {
         method: 'POST',
         body: formData,
         credentials: 'same-origin',
@@ -257,43 +360,36 @@
           'X-Requested-With': 'XMLHttpRequest',
         },
       });
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error(`${step.label}返回结果异常，请刷新页面后重试`);
-      }
-      const payload = await response.json().catch(() => null);
-      if (!payload || typeof payload !== 'object') {
-        throw new Error(`${step.label}返回结果无法识别`);
-      }
-      const accepted = Boolean(payload.ok) || step.acceptedStatuses.includes(String(payload.status || ''));
+      const payload = await response.json().catch(() => ({}));
+      const accepted = Boolean(payload.ok) || ['disabled', 'idle', 'throttled', 'quiet_hours'].includes(String(payload.status || ''));
       if (!response.ok || !accepted) {
-        throw new Error(String(payload.error || payload.message || `${step.label}失败`));
+        throw new Error(payload.error || payload.message || '执行失败');
       }
       return payload;
     }
 
-    button.addEventListener('click', async () => {
-      if (button.disabled || isRunning) return;
-      isRunning = true;
-      renderCooldown('正在刷新自动化状态，请稍候...');
+    refreshButton.addEventListener('click', async () => {
+      refreshButton.disabled = true;
+      refreshStatus.textContent = '正在刷新自动化转化模块状态...';
       try {
-        for (const step of refreshSteps) {
-          status.textContent = `正在执行${step.label}...`;
-          await postStep(step);
-        }
-        window.localStorage.setItem(storageKey, String(Date.now()));
-        status.textContent = '刷新完成，正在更新页面...';
-        window.location.reload();
+        await postAdminAction(apiUrls.message_activity_sync_run);
+        await postAdminAction(apiUrls.reply_monitor_capture);
+        await postAdminAction(apiUrls.reply_monitor_run_due);
+        await loadDashboard();
+        refreshStatus.textContent = '状态刷新完成';
+        showFeedback('自动化转化模块状态已刷新', 'success');
       } catch (error) {
-        isRunning = false;
-        renderCooldown(error.message || '刷新失败，请稍后重试。');
-        return;
+        refreshStatus.textContent = error.message || '状态刷新失败';
+        showFeedback(error.message || '状态刷新失败', 'error');
+      } finally {
+        refreshButton.disabled = false;
       }
-      isRunning = false;
     });
 
-    renderCooldown('');
-    window.setInterval(() => renderCooldown(''), 1000);
+    loadDashboard().catch((error) => {
+      loading.hidden = true;
+      showFeedback(error.message || '加载自动化转化概览失败', 'error');
+    });
   })();
 </script>
 {% endblock %}
