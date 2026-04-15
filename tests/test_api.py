@@ -69,6 +69,7 @@ def app(tmp_path):
             "WECOM_CALLBACK_TOKEN": "callback-token",
             "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
             "SIDEBAR_PERSON_DETAIL_URL_TEMPLATE": "https://www.youcangogogo.com/person/{person_id}",
+            "MCP_BEARER_TOKEN": "mcp-token",
         }
     )
     with app.app_context():
@@ -79,6 +80,73 @@ def app(tmp_path):
 @pytest.fixture()
 def client(app):
     return app.test_client()
+
+
+def _admin_action_token(client, path: str = "/admin/automation-conversion/agent-config") -> str:
+    client.get(path, follow_redirects=True)
+    with client.session_transaction() as session:
+        return str(session["admin_console_action_token"])
+
+
+def _mcp_call(client, name: str, arguments: dict[str, object]):
+    return client.post(
+        "/mcp",
+        headers={"Authorization": "Bearer mcp-token"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+    )
+
+
+def _seed_profile_segment_questionnaire(app, *, questionnaire_id: int = 901) -> dict[str, int | list[int]]:
+    choice_question_id = questionnaire_id * 100 + 1
+    option_ids = [questionnaire_id * 1000 + 1, questionnaire_id * 1000 + 2]
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO questionnaires (
+                id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                questionnaire_id,
+                f"agent-config-{questionnaire_id}",
+                f"agent-config-{questionnaire_id}",
+                f"Agent 配置问卷 {questionnaire_id}",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaire_questions (
+                id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, 'single_choice', '你最关心什么？', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (choice_question_id, questionnaire_id),
+        )
+        db.executemany(
+            """
+            INSERT INTO questionnaire_options (
+                id, question_id, option_text, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            [
+                (option_ids[0], choice_question_id, "效率", 1),
+                (option_ids[1], choice_question_id, "成交", 2),
+            ],
+        )
+        db.commit()
+    return {
+        "questionnaire_id": questionnaire_id,
+        "choice_question_id": choice_question_id,
+        "option_ids": option_ids,
+    }
 
 
 def fake_wecom_get(url, params=None, timeout=None):
@@ -302,6 +370,128 @@ def fake_wecom_post(url, params=None, json=None, timeout=None, files=None):
     if url.endswith("/cgi-bin/externalcontact/add_moment_task"):
         return FakeResponse({"errcode": 0, "errmsg": "ok", "jobid": "moment-job-001"})
     raise AssertionError(f"unexpected POST url: {url}")
+
+
+def test_automation_conversion_agent_create_and_edit_flow(client):
+    action_token = _admin_action_token(client)
+
+    create_response = client.post(
+        "/api/admin/automation-conversion/agents",
+        json={
+            "admin_action_token": action_token,
+            "agent_code": "conversion_followup_agent",
+            "display_name": "转化跟进 Agent",
+            "enabled": True,
+            "role_prompt": "你是转化跟进 Agent。",
+            "task_prompt": "基于结构化信息生成跟进话术。",
+            "variables": [
+                {"variable_key": "questionnaire_answers", "display_name": "问卷答案", "enabled": True},
+            ],
+            "output_schema": [
+                {"field_key": "draft_reply", "display_name": "草稿回复", "type": "string", "required": True},
+            ],
+            "change_summary": "创建新 Agent",
+        },
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.get_json()
+    assert created["ok"] is True
+    assert created["agent"]["agent_code"] == "conversion_followup_agent"
+    assert created["agent"]["display_name"] == "转化跟进 Agent"
+    assert created["agent"]["published_version"] == 0
+    assert created["agent"]["draft"]["variables"][0]["variable_key"] == "questionnaire_answers"
+    assert created["agent"]["draft"]["output_schema"][0]["field_key"] == "draft_reply"
+
+    detail_response = client.get("/api/admin/automation-conversion/agents/conversion_followup_agent")
+    assert detail_response.status_code == 200
+    assert detail_response.get_json()["item"]["agent_code"] == "conversion_followup_agent"
+
+    options_response = client.get("/api/admin/automation-conversion/agents/options", query_string={"enabled_only": 0})
+    assert options_response.status_code == 200
+    option_codes = [item["agent_code"] for item in options_response.get_json()["items"]]
+    assert "conversion_followup_agent" in option_codes
+
+    update_response = client.post(
+        "/api/admin/automation-conversion/agents/conversion_followup_agent/draft",
+        json={
+            "admin_action_token": action_token,
+            "display_name": "转化跟进 Agent",
+            "enabled": True,
+            "role_prompt": "你是更新后的转化跟进 Agent。",
+            "task_prompt": "生成更新后的跟进话术。",
+            "expected_draft_version": 1,
+            "change_summary": "更新新 Agent 草稿",
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.get_json()["agent"]["draft"]["role_prompt"] == "你是更新后的转化跟进 Agent。"
+
+
+def test_mcp_create_agent_config_tool(client):
+    response = _mcp_call(
+        client,
+        "create_agent_config",
+        {
+            "agent_code": "lobster_created_agent",
+            "display_name": "龙虾新建 Agent",
+            "enabled": True,
+            "role_prompt": "你是龙虾新建 Agent。",
+            "task_prompt": "根据问卷结构化输入生成跟进话术。",
+            "variables": [
+                {"variable_key": "questionnaire_answers", "display_name": "问卷答案", "enabled": True},
+            ],
+            "output_schema": [
+                {"field_key": "draft_reply", "display_name": "草稿回复", "type": "string", "required": True},
+            ],
+            "operator": "lobster_test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["result"]["structuredContent"]["created"] is True
+    created = body["result"]["structuredContent"]["agent"]
+    assert created["agent_code"] == "lobster_created_agent"
+    assert created["draft"]["variables"][0]["variable_key"] == "questionnaire_answers"
+
+
+def test_automation_conversion_profile_segment_template_detail_returns_template_bundle(client, app):
+    questionnaire = _seed_profile_segment_questionnaire(app, questionnaire_id=902)
+
+    created_response = client.post(
+        "/api/admin/automation-conversion/profile-segment-templates",
+        json={
+            "template_name": "基础画像模板 A",
+            "questionnaire_id": questionnaire["questionnaire_id"],
+            "segmentation_question_id": questionnaire["choice_question_id"],
+            "enabled": True,
+            "categories": [
+                {
+                    "category_name": "效率优先",
+                    "category_key": "efficiency",
+                    "option_ids": [questionnaire["option_ids"][0]],
+                },
+                {
+                    "category_name": "成交优先",
+                    "category_key": "closing",
+                    "option_ids": [questionnaire["option_ids"][1]],
+                },
+            ],
+        },
+    )
+    assert created_response.status_code == 201
+    template_id = created_response.get_json()["template_bundle"]["template"]["id"]
+
+    detail_response = client.get(f"/api/admin/automation-conversion/profile-segment-templates/{template_id}")
+    assert detail_response.status_code == 200
+    detail = detail_response.get_json()
+    assert detail["ok"] is True
+    assert detail["template_bundle"]["template"]["id"] == template_id
+    assert detail["template_bundle"]["template"]["template_name"] == "基础画像模板 A"
+    assert detail["template_bundle"]["questionnaire"]["id"] == questionnaire["questionnaire_id"]
+    assert detail["template_bundle"]["segmentation_question"]["id"] == questionnaire["choice_question_id"]
+    assert len(detail["template_bundle"]["categories"]) == 2
 
 
 def make_signup_management_fake_wecom_post(*, include_lead_tag: bool = True):

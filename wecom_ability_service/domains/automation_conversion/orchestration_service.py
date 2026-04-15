@@ -147,6 +147,13 @@ def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _slugify_agent_code(value: Any) -> str:
+    text = _normalized_text(value).lower().replace("-", "_").replace(" ", "_")
+    sanitized = "".join(ch if ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch == "_" else "_" for ch in text)
+    sanitized = "_".join(part for part in sanitized.split("_") if part)
+    return sanitized
+
+
 def _normalize_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -709,7 +716,13 @@ def _load_agent_list() -> list[dict[str, Any]]:
         _normalized_text(item.get("agent_code")): _serialize_agent_config(item)
         for item in repo.list_agent_config_rows()
     }
-    return [rows.get(agent_code) or _serialize_agent_config({"agent_code": agent_code, **CHILD_AGENT_CONFIG_MAP[agent_code]}) for agent_code in CHILD_AGENT_ORDER]
+    items = [
+        rows.get(agent_code) or _serialize_agent_config({"agent_code": agent_code, **CHILD_AGENT_CONFIG_MAP[agent_code]})
+        for agent_code in CHILD_AGENT_ORDER
+    ]
+    for agent_code in sorted(code for code in rows.keys() if code and code not in CHILD_AGENT_CONFIG_MAP):
+        items.append(rows[agent_code])
+    return items
 
 
 def _load_skill_list() -> list[dict[str, Any]]:
@@ -3233,12 +3246,88 @@ def list_pending_agent_prompt_publish_requests(
     }
 
 
+def create_agent_config(payload: dict[str, Any], *, operator_id: str, source: str = "admin_console") -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    display_name = _normalized_text(payload.get("display_name"))
+    if not display_name:
+        raise ValueError("display_name is required")
+    normalized_agent_code = _slugify_agent_code(payload.get("agent_code") or display_name)
+    if not normalized_agent_code:
+        raise ValueError("agent_code is required")
+    if repo.get_agent_config_row(normalized_agent_code):
+        raise ValueError("agent_code already exists")
+    role_prompt = _normalized_text(payload.get("role_prompt"))
+    task_prompt = _normalized_text(payload.get("task_prompt"))
+    if not role_prompt:
+        raise ValueError("role_prompt is required")
+    if not task_prompt:
+        raise ValueError("task_prompt is required")
+    variables = _normalize_json_list(payload.get("variables"))
+    output_schema = _normalize_json_list(payload.get("output_schema"))
+    enabled = _normalize_bool(payload.get("enabled", True))
+    summary = _normalized_text(payload.get("change_summary")) or "新建 Agent 草稿"
+    saved = repo.insert_agent_config_row(
+        {
+            "agent_code": normalized_agent_code,
+            "display_name": display_name,
+            "pool_keys": [],
+            "enabled": enabled,
+            "draft_role_prompt": role_prompt,
+            "draft_task_prompt": task_prompt,
+            "draft_variables": variables,
+            "draft_output_schema": output_schema,
+            "published_role_prompt": "",
+            "published_task_prompt": "",
+            "published_variables": [],
+            "published_output_schema": [],
+            "draft_version": 1,
+            "published_version": 0,
+            "published_at": "",
+            "published_by": "",
+            "last_modified_at": _iso_now(),
+            "last_modified_by": operator_id,
+            "last_modified_source": source,
+            "last_change_summary": summary,
+            "submitted_for_publish": False,
+            "submitted_at": "",
+            "submitted_by": "",
+        }
+    )
+    repo.insert_agent_prompt_row(
+        {
+            "agent_code": normalized_agent_code,
+            "display_name": display_name,
+            "prompt_text": task_prompt,
+            "enabled": enabled,
+            "version": 1,
+        }
+    )
+    get_db().commit()
+    return {"agent": _serialize_agent_config(saved)}
+
+
+def create_agent_config_draft_via_mcp(
+    payload: dict[str, Any],
+    *,
+    operator_id: str,
+) -> dict[str, Any]:
+    created = create_agent_config(
+        payload,
+        operator_id=operator_id,
+        source="lobster_mcp_create_agent",
+    )
+    return {
+        "created": True,
+        "agent": created.get("agent") or {},
+    }
+
+
 def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operator_id: str, source: str = "admin_console") -> dict[str, Any]:
     ensure_agent_orchestration_defaults()
     normalized_agent_code = _normalized_text(agent_code)
-    if normalized_agent_code not in CHILD_AGENT_CONFIG_MAP:
-        raise ValueError("invalid agent_code")
     existing = repo.deserialize_agent_config_row(repo.get_agent_config_row(normalized_agent_code) or {})
+    if not existing and normalized_agent_code not in CHILD_AGENT_CONFIG_MAP:
+        raise LookupError("agent config not found")
     if not existing:
         raise LookupError("agent config not found")
     expected_draft_version = payload.get("expected_draft_version")
