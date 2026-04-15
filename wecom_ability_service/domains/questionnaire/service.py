@@ -27,6 +27,7 @@ QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS = {
     "questionnaire_title",
     "submitted_at",
     "answers",
+    "phone_number",
     "day",
     "frequency",
     "remark",
@@ -1421,16 +1422,27 @@ def _serialize_questionnaire_external_push_answers(answer_snapshots: list[dict[s
     return serialized
 
 
+def _questionnaire_external_push_phone_number(answer_snapshots: list[dict[str, Any]]) -> str:
+    for item in answer_snapshots or []:
+        if str(item.get("question_type") or "").strip() != "mobile":
+            continue
+        mobile_value = str(item.get("text_value") or "").strip()
+        return mobile_value or "NULL"
+    return "NULL"
+
+
 def _build_questionnaire_external_push_payload(
     questionnaire: dict[str, Any],
     submission: dict[str, Any],
     computed_result: dict[str, Any],
 ) -> dict[str, Any]:
+    answer_snapshots = computed_result.get("answer_snapshots") or []
     payload: dict[str, Any] = {
         "user_id": _questionnaire_external_push_user_id(submission),
         "questionnaire_title": str(questionnaire.get("title") or questionnaire.get("name") or "").strip(),
         "submitted_at": _format_iso_datetime(submission.get("submitted_at")),
-        "answers": _serialize_questionnaire_external_push_answers(computed_result.get("answer_snapshots") or []),
+        "phone_number": _questionnaire_external_push_phone_number(answer_snapshots),
+        "answers": _serialize_questionnaire_external_push_answers(answer_snapshots),
     }
     if questionnaire.get("external_push_day") not in (None, ""):
         payload["day"] = int(questionnaire["external_push_day"])
@@ -1951,7 +1963,8 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     row = get_db().execute(
         """
         SELECT id, slug, name, title, description, is_disabled, redirect_url,
-               external_push_enabled, external_push_url, created_at, updated_at
+               external_push_enabled, external_push_url, external_push_day, external_push_frequency,
+               external_push_remark, external_push_custom_params, created_at, updated_at
         FROM questionnaires
         WHERE slug = ? AND is_disabled = ?
         LIMIT 1

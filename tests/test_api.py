@@ -3766,6 +3766,7 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         "user_id": "union-external-push-success-001",
         "questionnaire_title": "来访测评",
         "submitted_at": push_calls[0]["json"]["submitted_at"],
+        "phone_number": "13800138012",
         "day": 20,
         "frequency": 20,
         "remark": "黄小璨 499 用户激活",
@@ -3794,6 +3795,7 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         assert int(row["response_status_code"]) == 200
         assert row["status"] == "success"
         assert row["failure_reason"] == ""
+        assert json.loads(row["request_payload"])["phone_number"] == "13800138012"
         assert json.loads(row["request_payload"])["day"] == 20
         assert json.loads(row["request_payload"])["frequency"] == 20
         assert json.loads(row["request_payload"])["remark"] == "黄小璨 499 用户激活"
@@ -3801,6 +3803,57 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         assert json.loads(row["request_payload"])["answers"][1]["answer"] == ["效果"]
         assert json.loads(row["request_payload"])["answers"][2]["answer"] == ""
         assert '"success": false' in row["response_body"]
+
+
+def test_questionnaire_submit_external_push_without_mobile_question_sends_null_phone_number(client, app, monkeypatch):
+    with app.app_context():
+        set_settings({"QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED": "true"})
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1, q2, q3 = detail["questions"]
+    push_calls: list[dict[str, object]] = []
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        push_calls.append({"url": url, "json": json, "headers": dict(headers or {}), "timeout": timeout})
+        return FakeResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-no-mobile-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(q2["id"]): [q2["options"][0]["id"]],
+                str(q3["id"]): "没有手机号题",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert len(push_calls) == 1
+    assert push_calls[0]["json"]["phone_number"] == "NULL"
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT request_payload
+            FROM questionnaire_external_push_logs
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert json.loads(row["request_payload"])["phone_number"] == "NULL"
 
 
 def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_custom_param_name(client):
@@ -3826,6 +3879,20 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
     assert reserved_name_response.get_json() == {
         "ok": False,
         "error": "external_push_custom_params name 'remark' is reserved",
+    }
+
+    phone_number_reserved_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_custom_params=[{"name": "phone_number", "value": "bad"}],
+        ),
+    )
+    assert phone_number_reserved_response.status_code == 400
+    assert phone_number_reserved_response.get_json() == {
+        "ok": False,
+        "error": "external_push_custom_params name 'phone_number' is reserved",
     }
 
 
