@@ -13,10 +13,9 @@ from . import repo as legacy_repo
 from .agents import DeepSeekClientError, call_deepseek_agent
 from .orchestration_service import (
     _agent_context_source_sections,
-    _enabled_context_sources_from_variables,
     _fixed_agent_output_schema,
-    _normalize_enabled_context_sources,
     _replace_agent_prompt_placeholders,
+    _resolve_effective_enabled_context_sources,
     get_agent_config_detail,
 )
 from .workflow_definitions import (
@@ -29,6 +28,8 @@ from .workflow_definitions import (
     GENERATION_MODE_AUTO_LAYERED_REWRITE,
     GENERATION_MODE_MANUAL_LAYERED,
     GENERATION_MODE_PERSONALIZED_SINGLE,
+    NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
+    NODE_TRIGGER_MODE_SCHEDULED,
     SEGMENTATION_BASIS_BEHAVIOR,
     SEGMENTATION_BASIS_NONE,
     SEGMENTATION_BASIS_PROFILE,
@@ -86,6 +87,13 @@ def _parse_send_time(value: Any) -> tuple[int, int]:
     text = _normalized_text(value) or "09:00"
     parsed = datetime.strptime(text, "%H:%M")
     return parsed.hour, parsed.minute
+
+
+def _node_trigger_mode(node: dict[str, Any]) -> str:
+    normalized = _normalized_text(node.get("trigger_mode"))
+    if normalized == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
+        return NODE_TRIGGER_MODE_AUDIENCE_ENTERED
+    return NODE_TRIGGER_MODE_SCHEDULED
 
 
 def _iso_now() -> str:
@@ -458,6 +466,7 @@ def _build_generation_variables(
             "node_code": _normalized_text(node.get("node_code")),
             "node_name": _normalized_text(node.get("node_name")),
             "target_audience_code": _normalized_text(node.get("target_audience_code")),
+            "trigger_mode": _node_trigger_mode(node),
             "day_offset": int(node.get("day_offset") or 1),
             "send_time": _normalized_text(node.get("send_time")),
         },
@@ -507,18 +516,22 @@ def _build_agent_generation_request(
 ) -> tuple[str, str]:
     agent_detail = get_agent_config_detail(agent_code)
     published = dict(agent_detail.get("published") or {})
-    enabled_context_sources = _normalize_enabled_context_sources(
-        published.get("enabled_context_sources"),
-        default=_enabled_context_sources_from_variables(published.get("variables") or []),
+    role_prompt = _normalized_text(published.get("role_prompt"))
+    task_prompt = _normalized_text(published.get("task_prompt"))
+    enabled_context_sources = _resolve_effective_enabled_context_sources(
+        role_prompt=role_prompt,
+        task_prompt=task_prompt,
+        enabled_context_sources=published.get("enabled_context_sources"),
+        variables=published.get("variables") or [],
     )
     section_texts = _agent_context_source_sections(variables_snapshot, enabled_context_sources)
-    role_prompt = _replace_agent_prompt_placeholders(_normalized_text(published.get("role_prompt")), section_texts)
-    task_prompt = _replace_agent_prompt_placeholders(_normalized_text(published.get("task_prompt")), section_texts)
+    role_prompt = _replace_agent_prompt_placeholders(role_prompt, section_texts)
+    task_prompt = _replace_agent_prompt_placeholders(task_prompt, section_texts)
     system_prompt = "\n\n".join(
         part
         for part in [
             role_prompt,
-            "你只能基于已勾选的信息来源生成一条话术，不能臆测缺失事实。",
+            "你只能基于提示词里实际引用到的信息来源生成一条话术，不能臆测缺失事实。",
             "如果某类信息为空，就忽略它，不要报错。",
             "你必须只返回 JSON 对象。",
             'JSON 只允许包含字段：draft_reply。',
@@ -853,16 +866,18 @@ def _upsert_node_execution_candidates(
     scheduled_for = _normalized_text(execution.get("scheduled_for"))
     audience_rows = workflow_repo.list_current_member_audience_rows(_normalized_text(node.get("target_audience_code")))
     audience_map: dict[int, dict[str, Any]] = {}
+    trigger_mode = _node_trigger_mode(node)
     for row in audience_rows:
         entry_id = int(row.get("id") or 0)
         audience_map[entry_id] = dict(row)
-        if not _node_day_index_matches(
-            entered_at=_normalized_text(row.get("entered_at")),
-            send_time=_normalized_text(node.get("send_time")),
-            scheduled_for=scheduled_for,
-            expected_day_offset=int(node.get("day_offset") or 1),
-        ):
-            continue
+        if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED:
+            if not _node_day_index_matches(
+                entered_at=_normalized_text(row.get("entered_at")),
+                send_time=_normalized_text(node.get("send_time")),
+                scheduled_for=scheduled_for,
+                expected_day_offset=int(node.get("day_offset") or 1),
+            ):
+                continue
         workflow_repo.insert_workflow_execution_item_row(
             {
                 "execution_id": int(execution.get("id") or 0),
@@ -912,6 +927,13 @@ def _run_due_node(
     node: dict[str, Any],
     operator_id: str,
 ) -> dict[str, Any]:
+    if _node_trigger_mode(node) == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
+        return _run_immediate_node(
+            workflow_bundle=workflow_bundle,
+            node=node,
+            operator_id=operator_id,
+        )
+
     now_dt = datetime.now()
     scheduled_for_dt = now_dt.replace(
         hour=_parse_send_time(node.get("send_time"))[0],
@@ -992,6 +1014,121 @@ def _run_due_node(
         "status": final_status,
         "execution": final_execution,
         "items": workflow_repo.list_workflow_execution_item_rows(int(final_execution["id"])),
+    }
+
+
+def _run_immediate_node(
+    *,
+    workflow_bundle: dict[str, Any],
+    node: dict[str, Any],
+    operator_id: str,
+) -> dict[str, Any]:
+    audience_rows = workflow_repo.list_current_member_audience_rows(_normalized_text(node.get("target_audience_code")))
+    processed_executions: list[dict[str, Any]] = []
+    for audience_entry in audience_rows:
+        audience_entry_id = int(audience_entry.get("id") or 0)
+        if audience_entry_id <= 0:
+            continue
+        execution_key = (
+            f"acwf-immediate-"
+            f"{int((workflow_bundle.get('workflow') or {}).get('id') or 0)}-"
+            f"{int(node.get('id') or 0)}-"
+            f"{audience_entry_id}"
+        )
+        execution = workflow_repo.get_workflow_execution_row_by_execution_id(execution_key)
+        if not execution:
+            execution = workflow_repo.insert_workflow_execution_row(
+                {
+                    "execution_id": execution_key,
+                    "workflow_id": int((workflow_bundle.get("workflow") or {}).get("id") or 0),
+                    "node_id": int(node.get("id") or 0),
+                    "trigger_type": "scheduled_poll",
+                    "audience_code": _normalized_text(node.get("target_audience_code")),
+                    "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now(),
+                    "status": "pending",
+                    "total_count": 0,
+                    "success_count": 0,
+                    "skipped_count": 0,
+                    "failed_count": 0,
+                    "summary_json": {"audience_entry_id": audience_entry_id},
+                    "finished_at": "",
+                }
+            ) or workflow_repo.get_workflow_execution_row_by_execution_id(execution_key)
+        if not execution:
+            continue
+        if _normalized_text(execution.get("status")) in _FINAL_EXECUTION_STATUSES:
+            processed_executions.append(execution)
+            continue
+
+        workflow_repo.update_workflow_execution_row(
+            int(execution["id"]),
+            {
+                **execution,
+                "status": "running",
+                "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now(),
+                "finished_at": "",
+                "summary_json": {
+                    **dict(execution.get("summary_json") or {}),
+                    "audience_entry_id": audience_entry_id,
+                },
+            },
+        )
+        workflow_repo.insert_workflow_execution_item_row(
+            {
+                "execution_id": int(execution.get("id") or 0),
+                "workflow_id": int(execution.get("workflow_id") or 0),
+                "node_id": int(execution.get("node_id") or 0),
+                "member_id": int(audience_entry.get("member_id") or 0),
+                "audience_entry_id": audience_entry_id,
+                "external_contact_id": _normalized_text((audience_entry.get("member") or {}).get("external_contact_id")),
+                "rendered_content_text": "",
+                "content_snapshot_json": {},
+                "agent_pool_id": None,
+                "agent_run_id": "",
+                "agent_output_id": "",
+                "status": "pending",
+                "error_message": "",
+                "send_record_id": None,
+                "sent_at": "",
+            }
+        )
+        execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
+        for item in execution_items:
+            if _normalized_text(item.get("status")) != "pending":
+                continue
+            _process_execution_item(
+                execution=execution,
+                execution_item=item,
+                workflow_bundle=workflow_bundle,
+                node=node,
+                audience_entry=audience_entry,
+                operator_id=operator_id,
+            )
+        refreshed_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
+        final_status, counters = _execution_summary_from_items(refreshed_items)
+        final_execution = workflow_repo.update_workflow_execution_row(
+            int(execution["id"]),
+            {
+                **execution,
+                "status": final_status,
+                "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now(),
+                "total_count": counters["total_count"],
+                "success_count": counters["success_count"],
+                "skipped_count": counters["skipped_count"],
+                "failed_count": counters["failed_count"],
+                "summary_json": {
+                    "node_name": _normalized_text(node.get("node_name")),
+                    "audience_entry_id": audience_entry_id,
+                },
+                "finished_at": _iso_now() if final_status in _FINAL_EXECUTION_STATUSES else "",
+            },
+        )
+        processed_executions.append(final_execution)
+    return {
+        "ok": True,
+        "status": "finished" if processed_executions else "no_candidates",
+        "node_id": int(node.get("id") or 0),
+        "executions": processed_executions,
     }
 
 

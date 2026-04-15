@@ -585,7 +585,7 @@ def _agent_diff_summary(item: dict[str, Any]) -> list[str]:
         ensure_ascii=False,
         sort_keys=True,
     ):
-        results.append("信息来源勾选草稿尚未发布")
+        results.append("上下文占位符草稿尚未发布")
     return results
 
 
@@ -1043,6 +1043,40 @@ def _enabled_context_sources_from_variables(variables: Any) -> list[str]:
     return normalized_items
 
 
+def _enabled_context_sources_from_prompt_placeholders(*prompt_texts: Any) -> list[str]:
+    combined_prompt = "\n".join(
+        text for text in (_normalized_text(item) for item in prompt_texts) if text
+    )
+    if not combined_prompt:
+        return []
+    normalized_items: list[str] = []
+    for item in _AGENT_CONTEXT_SOURCE_SPECS:
+        code = _normalized_text(item.get("code"))
+        placeholder = _normalized_text(item.get("placeholder"))
+        if not code or not placeholder or placeholder not in combined_prompt or code in normalized_items:
+            continue
+        normalized_items.append(code)
+    return normalized_items
+
+
+def _resolve_effective_enabled_context_sources(
+    *,
+    role_prompt: Any,
+    task_prompt: Any,
+    enabled_context_sources: Any = None,
+    variables: Any = None,
+) -> list[str]:
+    prompt_selected = _enabled_context_sources_from_prompt_placeholders(role_prompt, task_prompt)
+    if prompt_selected:
+        return prompt_selected
+    if enabled_context_sources is not None:
+        return _normalize_enabled_context_sources(enabled_context_sources)
+    return _normalize_enabled_context_sources(
+        None,
+        default=_enabled_context_sources_from_variables(variables or []),
+    )
+
+
 def _variables_from_enabled_context_sources(enabled_context_sources: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for code in _normalize_enabled_context_sources(enabled_context_sources):
@@ -1059,13 +1093,21 @@ def _variables_from_enabled_context_sources(enabled_context_sources: Any) -> lis
     return items
 
 
-def _normalize_agent_config_variables(payload: dict[str, Any], *, default: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def _normalize_agent_config_variables(
+    payload: dict[str, Any],
+    *,
+    role_prompt: Any = "",
+    task_prompt: Any = "",
+    default: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     if "enabled_context_sources" in payload:
         return _variables_from_enabled_context_sources(payload.get("enabled_context_sources"))
     if "variables" in payload:
         resolved = _copy_json(payload.get("variables"), default=default or [])
         return resolved if isinstance(resolved, list) else list(default or [])
-    return _copy_json(default or [], default=[])
+    return _variables_from_enabled_context_sources(
+        _enabled_context_sources_from_prompt_placeholders(role_prompt, task_prompt)
+    )
 
 
 def _agent_context_source_sections(variable_snapshot: dict[str, Any], enabled_context_sources: Any) -> dict[str, str]:
@@ -1143,7 +1185,11 @@ def _agent_context_source_sections(variable_snapshot: dict[str, Any], enabled_co
 def _replace_agent_prompt_placeholders(prompt_text: Any, section_texts: dict[str, str]) -> str:
     resolved = _normalized_text(prompt_text)
     for code, spec in _AGENT_CONTEXT_SOURCE_BY_CODE.items():
-        resolved = resolved.replace(_normalized_text(spec.get("placeholder")), _normalized_text(section_texts.get(code)))
+        placeholder = _normalized_text(spec.get("placeholder"))
+        label = _normalized_text(spec.get("label"))
+        if not placeholder:
+            continue
+        resolved = resolved.replace(placeholder, f"【{label}】" if label else "")
     return resolved
 
 
@@ -1466,9 +1512,13 @@ def _build_child_agent_generation_request(
 ) -> tuple[str, str, dict[str, Any]]:
     config = get_agent_config_detail(agent_code)
     published = dict(config.get("published") or {})
-    enabled_context_sources = _normalize_enabled_context_sources(
-        published.get("enabled_context_sources"),
-        default=_enabled_context_sources_from_variables(published.get("variables") or []),
+    role_prompt = _normalized_text(published.get("role_prompt"))
+    task_prompt = _normalized_text(published.get("task_prompt"))
+    enabled_context_sources = _resolve_effective_enabled_context_sources(
+        role_prompt=role_prompt,
+        task_prompt=task_prompt,
+        enabled_context_sources=published.get("enabled_context_sources"),
+        variables=published.get("variables") or [],
     )
     variable_snapshot = _build_member_variable_snapshot(external_contact_id=external_contact_id)
     recent_message_rows = get_recent_messages_by_user(_normalized_text(external_contact_id), limit=20)
@@ -1484,13 +1534,13 @@ def _build_child_agent_generation_request(
     if structured_result:
         variable_snapshot["router_decision"]["structured_result"] = _normalize_json_dict(structured_result)
     section_texts = _agent_context_source_sections(variable_snapshot, enabled_context_sources)
-    role_prompt = _replace_agent_prompt_placeholders(_normalized_text(published.get("role_prompt")), section_texts)
-    task_prompt = _replace_agent_prompt_placeholders(_normalized_text(published.get("task_prompt")), section_texts)
+    role_prompt = _replace_agent_prompt_placeholders(role_prompt, section_texts)
+    task_prompt = _replace_agent_prompt_placeholders(task_prompt, section_texts)
     system_prompt = "\n\n".join(
         part
         for part in [
             role_prompt,
-            "你只能基于提供的信息来源生成一条话术，不要输出 markdown，不要输出额外解释。",
+            "你只能基于提示词里实际引用到的信息来源生成一条话术，不要输出 markdown，不要输出额外解释。",
             "如果某类信息为空，就忽略它，不要编造。",
             "你必须只返回 JSON 对象。",
             'JSON 只允许包含字段：draft_reply。',
@@ -3311,7 +3361,7 @@ def get_agent_orchestration_payload(
             "generated_at": bundle["generated_at"],
             "pending_publish": pending_publish,
             "notes": [
-                "子 Agent 配置已拆成角色提示词、任务提示词与信息来源勾选。",
+                "子 Agent 配置已拆成角色提示词、任务提示词与上下文占位符。",
                 "当前支持草稿态与已发布态；回滚仍是最小结构占位，不伪装成完整版本系统。",
             ],
         },
@@ -3507,7 +3557,12 @@ def create_agent_config(payload: dict[str, Any], *, operator_id: str, source: st
         raise ValueError("role_prompt is required")
     if not task_prompt:
         raise ValueError("task_prompt is required")
-    variables = _normalize_agent_config_variables(payload, default=[])
+    variables = _normalize_agent_config_variables(
+        payload,
+        role_prompt=role_prompt,
+        task_prompt=task_prompt,
+        default=[],
+    )
     output_schema = _fixed_agent_output_schema()
     enabled = _normalize_bool(payload.get("enabled", True))
     summary = _normalized_text(payload.get("change_summary")) or "新建 Agent 草稿"
@@ -3592,7 +3647,12 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
         raise ValueError("role_prompt is required")
     if not next_task_prompt:
         raise ValueError("task_prompt is required")
-    next_variables = _normalize_agent_config_variables(payload, default=list(existing.get("draft_variables_json") or []))
+    next_variables = _normalize_agent_config_variables(
+        payload,
+        role_prompt=next_role_prompt,
+        task_prompt=next_task_prompt,
+        default=list(existing.get("draft_variables_json") or []),
+    )
     next_output_schema = _fixed_agent_output_schema()
     changed = json.dumps(
         {
@@ -3617,7 +3677,7 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
     )
     next_draft_version = int(existing.get("draft_version") or 1) + (1 if changed else 0)
     summary = _normalized_text(payload.get("change_summary")) or (
-        "更新角色提示词、任务提示词与信息来源草稿" if changed else _normalized_text(existing.get("last_change_summary"))
+        "更新角色提示词、任务提示词与上下文占位符草稿" if changed else _normalized_text(existing.get("last_change_summary"))
     )
     saved = repo.update_agent_config_row(
         normalized_agent_code,

@@ -132,36 +132,6 @@
     background: rgba(248, 250, 252, 0.9);
   }
 
-  .ac-config-source-grid {
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ac-config-source-card {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: #fff;
-  }
-
-  .ac-config-source-card strong {
-    display: block;
-    color: #1f2937;
-    font-size: 14px;
-  }
-
-  .ac-config-source-card span {
-    display: block;
-    margin-top: 4px;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
   .ac-config-placeholder-group {
     display: flex;
     flex-wrap: wrap;
@@ -495,7 +465,7 @@
         <div class="ac-config-head">
           <div>
             <h4 id="agent-form-title">Agent 编排工作台</h4>
-            <p class="ac-config-muted">这里直接维护 Agent 的草稿态：显示名、启用状态、角色提示词、任务提示词与可见信息来源。保存后仍需发布，任务流执行才会使用最新版本。</p>
+            <p class="ac-config-muted">这里直接维护 Agent 的草稿态：显示名、启用状态、角色提示词和任务提示词。信息来源不再单独勾选，系统会根据你在提示词里实际写到的占位符自动注入，而且每类信息只整理一次。</p>
           </div>
           <button class="admin-button admin-button--ghost" id="agent-form-cancel" type="button">收起</button>
         </div>
@@ -531,7 +501,7 @@
 
           <label class="admin-field">
             <span>变更摘要</span>
-            <input type="text" name="change_summary" placeholder="例如：调整信息来源与提示词">
+            <input type="text" name="change_summary" placeholder="例如：调整提示词与占位符引用">
           </label>
 
           <label class="admin-field">
@@ -547,45 +517,21 @@
           <div class="ac-config-editor-grid">
             <section class="ac-config-editor-card">
               <div>
-                <strong>信息来源</strong>
-                <p class="ac-config-muted">只勾选这个 Agent 允许使用的 4 类信息来源。运行时会自动整理成可读文本，不需要再写变量 JSON。</p>
+                <strong>上下文注入规则</strong>
+                <p class="ac-config-muted">这里不再单独勾选 4 类信息来源。你只需要在角色提示词或任务提示词里写下对应占位符；运行时系统会自动识别被引用的项，并且每类信息只整理一次放进上下文，不会因为重复写占位符而重复膨胀。</p>
               </div>
-              <div class="ac-config-source-grid">
-                <label class="ac-config-source-card">
-                  <input type="checkbox" name="enabled_context_sources" value="questionnaire">
-                  <div>
-                    <strong>问卷信息</strong>
-                    <span>问卷题目与答案摘要</span>
-                  </div>
-                </label>
-                <label class="ac-config-source-card">
-                  <input type="checkbox" name="enabled_context_sources" value="recent_messages">
-                  <div>
-                    <strong>最近 20 条聊天信息</strong>
-                    <span>最近聊天上下文摘要</span>
-                  </div>
-                </label>
-                <label class="ac-config-source-card">
-                  <input type="checkbox" name="enabled_context_sources" value="user_tags">
-                  <div>
-                    <strong>用户标签</strong>
-                    <span>当前客户标签列表</span>
-                  </div>
-                </label>
-                <label class="ac-config-source-card">
-                  <input type="checkbox" name="enabled_context_sources" value="activation_info">
-                  <div>
-                    <strong>激活信息</strong>
-                    <span>激活状态、当前池子与当前大人群</span>
-                  </div>
-                </label>
-              </div>
+              <ul class="ac-config-diff-list">
+                <li>写了 {% raw %}{{问卷信息}}{% endraw %}，才会注入问卷题目与答案摘要。</li>
+                <li>写了 {% raw %}{{最近20条聊天信息}}{% endraw %}，才会注入最近 20 条聊天信息。</li>
+                <li>写了 {% raw %}{{用户标签}}{% endraw %}，才会注入当前用户标签。</li>
+                <li>写了 {% raw %}{{激活信息}}{% endraw %}，才会注入激活状态、当前池子和当前大人群。</li>
+              </ul>
             </section>
 
             <section class="ac-config-editor-card">
               <div>
                 <strong>变量插入区</strong>
-                <p class="ac-config-muted">点一下就能把占位符插入到当前聚焦的提示词编辑框。没有聚焦时，默认插入到任务提示词。</p>
+                <p class="ac-config-muted">点一下就能把占位符插入到当前聚焦的提示词编辑框。没有聚焦时默认插入到任务提示词。占位符在提示词里重复出现也不会重复展开原始内容，只会引用同一份上下文块。</p>
               </div>
               <div class="ac-config-placeholder-group">
                 <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{问卷信息}}{% endraw %}">{% raw %}{{问卷信息}}{% endraw %}</button>
@@ -616,8 +562,8 @@
                   <pre class="ac-config-code-block" id="agent-published-task-prompt">-</pre>
                 </div>
                 <div>
-                  <div class="ac-config-code">信息来源（已发布）</div>
-                  <pre class="ac-config-code-block" id="agent-published-context-sources">未勾选信息来源</pre>
+                  <div class="ac-config-code">已发布占位符引用</div>
+                  <pre class="ac-config-code-block" id="agent-published-context-sources">当前未引用任何上下文占位符</pre>
                 </div>
               </div>
             </section>
@@ -968,7 +914,6 @@
       changeSummary: elements.agentForm ? elements.agentForm.querySelector('[name="change_summary"]') : null,
       rolePrompt: elements.agentForm ? elements.agentForm.querySelector('[name="role_prompt"]') : null,
       taskPrompt: elements.agentForm ? elements.agentForm.querySelector('[name="task_prompt"]') : null,
-      enabledContextSources: elements.agentForm ? Array.from(elements.agentForm.querySelectorAll('[name="enabled_context_sources"]')) : [],
     };
 
     const templateFields = {
@@ -1043,34 +988,28 @@
       return JSON.stringify(Array.isArray(value) ? value : [], null, 2);
     }
 
-    function contextSourceLabel(code) {
-      const mapping = {
-        questionnaire: '问卷信息',
-        recent_messages: '最近20条聊天信息',
-        user_tags: '用户标签',
-        activation_info: '激活信息',
-      };
-      return mapping[String(code || '').trim()] || String(code || '').trim();
+    function contextSourceSpecs() {
+      return [
+        { code: 'questionnaire', label: '问卷信息', placeholder: '{{问卷信息}}' },
+        { code: 'recent_messages', label: '最近20条聊天信息', placeholder: '{{最近20条聊天信息}}' },
+        { code: 'user_tags', label: '用户标签', placeholder: '{{用户标签}}' },
+        { code: 'activation_info', label: '激活信息', placeholder: '{{激活信息}}' },
+      ];
     }
 
-    function collectEnabledContextSources() {
-      return (agentFields.enabledContextSources || [])
-        .filter((input) => input && input.checked)
-        .map((input) => String(input.value || '').trim())
-        .filter(Boolean);
+    function detectContextSourcesFromPrompt(rolePrompt, taskPrompt) {
+      const promptText = [rolePrompt, taskPrompt].map((item) => String(item || '')).join('\n');
+      return contextSourceSpecs()
+        .filter((item) => item.placeholder && promptText.includes(item.placeholder))
+        .map((item) => item.code);
     }
 
-    function applyEnabledContextSources(codes) {
-      const selected = new Set(Array.isArray(codes) ? codes.map((item) => String(item || '').trim()) : []);
-      (agentFields.enabledContextSources || []).forEach((input) => {
-        if (!input) return;
-        input.checked = selected.has(String(input.value || '').trim());
-      });
-    }
-
-    function formatContextSources(codes) {
-      const items = (Array.isArray(codes) ? codes : []).map(contextSourceLabel).filter(Boolean);
-      return items.length ? items.join('\n') : '未勾选信息来源';
+    function formatContextSourcesFromPrompt(rolePrompt, taskPrompt) {
+      const usedCodes = new Set(detectContextSourcesFromPrompt(rolePrompt, taskPrompt));
+      const items = contextSourceSpecs()
+        .filter((item) => usedCodes.has(item.code))
+        .map((item) => `${item.label} <- ${item.placeholder}`);
+      return items.length ? items.join('\n') : '当前未引用任何上下文占位符';
     }
 
     function insertPromptPlaceholder(placeholder) {
@@ -1111,7 +1050,10 @@
       const diffSummary = Array.isArray((detail || {}).diff_summary) ? detail.diff_summary : [];
       elements.agentPublishedRolePrompt.textContent = published.role_prompt || '-';
       elements.agentPublishedTaskPrompt.textContent = published.task_prompt || '-';
-      elements.agentPublishedContextSources.textContent = formatContextSources(published.enabled_context_sources || []);
+      elements.agentPublishedContextSources.textContent = formatContextSourcesFromPrompt(
+        published.role_prompt || '',
+        published.task_prompt || ''
+      );
       elements.agentDiffSummary.innerHTML = diffSummary.length
         ? diffSummary.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
         : '<li>当前草稿与已发布版本一致。</li>';
@@ -1372,7 +1314,6 @@
       if (agentFields.changeSummary) agentFields.changeSummary.value = '创建新 Agent 草稿';
       if (agentFields.rolePrompt) agentFields.rolePrompt.value = '';
       if (agentFields.taskPrompt) agentFields.taskPrompt.value = '';
-      applyEnabledContextSources([]);
       elements.agentMetaStatus.textContent = '新建态';
       elements.agentMetaDraftVersion.textContent = '1';
       elements.agentMetaPublishedVersion.textContent = '0';
@@ -1516,7 +1457,6 @@
       if (agentFields.changeSummary) agentFields.changeSummary.value = item.last_change_summary || '更新 Agent 草稿';
       if (agentFields.rolePrompt) agentFields.rolePrompt.value = draft.role_prompt || '';
       if (agentFields.taskPrompt) agentFields.taskPrompt.value = draft.task_prompt || '';
-      applyEnabledContextSources(draft.enabled_context_sources || []);
       if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = String(item.draft_version || 1);
       elements.agentFormTitle.textContent = `编辑 Agent · ${item.display_name || item.agent_code || ''}`;
       elements.agentPublishButton.hidden = false;
@@ -1588,7 +1528,6 @@
         change_summary: changeSummary || (state.agentFormMode === 'create' ? '创建新 Agent 草稿' : '更新 Agent 草稿'),
         role_prompt: rolePrompt,
         task_prompt: taskPrompt,
-        enabled_context_sources: collectEnabledContextSources(),
         expected_draft_version: Number((agentFields.expectedDraftVersion || {}).value || 1) || 1,
       };
     }
@@ -1830,7 +1769,6 @@
         }
         if (agentFields.rolePrompt) agentFields.rolePrompt.value = published.role_prompt || '';
         if (agentFields.taskPrompt) agentFields.taskPrompt.value = published.task_prompt || '';
-        applyEnabledContextSources(published.enabled_context_sources || []);
         if (agentFields.changeSummary && !String(agentFields.changeSummary.value || '').trim()) {
           agentFields.changeSummary.value = '用已发布版本覆盖草稿';
         }

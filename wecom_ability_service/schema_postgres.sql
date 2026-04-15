@@ -2041,6 +2041,8 @@ CREATE TABLE IF NOT EXISTS automation_workflow_node (
     node_name TEXT NOT NULL DEFAULT '',
     target_audience_code TEXT NOT NULL
         CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+    trigger_mode TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (trigger_mode IN ('scheduled', 'audience_entered')),
     day_offset INTEGER NOT NULL DEFAULT 1,
     send_time TEXT NOT NULL DEFAULT '09:00',
     timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
