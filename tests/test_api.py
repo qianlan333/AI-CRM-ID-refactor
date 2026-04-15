@@ -435,13 +435,8 @@ def test_mcp_create_agent_config_tool(client):
             "display_name": "龙虾新建 Agent",
             "enabled": True,
             "role_prompt": "你是龙虾新建 Agent。",
-            "task_prompt": "根据问卷结构化输入生成跟进话术。",
-            "variables": [
-                {"variable_key": "questionnaire_answers", "display_name": "问卷答案", "enabled": True},
-            ],
-            "output_schema": [
-                {"field_key": "draft_reply", "display_name": "草稿回复", "type": "string", "required": True},
-            ],
+            "task_prompt": "请根据 {{问卷信息}} 和 {{最近20条聊天信息}} 生成跟进话术。",
+            "enabled_context_sources": ["questionnaire", "recent_messages"],
             "operator": "lobster_test",
         },
     )
@@ -451,7 +446,23 @@ def test_mcp_create_agent_config_tool(client):
     assert body["result"]["structuredContent"]["created"] is True
     created = body["result"]["structuredContent"]["agent"]
     assert created["agent_code"] == "lobster_created_agent"
-    assert created["draft"]["variables"][0]["variable_key"] == "questionnaire_answers"
+    assert created["draft"]["enabled_context_sources"] == ["questionnaire", "recent_messages"]
+
+    update_response = _mcp_call(
+        client,
+        "save_agent_prompt_draft",
+        {
+            "agent_code": "lobster_created_agent",
+            "task_prompt": "请结合 {{用户标签}} 和 {{激活信息}} 输出一条成交推进话术。",
+            "enabled_context_sources": ["user_tags", "activation_info"],
+            "expected_draft_version": 1,
+            "operator": "lobster_test",
+        },
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.get_json()["result"]["structuredContent"]["agent"]
+    assert updated["draft"]["enabled_context_sources"] == ["user_tags", "activation_info"]
 
 
 def test_automation_conversion_profile_segment_template_detail_returns_template_bundle(client, app):
