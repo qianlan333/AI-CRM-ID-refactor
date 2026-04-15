@@ -2086,9 +2086,6 @@ ON automation_workflow_node (workflow_id, position_index ASC, id ASC);
 CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_schedule
 ON automation_workflow_node (target_audience_code, day_offset, send_time, enabled, id ASC);
 
-CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_trigger
-ON automation_workflow_node (target_audience_code, trigger_mode, enabled, id ASC);
-
 CREATE TABLE IF NOT EXISTS automation_workflow_node_content (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     node_id INTEGER NOT NULL UNIQUE REFERENCES automation_workflow_node(id) ON DELETE CASCADE,
