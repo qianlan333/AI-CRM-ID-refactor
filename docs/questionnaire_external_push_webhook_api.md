@@ -83,6 +83,10 @@ Content-Type: application/json
   "user_id": "union-external-push-success-001",
   "questionnaire_title": "来访测评",
   "submitted_at": "2026-04-06T18:21:10+08:00",
+  "day": 20,
+  "frequency": 20,
+  "remark": "黄小璨 499 用户激活",
+  "source_name": "黄小璨激活",
   "answers": [
     {
       "title": "你的预算",
@@ -111,6 +115,10 @@ Content-Type: application/json
 | `user_id` | `string` | 是 | 用户标识。当前实现取提交记录里的 `respondent_key` 优先值，因此通常等于 `unionid` / `openid` / `external_userid` 之一；若这些都没有，可能退化为系统生成的匿名键。你方不能假设它一定是企业微信用户 ID。 |
 | `questionnaire_title` | `string` | 是 | 问卷标题。 |
 | `submitted_at` | `string` | 是 | 提交时间，ISO 8601 字符串，例如 `2026-04-06T18:21:10+08:00`。 |
+| `day` | `number` | 否 | 后台为当前问卷手动配置的固定数字字段。未配置时不发送。 |
+| `frequency` | `number` | 否 | 后台为当前问卷手动配置的固定数字字段。未配置时不发送。 |
+| `remark` | `string` | 否 | 后台为当前问卷手动配置的固定文本字段。未配置时不发送。 |
+| 其他自定义字段 | `string` | 否 | 后台手动新增的自定义顶层参数，按“参数名: 参数值”直接平铺到顶层 JSON。若参数名重复或命中保留字段，后台保存会报错。 |
 | `answers` | `array<object>` | 是 | 问卷答案数组。 |
 
 ### 5.3 `answers[]` 元素说明
@@ -135,6 +143,7 @@ Content-Type: application/json
 - 多选题未选中时，当前会发空数组 `[]`
 - 文本题未填写时，当前会发空字符串 `""`
 - 手机号题未填写时，若该题是必填，提交本身不会成功，因此正常不会出现无值成功提交
+- 自定义顶层参数当前统一按字符串发送
 
 ## 6. 当前不会发送的字段
 

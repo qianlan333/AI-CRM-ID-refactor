@@ -1288,6 +1288,10 @@ CREATE TABLE IF NOT EXISTS questionnaires (
     redirect_url TEXT NOT NULL DEFAULT '',
     external_push_enabled INTEGER NOT NULL DEFAULT 0,
     external_push_url TEXT NOT NULL DEFAULT '',
+    external_push_day INTEGER,
+    external_push_frequency INTEGER,
+    external_push_remark TEXT NOT NULL DEFAULT '',
+    external_push_custom_params TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
