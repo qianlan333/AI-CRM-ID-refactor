@@ -450,7 +450,17 @@ def _set_sop_pool_effective_start(app, *, pool_key: str, effective_start_at: str
         get_db().commit()
 
 
-def _create_test_workflow(app, *, workflow_name: str = "测试任务流", audiences: list[str] | None = None, status: str = "active") -> dict[str, object]:
+def _create_test_workflow(
+    app,
+    *,
+    workflow_name: str = "测试任务流",
+    audiences: list[str] | None = None,
+    status: str = "active",
+    segmentation_basis: str = "none",
+    generation_mode: str = "manual_layered",
+    agent_bindings: list[dict[str, object]] | None = None,
+    profile_segment_template_id: int | None = None,
+) -> dict[str, object]:
     with app.app_context():
         return create_conversion_workflow(
             {
@@ -458,13 +468,49 @@ def _create_test_workflow(app, *, workflow_name: str = "测试任务流", audien
                 "workflow_code": workflow_name,
                 "description": "test workflow",
                 "status": status,
-                "segmentation_basis": "none",
-                "generation_mode": "manual_layered",
+                "segmentation_basis": segmentation_basis,
+                "generation_mode": generation_mode,
+                "profile_segment_template_id": profile_segment_template_id,
                 "audiences": list(audiences or ["pending_questionnaire"]),
-                "agent_pool_bindings": [],
+                "agent_bindings": list(agent_bindings or []),
             },
             operator_id="tester",
         )
+
+
+def _seed_test_agent_config(app, *, agent_code: str, display_name: str = "") -> None:
+    with app.app_context():
+        get_db().execute(
+            """
+            INSERT INTO automation_agent_config (
+                agent_code,
+                display_name,
+                pool_keys_json,
+                enabled,
+                draft_role_prompt,
+                draft_task_prompt,
+                draft_variables_json,
+                draft_output_schema_json,
+                published_role_prompt,
+                published_task_prompt,
+                published_variables_json,
+                published_output_schema_json,
+                draft_version,
+                published_version,
+                last_change_summary,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, '[]', 1, '', '', '[]', '[]', '', '', '[]', '[]', 1, 1, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(agent_code) DO UPDATE SET
+                display_name = excluded.display_name,
+                enabled = 1,
+                published_version = MAX(automation_agent_config.published_version, 1),
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (agent_code, display_name or agent_code),
+        )
+        get_db().commit()
 
 
 def test_init_db_adds_workflow_node_trigger_mode_column(app):
@@ -493,6 +539,317 @@ def test_create_workflow_node_supports_immediate_trigger_mode(app):
     assert node["trigger_mode"] == "audience_entered"
     assert node["day_offset"] == 1
     assert node["send_time"] == "00:00"
+
+
+def test_create_workflow_node_supports_immediate_personalized_single_with_one_agent_binding(app):
+    _seed_test_agent_config(app, agent_code="welcome_agent", display_name="Welcome Agent")
+    workflow_bundle = _create_test_workflow(app, workflow_name="立即单人定制节点工作流")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        result = create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "问卷提交后立即个性化发送",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "content_mode": "personalized_single",
+                "agent_bindings": [
+                    {
+                        "binding_scope": "personalized",
+                        "segment_key": "",
+                        "agent_code": "welcome_agent",
+                    }
+                ],
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+        saved_node = result["node"]
+        binding_rows = get_db().execute(
+            """
+            SELECT binding_scope, segment_key, agent_code
+            FROM automation_workflow_agent_binding
+            WHERE workflow_id = ? AND node_id = ?
+            ORDER BY id ASC
+            """,
+            (workflow_id, int(saved_node["id"])),
+        ).fetchall()
+        content_row = get_db().execute(
+            """
+            SELECT standard_content_text, standard_content_payload_json
+            FROM automation_workflow_node_content
+            WHERE node_id = ?
+            LIMIT 1
+            """,
+            (int(saved_node["id"]),),
+        ).fetchone()
+
+    assert saved_node["trigger_mode"] == "audience_entered"
+    assert saved_node["content_mode"] == "personalized_single"
+    assert saved_node["segmentation_basis"] == "none"
+    assert saved_node["standard_content_text"] == ""
+    assert saved_node["agent_bindings"] == [
+        {
+            "id": saved_node["agent_bindings"][0]["id"],
+            "node_id": saved_node["id"],
+            "binding_scope": "personalized",
+            "segment_key": "",
+            "agent_code": "welcome_agent",
+            "agent": saved_node["agent_bindings"][0]["agent"],
+        }
+    ]
+    assert [dict(row) for row in binding_rows] == [
+        {
+            "binding_scope": "personalized",
+            "segment_key": "",
+            "agent_code": "welcome_agent",
+        }
+    ]
+    assert dict(content_row)["standard_content_text"] == ""
+    assert json.loads(dict(content_row)["standard_content_payload_json"])["_automation_conversion_node_meta"] == {
+        "content_mode": "personalized_single",
+        "segmentation_basis": "none",
+    }
+
+
+def test_create_workflow_node_rejects_manual_layered_without_variants(app):
+    workflow_bundle = _create_test_workflow(app, workflow_name="手动分层校验工作流")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        with pytest.raises(ValueError, match="content_variants is required for manual_layered"):
+            create_conversion_workflow_node(
+                workflow_id,
+                {
+                    "node_name": "手动分层节点",
+                    "target_audience_code": "pending_questionnaire",
+                    "trigger_mode": "scheduled",
+                    "day_offset": 2,
+                    "send_time": "10:30",
+                    "content_mode": "manual_layered",
+                    "segmentation_basis": "behavior",
+                    "content_variants": [],
+                    "enabled": True,
+                },
+                operator_id="tester",
+            )
+
+
+def test_create_workflow_node_rejects_layered_rewrite_without_full_agent_bindings(app):
+    _seed_test_agent_config(app, agent_code="welcome_agent", display_name="Welcome Agent")
+    workflow_bundle = _create_test_workflow(app, workflow_name="分层改写校验工作流")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        with pytest.raises(ValueError, match="agent_bindings does not match expected segmentation targets"):
+            create_conversion_workflow_node(
+                workflow_id,
+                {
+                    "node_name": "改写节点",
+                    "target_audience_code": "pending_questionnaire",
+                    "trigger_mode": "scheduled",
+                    "day_offset": 1,
+                    "send_time": "09:15",
+                    "content_mode": "standard_layered_rewrite",
+                    "segmentation_basis": "behavior",
+                    "standard_content_text": "请根据问卷结果改写这条消息",
+                    "agent_bindings": [
+                        {
+                            "binding_scope": "behavior_tier",
+                            "segment_key": "lt_2",
+                            "agent_code": "welcome_agent",
+                        }
+                    ],
+                    "enabled": True,
+                },
+                operator_id="tester",
+            )
+
+
+def test_workflow_node_api_supports_operating_immediate_personalized_single_with_questionnaire_submit_agent(app, client):
+    _seed_test_agent_config(app, agent_code="questionnaire_followup_agent", display_name="问卷提交 agent")
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="问卷提交后进入运营中立即触发",
+        audiences=["operating"],
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "问卷提交后进入运营中立即发送",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "content_mode": "personalized_single",
+            "agent_bindings": [
+                {
+                    "binding_scope": "personalized",
+                    "segment_key": "",
+                    "agent_code": "questionnaire_followup_agent",
+                }
+            ],
+            "enabled": True,
+            "operator": "tester-node-api",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 201
+    assert payload["ok"] is True
+    assert payload["node"]["target_audience_code"] == "operating"
+    assert payload["node"]["trigger_mode"] == "audience_entered"
+    assert payload["node"]["content_mode"] == "personalized_single"
+    assert payload["node"]["segmentation_basis"] == "none"
+    assert payload["node"]["standard_content_text"] == ""
+    assert len(payload["node"]["agent_bindings"]) == 1
+    assert payload["node"]["agent_bindings"][0]["agent_code"] == "questionnaire_followup_agent"
+    assert payload["node"]["agent_bindings"][0]["binding_scope"] == "personalized"
+
+    with app.app_context():
+        binding_rows = get_db().execute(
+            """
+            SELECT binding_scope, segment_key, agent_code
+            FROM automation_workflow_agent_binding
+            WHERE workflow_id = ? AND node_id = ?
+            ORDER BY id ASC
+            """,
+            (workflow_id, int(payload["node"]["id"])),
+        ).fetchall()
+
+    assert [dict(row) for row in binding_rows] == [
+        {
+            "binding_scope": "personalized",
+            "segment_key": "",
+            "agent_code": "questionnaire_followup_agent",
+        }
+    ]
+
+
+def test_workflow_node_api_reopens_personalized_single_agent_binding_from_workflow_detail(app, client):
+    _seed_test_agent_config(app, agent_code="questionnaire_followup_agent", display_name="问卷提交 agent")
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="问卷提交个性化节点回显",
+        audiences=["operating"],
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    create_response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "立即触发问卷跟进",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "content_mode": "personalized_single",
+            "agent_bindings": [
+                {
+                    "binding_scope": "personalized",
+                    "segment_key": "",
+                    "agent_code": "questionnaire_followup_agent",
+                }
+            ],
+            "enabled": True,
+            "operator": "tester-node-detail-reopen",
+        },
+    )
+    create_payload = create_response.get_json()
+
+    assert create_response.status_code == 201
+    node_id = int((create_payload.get("node") or {}).get("id") or 0)
+
+    detail_response = client.get(f"/api/admin/automation-conversion/workflows/{workflow_id}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    reopened_node = next(
+        item for item in (((detail_payload.get("workflow_bundle") or {}).get("nodes")) or [])
+        if int(item.get("id") or 0) == node_id
+    )
+    assert reopened_node["content_mode"] == "personalized_single"
+    assert reopened_node["trigger_mode"] == "audience_entered"
+    assert reopened_node["agent_bindings"] == [
+        {
+            "id": reopened_node["agent_bindings"][0]["id"],
+            "node_id": node_id,
+            "binding_scope": "personalized",
+            "segment_key": "",
+            "agent_code": "questionnaire_followup_agent",
+            "agent": reopened_node["agent_bindings"][0]["agent"],
+        }
+    ]
+
+
+def test_workflow_node_api_reopens_behavior_layered_rewrite_agent_bindings_from_workflow_detail(app, client):
+    _seed_test_agent_config(app, agent_code="behavior_lt_2_agent", display_name="低行为 Agent")
+    _seed_test_agent_config(app, agent_code="behavior_2_9_agent", display_name="中行为 Agent")
+    _seed_test_agent_config(app, agent_code="behavior_10_agent", display_name="高行为 Agent")
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="行为分层改写节点回显",
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    create_response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "行为分层改写节点",
+            "target_audience_code": "pending_questionnaire",
+            "trigger_mode": "scheduled",
+            "day_offset": 2,
+            "send_time": "10:15",
+            "content_mode": "standard_layered_rewrite",
+            "segmentation_basis": "behavior",
+            "standard_content_text": "请根据行为层级改写内容",
+            "agent_bindings": [
+                {
+                    "binding_scope": "behavior_tier",
+                    "segment_key": "lt_2",
+                    "agent_code": "behavior_lt_2_agent",
+                },
+                {
+                    "binding_scope": "behavior_tier",
+                    "segment_key": "between_2_9",
+                    "agent_code": "behavior_2_9_agent",
+                },
+                {
+                    "binding_scope": "behavior_tier",
+                    "segment_key": "gte_10",
+                    "agent_code": "behavior_10_agent",
+                },
+            ],
+            "enabled": True,
+            "operator": "tester-node-detail-reopen",
+        },
+    )
+    create_payload = create_response.get_json()
+
+    assert create_response.status_code == 201
+    node_id = int((create_payload.get("node") or {}).get("id") or 0)
+
+    detail_response = client.get(f"/api/admin/automation-conversion/workflows/{workflow_id}")
+    detail_payload = detail_response.get_json()
+
+    assert detail_response.status_code == 200
+    reopened_node = next(
+        item for item in (((detail_payload.get("workflow_bundle") or {}).get("nodes")) or [])
+        if int(item.get("id") or 0) == node_id
+    )
+    reopened_bindings = {(item["binding_scope"], item["segment_key"]): item["agent_code"] for item in reopened_node["agent_bindings"]}
+
+    assert reopened_node["content_mode"] == "standard_layered_rewrite"
+    assert reopened_node["segmentation_basis"] == "behavior"
+    assert reopened_node["standard_content_text"] == "请根据行为层级改写内容"
+    assert reopened_bindings == {
+        ("behavior_tier", "lt_2"): "behavior_lt_2_agent",
+        ("behavior_tier", "between_2_9"): "behavior_2_9_agent",
+        ("behavior_tier", "gte_10"): "behavior_10_agent",
+    }
 
 
 def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entry(app, monkeypatch):

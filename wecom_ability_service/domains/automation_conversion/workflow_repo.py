@@ -640,6 +640,13 @@ def delete_workflow_agent_binding_rows(workflow_id: int) -> None:
     get_db().execute("DELETE FROM automation_workflow_agent_binding WHERE workflow_id = ?", (int(workflow_id),))
 
 
+def delete_workflow_agent_binding_rows_for_node(workflow_id: int, node_id: int) -> None:
+    get_db().execute(
+        "DELETE FROM automation_workflow_agent_binding WHERE workflow_id = ? AND node_id = ?",
+        (int(workflow_id), int(node_id)),
+    )
+
+
 def insert_workflow_agent_binding_row(payload: dict[str, Any]) -> dict[str, Any]:
     row = get_db().execute(
         """
