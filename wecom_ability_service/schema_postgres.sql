@@ -1292,6 +1292,10 @@ CREATE TABLE IF NOT EXISTS questionnaires (
     redirect_url TEXT NOT NULL DEFAULT '',
     external_push_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     external_push_url TEXT NOT NULL DEFAULT '',
+    external_push_day INTEGER,
+    external_push_frequency INTEGER,
+    external_push_remark TEXT NOT NULL DEFAULT '',
+    external_push_custom_params JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

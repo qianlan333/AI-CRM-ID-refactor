@@ -1355,6 +1355,15 @@
       };
     }
 
+    function createExternalPushCustomParam(param = {}, index = 0) {
+      return {
+        local_key: param.local_key || nextLocalKey('external-push-param'),
+        name: param.name || param.key || '',
+        value: param.value || param.detail || '',
+        sort_order: param.sort_order ?? (index + 1),
+      };
+    }
+
     function blankQuestionnaire() {
       return {
         id: null,
@@ -1365,6 +1374,10 @@
         redirect_url: '',
         external_push_enabled: false,
         external_push_url: '',
+        external_push_day: '',
+        external_push_frequency: '',
+        external_push_remark: '',
+        external_push_custom_params: [],
         slug: '',
         is_disabled: false,
         questions: [],
@@ -1385,6 +1398,12 @@
         redirect_url: questionnaire.redirect_url || '',
         external_push_enabled: Boolean(questionnaire.external_push_enabled),
         external_push_url: questionnaire.external_push_url || '',
+        external_push_day: questionnaire.external_push_day ?? '',
+        external_push_frequency: questionnaire.external_push_frequency ?? '',
+        external_push_remark: questionnaire.external_push_remark || '',
+        external_push_custom_params: (questionnaire.external_push_custom_params || []).map(
+          (param, index) => createExternalPushCustomParam(param, index),
+        ),
         slug: questionnaire.slug || '',
         is_disabled: Boolean(questionnaire.is_disabled),
         questions: (questionnaire.questions || []).map((question, index) => createQuestion(question.type || 'single_choice', question, index)),
@@ -1453,6 +1472,14 @@
         redirect_url: state.questionnaire.redirect_url,
         external_push_enabled: Boolean(state.questionnaire.external_push_enabled),
         external_push_url: state.questionnaire.external_push_url,
+        external_push_day: state.questionnaire.external_push_day === '' ? '' : Number(state.questionnaire.external_push_day),
+        external_push_frequency: state.questionnaire.external_push_frequency === '' ? '' : Number(state.questionnaire.external_push_frequency),
+        external_push_remark: state.questionnaire.external_push_remark,
+        external_push_custom_params: (state.questionnaire.external_push_custom_params || []).map((param, index) => ({
+          name: param.name,
+          value: param.value,
+          sort_order: Number(param.sort_order || (index + 1)),
+        })),
         slug: state.questionnaire.slug,
         is_disabled: state.questionnaire.is_disabled,
         questions: state.questionnaire.questions.map((question, index) => {
@@ -1815,6 +1842,33 @@
       inspectorTitleEl.textContent = '问卷设置';
       inspectorSubtitleEl.textContent = '编辑当前问卷的基础信息。';
       const deleteDisabled = !state.persistedIsDisabled;
+      const customParamsHtml = (state.questionnaire.external_push_custom_params || []).length
+        ? state.questionnaire.external_push_custom_params.map((param) => `
+            <div class="option-editor" data-custom-param-key="${escapeHtml(param.local_key)}">
+              <div class="field-grid compact">
+                <label class="field">参数名
+                  <input
+                    type="text"
+                    data-custom-param-name="${escapeHtml(param.local_key)}"
+                    value="${escapeHtml(param.name)}"
+                    placeholder="例如：source_name"
+                  >
+                </label>
+                <label class="field">参数值
+                  <input
+                    type="text"
+                    data-custom-param-value="${escapeHtml(param.local_key)}"
+                    value="${escapeHtml(param.value)}"
+                    placeholder="例如：黄小璨激活"
+                  >
+                </label>
+              </div>
+              <div class="option-editor-head" style="justify-content:flex-end;">
+                <button type="button" class="link-btn danger" data-custom-param-remove="${escapeHtml(param.local_key)}">删除参数</button>
+              </div>
+            </div>
+          `).join('')
+        : '<div class="empty-state">暂未配置自定义顶层参数</div>';
       const deleteSection = state.currentId ? `
         <section class="config-group danger-zone">
           <div class="config-head">
@@ -1865,6 +1919,27 @@
             <label class="field">外部推送地址
               <input id="field-external-push-url" type="text" value="${escapeHtml(state.questionnaire.external_push_url)}" placeholder="https://hooks.example.com/questionnaire/apply">
             </label>
+            <div class="field-grid compact">
+              <label class="field">day（数字）
+                <input id="field-external-push-day" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_day ?? ''))}" placeholder="20">
+              </label>
+              <label class="field">frequency（数字）
+                <input id="field-external-push-frequency" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_frequency ?? ''))}" placeholder="20">
+              </label>
+            </div>
+            <label class="field">remark（文本）
+              <input id="field-external-push-remark" type="text" value="${escapeHtml(state.questionnaire.external_push_remark || '')}" placeholder="例如：黄小璨 499 用户激活">
+            </label>
+            <section class="config-group" style="margin:12px 0 0;">
+              <div class="config-head">
+                <div>
+                  <h3>自定义顶层参数</h3>
+                  <p>提交时按参数名平铺到 webhook 顶层 JSON，参数值全部手动输入。</p>
+                </div>
+                <button id="add-external-push-custom-param-btn" type="button" class="btn secondary">新增参数</button>
+              </div>
+              ${customParamsHtml}
+            </section>
           </section>
           <div class="field-grid compact">
             <label class="field">分享标识
@@ -1903,6 +1978,49 @@
       inspectorBodyEl.querySelector('#field-external-push-url').addEventListener('input', (event) => {
         state.questionnaire.external_push_url = event.target.value;
         updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#field-external-push-day').addEventListener('input', (event) => {
+        state.questionnaire.external_push_day = event.target.value;
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#field-external-push-frequency').addEventListener('input', (event) => {
+        state.questionnaire.external_push_frequency = event.target.value;
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#field-external-push-remark').addEventListener('input', (event) => {
+        state.questionnaire.external_push_remark = event.target.value;
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#add-external-push-custom-param-btn').addEventListener('click', () => {
+        state.questionnaire.external_push_custom_params = [
+          ...(state.questionnaire.external_push_custom_params || []),
+          createExternalPushCustomParam({}, (state.questionnaire.external_push_custom_params || []).length),
+        ];
+        renderQuestionnaireInspector();
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelectorAll('[data-custom-param-name]').forEach((input) => {
+        input.addEventListener('input', (event) => {
+          const target = (state.questionnaire.external_push_custom_params || []).find((item) => item.local_key === input.dataset.customParamName);
+          if (target) target.name = event.target.value;
+          updateDraftIndicator();
+        });
+      });
+      inspectorBodyEl.querySelectorAll('[data-custom-param-value]').forEach((input) => {
+        input.addEventListener('input', (event) => {
+          const target = (state.questionnaire.external_push_custom_params || []).find((item) => item.local_key === input.dataset.customParamValue);
+          if (target) target.value = event.target.value;
+          updateDraftIndicator();
+        });
+      });
+      inspectorBodyEl.querySelectorAll('[data-custom-param-remove]').forEach((button) => {
+        button.addEventListener('click', () => {
+          state.questionnaire.external_push_custom_params = (state.questionnaire.external_push_custom_params || [])
+            .filter((item) => item.local_key !== button.dataset.customParamRemove)
+            .map((item, index) => ({ ...item, sort_order: index + 1 }));
+          renderQuestionnaireInspector();
+          updateDraftIndicator();
+        });
       });
       inspectorBodyEl.querySelector('#field-slug').addEventListener('input', (event) => {
         state.questionnaire.slug = event.target.value;

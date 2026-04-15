@@ -22,6 +22,15 @@ QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED = "failed"
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SKIPPED = "skipped"
 QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED_KEY = "QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED"
 QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_DISABLED_REASON = "skipped by global external push switch"
+QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS = {
+    "user_id",
+    "questionnaire_title",
+    "submitted_at",
+    "answers",
+    "day",
+    "frequency",
+    "remark",
+}
 
 
 class QuestionnaireAlreadySubmittedError(ValueError):
@@ -171,6 +180,35 @@ def _normalize_tag_codes(value: Any) -> list[str]:
     return []
 
 
+def _normalize_questionnaire_external_push_custom_params(value: Any) -> list[dict[str, str]]:
+    if value in (None, ""):
+        return []
+    raw_items = _json_loads(value, default=[]) if isinstance(value, str) else value
+    if raw_items in (None, ""):
+        return []
+    if not isinstance(raw_items, list):
+        raise ValueError("external_push_custom_params must be an array")
+
+    normalized: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            raise ValueError("external_push_custom_params item must be an object")
+        name = str(item.get("name") or item.get("key") or "").strip()
+        param_value = str(item.get("value") or item.get("detail") or "").strip()
+        if not name and not param_value:
+            continue
+        if not name:
+            raise ValueError("external_push_custom_params name is required")
+        if name in QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS:
+            raise ValueError(f"external_push_custom_params name '{name}' is reserved")
+        if name in seen_names:
+            raise ValueError(f"external_push_custom_params name '{name}' is duplicated")
+        seen_names.add(name)
+        normalized.append({"name": name, "value": param_value})
+    return normalized
+
+
 def _normalize_questionnaire_payload(
     payload: dict[str, Any],
     *,
@@ -187,6 +225,22 @@ def _normalize_questionnaire_payload(
         payload.get("external_push_enabled", (existing or {}).get("external_push_enabled"))
     )
     external_push_url = str(payload.get("external_push_url") or "").strip()
+    external_push_day = _normalize_required_integer(
+        payload.get("external_push_day", (existing or {}).get("external_push_day")),
+        "external_push_day",
+        allow_none=True,
+    )
+    external_push_frequency = _normalize_required_integer(
+        payload.get("external_push_frequency", (existing or {}).get("external_push_frequency")),
+        "external_push_frequency",
+        allow_none=True,
+    )
+    external_push_remark = str(
+        payload.get("external_push_remark", (existing or {}).get("external_push_remark")) or ""
+    ).strip()
+    external_push_custom_params = _normalize_questionnaire_external_push_custom_params(
+        payload.get("external_push_custom_params", (existing or {}).get("external_push_custom_params"))
+    )
     slug_source = str(raw_slug or (existing or {}).get("slug") or name or title).strip()
     slug = _slugify_questionnaire(slug_source)
 
@@ -286,6 +340,10 @@ def _normalize_questionnaire_payload(
         "redirect_url": redirect_url,
         "external_push_enabled": external_push_enabled,
         "external_push_url": external_push_url,
+        "external_push_day": external_push_day,
+        "external_push_frequency": external_push_frequency,
+        "external_push_remark": external_push_remark,
+        "external_push_custom_params": external_push_custom_params,
         "questions": normalized_questions,
         "score_rules": normalized_score_rules,
     }
@@ -295,7 +353,8 @@ def _get_questionnaire_row(questionnaire_id: int) -> dict[str, Any] | None:
     return get_db().execute(
         """
         SELECT id, slug, name, title, description, is_disabled, redirect_url,
-               external_push_enabled, external_push_url, created_at, updated_at
+               external_push_enabled, external_push_url, external_push_day, external_push_frequency,
+               external_push_remark, external_push_custom_params, created_at, updated_at
         FROM questionnaires
         WHERE id = ?
         """,
@@ -314,6 +373,14 @@ def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
         "redirect_url": row.get("redirect_url", "") or "",
         "external_push_enabled": _normalize_bool(row.get("external_push_enabled")),
         "external_push_url": row.get("external_push_url", "") or "",
+        "external_push_day": int(row["external_push_day"]) if row.get("external_push_day") is not None else "",
+        "external_push_frequency": int(row["external_push_frequency"])
+        if row.get("external_push_frequency") is not None
+        else "",
+        "external_push_remark": row.get("external_push_remark", "") or "",
+        "external_push_custom_params": _normalize_questionnaire_external_push_custom_params(
+            row.get("external_push_custom_params")
+        ),
         "created_at": row.get("created_at", ""),
         "updated_at": row.get("updated_at", ""),
     }
@@ -494,12 +561,14 @@ def list_questionnaires() -> list[dict[str, Any]]:
     rows = get_db().execute(
         """
         SELECT q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
-               q.external_push_enabled, q.external_push_url, q.created_at, q.updated_at,
+               q.external_push_enabled, q.external_push_url, q.external_push_day, q.external_push_frequency,
+               q.external_push_remark, q.external_push_custom_params, q.created_at, q.updated_at,
                COUNT(s.id) AS submission_count, MAX(s.submitted_at) AS last_submitted_at
         FROM questionnaires q
         LEFT JOIN questionnaire_submissions s ON s.questionnaire_id = q.id
         GROUP BY q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
-                 q.external_push_enabled, q.external_push_url, q.created_at, q.updated_at
+                 q.external_push_enabled, q.external_push_url, q.external_push_day, q.external_push_frequency,
+                 q.external_push_remark, q.external_push_custom_params, q.created_at, q.updated_at
         ORDER BY q.updated_at DESC, q.id DESC
         """
     ).fetchall()
@@ -588,9 +657,10 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
             """
             INSERT INTO questionnaires (
                 slug, name, title, description, is_disabled, redirect_url,
-                external_push_enabled, external_push_url, created_at, updated_at
+                external_push_enabled, external_push_url, external_push_day, external_push_frequency,
+                external_push_remark, external_push_custom_params, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (
@@ -602,6 +672,10 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
                 normalized["redirect_url"],
                 normalized["external_push_enabled"],
                 normalized["external_push_url"],
+                normalized["external_push_day"],
+                normalized["external_push_frequency"],
+                normalized["external_push_remark"],
+                _json_dumps(normalized["external_push_custom_params"]),
             ),
         ).fetchone()
         questionnaire_id = int(row["id"])
@@ -635,7 +709,8 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
             """
             UPDATE questionnaires
             SET slug = ?, name = ?, title = ?, description = ?, is_disabled = ?, redirect_url = ?,
-                external_push_enabled = ?, external_push_url = ?, updated_at = CURRENT_TIMESTAMP
+                external_push_enabled = ?, external_push_url = ?, external_push_day = ?, external_push_frequency = ?,
+                external_push_remark = ?, external_push_custom_params = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
             (
@@ -647,6 +722,10 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
                 normalized["redirect_url"],
                 normalized["external_push_enabled"],
                 normalized["external_push_url"],
+                normalized["external_push_day"],
+                normalized["external_push_frequency"],
+                normalized["external_push_remark"],
+                _json_dumps(normalized["external_push_custom_params"]),
                 int(questionnaire_id),
             ),
         )
@@ -830,7 +909,8 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     row = get_db().execute(
         """
         SELECT id, slug, name, title, description, is_disabled, redirect_url,
-               external_push_enabled, external_push_url, created_at, updated_at
+               external_push_enabled, external_push_url, external_push_day, external_push_frequency,
+               external_push_remark, external_push_custom_params, created_at, updated_at
         FROM questionnaires
         WHERE slug = ? AND is_disabled = ?
         LIMIT 1
@@ -864,6 +944,10 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     detail.pop("last_submitted_at", None)
     detail.pop("external_push_enabled", None)
     detail.pop("external_push_url", None)
+    detail.pop("external_push_day", None)
+    detail.pop("external_push_frequency", None)
+    detail.pop("external_push_remark", None)
+    detail.pop("external_push_custom_params", None)
     return detail
 
 
@@ -1342,12 +1426,22 @@ def _build_questionnaire_external_push_payload(
     submission: dict[str, Any],
     computed_result: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "user_id": _questionnaire_external_push_user_id(submission),
         "questionnaire_title": str(questionnaire.get("title") or questionnaire.get("name") or "").strip(),
         "submitted_at": _format_iso_datetime(submission.get("submitted_at")),
         "answers": _serialize_questionnaire_external_push_answers(computed_result.get("answer_snapshots") or []),
     }
+    if questionnaire.get("external_push_day") not in (None, ""):
+        payload["day"] = int(questionnaire["external_push_day"])
+    if questionnaire.get("external_push_frequency") not in (None, ""):
+        payload["frequency"] = int(questionnaire["external_push_frequency"])
+    remark = str(questionnaire.get("external_push_remark") or "").strip()
+    if remark:
+        payload["remark"] = remark
+    for item in _normalize_questionnaire_external_push_custom_params(questionnaire.get("external_push_custom_params")):
+        payload[item["name"]] = item["value"]
+    return payload
 
 
 def _create_questionnaire_external_push_log(

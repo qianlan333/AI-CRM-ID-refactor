@@ -2721,6 +2721,10 @@ def _build_questionnaire_payload(**overrides) -> dict:
         "redirect_url": "https://example.com/next",
         "external_push_enabled": False,
         "external_push_url": "",
+        "external_push_day": "",
+        "external_push_frequency": "",
+        "external_push_remark": "",
+        "external_push_custom_params": [],
         "questions": [
             {
                 "type": "single_choice",
@@ -3719,6 +3723,12 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         json=_build_questionnaire_payload_with_mobile(
             external_push_enabled=True,
             external_push_url="https://hooks.example.com/questionnaire/apply",
+            external_push_day=20,
+            external_push_frequency=20,
+            external_push_remark="黄小璨 499 用户激活",
+            external_push_custom_params=[
+                {"name": "source_name", "value": "黄小璨激活"},
+            ],
         ),
     )
     questionnaire = create_response.get_json()["questionnaire"]
@@ -3756,6 +3766,10 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         "user_id": "union-external-push-success-001",
         "questionnaire_title": "来访测评",
         "submitted_at": push_calls[0]["json"]["submitted_at"],
+        "day": 20,
+        "frequency": 20,
+        "remark": "黄小璨 499 用户激活",
+        "source_name": "黄小璨激活",
         "answers": [
             {"title": "你的预算", "answer": "10-30万"},
             {"title": "你的关注点", "answer": ["效果"]},
@@ -3780,9 +3794,39 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         assert int(row["response_status_code"]) == 200
         assert row["status"] == "success"
         assert row["failure_reason"] == ""
+        assert json.loads(row["request_payload"])["day"] == 20
+        assert json.loads(row["request_payload"])["frequency"] == 20
+        assert json.loads(row["request_payload"])["remark"] == "黄小璨 499 用户激活"
+        assert json.loads(row["request_payload"])["source_name"] == "黄小璨激活"
         assert json.loads(row["request_payload"])["answers"][1]["answer"] == ["效果"]
         assert json.loads(row["request_payload"])["answers"][2]["answer"] == ""
         assert '"success": false' in row["response_body"]
+
+
+def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_custom_param_name(client):
+    invalid_number_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(external_push_enabled=True, external_push_url="https://hooks.example.com/q", external_push_day="abc"),
+    )
+    assert invalid_number_response.status_code == 400
+    assert invalid_number_response.get_json() == {
+        "ok": False,
+        "error": "external_push_day must be an integer",
+    }
+
+    reserved_name_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_custom_params=[{"name": "remark", "value": "bad"}],
+        ),
+    )
+    assert reserved_name_response.status_code == 400
+    assert reserved_name_response.get_json() == {
+        "ok": False,
+        "error": "external_push_custom_params name 'remark' is reserved",
+    }
 
 
 def test_questionnaire_submit_external_push_global_switch_off_skips_without_breaking_submit(client, app, monkeypatch):

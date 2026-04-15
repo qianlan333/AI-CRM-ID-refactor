@@ -164,6 +164,14 @@ def _ensure_sqlite_questionnaire_external_push_tables(db) -> None:
             db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_enabled INTEGER NOT NULL DEFAULT 0")
         if "external_push_url" not in questionnaire_columns:
             db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_url TEXT NOT NULL DEFAULT ''")
+        if "external_push_day" not in questionnaire_columns:
+            db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_day INTEGER")
+        if "external_push_frequency" not in questionnaire_columns:
+            db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_frequency INTEGER")
+        if "external_push_remark" not in questionnaire_columns:
+            db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_remark TEXT NOT NULL DEFAULT ''")
+        if "external_push_custom_params" not in questionnaire_columns:
+            db.execute("ALTER TABLE questionnaires ADD COLUMN external_push_custom_params TEXT NOT NULL DEFAULT '[]'")
         db.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_questionnaires_external_push_enabled
@@ -1994,6 +2002,30 @@ def _ensure_postgres_questionnaire_external_push_tables(db) -> None:
         """
         ALTER TABLE IF EXISTS questionnaires
         ADD COLUMN IF NOT EXISTS external_push_url TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_day INTEGER
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_frequency INTEGER
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_remark TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_custom_params JSONB NOT NULL DEFAULT '[]'::jsonb
         """
     )
     db.execute(
