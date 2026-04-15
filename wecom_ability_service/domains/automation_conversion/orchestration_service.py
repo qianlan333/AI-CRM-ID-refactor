@@ -36,7 +36,6 @@ from .agents import (
     get_deepseek_runtime_config,
 )
 from .service import apply_router_target_pool, ensure_agent_prompt_defaults, get_member_detail, get_stage_detail_payload
-from .workflow_service import ensure_default_conversion_agent_pools, list_conversion_agent_pools_for_agent
 
 _EXPORT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-output-export")
 
@@ -142,10 +141,67 @@ _OUTCOME_STATUS_LABELS = {
 }
 _REPLY_OUTPUT_TYPES = {"agent_reply_draft", "agent_reply_final"}
 _REVIEW_DECISIONS = {"adopted", "rejected"}
+_AGENT_CONTEXT_SOURCE_SPECS = (
+    {
+        "code": "questionnaire",
+        "label": "问卷信息",
+        "placeholder": "{{问卷信息}}",
+        "variable_key": "questionnaire_info",
+        "description": "问卷题目与答案摘要",
+        "aliases": {"questionnaire", "questionnaire_info", "questionnaire_answers", "survey", "survey_answers"},
+    },
+    {
+        "code": "recent_messages",
+        "label": "最近20条聊天信息",
+        "placeholder": "{{最近20条聊天信息}}",
+        "variable_key": "recent_messages",
+        "description": "最近 20 条聊天记录摘要",
+        "aliases": {"recent_messages", "recent_message", "recent_chats", "messages", "chat_history"},
+    },
+    {
+        "code": "user_tags",
+        "label": "用户标签",
+        "placeholder": "{{用户标签}}",
+        "variable_key": "user_tags",
+        "description": "客户当前标签摘要",
+        "aliases": {"user_tags", "member_tags", "tags", "contact_tags"},
+    },
+    {
+        "code": "activation_info",
+        "label": "激活信息",
+        "placeholder": "{{激活信息}}",
+        "variable_key": "activation_info",
+        "description": "激活状态、当前池子与最近激活情况",
+        "aliases": {"activation_info", "activation_status", "message_activity_level", "activity"},
+    },
+)
+_AGENT_CONTEXT_SOURCE_CODE_SET = {item["code"] for item in _AGENT_CONTEXT_SOURCE_SPECS}
+_AGENT_CONTEXT_SOURCE_BY_CODE = {item["code"]: item for item in _AGENT_CONTEXT_SOURCE_SPECS}
+_AGENT_CONTEXT_SOURCE_BY_ALIAS = {
+    alias: item["code"]
+    for item in _AGENT_CONTEXT_SOURCE_SPECS
+    for alias in item["aliases"]
+}
+_FIXED_AGENT_OUTPUT_SCHEMA = [
+    {
+        "field_key": "draft_reply",
+        "display_name": "草稿话术",
+        "type": "string",
+        "required": True,
+        "description": "系统固定输出的一条话术。",
+    }
+]
 
 
 def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _slugify_agent_code(value: Any) -> str:
+    text = _normalized_text(value).lower().replace("-", "_").replace(" ", "_")
+    sanitized = "".join(ch if ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch == "_" else "_" for ch in text)
+    sanitized = "_".join(part for part in sanitized.split("_") if part)
+    return sanitized
 
 
 def _normalize_bool(value: Any) -> bool:
@@ -477,7 +533,6 @@ def ensure_agent_orchestration_defaults() -> None:
         if skill_code in existing_skill_codes:
             continue
         repo.insert_agent_skill_row(payload)
-    ensure_default_conversion_agent_pools()
     get_db().commit()
 
 
@@ -515,32 +570,44 @@ def _agent_diff_summary(item: dict[str, Any]) -> list[str]:
         results.append("角色提示词草稿与已发布版本不同")
     if _normalized_text(draft.get("task_prompt")) != _normalized_text(published.get("task_prompt")):
         results.append("任务提示词草稿与已发布版本不同")
-    if json.dumps(draft.get("variables") or [], ensure_ascii=False, sort_keys=True) != json.dumps(
-        published.get("variables") or [], ensure_ascii=False, sort_keys=True
+    if json.dumps(
+        _normalize_enabled_context_sources(
+            draft.get("enabled_context_sources"),
+            default=_enabled_context_sources_from_variables(draft.get("variables") or []),
+        ),
+        ensure_ascii=False,
+        sort_keys=True,
+    ) != json.dumps(
+        _normalize_enabled_context_sources(
+            published.get("enabled_context_sources"),
+            default=_enabled_context_sources_from_variables(published.get("variables") or []),
+        ),
+        ensure_ascii=False,
+        sort_keys=True,
     ):
-        results.append("变量配置草稿尚未发布")
-    if json.dumps(draft.get("output_schema") or [], ensure_ascii=False, sort_keys=True) != json.dumps(
-        published.get("output_schema") or [], ensure_ascii=False, sort_keys=True
-    ):
-        results.append("输出协议草稿尚未发布")
+        results.append("上下文占位符草稿尚未发布")
     return results
 
 
 def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
     deserialized = repo.deserialize_agent_config_row(row or {})
     agent_code = _normalized_text(deserialized.get("agent_code"))
+    draft_variables = list(deserialized.get("draft_variables_json") or [])
+    published_variables = list(deserialized.get("published_variables_json") or [])
+    draft_enabled_context_sources = _enabled_context_sources_from_variables(draft_variables)
+    published_enabled_context_sources = _enabled_context_sources_from_variables(published_variables)
     has_unpublished_changes = bool(_agent_diff_summary({
         "draft": {
             "role_prompt": _normalized_text(deserialized.get("draft_role_prompt")),
             "task_prompt": _normalized_text(deserialized.get("draft_task_prompt")),
-            "variables": list(deserialized.get("draft_variables_json") or []),
-            "output_schema": list(deserialized.get("draft_output_schema_json") or []),
+            "variables": draft_variables,
+            "enabled_context_sources": draft_enabled_context_sources,
         },
         "published": {
             "role_prompt": _normalized_text(deserialized.get("published_role_prompt")),
             "task_prompt": _normalized_text(deserialized.get("published_task_prompt")),
-            "variables": list(deserialized.get("published_variables_json") or []),
-            "output_schema": list(deserialized.get("published_output_schema_json") or []),
+            "variables": published_variables,
+            "enabled_context_sources": published_enabled_context_sources,
         },
     }))
     payload = {
@@ -562,20 +629,22 @@ def _serialize_agent_config(row: dict[str, Any] | None) -> dict[str, Any]:
         "submitted_for_publish": bool(deserialized.get("submitted_for_publish")),
         "submitted_at": _normalized_text(deserialized.get("submitted_at")),
         "submitted_by": _normalized_text(deserialized.get("submitted_by")),
+        "enabled_context_sources": draft_enabled_context_sources,
         "draft": {
             "role_prompt": _normalized_text(deserialized.get("draft_role_prompt")),
             "task_prompt": _normalized_text(deserialized.get("draft_task_prompt")),
-            "variables": list(deserialized.get("draft_variables_json") or []),
-            "output_schema": list(deserialized.get("draft_output_schema_json") or []),
+            "variables": draft_variables,
+            "enabled_context_sources": draft_enabled_context_sources,
+            "output_schema": _fixed_agent_output_schema(),
         },
         "published": {
             "role_prompt": _normalized_text(deserialized.get("published_role_prompt")),
             "task_prompt": _normalized_text(deserialized.get("published_task_prompt")),
-            "variables": list(deserialized.get("published_variables_json") or []),
-            "output_schema": list(deserialized.get("published_output_schema_json") or []),
+            "variables": published_variables,
+            "enabled_context_sources": published_enabled_context_sources,
+            "output_schema": _fixed_agent_output_schema(),
         },
     }
-    payload["agent_pools"] = list_conversion_agent_pools_for_agent(agent_code) if agent_code else []
     payload["diff_summary"] = _agent_diff_summary(payload)
     return payload
 
@@ -712,7 +781,13 @@ def _load_agent_list() -> list[dict[str, Any]]:
         _normalized_text(item.get("agent_code")): _serialize_agent_config(item)
         for item in repo.list_agent_config_rows()
     }
-    return [rows.get(agent_code) or _serialize_agent_config({"agent_code": agent_code, **CHILD_AGENT_CONFIG_MAP[agent_code]}) for agent_code in CHILD_AGENT_ORDER]
+    items = [
+        rows.get(agent_code) or _serialize_agent_config({"agent_code": agent_code, **CHILD_AGENT_CONFIG_MAP[agent_code]})
+        for agent_code in CHILD_AGENT_ORDER
+    ]
+    for agent_code in sorted(code for code in rows.keys() if code and code not in CHILD_AGENT_CONFIG_MAP):
+        items.append(rows[agent_code])
+    return items
 
 
 def _load_skill_list() -> list[dict[str, Any]]:
@@ -735,12 +810,14 @@ def _agent_prompt_bundle_payload(items: list[dict[str, Any]]) -> dict[str, Any]:
             "draft": {
                 "role_prompt": _normalized_text(((item.get("draft") or {}).get("role_prompt"))),
                 "task_prompt": _normalized_text(((item.get("draft") or {}).get("task_prompt"))),
+                "enabled_context_sources": list(((item.get("draft") or {}).get("enabled_context_sources")) or []),
                 "variables": list(((item.get("draft") or {}).get("variables")) or []),
                 "output_schema": list(((item.get("draft") or {}).get("output_schema")) or []),
             },
             "published": {
                 "role_prompt": _normalized_text(((item.get("published") or {}).get("role_prompt"))),
                 "task_prompt": _normalized_text(((item.get("published") or {}).get("task_prompt"))),
+                "enabled_context_sources": list(((item.get("published") or {}).get("enabled_context_sources")) or []),
                 "variables": list(((item.get("published") or {}).get("variables")) or []),
                 "output_schema": list(((item.get("published") or {}).get("output_schema")) or []),
             },
@@ -769,21 +846,50 @@ def _agent_prompt_bundle_payload(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _build_member_variable_snapshot(external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    from ..admin_console.customer_profile_service import (
+        get_customer_profile_tags_payload,
+        get_customer_questionnaire_answers_payload,
+    )
+
     detail = get_member_detail(external_contact_id=external_contact_id, phone=phone)
     profile = dict(detail.get("profile") or {})
     member = dict(detail.get("member") or {})
     questionnaire = dict(detail.get("questionnaire") or {})
     recent_messages = get_recent_messages_by_user(_normalized_text(profile.get("external_contact_id")), limit=20) if _normalized_text(profile.get("external_contact_id")) else []
+    tags_payload = get_customer_profile_tags_payload(external_userid=_normalized_text(profile.get("external_contact_id"))) if _normalized_text(profile.get("external_contact_id")) else {"tags": []}
+    questionnaire_payload = get_customer_questionnaire_answers_payload(
+        external_userid=_normalized_text(profile.get("external_contact_id")),
+        mobile=_normalized_text(profile.get("phone")),
+    )
+    user_tags = [
+        _normalized_text(item.get("tag_name")) or _normalized_text(item.get("tag_id"))
+        for item in tags_payload.get("tags") or []
+        if _normalized_text(item.get("tag_name")) or _normalized_text(item.get("tag_id"))
+    ]
+    questionnaire_answers = [
+        {
+            "question": _normalized_text(item.get("question")),
+            "answer": _normalized_text(item.get("answer")),
+        }
+        for item in questionnaire_payload.get("answers") or []
+        if _normalized_text(item.get("question")) or _normalized_text(item.get("answer"))
+    ]
     return {
         "recent_messages": [str(item.get("content") or item.get("message_text") or item.get("text") or "") for item in recent_messages[:20]],
         "current_pool": _normalized_text(member.get("current_pool")),
         "current_stage": _normalized_text(member.get("current_stage")),
         "questionnaire_result": _normalized_text(questionnaire.get("result")),
+        "questionnaire_answers": questionnaire_answers,
         "focus_reason": "、".join(questionnaire.get("matched_questions") or []),
         "owner_name": _normalized_text(profile.get("owner_display_name") or profile.get("owner_staff_id")),
         "last_touch_at": _normalized_text(member.get("updated_at")),
-        "member_tags": [],
+        "member_tags": user_tags,
         "message_activity_level": _normalized_text(member.get("activation_status")),
+        "activation_info": {
+            "activation_status": _normalized_text(member.get("activation_status")),
+            "last_activation_at": _normalized_text(member.get("last_activation_at")),
+            "current_pool": _normalized_text(member.get("current_pool")),
+        },
         "latest_agent_outputs": [
             item["rendered_output_text"] or item["reason"]
             for item in get_agent_outputs_by_user(_normalized_text(profile.get("external_contact_id")), limit=3).get("rows", [])
@@ -897,6 +1003,194 @@ def _normalize_json_list(value: Any) -> list[Any]:
 def _normalize_json_dict(value: Any) -> dict[str, Any]:
     resolved = _copy_json(value, default={})
     return resolved if isinstance(resolved, dict) else {}
+
+
+def _fixed_agent_output_schema() -> list[dict[str, Any]]:
+    return [dict(item) for item in _FIXED_AGENT_OUTPUT_SCHEMA]
+
+
+def _normalize_enabled_context_sources(value: Any, *, default: list[str] | None = None) -> list[str]:
+    raw_items = list(value) if isinstance(value, list) else list(default or [])
+    normalized_items: list[str] = []
+    for item in raw_items:
+        code = _normalized_text(item)
+        if code not in _AGENT_CONTEXT_SOURCE_CODE_SET or code in normalized_items:
+            continue
+        normalized_items.append(code)
+    return normalized_items
+
+
+def _enabled_context_sources_from_variables(variables: Any) -> list[str]:
+    normalized_items: list[str] = []
+    for item in list(variables or []):
+        if not isinstance(item, dict):
+            continue
+        candidates = [
+            _normalized_text(item.get("source")).lower(),
+            _normalized_text(item.get("variable_key")).lower(),
+            _normalized_text(item.get("field_key")).lower(),
+            _normalized_text(item.get("display_name")).lower(),
+            _normalized_text(item.get("description")).lower(),
+        ]
+        resolved_code = ""
+        for candidate in candidates:
+            if candidate in _AGENT_CONTEXT_SOURCE_BY_ALIAS:
+                resolved_code = _AGENT_CONTEXT_SOURCE_BY_ALIAS[candidate]
+                break
+        if not resolved_code or resolved_code in normalized_items:
+            continue
+        normalized_items.append(resolved_code)
+    return normalized_items
+
+
+def _enabled_context_sources_from_prompt_placeholders(*prompt_texts: Any) -> list[str]:
+    combined_prompt = "\n".join(
+        text for text in (_normalized_text(item) for item in prompt_texts) if text
+    )
+    if not combined_prompt:
+        return []
+    normalized_items: list[str] = []
+    for item in _AGENT_CONTEXT_SOURCE_SPECS:
+        code = _normalized_text(item.get("code"))
+        placeholder = _normalized_text(item.get("placeholder"))
+        if not code or not placeholder or placeholder not in combined_prompt or code in normalized_items:
+            continue
+        normalized_items.append(code)
+    return normalized_items
+
+
+def _resolve_effective_enabled_context_sources(
+    *,
+    role_prompt: Any,
+    task_prompt: Any,
+    enabled_context_sources: Any = None,
+    variables: Any = None,
+) -> list[str]:
+    prompt_selected = _enabled_context_sources_from_prompt_placeholders(role_prompt, task_prompt)
+    if prompt_selected:
+        return prompt_selected
+    if enabled_context_sources is not None:
+        return _normalize_enabled_context_sources(enabled_context_sources)
+    return _normalize_enabled_context_sources(
+        None,
+        default=_enabled_context_sources_from_variables(variables or []),
+    )
+
+
+def _variables_from_enabled_context_sources(enabled_context_sources: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for code in _normalize_enabled_context_sources(enabled_context_sources):
+        spec = _AGENT_CONTEXT_SOURCE_BY_CODE.get(code) or {}
+        items.append(
+            {
+                "variable_key": _normalized_text(spec.get("variable_key")),
+                "display_name": _normalized_text(spec.get("label")),
+                "description": _normalized_text(spec.get("description")),
+                "source": code,
+                "enabled": True,
+            }
+        )
+    return items
+
+
+def _normalize_agent_config_variables(
+    payload: dict[str, Any],
+    *,
+    role_prompt: Any = "",
+    task_prompt: Any = "",
+    default: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if "enabled_context_sources" in payload:
+        return _variables_from_enabled_context_sources(payload.get("enabled_context_sources"))
+    if "variables" in payload:
+        resolved = _copy_json(payload.get("variables"), default=default or [])
+        return resolved if isinstance(resolved, list) else list(default or [])
+    return _variables_from_enabled_context_sources(
+        _enabled_context_sources_from_prompt_placeholders(role_prompt, task_prompt)
+    )
+
+
+def _agent_context_source_sections(variable_snapshot: dict[str, Any], enabled_context_sources: Any) -> dict[str, str]:
+    snapshot = dict(variable_snapshot or {})
+    enabled_codes = _normalize_enabled_context_sources(enabled_context_sources)
+    questionnaire_payload = dict(snapshot.get("questionnaire") or {})
+    questionnaire_answers = list(questionnaire_payload.get("answers") or snapshot.get("questionnaire_answers") or [])
+    recent_messages = list(snapshot.get("recent_messages") or snapshot.get("recent_chats") or [])
+    user_tags = list(snapshot.get("user_tags") or snapshot.get("member_tags") or snapshot.get("tags") or [])
+    activation_payload = dict(snapshot.get("activation_info") or {})
+    if not activation_payload:
+        activation_payload = {
+            "activation_status": _normalized_text(snapshot.get("message_activity_level") or snapshot.get("activation_status")),
+            "last_activation_at": _normalized_text(snapshot.get("last_activation_at")),
+            "current_pool": _normalized_text(snapshot.get("current_pool") or ((snapshot.get("member") or {}).get("current_pool"))),
+            "current_audience_code": _normalized_text((snapshot.get("member") or {}).get("current_audience_code")),
+        }
+
+    questionnaire_lines: list[str] = []
+    for answer in questionnaire_answers:
+        if not isinstance(answer, dict):
+            text = _normalized_text(answer)
+            if text:
+                questionnaire_lines.append(text)
+            continue
+        question_text = (
+            _normalized_text(answer.get("question_title"))
+            or _normalized_text(answer.get("question"))
+            or _normalized_text(answer.get("question_label"))
+        )
+        answer_text = (
+            _normalized_text(answer.get("answer_text"))
+            or _normalized_text(answer.get("answer"))
+            or _normalized_text(answer.get("option_text"))
+            or _normalized_text(answer.get("free_text"))
+        )
+        if question_text and answer_text:
+            questionnaire_lines.append(f"{question_text}：{answer_text}")
+        elif question_text:
+            questionnaire_lines.append(question_text)
+        elif answer_text:
+            questionnaire_lines.append(answer_text)
+
+    recent_message_lines: list[str] = []
+    for item in recent_messages[:20]:
+        if isinstance(item, dict):
+            role = _normalized_text(item.get("role")) or ("客户" if _normalized_text(item.get("sender")) == "customer" else "")
+            time_text = _normalized_text(item.get("time") or item.get("send_time") or item.get("created_at"))
+            content = _normalized_text(item.get("content") or item.get("text") or item.get("message_text"))
+            prefix_parts = [part for part in [role, time_text] if part]
+            prefix = " / ".join(prefix_parts)
+            recent_message_lines.append(f"{prefix}：{content}" if prefix and content else content or prefix)
+        else:
+            text = _normalized_text(item)
+            if text:
+                recent_message_lines.append(text)
+
+    normalized_tags = [item for item in (_normalized_text(tag) for tag in user_tags) if item]
+    activation_lines = [
+        f"激活状态：{_normalized_text(activation_payload.get('activation_status'))}" if _normalized_text(activation_payload.get("activation_status")) else "",
+        f"最近激活时间：{_normalized_text(activation_payload.get('last_activation_at'))}" if _normalized_text(activation_payload.get("last_activation_at")) else "",
+        f"当前池子：{_normalized_text(activation_payload.get('current_pool'))}" if _normalized_text(activation_payload.get("current_pool")) else "",
+        f"当前大人群：{_normalized_text(activation_payload.get('current_audience_code'))}" if _normalized_text(activation_payload.get("current_audience_code")) else "",
+    ]
+
+    section_map = {
+        "questionnaire": "\n".join(questionnaire_lines).strip(),
+        "recent_messages": "\n".join(line for line in recent_message_lines if _normalized_text(line)).strip(),
+        "user_tags": "、".join(normalized_tags).strip(),
+        "activation_info": "\n".join(line for line in activation_lines if _normalized_text(line)).strip(),
+    }
+    return {code: section_map.get(code, "") for code in enabled_codes}
+
+
+def _replace_agent_prompt_placeholders(prompt_text: Any, section_texts: dict[str, str]) -> str:
+    resolved = _normalized_text(prompt_text)
+    for code, spec in _AGENT_CONTEXT_SOURCE_BY_CODE.items():
+        placeholder = _normalized_text(spec.get("placeholder"))
+        label = _normalized_text(spec.get("label"))
+        if not placeholder:
+            continue
+        resolved = resolved.replace(placeholder, f"【{label}】" if label else "")
+    return resolved
 
 
 def _router_decision_target_pool(decision: dict[str, Any]) -> str:
@@ -1218,9 +1512,18 @@ def _build_child_agent_generation_request(
 ) -> tuple[str, str, dict[str, Any]]:
     config = get_agent_config_detail(agent_code)
     published = dict(config.get("published") or {})
+    role_prompt = _normalized_text(published.get("role_prompt"))
+    task_prompt = _normalized_text(published.get("task_prompt"))
+    enabled_context_sources = _resolve_effective_enabled_context_sources(
+        role_prompt=role_prompt,
+        task_prompt=task_prompt,
+        enabled_context_sources=published.get("enabled_context_sources"),
+        variables=published.get("variables") or [],
+    )
     variable_snapshot = _build_member_variable_snapshot(external_contact_id=external_contact_id)
     recent_message_rows = get_recent_messages_by_user(_normalized_text(external_contact_id), limit=20)
     recent_messages = [_router_message_entry(item, external_contact_id=external_contact_id) for item in list(recent_message_rows or [])[:20]]
+    variable_snapshot["recent_messages"] = recent_messages
     variable_snapshot["router_decision"] = {
         "agent_code": _normalized_text(agent_code),
         "target_pool": _normalized_text(target_pool),
@@ -1230,25 +1533,27 @@ def _build_child_agent_generation_request(
     }
     if structured_result:
         variable_snapshot["router_decision"]["structured_result"] = _normalize_json_dict(structured_result)
+    section_texts = _agent_context_source_sections(variable_snapshot, enabled_context_sources)
+    role_prompt = _replace_agent_prompt_placeholders(role_prompt, section_texts)
+    task_prompt = _replace_agent_prompt_placeholders(task_prompt, section_texts)
     system_prompt = "\n\n".join(
         part
         for part in [
-            _normalized_text(published.get("role_prompt")),
-            "你必须只返回 JSON 对象，不要输出 markdown，不要输出额外解释。",
-            (
-                "JSON 至少包含这些字段："
-                'agent_code, target_pool, confidence, reason, next_action, draft_reply, need_human_review。'
-                "如果不适合直接生成回复，也要明确给出 reason，并把 draft_reply 置空。"
-            ),
+            role_prompt,
+            "你只能基于提示词里实际引用到的信息来源生成一条话术，不要输出 markdown，不要输出额外解释。",
+            "如果某类信息为空，就忽略它，不要编造。",
+            "你必须只返回 JSON 对象。",
+            'JSON 只允许包含字段：draft_reply。',
         ]
         if _normalized_text(part)
     )
     user_input = json.dumps(
         {
-            "task_prompt": _normalized_text(published.get("task_prompt")),
-            "recent_messages": recent_messages,
+            "task_prompt": task_prompt,
+            "enabled_context_sources": enabled_context_sources,
+            "context_sections": section_texts,
             "variables": variable_snapshot,
-            "required_output_schema": list(published.get("output_schema") or []),
+            "required_output_schema": _fixed_agent_output_schema(),
         },
         ensure_ascii=False,
     )
@@ -3056,7 +3361,7 @@ def get_agent_orchestration_payload(
             "generated_at": bundle["generated_at"],
             "pending_publish": pending_publish,
             "notes": [
-                "子 Agent 配置已拆成角色提示词、任务提示词、变量配置和输出协议。",
+                "子 Agent 配置已拆成角色提示词、任务提示词与上下文占位符。",
                 "当前支持草稿态与已发布态；回滚仍是最小结构占位，不伪装成完整版本系统。",
             ],
         },
@@ -3236,12 +3541,93 @@ def list_pending_agent_prompt_publish_requests(
     }
 
 
+def create_agent_config(payload: dict[str, Any], *, operator_id: str, source: str = "admin_console") -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    display_name = _normalized_text(payload.get("display_name"))
+    if not display_name:
+        raise ValueError("display_name is required")
+    normalized_agent_code = _slugify_agent_code(payload.get("agent_code") or display_name)
+    if not normalized_agent_code:
+        raise ValueError("agent_code is required")
+    if repo.get_agent_config_row(normalized_agent_code):
+        raise ValueError("agent_code already exists")
+    role_prompt = _normalized_text(payload.get("role_prompt"))
+    task_prompt = _normalized_text(payload.get("task_prompt"))
+    if not role_prompt:
+        raise ValueError("role_prompt is required")
+    if not task_prompt:
+        raise ValueError("task_prompt is required")
+    variables = _normalize_agent_config_variables(
+        payload,
+        role_prompt=role_prompt,
+        task_prompt=task_prompt,
+        default=[],
+    )
+    output_schema = _fixed_agent_output_schema()
+    enabled = _normalize_bool(payload.get("enabled", True))
+    summary = _normalized_text(payload.get("change_summary")) or "新建 Agent 草稿"
+    saved = repo.insert_agent_config_row(
+        {
+            "agent_code": normalized_agent_code,
+            "display_name": display_name,
+            "pool_keys": [],
+            "enabled": enabled,
+            "draft_role_prompt": role_prompt,
+            "draft_task_prompt": task_prompt,
+            "draft_variables": variables,
+            "draft_output_schema": output_schema,
+            "published_role_prompt": "",
+            "published_task_prompt": "",
+            "published_variables": [],
+            "published_output_schema": _fixed_agent_output_schema(),
+            "draft_version": 1,
+            "published_version": 0,
+            "published_at": "",
+            "published_by": "",
+            "last_modified_at": _iso_now(),
+            "last_modified_by": operator_id,
+            "last_modified_source": source,
+            "last_change_summary": summary,
+            "submitted_for_publish": False,
+            "submitted_at": "",
+            "submitted_by": "",
+        }
+    )
+    repo.insert_agent_prompt_row(
+        {
+            "agent_code": normalized_agent_code,
+            "display_name": display_name,
+            "prompt_text": task_prompt,
+            "enabled": enabled,
+            "version": 1,
+        }
+    )
+    get_db().commit()
+    return {"agent": _serialize_agent_config(saved)}
+
+
+def create_agent_config_draft_via_mcp(
+    payload: dict[str, Any],
+    *,
+    operator_id: str,
+) -> dict[str, Any]:
+    created = create_agent_config(
+        payload,
+        operator_id=operator_id,
+        source="lobster_mcp_create_agent",
+    )
+    return {
+        "created": True,
+        "agent": created.get("agent") or {},
+    }
+
+
 def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operator_id: str, source: str = "admin_console") -> dict[str, Any]:
     ensure_agent_orchestration_defaults()
     normalized_agent_code = _normalized_text(agent_code)
-    if normalized_agent_code not in CHILD_AGENT_CONFIG_MAP:
-        raise ValueError("invalid agent_code")
     existing = repo.deserialize_agent_config_row(repo.get_agent_config_row(normalized_agent_code) or {})
+    if not existing and normalized_agent_code not in CHILD_AGENT_CONFIG_MAP:
+        raise LookupError("agent config not found")
     if not existing:
         raise LookupError("agent config not found")
     expected_draft_version = payload.get("expected_draft_version")
@@ -3261,15 +3647,19 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
         raise ValueError("role_prompt is required")
     if not next_task_prompt:
         raise ValueError("task_prompt is required")
-    next_variables = _copy_json(payload.get("variables"), default=list(existing.get("draft_variables_json") or []))
-    next_output_schema = _copy_json(payload.get("output_schema"), default=list(existing.get("draft_output_schema_json") or []))
+    next_variables = _normalize_agent_config_variables(
+        payload,
+        role_prompt=next_role_prompt,
+        task_prompt=next_task_prompt,
+        default=list(existing.get("draft_variables_json") or []),
+    )
+    next_output_schema = _fixed_agent_output_schema()
     changed = json.dumps(
         {
             "display_name": next_display_name,
             "role_prompt": next_role_prompt,
             "task_prompt": next_task_prompt,
-            "variables": next_variables,
-            "output_schema": next_output_schema,
+            "enabled_context_sources": _enabled_context_sources_from_variables(next_variables),
             "enabled": _normalize_bool(payload.get("enabled", existing.get("enabled"))),
         },
         ensure_ascii=False,
@@ -3279,8 +3669,7 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
             "display_name": _normalized_text(existing.get("display_name")),
             "role_prompt": _normalized_text(existing.get("draft_role_prompt")),
             "task_prompt": _normalized_text(existing.get("draft_task_prompt")),
-            "variables": list(existing.get("draft_variables_json") or []),
-            "output_schema": list(existing.get("draft_output_schema_json") or []),
+            "enabled_context_sources": _enabled_context_sources_from_variables(list(existing.get("draft_variables_json") or [])),
             "enabled": bool(existing.get("enabled")),
         },
         ensure_ascii=False,
@@ -3288,7 +3677,7 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
     )
     next_draft_version = int(existing.get("draft_version") or 1) + (1 if changed else 0)
     summary = _normalized_text(payload.get("change_summary")) or (
-        "更新角色/任务提示词、变量配置与输出协议草稿" if changed else _normalized_text(existing.get("last_change_summary"))
+        "更新角色提示词、任务提示词与上下文占位符草稿" if changed else _normalized_text(existing.get("last_change_summary"))
     )
     saved = repo.update_agent_config_row(
         normalized_agent_code,
@@ -3303,7 +3692,7 @@ def save_agent_config_draft(agent_code: str, payload: dict[str, Any], *, operato
             "published_role_prompt": _normalized_text(existing.get("published_role_prompt")),
             "published_task_prompt": _normalized_text(existing.get("published_task_prompt")),
             "published_variables": list(existing.get("published_variables_json") or []),
-            "published_output_schema": list(existing.get("published_output_schema_json") or []),
+            "published_output_schema": _fixed_agent_output_schema(),
             "draft_version": next_draft_version,
             "published_version": int(existing.get("published_version") or 0),
             "published_at": _normalized_text(existing.get("published_at")),
@@ -3357,11 +3746,11 @@ def publish_agent_config(agent_code: str, *, operator_id: str) -> dict[str, Any]
             "draft_role_prompt": _normalized_text(existing.get("draft_role_prompt")),
             "draft_task_prompt": _normalized_text(existing.get("draft_task_prompt")),
             "draft_variables": list(existing.get("draft_variables_json") or []),
-            "draft_output_schema": list(existing.get("draft_output_schema_json") or []),
+            "draft_output_schema": _fixed_agent_output_schema(),
             "published_role_prompt": _normalized_text(existing.get("draft_role_prompt")),
             "published_task_prompt": _normalized_text(existing.get("draft_task_prompt")),
             "published_variables": list(existing.get("draft_variables_json") or []),
-            "published_output_schema": list(existing.get("draft_output_schema_json") or []),
+            "published_output_schema": _fixed_agent_output_schema(),
             "draft_version": int(existing.get("draft_version") or 1),
             "published_version": int(existing.get("draft_version") or 1),
             "published_at": _iso_now(),

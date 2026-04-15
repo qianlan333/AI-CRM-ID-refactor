@@ -6,16 +6,11 @@ from typing import Any
 from ...db import get_db
 from ..user_ops import page_service as user_ops_page_service
 from . import workflow_repo
-from .agents.registry import CHILD_AGENT_CONFIG_DEFINITIONS
 from .workflow_definitions import (
-    AGENT_POOL_BINDING_SCOPE_BEHAVIOR_TIER,
-    AGENT_POOL_BINDING_SCOPE_DEFAULT,
-    AGENT_POOL_BINDING_SCOPE_PERSONALIZED,
-    AGENT_POOL_BINDING_SCOPE_PROFILE_CATEGORY,
-    AGENT_POOL_TYPE_PERSONALIZED,
-    AGENT_POOL_TYPE_REPLY,
-    AGENT_POOL_TYPE_REWRITE,
-    AGENT_POOL_TYPE_SHARED,
+    AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
+    AGENT_BINDING_SCOPE_DEFAULT,
+    AGENT_BINDING_SCOPE_PERSONALIZED,
+    AGENT_BINDING_SCOPE_PROFILE_CATEGORY,
     AUDIENCE_CONVERTED,
     AUDIENCE_OPERATING,
     AUDIENCE_PENDING_QUESTIONNAIRE,
@@ -32,8 +27,7 @@ from .workflow_definitions import (
     WORKFLOW_STATUS_ACTIVE,
     WORKFLOW_STATUS_DRAFT,
     WORKFLOW_STATUS_PAUSED,
-    list_supported_agent_pool_binding_scopes,
-    list_supported_agent_pool_types,
+    list_supported_agent_binding_scopes,
     list_supported_behavior_tiers,
     list_supported_conversion_audiences,
     list_supported_generation_modes,
@@ -66,24 +60,6 @@ _ALLOWED_WORKFLOW_STATUSES = {
 _ALLOWED_NODE_TRIGGER_MODES = {
     NODE_TRIGGER_MODE_SCHEDULED,
     NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
-}
-_ALLOWED_POOL_TYPES = {
-    AGENT_POOL_TYPE_SHARED,
-    AGENT_POOL_TYPE_REPLY,
-    AGENT_POOL_TYPE_REWRITE,
-    AGENT_POOL_TYPE_PERSONALIZED,
-}
-
-_LEGACY_REPLY_POOL_LABELS = {
-    "new_user": "新用户应答池",
-    "inactive_normal": "未激活普通应答池",
-    "inactive_focus": "未激活重点应答池",
-    "active_normal": "活跃普通应答池",
-    "active_focus": "活跃重点应答池",
-    "silent": "沉默用户应答池",
-    "won": "已成交应答池",
-    "no_reply": "无需回复池",
-    "human_reply": "人工接管池",
 }
 
 
@@ -165,32 +141,6 @@ def _validate_node_trigger_mode(value: Any) -> str:
     return normalized
 
 
-def _normalize_agent_members_payload(payload: Any) -> list[dict[str, Any]]:
-    items = payload if isinstance(payload, list) else []
-    normalized: list[dict[str, Any]] = []
-    seen_agent_codes: set[str] = set()
-    for index, item in enumerate(items, start=1):
-        if not isinstance(item, dict):
-            raise ValueError("agents item must be an object")
-        agent_code = _normalized_text(item.get("agent_code"))
-        if not agent_code:
-            raise ValueError("agent_code is required")
-        if agent_code in seen_agent_codes:
-            raise ValueError(f"duplicate agent_code: {agent_code}")
-        seen_agent_codes.add(agent_code)
-        role_code = _normalized_text(item.get("role_code")) or "primary"
-        if role_code not in {"primary", "fallback", "supporting"}:
-            raise ValueError("role_code must be one of primary, fallback, supporting")
-        normalized.append(
-            {
-                "agent_code": agent_code,
-                "role_code": role_code,
-                "position_index": _normalize_int(item.get("position_index"), default=index - 1, minimum=0),
-            }
-        )
-    return normalized
-
-
 def _normalize_template_categories_payload(payload: Any) -> list[dict[str, Any]]:
     items = payload if isinstance(payload, list) else []
     normalized: list[dict[str, Any]] = []
@@ -252,31 +202,22 @@ def _normalize_workflow_audiences(payload: Any) -> list[str]:
     return normalized
 
 
-def _resolve_agent_pool_reference(payload: dict[str, Any]) -> dict[str, Any]:
-    pool_id = _normalize_int(payload.get("agent_pool_id"), default=0, minimum=0)
-    pool_code = _normalized_text(payload.get("pool_code"))
-    pool = workflow_repo.get_agent_pool_row(pool_id) if pool_id > 0 else None
-    if not pool and pool_code:
-        pool = workflow_repo.get_agent_pool_row_by_code(pool_code)
-    if not pool:
-        raise LookupError("agent pool not found")
-    return pool
-
-
-def _normalize_workflow_agent_pool_bindings(payload: Any) -> list[dict[str, Any]]:
+def _normalize_workflow_agent_bindings(payload: Any) -> list[dict[str, Any]]:
     items = payload if isinstance(payload, list) else []
     normalized: list[dict[str, Any]] = []
     seen_scope_keys: set[tuple[str, str]] = set()
     for item in items:
         if not isinstance(item, dict):
-            raise ValueError("agent_pool_bindings item must be an object")
-        pool = _resolve_agent_pool_reference(item)
-        binding_scope = _normalized_text(item.get("binding_scope")) or AGENT_POOL_BINDING_SCOPE_DEFAULT
+            raise ValueError("agent_bindings item must be an object")
+        agent_code = _normalized_text(item.get("agent_code"))
+        if not agent_code:
+            raise ValueError("agent_code is required")
+        binding_scope = _normalized_text(item.get("binding_scope")) or AGENT_BINDING_SCOPE_DEFAULT
         if binding_scope not in {
-            AGENT_POOL_BINDING_SCOPE_DEFAULT,
-            AGENT_POOL_BINDING_SCOPE_PROFILE_CATEGORY,
-            AGENT_POOL_BINDING_SCOPE_BEHAVIOR_TIER,
-            AGENT_POOL_BINDING_SCOPE_PERSONALIZED,
+            AGENT_BINDING_SCOPE_DEFAULT,
+            AGENT_BINDING_SCOPE_PROFILE_CATEGORY,
+            AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
+            AGENT_BINDING_SCOPE_PERSONALIZED,
         }:
             raise ValueError("invalid binding_scope")
         segment_key = _normalized_text(item.get("segment_key"))
@@ -286,11 +227,10 @@ def _normalize_workflow_agent_pool_bindings(payload: Any) -> list[dict[str, Any]
         seen_scope_keys.add(identity)
         normalized.append(
             {
-                "agent_pool_id": int(pool["id"]),
-                "pool_code": _normalized_text(pool.get("pool_code")),
-                "pool_type": _normalized_text(pool.get("pool_type")),
+                "node_id": _normalize_int(item.get("node_id"), default=0, minimum=0) or None,
                 "binding_scope": binding_scope,
                 "segment_key": segment_key,
+                "agent_code": agent_code,
             }
         )
     return normalized
@@ -317,13 +257,6 @@ def _normalize_node_variants_payload(payload: Any) -> list[dict[str, Any]]:
             }
         )
     return normalized
-
-
-def _validate_agent_members(agent_members: list[dict[str, Any]]) -> None:
-    available_codes = set(workflow_repo.list_agent_config_codes())
-    for item in agent_members:
-        if item["agent_code"] not in available_codes:
-            raise ValueError(f"invalid agent_code: {item['agent_code']}")
 
 
 def _validate_segmentation_question(questionnaire_id: int, question_id: int, categories: list[dict[str, Any]]) -> dict[str, Any]:
@@ -353,29 +286,14 @@ def _validate_segmentation_question(questionnaire_id: int, question_id: int, cat
     }
 
 
-def _serialize_agent_pool(pool: dict[str, Any], agents: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    agent_items = []
-    for item in agents or []:
-        agent_items.append(
-            {
-                "agent_code": _normalized_text(item.get("agent_code")),
-                "agent_name": _normalized_text(item.get("agent_display_name")) or _normalized_text(item.get("display_name")),
-                "role_code": _normalized_text(item.get("role_code")) or "primary",
-                "position_index": int(item.get("position_index") or 0),
-            }
-        )
+def _serialize_agent_reference(agent: dict[str, Any]) -> dict[str, Any]:
+    status_code = _normalized_text(agent.get("status_code")) or "draft"
     return {
-        "id": int(pool.get("id") or 0),
-        "pool_code": _normalized_text(pool.get("pool_code")),
-        "pool_name": _normalized_text(pool.get("display_name")),
-        "display_name": _normalized_text(pool.get("display_name")),
-        "pool_type": _normalized_text(pool.get("pool_type")) or AGENT_POOL_TYPE_SHARED,
-        "description": _normalized_text(pool.get("description")),
-        "status": "enabled" if bool(pool.get("enabled")) else "disabled",
-        "enabled": bool(pool.get("enabled")),
-        "updated_at": _normalized_text(pool.get("updated_at")),
-        "created_at": _normalized_text(pool.get("created_at")),
-        "agents": agent_items,
+        "agent_code": _normalized_text(agent.get("agent_code")),
+        "agent_name": _normalized_text(agent.get("display_name")) or _normalized_text(agent.get("agent_name")),
+        "description": _normalized_text(agent.get("description")),
+        "status": status_code,
+        "updated_at": _normalized_text(agent.get("updated_at")),
     }
 
 
@@ -393,10 +311,6 @@ def _serialize_profile_segment_template(template: dict[str, Any]) -> dict[str, A
         "updated_at": _normalized_text(template.get("updated_at")),
         "created_at": _normalized_text(template.get("created_at")),
     }
-
-
-def _build_agent_pool_bundle(pool: dict[str, Any]) -> dict[str, Any]:
-    return _serialize_agent_pool(pool, workflow_repo.list_agent_pool_agent_rows(int(pool["id"])))
 
 
 def _build_questionnaire_catalog_item(questionnaire: dict[str, Any]) -> dict[str, Any]:
@@ -513,12 +427,6 @@ def _extract_bundle_categories(bundle: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _sync_agent_pool_agents(agent_pool_id: int, agent_members: list[dict[str, Any]]) -> None:
-    workflow_repo.delete_agent_pool_agent_rows(agent_pool_id)
-    for item in agent_members:
-        workflow_repo.insert_agent_pool_agent_row({"agent_pool_id": int(agent_pool_id), **item})
-
-
 def _sync_profile_template_categories(template_id: int, question_id: int, categories: list[dict[str, Any]]) -> None:
     workflow_repo.delete_profile_segment_option_mapping_rows(template_id)
     workflow_repo.delete_profile_segment_category_rows(template_id)
@@ -551,9 +459,9 @@ def _workflow_expected_binding_targets(
     profile_segment_template_id: int | None,
 ) -> dict[str, Any]:
     if generation_mode == GENERATION_MODE_MANUAL_LAYERED:
-        return {"binding_scope": AGENT_POOL_BINDING_SCOPE_DEFAULT, "segment_keys": []}
+        return {"binding_scope": AGENT_BINDING_SCOPE_DEFAULT, "segment_keys": []}
     if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
-        return {"binding_scope": AGENT_POOL_BINDING_SCOPE_PERSONALIZED, "segment_keys": ["personalized"]}
+        return {"binding_scope": AGENT_BINDING_SCOPE_PERSONALIZED, "segment_keys": ["personalized"]}
     if segmentation_basis == SEGMENTATION_BASIS_PROFILE:
         template = get_conversion_profile_segment_template_bundle(int(profile_segment_template_id or 0))
         category_keys = [
@@ -561,13 +469,13 @@ def _workflow_expected_binding_targets(
             for item in template.get("categories") or []
             if bool(item.get("enabled"))
         ]
-        return {"binding_scope": AGENT_POOL_BINDING_SCOPE_PROFILE_CATEGORY, "segment_keys": category_keys}
+        return {"binding_scope": AGENT_BINDING_SCOPE_PROFILE_CATEGORY, "segment_keys": category_keys}
     if segmentation_basis == SEGMENTATION_BASIS_BEHAVIOR:
-        return {"binding_scope": AGENT_POOL_BINDING_SCOPE_BEHAVIOR_TIER, "segment_keys": _behavior_tier_codes()}
+        return {"binding_scope": AGENT_BINDING_SCOPE_BEHAVIOR_TIER, "segment_keys": _behavior_tier_codes()}
     raise ValueError("auto_layered_rewrite requires segmentation_basis profile or behavior")
 
 
-def _validate_workflow_agent_pool_bindings(
+def _validate_workflow_agent_bindings(
     *,
     segmentation_basis: str,
     generation_mode: str,
@@ -576,7 +484,7 @@ def _validate_workflow_agent_pool_bindings(
 ) -> list[dict[str, Any]]:
     if generation_mode == GENERATION_MODE_MANUAL_LAYERED:
         if bindings:
-            raise ValueError("manual_layered does not allow agent_pool_bindings")
+            raise ValueError("manual_layered does not allow agent_bindings")
         return []
     expected = _workflow_expected_binding_targets(
         segmentation_basis=segmentation_basis,
@@ -587,36 +495,38 @@ def _validate_workflow_agent_pool_bindings(
     expected_keys = list(expected["segment_keys"])
     if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
         if len(bindings) != 1:
-            raise ValueError("personalized_single requires exactly 1 agent_pool_binding")
+            raise ValueError("personalized_single requires exactly 1 agent_binding")
     else:
         if len(bindings) != len(expected_keys):
-            raise ValueError("agent_pool_bindings does not match expected segmentation targets")
+            raise ValueError("agent_bindings does not match expected segmentation targets")
     resolved_by_key: dict[str, dict[str, Any]] = {}
+    available_codes = set(workflow_repo.list_agent_config_codes())
     for item in bindings:
         item_scope = _normalized_text(item.get("binding_scope")) or binding_scope
         segment_key = _normalized_text(item.get("segment_key"))
         if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
             segment_key = "personalized"
-            item_scope = AGENT_POOL_BINDING_SCOPE_PERSONALIZED
+            item_scope = AGENT_BINDING_SCOPE_PERSONALIZED
         if item_scope != binding_scope:
             raise ValueError("invalid binding_scope for workflow generation_mode")
         if generation_mode != GENERATION_MODE_PERSONALIZED_SINGLE and segment_key not in expected_keys:
             raise ValueError(f"unexpected binding segment_key: {segment_key}")
-        pool_type = _normalized_text(item.get("pool_type")) or AGENT_POOL_TYPE_SHARED
-        if generation_mode == GENERATION_MODE_AUTO_LAYERED_REWRITE and pool_type not in {AGENT_POOL_TYPE_REWRITE, AGENT_POOL_TYPE_SHARED}:
-            raise ValueError("auto_layered_rewrite only accepts rewrite/shared agent pools")
-        if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE and pool_type not in {AGENT_POOL_TYPE_PERSONALIZED, AGENT_POOL_TYPE_SHARED}:
-            raise ValueError("personalized_single only accepts personalized/shared agent pools")
+        agent_code = _normalized_text(item.get("agent_code"))
+        if not agent_code:
+            raise ValueError("agent_code is required")
+        if agent_code not in available_codes:
+            raise ValueError(f"invalid agent_code: {agent_code}")
         resolved_by_key[segment_key] = {
-            "agent_pool_id": int(item["agent_pool_id"]),
+            "node_id": int(item.get("node_id") or 0) or None,
             "binding_scope": item_scope,
             "segment_key": segment_key if generation_mode != GENERATION_MODE_PERSONALIZED_SINGLE else "",
+            "agent_code": agent_code,
         }
     if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
         only_item = next(iter(resolved_by_key.values()))
         return [only_item]
     if set(resolved_by_key.keys()) != set(expected_keys):
-        raise ValueError("agent_pool_bindings must cover every segmentation target")
+        raise ValueError("agent_bindings must cover every segmentation target")
     return [resolved_by_key[key] for key in expected_keys]
 
 
@@ -647,9 +557,9 @@ def _normalize_workflow_payload(payload: dict[str, Any], *, existing: dict[str, 
         profile_segment_template_id = None
     if generation_mode == GENERATION_MODE_AUTO_LAYERED_REWRITE and segmentation_basis == SEGMENTATION_BASIS_NONE:
         raise ValueError("auto_layered_rewrite requires profile or behavior segmentation")
-    bindings_input = source.get("agent_pool_bindings") if "agent_pool_bindings" in source else current.get("agent_pool_bindings") or []
-    bindings = _normalize_workflow_agent_pool_bindings(bindings_input)
-    normalized_bindings = _validate_workflow_agent_pool_bindings(
+    bindings_input = source.get("agent_bindings") if "agent_bindings" in source else current.get("agent_bindings") or []
+    bindings = _normalize_workflow_agent_bindings(bindings_input)
+    normalized_bindings = _validate_workflow_agent_bindings(
         segmentation_basis=segmentation_basis,
         generation_mode=generation_mode,
         profile_segment_template_id=profile_segment_template_id,
@@ -674,7 +584,7 @@ def _normalize_workflow_payload(payload: dict[str, Any], *, existing: dict[str, 
         "fallback_to_standard_content": fallback_to_standard_content,
         "enabled": _workflow_status_to_enabled(status),
         "audiences": audiences,
-        "agent_pool_bindings": normalized_bindings,
+        "agent_bindings": normalized_bindings,
     }
 
 
@@ -723,24 +633,30 @@ def _build_node_bundle(node: dict[str, Any], workflow_bundle: dict[str, Any]) ->
 def _build_workflow_bundle(workflow: dict[str, Any]) -> dict[str, Any]:
     workflow_id = int(workflow["id"])
     audiences = workflow_repo.list_workflow_audience_rows(workflow_id)
-    bindings = workflow_repo.list_workflow_agent_pool_binding_rows(workflow_id)
+    bindings = workflow_repo.list_workflow_agent_binding_rows(workflow_id)
     nodes = workflow_repo.list_workflow_node_rows(workflow_id)
     profile_segment_template = (
         get_conversion_profile_segment_template_bundle(int(workflow.get("profile_segment_template_id") or 0))
         if int(workflow.get("profile_segment_template_id") or 0) > 0
         else None
     )
+    agent_map = {
+        _normalized_text(item.get("agent_code")): _serialize_agent_reference(item)
+        for item in workflow_repo.list_agent_config_summary_rows()
+    }
     binding_items = []
     for binding in bindings:
-        pool = workflow_repo.get_agent_pool_row(int(binding["agent_pool_id"]))
-        if not pool:
+        agent_code = _normalized_text(binding.get("agent_code"))
+        if not agent_code:
             continue
         binding_items.append(
             {
                 "id": int(binding["id"]),
+                "node_id": int(binding.get("node_id") or 0) or None,
                 "binding_scope": _normalized_text(binding.get("binding_scope")),
                 "segment_key": _normalized_text(binding.get("segment_key")),
-                "agent_pool": _serialize_agent_pool(pool, workflow_repo.list_agent_pool_agent_rows(int(pool["id"]))),
+                "agent_code": agent_code,
+                "agent": dict(agent_map.get(agent_code) or {"agent_code": agent_code, "agent_name": agent_code, "status": ""}),
             }
         )
     workflow_payload = {
@@ -767,7 +683,7 @@ def _build_workflow_bundle(workflow: dict[str, Any]) -> dict[str, Any]:
             for item in audiences
         ],
         "profile_segment_template": profile_segment_template,
-        "agent_pool_bindings": binding_items,
+        "agent_bindings": binding_items,
         "behavior_tiers": list_supported_behavior_tiers() if workflow_payload["segmentation_basis"] == SEGMENTATION_BASIS_BEHAVIOR else [],
     }
     bundle["nodes"] = [_build_node_bundle(node, bundle) for node in nodes]
@@ -778,9 +694,9 @@ def _sync_workflow_children(workflow_id: int, payload: dict[str, Any]) -> None:
     workflow_repo.delete_workflow_audience_rows(workflow_id)
     for audience_code in payload["audiences"]:
         workflow_repo.insert_workflow_audience_row({"workflow_id": int(workflow_id), "audience_code": audience_code})
-    workflow_repo.delete_workflow_agent_pool_binding_rows(workflow_id)
-    for item in payload["agent_pool_bindings"]:
-        workflow_repo.insert_workflow_agent_pool_binding_row({"workflow_id": int(workflow_id), **item})
+    workflow_repo.delete_workflow_agent_binding_rows(workflow_id)
+    for item in payload["agent_bindings"]:
+        workflow_repo.insert_workflow_agent_binding_row({"workflow_id": int(workflow_id), **item})
 
 
 def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, Any], *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -885,41 +801,6 @@ def _save_node_content(node_id: int, normalized_node: dict[str, Any]) -> None:
                 "content_payload_json": item["content_payload_json"],
             }
         )
-
-
-def ensure_default_conversion_agent_pools() -> None:
-    available_codes = set(workflow_repo.list_agent_config_codes())
-    legacy_membership: dict[str, list[dict[str, Any]]] = {}
-    for definition in CHILD_AGENT_CONFIG_DEFINITIONS:
-        agent_code = _normalized_text(definition.get("agent_code"))
-        if agent_code not in available_codes:
-            continue
-        for index, pool_code in enumerate(definition.get("pool_keys") or []):
-            normalized_pool_code = _normalized_text(pool_code)
-            if not normalized_pool_code:
-                continue
-            legacy_membership.setdefault(normalized_pool_code, []).append(
-                {
-                    "agent_code": agent_code,
-                    "role_code": "primary",
-                    "position_index": index,
-                }
-            )
-    for legacy_pool_code, display_name in _LEGACY_REPLY_POOL_LABELS.items():
-        existing = workflow_repo.get_agent_pool_row_by_code(legacy_pool_code)
-        base_payload = {
-            "pool_code": legacy_pool_code,
-            "display_name": display_name,
-            "description": "从旧自动化应答 pool_keys 兼容迁移的通用 Agent 池。",
-            "pool_type": AGENT_POOL_TYPE_REPLY,
-            "enabled": True,
-            "created_by": "system",
-            "updated_by": "system",
-        }
-        saved_pool = workflow_repo.update_agent_pool_row(int(existing["id"]), {**base_payload, "enabled": bool(existing.get("enabled", True))}) if existing else workflow_repo.insert_agent_pool_row(base_payload)
-        _sync_agent_pool_agents(int(saved_pool["id"]), legacy_membership.get(legacy_pool_code, []))
-
-
 def list_conversion_workflow_registry() -> dict[str, Any]:
     return {
         "audiences": list_supported_conversion_audiences(),
@@ -927,96 +808,18 @@ def list_conversion_workflow_registry() -> dict[str, Any]:
         "generation_modes": list_supported_generation_modes(),
         "node_trigger_modes": list_supported_node_trigger_modes(),
         "behavior_tiers": list_supported_behavior_tiers(),
-        "agent_pool_types": list_supported_agent_pool_types(),
-        "agent_pool_binding_scopes": list_supported_agent_pool_binding_scopes(),
+        "agent_binding_scopes": list_supported_agent_binding_scopes(),
         "node_content_variant_scopes": list_supported_node_content_variant_scopes(),
         "workflow_statuses": list_supported_workflow_statuses(),
     }
 
 
-def list_conversion_agent_pools(*, enabled_only: bool = False, pool_type: str = "") -> dict[str, Any]:
-    ensure_default_conversion_agent_pools()
-    pools = workflow_repo.list_agent_pool_rows(enabled_only=enabled_only, pool_type=pool_type)
-    items = [_build_agent_pool_bundle(pool) for pool in pools]
+def list_conversion_agent_options(*, enabled_only: bool = True) -> dict[str, Any]:
+    items = [
+        _serialize_agent_reference(item)
+        for item in workflow_repo.list_agent_config_summary_rows(enabled_only=enabled_only)
+    ]
     return {"items": items, "total": len(items)}
-
-
-def get_conversion_agent_pool_bundle(*, agent_pool_id: int | None = None, pool_code: str = "") -> dict[str, Any]:
-    ensure_default_conversion_agent_pools()
-    pool = workflow_repo.get_agent_pool_row(int(agent_pool_id)) if agent_pool_id is not None else None
-    if not pool and pool_code:
-        pool = workflow_repo.get_agent_pool_row_by_code(pool_code)
-    if not pool:
-        raise LookupError("agent pool not found")
-    return _build_agent_pool_bundle(pool)
-
-
-def list_conversion_agent_pools_for_agent(agent_code: str) -> list[dict[str, Any]]:
-    pools = workflow_repo.list_agent_pool_rows_for_agent(_normalized_text(agent_code))
-    return [_build_agent_pool_bundle(pool) for pool in pools]
-
-
-def create_conversion_agent_pool(payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
-    ensure_default_conversion_agent_pools()
-    pool_name = _normalized_text(payload.get("pool_name") or payload.get("display_name"))
-    pool_code = _slugify_code(payload.get("pool_code") or pool_name, prefix="agent_pool")
-    if workflow_repo.get_agent_pool_row_by_code(pool_code):
-        raise ValueError("pool_code already exists")
-    pool_type = _normalized_text(payload.get("pool_type")) or AGENT_POOL_TYPE_SHARED
-    if pool_type not in _ALLOWED_POOL_TYPES:
-        raise ValueError("invalid pool_type")
-    if not pool_name:
-        raise ValueError("pool_name is required")
-    agent_members = _normalize_agent_members_payload(payload.get("agents") or [])
-    _validate_agent_members(agent_members)
-    saved_pool = workflow_repo.insert_agent_pool_row(
-        {
-            "pool_code": pool_code,
-            "display_name": pool_name,
-            "description": _normalized_text(payload.get("description")),
-            "pool_type": pool_type,
-            "enabled": _normalize_bool(payload.get("enabled"), default=True),
-            "created_by": operator_id,
-            "updated_by": operator_id,
-        }
-    )
-    _sync_agent_pool_agents(int(saved_pool["id"]), agent_members)
-    get_db().commit()
-    return {"agent_pool": get_conversion_agent_pool_bundle(agent_pool_id=int(saved_pool["id"]))}
-
-
-def update_conversion_agent_pool(agent_pool_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
-    ensure_default_conversion_agent_pools()
-    existing = workflow_repo.get_agent_pool_row(int(agent_pool_id))
-    if not existing:
-        raise LookupError("agent pool not found")
-    pool_name = _normalized_text(payload.get("pool_name") or payload.get("display_name") or existing.get("display_name"))
-    next_pool_code = _slugify_code(payload.get("pool_code") or existing.get("pool_code") or pool_name, prefix="agent_pool")
-    duplicate = workflow_repo.get_agent_pool_row_by_code(next_pool_code)
-    if duplicate and int(duplicate["id"]) != int(existing["id"]):
-        raise ValueError("pool_code already exists")
-    next_pool_type = _normalized_text(payload.get("pool_type") or existing.get("pool_type")) or AGENT_POOL_TYPE_SHARED
-    if next_pool_type not in _ALLOWED_POOL_TYPES:
-        raise ValueError("invalid pool_type")
-    if "agents" in payload:
-        agent_members = _normalize_agent_members_payload(payload.get("agents"))
-    else:
-        agent_members = _normalize_agent_members_payload(get_conversion_agent_pool_bundle(agent_pool_id=int(existing["id"])).get("agents") or [])
-    _validate_agent_members(agent_members)
-    workflow_repo.update_agent_pool_row(
-        int(existing["id"]),
-        {
-            "pool_code": next_pool_code,
-            "display_name": pool_name,
-            "description": _normalized_text(payload.get("description") if "description" in payload else existing.get("description")),
-            "pool_type": next_pool_type,
-            "enabled": _normalize_bool(payload.get("enabled"), default=bool(existing.get("enabled"))),
-            "updated_by": operator_id,
-        },
-    )
-    _sync_agent_pool_agents(int(existing["id"]), agent_members)
-    get_db().commit()
-    return {"agent_pool": get_conversion_agent_pool_bundle(agent_pool_id=int(existing["id"]))}
 
 
 def list_conversion_profile_segment_templates(*, enabled_only: bool = False) -> dict[str, Any]:
@@ -1148,15 +951,14 @@ def create_conversion_workflow(payload: dict[str, Any], *, operator_id: str) -> 
 
 def update_conversion_workflow(workflow_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
     existing = get_conversion_workflow_model_bundle(int(workflow_id))
-    normalized = _normalize_workflow_payload(payload, existing={**existing["workflow"], "audiences": existing["audiences"], "agent_pool_bindings": [
+    normalized = _normalize_workflow_payload(payload, existing={**existing["workflow"], "audiences": existing["audiences"], "agent_bindings": [
         {
-            "agent_pool_id": int((item.get("agent_pool") or {}).get("id") or 0),
-            "pool_code": _normalized_text((item.get("agent_pool") or {}).get("pool_code")),
-            "pool_type": _normalized_text((item.get("agent_pool") or {}).get("pool_type")),
+            "node_id": int(item.get("node_id") or 0) or None,
             "binding_scope": _normalized_text(item.get("binding_scope")),
             "segment_key": _normalized_text(item.get("segment_key")),
+            "agent_code": _normalized_text(item.get("agent_code") or (item.get("agent") or {}).get("agent_code")),
         }
-        for item in existing.get("agent_pool_bindings") or []
+        for item in existing.get("agent_bindings") or []
     ]})
     duplicate = workflow_repo.get_workflow_row_by_code(normalized["workflow_code"])
     if duplicate and int(duplicate["id"]) != int(workflow_id):
@@ -1274,7 +1076,7 @@ def _build_execution_item_payload(item: dict[str, Any], *, include_send_record_d
             "fallback_reason": _normalized_text(snapshot.get("fallback_reason")),
             "segment_match": dict(snapshot.get("segment_match") or {}),
             "behavior_match": dict(snapshot.get("behavior_match") or {}),
-            "agent_pool_id": int(item.get("agent_pool_id") or 0) or None,
+            "agent_code": _normalized_text(item.get("agent_code")),
             "agent_run_id": _normalized_text(item.get("agent_run_id")),
             "agent_output_id": _normalized_text(item.get("agent_output_id")),
         },
@@ -1349,13 +1151,11 @@ def get_conversion_workflow_detail_summary(workflow_id: int) -> dict[str, Any]:
         {
             "binding_scope": _normalized_text(item.get("binding_scope")),
             "segment_key": _normalized_text(item.get("segment_key")),
-            "pool_id": int(((item.get("agent_pool") or {}).get("id")) or 0) or None,
-            "pool_code": _normalized_text((item.get("agent_pool") or {}).get("pool_code")),
-            "pool_name": _normalized_text((item.get("agent_pool") or {}).get("pool_name")),
-            "pool_type": _normalized_text((item.get("agent_pool") or {}).get("pool_type")),
-            "agent_count": len((item.get("agent_pool") or {}).get("agents") or []),
+            "agent_code": _normalized_text(item.get("agent_code") or (item.get("agent") or {}).get("agent_code")),
+            "agent_name": _normalized_text((item.get("agent") or {}).get("agent_name")),
+            "status": _normalized_text((item.get("agent") or {}).get("status")),
         }
-        for item in bundle.get("agent_pool_bindings") or []
+        for item in bundle.get("agent_bindings") or []
     ]
     return {
         "workflow_id": int((bundle.get("workflow") or {}).get("id") or 0),
@@ -1367,23 +1167,8 @@ def get_conversion_workflow_detail_summary(workflow_id: int) -> dict[str, Any]:
             "items": recent_executions,
             "total": len(recent_executions),
         },
-        "agent_pool_binding_summary": bindings_summary,
+        "agent_binding_summary": bindings_summary,
     }
-
-
-def list_conversion_agent_pool_options(*, enabled_only: bool = True) -> dict[str, Any]:
-    items = [
-        {
-            "id": int(item.get("id") or 0),
-            "pool_code": _normalized_text(item.get("pool_code")),
-            "pool_name": _normalized_text(item.get("display_name")),
-            "pool_type": _normalized_text(item.get("pool_type")),
-            "enabled": bool(item.get("enabled")),
-            "updated_at": _normalized_text(item.get("updated_at")),
-        }
-        for item in workflow_repo.list_agent_pool_rows(enabled_only=enabled_only)
-    ]
-    return {"items": items, "total": len(items)}
 
 
 def list_conversion_profile_segment_template_options(*, enabled_only: bool = True) -> dict[str, Any]:

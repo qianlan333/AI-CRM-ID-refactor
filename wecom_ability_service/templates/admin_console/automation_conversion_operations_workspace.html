@@ -391,7 +391,7 @@
         <section class="ac-ops-panel" id="workflow-binding-section" hidden>
           <div class="ac-ops-head">
             <div>
-              <h4>Agent 池绑定</h4>
+              <h4>Agent 绑定</h4>
               <p class="ac-ops-muted" id="workflow-binding-help"></p>
             </div>
           </div>
@@ -556,6 +556,7 @@
             <tr>
               <th>用户</th>
               <th>状态</th>
+              <th>agent_code</th>
               <th>send_record_id</th>
               <th>生成摘要</th>
               <th>内容预览</th>
@@ -650,7 +651,7 @@
       selectedExecutionId: null,
       selectedExecutionDetail: null,
       executions: [],
-      agentPoolOptions: [],
+      agentOptions: [],
       profileTemplateOptions: [],
       profileTemplateDetails: {},
     };
@@ -707,7 +708,7 @@
         ? 'status_code'
         : groupKey === 'behavior_tiers'
         ? 'tier_code'
-        : 'pool_type';
+        : 'binding_scope';
       const match = items.find((item) => String(item[keyName] || '') === String(code || ''));
       return match ? (match.label || fallback || code) : (fallback || code || '-');
     }
@@ -793,13 +794,13 @@
       const lines = [];
       if (summary.content_source) lines.push('内容来源：' + summary.content_source);
       if (summary.fallback_reason) lines.push('回落原因：' + summary.fallback_reason);
-      if ((summary.segment_match || {}).category_name || (summary.segment_match || {}).category_key) {
-        lines.push('画像命中：' + ((summary.segment_match || {}).category_name || (summary.segment_match || {}).category_key));
+      if ((summary.segment_match || {}).segment_label || (summary.segment_match || {}).segment_key || (summary.segment_match || {}).category_name || (summary.segment_match || {}).category_key) {
+        lines.push('画像命中：' + ((summary.segment_match || {}).segment_label || (summary.segment_match || {}).segment_key || (summary.segment_match || {}).category_name || (summary.segment_match || {}).category_key));
       }
-      if ((summary.behavior_match || {}).label || (summary.behavior_match || {}).tier_code) {
-        lines.push('行为层级：' + ((summary.behavior_match || {}).label || (summary.behavior_match || {}).tier_code));
+      if ((summary.behavior_match || {}).segment_label || (summary.behavior_match || {}).segment_key || (summary.behavior_match || {}).label || (summary.behavior_match || {}).tier_code) {
+        lines.push('行为层级：' + ((summary.behavior_match || {}).segment_label || (summary.behavior_match || {}).segment_key || (summary.behavior_match || {}).label || (summary.behavior_match || {}).tier_code));
       }
-      if (summary.agent_pool_id) lines.push('Agent 池：' + summary.agent_pool_id);
+      if (summary.agent_code) lines.push('Agent：' + summary.agent_code);
       if (summary.agent_run_id) lines.push('agent_run_id：' + summary.agent_run_id);
       if (summary.agent_output_id) lines.push('agent_output_id：' + summary.agent_output_id);
       return lines.length ? lines.join('\n') : '-';
@@ -868,12 +869,12 @@
     }
 
     function workflowBindingsSummary(item) {
-      const bindings = Array.isArray(item.agent_pool_bindings) ? item.agent_pool_bindings : [];
+      const bindings = Array.isArray(item.agent_bindings) ? item.agent_bindings : [];
       if (!bindings.length) return '无';
       return bindings.map((binding) => {
-        const pool = binding.agent_pool || {};
         const prefix = binding.segment_key ? `${binding.segment_key} -> ` : '';
-        return prefix + (pool.pool_name || pool.pool_code || '-');
+        const agent = binding.agent || {};
+        return prefix + (agent.agent_name || binding.agent_code || agent.agent_code || '-');
       }).join(' / ');
     }
 
@@ -934,14 +935,11 @@
       return state.workflows.find((item) => Number((item.workflow || {}).id || 0) === workflowId) || null;
     }
 
-    function allowedPoolOptions(generationMode) {
-      if (generationMode === 'auto_layered_rewrite') {
-        return state.agentPoolOptions.filter((item) => ['rewrite', 'shared'].includes(String(item.pool_type || '')));
+    function allowedAgentOptions(generationMode) {
+      if (!['auto_layered_rewrite', 'personalized_single'].includes(generationMode)) {
+        return [];
       }
-      if (generationMode === 'personalized_single') {
-        return state.agentPoolOptions.filter((item) => ['personalized', 'shared'].includes(String(item.pool_type || '')));
-      }
-      return [];
+      return state.agentOptions;
     }
 
     async function renderWorkflowBindingControls() {
@@ -949,7 +947,7 @@
       const currentSelections = {};
       elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]').forEach((select) => {
         const key = `${select.dataset.bindingScope || ''}:${select.dataset.segmentKey || ''}`;
-        currentSelections[key] = Number(select.value || 0);
+        currentSelections[key] = String(select.value || '').trim();
       });
       showFormFeedback(elements.workflowFormFeedback, '', '');
       if (values.segmentationBasis === 'profile') {
@@ -962,14 +960,14 @@
       if (values.generationMode === 'manual_layered') {
         elements.workflowBindingSection.hidden = true;
         elements.workflowBindingGrid.innerHTML = '';
-        elements.workflowBindingHelp.textContent = '手动分层录入不允许绑定 Agent 池。';
+        elements.workflowBindingHelp.textContent = '手动分层录入不允许绑定 Agent。';
         return;
       }
 
       if (values.generationMode === 'auto_layered_rewrite' && values.segmentationBasis === 'none') {
         elements.workflowBindingSection.hidden = false;
         elements.workflowBindingHelp.textContent = '标准版自动分层改写必须选择“基础画像分层”或“行为层级分层”。';
-        elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">当前配置还不能绑定 Agent 池。</div>';
+        elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">当前配置还不能绑定 Agent。</div>';
         return;
       }
 
@@ -979,7 +977,7 @@
       }
       if (values.segmentationBasis === 'profile' && !values.profileSegmentTemplateId) {
         elements.workflowBindingSection.hidden = false;
-        elements.workflowBindingHelp.textContent = '基础画像分层时，请先选择分层规则模板，再绑定 Agent 池。';
+        elements.workflowBindingHelp.textContent = '基础画像分层时，请先选择分层规则模板，再绑定 Agent。';
         elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">当前还没有可绑定的画像分类。</div>';
         return;
       }
@@ -987,32 +985,32 @@
       elements.workflowBindingSection.hidden = false;
       elements.workflowBindingHelp.textContent =
         values.generationMode === 'personalized_single'
-          ? '单人定制化生成只允许绑定 1 个 Agent 池。'
+          ? '单人定制化生成只允许绑定 1 个 Agent。'
           : values.segmentationBasis === 'behavior'
           ? '行为层级分层固定为 <2 / 2~9 / 10+。'
-          : '标准版自动分层改写需要按分层类别逐项绑定 Agent 池。';
+          : '标准版自动分层改写需要按分层类别逐项绑定 Agent。';
 
       const editingBundle = currentWorkflowEditingBundle();
-      const existingBindings = Array.isArray((editingBundle || {}).agent_pool_bindings) ? editingBundle.agent_pool_bindings : [];
+      const existingBindings = Array.isArray((editingBundle || {}).agent_bindings) ? editingBundle.agent_bindings : [];
       const bindingByKey = {};
       existingBindings.forEach((item) => {
         const key = `${item.binding_scope || ''}:${item.segment_key || (item.binding_scope === 'personalized' ? 'personalized' : '')}`;
-        bindingByKey[key] = Number(((item.agent_pool || {}).id) || 0);
+        bindingByKey[key] = String(item.agent_code || ((item.agent || {}).agent_code) || '');
       });
 
-      const options = allowedPoolOptions(values.generationMode);
+      const options = allowedAgentOptions(values.generationMode);
       elements.workflowBindingGrid.innerHTML = targets.map((target) => {
         const key = `${target.binding_scope}:${target.segment_key || (target.binding_scope === 'personalized' ? 'personalized' : '')}`;
         return `
           <label class="ac-ops-binding-item">
             <span>${escapeHtml(target.label)}</span>
             <select data-binding-scope="${escapeHtml(target.binding_scope)}" data-segment-key="${escapeHtml(target.segment_key || '')}">
-              <option value="">请选择 Agent 池</option>
-              ${options.map((item) => `<option value="${escapeHtml(item.id)}" ${Number(item.id) === Number(currentSelections[key] || bindingByKey[key] || 0) ? 'selected' : ''}>${escapeHtml(item.pool_name || item.pool_code)} · ${escapeHtml(item.pool_type || '')}</option>`).join('')}
+              <option value="">请选择 Agent</option>
+              ${options.map((item) => `<option value="${escapeHtml(item.agent_code)}" ${String(item.agent_code || '') === String(currentSelections[key] || bindingByKey[key] || '') ? 'selected' : ''}>${escapeHtml(item.agent_name || item.agent_code)} · ${escapeHtml(item.status || '')}</option>`).join('')}
             </select>
           </label>
         `;
-      }).join('') || '<div class="ac-ops-empty">当前配置没有需要绑定的 Agent 池。</div>';
+      }).join('') || '<div class="ac-ops-empty">当前配置没有需要绑定的 Agent。</div>';
     }
 
     function openWorkflowForm(mode, item) {
@@ -1040,7 +1038,7 @@
         elements.workflowForm.elements.generation_mode.value = 'manual_layered';
       }
       renderWorkflowBindingControls().catch((error) => {
-        showFormFeedback(elements.workflowFormFeedback, error.message || '加载 Agent 池绑定失败', 'error');
+        showFormFeedback(elements.workflowFormFeedback, error.message || '加载 Agent 绑定失败', 'error');
       });
       elements.workflowForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -1057,17 +1055,17 @@
       if (payload.segmentation_basis === 'profile' && !payload.profile_segment_template_id) {
         throw new Error('基础画像分层时必须选择分层规则模板');
       }
-      if (payload.generation_mode === 'manual_layered' && payload.agent_pool_bindings.length) {
-        throw new Error('手动分层录入不允许绑定 Agent 池');
+      if (payload.generation_mode === 'manual_layered' && payload.agent_bindings.length) {
+        throw new Error('手动分层录入不允许绑定 Agent');
       }
       if (payload.generation_mode === 'auto_layered_rewrite' && payload.segmentation_basis === 'none') {
         throw new Error('标准版自动分层改写必须选择基础画像分层或行为层级分层');
       }
-      if (payload.generation_mode === 'auto_layered_rewrite' && payload.agent_pool_bindings.length !== expectedBindingCount) {
-        throw new Error('标准版自动分层改写必须为每个分层类别绑定 Agent 池');
+      if (payload.generation_mode === 'auto_layered_rewrite' && payload.agent_bindings.length !== expectedBindingCount) {
+        throw new Error('标准版自动分层改写必须为每个分层类别绑定 Agent');
       }
-      if (payload.generation_mode === 'personalized_single' && payload.agent_pool_bindings.length !== 1) {
-        throw new Error('单人定制化生成只能绑定 1 个 Agent 池');
+      if (payload.generation_mode === 'personalized_single' && payload.agent_bindings.length !== 1) {
+        throw new Error('单人定制化生成只能绑定 1 个 Agent');
       }
     }
 
@@ -1076,11 +1074,11 @@
       const bindingInputs = Array.from(elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]'));
       const bindings = bindingInputs
         .map((select) => ({
-          agent_pool_id: Number(select.value || 0),
+          agent_code: String(select.value || '').trim(),
           binding_scope: select.dataset.bindingScope || '',
           segment_key: select.dataset.segmentKey || '',
         }))
-        .filter((item) => item.agent_pool_id > 0);
+        .filter((item) => item.agent_code);
       const payload = {
         workflow_name: values.workflowName,
         description: values.description,
@@ -1088,7 +1086,7 @@
         segmentation_basis: values.segmentationBasis,
         profile_segment_template_id: values.segmentationBasis === 'profile' ? values.profileSegmentTemplateId || null : null,
         generation_mode: values.generationMode,
-        agent_pool_bindings: bindings,
+        agent_bindings: bindings,
         status: values.status || 'draft',
       };
       validateWorkflowPayload(payload);
@@ -1143,7 +1141,7 @@
       ].join('');
       elements.workflowDetailSummary.innerHTML = `
         <div><dt>节点数量</dt><dd>${escapeHtml(summary.node_count || (bundle.nodes || []).length)}</dd></div>
-        <div><dt>Agent 池绑定</dt><dd>${escapeHtml((summary.agent_pool_binding_summary || []).map((item) => item.pool_name || item.pool_code || '-').join(' / ') || '无')}</dd></div>
+        <div><dt>Agent 绑定</dt><dd>${escapeHtml((summary.agent_binding_summary || []).map((item) => item.agent_name || item.agent_code || '-').join(' / ') || '无')}</dd></div>
         <div><dt>最近执行时间</dt><dd>${escapeHtml(summary.latest_execution_at || '暂无记录')}</dd></div>
         <div><dt>最近更新时间</dt><dd>${escapeHtml(workflow.updated_at || '-')}</dd></div>
         <div><dt>画像模板</dt><dd>${escapeHtml((((bundle.profile_segment_template || {}).template) || {}).template_name || '无')}</dd></div>
@@ -1373,12 +1371,13 @@
         <tr>
           <td>${escapeHtml((((item.member || {}).external_contact_id) || ((item.member || {}).phone) || '-') )}</td>
           <td>${escapeHtml(item.status || '-')}</td>
+          <td>${escapeHtml((((item.generation_summary || {}).agent_code) || item.agent_code || '-') )}</td>
           <td>${escapeHtml(item.send_record_id || '-')}</td>
           <td><div class="ac-ops-generation-summary">${escapeHtml(generationSummaryText(item.generation_summary))}</div></td>
           <td>${escapeHtml(item.rendered_content_preview || '-')}</td>
           <td>${escapeHtml(item.updated_at || item.created_at || '-')}</td>
         </tr>
-      `).join('') || '<tr><td colspan="6">当前批次没有单用户执行明细。</td></tr>';
+      `).join('') || '<tr><td colspan="7">当前批次没有单用户执行明细。</td></tr>';
     }
 
     async function loadExecutions(workflowId) {
@@ -1461,17 +1460,17 @@
     async function initialize() {
       try {
         showFeedback('', '');
-        const [registryPayload, dashboardPayload, workflowPayload, poolPayload, templatePayload] = await Promise.all([
+        const [registryPayload, dashboardPayload, workflowPayload, agentPayload, templatePayload] = await Promise.all([
           requestJson(apiUrls.registry, { credentials: 'same-origin' }),
           requestJson(apiUrls.dashboard, { credentials: 'same-origin' }),
           requestJson(apiUrls.workflows, { credentials: 'same-origin' }),
-          requestJson(apiUrls.agent_pools_options, { credentials: 'same-origin' }),
+          requestJson(apiUrls.agents_options, { credentials: 'same-origin' }),
           requestJson(apiUrls.profile_segment_templates_options, { credentials: 'same-origin' }),
         ]);
         state.registry = registryPayload;
         state.dashboard = dashboardPayload.dashboard || {};
         state.workflows = workflowPayload.items || [];
-        state.agentPoolOptions = poolPayload.items || [];
+        state.agentOptions = agentPayload.items || [];
         state.profileTemplateOptions = templatePayload.items || [];
 
         renderSummary();

@@ -69,6 +69,7 @@ def app(tmp_path):
             "WECOM_CALLBACK_TOKEN": "callback-token",
             "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
             "SIDEBAR_PERSON_DETAIL_URL_TEMPLATE": "https://www.youcangogogo.com/person/{person_id}",
+            "MCP_BEARER_TOKEN": "mcp-token",
         }
     )
     with app.app_context():
@@ -79,6 +80,73 @@ def app(tmp_path):
 @pytest.fixture()
 def client(app):
     return app.test_client()
+
+
+def _admin_action_token(client, path: str = "/admin/automation-conversion/agent-config") -> str:
+    client.get(path, follow_redirects=True)
+    with client.session_transaction() as session:
+        return str(session["admin_console_action_token"])
+
+
+def _mcp_call(client, name: str, arguments: dict[str, object]):
+    return client.post(
+        "/mcp",
+        headers={"Authorization": "Bearer mcp-token"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+    )
+
+
+def _seed_profile_segment_questionnaire(app, *, questionnaire_id: int = 901) -> dict[str, int | list[int]]:
+    choice_question_id = questionnaire_id * 100 + 1
+    option_ids = [questionnaire_id * 1000 + 1, questionnaire_id * 1000 + 2]
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO questionnaires (
+                id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                questionnaire_id,
+                f"agent-config-{questionnaire_id}",
+                f"agent-config-{questionnaire_id}",
+                f"Agent 配置问卷 {questionnaire_id}",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaire_questions (
+                id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, 'single_choice', '你最关心什么？', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (choice_question_id, questionnaire_id),
+        )
+        db.executemany(
+            """
+            INSERT INTO questionnaire_options (
+                id, question_id, option_text, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            [
+                (option_ids[0], choice_question_id, "效率", 1),
+                (option_ids[1], choice_question_id, "成交", 2),
+            ],
+        )
+        db.commit()
+    return {
+        "questionnaire_id": questionnaire_id,
+        "choice_question_id": choice_question_id,
+        "option_ids": option_ids,
+    }
 
 
 def fake_wecom_get(url, params=None, timeout=None):
@@ -302,6 +370,137 @@ def fake_wecom_post(url, params=None, json=None, timeout=None, files=None):
     if url.endswith("/cgi-bin/externalcontact/add_moment_task"):
         return FakeResponse({"errcode": 0, "errmsg": "ok", "jobid": "moment-job-001"})
     raise AssertionError(f"unexpected POST url: {url}")
+
+
+def test_automation_conversion_agent_create_and_edit_flow(client):
+    action_token = _admin_action_token(client)
+
+    create_response = client.post(
+        "/api/admin/automation-conversion/agents",
+        json={
+            "admin_action_token": action_token,
+            "agent_code": "conversion_followup_agent",
+            "display_name": "转化跟进 Agent",
+            "enabled": True,
+            "role_prompt": "你是转化跟进 Agent。",
+            "task_prompt": "请基于 {{问卷信息}} 和 {{用户标签}} 生成跟进话术。",
+            "enabled_context_sources": ["questionnaire", "user_tags"],
+            "change_summary": "创建新 Agent",
+        },
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.get_json()
+    assert created["ok"] is True
+    assert created["agent"]["agent_code"] == "conversion_followup_agent"
+    assert created["agent"]["display_name"] == "转化跟进 Agent"
+    assert created["agent"]["published_version"] == 0
+    assert created["agent"]["draft"]["enabled_context_sources"] == ["questionnaire", "user_tags"]
+    assert created["agent"]["draft"]["variables"][0]["variable_key"] == "questionnaire_info"
+    assert created["agent"]["draft"]["output_schema"][0]["field_key"] == "draft_reply"
+
+    detail_response = client.get("/api/admin/automation-conversion/agents/conversion_followup_agent")
+    assert detail_response.status_code == 200
+    assert detail_response.get_json()["item"]["agent_code"] == "conversion_followup_agent"
+
+    options_response = client.get("/api/admin/automation-conversion/agents/options", query_string={"enabled_only": 0})
+    assert options_response.status_code == 200
+    option_codes = [item["agent_code"] for item in options_response.get_json()["items"]]
+    assert "conversion_followup_agent" in option_codes
+
+    update_response = client.post(
+        "/api/admin/automation-conversion/agents/conversion_followup_agent/draft",
+        json={
+            "admin_action_token": action_token,
+            "display_name": "转化跟进 Agent",
+            "enabled": True,
+            "role_prompt": "你是更新后的转化跟进 Agent。",
+            "task_prompt": "生成更新后的跟进话术。",
+            "enabled_context_sources": ["questionnaire", "recent_messages", "activation_info"],
+            "expected_draft_version": 1,
+            "change_summary": "更新新 Agent 草稿",
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.get_json()["agent"]["draft"]["role_prompt"] == "你是更新后的转化跟进 Agent。"
+    assert update_response.get_json()["agent"]["draft"]["enabled_context_sources"] == ["questionnaire", "recent_messages", "activation_info"]
+
+
+def test_mcp_create_agent_config_tool(client):
+    response = _mcp_call(
+        client,
+        "create_agent_config",
+        {
+            "agent_code": "lobster_created_agent",
+            "display_name": "龙虾新建 Agent",
+            "enabled": True,
+            "role_prompt": "你是龙虾新建 Agent。",
+            "task_prompt": "请根据 {{问卷信息}} 和 {{最近20条聊天信息}} 生成跟进话术。",
+            "enabled_context_sources": ["questionnaire", "recent_messages"],
+            "operator": "lobster_test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["result"]["structuredContent"]["created"] is True
+    created = body["result"]["structuredContent"]["agent"]
+    assert created["agent_code"] == "lobster_created_agent"
+    assert created["draft"]["enabled_context_sources"] == ["questionnaire", "recent_messages"]
+
+    update_response = _mcp_call(
+        client,
+        "save_agent_prompt_draft",
+        {
+            "agent_code": "lobster_created_agent",
+            "task_prompt": "请结合 {{用户标签}} 和 {{激活信息}} 输出一条成交推进话术。",
+            "enabled_context_sources": ["user_tags", "activation_info"],
+            "expected_draft_version": 1,
+            "operator": "lobster_test",
+        },
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.get_json()["result"]["structuredContent"]["agent"]
+    assert updated["draft"]["enabled_context_sources"] == ["user_tags", "activation_info"]
+
+
+def test_automation_conversion_profile_segment_template_detail_returns_template_bundle(client, app):
+    questionnaire = _seed_profile_segment_questionnaire(app, questionnaire_id=902)
+
+    created_response = client.post(
+        "/api/admin/automation-conversion/profile-segment-templates",
+        json={
+            "template_name": "基础画像模板 A",
+            "questionnaire_id": questionnaire["questionnaire_id"],
+            "segmentation_question_id": questionnaire["choice_question_id"],
+            "enabled": True,
+            "categories": [
+                {
+                    "category_name": "效率优先",
+                    "category_key": "efficiency",
+                    "option_ids": [questionnaire["option_ids"][0]],
+                },
+                {
+                    "category_name": "成交优先",
+                    "category_key": "closing",
+                    "option_ids": [questionnaire["option_ids"][1]],
+                },
+            ],
+        },
+    )
+    assert created_response.status_code == 201
+    template_id = created_response.get_json()["template_bundle"]["template"]["id"]
+
+    detail_response = client.get(f"/api/admin/automation-conversion/profile-segment-templates/{template_id}")
+    assert detail_response.status_code == 200
+    detail = detail_response.get_json()
+    assert detail["ok"] is True
+    assert detail["template_bundle"]["template"]["id"] == template_id
+    assert detail["template_bundle"]["template"]["template_name"] == "基础画像模板 A"
+    assert detail["template_bundle"]["questionnaire"]["id"] == questionnaire["questionnaire_id"]
+    assert detail["template_bundle"]["segmentation_question"]["id"] == questionnaire["choice_question_id"]
+    assert len(detail["template_bundle"]["categories"]) == 2
 
 
 def make_signup_management_fake_wecom_post(*, include_lead_tag: bool = True):
@@ -2531,6 +2730,10 @@ def _build_questionnaire_payload(**overrides) -> dict:
         "redirect_url": "https://example.com/next",
         "external_push_enabled": False,
         "external_push_url": "",
+        "external_push_day": "",
+        "external_push_frequency": "",
+        "external_push_remark": "",
+        "external_push_custom_params": [],
         "questions": [
             {
                 "type": "single_choice",
@@ -3529,6 +3732,12 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         json=_build_questionnaire_payload_with_mobile(
             external_push_enabled=True,
             external_push_url="https://hooks.example.com/questionnaire/apply",
+            external_push_day=20,
+            external_push_frequency=20,
+            external_push_remark="黄小璨 499 用户激活",
+            external_push_custom_params=[
+                {"name": "source_name", "value": "黄小璨激活"},
+            ],
         ),
     )
     questionnaire = create_response.get_json()["questionnaire"]
@@ -3566,6 +3775,11 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         "user_id": "union-external-push-success-001",
         "questionnaire_title": "来访测评",
         "submitted_at": push_calls[0]["json"]["submitted_at"],
+        "phone_number": "13800138012",
+        "day": 20,
+        "frequency": 20,
+        "remark": "黄小璨 499 用户激活",
+        "source_name": "黄小璨激活",
         "answers": [
             {"title": "你的预算", "answer": "10-30万"},
             {"title": "你的关注点", "answer": ["效果"]},
@@ -3590,9 +3804,105 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         assert int(row["response_status_code"]) == 200
         assert row["status"] == "success"
         assert row["failure_reason"] == ""
+        assert json.loads(row["request_payload"])["phone_number"] == "13800138012"
+        assert json.loads(row["request_payload"])["day"] == 20
+        assert json.loads(row["request_payload"])["frequency"] == 20
+        assert json.loads(row["request_payload"])["remark"] == "黄小璨 499 用户激活"
+        assert json.loads(row["request_payload"])["source_name"] == "黄小璨激活"
         assert json.loads(row["request_payload"])["answers"][1]["answer"] == ["效果"]
         assert json.loads(row["request_payload"])["answers"][2]["answer"] == ""
         assert '"success": false' in row["response_body"]
+
+
+def test_questionnaire_submit_external_push_without_mobile_question_sends_null_phone_number(client, app, monkeypatch):
+    with app.app_context():
+        set_settings({"QUESTIONNAIRE_EXTERNAL_PUSH_GLOBAL_ENABLED": "true"})
+    create_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/questionnaire/apply",
+        ),
+    )
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1, q2, q3 = detail["questions"]
+    push_calls: list[dict[str, object]] = []
+
+    def fake_push_post(url, json=None, headers=None, timeout=None):
+        push_calls.append({"url": url, "json": json, "headers": dict(headers or {}), "timeout": timeout})
+        return FakeResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr("wecom_ability_service.domains.questionnaire.service.requests.post", fake_push_post)
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "unionid": "union-external-push-no-mobile-001",
+            "answers": {
+                str(q1["id"]): q1["options"][0]["id"],
+                str(q2["id"]): [q2["options"][0]["id"]],
+                str(q3["id"]): "没有手机号题",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert len(push_calls) == 1
+    assert push_calls[0]["json"]["phone_number"] == "NULL"
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT request_payload
+            FROM questionnaire_external_push_logs
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert json.loads(row["request_payload"])["phone_number"] == "NULL"
+
+
+def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_custom_param_name(client):
+    invalid_number_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(external_push_enabled=True, external_push_url="https://hooks.example.com/q", external_push_day="abc"),
+    )
+    assert invalid_number_response.status_code == 400
+    assert invalid_number_response.get_json() == {
+        "ok": False,
+        "error": "external_push_day must be an integer",
+    }
+
+    reserved_name_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_custom_params=[{"name": "remark", "value": "bad"}],
+        ),
+    )
+    assert reserved_name_response.status_code == 400
+    assert reserved_name_response.get_json() == {
+        "ok": False,
+        "error": "external_push_custom_params name 'remark' is reserved",
+    }
+
+    phone_number_reserved_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_custom_params=[{"name": "phone_number", "value": "bad"}],
+        ),
+    )
+    assert phone_number_reserved_response.status_code == 400
+    assert phone_number_reserved_response.get_json() == {
+        "ok": False,
+        "error": "external_push_custom_params name 'phone_number' is reserved",
+    }
 
 
 def test_questionnaire_submit_external_push_global_switch_off_skips_without_breaking_submit(client, app, monkeypatch):
@@ -3765,6 +4075,37 @@ def test_questionnaire_external_push_requires_url_when_enabled(client):
         "ok": False,
         "error": "external_push_url is required when external_push_enabled is enabled",
     }
+
+
+def test_questionnaire_create_auto_dedupes_generated_slug_when_name_collides(client):
+    payload = {
+        "name": "黄小璨AI激活问卷",
+        "title": "填写问卷激活黄小璨AI",
+        "description": "您在问卷中填写的信息会被录入黄小璨进行对黄小璨的初始设置",
+        "redirect_url": "",
+        "questions": [
+            {
+                "type": "mobile",
+                "title": "请输入手机号",
+                "required": True,
+                "sort_order": 1,
+                "placeholder_text": "请输入登录AI分身的唯一手机号码",
+            }
+        ],
+        "score_rules": [],
+    }
+
+    first_response = client.post("/api/admin/questionnaires", json=payload)
+    second_response = client.post("/api/admin/questionnaires", json=payload)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_slug = first_response.get_json()["questionnaire"]["slug"]
+    second_slug = second_response.get_json()["questionnaire"]["slug"]
+    assert first_slug == "ai"
+    assert second_slug != first_slug
+    assert second_slug.startswith("ai-")
 
 
 def test_questionnaire_external_push_failed_log_can_be_retried_and_reuses_original_payload(client, app, monkeypatch):

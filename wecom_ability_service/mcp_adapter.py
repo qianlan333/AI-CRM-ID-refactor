@@ -21,6 +21,7 @@ from .domains.automation_conversion import (
     crm_get_member_recent_outputs,
     crm_get_member_snapshot,
     crm_get_member_stage,
+    create_agent_config_draft_via_mcp,
     create_agent_output_export_job,
     list_pending_agent_prompt_publish_requests,
     get_agent_config_detail,
@@ -784,6 +785,33 @@ TOOL_DEFS = [
         },
     },
     {
+        "name": "create_agent_config",
+        "description": "Create a new child agent draft configuration without publishing it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_code": {"type": "string"},
+                "display_name": {"type": "string"},
+                "enabled": {"type": "boolean"},
+                "role_prompt": {"type": "string"},
+                "task_prompt": {"type": "string"},
+                "enabled_context_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["questionnaire", "recent_messages", "user_tags", "activation_info"],
+                    },
+                },
+                "variables": {"type": "array"},
+                "output_schema": {"type": "array"},
+                "change_summary": {"type": "string"},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["agent_code", "display_name", "role_prompt", "task_prompt"],
+        },
+    },
+    {
         "name": "get_agent_config",
         "description": "Read one child agent's draft/published configuration.",
         "inputSchema": {
@@ -822,6 +850,13 @@ TOOL_DEFS = [
                 "enabled": {"type": "boolean"},
                 "role_prompt": {"type": "string"},
                 "task_prompt": {"type": "string"},
+                "enabled_context_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["questionnaire", "recent_messages", "user_tags", "activation_info"],
+                    },
+                },
                 "variables": {"type": "array"},
                 "output_schema": {"type": "array"},
                 "change_summary": {"type": "string"},
@@ -2220,6 +2255,30 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             permission_scope="read",
             fn=lambda: list_agent_configs(enabled_only=bool(arguments.get("enabled_only"))),
         )
+    if name == "create_agent_config":
+        return _run_agent_skill(
+            "create_agent_config",
+            arguments,
+            permission_scope="draft_write",
+            fn=lambda: create_agent_config_draft_via_mcp(
+                {
+                    key: value
+                    for key, value in {
+                        "agent_code": arguments.get("agent_code"),
+                        "display_name": arguments.get("display_name"),
+                        "enabled": arguments.get("enabled"),
+                        "role_prompt": arguments.get("role_prompt"),
+                        "task_prompt": arguments.get("task_prompt"),
+                        "enabled_context_sources": arguments.get("enabled_context_sources"),
+                        "variables": arguments.get("variables"),
+                        "output_schema": arguments.get("output_schema"),
+                        "change_summary": arguments.get("change_summary"),
+                    }.items()
+                    if value is not None
+                },
+                operator_id=str(arguments.get("operator") or "lobster_mcp").strip() or "lobster_mcp",
+            ),
+        )
     if name == "get_all_agent_prompts":
         return _run_agent_skill(
             "get_all_agent_prompts",
@@ -2243,6 +2302,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                             "enabled": arguments.get("enabled"),
                             "role_prompt": arguments.get("role_prompt"),
                             "task_prompt": arguments.get("task_prompt"),
+                            "enabled_context_sources": arguments.get("enabled_context_sources"),
                             "variables": arguments.get("variables"),
                             "output_schema": arguments.get("output_schema"),
                             "change_summary": arguments.get("change_summary"),

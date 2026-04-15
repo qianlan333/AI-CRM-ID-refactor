@@ -1288,6 +1288,10 @@ CREATE TABLE IF NOT EXISTS questionnaires (
     redirect_url TEXT NOT NULL DEFAULT '',
     external_push_enabled INTEGER NOT NULL DEFAULT 0,
     external_push_url TEXT NOT NULL DEFAULT '',
+    external_push_day INTEGER,
+    external_push_frequency INTEGER,
+    external_push_remark TEXT NOT NULL DEFAULT '',
+    external_push_custom_params TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -1892,39 +1896,6 @@ CREATE TABLE IF NOT EXISTS automation_agent_skill_call_audit (
 CREATE INDEX IF NOT EXISTS idx_automation_agent_skill_call_audit_skill_created
 ON automation_agent_skill_call_audit (skill_code, created_at DESC, id DESC);
 
-CREATE TABLE IF NOT EXISTS automation_agent_pool (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pool_code TEXT NOT NULL UNIQUE,
-    display_name TEXT NOT NULL DEFAULT '',
-    description TEXT NOT NULL DEFAULT '',
-    pool_type TEXT NOT NULL DEFAULT 'shared'
-        CHECK (pool_type IN ('shared', 'reply', 'rewrite', 'personalized')),
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_by TEXT NOT NULL DEFAULT '',
-    updated_by TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_automation_agent_pool_enabled
-ON automation_agent_pool (enabled, updated_at DESC, id DESC);
-
-CREATE TABLE IF NOT EXISTS automation_agent_pool_agent (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent_pool_id INTEGER NOT NULL REFERENCES automation_agent_pool(id) ON DELETE CASCADE,
-    agent_code TEXT NOT NULL REFERENCES automation_agent_config(agent_code) ON DELETE CASCADE,
-    role_code TEXT NOT NULL DEFAULT 'primary'
-        CHECK (role_code IN ('primary', 'fallback', 'supporting')),
-    position_index INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_agent_pool_agent_unique
-ON automation_agent_pool_agent (agent_pool_id, agent_code);
-
-CREATE INDEX IF NOT EXISTS idx_automation_agent_pool_agent_position
-ON automation_agent_pool_agent (agent_pool_id, position_index ASC, id ASC);
-
 CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     template_code TEXT NOT NULL UNIQUE,
@@ -2042,22 +2013,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_member_audience_entry_current
 ON automation_member_audience_entry (member_id)
 WHERE is_current = 1;
 
-CREATE TABLE IF NOT EXISTS automation_workflow_agent_pool_binding (
+CREATE TABLE IF NOT EXISTS automation_workflow_agent_binding (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id INTEGER NOT NULL REFERENCES automation_workflow(id) ON DELETE CASCADE,
-    agent_pool_id INTEGER NOT NULL REFERENCES automation_agent_pool(id) ON DELETE CASCADE,
+    node_id INTEGER REFERENCES automation_workflow_node(id) ON DELETE CASCADE,
     binding_scope TEXT NOT NULL DEFAULT 'default'
         CHECK (binding_scope IN ('default', 'profile_category', 'behavior_tier', 'personalized')),
     segment_key TEXT NOT NULL DEFAULT '',
+    agent_code TEXT NOT NULL REFERENCES automation_agent_config(agent_code) ON DELETE CASCADE,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_agent_pool_binding_unique
-ON automation_workflow_agent_pool_binding (workflow_id, binding_scope, segment_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_agent_binding_unique
+ON automation_workflow_agent_binding (workflow_id, COALESCE(node_id, 0), binding_scope, segment_key);
 
-CREATE INDEX IF NOT EXISTS idx_automation_workflow_agent_pool_binding_pool
-ON automation_workflow_agent_pool_binding (agent_pool_id, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_automation_workflow_agent_binding_agent
+ON automation_workflow_agent_binding (agent_code, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_workflow_node (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2152,7 +2124,7 @@ CREATE TABLE IF NOT EXISTS automation_workflow_execution_item (
     external_contact_id TEXT NOT NULL DEFAULT '',
     rendered_content_text TEXT NOT NULL DEFAULT '',
     content_snapshot_json TEXT NOT NULL DEFAULT '{}',
-    agent_pool_id INTEGER REFERENCES automation_agent_pool(id) ON DELETE SET NULL,
+    agent_code TEXT NOT NULL DEFAULT '',
     agent_run_id TEXT NOT NULL DEFAULT '',
     agent_output_id TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending'

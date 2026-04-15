@@ -11,27 +11,38 @@ DEFAULT_OPERATOR = "automation_conversion_due_runner"
 DEFAULT_RETRY_COUNT = 6
 DEFAULT_RETRY_INTERVAL_SECONDS = 10
 JOB_DEFINITIONS = {
-    "sop": {
-        "label": "SOP 池运营",
-        "path": "/api/admin/automation-conversion/sop/run-due",
+    "conversion_workflow": {
+        "label": "自动化转化任务流",
+        "path": "/api/admin/automation-conversion/jobs/run-due",
+        "payload": {"jobs": ["conversion_workflow"]},
     }
 }
 
 
-def build_request(*, host: str, port: str, token: str, operator: str, path: str) -> urllib.request.Request:
+def build_request(*, host: str, port: str, token: str, operator: str, path: str, payload: dict[str, object] | None = None) -> urllib.request.Request:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return urllib.request.Request(
         f"http://{host}:{port}{path}",
-        data=json.dumps({"operator": operator}).encode("utf-8"),
+        data=json.dumps({"operator": operator, **dict(payload or {})}).encode("utf-8"),
         headers=headers,
         method="POST",
     )
 
 
-def _post_json(*, host: str, port: str, token: str, operator: str, path: str, retry_count: int, retry_interval_seconds: int) -> dict[str, object]:
-    request = build_request(host=host, port=port, token=token, operator=operator, path=path)
+def _post_json(
+    *,
+    host: str,
+    port: str,
+    token: str,
+    operator: str,
+    path: str,
+    payload: dict[str, object] | None,
+    retry_count: int,
+    retry_interval_seconds: int,
+) -> dict[str, object]:
+    request = build_request(host=host, port=port, token=token, operator=operator, path=path, payload=payload)
     attempts = max(1, int(retry_count))
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
@@ -81,6 +92,7 @@ def run(*, jobs: list[str] | None = None) -> str:
                 token=token,
                 operator=operator,
                 path=str(definition["path"]),
+                payload=dict(definition.get("payload") or {}),
                 retry_count=retry_count,
                 retry_interval_seconds=retry_interval_seconds,
             )

@@ -40,20 +40,6 @@ def _fetchall_dicts(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, An
     return [dict(row) for row in rows]
 
 
-def _serialize_agent_pool_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        **row,
-        "enabled": _row_bool(row.get("enabled")),
-    }
-
-
-def _serialize_agent_pool_agent_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        **row,
-        "position_index": int(row.get("position_index") or 0),
-    }
-
-
 def _serialize_profile_segment_template_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
@@ -98,11 +84,11 @@ def _serialize_workflow_audience_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _serialize_workflow_agent_pool_binding_row(row: dict[str, Any]) -> dict[str, Any]:
+def _serialize_workflow_agent_binding_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
         "workflow_id": int(row.get("workflow_id") or 0),
-        "agent_pool_id": int(row.get("agent_pool_id") or 0),
+        "node_id": int(row.get("node_id") or 0) or None,
     }
 
 
@@ -177,170 +163,31 @@ def _serialize_workflow_execution_item_row(row: dict[str, Any]) -> dict[str, Any
     }
 
 
-def list_agent_pool_rows(*, enabled_only: bool = False, pool_type: str = "") -> list[dict[str, Any]]:
+def list_agent_config_codes() -> list[str]:
+    rows = _fetchall_dicts("SELECT agent_code FROM automation_agent_config ORDER BY agent_code ASC")
+    return [_normalized_text(row.get("agent_code")) for row in rows if _normalized_text(row.get("agent_code"))]
+
+
+def list_agent_config_summary_rows(*, enabled_only: bool = False) -> list[dict[str, Any]]:
     sql = """
-        SELECT *
-        FROM automation_agent_pool
+        SELECT
+            agent_code,
+            display_name,
+            last_change_summary AS description,
+            CASE
+                WHEN COALESCE(enabled, FALSE) IS NOT TRUE THEN 'disabled'
+                WHEN published_version > 0 THEN 'published'
+                ELSE 'draft'
+            END AS status_code,
+            updated_at
+        FROM automation_agent_config
         WHERE 1 = 1
     """
     params: list[Any] = []
     if enabled_only:
-        sql += " AND enabled = ?"
-        params.append(True)
-    if _normalized_text(pool_type):
-        sql += " AND pool_type = ?"
-        params.append(_normalized_text(pool_type))
-    sql += " ORDER BY updated_at DESC, id DESC"
-    return [_serialize_agent_pool_row(row) for row in _fetchall_dicts(sql, tuple(params))]
-
-
-def get_agent_pool_row(agent_pool_id: int) -> dict[str, Any] | None:
-    row = _fetchone_dict(
-        """
-        SELECT *
-        FROM automation_agent_pool
-        WHERE id = ?
-        LIMIT 1
-        """,
-        (int(agent_pool_id),),
-    )
-    return _serialize_agent_pool_row(row) if row else None
-
-
-def get_agent_pool_row_by_code(pool_code: str) -> dict[str, Any] | None:
-    row = _fetchone_dict(
-        """
-        SELECT *
-        FROM automation_agent_pool
-        WHERE pool_code = ?
-        LIMIT 1
-        """,
-        (_normalized_text(pool_code),),
-    )
-    return _serialize_agent_pool_row(row) if row else None
-
-
-def insert_agent_pool_row(payload: dict[str, Any]) -> dict[str, Any]:
-    row = get_db().execute(
-        """
-        INSERT INTO automation_agent_pool (
-            pool_code,
-            display_name,
-            description,
-            pool_type,
-            enabled,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING *
-        """,
-        (
-            _normalized_text(payload.get("pool_code")),
-            _normalized_text(payload.get("display_name")),
-            _normalized_text(payload.get("description")),
-            _normalized_text(payload.get("pool_type")) or "shared",
-            bool(payload.get("enabled", True)),
-            _normalized_text(payload.get("created_by")),
-            _normalized_text(payload.get("updated_by")),
-        ),
-    ).fetchone()
-    return _serialize_agent_pool_row(dict(row) if row else {})
-
-
-def update_agent_pool_row(agent_pool_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-    row = get_db().execute(
-        """
-        UPDATE automation_agent_pool
-        SET pool_code = ?,
-            display_name = ?,
-            description = ?,
-            pool_type = ?,
-            enabled = ?,
-            updated_by = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-        RETURNING *
-        """,
-        (
-            _normalized_text(payload.get("pool_code")),
-            _normalized_text(payload.get("display_name")),
-            _normalized_text(payload.get("description")),
-            _normalized_text(payload.get("pool_type")) or "shared",
-            bool(payload.get("enabled", True)),
-            _normalized_text(payload.get("updated_by")),
-            int(agent_pool_id),
-        ),
-    ).fetchone()
-    return _serialize_agent_pool_row(dict(row) if row else {})
-
-
-def list_agent_pool_agent_rows(agent_pool_id: int) -> list[dict[str, Any]]:
-    return [
-        _serialize_agent_pool_agent_row(row)
-        for row in _fetchall_dicts(
-            """
-            SELECT
-                a.*,
-                c.display_name AS agent_display_name
-            FROM automation_agent_pool_agent a
-            LEFT JOIN automation_agent_config c ON c.agent_code = a.agent_code
-            WHERE a.agent_pool_id = ?
-            ORDER BY a.position_index ASC, a.id ASC
-            """,
-            (int(agent_pool_id),),
-        )
-    ]
-
-
-def list_agent_pool_rows_for_agent(agent_code: str) -> list[dict[str, Any]]:
-    return [
-        _serialize_agent_pool_row(row)
-        for row in _fetchall_dicts(
-            """
-            SELECT p.*
-            FROM automation_agent_pool p
-            INNER JOIN automation_agent_pool_agent a ON a.agent_pool_id = p.id
-            WHERE a.agent_code = ?
-            ORDER BY p.updated_at DESC, p.id DESC
-            """,
-            (_normalized_text(agent_code),),
-        )
-    ]
-
-
-def delete_agent_pool_agent_rows(agent_pool_id: int) -> None:
-    get_db().execute("DELETE FROM automation_agent_pool_agent WHERE agent_pool_id = ?", (int(agent_pool_id),))
-
-
-def insert_agent_pool_agent_row(payload: dict[str, Any]) -> dict[str, Any]:
-    row = get_db().execute(
-        """
-        INSERT INTO automation_agent_pool_agent (
-            agent_pool_id,
-            agent_code,
-            role_code,
-            position_index,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        RETURNING *
-        """,
-        (
-            int(payload.get("agent_pool_id") or 0),
-            _normalized_text(payload.get("agent_code")),
-            _normalized_text(payload.get("role_code")) or "primary",
-            int(payload.get("position_index") or 0),
-        ),
-    ).fetchone()
-    return _serialize_agent_pool_agent_row(dict(row) if row else {})
-
-
-def list_agent_config_codes() -> list[str]:
-    rows = _fetchall_dicts("SELECT agent_code FROM automation_agent_config ORDER BY agent_code ASC")
-    return [_normalized_text(row.get("agent_code")) for row in rows if _normalized_text(row.get("agent_code"))]
+        sql += " AND COALESCE(enabled, FALSE) IS TRUE AND published_version > 0"
+    sql += " ORDER BY updated_at DESC, agent_code ASC"
+    return _fetchall_dicts(sql, tuple(params))
 
 
 def get_questionnaire_row(questionnaire_id: int) -> dict[str, Any] | None:
@@ -774,47 +621,49 @@ def insert_workflow_audience_row(payload: dict[str, Any]) -> dict[str, Any]:
     return _serialize_workflow_audience_row(dict(row) if row else {})
 
 
-def list_workflow_agent_pool_binding_rows(workflow_id: int) -> list[dict[str, Any]]:
+def list_workflow_agent_binding_rows(workflow_id: int) -> list[dict[str, Any]]:
     return [
-        _serialize_workflow_agent_pool_binding_row(row)
+        _serialize_workflow_agent_binding_row(row)
         for row in _fetchall_dicts(
             """
             SELECT *
-            FROM automation_workflow_agent_pool_binding
+            FROM automation_workflow_agent_binding
             WHERE workflow_id = ?
-            ORDER BY binding_scope ASC, segment_key ASC, id ASC
+            ORDER BY COALESCE(node_id, 0) ASC, binding_scope ASC, segment_key ASC, id ASC
             """,
             (int(workflow_id),),
         )
     ]
 
 
-def delete_workflow_agent_pool_binding_rows(workflow_id: int) -> None:
-    get_db().execute("DELETE FROM automation_workflow_agent_pool_binding WHERE workflow_id = ?", (int(workflow_id),))
+def delete_workflow_agent_binding_rows(workflow_id: int) -> None:
+    get_db().execute("DELETE FROM automation_workflow_agent_binding WHERE workflow_id = ?", (int(workflow_id),))
 
 
-def insert_workflow_agent_pool_binding_row(payload: dict[str, Any]) -> dict[str, Any]:
+def insert_workflow_agent_binding_row(payload: dict[str, Any]) -> dict[str, Any]:
     row = get_db().execute(
         """
-        INSERT INTO automation_workflow_agent_pool_binding (
+        INSERT INTO automation_workflow_agent_binding (
             workflow_id,
-            agent_pool_id,
+            node_id,
             binding_scope,
             segment_key,
+            agent_code,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
             int(payload.get("workflow_id") or 0),
-            int(payload.get("agent_pool_id") or 0),
+            int(payload.get("node_id") or 0) or None,
             _normalized_text(payload.get("binding_scope")) or "default",
             _normalized_text(payload.get("segment_key")),
+            _normalized_text(payload.get("agent_code")),
         ),
     ).fetchone()
-    return _serialize_workflow_agent_pool_binding_row(dict(row) if row else {})
+    return _serialize_workflow_agent_binding_row(dict(row) if row else {})
 
 
 def list_workflow_node_rows(workflow_id: int) -> list[dict[str, Any]]:
@@ -1547,7 +1396,7 @@ def insert_workflow_execution_item_row(payload: dict[str, Any]) -> dict[str, Any
             external_contact_id,
             rendered_content_text,
             content_snapshot_json,
-            agent_pool_id,
+            agent_code,
             agent_run_id,
             agent_output_id,
             status,
@@ -1570,7 +1419,7 @@ def insert_workflow_execution_item_row(payload: dict[str, Any]) -> dict[str, Any
             _normalized_text(payload.get("external_contact_id")),
             _normalized_text(payload.get("rendered_content_text")),
             json.dumps(payload.get("content_snapshot_json") or {}, ensure_ascii=False),
-            int(payload.get("agent_pool_id") or 0) or None,
+            _normalized_text(payload.get("agent_code")),
             _normalized_text(payload.get("agent_run_id")),
             _normalized_text(payload.get("agent_output_id")),
             _normalized_text(payload.get("status")) or "pending",
@@ -1593,7 +1442,7 @@ def update_workflow_execution_item_row(execution_item_id: int, payload: dict[str
             external_contact_id = ?,
             rendered_content_text = ?,
             content_snapshot_json = ?,
-            agent_pool_id = ?,
+            agent_code = ?,
             agent_run_id = ?,
             agent_output_id = ?,
             status = ?,
@@ -1612,7 +1461,7 @@ def update_workflow_execution_item_row(execution_item_id: int, payload: dict[str
             _normalized_text(payload.get("external_contact_id")),
             _normalized_text(payload.get("rendered_content_text")),
             json.dumps(payload.get("content_snapshot_json") or {}, ensure_ascii=False),
-            int(payload.get("agent_pool_id") or 0) or None,
+            _normalized_text(payload.get("agent_code")),
             _normalized_text(payload.get("agent_run_id")),
             _normalized_text(payload.get("agent_output_id")),
             _normalized_text(payload.get("status")) or "pending",
