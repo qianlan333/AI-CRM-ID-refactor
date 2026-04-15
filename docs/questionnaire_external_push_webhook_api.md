@@ -83,6 +83,7 @@ Content-Type: application/json
   "user_id": "union-external-push-success-001",
   "questionnaire_title": "来访测评",
   "submitted_at": "2026-04-06T18:21:10+08:00",
+  "phone_number": "13800138012",
   "day": 20,
   "frequency": 20,
   "remark": "黄小璨 499 用户激活",
@@ -115,6 +116,7 @@ Content-Type: application/json
 | `user_id` | `string` | 是 | 用户标识。当前实现取提交记录里的 `respondent_key` 优先值，因此通常等于 `unionid` / `openid` / `external_userid` 之一；若这些都没有，可能退化为系统生成的匿名键。你方不能假设它一定是企业微信用户 ID。 |
 | `questionnaire_title` | `string` | 是 | 问卷标题。 |
 | `submitted_at` | `string` | 是 | 提交时间，ISO 8601 字符串，例如 `2026-04-06T18:21:10+08:00`。 |
+| `phone_number` | `string` | 是 | 若问卷里存在手机号题且用户提交了该值，这里发送该手机号；若问卷没有手机号题，或该字段最终没有值，则固定发送字符串 `"NULL"`。 |
 | `day` | `number` | 否 | 后台为当前问卷手动配置的固定数字字段。未配置时不发送。 |
 | `frequency` | `number` | 否 | 后台为当前问卷手动配置的固定数字字段。未配置时不发送。 |
 | `remark` | `string` | 否 | 后台为当前问卷手动配置的固定文本字段。未配置时不发送。 |
