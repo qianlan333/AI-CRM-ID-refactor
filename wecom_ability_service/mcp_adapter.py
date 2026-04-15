@@ -25,6 +25,8 @@ from .domains.automation_conversion import (
     create_agent_output_export_job,
     create_conversion_workflow,
     create_conversion_workflow_node,
+    update_conversion_workflow,
+    update_conversion_workflow_node,
     list_pending_agent_prompt_publish_requests,
     get_agent_config_detail,
     get_all_agent_prompts,
@@ -858,6 +860,73 @@ TOOL_DEFS = [
                 "idempotency_key": {"type": "string"},
             },
             "required": ["workflow_id", "node_name", "target_audience_code"],
+        },
+    },
+    {
+        "name": "crm.automation.update_workflow",
+        "description": "Update one existing CRM automation-conversion workflow.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workflow_id": {"type": "integer"},
+                "workflow_name": {"type": "string"},
+                "workflow_code": {"type": "string"},
+                "description": {"type": "string"},
+                "status": {"type": "string", "enum": ["draft", "active", "paused"]},
+                "segmentation_basis": {"type": "string", "enum": ["none", "profile", "behavior"]},
+                "generation_mode": {
+                    "type": "string",
+                    "enum": ["manual_layered", "auto_layered_rewrite", "personalized_single"],
+                },
+                "profile_segment_template_id": {"type": "integer", "minimum": 1},
+                "fallback_to_standard_content": {"type": "boolean"},
+                "audiences": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["pending_questionnaire", "operating", "converted"],
+                    },
+                },
+                "agent_bindings": {"type": "array", "items": {"type": "object"}},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["workflow_id"],
+        },
+    },
+    {
+        "name": "crm.automation.update_workflow_node",
+        "description": "Update one existing node under a CRM automation-conversion workflow.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "integer"},
+                "node_name": {"type": "string"},
+                "node_code": {"type": "string"},
+                "target_audience_code": {
+                    "type": "string",
+                    "enum": ["pending_questionnaire", "operating", "converted"],
+                },
+                "trigger_mode": {"type": "string", "enum": ["scheduled", "audience_entered"]},
+                "day_offset": {"type": "integer", "minimum": 1},
+                "send_time": {"type": "string"},
+                "timezone": {"type": "string"},
+                "position_index": {"type": "integer", "minimum": 0},
+                "enabled": {"type": "boolean"},
+                "content_mode": {
+                    "type": "string",
+                    "enum": ["standard_direct", "manual_layered", "standard_layered_rewrite", "personalized_single"],
+                },
+                "segmentation_basis": {"type": "string", "enum": ["none", "profile", "behavior"]},
+                "standard_content_text": {"type": "string"},
+                "standard_content_payload": {"type": "object"},
+                "fallback_to_standard_content": {"type": "boolean"},
+                "content_variants": {"type": "array", "items": {"type": "object"}},
+                "agent_bindings": {"type": "array", "items": {"type": "object"}},
+                "operator": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": ["node_id"],
         },
     },
     {
@@ -2388,6 +2457,64 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             permission_scope="workflow_write",
             fn=lambda: create_conversion_workflow_node(
                 int(arguments.get("workflow_id") or 0),
+                {
+                    key: value
+                    for key, value in {
+                        "node_name": arguments.get("node_name"),
+                        "node_code": arguments.get("node_code"),
+                        "target_audience_code": arguments.get("target_audience_code"),
+                        "trigger_mode": arguments.get("trigger_mode"),
+                        "day_offset": arguments.get("day_offset"),
+                        "send_time": arguments.get("send_time"),
+                        "timezone": arguments.get("timezone"),
+                        "position_index": arguments.get("position_index"),
+                        "enabled": arguments.get("enabled"),
+                        "content_mode": arguments.get("content_mode"),
+                        "segmentation_basis": arguments.get("segmentation_basis"),
+                        "standard_content_text": arguments.get("standard_content_text"),
+                        "standard_content_payload": arguments.get("standard_content_payload"),
+                        "fallback_to_standard_content": arguments.get("fallback_to_standard_content"),
+                        "content_variants": arguments.get("content_variants"),
+                        "agent_bindings": arguments.get("agent_bindings"),
+                    }.items()
+                    if value is not None
+                },
+                operator_id=str(arguments.get("operator") or "lobster_mcp").strip() or "lobster_mcp",
+            ),
+        )
+    if name == "crm.automation.update_workflow":
+        return _run_agent_skill(
+            "crm.automation.update_workflow",
+            arguments,
+            permission_scope="workflow_write",
+            fn=lambda: update_conversion_workflow(
+                int(arguments.get("workflow_id") or 0),
+                {
+                    key: value
+                    for key, value in {
+                        "workflow_name": arguments.get("workflow_name"),
+                        "workflow_code": arguments.get("workflow_code"),
+                        "description": arguments.get("description"),
+                        "status": arguments.get("status"),
+                        "segmentation_basis": arguments.get("segmentation_basis"),
+                        "generation_mode": arguments.get("generation_mode"),
+                        "profile_segment_template_id": arguments.get("profile_segment_template_id"),
+                        "fallback_to_standard_content": arguments.get("fallback_to_standard_content"),
+                        "audiences": arguments.get("audiences"),
+                        "agent_bindings": arguments.get("agent_bindings"),
+                    }.items()
+                    if value is not None
+                },
+                operator_id=str(arguments.get("operator") or "lobster_mcp").strip() or "lobster_mcp",
+            ),
+        )
+    if name == "crm.automation.update_workflow_node":
+        return _run_agent_skill(
+            "crm.automation.update_workflow_node",
+            arguments,
+            permission_scope="workflow_write",
+            fn=lambda: update_conversion_workflow_node(
+                int(arguments.get("node_id") or 0),
                 {
                     key: value
                     for key, value in {
