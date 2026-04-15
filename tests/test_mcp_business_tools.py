@@ -652,3 +652,71 @@ def test_task_requires_confirm_when_dry_run_is_false(client, app, monkeypatch):
 
     payload = response.get_json()
     assert payload["error"]["message"] == "confirm=true is required when dry_run=false"
+
+
+def test_crm_automation_workflow_tools_can_list_and_create_workflows_and_nodes(client):
+    registry_response = _mcp_call(client, "crm.automation.get_workflow_registry", {})
+    registry_payload = registry_response.get_json()["result"]["structuredContent"]
+    assert registry_payload["audiences"]
+    assert registry_payload["generation_modes"]
+    assert registry_payload["node_trigger_modes"]
+
+    empty_list_response = _mcp_call(client, "crm.automation.list_workflows", {})
+    empty_list_payload = empty_list_response.get_json()["result"]["structuredContent"]
+    assert empty_list_payload["total"] == 0
+    assert empty_list_payload["items"] == []
+
+    create_workflow_response = _mcp_call(
+        client,
+        "crm.automation.create_workflow",
+        {
+            "workflow_name": "新客欢迎流",
+            "workflow_code": "welcome_flow",
+            "description": "给运营池新客的欢迎任务流",
+            "status": "draft",
+            "segmentation_basis": "none",
+            "generation_mode": "manual_layered",
+            "audiences": ["operating"],
+            "operator": "tester-workflow",
+        },
+    )
+    workflow_bundle = create_workflow_response.get_json()["result"]["structuredContent"]["workflow_bundle"]
+    workflow_id = workflow_bundle["workflow"]["id"]
+    assert workflow_bundle["workflow"]["workflow_code"] == "welcome_flow"
+    assert workflow_bundle["workflow"]["workflow_name"] == "新客欢迎流"
+    assert workflow_bundle["nodes"] == []
+
+    create_node_response = _mcp_call(
+        client,
+        "crm.automation.create_workflow_node",
+        {
+            "workflow_id": workflow_id,
+            "node_name": "欢迎首触达",
+            "node_code": "welcome_touch_1",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "content_mode": "standard_direct",
+            "standard_content_text": "欢迎加入，我们先带你完成第一步设置。",
+            "operator": "tester-workflow",
+        },
+    )
+    node_payload = create_node_response.get_json()["result"]["structuredContent"]["node"]
+    assert node_payload["node_code"] == "welcome_touch_1"
+    assert node_payload["node_name"] == "欢迎首触达"
+    assert node_payload["target_audience_code"] == "operating"
+    assert node_payload["content_mode"] == "standard_direct"
+
+    nodes_response = _mcp_call(
+        client,
+        "crm.automation.get_workflow_nodes",
+        {"workflow_id": workflow_id},
+    )
+    nodes_payload = nodes_response.get_json()["result"]["structuredContent"]
+    assert nodes_payload["total"] == 1
+    assert nodes_payload["items"][0]["node_code"] == "welcome_touch_1"
+
+    list_response = _mcp_call(client, "crm.automation.list_workflows", {"status": "draft"})
+    list_payload = list_response.get_json()["result"]["structuredContent"]
+    assert list_payload["total"] == 1
+    assert list_payload["items"][0]["workflow"]["workflow_code"] == "welcome_flow"
+    assert list_payload["items"][0]["nodes"][0]["node_code"] == "welcome_touch_1"
