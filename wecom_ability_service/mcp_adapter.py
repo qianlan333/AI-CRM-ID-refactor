@@ -795,6 +795,13 @@ TOOL_DEFS = [
                 "enabled": {"type": "boolean"},
                 "role_prompt": {"type": "string"},
                 "task_prompt": {"type": "string"},
+                "enabled_context_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["questionnaire", "recent_messages", "user_tags", "activation_info"],
+                    },
+                },
                 "variables": {"type": "array"},
                 "output_schema": {"type": "array"},
                 "change_summary": {"type": "string"},
@@ -843,6 +850,13 @@ TOOL_DEFS = [
                 "enabled": {"type": "boolean"},
                 "role_prompt": {"type": "string"},
                 "task_prompt": {"type": "string"},
+                "enabled_context_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["questionnaire", "recent_messages", "user_tags", "activation_info"],
+                    },
+                },
                 "variables": {"type": "array"},
                 "output_schema": {"type": "array"},
                 "change_summary": {"type": "string"},
@@ -2255,6 +2269,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                         "enabled": arguments.get("enabled"),
                         "role_prompt": arguments.get("role_prompt"),
                         "task_prompt": arguments.get("task_prompt"),
+                        "enabled_context_sources": arguments.get("enabled_context_sources"),
                         "variables": arguments.get("variables"),
                         "output_schema": arguments.get("output_schema"),
                         "change_summary": arguments.get("change_summary"),
@@ -2287,6 +2302,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                             "enabled": arguments.get("enabled"),
                             "role_prompt": arguments.get("role_prompt"),
                             "task_prompt": arguments.get("task_prompt"),
+                            "enabled_context_sources": arguments.get("enabled_context_sources"),
                             "variables": arguments.get("variables"),
                             "output_schema": arguments.get("output_schema"),
                             "change_summary": arguments.get("change_summary"),

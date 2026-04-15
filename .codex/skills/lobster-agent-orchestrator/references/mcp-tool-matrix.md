@@ -1,5 +1,17 @@
 # MCP Tool Matrix
 
+## 当前结论
+
+龙虾现在可以继续使用这套 skill 能力，但要按新版口径调用：
+
+- 优先传 `enabled_context_sources`
+- 不再把 `variables / output_schema` 当成主输入
+- 提示词里直接写占位符：
+  - `{{问卷信息}}`
+  - `{{最近20条聊天信息}}`
+  - `{{用户标签}}`
+  - `{{激活信息}}`
+
 ## 只读
 
 - `list_agent_configs`
@@ -44,22 +56,10 @@
   "display_name": "问卷跟进 Agent",
   "enabled": true,
   "role_prompt": "你是问卷跟进 Agent。",
-  "task_prompt": "基于问卷明细生成首轮跟进话术。",
-  "variables": [
-    {
-      "variable_key": "questionnaire_answers",
-      "display_name": "问卷答案",
-      "description": "结构化问卷答案",
-      "enabled": true
-    }
-  ],
-  "output_schema": [
-    {
-      "field_key": "draft_reply",
-      "display_name": "草稿回复",
-      "type": "string",
-      "required": true
-    }
+  "task_prompt": "请基于 {{问卷信息}} 和 {{用户标签}} 生成一条首轮跟进话术。",
+  "enabled_context_sources": [
+    "questionnaire",
+    "user_tags"
   ],
   "change_summary": "新建问卷跟进 Agent",
   "operator": "lobster"
@@ -71,9 +71,34 @@
 ```json
 {
   "agent_code": "pricing_agent",
-  "task_prompt": "先解释价格结构，再收敛到下一步动作。",
-  "change_summary": "收紧价格答疑脚本",
+  "task_prompt": "请结合 {{最近20条聊天信息}} 和 {{激活信息}}，输出一条自然的价格答疑话术。",
+  "enabled_context_sources": [
+    "recent_messages",
+    "activation_info"
+  ],
+  "change_summary": "收紧价格话术",
   "expected_draft_version": 7,
   "operator": "lobster"
 }
 ```
+
+## get_agent_config 读取重点
+
+优先看这些字段：
+
+- `agent.agent_code`
+- `agent.display_name`
+- `agent.draft.role_prompt`
+- `agent.draft.task_prompt`
+- `agent.draft.enabled_context_sources`
+- `agent.published.role_prompt`
+- `agent.published.task_prompt`
+- `agent.published.enabled_context_sources`
+- `agent.draft_version`
+- `agent.published_version`
+
+## 注意事项
+
+- `variables / output_schema` 仍可能在返回里保留，用于后端兼容，不是运营主编辑口径
+- 当前系统内部固定输出 `draft_reply`
+- skill 不应该再引导运营去写数组 JSON 或输出 schema
