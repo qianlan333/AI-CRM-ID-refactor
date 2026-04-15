@@ -62,6 +62,20 @@ _ALLOWED_NODE_TRIGGER_MODES = {
     NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
 }
 
+NODE_CONTENT_MODE_STANDARD_DIRECT = "standard_direct"
+NODE_CONTENT_MODE_MANUAL_LAYERED = "manual_layered"
+NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE = "standard_layered_rewrite"
+NODE_CONTENT_MODE_PERSONALIZED_SINGLE = "personalized_single"
+
+_ALLOWED_NODE_CONTENT_MODES = {
+    NODE_CONTENT_MODE_STANDARD_DIRECT,
+    NODE_CONTENT_MODE_MANUAL_LAYERED,
+    NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
+    NODE_CONTENT_MODE_PERSONALIZED_SINGLE,
+}
+
+_NODE_CONTENT_META_KEY = "_automation_conversion_node_meta"
+
 
 def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
@@ -139,6 +153,102 @@ def _validate_node_trigger_mode(value: Any) -> str:
     if normalized not in _ALLOWED_NODE_TRIGGER_MODES:
         raise ValueError("trigger_mode must be one of scheduled, audience_entered")
     return normalized
+
+
+def _workflow_generation_mode_to_node_content_mode(value: Any) -> str:
+    generation_mode = _normalized_text(value)
+    if generation_mode == GENERATION_MODE_MANUAL_LAYERED:
+        return NODE_CONTENT_MODE_MANUAL_LAYERED
+    if generation_mode == GENERATION_MODE_AUTO_LAYERED_REWRITE:
+        return NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE
+    if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
+        return NODE_CONTENT_MODE_PERSONALIZED_SINGLE
+    return NODE_CONTENT_MODE_STANDARD_DIRECT
+
+
+def _node_content_mode_to_generation_mode(value: Any) -> str:
+    content_mode = _normalized_text(value)
+    if content_mode == NODE_CONTENT_MODE_MANUAL_LAYERED:
+        return GENERATION_MODE_MANUAL_LAYERED
+    if content_mode == NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE:
+        return GENERATION_MODE_AUTO_LAYERED_REWRITE
+    if content_mode == NODE_CONTENT_MODE_PERSONALIZED_SINGLE:
+        return GENERATION_MODE_PERSONALIZED_SINGLE
+    return ""
+
+
+def _normalize_node_content_mode(value: Any, *, default: str) -> str:
+    normalized = _normalized_text(value) or _normalized_text(default) or NODE_CONTENT_MODE_STANDARD_DIRECT
+    if normalized not in _ALLOWED_NODE_CONTENT_MODES:
+        raise ValueError("content_mode must be one of standard_direct, manual_layered, standard_layered_rewrite, personalized_single")
+    return normalized
+
+
+def _strip_node_content_meta(payload: Any) -> dict[str, Any]:
+    cleaned = dict(payload or {})
+    cleaned.pop(_NODE_CONTENT_META_KEY, None)
+    return cleaned
+
+
+def _build_node_content_payload_json(
+    payload: Any,
+    *,
+    content_mode: str,
+    segmentation_basis: str,
+) -> dict[str, Any]:
+    base_payload = _strip_node_content_meta(payload)
+    base_payload[_NODE_CONTENT_META_KEY] = {
+        "content_mode": _normalized_text(content_mode) or NODE_CONTENT_MODE_STANDARD_DIRECT,
+        "segmentation_basis": _normalized_text(segmentation_basis) or SEGMENTATION_BASIS_NONE,
+    }
+    return base_payload
+
+
+def _extract_node_content_meta(content_payload: Any) -> dict[str, str]:
+    payload = dict(content_payload or {})
+    meta = dict(payload.get(_NODE_CONTENT_META_KEY) or {})
+    content_mode = _normalized_text(meta.get("content_mode"))
+    if content_mode not in _ALLOWED_NODE_CONTENT_MODES:
+        content_mode = ""
+    segmentation_basis = _normalized_text(meta.get("segmentation_basis"))
+    if segmentation_basis not in _ALLOWED_SEGMENTATION_BASES:
+        segmentation_basis = ""
+    return {
+        "content_mode": content_mode,
+        "segmentation_basis": segmentation_basis,
+    }
+
+
+def _binding_scope_to_segmentation_basis(binding_scope: str) -> str:
+    normalized = _normalized_text(binding_scope)
+    if normalized == AGENT_BINDING_SCOPE_PROFILE_CATEGORY:
+        return SEGMENTATION_BASIS_PROFILE
+    if normalized == AGENT_BINDING_SCOPE_BEHAVIOR_TIER:
+        return SEGMENTATION_BASIS_BEHAVIOR
+    return SEGMENTATION_BASIS_NONE
+
+
+def _variant_scope_to_segmentation_basis(variant_scope: str) -> str:
+    normalized = _normalized_text(variant_scope)
+    if normalized == NODE_CONTENT_VARIANT_SCOPE_PROFILE_CATEGORY:
+        return SEGMENTATION_BASIS_PROFILE
+    if normalized == NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER:
+        return SEGMENTATION_BASIS_BEHAVIOR
+    return SEGMENTATION_BASIS_NONE
+
+
+def _allowed_manual_variant_keys_for_basis(workflow_bundle: dict[str, Any], segmentation_basis: str) -> tuple[str, list[str]]:
+    normalized_basis = _normalized_text(segmentation_basis)
+    if normalized_basis == SEGMENTATION_BASIS_PROFILE:
+        keys = [
+            _normalized_text(item.get("category_key"))
+            for item in (workflow_bundle.get("profile_segment_template") or {}).get("categories") or []
+            if bool(item.get("enabled"))
+        ]
+        return NODE_CONTENT_VARIANT_SCOPE_PROFILE_CATEGORY, keys
+    if normalized_basis == SEGMENTATION_BASIS_BEHAVIOR:
+        return NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER, _behavior_tier_codes()
+    return "", []
 
 
 def _normalize_template_categories_payload(payload: Any) -> list[dict[str, Any]]:
@@ -590,18 +700,71 @@ def _normalize_workflow_payload(payload: dict[str, Any], *, existing: dict[str, 
 
 def _allowed_manual_variant_keys(workflow_bundle: dict[str, Any]) -> tuple[str, list[str]]:
     workflow = dict(workflow_bundle.get("workflow") or {})
-    segmentation_basis = _normalized_text(workflow.get("segmentation_basis"))
-    if segmentation_basis == SEGMENTATION_BASIS_PROFILE:
-        keys = [_normalized_text(item.get("category_key")) for item in (workflow_bundle.get("profile_segment_template") or {}).get("categories") or [] if bool(item.get("enabled"))]
-        return NODE_CONTENT_VARIANT_SCOPE_PROFILE_CATEGORY, keys
-    if segmentation_basis == SEGMENTATION_BASIS_BEHAVIOR:
-        return NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER, _behavior_tier_codes()
-    return "", []
+    return _allowed_manual_variant_keys_for_basis(workflow_bundle, _normalized_text(workflow.get("segmentation_basis")))
 
 
-def _build_node_bundle(node: dict[str, Any], workflow_bundle: dict[str, Any]) -> dict[str, Any]:
+def _resolve_node_content_mode_and_basis(
+    *,
+    workflow: dict[str, Any],
+    content_row: dict[str, Any],
+    variants: list[dict[str, Any]],
+    node_bindings: list[dict[str, Any]],
+) -> tuple[str, str]:
+    meta = _extract_node_content_meta(content_row.get("standard_content_payload_json") or {})
+    content_mode = _normalized_text(meta.get("content_mode"))
+    segmentation_basis = _normalized_text(meta.get("segmentation_basis"))
+    if content_mode and content_mode in _ALLOWED_NODE_CONTENT_MODES:
+        if content_mode in {
+            NODE_CONTENT_MODE_MANUAL_LAYERED,
+            NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
+        } and segmentation_basis not in {SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
+            segmentation_basis = _normalized_text(workflow.get("segmentation_basis"))
+        if content_mode not in {
+            NODE_CONTENT_MODE_MANUAL_LAYERED,
+            NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
+        }:
+            segmentation_basis = SEGMENTATION_BASIS_NONE
+        return content_mode, segmentation_basis or SEGMENTATION_BASIS_NONE
+
+    if node_bindings:
+        binding_scope = _normalized_text((node_bindings[0] or {}).get("binding_scope"))
+        if binding_scope == AGENT_BINDING_SCOPE_PERSONALIZED:
+            return NODE_CONTENT_MODE_PERSONALIZED_SINGLE, SEGMENTATION_BASIS_NONE
+        inferred_basis = _binding_scope_to_segmentation_basis(binding_scope)
+        if inferred_basis in {SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
+            return NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE, inferred_basis
+
+    if variants:
+        inferred_basis = _variant_scope_to_segmentation_basis(_normalized_text((variants[0] or {}).get("variant_scope")))
+        if inferred_basis in {SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
+            return NODE_CONTENT_MODE_MANUAL_LAYERED, inferred_basis
+
+    fallback_mode = _workflow_generation_mode_to_node_content_mode(workflow.get("generation_mode"))
+    fallback_basis = _normalized_text(workflow.get("segmentation_basis")) or SEGMENTATION_BASIS_NONE
+    if fallback_mode in {
+        NODE_CONTENT_MODE_MANUAL_LAYERED,
+        NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
+    } and fallback_basis in {SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
+        return fallback_mode, fallback_basis
+    return NODE_CONTENT_MODE_STANDARD_DIRECT, SEGMENTATION_BASIS_NONE
+
+
+def _build_node_bundle(
+    node: dict[str, Any],
+    workflow_bundle: dict[str, Any],
+    *,
+    node_bindings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     content = workflow_repo.get_workflow_node_content_row(int(node["id"])) or {}
     variants = workflow_repo.list_workflow_node_content_variant_rows(int(content["id"])) if content else []
+    node_binding_items = [dict(item) for item in (node_bindings or [])]
+    workflow = dict(workflow_bundle.get("workflow") or {})
+    content_mode, segmentation_basis = _resolve_node_content_mode_and_basis(
+        workflow=workflow,
+        content_row=content,
+        variants=variants,
+        node_bindings=node_binding_items,
+    )
     return {
         "id": int(node["id"]),
         "node_code": _normalized_text(node.get("node_code")),
@@ -614,9 +777,12 @@ def _build_node_bundle(node: dict[str, Any], workflow_bundle: dict[str, Any]) ->
         "position_index": int(node.get("position_index") or 0),
         "enabled": bool(node.get("enabled")),
         "status": "enabled" if bool(node.get("enabled")) else "disabled",
+        "content_mode": content_mode,
+        "segmentation_basis": segmentation_basis,
         "standard_content_text": _normalized_text(content.get("standard_content_text")),
-        "standard_content_payload": dict(content.get("standard_content_payload_json") or {}),
+        "standard_content_payload": _strip_node_content_meta(content.get("standard_content_payload_json") or {}),
         "fallback_to_standard_content": bool(content.get("fallback_to_standard_content")) if content else True,
+        "agent_bindings": node_binding_items,
         "content_variants": [
             {
                 "id": int(item["id"]),
@@ -645,20 +811,23 @@ def _build_workflow_bundle(workflow: dict[str, Any]) -> dict[str, Any]:
         for item in workflow_repo.list_agent_config_summary_rows()
     }
     binding_items = []
+    node_bindings_by_node_id: dict[int, list[dict[str, Any]]] = {}
     for binding in bindings:
         agent_code = _normalized_text(binding.get("agent_code"))
         if not agent_code:
             continue
-        binding_items.append(
-            {
-                "id": int(binding["id"]),
-                "node_id": int(binding.get("node_id") or 0) or None,
-                "binding_scope": _normalized_text(binding.get("binding_scope")),
-                "segment_key": _normalized_text(binding.get("segment_key")),
-                "agent_code": agent_code,
-                "agent": dict(agent_map.get(agent_code) or {"agent_code": agent_code, "agent_name": agent_code, "status": ""}),
-            }
-        )
+        binding_item = {
+            "id": int(binding["id"]),
+            "node_id": int(binding.get("node_id") or 0) or None,
+            "binding_scope": _normalized_text(binding.get("binding_scope")),
+            "segment_key": _normalized_text(binding.get("segment_key")),
+            "agent_code": agent_code,
+            "agent": dict(agent_map.get(agent_code) or {"agent_code": agent_code, "agent_name": agent_code, "status": ""}),
+        }
+        if binding_item["node_id"]:
+            node_bindings_by_node_id.setdefault(int(binding_item["node_id"]), []).append(binding_item)
+        else:
+            binding_items.append(binding_item)
     workflow_payload = {
         "id": workflow_id,
         "workflow_code": _normalized_text(workflow.get("workflow_code")),
@@ -686,7 +855,14 @@ def _build_workflow_bundle(workflow: dict[str, Any]) -> dict[str, Any]:
         "agent_bindings": binding_items,
         "behavior_tiers": list_supported_behavior_tiers() if workflow_payload["segmentation_basis"] == SEGMENTATION_BASIS_BEHAVIOR else [],
     }
-    bundle["nodes"] = [_build_node_bundle(node, bundle) for node in nodes]
+    bundle["nodes"] = [
+        _build_node_bundle(
+            node,
+            bundle,
+            node_bindings=node_bindings_by_node_id.get(int(node["id"]), []),
+        )
+        for node in nodes
+    ]
     return bundle
 
 
@@ -713,37 +889,101 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
     trigger_mode = _validate_node_trigger_mode(
         source.get("trigger_mode") if "trigger_mode" in source else current.get("trigger_mode") or NODE_TRIGGER_MODE_SCHEDULED
     )
-    day_offset = _normalize_int(source.get("day_offset") if "day_offset" in source else current.get("day_offset"), default=1, minimum=1)
-    send_time = _validate_send_time(source.get("send_time") if "send_time" in source else current.get("send_time") or "09:00")
-    if trigger_mode == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
+
+    raw_day_offset = source.get("day_offset") if "day_offset" in source else current.get("day_offset")
+    raw_send_time = source.get("send_time") if "send_time" in source else current.get("send_time")
+    if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED:
+        if raw_day_offset in {None, ""}:
+            raise ValueError("day_offset is required when trigger_mode is scheduled")
+        if _normalized_text(raw_send_time) == "":
+            raise ValueError("send_time is required when trigger_mode is scheduled")
+        day_offset = _normalize_int(raw_day_offset, default=0, minimum=1)
+        if day_offset <= 0:
+            raise ValueError("day_offset is required when trigger_mode is scheduled")
+        send_time = _validate_send_time(raw_send_time)
+    else:
         day_offset = 1
         send_time = "00:00"
-    standard_content_text = _normalized_text(
+
+    default_content_mode = _workflow_generation_mode_to_node_content_mode(workflow.get("generation_mode"))
+    content_mode = _normalize_node_content_mode(
+        source.get("content_mode") if "content_mode" in source else current.get("content_mode"),
+        default=default_content_mode,
+    )
+    raw_segmentation_basis = source.get("segmentation_basis") if "segmentation_basis" in source else current.get("segmentation_basis")
+    if content_mode in {
+        NODE_CONTENT_MODE_MANUAL_LAYERED,
+        NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
+    }:
+        segmentation_basis = _normalized_text(raw_segmentation_basis) or _normalized_text(workflow.get("segmentation_basis"))
+        if segmentation_basis not in {SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
+            raise ValueError("segmentation_basis must be profile or behavior when content_mode requires layered segmentation")
+    else:
+        segmentation_basis = SEGMENTATION_BASIS_NONE
+
+    raw_standard_content_text = (
         source.get("standard_content_text")
         if "standard_content_text" in source
         else current.get("standard_content_text")
     )
-    if not standard_content_text:
-        raise ValueError("standard_content_text is required")
+    standard_content_text = _normalized_text(raw_standard_content_text)
+    if trigger_mode == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
+        day_offset = 1
+        send_time = "00:00"
     position_index = _normalize_int(
         source.get("position_index") if "position_index" in source else current.get("position_index"),
         default=len(workflow_bundle.get("nodes") or []),
         minimum=0,
     )
-    content_variants = _normalize_node_variants_payload(source.get("content_variants") if "content_variants" in source else current.get("content_variants") or [])
-    generation_mode = _normalized_text(workflow.get("generation_mode")) or GENERATION_MODE_MANUAL_LAYERED
-    variant_scope, allowed_keys = _allowed_manual_variant_keys(workflow_bundle)
-    if generation_mode != GENERATION_MODE_MANUAL_LAYERED and content_variants:
-        raise ValueError("content_variants is only allowed for manual_layered workflows")
-    if generation_mode == GENERATION_MODE_MANUAL_LAYERED:
-        if not allowed_keys and content_variants:
-            raise ValueError("current workflow segmentation does not allow content_variants")
+    content_variants_input = source.get("content_variants") if "content_variants" in source else current.get("content_variants") or []
+    content_variants = _normalize_node_variants_payload(content_variants_input)
+    agent_bindings_input = source.get("agent_bindings") if "agent_bindings" in source else current.get("agent_bindings") or []
+    agent_bindings = _normalize_workflow_agent_bindings(agent_bindings_input)
+
+    if content_mode == NODE_CONTENT_MODE_STANDARD_DIRECT:
+        if not standard_content_text:
+            raise ValueError("standard_content_text is required")
+        content_variants = []
+        agent_bindings = []
+    elif content_mode == NODE_CONTENT_MODE_MANUAL_LAYERED:
+        variant_scope, allowed_keys = _allowed_manual_variant_keys_for_basis(workflow_bundle, segmentation_basis)
+        if segmentation_basis == SEGMENTATION_BASIS_PROFILE and not allowed_keys:
+            raise ValueError("profile segmentation requires a workflow profile segment template")
+        if not content_variants:
+            raise ValueError("content_variants is required for manual_layered")
+        if not allowed_keys:
+            raise ValueError("current node segmentation does not allow content_variants")
         for item in content_variants:
             if item["segment_key"] not in allowed_keys:
                 raise ValueError(f"invalid content_variants.segment_key: {item['segment_key']}")
-    else:
-        variant_scope = ""
+        agent_bindings = []
+        content_variants = [
+            {
+                "variant_scope": variant_scope,
+                **item,
+            }
+            for item in content_variants
+        ]
+    elif content_mode == NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE:
+        if not standard_content_text:
+            raise ValueError("standard_content_text is required")
         content_variants = []
+        agent_bindings = _validate_workflow_agent_bindings(
+            segmentation_basis=segmentation_basis,
+            generation_mode=GENERATION_MODE_AUTO_LAYERED_REWRITE,
+            profile_segment_template_id=int(workflow.get("profile_segment_template_id") or 0) or None,
+            bindings=agent_bindings,
+        )
+    else:
+        standard_content_text = ""
+        content_variants = []
+        agent_bindings = _validate_workflow_agent_bindings(
+            segmentation_basis=SEGMENTATION_BASIS_NONE,
+            generation_mode=GENERATION_MODE_PERSONALIZED_SINGLE,
+            profile_segment_template_id=None,
+            bindings=agent_bindings,
+        )
+
     return {
         "node_code": node_code,
         "node_name": node_name,
@@ -754,23 +994,27 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
         "timezone": _normalized_text(source.get("timezone") or current.get("timezone") or "Asia/Shanghai"),
         "position_index": position_index,
         "enabled": _normalize_bool(source.get("enabled"), default=_normalize_bool(current.get("enabled"), default=True)),
+        "content_mode": content_mode,
+        "segmentation_basis": segmentation_basis,
         "standard_content_text": standard_content_text,
-        "standard_content_payload_json": dict(source.get("standard_content_payload") or source.get("standard_content_payload_json") or current.get("standard_content_payload") or {}),
+        "standard_content_payload_json": _build_node_content_payload_json(
+            source.get("standard_content_payload")
+            or source.get("standard_content_payload_json")
+            or current.get("standard_content_payload")
+            or {},
+            content_mode=content_mode,
+            segmentation_basis=segmentation_basis,
+        ),
         "fallback_to_standard_content": _normalize_bool(
             source.get("fallback_to_standard_content"),
             default=_normalize_bool(current.get("fallback_to_standard_content"), default=True),
         ),
-        "content_variants": [
-            {
-                "variant_scope": variant_scope,
-                **item,
-            }
-            for item in content_variants
-        ],
+        "agent_bindings": agent_bindings,
+        "content_variants": content_variants,
     }
 
 
-def _save_node_content(node_id: int, normalized_node: dict[str, Any]) -> None:
+def _save_node_content(workflow_id: int, node_id: int, normalized_node: dict[str, Any]) -> None:
     content_row = workflow_repo.get_workflow_node_content_row(node_id)
     if content_row:
         saved_content = workflow_repo.update_workflow_node_content_row(
@@ -799,6 +1043,18 @@ def _save_node_content(node_id: int, normalized_node: dict[str, Any]) -> None:
                 "segment_key": item["segment_key"],
                 "content_text": item["content_text"],
                 "content_payload_json": item["content_payload_json"],
+            }
+        )
+
+    workflow_repo.delete_workflow_agent_binding_rows_for_node(int(workflow_id), int(node_id))
+    for item in normalized_node["agent_bindings"]:
+        workflow_repo.insert_workflow_agent_binding_row(
+            {
+                "workflow_id": int(workflow_id),
+                "node_id": int(node_id),
+                "binding_scope": item["binding_scope"],
+                "segment_key": item["segment_key"],
+                "agent_code": item["agent_code"],
             }
         )
 def list_conversion_workflow_registry() -> dict[str, Any]:
@@ -999,9 +1255,11 @@ def create_conversion_workflow_node(workflow_id: int, payload: dict[str, Any], *
     workflow_bundle = get_conversion_workflow_model_bundle(int(workflow_id))
     normalized = _normalize_node_payload(payload, workflow_bundle)
     node = workflow_repo.insert_workflow_node_row({"workflow_id": int(workflow_id), **normalized})
-    _save_node_content(int(node["id"]), normalized)
+    _save_node_content(int(workflow_id), int(node["id"]), normalized)
     get_db().commit()
-    return {"node": _build_node_bundle(workflow_repo.get_workflow_node_row(int(node["id"])) or node, get_conversion_workflow_model_bundle(int(workflow_id)))}
+    refreshed_workflow_bundle = get_conversion_workflow_model_bundle(int(workflow_id))
+    refreshed_node = next((item for item in refreshed_workflow_bundle.get("nodes") or [] if int(item.get("id") or 0) == int(node["id"])), None)
+    return {"node": refreshed_node or _build_node_bundle(workflow_repo.get_workflow_node_row(int(node["id"])) or node, refreshed_workflow_bundle)}
 
 
 def update_conversion_workflow_node(node_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
@@ -1009,14 +1267,14 @@ def update_conversion_workflow_node(node_id: int, payload: dict[str, Any], *, op
     if not existing:
         raise LookupError("workflow node not found")
     workflow_bundle = get_conversion_workflow_model_bundle(int(existing["workflow_id"]))
-    existing_node_bundle = _build_node_bundle(existing, workflow_bundle)
+    existing_node_bundle = next((item for item in workflow_bundle.get("nodes") or [] if int(item.get("id") or 0) == int(node_id)), None) or _build_node_bundle(existing, workflow_bundle)
     normalized = _normalize_node_payload(payload, workflow_bundle, existing=existing_node_bundle)
     workflow_repo.update_workflow_node_row(int(node_id), normalized)
-    _save_node_content(int(node_id), normalized)
+    _save_node_content(int(existing["workflow_id"]), int(node_id), normalized)
     get_db().commit()
     refreshed_workflow_bundle = get_conversion_workflow_model_bundle(int(existing["workflow_id"]))
-    refreshed_node = workflow_repo.get_workflow_node_row(int(node_id))
-    return {"node": _build_node_bundle(refreshed_node or existing, refreshed_workflow_bundle)}
+    refreshed_node = next((item for item in refreshed_workflow_bundle.get("nodes") or [] if int(item.get("id") or 0) == int(node_id)), None)
+    return {"node": refreshed_node or _build_node_bundle(workflow_repo.get_workflow_node_row(int(node_id)) or existing, refreshed_workflow_bundle)}
 
 
 def delete_conversion_workflow_node(node_id: int) -> dict[str, Any]:
