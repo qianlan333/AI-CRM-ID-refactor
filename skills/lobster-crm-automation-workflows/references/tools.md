@@ -79,6 +79,28 @@ The result should include workflow bundles with:
 - workflow-level agent bindings
 - nodes
 
+### Update Workflow
+
+Preferred method name:
+
+- `crm.automation.update_workflow`
+
+Minimum patch payload:
+
+```json
+{
+  "workflow_id": 12,
+  "workflow_name": "新客欢迎流 V2",
+  "description": "补充基础信息后的版本。"
+}
+```
+
+Notes:
+
+- `workflow_id` is required.
+- Only send the fields you want to change.
+- If you change `segmentation_basis`, `generation_mode`, or `audiences`, make sure the existing node structure still remains valid.
+
 ### Workflow Nodes
 
 Preferred method name:
@@ -157,6 +179,29 @@ Extra rules:
 - If `content_mode = standard_direct`, `standard_content_text` is required.
 - If `content_mode = manual_layered`, `content_variants` are required.
 - If `content_mode = standard_layered_rewrite` or `personalized_single`, valid `agent_bindings` are required.
+
+### Update Workflow Node
+
+Preferred method name:
+
+- `crm.automation.update_workflow_node`
+
+Minimum patch payload:
+
+```json
+{
+  "node_id": 34,
+  "node_name": "欢迎首触达 V2"
+}
+```
+
+Notes:
+
+- `node_id` is required.
+- Only send the fields you intend to change.
+- When switching a node to `standard_direct`, you must also provide `standard_content_text`.
+- When switching a node to `manual_layered`, you must also provide valid `content_variants`.
+- In inherited modes like `personalized_single`, prefer updating metadata fields first unless you are intentionally changing behavior.
 
 ## Practical Call Pattern
 

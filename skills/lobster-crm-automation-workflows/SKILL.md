@@ -1,6 +1,6 @@
 ---
 name: lobster-crm-automation-workflows
-description: Use when Lobster needs to inspect or create CRM automation-conversion workflows and workflow nodes through the `wecom_mcp` proxy. Covers listing all workflows, reading workflow nodes, creating new workflows, and adding new workflow nodes without relying on native `crm.automation.*` tools.
+description: Use when Lobster needs to inspect, create, or update CRM automation-conversion workflows and workflow nodes through the `wecom_mcp` proxy. Covers listing all workflows, reading workflow nodes, creating new workflows, adding new workflow nodes, and modifying existing workflow metadata or node metadata without relying on native `crm.automation.*` tools.
 ---
 
 # Lobster CRM Automation Workflows
@@ -15,6 +15,8 @@ Do not assume native `crm.automation.*` tools are visible in the current session
 - 查看某个任务流下的全部节点
 - 新增任务流
 - 在已有任务流下新增节点
+- 修改已有任务流
+- 修改已有任务流节点
 
 ## Workflow
 
@@ -30,7 +32,10 @@ Do not assume native `crm.automation.*` tools are visible in the current session
    - node listing: `crm.automation.get_workflow_nodes`
    - workflow creation: `crm.automation.create_workflow`
    - node creation: `crm.automation.create_workflow_node`
+   - workflow update: `crm.automation.update_workflow`
+   - node update: `crm.automation.update_workflow_node`
 6. To create a node, first confirm the target workflow exists.
+7. To update an existing workflow or node, first read the current object, then send a minimal patch payload instead of rewriting fields you do not intend to change.
 
 ## Operating Rules
 
@@ -41,6 +46,7 @@ Do not assume native `crm.automation.*` tools are visible in the current session
 - When creating a node, do not invent a `target_audience_code`. It must already belong to the workflow audiences.
 - If the user does not provide schedule details, prefer `trigger_mode = audience_entered`.
 - For `standard_direct` nodes, always provide `standard_content_text`.
+- For updates, prefer changing only the explicitly requested fields. Do not silently rewrite schedule, audience, or generation mode.
 - If the create call fails with a validation error, surface the exact constraint and adjust the payload instead of guessing silently.
 - If the first guessed category fails, retry with the other candidate category before concluding the workflow tools are unavailable.
 
@@ -53,6 +59,7 @@ Do not assume native `crm.automation.*` tools are visible in the current session
   - `status`
   - node count
 - When creating a workflow or node, always report the created IDs and codes.
+- When updating a workflow or node, always report the updated ID plus the fields that actually changed.
 
 ## References
 
