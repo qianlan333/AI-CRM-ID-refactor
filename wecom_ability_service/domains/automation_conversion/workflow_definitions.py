@@ -187,6 +187,10 @@ def list_supported_agent_pool_binding_scopes() -> list[dict[str, str]]:
     ]
 
 
+def list_supported_agent_binding_scopes() -> list[dict[str, str]]:
+    return list_supported_agent_pool_binding_scopes()
+
+
 def list_supported_node_content_variant_scopes() -> list[dict[str, str]]:
     return [
         {
