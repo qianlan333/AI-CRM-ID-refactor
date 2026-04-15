@@ -1,13 +1,13 @@
 ---
 name: lobster-crm-automation-workflows
-description: Use when Lobster needs to inspect or create CRM automation-conversion workflows and workflow nodes through MCP. Covers listing all workflows, reading workflow nodes, creating new workflows, and adding new workflow nodes.
+description: Use when Lobster needs to inspect or create CRM automation-conversion workflows and workflow nodes through the `wecom_mcp` proxy. Covers listing all workflows, reading workflow nodes, creating new workflows, and adding new workflow nodes without relying on native `crm.automation.*` tools.
 ---
 
 # Lobster CRM Automation Workflows
 
-This skill is for Lobster to operate the CRM automation-conversion workflow workspace through MCP.
+This skill is for Lobster to operate the CRM automation-conversion workflow workspace through the `wecom_mcp` proxy tool.
 
-It assumes the `openclaw-wecom-mcp` / `wecom-mcp` server is already enabled and reachable.
+Do not assume native `crm.automation.*` tools are visible in the current session. Use `wecom-preflight` plus `wecom_mcp list/call` instead.
 
 ## Use This Skill For
 
@@ -18,11 +18,19 @@ It assumes the `openclaw-wecom-mcp` / `wecom-mcp` server is already enabled and 
 
 ## Workflow
 
-1. If you are unsure which enum values are allowed, call `crm.automation.get_workflow_registry` first.
-2. To inspect current setup, call `crm.automation.list_workflows`.
-3. If the user asks for one workflow's nodes only, call `crm.automation.get_workflow_nodes`.
-4. To create a workflow, call `crm.automation.create_workflow`.
-5. To create a node, first confirm the target workflow exists, then call `crm.automation.create_workflow_node`.
+1. Before the first `wecom_mcp` call in a session, run the `wecom-preflight` skill.
+2. Discover the usable CRM MCP category before doing workflow operations:
+   - First try `wecom_mcp list crm`
+   - If that category is empty or unavailable, try `wecom_mcp list crm.automation`
+3. Use the category that returns workflow tools. Call methods through `wecom_mcp call <category> <method> <args>`.
+4. Do not guess method names. Prefer the exact method names returned by `wecom_mcp list <category>`.
+5. When the category lists the workflow methods, use this mapping:
+   - registry lookup: `crm.automation.get_workflow_registry`
+   - workflow listing: `crm.automation.list_workflows`
+   - node listing: `crm.automation.get_workflow_nodes`
+   - workflow creation: `crm.automation.create_workflow`
+   - node creation: `crm.automation.create_workflow_node`
+6. To create a node, first confirm the target workflow exists.
 
 ## Operating Rules
 
@@ -34,6 +42,7 @@ It assumes the `openclaw-wecom-mcp` / `wecom-mcp` server is already enabled and 
 - If the user does not provide schedule details, prefer `trigger_mode = audience_entered`.
 - For `standard_direct` nodes, always provide `standard_content_text`.
 - If the create call fails with a validation error, surface the exact constraint and adjust the payload instead of guessing silently.
+- If the first guessed category fails, retry with the other candidate category before concluding the workflow tools are unavailable.
 
 ## Response Style
 
@@ -47,4 +56,4 @@ It assumes the `openclaw-wecom-mcp` / `wecom-mcp` server is already enabled and 
 
 ## References
 
-- See [tools.md](references/tools.md) for tool contracts, enums, and minimal example payloads.
+- See [tools.md](references/tools.md) for `wecom_mcp` discovery flow, category fallback, and minimal payloads.

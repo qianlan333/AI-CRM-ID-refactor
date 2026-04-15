@@ -1,4 +1,4 @@
 interface:
   display_name: "Lobster CRM Workflow Ops"
-  short_description: "Inspect and create CRM automation workflows and nodes"
-  default_prompt: "Use $lobster-crm-automation-workflows to inspect or create CRM automation-conversion workflows and workflow nodes through MCP."
+  short_description: "Inspect and create CRM automation workflows via wecom_mcp"
+  default_prompt: "Use $lobster-crm-automation-workflows to inspect or create CRM automation-conversion workflows and workflow nodes through the wecom_mcp proxy, not by assuming native crm.automation.* tools exist."
