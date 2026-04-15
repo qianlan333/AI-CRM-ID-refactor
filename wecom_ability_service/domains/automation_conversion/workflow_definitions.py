@@ -15,6 +15,9 @@ GENERATION_MODE_MANUAL_LAYERED = "manual_layered"
 GENERATION_MODE_AUTO_LAYERED_REWRITE = "auto_layered_rewrite"
 GENERATION_MODE_PERSONALIZED_SINGLE = "personalized_single"
 
+NODE_TRIGGER_MODE_SCHEDULED = "scheduled"
+NODE_TRIGGER_MODE_AUDIENCE_ENTERED = "audience_entered"
+
 AGENT_POOL_TYPE_SHARED = "shared"
 AGENT_POOL_TYPE_REPLY = "reply"
 AGENT_POOL_TYPE_REWRITE = "rewrite"
@@ -119,6 +122,21 @@ def list_supported_generation_modes() -> list[dict[str, str]]:
             "mode_code": GENERATION_MODE_PERSONALIZED_SINGLE,
             "label": "单人定制化生成",
             "description": "每个任务流只绑定 1 个 Agent 池进行单人定制生成。",
+        },
+    ]
+
+
+def list_supported_node_trigger_modes() -> list[dict[str, str]]:
+    return [
+        {
+            "trigger_mode": NODE_TRIGGER_MODE_SCHEDULED,
+            "label": "按时间点运行",
+            "description": "按第 N 天和具体时间执行。",
+        },
+        {
+            "trigger_mode": NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
+            "label": "进入人群后立即运行",
+            "description": "成员进入目标人群后，runner 下一轮立即执行一次。",
         },
     ]
 

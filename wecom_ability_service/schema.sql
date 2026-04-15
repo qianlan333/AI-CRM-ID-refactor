@@ -2066,6 +2066,8 @@ CREATE TABLE IF NOT EXISTS automation_workflow_node (
     node_name TEXT NOT NULL DEFAULT '',
     target_audience_code TEXT NOT NULL
         CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+    trigger_mode TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (trigger_mode IN ('scheduled', 'audience_entered')),
     day_offset INTEGER NOT NULL DEFAULT 1,
     send_time TEXT NOT NULL DEFAULT '09:00',
     timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
@@ -2083,6 +2085,9 @@ ON automation_workflow_node (workflow_id, position_index ASC, id ASC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_schedule
 ON automation_workflow_node (target_audience_code, day_offset, send_time, enabled, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_trigger
+ON automation_workflow_node (target_audience_code, trigger_mode, enabled, id ASC);
 
 CREATE TABLE IF NOT EXISTS automation_workflow_node_content (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

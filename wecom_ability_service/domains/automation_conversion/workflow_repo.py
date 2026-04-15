@@ -111,6 +111,7 @@ def _serialize_workflow_node_row(row: dict[str, Any]) -> dict[str, Any]:
         **row,
         "workflow_id": int(row.get("workflow_id") or 0),
         "day_offset": int(row.get("day_offset") or 1),
+        "trigger_mode": _normalized_text(row.get("trigger_mode")) or "scheduled",
         "position_index": int(row.get("position_index") or 0),
         "enabled": _row_bool(row.get("enabled")),
     }
@@ -456,7 +457,7 @@ def insert_profile_segment_template_row(payload: dict[str, Any]) -> dict[str, An
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
@@ -852,6 +853,7 @@ def insert_workflow_node_row(payload: dict[str, Any]) -> dict[str, Any]:
             node_code,
             node_name,
             target_audience_code,
+            trigger_mode,
             day_offset,
             send_time,
             timezone,
@@ -860,7 +862,7 @@ def insert_workflow_node_row(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
@@ -868,6 +870,7 @@ def insert_workflow_node_row(payload: dict[str, Any]) -> dict[str, Any]:
             _normalized_text(payload.get("node_code")),
             _normalized_text(payload.get("node_name")),
             _normalized_text(payload.get("target_audience_code")),
+            _normalized_text(payload.get("trigger_mode")) or "scheduled",
             int(payload.get("day_offset") or 1),
             _normalized_text(payload.get("send_time")) or "09:00",
             _normalized_text(payload.get("timezone")) or "Asia/Shanghai",
@@ -885,6 +888,7 @@ def update_workflow_node_row(node_id: int, payload: dict[str, Any]) -> dict[str,
         SET node_code = ?,
             node_name = ?,
             target_audience_code = ?,
+            trigger_mode = ?,
             day_offset = ?,
             send_time = ?,
             timezone = ?,
@@ -898,6 +902,7 @@ def update_workflow_node_row(node_id: int, payload: dict[str, Any]) -> dict[str,
             _normalized_text(payload.get("node_code")),
             _normalized_text(payload.get("node_name")),
             _normalized_text(payload.get("target_audience_code")),
+            _normalized_text(payload.get("trigger_mode")) or "scheduled",
             int(payload.get("day_offset") or 1),
             _normalized_text(payload.get("send_time")) or "09:00",
             _normalized_text(payload.get("timezone")) or "Asia/Shanghai",

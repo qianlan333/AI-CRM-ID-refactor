@@ -22,8 +22,10 @@ from .workflow_definitions import (
     GENERATION_MODE_AUTO_LAYERED_REWRITE,
     GENERATION_MODE_MANUAL_LAYERED,
     GENERATION_MODE_PERSONALIZED_SINGLE,
+    NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
     NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER,
     NODE_CONTENT_VARIANT_SCOPE_PROFILE_CATEGORY,
+    NODE_TRIGGER_MODE_SCHEDULED,
     SEGMENTATION_BASIS_BEHAVIOR,
     SEGMENTATION_BASIS_NONE,
     SEGMENTATION_BASIS_PROFILE,
@@ -36,6 +38,7 @@ from .workflow_definitions import (
     list_supported_conversion_audiences,
     list_supported_generation_modes,
     list_supported_node_content_variant_scopes,
+    list_supported_node_trigger_modes,
     list_supported_segmentation_bases,
     list_supported_workflow_statuses,
 )
@@ -59,6 +62,10 @@ _ALLOWED_WORKFLOW_STATUSES = {
     WORKFLOW_STATUS_DRAFT,
     WORKFLOW_STATUS_ACTIVE,
     WORKFLOW_STATUS_PAUSED,
+}
+_ALLOWED_NODE_TRIGGER_MODES = {
+    NODE_TRIGGER_MODE_SCHEDULED,
+    NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
 }
 _ALLOWED_POOL_TYPES = {
     AGENT_POOL_TYPE_SHARED,
@@ -149,6 +156,13 @@ def _validate_send_time(value: Any) -> str:
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         raise ValueError("send_time must be HH:MM")
     return f"{hour:02d}:{minute:02d}"
+
+
+def _validate_node_trigger_mode(value: Any) -> str:
+    normalized = _normalized_text(value) or NODE_TRIGGER_MODE_SCHEDULED
+    if normalized not in _ALLOWED_NODE_TRIGGER_MODES:
+        raise ValueError("trigger_mode must be one of scheduled, audience_entered")
+    return normalized
 
 
 def _normalize_agent_members_payload(payload: Any) -> list[dict[str, Any]]:
@@ -683,6 +697,7 @@ def _build_node_bundle(node: dict[str, Any], workflow_bundle: dict[str, Any]) ->
         "node_code": _normalized_text(node.get("node_code")),
         "node_name": _normalized_text(node.get("node_name")),
         "target_audience_code": _normalized_text(node.get("target_audience_code")),
+        "trigger_mode": _normalized_text(node.get("trigger_mode")) or NODE_TRIGGER_MODE_SCHEDULED,
         "day_offset": int(node.get("day_offset") or 1),
         "send_time": _normalized_text(node.get("send_time")),
         "timezone": _normalized_text(node.get("timezone")) or "Asia/Shanghai",
@@ -779,8 +794,14 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
     target_audience_code = _normalized_text(source.get("target_audience_code") or current.get("target_audience_code"))
     if target_audience_code not in [item["audience_code"] for item in workflow_bundle.get("audiences") or []]:
         raise ValueError("target_audience_code must belong to workflow audiences")
+    trigger_mode = _validate_node_trigger_mode(
+        source.get("trigger_mode") if "trigger_mode" in source else current.get("trigger_mode") or NODE_TRIGGER_MODE_SCHEDULED
+    )
     day_offset = _normalize_int(source.get("day_offset") if "day_offset" in source else current.get("day_offset"), default=1, minimum=1)
     send_time = _validate_send_time(source.get("send_time") if "send_time" in source else current.get("send_time") or "09:00")
+    if trigger_mode == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
+        day_offset = 1
+        send_time = "00:00"
     standard_content_text = _normalized_text(
         source.get("standard_content_text")
         if "standard_content_text" in source
@@ -811,6 +832,7 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
         "node_code": node_code,
         "node_name": node_name,
         "target_audience_code": target_audience_code,
+        "trigger_mode": trigger_mode,
         "day_offset": day_offset,
         "send_time": send_time,
         "timezone": _normalized_text(source.get("timezone") or current.get("timezone") or "Asia/Shanghai"),
@@ -903,6 +925,7 @@ def list_conversion_workflow_registry() -> dict[str, Any]:
         "audiences": list_supported_conversion_audiences(),
         "segmentation_bases": list_supported_segmentation_bases(),
         "generation_modes": list_supported_generation_modes(),
+        "node_trigger_modes": list_supported_node_trigger_modes(),
         "behavior_tiers": list_supported_behavior_tiers(),
         "agent_pool_types": list_supported_agent_pool_types(),
         "agent_pool_binding_scopes": list_supported_agent_pool_binding_scopes(),
@@ -1276,6 +1299,7 @@ def _build_execution_payload(execution: dict[str, Any]) -> dict[str, Any]:
             "node_code": _normalized_text(node.get("node_code")),
             "node_name": _normalized_text(node.get("node_name")),
             "target_audience_code": _normalized_text(node.get("target_audience_code")),
+            "trigger_mode": _normalized_text(node.get("trigger_mode")) or NODE_TRIGGER_MODE_SCHEDULED,
             "day_offset": int(node.get("day_offset") or 0),
             "send_time": _normalized_text(node.get("send_time")),
         },

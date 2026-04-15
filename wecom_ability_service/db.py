@@ -1138,6 +1138,8 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             node_name TEXT NOT NULL DEFAULT '',
             target_audience_code TEXT NOT NULL
                 CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            trigger_mode TEXT NOT NULL DEFAULT 'scheduled'
+                CHECK (trigger_mode IN ('scheduled', 'audience_entered')),
             day_offset INTEGER NOT NULL DEFAULT 1,
             send_time TEXT NOT NULL DEFAULT '09:00',
             timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
@@ -1148,6 +1150,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         )
         """
     )
+    workflow_node_columns = _sqlite_table_columns(db, "automation_workflow_node")
+    if "trigger_mode" not in workflow_node_columns:
+        db.execute("ALTER TABLE automation_workflow_node ADD COLUMN trigger_mode TEXT NOT NULL DEFAULT 'scheduled'")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS automation_workflow_node_content (
@@ -1285,6 +1290,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_schedule ON automation_workflow_node (target_audience_code, day_offset, send_time, enabled, id ASC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_trigger ON automation_workflow_node (target_audience_code, trigger_mode, enabled, id ASC)"
     )
     db.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_workflow_node_content_variant_unique ON automation_workflow_node_content_variant (node_content_id, variant_scope, segment_key)"
@@ -2580,6 +2588,27 @@ def _init_postgres(db) -> None:
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_automation_agent_config_tables(db)
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow_node
+        ADD COLUMN IF NOT EXISTS trigger_mode TEXT NOT NULL DEFAULT 'scheduled'
+        """
+    )
+    db.execute(
+        """
+        UPDATE automation_workflow_node
+        SET trigger_mode = CASE
+            WHEN COALESCE(trigger_mode, '') IN ('scheduled', 'audience_entered') THEN trigger_mode
+            ELSE 'scheduled'
+        END
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_trigger
+        ON automation_workflow_node (target_audience_code, trigger_mode, enabled, id ASC)
+        """
+    )
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)
     _ensure_automation_sop_v1_seed_data()

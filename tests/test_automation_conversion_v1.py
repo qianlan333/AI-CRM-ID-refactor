@@ -16,12 +16,15 @@ from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
     backfill_missing_child_agent_replies,
     create_agent_run,
+    create_conversion_workflow,
+    create_conversion_workflow_node,
     ensure_agent_orchestration_defaults,
     get_all_agent_prompts,
     get_agent_config_detail,
     get_agent_output_detail,
     list_agent_configs,
     list_pending_agent_prompt_publish_requests,
+    run_due_conversion_workflows,
     run_router_pending_callback_check,
     save_agent_config_draft,
     save_agent_router_settings,
@@ -445,6 +448,118 @@ def _set_sop_pool_effective_start(app, *, pool_key: str, effective_start_at: str
             (effective_start_at, pool_key),
         )
         get_db().commit()
+
+
+def _create_test_workflow(app, *, workflow_name: str = "测试任务流", audiences: list[str] | None = None, status: str = "active") -> dict[str, object]:
+    with app.app_context():
+        return create_conversion_workflow(
+            {
+                "workflow_name": workflow_name,
+                "workflow_code": workflow_name,
+                "description": "test workflow",
+                "status": status,
+                "segmentation_basis": "none",
+                "generation_mode": "manual_layered",
+                "audiences": list(audiences or ["pending_questionnaire"]),
+                "agent_pool_bindings": [],
+            },
+            operator_id="tester",
+        )
+
+
+def test_init_db_adds_workflow_node_trigger_mode_column(app):
+    with app.app_context():
+        assert "trigger_mode" in _sqlite_table_columns(get_db(), "automation_workflow_node")
+
+
+def test_create_workflow_node_supports_immediate_trigger_mode(app):
+    workflow_bundle = _create_test_workflow(app, workflow_name="即时节点工作流")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        result = create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "进入人群立即发",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "standard_content_text": "欢迎进入",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    node = result["node"]
+    assert node["trigger_mode"] == "audience_entered"
+    assert node["day_offset"] == 1
+    assert node["send_time"] == "00:00"
+
+
+def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entry(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_workflow_immediate_001", mobile="13800001111", owner_userid="sales_01", customer_name="立即节点客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_workflow_immediate_001",
+        phone="13800001111",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 10:00:00",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="立即触发任务流")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "入池即发",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "standard_content_text": "欢迎进入自动化任务流",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 901, "wecom_result": {"msgid": "msg-901"}},
+    )
+
+    with app.app_context():
+        first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        second = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        execution_rows = get_db().execute(
+            """
+            SELECT execution_id, total_count, success_count, status, scheduled_for
+            FROM automation_workflow_execution
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        item_rows = get_db().execute(
+            """
+            SELECT status, audience_entry_id, rendered_content_text
+            FROM automation_workflow_execution_item
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert len(dispatched) == 1
+    assert len(execution_rows) == 1
+    assert execution_rows[0]["status"] == "finished"
+    assert execution_rows[0]["success_count"] == 1
+    assert execution_rows[0]["scheduled_for"] == "2026-04-08 10:00:00"
+    assert len(item_rows) == 1
+    assert item_rows[0]["status"] == "sent"
+    assert item_rows[0]["audience_entry_id"] is not None
+    assert item_rows[0]["rendered_content_text"] == "欢迎进入自动化任务流"
 
 
 def _test_png_data_url() -> str:

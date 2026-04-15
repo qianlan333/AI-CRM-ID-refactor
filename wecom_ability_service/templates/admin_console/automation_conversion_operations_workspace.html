@@ -440,6 +440,7 @@
           <tr>
             <th>节点名称</th>
             <th>目标人群</th>
+            <th>触发方式</th>
             <th>第几天</th>
             <th>时间</th>
             <th>标准版内容</th>
@@ -475,6 +476,13 @@
         </div>
         <div class="ac-ops-field-grid">
           <label class="admin-field">
+            <span>触发方式</span>
+            <select name="trigger_mode">
+              <option value="scheduled">按时间点运行</option>
+              <option value="audience_entered">进入目标人群后立即运行</option>
+            </select>
+          </label>
+          <label class="admin-field">
             <span>第几天</span>
             <input type="number" name="day_offset" min="1" value="1">
           </label>
@@ -483,6 +491,7 @@
             <input type="time" name="send_time" value="09:00">
           </label>
         </div>
+        <p class="ac-ops-muted" id="node-trigger-help">按时间点运行时，会在进入目标人群后的第 N 天指定时间执行。</p>
         <label class="admin-field">
           <span>标准版内容</span>
           <textarea name="standard_content_text" rows="6" placeholder="输入标准版原文"></textarea>
@@ -613,6 +622,7 @@
       nodeFormTitle: document.getElementById('node-form-title'),
       nodeForm: document.getElementById('node-form'),
       nodeFormCancel: document.getElementById('node-form-cancel'),
+      nodeTriggerHelp: document.getElementById('node-trigger-help'),
       nodeVariantSection: document.getElementById('node-variant-section'),
       nodeVariantHelp: document.getElementById('node-variant-help'),
       nodeVariantGrid: document.getElementById('node-variant-grid'),
@@ -691,6 +701,8 @@
         ? 'basis_code'
         : groupKey === 'generation_modes'
         ? 'mode_code'
+        : groupKey === 'node_trigger_modes'
+        ? 'trigger_mode'
         : groupKey === 'workflow_statuses'
         ? 'status_code'
         : groupKey === 'behavior_tiers'
@@ -710,6 +722,10 @@
 
     function generationLabel(code) {
       return labelFromRegistry('generation_modes', code, code);
+    }
+
+    function nodeTriggerModeLabel(code) {
+      return labelFromRegistry('node_trigger_modes', code, code);
     }
 
     function statusLabel(code) {
@@ -1149,8 +1165,9 @@
         <tr>
           <td><strong>${escapeHtml(node.node_name || node.node_code || '-')}</strong><div class="ac-ops-code">${escapeHtml(node.node_code || '')}</div></td>
           <td>${escapeHtml(audienceLabel(node.target_audience_code))}</td>
-          <td>第 ${escapeHtml(node.day_offset || 1)} 天</td>
-          <td>${escapeHtml(node.send_time || '-')}</td>
+          <td>${escapeHtml(nodeTriggerModeLabel(node.trigger_mode || 'scheduled'))}</td>
+          <td>${node.trigger_mode === 'audience_entered' ? '-' : `第 ${escapeHtml(node.day_offset || 1)} 天`}</td>
+          <td>${escapeHtml(node.trigger_mode === 'audience_entered' ? '立即运行' : (node.send_time || '-'))}</td>
           <td>${escapeHtml(node.standard_content_text || '-').slice(0, 60)}</td>
           <td>${escapeHtml((node.content_variants || []).length)}</td>
           <td>${escapeHtml(node.status || '-')}</td>
@@ -1202,6 +1219,20 @@
       `).join('');
     }
 
+    function syncNodeTriggerModeFields() {
+      const triggerMode = String(elements.nodeForm.elements.trigger_mode.value || 'scheduled');
+      const dayField = elements.nodeForm.elements.day_offset.closest('label');
+      const timeField = elements.nodeForm.elements.send_time.closest('label');
+      const scheduled = triggerMode === 'scheduled';
+      if (dayField) dayField.hidden = !scheduled;
+      if (timeField) timeField.hidden = !scheduled;
+      if (elements.nodeTriggerHelp) {
+        elements.nodeTriggerHelp.textContent = scheduled
+          ? '按时间点运行时，会在进入目标人群后的第 N 天指定时间执行。'
+          : '进入目标人群后立即运行时，不再要求配置第几天和时间。';
+      }
+    }
+
     function openNodeForm(node, mode) {
       if (!state.selectedWorkflowBundle) return;
       const readonly = mode === 'view';
@@ -1214,6 +1245,7 @@
         elements.nodeForm.elements.node_id.value = String(node.id || '');
         elements.nodeForm.elements.node_name.value = node.node_name || '';
         elements.nodeForm.elements.target_audience_code.value = node.target_audience_code || '';
+        elements.nodeForm.elements.trigger_mode.value = node.trigger_mode || 'scheduled';
         elements.nodeForm.elements.day_offset.value = node.day_offset || 1;
         elements.nodeForm.elements.send_time.value = node.send_time || '09:00';
         elements.nodeForm.elements.standard_content_text.value = node.standard_content_text || '';
@@ -1221,10 +1253,12 @@
       } else {
         elements.nodeFormTitle.textContent = '新增节点';
         elements.nodeForm.elements.node_id.value = '';
+        elements.nodeForm.elements.trigger_mode.value = 'scheduled';
         elements.nodeForm.elements.day_offset.value = 1;
         elements.nodeForm.elements.send_time.value = '09:00';
         elements.nodeForm.elements.enabled.checked = true;
       }
+      syncNodeTriggerModeFields();
       renderNodeVariantControls(node || null);
       elements.nodeForm.querySelectorAll('input, select, textarea').forEach((field) => {
         if (field.name === 'node_id') return;
@@ -1239,6 +1273,7 @@
       elements.nodeForm.querySelectorAll('input, select, textarea').forEach((field) => {
         field.disabled = false;
       });
+      syncNodeTriggerModeFields();
       elements.nodeFormActions.hidden = false;
       showFormFeedback(elements.nodeFormFeedback, '', '');
     }
@@ -1247,14 +1282,18 @@
       const bundle = state.selectedWorkflowBundle;
       if (!bundle) throw new Error('请先选择任务流');
       const targetAudience = String(elements.nodeForm.elements.target_audience_code.value || '').trim();
+      const triggerMode = String(elements.nodeForm.elements.trigger_mode.value || 'scheduled').trim();
       const payload = {
         node_name: String(elements.nodeForm.elements.node_name.value || '').trim(),
         target_audience_code: targetAudience,
-        day_offset: Number(elements.nodeForm.elements.day_offset.value || 1),
-        send_time: String(elements.nodeForm.elements.send_time.value || '09:00'),
+        trigger_mode: triggerMode,
         standard_content_text: String(elements.nodeForm.elements.standard_content_text.value || '').trim(),
         enabled: !!elements.nodeForm.elements.enabled.checked,
       };
+      if (triggerMode === 'scheduled') {
+        payload.day_offset = Number(elements.nodeForm.elements.day_offset.value || 1);
+        payload.send_time = String(elements.nodeForm.elements.send_time.value || '09:00');
+      }
       if (!payload.node_name) throw new Error('节点名称不能为空');
       if (!payload.target_audience_code) throw new Error('请选择节点目标人群');
       if (!payload.standard_content_text) throw new Error('标准版内容不能为空');
@@ -1574,6 +1613,7 @@
 
     elements.nodeCreateButton.addEventListener('click', () => openNodeForm(null, 'create'));
     elements.nodeFormCancel.addEventListener('click', closeNodeForm);
+    elements.nodeForm.elements.trigger_mode.addEventListener('change', syncNodeTriggerModeFields);
     elements.nodeForm.addEventListener('submit', saveNode);
 
     elements.nodeTableBody.addEventListener('click', async (event) => {
