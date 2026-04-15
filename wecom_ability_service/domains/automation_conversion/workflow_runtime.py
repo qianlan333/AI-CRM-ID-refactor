@@ -6,11 +6,19 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ...db import get_db
+from ...services import get_recent_messages_by_user
 from ..tasks.service import dispatch_wecom_task
 from ..user_ops import page_service as user_ops_page_service
 from . import repo as legacy_repo
 from .agents import DeepSeekClientError, call_deepseek_agent
-from .orchestration_service import get_agent_config_detail
+from .orchestration_service import (
+    _agent_context_source_sections,
+    _enabled_context_sources_from_variables,
+    _fixed_agent_output_schema,
+    _normalize_enabled_context_sources,
+    _replace_agent_prompt_placeholders,
+    get_agent_config_detail,
+)
 from .workflow_definitions import (
     AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
     AGENT_BINDING_SCOPE_PERSONALIZED,
@@ -406,6 +414,8 @@ def _build_generation_variables(
     segment_match: dict[str, Any],
     behavior_match: dict[str, Any],
 ) -> dict[str, Any]:
+    from ..admin_console.customer_profile_service import get_customer_profile_tags_payload
+
     latest_submission = workflow_repo.get_latest_any_questionnaire_submission_row(
         external_contact_ids=[_normalized_text(member.get("external_contact_id"))],
         phone=_normalized_text(member.get("phone")),
@@ -422,6 +432,20 @@ def _build_generation_variables(
                     "text_value": _normalized_text(answer.get("text_value")),
                 }
             )
+    recent_messages = [
+        {
+            "role": "客户" if _normalized_text(item.get("sender")) == _normalized_text(member.get("external_contact_id")) else "员工",
+            "time": _normalized_text(item.get("send_time")),
+            "content": _normalized_text(item.get("content") or item.get("message_text") or item.get("text")),
+        }
+        for item in get_recent_messages_by_user(_normalized_text(member.get("external_contact_id")), limit=20)
+    ] if _normalized_text(member.get("external_contact_id")) else []
+    tags_payload = get_customer_profile_tags_payload(external_userid=_normalized_text(member.get("external_contact_id"))) if _normalized_text(member.get("external_contact_id")) else {"tags": []}
+    user_tags = [
+        _normalized_text(item.get("tag_name")) or _normalized_text(item.get("tag_id"))
+        for item in tags_payload.get("tags") or []
+        if _normalized_text(item.get("tag_name")) or _normalized_text(item.get("tag_id"))
+    ]
     workflow = dict(workflow_bundle.get("workflow") or {})
     return {
         "workflow": {
@@ -445,6 +469,7 @@ def _build_generation_variables(
             "current_pool": _normalized_text(member.get("current_pool")),
             "current_audience_code": _normalized_text(member.get("current_audience_code")),
             "current_audience_entered_at": _normalized_text(member.get("current_audience_entered_at")),
+            "activation_status": _normalized_text(member.get("activation_status")),
         },
         "standard_content_text": _normalized_text(standard_content_text),
         "profile_segment": {
@@ -463,6 +488,14 @@ def _build_generation_variables(
             "submitted_at": _normalized_text((latest_submission or {}).get("submitted_at")),
             "answers": questionnaire_answers,
         },
+        "recent_messages": recent_messages,
+        "user_tags": user_tags,
+        "activation_info": {
+            "activation_status": _normalized_text(member.get("activation_status")),
+            "current_pool": _normalized_text(member.get("current_pool")),
+            "current_audience_code": _normalized_text(member.get("current_audience_code")),
+            "current_audience_entered_at": _normalized_text(member.get("current_audience_entered_at")),
+        },
     }
 
 
@@ -474,15 +507,21 @@ def _build_agent_generation_request(
 ) -> tuple[str, str]:
     agent_detail = get_agent_config_detail(agent_code)
     published = dict(agent_detail.get("published") or {})
-    role_prompt = _normalized_text(published.get("role_prompt"))
-    task_prompt = _normalized_text(published.get("task_prompt"))
+    enabled_context_sources = _normalize_enabled_context_sources(
+        published.get("enabled_context_sources"),
+        default=_enabled_context_sources_from_variables(published.get("variables") or []),
+    )
+    section_texts = _agent_context_source_sections(variables_snapshot, enabled_context_sources)
+    role_prompt = _replace_agent_prompt_placeholders(_normalized_text(published.get("role_prompt")), section_texts)
+    task_prompt = _replace_agent_prompt_placeholders(_normalized_text(published.get("task_prompt")), section_texts)
     system_prompt = "\n\n".join(
         part
         for part in [
             role_prompt,
-            "你只能基于提供的结构化信息生成内容，不能引用聊天上下文，不能臆测缺失事实。",
+            "你只能基于已勾选的信息来源生成一条话术，不能臆测缺失事实。",
+            "如果某类信息为空，就忽略它，不要报错。",
             "你必须只返回 JSON 对象。",
-            'JSON 至少包含字段：reply_final, reason。',
+            'JSON 只允许包含字段：draft_reply。',
         ]
         if _normalized_text(part)
     )
@@ -490,8 +529,10 @@ def _build_agent_generation_request(
         {
             "task_prompt": task_prompt,
             "standard_content_text": _normalized_text(standard_content_text),
+            "enabled_context_sources": enabled_context_sources,
+            "context_sections": section_texts,
             "variables": variables_snapshot,
-            "required_output_schema": list(published.get("output_schema") or []),
+            "required_output_schema": _fixed_agent_output_schema(),
         },
         ensure_ascii=False,
     )

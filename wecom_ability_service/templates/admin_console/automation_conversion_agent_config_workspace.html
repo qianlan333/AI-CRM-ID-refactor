@@ -132,6 +132,55 @@
     background: rgba(248, 250, 252, 0.9);
   }
 
+  .ac-config-source-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ac-config-source-card {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: #fff;
+  }
+
+  .ac-config-source-card strong {
+    display: block;
+    color: #1f2937;
+    font-size: 14px;
+  }
+
+  .ac-config-source-card span {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .ac-config-placeholder-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .ac-config-placeholder-button {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: #fff;
+    color: #334155;
+  }
+
+  .ac-config-placeholder-help {
+    margin: 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
   .ac-config-json-editor {
     width: 100%;
     min-height: 220px;
@@ -446,7 +495,7 @@
         <div class="ac-config-head">
           <div>
             <h4 id="agent-form-title">Agent 编排工作台</h4>
-            <p class="ac-config-muted">这里直接维护 Agent 的草稿态：显示名、启用状态、角色提示词、任务提示词、变量定义和输出协议。保存后仍需发布，任务流执行才会使用最新版本。</p>
+            <p class="ac-config-muted">这里直接维护 Agent 的草稿态：显示名、启用状态、角色提示词、任务提示词与可见信息来源。保存后仍需发布，任务流执行才会使用最新版本。</p>
           </div>
           <button class="admin-button admin-button--ghost" id="agent-form-cancel" type="button">收起</button>
         </div>
@@ -482,7 +531,7 @@
 
           <label class="admin-field">
             <span>变更摘要</span>
-            <input type="text" name="change_summary" placeholder="例如：补充问卷变量与输出协议">
+            <input type="text" name="change_summary" placeholder="例如：调整信息来源与提示词">
           </label>
 
           <label class="admin-field">
@@ -498,18 +547,53 @@
           <div class="ac-config-editor-grid">
             <section class="ac-config-editor-card">
               <div>
-                <strong>变量定义（草稿 JSON）</strong>
-                <p class="ac-config-muted">填写数组。运行时会在这里定义的变量基础上注入自动化转化的结构化上下文，例如问卷答案、画像分层、行为层级与标准版内容。</p>
+                <strong>信息来源</strong>
+                <p class="ac-config-muted">只勾选这个 Agent 允许使用的 4 类信息来源。运行时会自动整理成可读文本，不需要再写变量 JSON。</p>
               </div>
-              <textarea class="ac-config-json-editor" name="variables_json" spellcheck="false" placeholder='[{"variable_key":"questionnaire_answers","display_name":"问卷答案","description":"问卷结构化答案","enabled":true}]'></textarea>
+              <div class="ac-config-source-grid">
+                <label class="ac-config-source-card">
+                  <input type="checkbox" name="enabled_context_sources" value="questionnaire">
+                  <div>
+                    <strong>问卷信息</strong>
+                    <span>问卷题目与答案摘要</span>
+                  </div>
+                </label>
+                <label class="ac-config-source-card">
+                  <input type="checkbox" name="enabled_context_sources" value="recent_messages">
+                  <div>
+                    <strong>最近 20 条聊天信息</strong>
+                    <span>最近聊天上下文摘要</span>
+                  </div>
+                </label>
+                <label class="ac-config-source-card">
+                  <input type="checkbox" name="enabled_context_sources" value="user_tags">
+                  <div>
+                    <strong>用户标签</strong>
+                    <span>当前客户标签列表</span>
+                  </div>
+                </label>
+                <label class="ac-config-source-card">
+                  <input type="checkbox" name="enabled_context_sources" value="activation_info">
+                  <div>
+                    <strong>激活信息</strong>
+                    <span>激活状态、当前池子与当前大人群</span>
+                  </div>
+                </label>
+              </div>
             </section>
 
             <section class="ac-config-editor-card">
               <div>
-                <strong>输出协议（草稿 JSON）</strong>
-                <p class="ac-config-muted">填写数组。建议把生成结果约束在稳定字段里，例如 `draft_reply`、`reason`、`next_action`。</p>
+                <strong>变量插入区</strong>
+                <p class="ac-config-muted">点一下就能把占位符插入到当前聚焦的提示词编辑框。没有聚焦时，默认插入到任务提示词。</p>
               </div>
-              <textarea class="ac-config-json-editor" name="output_schema_json" spellcheck="false" placeholder='[{"field_key":"draft_reply","display_name":"草稿回复","type":"string","required":true}]'></textarea>
+              <div class="ac-config-placeholder-group">
+                <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{问卷信息}}{% endraw %}">{% raw %}{{问卷信息}}{% endraw %}</button>
+                <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{最近20条聊天信息}}{% endraw %}">{% raw %}{{最近20条聊天信息}}{% endraw %}</button>
+                <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{用户标签}}{% endraw %}">{% raw %}{{用户标签}}{% endraw %}</button>
+                <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{激活信息}}{% endraw %}">{% raw %}{{激活信息}}{% endraw %}</button>
+              </div>
+              <p class="ac-config-placeholder-help">系统内部固定只生成一条话术，保存和发布时会自动按 `draft_reply` 收口，不再让你配置输出协议 JSON。</p>
             </section>
           </div>
 
@@ -532,12 +616,8 @@
                   <pre class="ac-config-code-block" id="agent-published-task-prompt">-</pre>
                 </div>
                 <div>
-                  <div class="ac-config-code">变量定义（已发布）</div>
-                  <pre class="ac-config-code-block" id="agent-published-variables">[]</pre>
-                </div>
-                <div>
-                  <div class="ac-config-code">输出协议（已发布）</div>
-                  <pre class="ac-config-code-block" id="agent-published-output-schema">[]</pre>
+                  <div class="ac-config-code">信息来源（已发布）</div>
+                  <pre class="ac-config-code-block" id="agent-published-context-sources">未勾选信息来源</pre>
                 </div>
               </div>
             </section>
@@ -841,8 +921,7 @@
       agentLoadPublishedButton: document.getElementById('agent-load-published-button'),
       agentPublishedRolePrompt: document.getElementById('agent-published-role-prompt'),
       agentPublishedTaskPrompt: document.getElementById('agent-published-task-prompt'),
-      agentPublishedVariables: document.getElementById('agent-published-variables'),
-      agentPublishedOutputSchema: document.getElementById('agent-published-output-schema'),
+      agentPublishedContextSources: document.getElementById('agent-published-context-sources'),
       agentDiffSummary: document.getElementById('agent-diff-summary'),
       templateTableBody: document.getElementById('template-table-body'),
       templateEmpty: document.getElementById('template-empty'),
@@ -889,8 +968,7 @@
       changeSummary: elements.agentForm ? elements.agentForm.querySelector('[name="change_summary"]') : null,
       rolePrompt: elements.agentForm ? elements.agentForm.querySelector('[name="role_prompt"]') : null,
       taskPrompt: elements.agentForm ? elements.agentForm.querySelector('[name="task_prompt"]') : null,
-      variablesJson: elements.agentForm ? elements.agentForm.querySelector('[name="variables_json"]') : null,
-      outputSchemaJson: elements.agentForm ? elements.agentForm.querySelector('[name="output_schema_json"]') : null,
+      enabledContextSources: elements.agentForm ? Array.from(elements.agentForm.querySelectorAll('[name="enabled_context_sources"]')) : [],
     };
 
     const templateFields = {
@@ -965,19 +1043,52 @@
       return JSON.stringify(Array.isArray(value) ? value : [], null, 2);
     }
 
-    function parseJsonArray(text, label) {
-      const source = String(text || '').trim();
-      if (!source) return [];
-      let parsed;
-      try {
-        parsed = JSON.parse(source);
-      } catch (error) {
-        throw new Error(label + ' 必须是合法 JSON 数组');
-      }
-      if (!Array.isArray(parsed)) {
-        throw new Error(label + ' 必须是 JSON 数组');
-      }
-      return parsed;
+    function contextSourceLabel(code) {
+      const mapping = {
+        questionnaire: '问卷信息',
+        recent_messages: '最近20条聊天信息',
+        user_tags: '用户标签',
+        activation_info: '激活信息',
+      };
+      return mapping[String(code || '').trim()] || String(code || '').trim();
+    }
+
+    function collectEnabledContextSources() {
+      return (agentFields.enabledContextSources || [])
+        .filter((input) => input && input.checked)
+        .map((input) => String(input.value || '').trim())
+        .filter(Boolean);
+    }
+
+    function applyEnabledContextSources(codes) {
+      const selected = new Set(Array.isArray(codes) ? codes.map((item) => String(item || '').trim()) : []);
+      (agentFields.enabledContextSources || []).forEach((input) => {
+        if (!input) return;
+        input.checked = selected.has(String(input.value || '').trim());
+      });
+    }
+
+    function formatContextSources(codes) {
+      const items = (Array.isArray(codes) ? codes : []).map(contextSourceLabel).filter(Boolean);
+      return items.length ? items.join('\n') : '未勾选信息来源';
+    }
+
+    function insertPromptPlaceholder(placeholder) {
+      const value = String(placeholder || '').trim();
+      if (!value) return;
+      const activeElement = document.activeElement;
+      const target = activeElement === agentFields.rolePrompt || activeElement === agentFields.taskPrompt
+        ? activeElement
+        : agentFields.taskPrompt;
+      if (!target) return;
+      const start = Number(target.selectionStart || 0);
+      const end = Number(target.selectionEnd || start);
+      const before = String(target.value || '').slice(0, start);
+      const after = String(target.value || '').slice(end);
+      target.value = before + value + after;
+      const nextCursor = start + value.length;
+      target.focus();
+      target.setSelectionRange(nextCursor, nextCursor);
     }
 
     function statusLabel(status) {
@@ -1000,8 +1111,7 @@
       const diffSummary = Array.isArray((detail || {}).diff_summary) ? detail.diff_summary : [];
       elements.agentPublishedRolePrompt.textContent = published.role_prompt || '-';
       elements.agentPublishedTaskPrompt.textContent = published.task_prompt || '-';
-      elements.agentPublishedVariables.textContent = prettyJson(published.variables || []);
-      elements.agentPublishedOutputSchema.textContent = prettyJson(published.output_schema || []);
+      elements.agentPublishedContextSources.textContent = formatContextSources(published.enabled_context_sources || []);
       elements.agentDiffSummary.innerHTML = diffSummary.length
         ? diffSummary.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
         : '<li>当前草稿与已发布版本一致。</li>';
@@ -1262,8 +1372,7 @@
       if (agentFields.changeSummary) agentFields.changeSummary.value = '创建新 Agent 草稿';
       if (agentFields.rolePrompt) agentFields.rolePrompt.value = '';
       if (agentFields.taskPrompt) agentFields.taskPrompt.value = '';
-      if (agentFields.variablesJson) agentFields.variablesJson.value = '[]';
-      if (agentFields.outputSchemaJson) agentFields.outputSchemaJson.value = '[]';
+      applyEnabledContextSources([]);
       elements.agentMetaStatus.textContent = '新建态';
       elements.agentMetaDraftVersion.textContent = '1';
       elements.agentMetaPublishedVersion.textContent = '0';
@@ -1407,8 +1516,7 @@
       if (agentFields.changeSummary) agentFields.changeSummary.value = item.last_change_summary || '更新 Agent 草稿';
       if (agentFields.rolePrompt) agentFields.rolePrompt.value = draft.role_prompt || '';
       if (agentFields.taskPrompt) agentFields.taskPrompt.value = draft.task_prompt || '';
-      if (agentFields.variablesJson) agentFields.variablesJson.value = prettyJson(draft.variables || []);
-      if (agentFields.outputSchemaJson) agentFields.outputSchemaJson.value = prettyJson(draft.output_schema || []);
+      applyEnabledContextSources(draft.enabled_context_sources || []);
       if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = String(item.draft_version || 1);
       elements.agentFormTitle.textContent = `编辑 Agent · ${item.display_name || item.agent_code || ''}`;
       elements.agentPublishButton.hidden = false;
@@ -1480,8 +1588,7 @@
         change_summary: changeSummary || (state.agentFormMode === 'create' ? '创建新 Agent 草稿' : '更新 Agent 草稿'),
         role_prompt: rolePrompt,
         task_prompt: taskPrompt,
-        variables: parseJsonArray((agentFields.variablesJson || {}).value, '变量定义'),
-        output_schema: parseJsonArray((agentFields.outputSchemaJson || {}).value, '输出协议'),
+        enabled_context_sources: collectEnabledContextSources(),
         expected_draft_version: Number((agentFields.expectedDraftVersion || {}).value || 1) || 1,
       };
     }
@@ -1723,12 +1830,19 @@
         }
         if (agentFields.rolePrompt) agentFields.rolePrompt.value = published.role_prompt || '';
         if (agentFields.taskPrompt) agentFields.taskPrompt.value = published.task_prompt || '';
-        if (agentFields.variablesJson) agentFields.variablesJson.value = prettyJson(published.variables || []);
-        if (agentFields.outputSchemaJson) agentFields.outputSchemaJson.value = prettyJson(published.output_schema || []);
+        applyEnabledContextSources(published.enabled_context_sources || []);
         if (agentFields.changeSummary && !String(agentFields.changeSummary.value || '').trim()) {
           agentFields.changeSummary.value = '用已发布版本覆盖草稿';
         }
         showAgentFormFeedback('已将已发布版本回填到草稿编辑区，保存后会生成新的草稿版本。', 'success');
+      });
+    }
+
+    if (elements.agentFormPanel) {
+      elements.agentFormPanel.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-agent-placeholder]');
+        if (!button) return;
+        insertPromptPlaceholder(button.getAttribute('data-agent-placeholder'));
       });
     }
 

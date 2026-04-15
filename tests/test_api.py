@@ -383,13 +383,8 @@ def test_automation_conversion_agent_create_and_edit_flow(client):
             "display_name": "转化跟进 Agent",
             "enabled": True,
             "role_prompt": "你是转化跟进 Agent。",
-            "task_prompt": "基于结构化信息生成跟进话术。",
-            "variables": [
-                {"variable_key": "questionnaire_answers", "display_name": "问卷答案", "enabled": True},
-            ],
-            "output_schema": [
-                {"field_key": "draft_reply", "display_name": "草稿回复", "type": "string", "required": True},
-            ],
+            "task_prompt": "请基于 {{问卷信息}} 和 {{用户标签}} 生成跟进话术。",
+            "enabled_context_sources": ["questionnaire", "user_tags"],
             "change_summary": "创建新 Agent",
         },
     )
@@ -400,7 +395,8 @@ def test_automation_conversion_agent_create_and_edit_flow(client):
     assert created["agent"]["agent_code"] == "conversion_followup_agent"
     assert created["agent"]["display_name"] == "转化跟进 Agent"
     assert created["agent"]["published_version"] == 0
-    assert created["agent"]["draft"]["variables"][0]["variable_key"] == "questionnaire_answers"
+    assert created["agent"]["draft"]["enabled_context_sources"] == ["questionnaire", "user_tags"]
+    assert created["agent"]["draft"]["variables"][0]["variable_key"] == "questionnaire_info"
     assert created["agent"]["draft"]["output_schema"][0]["field_key"] == "draft_reply"
 
     detail_response = client.get("/api/admin/automation-conversion/agents/conversion_followup_agent")
@@ -420,12 +416,14 @@ def test_automation_conversion_agent_create_and_edit_flow(client):
             "enabled": True,
             "role_prompt": "你是更新后的转化跟进 Agent。",
             "task_prompt": "生成更新后的跟进话术。",
+            "enabled_context_sources": ["questionnaire", "recent_messages", "activation_info"],
             "expected_draft_version": 1,
             "change_summary": "更新新 Agent 草稿",
         },
     )
     assert update_response.status_code == 200
     assert update_response.get_json()["agent"]["draft"]["role_prompt"] == "你是更新后的转化跟进 Agent。"
+    assert update_response.get_json()["agent"]["draft"]["enabled_context_sources"] == ["questionnaire", "recent_messages", "activation_info"]
 
 
 def test_mcp_create_agent_config_tool(client):
