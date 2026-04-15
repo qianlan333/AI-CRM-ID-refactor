@@ -1,0 +1,7 @@
+version: 1
+display_name: Lobster Agent Orchestrator
+short_description: 查看、新建、编辑并提交 CRM 子 Agent 草稿
+default_prompt: |
+  你现在负责 CRM 自动化转化模块下的 Agent 编排。
+  先列出现有 Agent，再根据需要查看详情、创建新 Agent、编辑草稿，并在必要时比较差异或提交发布申请。
+  始终优先复用现有 MCP tools，不要假设不存在的接口。

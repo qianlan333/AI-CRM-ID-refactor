@@ -5,6 +5,7 @@ from flask import jsonify, redirect, request, url_for
 from ..domains.automation_conversion import (
     activate_conversion_workflow,
     build_rejected_feedback_clipboard_payload,
+    create_agent_config,
     create_conversion_profile_segment_template,
     create_conversion_workflow,
     create_conversion_workflow_node,
@@ -210,6 +211,7 @@ def _build_agent_config_workspace() -> dict[str, object]:
         "api_urls": {
             "registry": url_for("api.api_admin_automation_conversion_workflow_registry"),
             "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
+            "agent_create": url_for("api.api_admin_automation_conversion_agent_create"),
             "agent_detail_base": url_for("api.api_admin_automation_conversion_agent_detail", agent_code="__AGENT_CODE__"),
             "agent_draft_base": url_for("api.api_admin_automation_conversion_agent_draft", agent_code="__AGENT_CODE__"),
             "agent_publish_base": url_for("api.api_admin_automation_conversion_agent_publish", agent_code="__AGENT_CODE__"),
@@ -314,7 +316,7 @@ def _render_agent_config_page(*, page_error: str = ""):
         "automation_conversion_agent_config_workspace.html",
         active_nav="automation_conversion",
         page_title="模型 / Agent 配置",
-        page_summary="当前页面只保留自动化转化模块直接需要的 Agent 可用项与基础画像分层模板，不替代 Lobster 原有完整编辑链。",
+        page_summary="当前页面已经收口成自动化转化模块的底层配置工作台：Agent 编排、分层模板、欢迎语 / 二维码和大模型配置统一都从这里维护。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
@@ -566,6 +568,22 @@ def api_admin_automation_conversion_agent_detail(agent_code: str):
     return jsonify({"ok": True, "item": payload})
 
 
+def api_admin_automation_conversion_agent_create():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = create_agent_config(
+            payload,
+            operator_id=_operator_from_request(),
+            source="automation_conversion_agent_config",
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result}), 201
+
+
 def api_admin_automation_conversion_agent_draft(agent_code: str):
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
@@ -665,7 +683,7 @@ def api_admin_automation_conversion_profile_segment_template_detail(template_id:
         payload = get_conversion_profile_segment_template_bundle(int(template_id))
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
-    return jsonify({"ok": True, **payload})
+    return jsonify({"ok": True, "template_bundle": payload, **payload})
 
 
 def api_admin_automation_conversion_profile_segment_template_create():
@@ -1017,6 +1035,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/member/unmark-won", methods=["POST"])(api_admin_automation_conversion_unmark_won)
     bp.route("/api/admin/automation-conversion/member/push-openclaw", methods=["POST"])(api_admin_automation_conversion_push_openclaw)
     bp.route("/api/admin/automation-conversion/dashboard", methods=["GET"])(api_admin_automation_conversion_dashboard)
+    bp.route("/api/admin/automation-conversion/agents", methods=["POST"])(api_admin_automation_conversion_agent_create)
     bp.route("/api/admin/automation-conversion/agents/options", methods=["GET"])(api_admin_automation_conversion_agent_options)
     bp.route("/api/admin/automation-conversion/agents/<agent_code>", methods=["GET"])(api_admin_automation_conversion_agent_detail)
     bp.route("/api/admin/automation-conversion/agents/<agent_code>/draft", methods=["POST"])(api_admin_automation_conversion_agent_draft)

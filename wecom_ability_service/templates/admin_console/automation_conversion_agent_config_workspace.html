@@ -116,6 +116,55 @@
     grid-template-columns: 1fr;
   }
 
+  .ac-config-editor-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    align-items: start;
+  }
+
+  .ac-config-editor-card {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(248, 250, 252, 0.9);
+  }
+
+  .ac-config-json-editor {
+    width: 100%;
+    min-height: 220px;
+    padding: 12px 14px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: #fff;
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+  }
+
+  .ac-config-code-block {
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    color: #334155;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  .ac-config-diff-list {
+    margin: 0;
+    padding-left: 18px;
+    color: #475569;
+  }
+
+  .ac-config-diff-list li + li {
+    margin-top: 6px;
+  }
+
   .ac-config-feedback,
   .ac-config-loading,
   .ac-config-empty {
@@ -285,6 +334,10 @@
     .ac-config-form-grid {
       grid-template-columns: 1fr;
     }
+
+    .ac-config-editor-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 {% endblock %}
@@ -313,7 +366,7 @@
       <div>
         <div class="ac-eyebrow">模型 / Agent 配置</div>
         <h2>Agent 直绑 + 基础画像分层模板</h2>
-        <p class="ac-config-muted">任务流后续直接绑定 Agent。这个页面只处理自动化转化模块真正需要的 Agent 与分层模板，不再展示 Agent 池，也不再跳去一个没有编辑动作的壳页。</p>
+        <p class="ac-config-muted">任务流后续直接绑定 Agent。这里已经收口成自动化转化模块自己的底层配置工作台：Agent 编排、基础画像分层模板、欢迎语 / 二维码，以及大模型 API 配置统一都在这里完成。</p>
       </div>
       <div class="ac-config-row-actions">
         <a class="admin-button admin-button--secondary" href="{{ (workspace.entry_urls or {}).operations }}">查看任务流绑定</a>
@@ -392,8 +445,8 @@
       <section class="ac-config-panel ac-config-editor-shell" id="agent-form-panel" hidden>
         <div class="ac-config-head">
           <div>
-            <h4 id="agent-form-title">新增 / 编辑 Agent</h4>
-            <p class="ac-config-muted">这里直接编辑当前 Agent 的显示名、启用状态、角色提示词和任务提示词。</p>
+            <h4 id="agent-form-title">Agent 编排工作台</h4>
+            <p class="ac-config-muted">这里直接维护 Agent 的草稿态：显示名、启用状态、角色提示词、任务提示词、变量定义和输出协议。保存后仍需发布，任务流执行才会使用最新版本。</p>
           </div>
           <button class="admin-button admin-button--ghost" id="agent-form-cancel" type="button">收起</button>
         </div>
@@ -401,12 +454,13 @@
         <div class="ac-config-feedback" id="agent-form-feedback" hidden></div>
 
         <form id="agent-form" class="admin-form-grid admin-form-grid--stacked">
+          <input type="hidden" name="form_mode" value="edit">
           <input type="hidden" name="expected_draft_version" value="">
 
           <div class="ac-config-form-grid">
             <label class="admin-field">
-              <span>Agent</span>
-              <select name="agent_code"></select>
+              <span>Agent Code</span>
+              <input type="text" name="agent_code" placeholder="例如：conversion_followup_agent">
             </label>
             <label class="admin-field">
               <span>显示名称</span>
@@ -427,6 +481,11 @@
           </dl>
 
           <label class="admin-field">
+            <span>变更摘要</span>
+            <input type="text" name="change_summary" placeholder="例如：补充问卷变量与输出协议">
+          </label>
+
+          <label class="admin-field">
             <span>角色提示词</span>
             <textarea name="role_prompt" rows="6" placeholder="填写角色提示词"></textarea>
           </label>
@@ -436,8 +495,66 @@
             <textarea name="task_prompt" rows="10" placeholder="填写任务提示词"></textarea>
           </label>
 
+          <div class="ac-config-editor-grid">
+            <section class="ac-config-editor-card">
+              <div>
+                <strong>变量定义（草稿 JSON）</strong>
+                <p class="ac-config-muted">填写数组。运行时会在这里定义的变量基础上注入自动化转化的结构化上下文，例如问卷答案、画像分层、行为层级与标准版内容。</p>
+              </div>
+              <textarea class="ac-config-json-editor" name="variables_json" spellcheck="false" placeholder='[{"variable_key":"questionnaire_answers","display_name":"问卷答案","description":"问卷结构化答案","enabled":true}]'></textarea>
+            </section>
+
+            <section class="ac-config-editor-card">
+              <div>
+                <strong>输出协议（草稿 JSON）</strong>
+                <p class="ac-config-muted">填写数组。建议把生成结果约束在稳定字段里，例如 `draft_reply`、`reason`、`next_action`。</p>
+              </div>
+              <textarea class="ac-config-json-editor" name="output_schema_json" spellcheck="false" placeholder='[{"field_key":"draft_reply","display_name":"草稿回复","type":"string","required":true}]'></textarea>
+            </section>
+          </div>
+
+          <div class="ac-config-editor-grid">
+            <section class="ac-config-editor-card">
+              <div class="ac-config-head">
+                <div>
+                  <strong>已发布版本预览</strong>
+                  <p class="ac-config-muted">对照当前草稿和已发布版本。需要回退时，可以先用已发布内容覆盖草稿，再保存。</p>
+                </div>
+                <button class="admin-button admin-button--ghost" id="agent-load-published-button" type="button">用已发布版本覆盖草稿</button>
+              </div>
+              <div class="ac-config-stack">
+                <div>
+                  <div class="ac-config-code">角色提示词（已发布）</div>
+                  <pre class="ac-config-code-block" id="agent-published-role-prompt">-</pre>
+                </div>
+                <div>
+                  <div class="ac-config-code">任务提示词（已发布）</div>
+                  <pre class="ac-config-code-block" id="agent-published-task-prompt">-</pre>
+                </div>
+                <div>
+                  <div class="ac-config-code">变量定义（已发布）</div>
+                  <pre class="ac-config-code-block" id="agent-published-variables">[]</pre>
+                </div>
+                <div>
+                  <div class="ac-config-code">输出协议（已发布）</div>
+                  <pre class="ac-config-code-block" id="agent-published-output-schema">[]</pre>
+                </div>
+              </div>
+            </section>
+
+            <section class="ac-config-editor-card">
+              <div>
+                <strong>草稿差异摘要</strong>
+                <p class="ac-config-muted">这里直接显示当前草稿与已发布版本的差异，便于发布前自检。</p>
+              </div>
+              <ul class="ac-config-diff-list" id="agent-diff-summary">
+                <li>当前没有差异。</li>
+              </ul>
+            </section>
+          </div>
+
           <div class="admin-form-actions">
-            <button class="admin-button admin-button--primary" id="agent-form-submit" type="submit">保存草稿</button>
+            <button class="admin-button admin-button--primary" id="agent-form-submit" type="submit">保存</button>
             <button class="admin-button admin-button--secondary" id="agent-publish-button" type="button">发布</button>
           </div>
         </form>
@@ -721,6 +838,12 @@
       agentMetaDraftVersion: document.getElementById('agent-meta-draft-version'),
       agentMetaPublishedVersion: document.getElementById('agent-meta-published-version'),
       agentMetaChangeSummary: document.getElementById('agent-meta-change-summary'),
+      agentLoadPublishedButton: document.getElementById('agent-load-published-button'),
+      agentPublishedRolePrompt: document.getElementById('agent-published-role-prompt'),
+      agentPublishedTaskPrompt: document.getElementById('agent-published-task-prompt'),
+      agentPublishedVariables: document.getElementById('agent-published-variables'),
+      agentPublishedOutputSchema: document.getElementById('agent-published-output-schema'),
+      agentDiffSummary: document.getElementById('agent-diff-summary'),
       templateTableBody: document.getElementById('template-table-body'),
       templateEmpty: document.getElementById('template-empty'),
       templateDetailPanel: document.getElementById('template-detail-panel'),
@@ -758,12 +881,16 @@
     };
 
     const agentFields = {
+      formMode: elements.agentForm ? elements.agentForm.querySelector('[name="form_mode"]') : null,
       expectedDraftVersion: elements.agentForm ? elements.agentForm.querySelector('[name="expected_draft_version"]') : null,
       agentCode: elements.agentForm ? elements.agentForm.querySelector('[name="agent_code"]') : null,
       displayName: elements.agentForm ? elements.agentForm.querySelector('[name="display_name"]') : null,
       enabled: elements.agentForm ? elements.agentForm.querySelector('[name="enabled"]') : null,
+      changeSummary: elements.agentForm ? elements.agentForm.querySelector('[name="change_summary"]') : null,
       rolePrompt: elements.agentForm ? elements.agentForm.querySelector('[name="role_prompt"]') : null,
       taskPrompt: elements.agentForm ? elements.agentForm.querySelector('[name="task_prompt"]') : null,
+      variablesJson: elements.agentForm ? elements.agentForm.querySelector('[name="variables_json"]') : null,
+      outputSchemaJson: elements.agentForm ? elements.agentForm.querySelector('[name="output_schema_json"]') : null,
     };
 
     const templateFields = {
@@ -795,6 +922,7 @@
     const state = {
       agents: [],
       agentDetails: {},
+      agentFormMode: 'create',
       selectedAgentCode: null,
       templates: [],
       templateCatalog: [],
@@ -804,6 +932,7 @@
       defaultChannel: null,
       providerAvailable: false,
       modelSettings: null,
+      selectedAgentDetail: null,
     };
 
     function escapeHtml(value) {
@@ -832,6 +961,25 @@
       return payload;
     }
 
+    function prettyJson(value) {
+      return JSON.stringify(Array.isArray(value) ? value : [], null, 2);
+    }
+
+    function parseJsonArray(text, label) {
+      const source = String(text || '').trim();
+      if (!source) return [];
+      let parsed;
+      try {
+        parsed = JSON.parse(source);
+      } catch (error) {
+        throw new Error(label + ' 必须是合法 JSON 数组');
+      }
+      if (!Array.isArray(parsed)) {
+        throw new Error(label + ' 必须是 JSON 数组');
+      }
+      return parsed;
+    }
+
     function statusLabel(status) {
       const normalized = String(status || '').trim();
       if (normalized === 'published') return '已发布';
@@ -845,6 +993,18 @@
       if (normalized === 'published') return 'ac-config-status-badge is-published';
       if (normalized === 'disabled') return 'ac-config-status-badge is-disabled';
       return 'ac-config-status-badge is-draft';
+    }
+
+    function renderAgentPublishedSnapshot(detail) {
+      const published = ((detail || {}).published) || {};
+      const diffSummary = Array.isArray((detail || {}).diff_summary) ? detail.diff_summary : [];
+      elements.agentPublishedRolePrompt.textContent = published.role_prompt || '-';
+      elements.agentPublishedTaskPrompt.textContent = published.task_prompt || '-';
+      elements.agentPublishedVariables.textContent = prettyJson(published.variables || []);
+      elements.agentPublishedOutputSchema.textContent = prettyJson(published.output_schema || []);
+      elements.agentDiffSummary.innerHTML = diffSummary.length
+        ? diffSummary.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
+        : '<li>当前草稿与已发布版本一致。</li>';
     }
 
     function showFeedback(message, tone) {
@@ -940,17 +1100,6 @@
       elements.catalogTotal.textContent = String(state.templateCatalog.length);
     }
 
-    function renderAgentSelectOptions() {
-      if (!agentFields.agentCode) return;
-      const options = state.agents.map((item) => (
-        `<option value="${escapeHtml(item.agent_code)}">${escapeHtml(item.agent_name || item.agent_code)}</option>`
-      )).join('');
-      agentFields.agentCode.innerHTML = options || '<option value="">暂无可用 Agent</option>';
-      if (state.selectedAgentCode) {
-        agentFields.agentCode.value = state.selectedAgentCode;
-      }
-    }
-
     function renderAgents() {
       elements.agentTableBody.innerHTML = state.agents.map((item) => {
         const isActive = item.agent_code === state.selectedAgentCode;
@@ -972,7 +1121,6 @@
         `;
       }).join('');
       elements.agentEmpty.hidden = state.agents.length > 0;
-      renderAgentSelectOptions();
     }
 
     function renderQuestionnaireOptions() {
@@ -1101,6 +1249,41 @@
       `).join('') || '<div class="ac-config-empty">当前模板还没有分类。</div>';
     }
 
+    function resetAgentForm() {
+      if (elements.agentForm) elements.agentForm.reset();
+      if (agentFields.formMode) agentFields.formMode.value = 'create';
+      if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = '1';
+      if (agentFields.agentCode) {
+        agentFields.agentCode.value = '';
+        agentFields.agentCode.readOnly = false;
+      }
+      if (agentFields.displayName) agentFields.displayName.value = '';
+      if (agentFields.enabled) agentFields.enabled.checked = true;
+      if (agentFields.changeSummary) agentFields.changeSummary.value = '创建新 Agent 草稿';
+      if (agentFields.rolePrompt) agentFields.rolePrompt.value = '';
+      if (agentFields.taskPrompt) agentFields.taskPrompt.value = '';
+      if (agentFields.variablesJson) agentFields.variablesJson.value = '[]';
+      if (agentFields.outputSchemaJson) agentFields.outputSchemaJson.value = '[]';
+      elements.agentMetaStatus.textContent = '新建态';
+      elements.agentMetaDraftVersion.textContent = '1';
+      elements.agentMetaPublishedVersion.textContent = '0';
+      elements.agentMetaChangeSummary.textContent = '保存后生成首版草稿';
+      elements.agentPublishButton.hidden = true;
+      state.selectedAgentDetail = null;
+      renderAgentPublishedSnapshot(null);
+      showAgentFormFeedback('', '');
+    }
+
+    function normalizeTemplateBundle(payload) {
+      if (payload && payload.template_bundle) {
+        return payload.template_bundle;
+      }
+      if (payload && payload.template) {
+        return payload;
+      }
+      return null;
+    }
+
     function channelFieldStatusLabel(status) {
       const normalized = String(status || '').trim();
       if (normalized === 'applied') return '已生效';
@@ -1176,9 +1359,6 @@
       state.agents = Array.isArray(initialAgentPayload) ? initialAgentPayload.map(normalizeAgentItem) : [];
       state.templates = Array.isArray(initialTemplatePayload) ? initialTemplatePayload : [];
       state.templateCatalog = Array.isArray(initialCatalogPayload) ? initialCatalogPayload : [];
-      if (!state.selectedAgentCode && state.agents.length) {
-        state.selectedAgentCode = state.agents[0].agent_code;
-      }
       renderSummary();
       renderAgents();
       renderTemplateTable();
@@ -1201,7 +1381,7 @@
       const result = await requestJson(apiUrls.agents_options, { credentials: 'same-origin' });
       state.agents = (result.items || []).map(normalizeAgentItem);
       if (state.selectedAgentCode && !state.agents.some((item) => item.agent_code === state.selectedAgentCode)) {
-        state.selectedAgentCode = state.agents.length ? state.agents[0].agent_code : null;
+        state.selectedAgentCode = null;
       }
       renderSummary();
       renderAgents();
@@ -1214,16 +1394,24 @@
       const hasUnpublishedChanges = !!item.has_unpublished_changes;
       const derivedStatus = !item.enabled ? 'disabled' : publishedVersion > 0 && !hasUnpublishedChanges ? 'published' : 'draft';
 
+      state.agentFormMode = 'edit';
       state.selectedAgentCode = item.agent_code || state.selectedAgentCode;
+      state.selectedAgentDetail = item;
       renderAgents();
-      renderAgentSelectOptions();
 
+      if (agentFields.formMode) agentFields.formMode.value = 'edit';
       if (agentFields.agentCode) agentFields.agentCode.value = item.agent_code || '';
+      if (agentFields.agentCode) agentFields.agentCode.readOnly = true;
       if (agentFields.displayName) agentFields.displayName.value = item.display_name || '';
       if (agentFields.enabled) agentFields.enabled.checked = !!item.enabled;
+      if (agentFields.changeSummary) agentFields.changeSummary.value = item.last_change_summary || '更新 Agent 草稿';
       if (agentFields.rolePrompt) agentFields.rolePrompt.value = draft.role_prompt || '';
       if (agentFields.taskPrompt) agentFields.taskPrompt.value = draft.task_prompt || '';
+      if (agentFields.variablesJson) agentFields.variablesJson.value = prettyJson(draft.variables || []);
+      if (agentFields.outputSchemaJson) agentFields.outputSchemaJson.value = prettyJson(draft.output_schema || []);
       if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = String(item.draft_version || 1);
+      elements.agentFormTitle.textContent = `编辑 Agent · ${item.display_name || item.agent_code || ''}`;
+      elements.agentPublishButton.hidden = false;
 
       elements.agentMetaStatus.textContent = item.enabled
         ? (hasUnpublishedChanges && publishedVersion > 0 ? '已发布，当前有未发布草稿' : statusLabel(derivedStatus))
@@ -1231,6 +1419,7 @@
       elements.agentMetaDraftVersion.textContent = String(item.draft_version || 1);
       elements.agentMetaPublishedVersion.textContent = String(item.published_version || 0);
       elements.agentMetaChangeSummary.textContent = item.last_change_summary || '暂无变更摘要';
+      renderAgentPublishedSnapshot(item);
     }
 
     async function loadAgentDetail(agentCode) {
@@ -1244,20 +1433,27 @@
       return state.agentDetails[normalizedCode];
     }
 
-    async function openAgentForm(agentCode) {
-      if (!state.agents.length) {
-        showFeedback('当前没有可编辑的 Agent。', 'error');
-        return;
+    async function openAgentCreateForm() {
+      elements.agentFormPanel.hidden = false;
+      state.agentFormMode = 'create';
+      state.selectedAgentCode = null;
+      renderAgents();
+      resetAgentForm();
+      elements.agentFormTitle.textContent = '新增 Agent';
+      elements.agentFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (agentFields.agentCode) requestAnimationFrame(() => agentFields.agentCode.focus());
+    }
+
+    async function openAgentEditForm(agentCode) {
+      const normalizedCode = String(agentCode || '').trim();
+      if (!normalizedCode) {
+        throw new Error('请选择 Agent');
       }
       elements.agentFormPanel.hidden = false;
-      elements.agentFormTitle.textContent = '新增 / 编辑 Agent';
       showAgentFormFeedback('', '');
-      const targetCode = String(agentCode || state.selectedAgentCode || state.agents[0].agent_code || '').trim();
-      await loadAgentDetail(targetCode);
+      await loadAgentDetail(normalizedCode);
       elements.agentFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      if (agentFields.displayName) {
-        requestAnimationFrame(() => agentFields.displayName.focus());
-      }
+      if (agentFields.displayName) requestAnimationFrame(() => agentFields.displayName.focus());
     }
 
     function closeAgentForm() {
@@ -1270,18 +1466,23 @@
       const displayName = String((agentFields.displayName || {}).value || '').trim();
       const rolePrompt = String((agentFields.rolePrompt || {}).value || '').trim();
       const taskPrompt = String((agentFields.taskPrompt || {}).value || '').trim();
-      if (!agentCode) throw new Error('请选择 Agent');
+      const changeSummary = String((agentFields.changeSummary || {}).value || '').trim();
+      if (!agentCode) throw new Error('Agent Code 不能为空');
+      if (!/^[a-z][a-z0-9_]*$/.test(agentCode)) throw new Error('Agent Code 只能使用小写字母、数字和下划线，且必须以字母开头');
       if (!displayName) throw new Error('显示名称不能为空');
       if (!rolePrompt) throw new Error('角色提示词不能为空');
       if (!taskPrompt) throw new Error('任务提示词不能为空');
       return {
+        agent_code: agentCode,
         admin_action_token: adminActionToken,
         display_name: displayName,
         enabled: !!((agentFields.enabled || {}).checked),
+        change_summary: changeSummary || (state.agentFormMode === 'create' ? '创建新 Agent 草稿' : '更新 Agent 草稿'),
         role_prompt: rolePrompt,
         task_prompt: taskPrompt,
+        variables: parseJsonArray((agentFields.variablesJson || {}).value, '变量定义'),
+        output_schema: parseJsonArray((agentFields.outputSchemaJson || {}).value, '输出协议'),
         expected_draft_version: Number((agentFields.expectedDraftVersion || {}).value || 1) || 1,
-        change_summary: '自动化转化模块内更新 Agent 配置',
       };
     }
 
@@ -1431,26 +1632,20 @@
         return;
       }
       const payload = await requestJson(withId(apiUrls.profile_segment_template_detail_base, normalizedId), { credentials: 'same-origin' });
+      const bundle = normalizeTemplateBundle(payload);
+      if (!bundle) {
+        throw new Error('模板详情返回数据不完整');
+      }
       state.selectedTemplateId = normalizedId;
-      state.selectedTemplateDetail = payload.template_bundle;
+      state.selectedTemplateDetail = bundle;
       renderTemplateTable();
       renderTemplateDetail();
     }
 
     if (elements.agentCreateButton) {
       elements.agentCreateButton.addEventListener('click', function () {
-        openAgentForm().catch((error) => {
+        openAgentCreateForm().catch((error) => {
           showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
-        });
-      });
-    }
-
-    if (agentFields.agentCode) {
-      agentFields.agentCode.addEventListener('change', function () {
-        const nextCode = String(agentFields.agentCode.value || '').trim();
-        if (!nextCode) return;
-        loadAgentDetail(nextCode).catch((error) => {
-          showAgentFormFeedback(error.message || '加载 Agent 详情失败', 'error');
         });
       });
     }
@@ -1459,7 +1654,7 @@
       elements.agentTableBody.addEventListener('click', function (event) {
         const button = event.target.closest('button[data-agent-edit]');
         if (!button) return;
-        openAgentForm(button.dataset.agentEdit || '').catch((error) => {
+        openAgentEditForm(button.dataset.agentEdit || '').catch((error) => {
           showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
         });
       });
@@ -1475,18 +1670,22 @@
       elements.agentForm.addEventListener('submit', async function (event) {
         event.preventDefault();
         try {
-          const agentCode = String((agentFields.agentCode || {}).value || '').trim();
           const payload = collectAgentPayload();
-          const result = await requestJson(withCode(apiUrls.agent_draft_base, agentCode), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          showAgentFormFeedback('Agent 草稿已保存', 'success');
+          const isCreateMode = state.agentFormMode === 'create';
+          const agentCode = String(payload.agent_code || '').trim();
+          const result = await requestJson(
+            isCreateMode ? apiUrls.agent_create : withCode(apiUrls.agent_draft_base, agentCode),
+            {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            }
+          );
+          showAgentFormFeedback(isCreateMode ? 'Agent 已创建' : 'Agent 草稿已保存', 'success');
           await refreshAgents();
-          await loadAgentDetail(((result || {}).agent || {}).agent_code || agentCode);
-          showFeedback('Agent 草稿已保存', 'success');
+          await openAgentEditForm(((result || {}).agent || {}).agent_code || agentCode);
+          showFeedback(isCreateMode ? 'Agent 已创建' : 'Agent 草稿已保存', 'success');
         } catch (error) {
           showAgentFormFeedback(error.message || '保存 Agent 草稿失败', 'error');
         }
@@ -1511,6 +1710,25 @@
         } catch (error) {
           showAgentFormFeedback(error.message || '发布 Agent 失败', 'error');
         }
+      });
+    }
+
+    if (elements.agentLoadPublishedButton) {
+      elements.agentLoadPublishedButton.addEventListener('click', function () {
+        const detail = state.selectedAgentDetail || {};
+        const published = detail.published || {};
+        if (!detail.agent_code) {
+          showAgentFormFeedback('请先选择一个已有 Agent，再使用已发布版本覆盖草稿。', 'error');
+          return;
+        }
+        if (agentFields.rolePrompt) agentFields.rolePrompt.value = published.role_prompt || '';
+        if (agentFields.taskPrompt) agentFields.taskPrompt.value = published.task_prompt || '';
+        if (agentFields.variablesJson) agentFields.variablesJson.value = prettyJson(published.variables || []);
+        if (agentFields.outputSchemaJson) agentFields.outputSchemaJson.value = prettyJson(published.output_schema || []);
+        if (agentFields.changeSummary && !String(agentFields.changeSummary.value || '').trim()) {
+          agentFields.changeSummary.value = '用已发布版本覆盖草稿';
+        }
+        showAgentFormFeedback('已将已发布版本回填到草稿编辑区，保存后会生成新的草稿版本。', 'success');
       });
     }
 
