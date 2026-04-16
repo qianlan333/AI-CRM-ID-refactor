@@ -759,6 +759,62 @@ def test_create_workflow_remains_compatible_with_legacy_segmentation_basis_behav
     ]
 
 
+def test_operations_list_page_renders_split_navigation_without_legacy_panels(client):
+    response = client.get("/admin/automation-conversion/operations")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "执行记录" in html
+    assert "新建任务流" in html
+    assert "编辑" in html
+    assert "最近更新时间" not in html
+    assert ">详情<" not in html
+
+
+def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_shells(app, client):
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="拆页回归任务流",
+        status="draft",
+        generation_mode="manual_layered",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    new_response = client.get("/admin/automation-conversion/operations/workflows/new")
+    new_html = new_response.get_data(as_text=True)
+    assert new_response.status_code == 200
+    assert "新建任务流" in new_html
+    assert "第一步" in new_html
+    assert "第二步" in new_html
+
+    edit_response = client.get(f"/admin/automation-conversion/operations/workflows/{workflow_id}/edit")
+    edit_html = edit_response.get_data(as_text=True)
+    assert edit_response.status_code == 200
+    assert "编辑任务流" in edit_html
+    assert "保存并进入节点配置" in edit_html
+    assert "返回列表" in edit_html
+    assert "execution-table-body" not in edit_html
+    assert "execution-items-body" not in edit_html
+
+    nodes_response = client.get(f"/admin/automation-conversion/operations/workflows/{workflow_id}/nodes")
+    nodes_html = nodes_response.get_data(as_text=True)
+    assert nodes_response.status_code == 200
+    assert "节点配置" in nodes_html
+    assert "返回任务流编辑" in nodes_html
+    assert "新增节点" in nodes_html
+    assert "任务流保存后，在这个页面完成节点配置" in nodes_html
+    assert "execution-table-body" not in nodes_html
+    assert "execution-items-body" not in nodes_html
+
+    executions_response = client.get("/admin/automation-conversion/operations/executions")
+    executions_html = executions_response.get_data(as_text=True)
+    assert executions_response.status_code == 200
+    assert "执行记录" in executions_html
+    assert "执行批次" in executions_html
+    assert "批次详情" in executions_html
+    assert "返回自动化运营" in executions_html
+
+
 def test_create_workflow_node_supports_immediate_trigger_mode(app):
     workflow_bundle = _create_test_workflow(app, workflow_name="即时节点工作流")
     workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)

@@ -140,28 +140,95 @@ def _redirect_to(endpoint: str, **params):
     return redirect(url_for(endpoint, **compact_params), code=302)
 
 
-def _build_operations_workspace() -> dict[str, object]:
-    selected_workflow_id = _query_int("workflow_id", default=0, minimum=0, maximum=100000000)
+def _operations_page_api_urls() -> dict[str, str]:
     return {
-        "selected_workflow_id": selected_workflow_id or None,
-        "api_urls": {
-            "registry": url_for("api.api_admin_automation_conversion_workflow_registry"),
-            "dashboard": url_for("api.api_admin_automation_conversion_dashboard"),
-            "workflows": url_for("api.api_admin_automation_conversion_workflows"),
-            "workflow_detail_base": url_for("api.api_admin_automation_conversion_workflow_detail", workflow_id=0),
-            "workflow_summary_base": url_for("api.api_admin_automation_conversion_workflow_summary", workflow_id=0),
-            "workflow_activate_base": url_for("api.api_admin_automation_conversion_workflow_activate", workflow_id=0),
-            "workflow_pause_base": url_for("api.api_admin_automation_conversion_workflow_pause", workflow_id=0),
-            "workflow_delete_base": url_for("api.api_admin_automation_conversion_workflow_delete", workflow_id=0),
-            "workflow_nodes_base": url_for("api.api_admin_automation_conversion_workflow_nodes", workflow_id=0),
-            "workflow_node_base": url_for("api.api_admin_automation_conversion_workflow_node_update", node_id=0),
-            "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
-            "profile_segment_templates_options": url_for("api.api_admin_automation_conversion_profile_segment_template_options", enabled_only=0),
-            "profile_segment_templates_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
-            "profile_segment_template_detail_base": url_for("api.api_admin_automation_conversion_profile_segment_template_detail", template_id=0),
-            "executions": url_for("api.api_admin_automation_conversion_execution_batches"),
-            "execution_detail_base": url_for("api.api_admin_automation_conversion_execution_detail", execution_id=0),
-            "jobs_run_due": url_for("api.api_admin_automation_conversion_jobs_run_due"),
+        "registry": url_for("api.api_admin_automation_conversion_workflow_registry"),
+        "dashboard": url_for("api.api_admin_automation_conversion_dashboard"),
+        "workflows": url_for("api.api_admin_automation_conversion_workflows"),
+        "workflow_detail_base": url_for("api.api_admin_automation_conversion_workflow_detail", workflow_id=0),
+        "workflow_summary_base": url_for("api.api_admin_automation_conversion_workflow_summary", workflow_id=0),
+        "workflow_activate_base": url_for("api.api_admin_automation_conversion_workflow_activate", workflow_id=0),
+        "workflow_pause_base": url_for("api.api_admin_automation_conversion_workflow_pause", workflow_id=0),
+        "workflow_delete_base": url_for("api.api_admin_automation_conversion_workflow_delete", workflow_id=0),
+        "workflow_nodes_base": url_for("api.api_admin_automation_conversion_workflow_nodes", workflow_id=0),
+        "workflow_node_base": url_for("api.api_admin_automation_conversion_workflow_node_update", node_id=0),
+        "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
+        "profile_segment_templates_options": url_for("api.api_admin_automation_conversion_profile_segment_template_options", enabled_only=0),
+        "profile_segment_templates_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
+        "profile_segment_template_detail_base": url_for("api.api_admin_automation_conversion_profile_segment_template_detail", template_id=0),
+        "executions": url_for("api.api_admin_automation_conversion_execution_batches"),
+        "execution_detail_base": url_for("api.api_admin_automation_conversion_execution_detail", execution_id=0),
+        "jobs_run_due": url_for("api.api_admin_automation_conversion_jobs_run_due"),
+    }
+
+
+def _operations_page_entry_urls() -> dict[str, str]:
+    return {
+        "list": url_for("api.admin_automation_conversion_operations"),
+        "workflow_new": url_for("api.admin_automation_conversion_workflow_new"),
+        "workflow_edit_base": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=0),
+        "workflow_nodes_base": url_for("api.admin_automation_conversion_workflow_nodes", workflow_id=0),
+        "executions": url_for("api.admin_automation_conversion_execution_records"),
+    }
+
+
+def _build_operations_list_workspace() -> dict[str, object]:
+    return {
+        "page_mode": "list",
+        "api_urls": _operations_page_api_urls(),
+        "entry_urls": _operations_page_entry_urls(),
+        "action_urls": {
+            "workflow_new": url_for("api.admin_automation_conversion_workflow_new"),
+            "execution_records": url_for("api.admin_automation_conversion_execution_records"),
+        },
+    }
+
+
+def _build_workflow_editor_workspace(workflow_id: int | None = None) -> dict[str, object]:
+    normalized_workflow_id = int(workflow_id or 0) or None
+    page_mode = "workflow_edit" if normalized_workflow_id else "workflow_new"
+    return {
+        "page_mode": page_mode,
+        "selected_workflow_id": normalized_workflow_id,
+        "api_urls": _operations_page_api_urls(),
+        "entry_urls": _operations_page_entry_urls(),
+        "action_urls": {
+            "list": url_for("api.admin_automation_conversion_operations"),
+            "workflow_edit": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=normalized_workflow_id or 0),
+            "workflow_nodes": url_for("api.admin_automation_conversion_workflow_nodes", workflow_id=normalized_workflow_id or 0),
+            "execution_records": url_for("api.admin_automation_conversion_execution_records"),
+        },
+    }
+
+
+def _build_workflow_nodes_workspace(workflow_id: int) -> dict[str, object]:
+    normalized_workflow_id = int(workflow_id or 0) or None
+    return {
+        "page_mode": "nodes",
+        "selected_workflow_id": normalized_workflow_id,
+        "api_urls": _operations_page_api_urls(),
+        "entry_urls": _operations_page_entry_urls(),
+        "action_urls": {
+            "list": url_for("api.admin_automation_conversion_operations"),
+            "workflow_edit": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=normalized_workflow_id or 0),
+            "execution_records": url_for("api.admin_automation_conversion_execution_records"),
+        },
+    }
+
+
+def _build_execution_records_workspace() -> dict[str, object]:
+    workflow_id = _query_int("workflow_id", default=0, minimum=0, maximum=100000000) or None
+    execution_id = _query_int("execution_id", default=0, minimum=0, maximum=100000000) or None
+    return {
+        "page_mode": "executions",
+        "selected_workflow_id": workflow_id,
+        "selected_execution_id": execution_id,
+        "api_urls": _operations_page_api_urls(),
+        "entry_urls": _operations_page_entry_urls(),
+        "action_urls": {
+            "list": url_for("api.admin_automation_conversion_operations"),
+            "workflow_edit": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=workflow_id or 0),
+            "workflow_nodes": url_for("api.admin_automation_conversion_workflow_nodes", workflow_id=workflow_id or 0),
         },
     }
 
@@ -285,10 +352,71 @@ def _render_operations_page(*, page_error: str = ""):
             ("自动化运营", None),
         ),
         workspace_tabs=_automation_conversion_workspace_tabs("operations"),
-        operations_workspace=_build_operations_workspace(),
+        operations_workspace=_build_operations_list_workspace(),
         admin_action_token=ensure_admin_console_action_token(),
         page_error=page_error,
-        page_notice="当前先以模块壳子、一级导航和稳定入口为主。",
+        page_notice="当前页面只保留自动化运营列表和一级入口。",
+    )
+
+
+def _render_workflow_editor_page(*, workflow_id: int | None = None, page_error: str = ""):
+    is_new = int(workflow_id or 0) <= 0
+    return _render_admin_template(
+        "automation_conversion_workflow_editor.html",
+        active_nav="automation_conversion",
+        page_title="新建任务流" if is_new else "编辑任务流",
+        page_summary="任务流层只负责适用人群、发给谁、怎么发、生成方式和 Agent 绑定，不再和节点配置混排。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("自动化运营", url_for("api.admin_automation_conversion_operations")),
+            ("新建任务流" if is_new else "编辑任务流", None),
+        ),
+        workspace_tabs=_automation_conversion_workspace_tabs("operations"),
+        operations_workspace=_build_workflow_editor_workspace(workflow_id=workflow_id),
+        admin_action_token=ensure_admin_console_action_token(),
+        page_error=page_error,
+        page_notice="当前页面只承载任务流编辑骨架。",
+    )
+
+
+def _render_workflow_nodes_page(*, workflow_id: int, page_error: str = ""):
+    return _render_admin_template(
+        "automation_conversion_workflow_nodes.html",
+        active_nav="automation_conversion",
+        page_title="节点配置",
+        page_summary="节点层只负责节点名称、目标人群、触发方式和节点内容；任务流配置不再与节点编辑混排。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("自动化运营", url_for("api.admin_automation_conversion_operations")),
+            ("节点配置", None),
+        ),
+        workspace_tabs=_automation_conversion_workspace_tabs("operations"),
+        operations_workspace=_build_workflow_nodes_workspace(workflow_id=workflow_id),
+        admin_action_token=ensure_admin_console_action_token(),
+        page_error=page_error,
+        page_notice="当前页面只承载节点配置骨架。",
+    )
+
+
+def _render_execution_records_page(*, page_error: str = ""):
+    return _render_admin_template(
+        "automation_conversion_execution_records.html",
+        active_nav="automation_conversion",
+        page_title="执行记录",
+        page_summary="执行记录页只看批次与单用户执行明细，不再和任务流编辑、节点配置混排。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("自动化运营", url_for("api.admin_automation_conversion_operations")),
+            ("执行记录", None),
+        ),
+        workspace_tabs=_automation_conversion_workspace_tabs("operations"),
+        operations_workspace=_build_execution_records_workspace(),
+        admin_action_token=ensure_admin_console_action_token(),
+        page_error=page_error,
+        page_notice="当前页面只承载执行记录骨架。",
     )
 
 
@@ -339,6 +467,22 @@ def admin_automation_conversion_overview():
 
 def admin_automation_conversion_operations():
     return _render_operations_page()
+
+
+def admin_automation_conversion_workflow_new():
+    return _render_workflow_editor_page()
+
+
+def admin_automation_conversion_workflow_edit(workflow_id: int):
+    return _render_workflow_editor_page(workflow_id=workflow_id)
+
+
+def admin_automation_conversion_workflow_nodes(workflow_id: int):
+    return _render_workflow_nodes_page(workflow_id=workflow_id)
+
+
+def admin_automation_conversion_execution_records():
+    return _render_execution_records_page()
 
 
 def admin_automation_conversion_auto_reply():
@@ -1016,6 +1160,10 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
     bp.route("/admin/automation-conversion/overview", methods=["GET"])(admin_automation_conversion_overview)
     bp.route("/admin/automation-conversion/operations", methods=["GET"])(admin_automation_conversion_operations)
+    bp.route("/admin/automation-conversion/operations/workflows/new", methods=["GET"])(admin_automation_conversion_workflow_new)
+    bp.route("/admin/automation-conversion/operations/workflows/<int:workflow_id>/edit", methods=["GET"])(admin_automation_conversion_workflow_edit)
+    bp.route("/admin/automation-conversion/operations/workflows/<int:workflow_id>/nodes", methods=["GET"])(admin_automation_conversion_workflow_nodes)
+    bp.route("/admin/automation-conversion/operations/executions", methods=["GET"])(admin_automation_conversion_execution_records)
     bp.route("/admin/automation-conversion/auto-reply", methods=["GET"])(admin_automation_conversion_auto_reply)
     bp.route("/admin/automation-conversion/agent-config", methods=["GET"])(admin_automation_conversion_agent_config)
     bp.route("/admin/automation-conversion/flow-design", methods=["GET"])(admin_automation_conversion_flow_design)

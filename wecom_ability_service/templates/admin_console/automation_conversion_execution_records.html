@@ -1,0 +1,394 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+{% include "admin_console/_automation_conversion_operations_styles.html" %}
+{% endblock %}
+
+{% block content %}
+{% set workspace = operations_workspace or {} %}
+
+{% include "admin_console/_automation_conversion_workspace_tabs.html" %}
+
+<div
+  id="automation-execution-records-root"
+  class="ac-ops-shell"
+  data-page-mode="{{ workspace.page_mode or 'executions' }}"
+  data-selected-workflow-id="{{ workspace.selected_workflow_id or '' }}"
+  data-selected-execution-id="{{ workspace.selected_execution_id or '' }}"
+  data-api-urls='{{ (workspace.api_urls or {})|tojson }}'
+  data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
+  data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
+>
+  <section class="admin-card">
+    <div class="ac-ops-head">
+      <div>
+        <div class="ac-eyebrow">自动化运营</div>
+        <h2>执行记录</h2>
+        <p class="ac-ops-muted">执行记录独立成单页查看。这里专门看批次结果和批次内的发送明细，不再混在自动化运营列表页里。</p>
+      </div>
+      <div class="ac-ops-page-links">
+        <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回自动化运营</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="ac-ops-panel">
+    <div class="ac-ops-head">
+      <div>
+        <h3>执行批次</h3>
+        <p class="ac-ops-muted">支持按任务流筛选批次，并在当前页查看批次详情。</p>
+      </div>
+      <div class="ac-ops-toolbar">
+        <label class="admin-field">
+          <span>任务流</span>
+          <select id="execution-workflow-filter">
+            <option value="">全部任务流</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="ac-ops-feedback" id="executions-page-feedback" hidden></div>
+    <div class="ac-ops-loading" id="executions-page-loading">正在加载执行记录...</div>
+    <div class="ac-ops-table-wrap">
+      <table class="ac-ops-table">
+        <thead>
+          <tr>
+            <th>批次时间</th>
+            <th>任务流 / 节点</th>
+            <th>状态</th>
+            <th>命中人数</th>
+            <th>成功</th>
+            <th>失败</th>
+            <th>跳过</th>
+          </tr>
+        </thead>
+        <tbody id="execution-table-body"></tbody>
+      </table>
+    </div>
+    <div class="ac-ops-empty" id="execution-empty" hidden>当前没有可展示的执行批次。</div>
+  </section>
+
+  <section class="ac-ops-panel" id="execution-detail-panel" hidden>
+    <div class="ac-ops-head">
+      <div>
+        <div class="ac-eyebrow">批次详情</div>
+        <h3 id="execution-detail-title">请选择一条执行记录</h3>
+        <p class="ac-ops-code" id="execution-detail-subtitle"></p>
+      </div>
+    </div>
+    <div class="ac-ops-summary-grid" id="execution-detail-summary"></div>
+    <div class="ac-ops-loading" id="execution-detail-loading" hidden>正在加载批次详情...</div>
+    <div class="ac-ops-empty" id="execution-detail-empty" hidden>选择上方批次后，这里会展示命中成员、生成摘要和内容预览。</div>
+    <div class="ac-ops-table-wrap" id="execution-items-wrap" hidden>
+      <table class="ac-ops-table">
+        <thead>
+          <tr>
+            <th>用户</th>
+            <th>状态</th>
+            <th>agent_code</th>
+            <th>send_record_id</th>
+            <th>生成摘要</th>
+            <th>内容预览</th>
+            <th>更新时间</th>
+          </tr>
+        </thead>
+        <tbody id="execution-items-body"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script>
+  (() => {
+    const root = document.getElementById('automation-execution-records-root');
+    if (!root) return;
+
+    const apiUrls = JSON.parse(root.dataset.apiUrls || '{}');
+    const selectedWorkflowId = Number(root.dataset.selectedWorkflowId || 0) || null;
+    const selectedExecutionId = Number(root.dataset.selectedExecutionId || 0) || null;
+    const elements = {
+      pageFeedback: document.getElementById('executions-page-feedback'),
+      pageLoading: document.getElementById('executions-page-loading'),
+      workflowFilter: document.getElementById('execution-workflow-filter'),
+      tableBody: document.getElementById('execution-table-body'),
+      empty: document.getElementById('execution-empty'),
+      detailPanel: document.getElementById('execution-detail-panel'),
+      detailTitle: document.getElementById('execution-detail-title'),
+      detailSubtitle: document.getElementById('execution-detail-subtitle'),
+      detailSummary: document.getElementById('execution-detail-summary'),
+      detailLoading: document.getElementById('execution-detail-loading'),
+      detailEmpty: document.getElementById('execution-detail-empty'),
+      detailItemsWrap: document.getElementById('execution-items-wrap'),
+      detailItemsBody: document.getElementById('execution-items-body'),
+    };
+
+    const state = {
+      workflows: [],
+      executions: [],
+      selectedWorkflowId,
+      selectedExecutionId,
+    };
+
+    function withId(base, id) {
+      return String(base || '').replace(/\/0(?=\/|$|\?)/, '/' + encodeURIComponent(String(id)));
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      const rawText = await response.text();
+      let payload = {};
+      if (rawText) {
+        try {
+          payload = JSON.parse(rawText);
+        } catch (error) {
+          payload = {};
+        }
+      }
+      if (!response.ok || payload.ok === false) {
+        throw new Error(String(payload.error || payload.message || rawText || `HTTP ${response.status}`).trim());
+      }
+      return payload;
+    }
+
+    function showFeedback(message, tone) {
+      if (!message) {
+        elements.pageFeedback.hidden = true;
+        elements.pageFeedback.textContent = '';
+        elements.pageFeedback.className = 'ac-ops-feedback';
+        return;
+      }
+      elements.pageFeedback.hidden = false;
+      elements.pageFeedback.textContent = message;
+      elements.pageFeedback.className = 'ac-ops-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
+    }
+
+    function formatDateTime(value) {
+      const text = String(value || '').trim();
+      if (!text) return '-';
+      return text.replace('T', ' ').replace(/\.\d+$/, '');
+    }
+
+    function statusLabel(status) {
+      const normalized = String(status || '').trim();
+      if (normalized === 'finished') return '完成';
+      if (normalized === 'running') return '运行中';
+      if (normalized === 'pending') return '待执行';
+      if (normalized === 'failed') return '失败';
+      if (normalized === 'no_candidates') return '无命中';
+      return normalized || '-';
+    }
+
+    function workflowLabel(item) {
+      const workflow = (item || {}).workflow || {};
+      const node = (item || {}).node || {};
+      const workflowText = workflow.workflow_name || workflow.workflow_code || '-';
+      const nodeText = node.node_name || node.node_code || '-';
+      return `${workflowText} / ${nodeText}`;
+    }
+
+    function memberLabel(item) {
+      const member = (item || {}).member || {};
+      return member.external_contact_id || member.phone || member.id || '-';
+    }
+
+    function generationSummaryText(summary) {
+      if (!summary || typeof summary !== 'object') return '-';
+      const lines = [];
+      if (summary.content_source) lines.push(`内容来源：${summary.content_source}`);
+      if (summary.fallback_reason) lines.push(`回退原因：${summary.fallback_reason}`);
+      if (summary.segment_match && summary.segment_match.segment_key) {
+        lines.push(`内容分层：${summary.segment_match.segment_key}`);
+      }
+      if (summary.behavior_match && summary.behavior_match.tier_key) {
+        lines.push(`行为层级：${summary.behavior_match.tier_key}`);
+      }
+      if (summary.agent_code) lines.push(`Agent：${summary.agent_code}`);
+      if (summary.agent_run_id) lines.push(`运行 ID：${summary.agent_run_id}`);
+      if (summary.agent_output_id) lines.push(`输出 ID：${summary.agent_output_id}`);
+      return lines.length ? lines.join('\n') : '-';
+    }
+
+    function executionQueryUrl() {
+      const url = new URL(apiUrls.executions, window.location.origin);
+      if (state.selectedWorkflowId) {
+        url.searchParams.set('workflow_id', String(state.selectedWorkflowId));
+      }
+      url.searchParams.set('limit', '50');
+      return url.pathname + url.search;
+    }
+
+    async function loadWorkflowOptions() {
+      const payload = await requestJson(apiUrls.workflows);
+      state.workflows = Array.isArray(payload.items) ? payload.items : [];
+      const currentValue = state.selectedWorkflowId ? String(state.selectedWorkflowId) : '';
+      const options = ['<option value="">全部任务流</option>'].concat(
+        state.workflows.map((bundle) => {
+          const workflow = bundle.workflow || {};
+          const workflowId = Number(workflow.id || 0);
+          const selected = String(workflowId) === currentValue ? ' selected' : '';
+          return `<option value="${workflowId}"${selected}>${escapeHtml(workflow.workflow_name || workflow.workflow_code || ('任务流 #' + workflowId))}</option>`;
+        })
+      );
+      elements.workflowFilter.innerHTML = options.join('');
+    }
+
+    function renderExecutionRows() {
+      const currentExecutionId = Number(state.selectedExecutionId || 0);
+      elements.tableBody.innerHTML = state.executions.map((item) => {
+        const executionId = Number(item.id || 0);
+        const activeClass = executionId === currentExecutionId ? ' is-active' : '';
+        return `
+          <tr class="is-clickable${activeClass}" data-execution-id="${executionId}">
+            <td>${escapeHtml(formatDateTime(item.scheduled_for || item.updated_at || item.created_at))}</td>
+            <td>
+              <strong>${escapeHtml((item.workflow || {}).workflow_name || (item.workflow || {}).workflow_code || '-')}</strong>
+              <div class="ac-ops-code">${escapeHtml((item.node || {}).node_name || (item.node || {}).node_code || '-')}</div>
+            </td>
+            <td>${escapeHtml(statusLabel(item.status))}</td>
+            <td>${escapeHtml(String(item.hit_count || 0))}</td>
+            <td>${escapeHtml(String(item.sent_count || 0))}</td>
+            <td>${escapeHtml(String(item.failed_count || 0))}</td>
+            <td>${escapeHtml(String(item.skipped_count || 0))}</td>
+          </tr>
+        `;
+      }).join('');
+      elements.empty.hidden = state.executions.length > 0;
+    }
+
+    function setDetailPlaceholder() {
+      elements.detailPanel.hidden = false;
+      elements.detailTitle.textContent = '请选择一条执行记录';
+      elements.detailSubtitle.textContent = '';
+      elements.detailSummary.innerHTML = '';
+      elements.detailItemsBody.innerHTML = '';
+      elements.detailItemsWrap.hidden = true;
+      elements.detailLoading.hidden = true;
+      elements.detailEmpty.hidden = false;
+    }
+
+    function renderExecutionDetail(payload) {
+      const execution = payload.execution || {};
+      const summary = payload.summary || {};
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      elements.detailPanel.hidden = false;
+      elements.detailTitle.textContent = workflowLabel(execution);
+      elements.detailSubtitle.textContent = `批次时间：${formatDateTime(execution.scheduled_for || execution.updated_at || execution.created_at)} · 状态：${statusLabel(execution.status)}`;
+      elements.detailSummary.innerHTML = [
+        { label: '命中人数', value: String(summary.hit_count || 0) },
+        { label: '成功', value: String(summary.success_count || 0) },
+        { label: '失败', value: String(summary.failed_count || 0) },
+        { label: '跳过', value: String(summary.skipped_count || 0) },
+      ].map((entry) => `
+        <div class="ac-ops-stat">
+          <strong>${escapeHtml(entry.value)}</strong>
+          <span>${escapeHtml(entry.label)}</span>
+        </div>
+      `).join('');
+      elements.detailItemsBody.innerHTML = items.map((item) => `
+        <tr>
+          <td>${escapeHtml(String(memberLabel(item)))}</td>
+          <td>${escapeHtml(statusLabel(item.status))}</td>
+          <td>${escapeHtml(item.agent_code || (item.generation_summary || {}).agent_code || '-')}</td>
+          <td>${escapeHtml(item.send_record_id || '-')}</td>
+          <td><div class="ac-ops-generation-summary">${escapeHtml(generationSummaryText(item.generation_summary))}</div></td>
+          <td><div class="ac-ops-generation-summary">${escapeHtml(item.rendered_content_preview || '-')}</div></td>
+          <td>${escapeHtml(formatDateTime(item.updated_at || item.created_at))}</td>
+        </tr>
+      `).join('');
+      elements.detailItemsWrap.hidden = items.length === 0;
+      elements.detailEmpty.hidden = items.length > 0;
+      elements.detailLoading.hidden = true;
+    }
+
+    async function loadExecutionDetail(executionId) {
+      if (!executionId) {
+        state.selectedExecutionId = null;
+        renderExecutionRows();
+        setDetailPlaceholder();
+        return;
+      }
+      state.selectedExecutionId = Number(executionId);
+      renderExecutionRows();
+      elements.detailPanel.hidden = false;
+      elements.detailLoading.hidden = false;
+      elements.detailEmpty.hidden = true;
+      elements.detailItemsWrap.hidden = true;
+      try {
+        const payload = await requestJson(withId(apiUrls.execution_detail_base, executionId));
+        renderExecutionDetail(payload);
+      } catch (error) {
+        elements.detailLoading.hidden = true;
+        elements.detailItemsWrap.hidden = true;
+        elements.detailEmpty.hidden = false;
+        elements.detailTitle.textContent = '批次详情加载失败';
+        elements.detailSubtitle.textContent = String(error.message || error);
+      }
+    }
+
+    async function loadExecutions() {
+      elements.pageLoading.hidden = false;
+      showFeedback('');
+      try {
+        const payload = await requestJson(executionQueryUrl());
+        state.executions = Array.isArray(payload.items) ? payload.items : [];
+        renderExecutionRows();
+        elements.pageLoading.hidden = true;
+        if (!state.executions.length) {
+          state.selectedExecutionId = null;
+          setDetailPlaceholder();
+          return;
+        }
+        const targetExecutionId = state.selectedExecutionId && state.executions.some((item) => Number(item.id || 0) === Number(state.selectedExecutionId))
+          ? state.selectedExecutionId
+          : Number((state.executions[0] || {}).id || 0) || null;
+        await loadExecutionDetail(targetExecutionId);
+      } catch (error) {
+        state.executions = [];
+        renderExecutionRows();
+        elements.pageLoading.hidden = true;
+        setDetailPlaceholder();
+        showFeedback(String(error.message || error), 'error');
+      }
+    }
+
+    function bindEvents() {
+      elements.workflowFilter.addEventListener('change', async (event) => {
+        state.selectedWorkflowId = Number(event.target.value || 0) || null;
+        await loadExecutions();
+      });
+      elements.tableBody.addEventListener('click', async (event) => {
+        const row = event.target.closest('tr[data-execution-id]');
+        if (!row) return;
+        const executionId = Number(row.dataset.executionId || 0);
+        if (!executionId) return;
+        await loadExecutionDetail(executionId);
+      });
+    }
+
+    async function init() {
+      bindEvents();
+      setDetailPlaceholder();
+      await loadWorkflowOptions();
+      await loadExecutions();
+    }
+
+    init().catch((error) => {
+      elements.pageLoading.hidden = true;
+      setDetailPlaceholder();
+      showFeedback(String(error.message || error), 'error');
+    });
+  })();
+</script>
+{% endblock %}

@@ -1,255 +1,7 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
-<style>
-  .ac-ops-shell {
-    display: grid;
-    gap: 18px;
-  }
-
-  .ac-ops-summary-grid,
-  .ac-ops-detail-grid,
-  .ac-ops-node-summary,
-  .ac-ops-execution-summary,
-  .ac-ops-binding-grid,
-  .ac-ops-variant-grid {
-    display: grid;
-    gap: 14px;
-  }
-
-  .ac-ops-summary-grid,
-  .ac-ops-node-summary,
-  .ac-ops-execution-summary {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  }
-
-  .ac-ops-detail-grid {
-    grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.9fr);
-    align-items: start;
-  }
-
-  .ac-ops-card,
-  .ac-ops-panel,
-  .ac-ops-stat,
-  .ac-ops-empty,
-  .ac-ops-form-card {
-    padding: 18px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.88);
-  }
-
-  .ac-ops-panel,
-  .ac-ops-card,
-  .ac-ops-form-card {
-    display: grid;
-    gap: 16px;
-  }
-
-  .ac-ops-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 14px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .ac-ops-head p,
-  .ac-ops-muted,
-  .ac-ops-code {
-    margin: 0;
-    color: #64748b;
-    line-height: 1.6;
-  }
-
-  .ac-ops-code {
-    font-size: 12px;
-  }
-
-  .ac-ops-toolbar,
-  .ac-ops-chip-row,
-  .ac-ops-inline-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-  }
-
-  .ac-ops-table-wrap {
-    overflow: auto;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 18px;
-    background: #fff;
-  }
-
-  .ac-ops-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .ac-ops-table th,
-  .ac-ops-table td {
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-    text-align: left;
-    vertical-align: top;
-  }
-
-  .ac-ops-table th {
-    background: rgba(248, 250, 252, 0.94);
-    color: #64748b;
-    font-size: 12px;
-  }
-
-  .ac-ops-table tbody tr.is-active {
-    background: rgba(255, 247, 237, 0.9);
-  }
-
-  .ac-ops-table tbody tr.is-clickable {
-    cursor: pointer;
-  }
-
-  .ac-ops-table tbody tr.is-clickable:hover {
-    background: rgba(248, 242, 233, 0.62);
-  }
-
-  .ac-ops-stat {
-    display: grid;
-    gap: 8px;
-  }
-
-  .ac-ops-stat strong {
-    font-size: 24px;
-    line-height: 1;
-    color: #1f2937;
-  }
-
-  .ac-ops-stat span {
-    color: #64748b;
-    font-size: 12px;
-  }
-
-  .ac-ops-form-card[hidden],
-  .ac-ops-empty[hidden],
-  .ac-ops-loading[hidden],
-  .ac-ops-feedback[hidden] {
-    display: none;
-  }
-
-  .ac-ops-field-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-  }
-
-  .ac-ops-field-grid--single {
-    grid-template-columns: 1fr;
-  }
-
-  .ac-ops-checkbox-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px;
-  }
-
-  .ac-ops-checkbox-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(248, 250, 252, 0.82);
-  }
-
-  .ac-ops-binding-grid,
-  .ac-ops-variant-grid {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  }
-
-  .ac-ops-binding-item,
-  .ac-ops-variant-item {
-    display: grid;
-    gap: 10px;
-    padding: 14px;
-    border-radius: 16px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(248, 250, 252, 0.82);
-  }
-
-  .ac-ops-summary-meta {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
-  }
-
-  .ac-ops-summary-meta > div {
-    padding: 12px 14px;
-    border-radius: 16px;
-    background: rgba(248, 250, 252, 0.92);
-    border: 1px solid rgba(15, 23, 42, 0.06);
-  }
-
-  .ac-ops-summary-meta dt {
-    margin-bottom: 6px;
-    font-size: 12px;
-    color: #64748b;
-  }
-
-  .ac-ops-summary-meta dd {
-    margin: 0;
-    color: #1f2937;
-    line-height: 1.6;
-  }
-
-  .ac-ops-loading {
-    padding: 14px 16px;
-    border-radius: 14px;
-    background: rgba(15, 23, 42, 0.04);
-    color: #334155;
-  }
-
-  .ac-ops-empty {
-    color: #475569;
-    line-height: 1.7;
-  }
-
-  .ac-ops-feedback {
-    padding: 14px 16px;
-    border-radius: 14px;
-    background: rgba(15, 23, 42, 0.04);
-    color: #334155;
-  }
-
-  .ac-ops-feedback.is-error {
-    background: rgba(254, 242, 242, 0.96);
-    color: #991b1b;
-  }
-
-  .ac-ops-feedback.is-success {
-    background: rgba(240, 253, 244, 0.96);
-    color: #166534;
-  }
-
-  .ac-ops-generation-summary {
-    white-space: pre-line;
-    color: #475569;
-    line-height: 1.6;
-  }
-
-  @media (max-width: 1180px) {
-    .ac-ops-detail-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 760px) {
-    .ac-ops-field-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>
+{% include "admin_console/_automation_conversion_operations_styles.html" %}
 {% endblock %}
 
 {% block content %}
@@ -258,325 +10,66 @@
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
 <div
-  id="automation-operations-root"
+  id="automation-operations-list-root"
   class="ac-ops-shell"
-  data-selected-workflow-id="{{ workspace.selected_workflow_id or '' }}"
+  data-page-mode="{{ workspace.page_mode or 'list' }}"
   data-api-urls='{{ (workspace.api_urls or {})|tojson }}'
+  data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
+  data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
   <section class="admin-card">
     <div class="ac-ops-head">
       <div>
         <div class="ac-eyebrow">自动化运营</div>
-        <h2>任务流列表 / 详情 / 节点 / 执行记录</h2>
-        <p class="ac-ops-muted">这一版只做线性任务流，不做流程图、拖拽编排、复杂筛选群发。</p>
+        <h2>自动化运营</h2>
+        <p class="ac-ops-muted">列表页只保留任务流列表和下一步入口，不再在当前页展开任务流编辑、节点配置或执行记录。</p>
+      </div>
+      <div class="ac-ops-page-links">
+        <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).executions or '#' }}">执行记录</a>
+        <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).workflow_new or '#' }}">新建任务流</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="ac-ops-panel">
+    <div class="ac-ops-head">
+      <div>
+        <h3>任务流列表</h3>
+        <p class="ac-ops-muted">从这里进入任务流编辑页，或直接完成启用、停用、删除。</p>
       </div>
       <div class="ac-ops-toolbar">
-        <button id="workflow-create-button" class="admin-button admin-button--primary" type="button">新建任务流</button>
+        <label class="admin-field">
+          <span>状态</span>
+          <select id="workflow-status-filter">
+            <option value="">全部</option>
+            <option value="draft">草稿</option>
+            <option value="active">启用</option>
+            <option value="paused">停用</option>
+          </select>
+        </label>
       </div>
     </div>
     <div class="ac-ops-feedback" id="operations-feedback" hidden></div>
-    <div class="ac-ops-loading" id="operations-global-loading">正在加载自动化运营数据...</div>
-    <div class="ac-ops-summary-grid" id="operations-summary-grid" hidden>
-      <article class="ac-ops-stat">
-        <span>未填问卷人群</span>
-        <strong id="summary-pending-questionnaire">0</strong>
-      </article>
-      <article class="ac-ops-stat">
-        <span>运营中人群</span>
-        <strong id="summary-operating">0</strong>
-      </article>
-      <article class="ac-ops-stat">
-        <span>已转化人群</span>
-        <strong id="summary-converted">0</strong>
-      </article>
-      <article class="ac-ops-stat">
-        <span>启用中任务流</span>
-        <strong id="summary-active-workflows">0</strong>
-      </article>
-      <article class="ac-ops-stat">
-        <span>最近发送成功</span>
-        <strong id="summary-send-success">0</strong>
-      </article>
-      <article class="ac-ops-stat">
-        <span>最近发送失败</span>
-        <strong id="summary-send-failed">0</strong>
-      </article>
-    </div>
-  </section>
-
-  <div class="ac-ops-detail-grid">
-    <section class="ac-ops-panel">
-      <div class="ac-ops-head">
-        <div>
-          <h3>任务流列表</h3>
-          <p class="ac-ops-muted">列表数据直接来自任务流真实 API，支持新建、编辑、启停、删除。</p>
-        </div>
-        <div class="ac-ops-toolbar">
-          <label class="admin-field">
-            <span>状态</span>
-            <select id="workflow-status-filter">
-              <option value="">全部</option>
-              <option value="draft">草稿</option>
-              <option value="active">启用</option>
-              <option value="paused">停用</option>
-            </select>
-          </label>
-        </div>
-      </div>
-      <div class="ac-ops-table-wrap">
-        <table class="ac-ops-table">
-          <thead>
-            <tr>
-              <th>任务流名称</th>
-              <th>适用人群</th>
-              <th>发给谁</th>
-              <th>怎么发</th>
-              <th>生成方式</th>
-              <th>Agent 绑定情况</th>
-              <th>节点数量</th>
-              <th>状态</th>
-              <th>最近更新时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="workflow-table-body"></tbody>
-        </table>
-      </div>
-      <div class="ac-ops-empty" id="workflow-empty" hidden>当前没有任务流，可以直接新建第一条任务流。</div>
-    </section>
-
-    <aside class="ac-ops-form-card" id="workflow-form-card" hidden>
-      <div class="ac-ops-head">
-        <div>
-          <h3 id="workflow-form-title">新建任务流</h3>
-          <p class="ac-ops-muted">表单校验尽量贴近后端真实规则，避免只靠提交后报错。</p>
-        </div>
-        <button class="admin-button admin-button--ghost" id="workflow-form-cancel" type="button">收起</button>
-      </div>
-      <form id="workflow-form" class="admin-form-grid admin-form-grid--stacked">
-        <input type="hidden" name="workflow_id" value="">
-        <div class="ac-ops-field-grid">
-          <label class="admin-field">
-            <span>任务流名称</span>
-            <input type="text" name="workflow_name" placeholder="例如：运营中 7 天唤醒任务流">
-          </label>
-          <label class="admin-field">
-            <span>状态</span>
-            <select name="status"></select>
-          </label>
-        </div>
-        <label class="admin-field">
-          <span>任务流描述</span>
-          <textarea name="description" rows="3" placeholder="可选，补充这条任务流的用途"></textarea>
-        </label>
-        <div class="admin-field">
-          <span>适用人群</span>
-          <div class="ac-ops-checkbox-grid" id="workflow-audience-options"></div>
-        </div>
-        <div class="ac-ops-field-grid">
-          <label class="admin-field">
-            <span>发给谁</span>
-            <select name="recipient_filter_basis"></select>
-          </label>
-          <label class="admin-field">
-            <span>怎么发</span>
-            <select name="content_segmentation_basis"></select>
-          </label>
-          <label class="admin-field">
-            <span>生成方式</span>
-            <select name="generation_mode"></select>
-          </label>
-        </div>
-        <div class="admin-field" id="workflow-recipient-tier-field" hidden>
-          <span>行为层级</span>
-          <div class="ac-ops-checkbox-grid" id="workflow-recipient-tier-options"></div>
-        </div>
-        <label class="admin-field" id="workflow-template-field" hidden>
-          <span>分层规则模板</span>
-          <select name="content_profile_segment_template_id">
-            <option value="">请选择基础画像分层模板</option>
-          </select>
-        </label>
-        <section class="ac-ops-panel" id="workflow-binding-section" hidden>
-          <div class="ac-ops-head">
-            <div>
-              <h4>Agent 绑定</h4>
-              <p class="ac-ops-muted" id="workflow-binding-help"></p>
-            </div>
-          </div>
-          <div class="ac-ops-binding-grid" id="workflow-binding-grid"></div>
-        </section>
-        <div class="ac-ops-feedback" id="workflow-form-feedback" hidden></div>
-        <div class="ac-ops-inline-actions">
-          <button class="admin-button admin-button--primary" type="submit">保存任务流</button>
-          <button class="admin-button admin-button--secondary" type="button" id="workflow-form-reset">重置</button>
-        </div>
-      </form>
-    </aside>
-  </div>
-
-  <section class="ac-ops-panel" id="workflow-detail-panel" hidden>
-    <div class="ac-ops-head">
-      <div>
-        <div class="ac-eyebrow">任务流详情</div>
-        <h3 id="workflow-detail-title">请选择任务流</h3>
-        <p class="ac-ops-code" id="workflow-detail-code"></p>
-      </div>
-      <div class="ac-ops-toolbar">
-        <button class="admin-button admin-button--secondary" id="workflow-edit-button" type="button">编辑任务流</button>
-        <button class="admin-button admin-button--secondary" id="workflow-status-button" type="button">启用 / 停用</button>
-        <button class="admin-button admin-button--ghost" id="workflow-delete-button" type="button">删除</button>
-      </div>
-    </div>
-    <div class="ac-ops-chip-row" id="workflow-detail-chips"></div>
-    <dl class="ac-ops-summary-meta" id="workflow-detail-summary"></dl>
-  </section>
-
-  <section class="ac-ops-panel" id="node-panel" hidden>
-    <div class="ac-ops-head">
-      <div>
-        <h3>节点配置</h3>
-        <p class="ac-ops-muted">按线性列表维护节点，不做流程图、优先级和分支图。</p>
-      </div>
-      <div class="ac-ops-toolbar">
-        <button class="admin-button admin-button--primary" id="node-create-button" type="button">新增节点</button>
-      </div>
-    </div>
-    <div class="ac-ops-node-summary" id="node-summary-grid"></div>
+    <div class="ac-ops-loading" id="operations-loading">正在加载任务流列表...</div>
     <div class="ac-ops-table-wrap">
       <table class="ac-ops-table">
         <thead>
           <tr>
-            <th>节点名称</th>
-            <th>目标人群</th>
-            <th>触发方式</th>
-            <th>第几天</th>
-            <th>时间</th>
-            <th>标准版内容</th>
-            <th>分层内容</th>
+            <th>任务流名称</th>
+            <th>适用人群</th>
+            <th>发给谁</th>
+            <th>怎么发</th>
+            <th>生成方式</th>
+            <th>Agent 绑定情况</th>
+            <th>节点数量</th>
             <th>状态</th>
             <th>操作</th>
           </tr>
         </thead>
-        <tbody id="node-table-body"></tbody>
+        <tbody id="workflow-table-body"></tbody>
       </table>
     </div>
-    <div class="ac-ops-empty" id="node-empty" hidden>当前任务流还没有节点，可以先新增第一个节点。</div>
-
-    <aside class="ac-ops-form-card" id="node-form-card" hidden>
-      <div class="ac-ops-head">
-        <div>
-          <h4 id="node-form-title">新增节点</h4>
-          <p class="ac-ops-muted">节点层只配置节点名称、目标人群、触发方式和节点内容；内容方式、分层依据、Agent 绑定都继承任务流。</p>
-        </div>
-        <button class="admin-button admin-button--ghost" id="node-form-cancel" type="button">收起</button>
-      </div>
-      <form id="node-form" class="admin-form-grid admin-form-grid--stacked">
-        <input type="hidden" name="node_id" value="">
-        <div class="ac-ops-field-grid">
-          <label class="admin-field">
-            <span>节点名称</span>
-            <input type="text" name="node_name" placeholder="例如：进入运营中第 3 天">
-          </label>
-          <label class="admin-field">
-            <span>目标人群</span>
-            <select name="target_audience_code"></select>
-          </label>
-        </div>
-        <div class="ac-ops-field-grid">
-          <label class="admin-field">
-            <span>触发方式</span>
-            <select name="trigger_mode">
-              <option value="scheduled">进入人群后第 N 天指定时间运行</option>
-              <option value="audience_entered">进入目标人群后立即运行</option>
-            </select>
-          </label>
-          <label class="admin-field">
-            <span>第几天</span>
-            <input type="number" name="day_offset" min="1" value="1">
-          </label>
-          <label class="admin-field">
-            <span>时间</span>
-            <input type="time" name="send_time" value="09:00">
-          </label>
-        </div>
-        <p class="ac-ops-muted" id="node-trigger-help">按时间点运行时，会在进入目标人群后的第 N 天指定时间执行。</p>
-        <p class="ac-ops-muted" id="node-content-help"></p>
-        <label class="admin-field" id="node-standard-content-field">
-          <span id="node-standard-content-label">标准版内容</span>
-          <textarea name="standard_content_text" rows="6" placeholder="输入标准版原文"></textarea>
-        </label>
-        <label class="admin-checkbox">
-          <input type="checkbox" name="enabled" value="1" checked>
-          <span>启用当前节点</span>
-        </label>
-        <section class="ac-ops-panel" id="node-variant-section" hidden>
-          <div class="ac-ops-head">
-            <div>
-              <h4>分层内容明细</h4>
-              <p class="ac-ops-muted" id="node-variant-help"></p>
-            </div>
-          </div>
-          <div class="ac-ops-variant-grid" id="node-variant-grid"></div>
-        </section>
-        <div class="ac-ops-feedback" id="node-form-feedback" hidden></div>
-        <div class="ac-ops-inline-actions" id="node-form-actions">
-          <button class="admin-button admin-button--primary" id="node-form-submit" type="submit">保存节点</button>
-        </div>
-      </form>
-    </aside>
-  </section>
-
-  <section class="ac-ops-panel" id="execution-panel" hidden>
-    <div class="ac-ops-head">
-      <div>
-        <h3>执行记录</h3>
-        <p class="ac-ops-muted">直接消费任务 6 已接好的执行记录接口，只做清晰列表，不做复杂图表。</p>
-      </div>
-    </div>
-    <div class="ac-ops-table-wrap">
-      <table class="ac-ops-table">
-        <thead>
-          <tr>
-            <th>批次时间</th>
-            <th>任务流 / 节点</th>
-            <th>状态</th>
-            <th>命中人数</th>
-            <th>成功</th>
-            <th>失败</th>
-            <th>跳过</th>
-          </tr>
-        </thead>
-        <tbody id="execution-table-body"></tbody>
-      </table>
-    </div>
-    <div class="ac-ops-empty" id="execution-empty" hidden>当前任务流还没有执行记录。</div>
-
-    <div class="ac-ops-form-card" id="execution-detail-card" hidden>
-      <div class="ac-ops-head">
-        <div>
-          <h4 id="execution-detail-title">批次详情</h4>
-          <p class="ac-ops-code" id="execution-detail-code"></p>
-        </div>
-      </div>
-      <div class="ac-ops-execution-summary" id="execution-summary-grid"></div>
-      <div class="ac-ops-table-wrap">
-        <table class="ac-ops-table">
-          <thead>
-            <tr>
-              <th>用户</th>
-              <th>状态</th>
-              <th>agent_code</th>
-              <th>send_record_id</th>
-              <th>生成摘要</th>
-              <th>内容预览</th>
-              <th>更新时间</th>
-            </tr>
-          </thead>
-          <tbody id="execution-item-table-body"></tbody>
-        </table>
-      </div>
-    </div>
+    <div class="ac-ops-empty" id="workflow-empty" hidden>当前没有任务流，可以先新建第一条任务流。</div>
   </section>
 </div>
 {% endblock %}
@@ -585,120 +78,36 @@
 {{ super() }}
 <script>
   (() => {
-    const root = document.getElementById('automation-operations-root');
+    const root = document.getElementById('automation-operations-list-root');
     if (!root) return;
 
     const apiUrls = JSON.parse(root.dataset.apiUrls || '{}');
-    const initialSelectedWorkflowId = Number(root.dataset.selectedWorkflowId || 0);
-
+    const entryUrls = JSON.parse(root.dataset.entryUrls || '{}');
     const elements = {
-      globalLoading: document.getElementById('operations-global-loading'),
+      statusFilter: document.getElementById('workflow-status-filter'),
       feedback: document.getElementById('operations-feedback'),
-      summaryGrid: document.getElementById('operations-summary-grid'),
-      summaryPending: document.getElementById('summary-pending-questionnaire'),
-      summaryOperating: document.getElementById('summary-operating'),
-      summaryConverted: document.getElementById('summary-converted'),
-      summaryActiveWorkflows: document.getElementById('summary-active-workflows'),
-      summarySendSuccess: document.getElementById('summary-send-success'),
-      summarySendFailed: document.getElementById('summary-send-failed'),
-      workflowStatusFilter: document.getElementById('workflow-status-filter'),
-      workflowTableBody: document.getElementById('workflow-table-body'),
-      workflowEmpty: document.getElementById('workflow-empty'),
-      workflowCreateButton: document.getElementById('workflow-create-button'),
-      workflowFormCard: document.getElementById('workflow-form-card'),
-      workflowFormTitle: document.getElementById('workflow-form-title'),
-      workflowForm: document.getElementById('workflow-form'),
-      workflowFormCancel: document.getElementById('workflow-form-cancel'),
-      workflowFormReset: document.getElementById('workflow-form-reset'),
-      workflowFormFeedback: document.getElementById('workflow-form-feedback'),
-      workflowAudienceOptions: document.getElementById('workflow-audience-options'),
-      workflowRecipientTierField: document.getElementById('workflow-recipient-tier-field'),
-      workflowRecipientTierOptions: document.getElementById('workflow-recipient-tier-options'),
-      workflowTemplateField: document.getElementById('workflow-template-field'),
-      workflowBindingSection: document.getElementById('workflow-binding-section'),
-      workflowBindingHelp: document.getElementById('workflow-binding-help'),
-      workflowBindingGrid: document.getElementById('workflow-binding-grid'),
-      workflowDetailPanel: document.getElementById('workflow-detail-panel'),
-      workflowDetailTitle: document.getElementById('workflow-detail-title'),
-      workflowDetailCode: document.getElementById('workflow-detail-code'),
-      workflowDetailChips: document.getElementById('workflow-detail-chips'),
-      workflowDetailSummary: document.getElementById('workflow-detail-summary'),
-      workflowEditButton: document.getElementById('workflow-edit-button'),
-      workflowStatusButton: document.getElementById('workflow-status-button'),
-      workflowDeleteButton: document.getElementById('workflow-delete-button'),
-      nodePanel: document.getElementById('node-panel'),
-      nodeSummaryGrid: document.getElementById('node-summary-grid'),
-      nodeTableBody: document.getElementById('node-table-body'),
-      nodeEmpty: document.getElementById('node-empty'),
-      nodeCreateButton: document.getElementById('node-create-button'),
-      nodeFormCard: document.getElementById('node-form-card'),
-      nodeFormTitle: document.getElementById('node-form-title'),
-      nodeForm: document.getElementById('node-form'),
-      nodeFormCancel: document.getElementById('node-form-cancel'),
-      nodeTriggerHelp: document.getElementById('node-trigger-help'),
-      nodeContentHelp: document.getElementById('node-content-help'),
-      nodeStandardContentField: document.getElementById('node-standard-content-field'),
-      nodeStandardContentLabel: document.getElementById('node-standard-content-label'),
-      nodeVariantSection: document.getElementById('node-variant-section'),
-      nodeVariantHelp: document.getElementById('node-variant-help'),
-      nodeVariantGrid: document.getElementById('node-variant-grid'),
-      nodeFormFeedback: document.getElementById('node-form-feedback'),
-      nodeFormActions: document.getElementById('node-form-actions'),
-      nodeFormSubmit: document.getElementById('node-form-submit'),
-      executionPanel: document.getElementById('execution-panel'),
-      executionTableBody: document.getElementById('execution-table-body'),
-      executionEmpty: document.getElementById('execution-empty'),
-      executionDetailCard: document.getElementById('execution-detail-card'),
-      executionDetailTitle: document.getElementById('execution-detail-title'),
-      executionDetailCode: document.getElementById('execution-detail-code'),
-      executionSummaryGrid: document.getElementById('execution-summary-grid'),
-      executionItemTableBody: document.getElementById('execution-item-table-body'),
+      loading: document.getElementById('operations-loading'),
+      tableBody: document.getElementById('workflow-table-body'),
+      empty: document.getElementById('workflow-empty'),
     };
 
     const state = {
-      registry: null,
-      dashboard: null,
+      registry: {},
       workflows: [],
-      workflowStatusFilter: '',
-      selectedWorkflowId: initialSelectedWorkflowId || null,
-      selectedWorkflowBundle: null,
-      selectedWorkflowSummary: null,
-      selectedExecutionId: null,
-      selectedExecutionDetail: null,
-      executions: [],
-      agentOptions: [],
-      profileTemplateOptions: [],
-      profileTemplateDetails: {},
-      workflowBindingRenderToken: 0,
+      statusFilter: '',
     };
-
-    const NODE_CONTENT_MODE_OPTIONS = [
-      {
-        value: 'standard_direct',
-        label: '标准内容直发',
-        description: '只展示标准版内容。',
-      },
-      {
-        value: 'manual_layered',
-        label: '手动分层录入',
-        description: '展示分层依据、分层内容明细，标准版内容可选。',
-      },
-      {
-        value: 'standard_layered_rewrite',
-        label: '标准内容分层改写',
-        description: '展示分层依据、标准版内容和 Agent 绑定。',
-      },
-      {
-        value: 'personalized_single',
-        label: '单人定制化生成',
-        description: '只展示 Agent 绑定。',
-      },
-    ];
-
-    const NODE_CONTENT_MODE_SET = new Set(NODE_CONTENT_MODE_OPTIONS.map((item) => item.value));
 
     function withId(base, id) {
       return String(base || '').replace(/\/0(?=\/|$|\?)/, '/' + encodeURIComponent(String(id)));
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function showFeedback(message, tone) {
@@ -713,19 +122,6 @@
       elements.feedback.className = 'ac-ops-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
     }
 
-    function showFormFeedback(target, message, tone) {
-      if (!target) return;
-      if (!message) {
-        target.hidden = true;
-        target.textContent = '';
-        target.className = 'ac-ops-feedback';
-        return;
-      }
-      target.hidden = false;
-      target.textContent = message;
-      target.className = 'ac-ops-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
-    }
-
     async function requestJson(url, options) {
       const response = await fetch(url, options);
       const rawText = await response.text();
@@ -737,81 +133,14 @@
           payload = {};
         }
       }
-      if (!response.ok || !payload.ok) {
-        const backendError = String(payload.error || payload.message || rawText || '').trim();
-        if (backendError) {
-          throw new Error(backendError);
-        }
-        throw new Error(`HTTP ${response.status} ${response.statusText || 'request failed'}`);
+      if (!response.ok || payload.ok === false) {
+        throw new Error(String(payload.error || payload.message || rawText || `HTTP ${response.status}`).trim());
       }
       return payload;
     }
 
-    function humanizeNodeSaveError(rawError) {
-      const error = String(rawError || '').trim();
-      const triggerMode = String((elements.nodeForm.elements.trigger_mode || {}).value || '').trim();
-      const contentMode = defaultNodeContentMode(state.selectedWorkflowBundle, null);
-      if (!error) {
-        return '保存失败，请检查节点配置后重试。';
-      }
-      if (/[\u4e00-\u9fff]/.test(error)) {
-        return error;
-      }
-      const directMap = {
-        'node_name is required': '节点名称不能为空',
-        'target_audience_code is required': '目标人群不能为空',
-        'target_audience_code must belong to workflow audiences': '当前目标人群不属于任务流适用人群',
-        'send_time must be HH:MM': '时间格式不正确，请按 HH:MM 填写',
-        'segmentation_basis must be profile or behavior when content_mode requires layered segmentation': '当前内容方式需要分层，请先选择分层依据',
-        'agent_bindings does not match expected segmentation targets': '当前内容方式需要为每个分层目标绑定 Agent',
-        'personalized_single requires exactly 1 agent_binding': '当前内容方式需要绑定 1 个 Agent',
-        'workflow generation_mode is required for node inheritance': '当前任务流配置缺失，节点无法保存',
-        'workflow generation_mode is invalid for node inheritance': '当前任务流配置缺失，节点无法保存',
-        'workflow configuration is incomplete for inherited content_mode': '当前任务流配置缺失，节点无法保存',
-        'workflow segmentation_basis is invalid for inherited layered content_mode': '当前任务流配置缺失，节点无法保存',
-        'workflow segmentation targets are not configured for inherited content_mode': '当前任务流配置缺失，节点无法保存',
-        'workflow profile_segment_template_id is required for inherited profile segmentation': '当前任务流配置缺失，节点无法保存',
-        'workflow agent_bindings are invalid for inherited layered content_mode': '当前任务流配置缺失，节点无法保存',
-        'workflow personalized_single requires exactly 1 agent_binding': '当前任务流未绑定 Agent，单人定制化节点无法保存',
-        'workflow personalized_single agent_binding is invalid': '当前任务流未绑定 Agent，单人定制化节点无法保存',
-        'trigger_mode must be one of scheduled, audience_entered': '触发方式不合法，请刷新页面后重试',
-        'content_mode must be one of standard_direct, manual_layered, standard_layered_rewrite, personalized_single': '内容方式不合法，请刷新页面后重试',
-        'day_offset and send_time are not allowed when trigger_mode is audience_entered': '当前触发方式为“立即运行”，不能同时填写“第几天”和“时间”',
-        'day_offset is not allowed when trigger_mode is audience_entered': '当前触发方式为“立即运行”，不能同时填写“第几天”和“时间”',
-        'send_time is not allowed when trigger_mode is audience_entered': '当前触发方式为“立即运行”，不能同时填写“第几天”和“时间”',
-      };
-      if (directMap[error]) {
-        return directMap[error];
-      }
-      if (error === 'standard_content_text is required') {
-        if (contentMode === 'personalized_single') {
-          return '当前内容方式为“单人定制化生成”，不需要填写标准版内容';
-        }
-        return '当前任务流内容方式需要标准版内容，请先填写节点内容';
-      }
-      if (error === 'day_offset is required when trigger_mode is scheduled' || error === 'send_time is required when trigger_mode is scheduled') {
-        return '当前触发方式为“第 N 天指定时间运行”，请填写“第几天”和“时间”';
-      }
-      if (error === 'content_variants is required for manual_layered') {
-        return '当前任务流内容方式需要分层内容，请先填写分层内容明细';
-      }
-      if (error === 'profile segmentation requires a workflow profile segment template' || error === 'current node segmentation does not allow content_variants') {
-        return '当前任务流配置缺失，节点无法保存';
-      }
-      if (triggerMode === 'audience_entered' && error.includes('day_offset') && error.includes('send_time')) {
-        return '当前触发方式为“立即运行”，不能同时填写“第几天”和“时间”';
-      }
-      if (error.startsWith('HTTP ')) {
-        return '保存失败，服务暂时没有返回可识别的错误信息，请稍后重试。';
-      }
-      if (error === '请求失败') {
-        return '保存失败，请稍后重试或联系管理员检查节点保存接口。';
-      }
-      return `保存失败：${error}`;
-    }
-
     function labelFromRegistry(groupKey, code, fallback) {
-      const items = Array.isArray((state.registry || {})[groupKey]) ? state.registry[groupKey] : [];
+      const items = Array.isArray(state.registry[groupKey]) ? state.registry[groupKey] : [];
       const keyName = groupKey === 'audiences'
         ? 'audience_code'
         : groupKey === 'recipient_filter_bases'
@@ -820,13 +149,9 @@
         ? 'basis_code'
         : groupKey === 'generation_modes'
         ? 'mode_code'
-        : groupKey === 'node_trigger_modes'
-        ? 'trigger_mode'
         : groupKey === 'workflow_statuses'
         ? 'status_code'
-        : groupKey === 'behavior_tiers'
-        ? 'tier_code'
-        : 'binding_scope';
+        : 'tier_code';
       const match = items.find((item) => String(item[keyName] || '') === String(code || ''));
       return match ? (match.label || fallback || code) : (fallback || code || '-');
     }
@@ -847,40 +172,16 @@
       return labelFromRegistry('generation_modes', code, code);
     }
 
-    function nodeTriggerModeLabel(code) {
-      return labelFromRegistry('node_trigger_modes', code, code);
-    }
-
     function statusLabel(code) {
       return labelFromRegistry('workflow_statuses', code, code);
     }
 
-    function behaviorTierLabel(code, fallback) {
+    function behaviorTierLabel(code) {
       const normalized = String(code || '').trim();
       if (normalized === 'lt_2') return '小于 2';
       if (normalized === 'between_2_9') return '2 ~ 9';
       if (normalized === 'gte_10') return '大于等于 10';
-      return labelFromRegistry('behavior_tiers', normalized, fallback || normalized);
-    }
-
-    function workflowUsesLayeredSegmentation(generationMode) {
-      return ['manual_layered', 'auto_layered_rewrite'].includes(String(generationMode || '').trim());
-    }
-
-    function checkedInputValues(container, selector) {
-      return Array.from(container.querySelectorAll(selector)).filter((input) => input.checked).map((input) => input.value);
-    }
-
-    function renderWorkflowRecipientTierOptions() {
-      elements.workflowRecipientTierOptions.innerHTML = (state.registry.behavior_tiers || []).map((item) => `
-        <label class="ac-ops-checkbox-item">
-          <input type="checkbox" name="recipient_behavior_tier_keys" value="${escapeHtml(item.tier_code)}">
-          <span>
-            <strong>${escapeHtml(behaviorTierLabel(item.tier_code, item.label))}</strong><br>
-            <span class="ac-ops-muted">${escapeHtml(item.description || '')}</span>
-          </span>
-        </label>
-      `).join('');
+      return normalized || '-';
     }
 
     function workflowRecipientSummary(workflow) {
@@ -889,7 +190,7 @@
         return recipientFilterLabel(basis || 'none');
       }
       const tierKeys = Array.isArray((workflow || {}).recipient_behavior_tier_keys) ? workflow.recipient_behavior_tier_keys : [];
-      const tierLabels = tierKeys.map((item) => behaviorTierLabel(item, item)).filter(Boolean);
+      const tierLabels = tierKeys.map((item) => behaviorTierLabel(item)).filter(Boolean);
       return tierLabels.length ? `按行为层级发：${tierLabels.join(' / ')}` : '按行为层级发';
     }
 
@@ -902,141 +203,6 @@
       return templateName ? `按基础画像分层 · ${templateName}` : segmentationLabel(basis);
     }
 
-    function escapeHtml(value) {
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    function workflowBindingTargets(segmentationBasis, generationMode, profileTemplateDetail) {
-      if (generationMode === 'manual_layered') return [];
-      if (generationMode === 'personalized_single') {
-        return [{ binding_scope: 'personalized', segment_key: 'personalized', label: '单人定制化' }];
-      }
-      if (segmentationBasis === 'behavior') {
-        return (state.registry.behavior_tiers || []).map((item) => ({
-          binding_scope: 'behavior_tier',
-          segment_key: item.tier_code,
-          label: behaviorTierLabel(item.tier_code, item.label),
-        }));
-      }
-      if (segmentationBasis === 'profile') {
-        return ((profileTemplateDetail || {}).categories || [])
-          .filter((item) => item.enabled)
-          .map((item) => ({
-            binding_scope: 'profile_category',
-            segment_key: item.category_key,
-            label: item.category_name || item.category_key,
-          }));
-      }
-      return [];
-    }
-
-    function manualVariantTargets(workflowBundle, segmentationBasis) {
-      if (!workflowBundle) return [];
-      if (String(segmentationBasis || '') === 'behavior') {
-        return (state.registry.behavior_tiers || []).map((item) => ({
-          variant_scope: 'behavior_tier',
-          segment_key: item.tier_code,
-          label: behaviorTierLabel(item.tier_code, item.label),
-        }));
-      }
-      if (String(segmentationBasis || '') === 'profile') {
-        return (((workflowBundle.profile_segment_template || {}).categories) || [])
-          .filter((item) => item.enabled)
-          .map((item) => ({
-            variant_scope: 'profile_category',
-            segment_key: item.category_key,
-            label: item.category_name || item.category_key,
-          }));
-      }
-      return [];
-    }
-
-    function generationSummaryText(summary) {
-      if (!summary) return '-';
-      const lines = [];
-      if (summary.content_source) lines.push('内容来源：' + summary.content_source);
-      if (summary.fallback_reason) lines.push('回落原因：' + summary.fallback_reason);
-      if ((summary.segment_match || {}).segment_label || (summary.segment_match || {}).segment_key || (summary.segment_match || {}).category_name || (summary.segment_match || {}).category_key) {
-        lines.push('画像命中：' + ((summary.segment_match || {}).segment_label || (summary.segment_match || {}).segment_key || (summary.segment_match || {}).category_name || (summary.segment_match || {}).category_key));
-      }
-      if ((summary.behavior_match || {}).segment_label || (summary.behavior_match || {}).segment_key || (summary.behavior_match || {}).label || (summary.behavior_match || {}).tier_code) {
-        lines.push('行为层级：' + ((summary.behavior_match || {}).segment_label || (summary.behavior_match || {}).segment_key || (summary.behavior_match || {}).label || (summary.behavior_match || {}).tier_code));
-      }
-      if (summary.agent_code) lines.push('Agent：' + summary.agent_code);
-      if (summary.agent_run_id) lines.push('agent_run_id：' + summary.agent_run_id);
-      if (summary.agent_output_id) lines.push('agent_output_id：' + summary.agent_output_id);
-      return lines.length ? lines.join('\n') : '-';
-    }
-
-    function setWorkflowQuery(workflowId) {
-      const url = new URL(window.location.href);
-      if (workflowId) {
-        url.searchParams.set('workflow_id', String(workflowId));
-      } else {
-        url.searchParams.delete('workflow_id');
-      }
-      url.searchParams.delete('execution_id');
-      window.history.replaceState({}, '', url.toString());
-    }
-
-    async function ensureProfileTemplateDetail(templateId) {
-      const normalizedId = Number(templateId || 0);
-      if (!normalizedId) return null;
-      if (state.profileTemplateDetails[normalizedId]) return state.profileTemplateDetails[normalizedId];
-      const payload = await requestJson(withId(apiUrls.profile_segment_template_detail_base, normalizedId), { credentials: 'same-origin' });
-      state.profileTemplateDetails[normalizedId] = payload.template_bundle;
-      return payload.template_bundle;
-    }
-
-    function renderSummary() {
-      const dashboard = state.dashboard || {};
-      const audience = dashboard.audience_overview || {};
-      const recentSend = dashboard.recent_send_summary || {};
-      elements.globalLoading.hidden = true;
-      elements.summaryGrid.hidden = false;
-      elements.summaryPending.textContent = String(audience.pending_questionnaire_count || 0);
-      elements.summaryOperating.textContent = String(audience.operating_count || 0);
-      elements.summaryConverted.textContent = String(audience.converted_count || 0);
-      elements.summaryActiveWorkflows.textContent = String(dashboard.active_workflow_count || 0);
-      elements.summarySendSuccess.textContent = String(recentSend.success_count || 0);
-      elements.summarySendFailed.textContent = String(recentSend.failed_count || 0);
-    }
-
-    function renderWorkflowAudienceOptions() {
-      elements.workflowAudienceOptions.innerHTML = (state.registry.audiences || []).map((item) => `
-        <label class="ac-ops-checkbox-item">
-          <input type="checkbox" name="audiences" value="${escapeHtml(item.audience_code)}">
-          <span>
-            <strong>${escapeHtml(item.label || item.audience_code)}</strong><br>
-            <span class="ac-ops-muted">${escapeHtml(item.description || '')}</span>
-          </span>
-        </label>
-      `).join('');
-    }
-
-    function renderWorkflowSelectOptions() {
-      const recipientSelect = elements.workflowForm.elements.recipient_filter_basis;
-      recipientSelect.innerHTML = (state.registry.recipient_filter_bases || []).map((item) => `<option value="${escapeHtml(item.basis_code)}">${escapeHtml(item.label || item.basis_code)}</option>`).join('');
-      const segmentationSelect = elements.workflowForm.elements.content_segmentation_basis;
-      segmentationSelect.innerHTML = (state.registry.segmentation_bases || []).map((item) => `<option value="${escapeHtml(item.basis_code)}">${escapeHtml(item.label || item.basis_code)}</option>`).join('');
-      const generationSelect = elements.workflowForm.elements.generation_mode;
-      generationSelect.innerHTML = (state.registry.generation_modes || []).map((item) => `<option value="${escapeHtml(item.mode_code)}">${escapeHtml(item.label || item.mode_code)}</option>`).join('');
-      const statusSelect = elements.workflowForm.elements.status;
-      statusSelect.innerHTML = (state.registry.workflow_statuses || []).map((item) => `<option value="${escapeHtml(item.status_code)}">${escapeHtml(item.label || item.status_code)}</option>`).join('');
-      const templateSelect = elements.workflowForm.elements.content_profile_segment_template_id;
-      templateSelect.innerHTML = `<option value="">请选择基础画像分层模板</option>` + state.profileTemplateOptions.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.template_name || item.template_code)}</option>`).join('');
-    }
-
-    function filteredWorkflows() {
-      if (!state.workflowStatusFilter) return state.workflows;
-      return state.workflows.filter((item) => String(((item.workflow || {}).status) || '') === state.workflowStatusFilter);
-    }
-
     function workflowBindingsSummary(item) {
       const bindings = Array.isArray(item.agent_bindings) ? item.agent_bindings : [];
       if (!bindings.length) return '无';
@@ -1047,13 +213,22 @@
       }).join(' / ');
     }
 
-    function renderWorkflowTable() {
+    function filteredWorkflows() {
+      if (!state.statusFilter) return state.workflows;
+      return state.workflows.filter((item) => String(((item.workflow || {}).status) || '') === state.statusFilter);
+    }
+
+    function workflowEditUrl(workflowId) {
+      return withId(entryUrls.workflow_edit_base, workflowId);
+    }
+
+    function renderTable() {
       const items = filteredWorkflows();
-      elements.workflowTableBody.innerHTML = items.map((item) => {
+      elements.tableBody.innerHTML = items.map((item) => {
         const workflow = item.workflow || {};
-        const isActive = Number(workflow.id || 0) === Number(state.selectedWorkflowId || 0);
+        const workflowId = Number(workflow.id || 0);
         return `
-          <tr class="is-clickable${isActive ? ' is-active' : ''}" data-workflow-id="${escapeHtml(workflow.id)}">
+          <tr>
             <td>
               <strong>${escapeHtml(workflow.workflow_name || workflow.workflow_code || '-')}</strong>
               <div class="ac-ops-code">${escapeHtml(workflow.workflow_code || '')}</div>
@@ -1065,751 +240,24 @@
             <td>${escapeHtml(workflowBindingsSummary(item))}</td>
             <td>${escapeHtml((item.nodes || []).length)}</td>
             <td>${escapeHtml(statusLabel(workflow.status))}</td>
-            <td>${escapeHtml(workflow.updated_at || '-')}</td>
             <td>
               <div class="ac-ops-inline-actions">
-                <button class="admin-button admin-button--secondary" type="button" data-action="detail" data-workflow-id="${escapeHtml(workflow.id)}">详情</button>
-                <button class="admin-button admin-button--secondary" type="button" data-action="edit" data-workflow-id="${escapeHtml(workflow.id)}">编辑</button>
-                <button class="admin-button admin-button--secondary" type="button" data-action="${workflow.status === 'active' ? 'pause' : 'activate'}" data-workflow-id="${escapeHtml(workflow.id)}">${workflow.status === 'active' ? '停用' : '启用'}</button>
-                <button class="admin-button admin-button--ghost" type="button" data-action="delete" data-workflow-id="${escapeHtml(workflow.id)}">删除</button>
+                <a class="admin-button admin-button--secondary" href="${escapeHtml(workflowEditUrl(workflowId))}">编辑</a>
+                <button class="admin-button admin-button--secondary" type="button" data-action="${workflow.status === 'active' ? 'pause' : 'activate'}" data-workflow-id="${escapeHtml(workflowId)}">${workflow.status === 'active' ? '停用' : '启用'}</button>
+                <button class="admin-button admin-button--ghost" type="button" data-action="delete" data-workflow-id="${escapeHtml(workflowId)}">删除</button>
               </div>
             </td>
           </tr>
         `;
       }).join('');
-      elements.workflowEmpty.hidden = items.length > 0;
-    }
-
-    function setCheckboxValues(container, values) {
-      const selected = new Set(values || []);
-      container.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-        input.checked = selected.has(input.value);
-      });
-    }
-
-    function getWorkflowFormValues() {
-      return {
-        workflowId: Number(elements.workflowForm.elements.workflow_id.value || 0),
-        workflowName: String(elements.workflowForm.elements.workflow_name.value || '').trim(),
-        description: String(elements.workflowForm.elements.description.value || '').trim(),
-        status: String(elements.workflowForm.elements.status.value || '').trim(),
-        recipientFilterBasis: String(elements.workflowForm.elements.recipient_filter_basis.value || '').trim(),
-        recipientBehaviorTierKeys: checkedInputValues(elements.workflowRecipientTierOptions, 'input[name="recipient_behavior_tier_keys"]'),
-        contentSegmentationBasis: String(elements.workflowForm.elements.content_segmentation_basis.value || '').trim(),
-        generationMode: String(elements.workflowForm.elements.generation_mode.value || '').trim(),
-        contentProfileSegmentTemplateId: Number(elements.workflowForm.elements.content_profile_segment_template_id.value || 0),
-        audiences: Array.from(elements.workflowForm.querySelectorAll('input[name="audiences"]:checked')).map((input) => input.value),
-      };
-    }
-
-    function currentWorkflowEditingBundle() {
-      const workflowId = Number(elements.workflowForm.elements.workflow_id.value || 0);
-      return state.workflows.find((item) => Number((item.workflow || {}).id || 0) === workflowId) || null;
-    }
-
-    function allowedAgentOptions(generationMode) {
-      if (!['auto_layered_rewrite', 'personalized_single'].includes(generationMode)) {
-        return [];
-      }
-      return state.agentOptions;
-    }
-
-    async function renderWorkflowBindingControls() {
-      const renderToken = state.workflowBindingRenderToken + 1;
-      state.workflowBindingRenderToken = renderToken;
-      const values = getWorkflowFormValues();
-      const usesLayeredSegmentation = workflowUsesLayeredSegmentation(values.generationMode);
-      const contentSegmentationBasis = usesLayeredSegmentation ? values.contentSegmentationBasis : 'none';
-      const needsProfileTemplate = contentSegmentationBasis === 'profile';
-      const currentSelections = {};
-      elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]').forEach((select) => {
-        const key = `${select.dataset.bindingScope || ''}:${select.dataset.segmentKey || ''}`;
-        currentSelections[key] = String(select.value || '').trim();
-      });
-      showFormFeedback(elements.workflowFormFeedback, '', '');
-      elements.workflowBindingHelp.textContent = '';
-      elements.workflowRecipientTierField.hidden = values.recipientFilterBasis !== 'behavior';
-      if (needsProfileTemplate) {
-        elements.workflowTemplateField.hidden = false;
-      } else {
-        elements.workflowTemplateField.hidden = true;
-      }
-
-      if (values.generationMode === 'manual_layered') {
-        elements.workflowBindingSection.hidden = true;
-        elements.workflowBindingGrid.innerHTML = '';
-        elements.workflowBindingHelp.textContent = '手动分层录入不允许绑定 Agent。';
-        return;
-      }
-
-      if (values.generationMode === 'auto_layered_rewrite' && contentSegmentationBasis === 'none') {
-        elements.workflowBindingSection.hidden = false;
-        elements.workflowBindingHelp.textContent = '标准版自动分层改写必须选择“基础画像分层”或“行为层级分层”。';
-        elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">当前配置还不能绑定 Agent。</div>';
-        return;
-      }
-
-      let templateDetail = null;
-      if (needsProfileTemplate && values.contentProfileSegmentTemplateId) {
-        elements.workflowBindingSection.hidden = false;
-        elements.workflowBindingHelp.textContent = '正在加载基础画像分层模板...';
-        elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">正在加载分层目标...</div>';
-        templateDetail = await ensureProfileTemplateDetail(values.contentProfileSegmentTemplateId);
-        if (renderToken !== state.workflowBindingRenderToken) return;
-      }
-      if (needsProfileTemplate && !values.contentProfileSegmentTemplateId) {
-        elements.workflowBindingSection.hidden = false;
-        elements.workflowBindingHelp.textContent = '基础画像分层时，请先选择分层规则模板，再绑定 Agent。';
-        elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">当前还没有可绑定的画像分类。</div>';
-        return;
-      }
-      const targets = workflowBindingTargets(contentSegmentationBasis, values.generationMode, templateDetail);
-      elements.workflowBindingSection.hidden = false;
-      elements.workflowBindingHelp.textContent =
-        values.generationMode === 'personalized_single'
-          ? '单人定制化生成只允许绑定 1 个 Agent。'
-          : contentSegmentationBasis === 'behavior'
-          ? '行为层级分层固定为：小于 2、2 ~ 9、大于等于 10。'
-          : '标准版自动分层改写需要按分层类别逐项绑定 Agent。';
-
-      const editingBundle = currentWorkflowEditingBundle();
-      const existingBindings = Array.isArray((editingBundle || {}).agent_bindings) ? editingBundle.agent_bindings : [];
-      const bindingByKey = {};
-      existingBindings.forEach((item) => {
-        const key = `${item.binding_scope || ''}:${item.segment_key || (item.binding_scope === 'personalized' ? 'personalized' : '')}`;
-        bindingByKey[key] = String(item.agent_code || ((item.agent || {}).agent_code) || '');
-      });
-
-      const options = allowedAgentOptions(values.generationMode);
-      elements.workflowBindingGrid.innerHTML = targets.map((target) => {
-        const key = `${target.binding_scope}:${target.segment_key || (target.binding_scope === 'personalized' ? 'personalized' : '')}`;
-        return `
-          <label class="ac-ops-binding-item">
-            <span>${escapeHtml(target.label)}</span>
-            <select data-binding-scope="${escapeHtml(target.binding_scope)}" data-segment-key="${escapeHtml(target.segment_key || '')}">
-              <option value="">请选择 Agent</option>
-              ${options.map((item) => `<option value="${escapeHtml(item.agent_code)}" ${String(item.agent_code || '') === String(currentSelections[key] || bindingByKey[key] || '') ? 'selected' : ''}>${escapeHtml(item.agent_name || item.agent_code)} · ${escapeHtml(item.status || '')}</option>`).join('')}
-            </select>
-          </label>
-        `;
-      }).join('') || '<div class="ac-ops-empty">当前配置没有需要绑定的 Agent。</div>';
-    }
-
-    function openWorkflowForm(mode, item) {
-      elements.workflowFormCard.hidden = false;
-      showFormFeedback(elements.workflowFormFeedback, '', '');
-      elements.workflowForm.reset();
-      elements.workflowForm.elements.workflow_id.value = '';
-      renderWorkflowSelectOptions();
-      renderWorkflowAudienceOptions();
-      if (mode === 'edit' && item) {
-        const workflow = item.workflow || {};
-        elements.workflowFormTitle.textContent = '编辑任务流';
-        elements.workflowForm.elements.workflow_id.value = String(workflow.id || '');
-        elements.workflowForm.elements.workflow_name.value = workflow.workflow_name || '';
-        elements.workflowForm.elements.description.value = workflow.description || '';
-        elements.workflowForm.elements.status.value = workflow.status || 'draft';
-        elements.workflowForm.elements.recipient_filter_basis.value = workflow.recipient_filter_basis || 'none';
-        setCheckboxValues(elements.workflowRecipientTierOptions, workflow.recipient_behavior_tier_keys || []);
-        elements.workflowForm.elements.content_segmentation_basis.value = workflow.content_segmentation_basis || workflow.segmentation_basis || 'none';
-        elements.workflowForm.elements.generation_mode.value = workflow.generation_mode || 'manual_layered';
-        elements.workflowForm.elements.content_profile_segment_template_id.value = workflow.content_profile_segment_template_id || workflow.profile_segment_template_id || '';
-        setCheckboxValues(elements.workflowAudienceOptions, (item.audiences || []).map((row) => row.audience_code));
-      } else {
-        elements.workflowFormTitle.textContent = '新建任务流';
-        elements.workflowForm.elements.status.value = 'draft';
-        elements.workflowForm.elements.recipient_filter_basis.value = 'none';
-        setCheckboxValues(elements.workflowRecipientTierOptions, []);
-        elements.workflowForm.elements.content_segmentation_basis.value = 'none';
-        elements.workflowForm.elements.generation_mode.value = 'manual_layered';
-        elements.workflowForm.elements.content_profile_segment_template_id.value = '';
-      }
-      renderWorkflowBindingControls().catch((error) => {
-        showFormFeedback(elements.workflowFormFeedback, error.message || '加载 Agent 绑定失败', 'error');
-      });
-      elements.workflowForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    function closeWorkflowForm() {
-      elements.workflowFormCard.hidden = true;
-      showFormFeedback(elements.workflowFormFeedback, '', '');
-    }
-
-    function validateWorkflowPayload(payload) {
-      const expectedBindingCount = elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]').length;
-      if (!payload.workflow_name) throw new Error('任务流名称不能为空');
-      if (!payload.audiences.length) throw new Error('请至少选择一个适用人群');
-      if (payload.recipient_filter_basis === 'none' && payload.recipient_behavior_tier_keys.length) {
-        throw new Error('不分层发送时不应选择行为层级');
-      }
-      if (payload.recipient_filter_basis === 'behavior' && !payload.recipient_behavior_tier_keys.length) {
-        throw new Error('按行为层级发时至少选择一个行为层级');
-      }
-      if (payload.content_segmentation_basis === 'profile' && !payload.content_profile_segment_template_id) {
-        throw new Error('基础画像分层时必须选择分层规则模板');
-      }
-      if (payload.generation_mode === 'manual_layered' && payload.agent_bindings.length) {
-        throw new Error('手动分层录入不允许绑定 Agent');
-      }
-      if (payload.generation_mode === 'auto_layered_rewrite' && payload.content_segmentation_basis === 'none') {
-        throw new Error('标准版自动分层改写必须选择基础画像分层或行为层级分层');
-      }
-      if (payload.generation_mode === 'auto_layered_rewrite' && payload.agent_bindings.length !== expectedBindingCount) {
-        throw new Error('标准版自动分层改写必须为每个分层类别绑定 Agent');
-      }
-      if (payload.generation_mode === 'personalized_single' && payload.agent_bindings.length !== 1) {
-        throw new Error('单人定制化生成只能绑定 1 个 Agent');
-      }
-    }
-
-    async function buildWorkflowPayload() {
-      const values = getWorkflowFormValues();
-      const contentSegmentationBasis = workflowUsesLayeredSegmentation(values.generationMode) ? values.contentSegmentationBasis : 'none';
-      const bindingInputs = Array.from(elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]'));
-      const bindings = bindingInputs
-        .map((select) => ({
-          agent_code: String(select.value || '').trim(),
-          binding_scope: select.dataset.bindingScope || '',
-          segment_key: select.dataset.segmentKey || '',
-        }))
-        .filter((item) => item.agent_code);
-      const payload = {
-        workflow_name: values.workflowName,
-        description: values.description,
-        audiences: values.audiences,
-        recipient_filter_basis: values.recipientFilterBasis || 'none',
-        recipient_behavior_tier_keys: values.recipientFilterBasis === 'behavior' ? values.recipientBehaviorTierKeys : [],
-        content_segmentation_basis: contentSegmentationBasis,
-        content_profile_segment_template_id: contentSegmentationBasis === 'profile' ? values.contentProfileSegmentTemplateId || null : null,
-        generation_mode: values.generationMode,
-        agent_bindings: bindings,
-        status: values.status || 'draft',
-      };
-      validateWorkflowPayload(payload);
-      return payload;
-    }
-
-    async function saveWorkflow(event) {
-      event.preventDefault();
-      try {
-        const payload = await buildWorkflowPayload();
-        const workflowId = Number(elements.workflowForm.elements.workflow_id.value || 0);
-        const result = await requestJson(workflowId ? withId(apiUrls.workflow_detail_base, workflowId) : apiUrls.workflows, {
-          method: workflowId ? 'PUT' : 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        showFormFeedback(elements.workflowFormFeedback, workflowId ? '任务流已更新' : '任务流已创建', 'success');
-        await loadWorkflows();
-        const savedId = Number((((result || {}).workflow_bundle || {}).workflow || {}).id || workflowId || 0);
-        if (savedId) {
-          await selectWorkflow(savedId);
-        }
-        closeWorkflowForm();
-        showFeedback(workflowId ? '任务流已更新' : '任务流已创建', 'success');
-      } catch (error) {
-        showFormFeedback(elements.workflowFormFeedback, error.message || '保存任务流失败', 'error');
-      }
-    }
-
-    function renderWorkflowDetail() {
-      const bundle = state.selectedWorkflowBundle;
-      const summary = state.selectedWorkflowSummary || {};
-      if (!bundle) {
-        elements.workflowDetailPanel.hidden = true;
-        elements.nodePanel.hidden = true;
-        elements.executionPanel.hidden = true;
-        return;
-      }
-      const workflow = bundle.workflow || {};
-      elements.workflowDetailPanel.hidden = false;
-      elements.nodePanel.hidden = false;
-      elements.executionPanel.hidden = false;
-      elements.workflowDetailTitle.textContent = workflow.workflow_name || workflow.workflow_code || '任务流详情';
-      elements.workflowDetailCode.textContent = 'workflow_code=' + (workflow.workflow_code || '-');
-      elements.workflowStatusButton.textContent = workflow.status === 'active' ? '停用任务流' : '启用任务流';
-      elements.workflowDetailChips.innerHTML = [
-        workflow.status ? `<span class="admin-chip admin-chip--neutral">${escapeHtml(statusLabel(workflow.status))}</span>` : '',
-        `<span class="admin-chip admin-chip--neutral">发给谁：${escapeHtml(workflowRecipientSummary(workflow))}</span>`,
-        `<span class="admin-chip admin-chip--neutral">怎么发：${escapeHtml(workflowContentSummary(workflow, bundle))}</span>`,
-        workflow.generation_mode ? `<span class="admin-chip admin-chip--neutral">${escapeHtml(generationLabel(workflow.generation_mode))}</span>` : '',
-        ...(bundle.audiences || []).map((item) => `<span class="admin-chip admin-chip--neutral">${escapeHtml(audienceLabel(item.audience_code))}</span>`),
-      ].join('');
-      elements.workflowDetailSummary.innerHTML = `
-        <div><dt>节点数量</dt><dd>${escapeHtml(summary.node_count || (bundle.nodes || []).length)}</dd></div>
-        <div><dt>发给谁</dt><dd>${escapeHtml(workflowRecipientSummary(workflow))}</dd></div>
-        <div><dt>怎么发</dt><dd>${escapeHtml(workflowContentSummary(workflow, bundle))}</dd></div>
-        <div><dt>Agent 绑定</dt><dd>${escapeHtml((summary.agent_binding_summary || []).map((item) => item.agent_name || item.agent_code || '-').join(' / ') || '无')}</dd></div>
-        <div><dt>最近执行时间</dt><dd>${escapeHtml(summary.latest_execution_at || '暂无记录')}</dd></div>
-        <div><dt>最近更新时间</dt><dd>${escapeHtml(workflow.updated_at || '-')}</dd></div>
-        <div><dt>画像模板</dt><dd>${escapeHtml((((bundle.profile_segment_template || {}).template) || {}).template_name || '无')}</dd></div>
-        <div><dt>说明</dt><dd>${escapeHtml(workflow.description || '暂无描述')}</dd></div>
-      `;
-    }
-
-    function renderNodeSection() {
-      const bundle = state.selectedWorkflowBundle;
-      if (!bundle) return;
-      const workflow = bundle.workflow || {};
-      const nodes = Array.isArray(bundle.nodes) ? bundle.nodes : [];
-      elements.nodeSummaryGrid.innerHTML = `
-        <article class="ac-ops-stat"><span>节点数量</span><strong>${escapeHtml(nodes.length)}</strong></article>
-        <article class="ac-ops-stat"><span>发给谁</span><strong>${escapeHtml(workflowRecipientSummary(workflow))}</strong></article>
-        <article class="ac-ops-stat"><span>怎么发</span><strong>${escapeHtml(workflowContentSummary(workflow, bundle))}</strong></article>
-        <article class="ac-ops-stat"><span>生成方式</span><strong>${escapeHtml(generationLabel(workflow.generation_mode))}</strong></article>
-      `;
-      elements.nodeTableBody.innerHTML = nodes.map((node) => `
-        <tr>
-          <td><strong>${escapeHtml(node.node_name || node.node_code || '-')}</strong><div class="ac-ops-code">${escapeHtml(node.node_code || '')}</div></td>
-          <td>${escapeHtml(audienceLabel(node.target_audience_code))}</td>
-          <td>${escapeHtml(nodeTriggerModeLabel(node.trigger_mode || 'scheduled'))}</td>
-          <td>${node.trigger_mode === 'audience_entered' ? '-' : `第 ${escapeHtml(node.day_offset || 1)} 天`}</td>
-          <td>${escapeHtml(node.trigger_mode === 'audience_entered' ? '立即运行' : (node.send_time || '-'))}</td>
-          <td>${escapeHtml(node.standard_content_text || '-').slice(0, 60)}</td>
-          <td>${escapeHtml((node.content_variants || []).length)}</td>
-          <td>${escapeHtml(node.status || '-')}</td>
-          <td>
-            <div class="ac-ops-inline-actions">
-              <button class="admin-button admin-button--secondary" type="button" data-node-action="view" data-node-id="${escapeHtml(node.id)}">查看</button>
-              <button class="admin-button admin-button--secondary" type="button" data-node-action="edit" data-node-id="${escapeHtml(node.id)}">编辑</button>
-              <button class="admin-button admin-button--ghost" type="button" data-node-action="delete" data-node-id="${escapeHtml(node.id)}">删除</button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
-      elements.nodeEmpty.hidden = nodes.length > 0;
-    }
-
-    function renderNodeTargetOptions() {
-      const bundle = state.selectedWorkflowBundle;
-      const select = elements.nodeForm.elements.target_audience_code;
-      if (!bundle) {
-        select.innerHTML = '<option value="">请先选择任务流</option>';
-        return;
-      }
-      select.innerHTML = (bundle.audiences || []).map((item) => `<option value="${escapeHtml(item.audience_code)}">${escapeHtml(audienceLabel(item.audience_code))}</option>`).join('');
-    }
-
-    function defaultNodeContentMode(bundle, node) {
-      const workflowMode = String((((bundle || {}).workflow) || {}).generation_mode || '').trim();
-      if (workflowMode === 'manual_layered') return 'manual_layered';
-      if (workflowMode === 'auto_layered_rewrite') return 'standard_layered_rewrite';
-      if (workflowMode === 'personalized_single') return 'personalized_single';
-      return 'standard_direct';
-    }
-
-    function defaultNodeSegmentationBasis(bundle, node, contentMode) {
-      if (!['manual_layered', 'standard_layered_rewrite'].includes(String(contentMode || '').trim())) {
-        return '';
-      }
-      const workflowBasis = String((((bundle || {}).workflow) || {}).content_segmentation_basis || (((bundle || {}).workflow) || {}).segmentation_basis || '').trim();
-      if (workflowBasis === 'profile' || workflowBasis === 'behavior') {
-        return workflowBasis;
-      }
-      return ((((bundle || {}).profile_segment_template || {}).template) || {}).id ? 'profile' : 'behavior';
-    }
-
-    function workflowAgentName(binding) {
-      const agent = (binding || {}).agent || {};
-      return agent.agent_name || binding.agent_name || binding.agent_code || agent.agent_code || '未绑定 Agent';
-    }
-
-    function collectNodeContentVariants() {
-      return Array.from(elements.nodeVariantGrid.querySelectorAll('textarea[data-segment-key]'))
-        .map((input) => ({
-          segment_key: String(input.dataset.segmentKey || '').trim(),
-          content_text: String(input.value || '').trim(),
-        }))
-        .filter((item) => item.segment_key && item.content_text);
-    }
-
-    function nodeFormValues(node) {
-      const bundle = state.selectedWorkflowBundle;
-      const contentMode = defaultNodeContentMode(bundle, node);
-      const segmentationBasis = defaultNodeSegmentationBasis(bundle, node, contentMode);
-      return { contentMode, segmentationBasis };
-    }
-
-    function syncNodeContentFields(node) {
-      const values = nodeFormValues(node);
-      const showStandardContent = values.contentMode !== 'personalized_single';
-      const showVariants = values.contentMode === 'manual_layered';
-      if (elements.nodeStandardContentField) {
-        elements.nodeStandardContentField.hidden = !showStandardContent;
-      }
-      if (elements.nodeStandardContentLabel) {
-        elements.nodeStandardContentLabel.textContent = values.contentMode === 'manual_layered' ? '标准版回退内容（可选）' : '标准版内容';
-      }
-      if (elements.nodeContentHelp) {
-        if (values.contentMode === 'standard_direct') {
-          elements.nodeContentHelp.textContent = '当前节点继承任务流“标准内容直发”，这里只填写标准版内容。';
-        } else if (values.contentMode === 'manual_layered') {
-          elements.nodeContentHelp.textContent = `当前节点继承任务流“手动分层录入”与“${segmentationLabel(values.segmentationBasis)}”；这里只填写分层内容明细，标准版内容作为可选回退。`;
-        } else if (values.contentMode === 'standard_layered_rewrite') {
-          elements.nodeContentHelp.textContent = `当前节点继承任务流“标准内容分层改写”与“${segmentationLabel(values.segmentationBasis)}”；分层依据和 Agent 绑定都在任务流层维护，这里只填写标准版内容。`;
-        } else {
-          elements.nodeContentHelp.textContent = '当前节点继承任务流“单人定制化生成”；将使用任务流已配置的 Agent 和信息来源，节点层无需填写标准版内容或分层内容明细。';
-        }
-      }
-      renderNodeVariantControls(node || null, values.segmentationBasis, showVariants);
-    }
-
-    function renderNodeVariantControls(node, segmentationBasis, forceShow) {
-      const bundle = state.selectedWorkflowBundle;
-      const targets = forceShow ? manualVariantTargets(bundle, segmentationBasis) : [];
-      if (!targets.length) {
-        elements.nodeVariantSection.hidden = true;
-        elements.nodeVariantGrid.innerHTML = '';
-        return;
-      }
-      const variantByKey = {};
-      (node && Array.isArray(node.content_variants) ? node.content_variants : []).forEach((item) => {
-        variantByKey[item.segment_key] = item.content_text || '';
-      });
-      elements.nodeVariantSection.hidden = false;
-      elements.nodeVariantHelp.textContent =
-        segmentationBasis === 'profile'
-          ? '展示当前任务流画像模板里的分类，未命中时默认仍可回落到标准版内容。'
-          : '行为层级固定为：小于 2、2 ~ 9、大于等于 10。';
-      elements.nodeVariantGrid.innerHTML = targets.map((target) => `
-        <label class="ac-ops-variant-item">
-          <span>${escapeHtml(target.label)}</span>
-          <textarea rows="5" data-variant-scope="${escapeHtml(target.variant_scope)}" data-segment-key="${escapeHtml(target.segment_key)}" placeholder="输入该分层下的内容">${escapeHtml(variantByKey[target.segment_key] || '')}</textarea>
-        </label>
-      `).join('');
-    }
-
-    function syncNodeTriggerModeFields() {
-      const triggerMode = String(elements.nodeForm.elements.trigger_mode.value || 'scheduled');
-      const dayField = elements.nodeForm.elements.day_offset.closest('label');
-      const timeField = elements.nodeForm.elements.send_time.closest('label');
-      const scheduled = triggerMode === 'scheduled';
-      if (dayField) dayField.hidden = !scheduled;
-      if (timeField) timeField.hidden = !scheduled;
-      if (elements.nodeTriggerHelp) {
-        elements.nodeTriggerHelp.textContent = scheduled
-          ? '按时间点运行时，会在进入目标人群后的第 N 天指定时间执行。'
-          : '进入目标人群后立即运行时，不再要求配置第几天和时间。';
-      }
-    }
-
-    function openNodeForm(node, mode) {
-      if (!state.selectedWorkflowBundle) return;
-      const readonly = mode === 'view';
-      elements.nodeFormCard.hidden = false;
-      showFormFeedback(elements.nodeFormFeedback, '', '');
-      elements.nodeForm.reset();
-      renderNodeTargetOptions();
-      if (node) {
-        elements.nodeFormTitle.textContent = mode === 'view' ? '查看节点' : '编辑节点';
-        elements.nodeForm.elements.node_id.value = String(node.id || '');
-        elements.nodeForm.elements.node_name.value = node.node_name || '';
-        elements.nodeForm.elements.target_audience_code.value = node.target_audience_code || '';
-        elements.nodeForm.elements.trigger_mode.value = node.trigger_mode || 'scheduled';
-        elements.nodeForm.elements.day_offset.value = node.day_offset || 1;
-        elements.nodeForm.elements.send_time.value = node.send_time || '09:00';
-        elements.nodeForm.elements.standard_content_text.value = node.standard_content_text || '';
-        elements.nodeForm.elements.enabled.checked = !!node.enabled;
-      } else {
-        elements.nodeFormTitle.textContent = '新增节点';
-        elements.nodeForm.elements.node_id.value = '';
-        elements.nodeForm.elements.trigger_mode.value = 'scheduled';
-        elements.nodeForm.elements.day_offset.value = 1;
-        elements.nodeForm.elements.send_time.value = '09:00';
-        elements.nodeForm.elements.enabled.checked = true;
-      }
-      syncNodeTriggerModeFields();
-      syncNodeContentFields(node || null);
-      elements.nodeForm.querySelectorAll('input, select, textarea').forEach((field) => {
-        if (field.name === 'node_id') return;
-        field.disabled = readonly;
-      });
-      elements.nodeFormActions.hidden = readonly;
-      elements.nodeForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    function closeNodeForm() {
-      elements.nodeFormCard.hidden = true;
-      elements.nodeForm.querySelectorAll('input, select, textarea').forEach((field) => {
-        field.disabled = false;
-      });
-      syncNodeTriggerModeFields();
-      syncNodeContentFields(null);
-      elements.nodeFormActions.hidden = false;
-      showFormFeedback(elements.nodeFormFeedback, '', '');
-    }
-
-    function validateNodePayload(payload, context) {
-      const bundle = context.bundle;
-      const allowedAudiences = new Set((bundle.audiences || []).map((item) => item.audience_code));
-      if (!payload.node_name) throw new Error('节点名称不能为空');
-      if (!payload.target_audience_code) throw new Error('请选择节点目标人群');
-      if (!allowedAudiences.has(payload.target_audience_code)) {
-        throw new Error('节点目标人群必须属于父任务流适用人群');
-      }
-
-      if (context.triggerMode === 'audience_entered') {
-        if ('day_offset' in payload || 'send_time' in payload) {
-          throw new Error('立即运行时不允许提交第几天和时间');
-        }
-      } else if (context.triggerMode === 'scheduled') {
-        if (!Number.isInteger(payload.day_offset) || payload.day_offset < 1) {
-          throw new Error('第 N 天运行时必须填写有效的第几天');
-        }
-        if (!/^\d{2}:\d{2}$/.test(String(payload.send_time || ''))) {
-          throw new Error('第 N 天运行时必须填写时间');
-        }
-      } else {
-        throw new Error('触发方式不合法');
-      }
-
-      if (context.contentMode === 'standard_direct') {
-        if (!payload.standard_content_text) throw new Error('标准内容直发必须填写标准版内容');
-        return;
-      }
-
-      if (context.contentMode === 'manual_layered') {
-        if (!Array.isArray(payload.content_variants) || !payload.content_variants.length) {
-          throw new Error('手动分层录入必须填写分层内容');
-        }
-        return;
-      }
-
-      if (context.contentMode === 'standard_layered_rewrite') {
-        if (!payload.standard_content_text) throw new Error('标准内容分层改写必须填写标准版内容');
-        if ('content_variants' in payload) throw new Error('标准内容分层改写不允许提交分层内容明细');
-        return;
-      }
-
-      if (context.contentMode === 'personalized_single') {
-        if ('standard_content_text' in payload || 'content_variants' in payload) throw new Error('单人定制化生成不需要填写节点内容');
-        return;
-      }
-
-      throw new Error('内容方式不合法');
-    }
-
-    function buildNodePayload() {
-      const bundle = state.selectedWorkflowBundle;
-      if (!bundle) throw new Error('请先选择任务流');
-      const targetAudience = String(elements.nodeForm.elements.target_audience_code.value || '').trim();
-      const triggerMode = String(elements.nodeForm.elements.trigger_mode.value || 'scheduled').trim();
-      const contentMode = defaultNodeContentMode(bundle, null);
-      const standardContentText = String(elements.nodeForm.elements.standard_content_text.value || '').trim();
-      const contentVariants = collectNodeContentVariants();
-      const payload = {
-        node_name: String(elements.nodeForm.elements.node_name.value || '').trim(),
-        target_audience_code: targetAudience,
-        trigger_mode: triggerMode,
-        enabled: !!elements.nodeForm.elements.enabled.checked,
-      };
-      if (triggerMode === 'scheduled') {
-        payload.day_offset = Number(elements.nodeForm.elements.day_offset.value || 1);
-        payload.send_time = String(elements.nodeForm.elements.send_time.value || '09:00');
-      }
-
-      if (contentMode === 'standard_direct') {
-        payload.standard_content_text = standardContentText;
-      } else if (contentMode === 'manual_layered') {
-        if (standardContentText) {
-          payload.standard_content_text = standardContentText;
-        }
-        payload.content_variants = contentVariants;
-      } else if (contentMode === 'standard_layered_rewrite') {
-        payload.standard_content_text = standardContentText;
-      }
-
-      validateNodePayload(payload, {
-        bundle,
-        triggerMode,
-        contentMode,
-      });
-      return payload;
-    }
-
-    async function saveNode(event) {
-      event.preventDefault();
-      try {
-        const payload = buildNodePayload();
-        const nodeId = Number(elements.nodeForm.elements.node_id.value || 0);
-        const workflowId = Number((state.selectedWorkflowBundle.workflow || {}).id || 0);
-        await requestJson(nodeId ? withId(apiUrls.workflow_node_base, nodeId) : withId(apiUrls.workflow_nodes_base, workflowId), {
-          method: nodeId ? 'PUT' : 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        showFormFeedback(elements.nodeFormFeedback, nodeId ? '节点已更新' : '节点已创建', 'success');
-        await selectWorkflow(workflowId);
-        closeNodeForm();
-        showFeedback(nodeId ? '节点已更新' : '节点已创建', 'success');
-      } catch (error) {
-        showFormFeedback(elements.nodeFormFeedback, humanizeNodeSaveError(error.message || '保存节点失败'), 'error');
-      }
-    }
-
-    function renderExecutionList() {
-      const items = Array.isArray(state.executions) ? state.executions : [];
-      elements.executionTableBody.innerHTML = items.map((item) => `
-        <tr class="is-clickable${Number(item.id || 0) === Number(state.selectedExecutionId || 0) ? ' is-active' : ''}" data-execution-id="${escapeHtml(item.id)}">
-          <td>${escapeHtml(item.scheduled_for || item.updated_at || item.created_at || '-')}</td>
-          <td>${escapeHtml(((item.workflow || {}).workflow_name) || '-')} / ${escapeHtml(((item.node || {}).node_name) || '-')}</td>
-          <td>${escapeHtml(item.status || '-')}</td>
-          <td>${escapeHtml(item.hit_count || 0)}</td>
-          <td>${escapeHtml(item.sent_count || 0)}</td>
-          <td>${escapeHtml(item.failed_count || 0)}</td>
-          <td>${escapeHtml(item.skipped_count || 0)}</td>
-        </tr>
-      `).join('');
-      elements.executionEmpty.hidden = items.length > 0;
-    }
-
-    function renderExecutionDetail() {
-      const payload = state.selectedExecutionDetail;
-      if (!payload) {
-        elements.executionDetailCard.hidden = true;
-        return;
-      }
-      const execution = payload.execution || {};
-      const summary = payload.summary || {};
-      const items = Array.isArray(payload.items) ? payload.items : [];
-      elements.executionDetailCard.hidden = false;
-      elements.executionDetailTitle.textContent = ((execution.node || {}).node_name || '批次详情') + ' · ' + (execution.scheduled_for || execution.updated_at || '-');
-      elements.executionDetailCode.textContent = 'execution_id=' + (execution.execution_id || execution.id || '-');
-      elements.executionSummaryGrid.innerHTML = `
-        <article class="ac-ops-stat"><span>命中人数</span><strong>${escapeHtml(summary.hit_count || 0)}</strong></article>
-        <article class="ac-ops-stat"><span>成功</span><strong>${escapeHtml(summary.success_count || 0)}</strong></article>
-        <article class="ac-ops-stat"><span>失败</span><strong>${escapeHtml(summary.failed_count || 0)}</strong></article>
-        <article class="ac-ops-stat"><span>跳过</span><strong>${escapeHtml(summary.skipped_count || 0)}</strong></article>
-      `;
-      elements.executionItemTableBody.innerHTML = items.map((item) => `
-        <tr>
-          <td>${escapeHtml((((item.member || {}).external_contact_id) || ((item.member || {}).phone) || '-') )}</td>
-          <td>${escapeHtml(item.status || '-')}</td>
-          <td>${escapeHtml((((item.generation_summary || {}).agent_code) || item.agent_code || '-') )}</td>
-          <td>${escapeHtml(item.send_record_id || '-')}</td>
-          <td><div class="ac-ops-generation-summary">${escapeHtml(generationSummaryText(item.generation_summary))}</div></td>
-          <td>${escapeHtml(item.rendered_content_preview || '-')}</td>
-          <td>${escapeHtml(item.updated_at || item.created_at || '-')}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="7">当前批次没有单用户执行明细。</td></tr>';
-    }
-
-    async function loadExecutions(workflowId) {
-      const payload = await requestJson(apiUrls.executions + '?workflow_id=' + encodeURIComponent(String(workflowId)) + '&limit=30', {
-        credentials: 'same-origin',
-      });
-      state.executions = payload.items || [];
-      renderExecutionList();
-      if (state.executions.length) {
-        const targetExecutionId = state.selectedExecutionId && state.executions.some((item) => Number(item.id) === Number(state.selectedExecutionId))
-          ? state.selectedExecutionId
-          : Number((state.executions[0] || {}).id || 0);
-        if (targetExecutionId) {
-          await selectExecution(targetExecutionId);
-        }
-      } else {
-        state.selectedExecutionId = null;
-        state.selectedExecutionDetail = null;
-        renderExecutionDetail();
-      }
-    }
-
-    async function selectExecution(executionId) {
-      const normalizedId = Number(executionId || 0);
-      if (!normalizedId) {
-        state.selectedExecutionId = null;
-        state.selectedExecutionDetail = null;
-        renderExecutionDetail();
-        return;
-      }
-      state.selectedExecutionId = normalizedId;
-      const payload = await requestJson(withId(apiUrls.execution_detail_base, normalizedId), { credentials: 'same-origin' });
-      state.selectedExecutionDetail = payload;
-      renderExecutionList();
-      renderExecutionDetail();
-    }
-
-    async function selectWorkflow(workflowId) {
-      const normalizedId = Number(workflowId || 0);
-      if (!normalizedId) {
-        state.selectedWorkflowId = null;
-        state.selectedWorkflowBundle = null;
-        state.selectedWorkflowSummary = null;
-        renderWorkflowTable();
-        renderWorkflowDetail();
-        return;
-      }
-      state.selectedWorkflowId = normalizedId;
-      setWorkflowQuery(normalizedId);
-      const [detailPayload, summaryPayload] = await Promise.all([
-        requestJson(withId(apiUrls.workflow_detail_base, normalizedId), { credentials: 'same-origin' }),
-        requestJson(withId(apiUrls.workflow_summary_base, normalizedId), { credentials: 'same-origin' }),
-      ]);
-      state.selectedWorkflowBundle = detailPayload.workflow_bundle;
-      state.selectedWorkflowSummary = summaryPayload.summary;
-      renderWorkflowTable();
-      renderWorkflowDetail();
-      renderNodeSection();
-      renderNodeTargetOptions();
-      syncNodeContentFields(null);
-      await loadExecutions(normalizedId);
+      elements.empty.hidden = items.length > 0;
     }
 
     async function loadWorkflows() {
-      const url = state.workflowStatusFilter ? apiUrls.workflows + '?status=' + encodeURIComponent(state.workflowStatusFilter) : apiUrls.workflows;
-      const payload = await requestJson(url, { credentials: 'same-origin' });
+      const query = state.statusFilter ? `?status=${encodeURIComponent(state.statusFilter)}` : '';
+      const payload = await requestJson(`${apiUrls.workflows}${query}`, { credentials: 'same-origin' });
       state.workflows = payload.items || [];
-      renderWorkflowTable();
-      if (!state.workflows.length) {
-        await selectWorkflow(null);
-        return;
-      }
-      const selectedExists = state.workflows.some((item) => Number(((item.workflow || {}).id) || 0) === Number(state.selectedWorkflowId || 0));
-      const targetId = selectedExists ? state.selectedWorkflowId : Number((((state.workflows[0] || {}).workflow) || {}).id || 0);
-      if (targetId) {
-        await selectWorkflow(targetId);
-      }
-    }
-
-    async function initialize() {
-      try {
-        showFeedback('', '');
-        const [registryPayload, dashboardPayload, workflowPayload, agentPayload, templatePayload] = await Promise.all([
-          requestJson(apiUrls.registry, { credentials: 'same-origin' }),
-          requestJson(apiUrls.dashboard, { credentials: 'same-origin' }),
-          requestJson(apiUrls.workflows, { credentials: 'same-origin' }),
-          requestJson(apiUrls.agents_options, { credentials: 'same-origin' }),
-          requestJson(apiUrls.profile_segment_templates_options, { credentials: 'same-origin' }),
-        ]);
-        state.registry = registryPayload;
-        state.dashboard = dashboardPayload.dashboard || {};
-        state.workflows = workflowPayload.items || [];
-        state.agentOptions = agentPayload.items || [];
-        state.profileTemplateOptions = templatePayload.items || [];
-
-        renderSummary();
-        renderWorkflowAudienceOptions();
-        renderWorkflowRecipientTierOptions();
-        renderWorkflowSelectOptions();
-        renderWorkflowTable();
-
-        if (state.workflows.length) {
-          const selectedExists = state.workflows.some((item) => Number(((item.workflow || {}).id) || 0) === Number(state.selectedWorkflowId || 0));
-          const targetId = selectedExists ? state.selectedWorkflowId : Number((((state.workflows[0] || {}).workflow) || {}).id || 0);
-          if (targetId) {
-            await selectWorkflow(targetId);
-          }
-        } else {
-          elements.globalLoading.hidden = true;
-          elements.summaryGrid.hidden = false;
-          elements.workflowEmpty.hidden = false;
-        }
-      } catch (error) {
-        elements.globalLoading.hidden = true;
-        showFeedback(error.message || '加载自动化运营数据失败', 'error');
-      }
+      renderTable();
     }
 
     async function toggleWorkflowStatus(workflowId) {
@@ -1829,137 +277,52 @@
     }
 
     async function deleteWorkflow(workflowId) {
-      if (!window.confirm('确认删除这条任务流吗？节点配置也会一起删除。')) return;
+      if (!window.confirm('确认删除这条任务流吗？')) return;
       await requestJson(withId(apiUrls.workflow_delete_base, workflowId), {
         method: 'DELETE',
         credentials: 'same-origin',
       });
-      if (Number(state.selectedWorkflowId || 0) === Number(workflowId || 0)) {
-        state.selectedWorkflowId = null;
-      }
       await loadWorkflows();
       showFeedback('任务流已删除', 'success');
     }
 
-    async function deleteNode(nodeId) {
-      if (!window.confirm('确认删除这个节点吗？')) return;
-      await requestJson(withId(apiUrls.workflow_node_base, nodeId), {
-        method: 'DELETE',
-        credentials: 'same-origin',
-      });
-      await selectWorkflow(state.selectedWorkflowId);
-      showFeedback('节点已删除', 'success');
+    async function initialize() {
+      try {
+        showFeedback('', '');
+        const registryPayload = await requestJson(apiUrls.registry, { credentials: 'same-origin' });
+        state.registry = registryPayload;
+        await loadWorkflows();
+      } catch (error) {
+        showFeedback(error.message || '加载任务流列表失败', 'error');
+      } finally {
+        elements.loading.hidden = true;
+      }
     }
 
-    function findNodeById(nodeId) {
-      const bundle = state.selectedWorkflowBundle;
-      return ((bundle || {}).nodes || []).find((item) => Number(item.id || 0) === Number(nodeId || 0)) || null;
-    }
-
-    elements.workflowStatusFilter.addEventListener('change', async (event) => {
-      state.workflowStatusFilter = String(event.target.value || '').trim();
-      await loadWorkflows();
+    elements.statusFilter.addEventListener('change', async (event) => {
+      state.statusFilter = String(event.target.value || '').trim();
+      elements.loading.hidden = false;
+      try {
+        await loadWorkflows();
+      } catch (error) {
+        showFeedback(error.message || '加载任务流列表失败', 'error');
+      } finally {
+        elements.loading.hidden = true;
+      }
     });
 
-    elements.workflowCreateButton.addEventListener('click', () => openWorkflowForm('create'));
-    elements.workflowFormCancel.addEventListener('click', closeWorkflowForm);
-    elements.workflowFormReset.addEventListener('click', () => openWorkflowForm('create'));
-    elements.workflowForm.addEventListener('submit', saveWorkflow);
-    elements.workflowForm.elements.recipient_filter_basis.addEventListener('change', () => {
-      renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
-    });
-    elements.workflowRecipientTierOptions.addEventListener('change', () => {
-      renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
-    });
-    elements.workflowForm.elements.content_segmentation_basis.addEventListener('change', () => {
-      renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
-    });
-    elements.workflowForm.elements.generation_mode.addEventListener('change', () => {
-      renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
-    });
-    elements.workflowForm.elements.content_profile_segment_template_id.addEventListener('change', () => {
-      renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
-    });
-
-    elements.workflowTableBody.addEventListener('click', async (event) => {
+    elements.tableBody.addEventListener('click', async (event) => {
       const button = event.target.closest('button[data-action]');
-      const row = event.target.closest('tr[data-workflow-id]');
-      if (button) {
-        event.stopPropagation();
-        const workflowId = Number(button.dataset.workflowId || 0);
-        try {
-          if (button.dataset.action === 'detail') {
-            await selectWorkflow(workflowId);
-          } else if (button.dataset.action === 'edit') {
-            const item = state.workflows.find((rowItem) => Number(((rowItem.workflow || {}).id) || 0) === workflowId);
-            openWorkflowForm('edit', item || null);
-          } else if (button.dataset.action === 'activate' || button.dataset.action === 'pause') {
-            await toggleWorkflowStatus(workflowId);
-          } else if (button.dataset.action === 'delete') {
-            await deleteWorkflow(workflowId);
-          }
-        } catch (error) {
-          showFeedback(error.message || '任务流操作失败', 'error');
-        }
-        return;
-      }
-      if (row) {
-        try {
-          await selectWorkflow(Number(row.dataset.workflowId || 0));
-        } catch (error) {
-          showFeedback(error.message || '加载任务流详情失败', 'error');
-        }
-      }
-    });
-
-    elements.workflowEditButton.addEventListener('click', () => {
-      const item = state.workflows.find((row) => Number(((row.workflow || {}).id) || 0) === Number(state.selectedWorkflowId || 0));
-      openWorkflowForm('edit', item || null);
-    });
-
-    elements.workflowStatusButton.addEventListener('click', async () => {
-      try {
-        await toggleWorkflowStatus(state.selectedWorkflowId);
-      } catch (error) {
-        showFeedback(error.message || '切换任务流状态失败', 'error');
-      }
-    });
-
-    elements.workflowDeleteButton.addEventListener('click', async () => {
-      try {
-        await deleteWorkflow(state.selectedWorkflowId);
-      } catch (error) {
-        showFeedback(error.message || '删除任务流失败', 'error');
-      }
-    });
-
-    elements.nodeCreateButton.addEventListener('click', () => openNodeForm(null, 'create'));
-    elements.nodeFormCancel.addEventListener('click', closeNodeForm);
-    elements.nodeForm.elements.trigger_mode.addEventListener('change', syncNodeTriggerModeFields);
-    elements.nodeForm.addEventListener('submit', saveNode);
-
-    elements.nodeTableBody.addEventListener('click', async (event) => {
-      const button = event.target.closest('button[data-node-action]');
       if (!button) return;
-      const nodeId = Number(button.dataset.nodeId || 0);
+      const workflowId = Number(button.dataset.workflowId || 0);
       try {
-        if (button.dataset.nodeAction === 'view' || button.dataset.nodeAction === 'edit') {
-          openNodeForm(findNodeById(nodeId), button.dataset.nodeAction);
-        } else if (button.dataset.nodeAction === 'delete') {
-          await deleteNode(nodeId);
+        if (button.dataset.action === 'activate' || button.dataset.action === 'pause') {
+          await toggleWorkflowStatus(workflowId);
+        } else if (button.dataset.action === 'delete') {
+          await deleteWorkflow(workflowId);
         }
       } catch (error) {
-        showFeedback(error.message || '节点操作失败', 'error');
-      }
-    });
-
-    elements.executionTableBody.addEventListener('click', async (event) => {
-      const row = event.target.closest('tr[data-execution-id]');
-      if (!row) return;
-      try {
-        await selectExecution(Number(row.dataset.executionId || 0));
-      } catch (error) {
-        showFeedback(error.message || '加载批次详情失败', 'error');
+        showFeedback(error.message || '任务流操作失败', 'error');
       }
     });
 
