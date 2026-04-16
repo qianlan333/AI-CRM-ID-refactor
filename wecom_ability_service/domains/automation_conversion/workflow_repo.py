@@ -672,6 +672,31 @@ def list_workflow_agent_binding_rows(workflow_id: int) -> list[dict[str, Any]]:
     ]
 
 
+def list_workflow_agent_binding_reference_rows(agent_code: str) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT
+            b.workflow_id,
+            b.node_id,
+            b.binding_scope,
+            b.segment_key,
+            w.workflow_name,
+            w.workflow_code,
+            w.status AS workflow_status,
+            n.node_name,
+            n.node_code
+        FROM automation_workflow_agent_binding AS b
+        JOIN automation_workflow AS w
+          ON w.id = b.workflow_id
+        LEFT JOIN automation_workflow_node AS n
+          ON n.id = b.node_id
+        WHERE b.agent_code = ?
+        ORDER BY w.updated_at DESC, w.id DESC, COALESCE(n.position_index, 0) ASC, b.id ASC
+        """,
+        (_normalized_text(agent_code),),
+    )
+
+
 def delete_workflow_agent_binding_rows(workflow_id: int) -> None:
     get_db().execute("DELETE FROM automation_workflow_agent_binding WHERE workflow_id = ?", (int(workflow_id),))
 

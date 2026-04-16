@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
+import time
 from typing import Any
 
+import requests
+from flask import current_app
+
 from ...db import get_db
+from ...infra.settings import get_setting
 from ..user_ops import page_service as user_ops_page_service
 from . import workflow_repo
 from .workflow_definitions import (
@@ -82,6 +90,9 @@ _ALLOWED_NODE_CONTENT_MODES = {
 }
 
 _NODE_CONTENT_META_KEY = "_automation_conversion_node_meta"
+_BAZHUAYU_DEFAULT_WEBHOOK_URL = "https://api-rpa.bazhuayu.com/api/v1/bots/webhooks/69cc9c20612e78c4472b2f4d/invoke"
+_BAZHUAYU_DEFAULT_SIGNING_SECRET = "mPwS+MOxF0O9dyED6z5LlA=="
+_BAZHUAYU_DEFAULT_TIMEOUT_SECONDS = 15
 
 
 def _normalized_text(value: Any) -> str:
@@ -116,6 +127,21 @@ def _truncate_text(value: Any, *, limit: int = 120) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: max(0, limit - 3)]}..."
+
+
+def _setting_text(key: str, *, default: str = "") -> str:
+    return _normalized_text(get_setting(key) or current_app.config.get(key, "") or default)
+
+
+def _setting_int(key: str, *, default: int, minimum: int = 1) -> int:
+    raw_value = get_setting(key)
+    if raw_value is None:
+        raw_value = current_app.config.get(key, default)
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = int(default)
+    return max(int(minimum), value)
 
 
 def _slugify_code(value: Any, *, prefix: str) -> str:
@@ -1650,4 +1676,77 @@ def get_conversion_workflow_execution_item_detail(execution_item_id: int) -> dic
     return {
         "execution": _build_execution_payload(execution) if execution else {},
         "item": _build_execution_item_payload(item, include_send_record_detail=True),
+    }
+
+
+def _compute_bazhuayu_sign(secret: str, timestamp: str) -> str:
+    normalized_secret = _normalized_text(secret)
+    normalized_timestamp = _normalized_text(timestamp)
+    if not normalized_secret:
+        raise ValueError("bazhuayu signing secret is not configured")
+    if not normalized_timestamp:
+        raise ValueError("bazhuayu timestamp is required")
+    string_to_sign = f"{normalized_timestamp}\n{normalized_secret}"
+    digest = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("utf-8")
+
+
+def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, operator_id: str = "") -> dict[str, Any]:
+    detail = get_conversion_workflow_execution_item_detail(int(execution_item_id))
+    item = dict(detail.get("item") or {})
+    member = dict(item.get("member") or {})
+    userid = _normalized_text(item.get("external_contact_id")) or _normalized_text(member.get("external_contact_id"))
+    text = _normalized_text(item.get("rendered_content_text"))
+    if not userid:
+        raise ValueError("execution item missing external_contact_id")
+    if not text:
+        raise ValueError("execution item rendered content is empty")
+
+    webhook_url = _setting_text("BAZHUAYU_WEBHOOK_URL", default=_BAZHUAYU_DEFAULT_WEBHOOK_URL)
+    signing_secret = _setting_text("BAZHUAYU_SIGNING_SECRET", default=_BAZHUAYU_DEFAULT_SIGNING_SECRET)
+    specified_bot = _setting_text("BAZHUAYU_SPECIFIED_BOT")
+    timeout_seconds = _setting_int("BAZHUAYU_TIMEOUT_SECONDS", default=_BAZHUAYU_DEFAULT_TIMEOUT_SECONDS, minimum=1)
+    timestamp = str(int(time.time()))
+    payload = {
+        "sign": _compute_bazhuayu_sign(signing_secret, timestamp),
+        "params": {
+            "userid": userid,
+            "text": text,
+        },
+        "timestamp": timestamp,
+    }
+    if specified_bot:
+        payload["SpecifiedBot"] = specified_bot
+
+    response = requests.post(
+        webhook_url,
+        json=payload,
+        headers={"Content-Type": "application/json"},
+        timeout=timeout_seconds,
+    )
+    raw_body = response.text or ""
+    try:
+        response_payload = response.json() if raw_body else {}
+    except ValueError:
+        response_payload = raw_body
+    if not response.ok:
+        if isinstance(response_payload, dict) and _normalized_text(response_payload.get("description")):
+            message = _normalized_text(response_payload.get("description"))
+        elif isinstance(response_payload, dict) and _normalized_text(response_payload.get("message")):
+            message = _normalized_text(response_payload.get("message"))
+        else:
+            message = raw_body.strip() or f"bazhuayu webhook failed: HTTP {response.status_code}"
+        raise requests.RequestException(message)
+
+    return {
+        "ok": True,
+        "execution_item_id": int(item.get("id") or 0),
+        "requested_by": _normalized_text(operator_id) or "crm_console",
+        "request": {
+            "userid": userid,
+            "text": text,
+            "timestamp": timestamp,
+            "specified_bot": specified_bot,
+        },
+        "response": response_payload if isinstance(response_payload, dict) else {"raw": raw_body},
     }

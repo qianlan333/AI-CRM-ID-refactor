@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import requests
+
 from flask import jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
@@ -9,11 +11,13 @@ from ..domains.automation_conversion import (
     create_conversion_profile_segment_template,
     create_conversion_workflow,
     create_conversion_workflow_node,
+    delete_agent_config,
     delete_conversion_workflow,
     get_conversion_dashboard_payload,
     get_conversion_workflow_detail_summary,
     get_conversion_workflow_execution_detail,
     get_conversion_workflow_execution_item_detail,
+    send_conversion_execution_item_via_bazhuayu,
     list_agent_configs,
     list_conversion_agent_options,
     list_recent_reviewable_agent_outputs,
@@ -229,6 +233,10 @@ def _build_execution_records_workspace() -> dict[str, object]:
             "list": url_for("api.admin_automation_conversion_operations"),
             "workflow_edit": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=workflow_id or 0),
             "workflow_nodes": url_for("api.admin_automation_conversion_workflow_nodes", workflow_id=workflow_id or 0),
+            "execution_item_bazhuayu_send_base": url_for(
+                "api.api_admin_automation_conversion_execution_item_send_via_bazhuayu",
+                execution_item_id=0,
+            ),
         },
     }
 
@@ -276,6 +284,7 @@ def _build_agent_config_workspace() -> dict[str, object]:
             "agent_create": url_for("api.api_admin_automation_conversion_agent_create"),
             "agent_detail_base": url_for("api.api_admin_automation_conversion_agent_detail", agent_code="__AGENT_CODE__"),
             "agent_draft_base": url_for("api.api_admin_automation_conversion_agent_draft", agent_code="__AGENT_CODE__"),
+            "agent_delete_base": url_for("api.api_admin_automation_conversion_agent_delete", agent_code="__AGENT_CODE__"),
             "agent_publish_base": url_for("api.api_admin_automation_conversion_agent_publish", agent_code="__AGENT_CODE__"),
             "default_channel_settings": url_for("api.api_admin_automation_conversion_default_channel_settings"),
             "default_channel_generate_qr": url_for("api.api_admin_automation_conversion_default_channel_generate_qr"),
@@ -350,7 +359,8 @@ def _render_operations_page(*, page_error: str = ""):
         operations_workspace=_build_operations_list_workspace(),
         admin_action_token=ensure_admin_console_action_token(),
         page_error=page_error,
-        page_notice="当前页面只保留自动化运营列表和一级入口。",
+        show_shell_meta=False,
+        show_page_header=False,
     )
 
 
@@ -371,7 +381,8 @@ def _render_workflow_editor_page(*, workflow_id: int | None = None, page_error: 
         operations_workspace=_build_workflow_editor_workspace(workflow_id=workflow_id),
         admin_action_token=ensure_admin_console_action_token(),
         page_error=page_error,
-        page_notice="当前页面只承载任务流编辑骨架。",
+        show_shell_meta=False,
+        show_page_header=False,
     )
 
 
@@ -411,7 +422,8 @@ def _render_execution_records_page(*, page_error: str = ""):
         operations_workspace=_build_execution_records_workspace(),
         admin_action_token=ensure_admin_console_action_token(),
         page_error=page_error,
-        page_notice="当前页面只承载执行记录骨架。",
+        show_shell_meta=False,
+        show_page_header=False,
     )
 
 
@@ -758,6 +770,23 @@ def api_admin_automation_conversion_agent_publish(agent_code: str):
     return jsonify({"ok": True, **result})
 
 
+def api_admin_automation_conversion_agent_delete(agent_code: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        result = delete_agent_config(
+            agent_code,
+            operator_id=_operator_from_request(),
+            source="automation_conversion_agent_config",
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
 def api_admin_automation_conversion_default_channel_settings():
     return jsonify({"ok": True, **get_default_channel_settings_payload()})
 
@@ -1003,6 +1032,24 @@ def api_admin_automation_conversion_execution_item_detail(execution_item_id: int
     return jsonify({"ok": True, **payload})
 
 
+def api_admin_automation_conversion_execution_item_send_via_bazhuayu(execution_item_id: int):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        payload = send_conversion_execution_item_via_bazhuayu(
+            int(execution_item_id),
+            operator_id=_operator_from_request(),
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify(payload)
+
+
 def api_admin_automation_conversion_profile_segment_template_options():
     return jsonify(
         {
@@ -1181,6 +1228,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/agents", methods=["POST"])(api_admin_automation_conversion_agent_create)
     bp.route("/api/admin/automation-conversion/agents/options", methods=["GET"])(api_admin_automation_conversion_agent_options)
     bp.route("/api/admin/automation-conversion/agents/<agent_code>", methods=["GET"])(api_admin_automation_conversion_agent_detail)
+    bp.route("/api/admin/automation-conversion/agents/<agent_code>", methods=["DELETE"])(api_admin_automation_conversion_agent_delete)
     bp.route("/api/admin/automation-conversion/agents/<agent_code>/draft", methods=["POST"])(api_admin_automation_conversion_agent_draft)
     bp.route("/api/admin/automation-conversion/agents/<agent_code>/publish", methods=["POST"])(api_admin_automation_conversion_agent_publish)
     bp.route("/api/admin/automation-conversion/default-channel-settings", methods=["GET"])(api_admin_automation_conversion_default_channel_settings)
@@ -1214,6 +1262,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/executions/<int:execution_id>", methods=["GET"])(api_admin_automation_conversion_execution_detail)
     bp.route("/api/admin/automation-conversion/executions/<int:execution_id>/items", methods=["GET"])(api_admin_automation_conversion_execution_items)
     bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>", methods=["GET"])(api_admin_automation_conversion_execution_item_detail)
+    bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_execution_item_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
     bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)

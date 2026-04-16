@@ -19,7 +19,7 @@ from ...customer_timeline.service import get_customer_timeline
 from ...db import get_db
 from ...infra.settings import mask_value
 from ...services import get_recent_messages_by_user, get_signup_conversion_config
-from . import local_projection, repo
+from . import local_projection, repo, workflow_repo
 from .agents import (
     AGENT_OUTPUT_TYPE_OPTIONS,
     CHILD_AGENT_CONFIG_MAP,
@@ -3766,6 +3766,51 @@ def publish_agent_config(agent_code: str, *, operator_id: str) -> dict[str, Any]
     )
     get_db().commit()
     return {"agent": _serialize_agent_config(saved)}
+
+
+def delete_agent_config(agent_code: str, *, operator_id: str, source: str = "admin_console") -> dict[str, Any]:
+    ensure_agent_orchestration_defaults()
+    normalized_agent_code = _normalized_text(agent_code)
+    existing = repo.deserialize_agent_config_row(repo.get_agent_config_row(normalized_agent_code) or {})
+    if not existing:
+        raise LookupError("agent config not found")
+    if normalized_agent_code in CHILD_AGENT_CONFIG_MAP:
+        raise ValueError("系统预置 Agent 不支持删除；删除后会被默认配置自动补回。")
+
+    workflow_references = workflow_repo.list_workflow_agent_binding_reference_rows(normalized_agent_code)
+    if workflow_references:
+        reference_labels = []
+        for item in workflow_references[:5]:
+            workflow_label = _normalized_text(item.get("workflow_name")) or _normalized_text(item.get("workflow_code")) or f"#{int(item.get('workflow_id') or 0)}"
+            node_label = _normalized_text(item.get("node_name")) or _normalized_text(item.get("node_code"))
+            reference_labels.append(f"{workflow_label} / {node_label}" if node_label else workflow_label)
+        if len(workflow_references) > 5:
+            reference_labels.append(f"等 {len(workflow_references)} 处引用")
+        raise ValueError(f"当前 Agent 已被任务流引用，暂不能删除：{'；'.join(reference_labels)}")
+
+    skill_references = [
+        repo.deserialize_agent_skill_row(item)
+        for item in repo.list_agent_skill_rows_for_agent(normalized_agent_code)
+    ]
+    if skill_references:
+        skill_labels = [
+            _normalized_text(item.get("skill_code")) or f"#{index + 1}"
+            for index, item in enumerate(skill_references[:5])
+        ]
+        if len(skill_references) > 5:
+            skill_labels.append(f"等 {len(skill_references)} 项")
+        raise ValueError(f"当前 Agent 已被其他技能配置引用，暂不能删除：{'、'.join(skill_labels)}")
+
+    repo.delete_agent_prompt_row(normalized_agent_code)
+    repo.delete_agent_config_row(normalized_agent_code)
+    get_db().commit()
+    return {
+        "deleted": True,
+        "agent_code": normalized_agent_code,
+        "message": f"Agent {normalized_agent_code} 已删除",
+        "operator_id": _normalized_text(operator_id),
+        "source": _normalized_text(source),
+    }
 
 
 def create_agent_run(payload: dict[str, Any]) -> dict[str, Any]:

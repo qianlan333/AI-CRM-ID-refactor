@@ -7,8 +7,6 @@
 {% block content %}
 {% set workspace = operations_workspace or {} %}
 
-{% include "admin_console/_automation_conversion_workspace_tabs.html" %}
-
 <div
   id="automation-workflow-editor-root"
   class="ac-ops-shell"
@@ -23,35 +21,62 @@
       <div>
         <div class="ac-eyebrow">自动化运营</div>
         <h2>{{ '新建任务流' if (workspace.page_mode or '') == 'workflow_new' else '编辑任务流' }}</h2>
-        <p class="ac-ops-muted">这个页面只处理任务流基础信息。节点配置会在保存成功后进入下一步，不在当前页混排。</p>
+        <p class="ac-ops-muted">
+          {% if (workspace.page_mode or '') == 'workflow_new' %}
+          当前页面只处理任务流基础信息；新建任务流保存后会自动进入节点配置页。
+          {% else %}
+          当前页面只处理任务流基础信息；已有任务流可直接进入节点配置页，保存不再是进入下一步的唯一前置条件。
+          {% endif %}
+        </p>
       </div>
       <div class="ac-ops-page-links">
+        {% if (workspace.page_mode or '') != 'workflow_new' and ((workspace.action_urls or {}).workflow_nodes) %}
+        <a class="ac-ops-page-link" href="{{ (workspace.action_urls or {}).workflow_nodes }}">进入节点配置</a>
+        {% endif %}
         <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回列表</a>
       </div>
     </div>
+  </section>
+
+  {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
+
+  <section class="ac-ops-form-card">
+    <div class="ac-ops-head">
+      <div>
+        <h3>{{ '任务流信息' if (workspace.page_mode or '') == 'workflow_new' else '编辑任务流信息' }}</h3>
+        <p class="ac-ops-muted">
+          {% if (workspace.page_mode or '') == 'workflow_new' %}
+          新建任务流时，保存后会自动进入节点配置页。当前页面不会展示节点列表、节点表单、执行记录或批次详情。
+          {% else %}
+          已有任务流可以直接进入节点配置。当前页面只负责维护任务流基础信息，不再混排节点配置和执行记录。
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
     <div class="ac-ops-step-strip">
       <article class="ac-ops-step is-current">
         <span class="ac-ops-step-index">第一步</span>
         <strong class="ac-ops-step-title">任务流信息</strong>
         <span class="ac-ops-step-desc">配置适用人群、发给谁、怎么发、生成方式和 Agent 绑定。</span>
       </article>
-      <article class="ac-ops-step">
+      {% if (workspace.page_mode or '') == 'workflow_new' %}
+      <article class="ac-ops-step is-locked">
         <span class="ac-ops-step-index">第二步</span>
         <strong class="ac-ops-step-title">节点配置</strong>
-        <span class="ac-ops-step-desc">任务流保存成功后自动进入节点配置页，再继续维护节点触发和节点内容。</span>
+        <span class="ac-ops-step-desc">新建任务流需要先保存；保存成功后会自动进入节点配置页。</span>
       </article>
+      {% else %}
+      <a class="ac-ops-step ac-ops-step-link" href="{{ (workspace.action_urls or {}).workflow_nodes or '#' }}">
+        <span class="ac-ops-step-index">第二步</span>
+        <strong class="ac-ops-step-title">节点配置</strong>
+        <span class="ac-ops-step-desc">当前任务流已存在，可直接进入节点配置页继续维护节点触发和节点内容。</span>
+      </a>
+      {% endif %}
     </div>
+
     <div class="ac-ops-feedback" id="workflow-editor-feedback" hidden></div>
     <div class="ac-ops-loading" id="workflow-editor-loading">正在加载任务流信息...</div>
-  </section>
-
-  <section class="ac-ops-form-card">
-    <div class="ac-ops-head">
-      <div>
-        <h3>{{ '任务流信息' if (workspace.page_mode or '') == 'workflow_new' else '编辑任务流信息' }}</h3>
-        <p class="ac-ops-muted">保存成功后默认跳转到节点配置页。当前页面不会展示节点列表、节点表单、执行记录或批次详情。</p>
-      </div>
-    </div>
 
     <form id="workflow-form" class="admin-form-grid admin-form-grid--stacked">
       <input type="hidden" name="workflow_id" value="">
@@ -117,7 +142,12 @@
       <div class="ac-ops-feedback" id="workflow-form-feedback" hidden></div>
 
       <div class="ac-ops-inline-actions">
-        <button class="admin-button admin-button--primary" id="workflow-save-button" type="submit">保存并进入节点配置</button>
+        <button class="admin-button admin-button--primary" id="workflow-save-button" type="submit">
+          {{ '保存并进入节点配置' if (workspace.page_mode or '') == 'workflow_new' else '保存任务流' }}
+        </button>
+        {% if (workspace.page_mode or '') != 'workflow_new' and ((workspace.action_urls or {}).workflow_nodes) %}
+        <a class="admin-button admin-button--secondary" id="workflow-nodes-entry-button" href="{{ (workspace.action_urls or {}).workflow_nodes }}">进入节点配置</a>
+        {% endif %}
         <a class="admin-button admin-button--secondary" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回列表</a>
       </div>
     </form>
@@ -500,7 +530,16 @@
         if (!savedId) {
           throw new Error('任务流保存成功，但未返回 workflow_id');
         }
-        window.location.href = workflowNodesUrl(savedId);
+        if (!workflowId) {
+          window.location.href = workflowNodesUrl(savedId);
+          return;
+        }
+        state.workflowBundle = (result || {}).workflow_bundle || state.workflowBundle;
+        if (state.workflowBundle) {
+          fillForm(state.workflowBundle);
+          await renderBindingControls();
+        }
+        showFeedback(elements.formFeedback, '任务流已保存', 'success');
       } catch (error) {
         showFeedback(elements.formFeedback, error.message || '保存任务流失败', 'error');
       }
