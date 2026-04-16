@@ -1705,7 +1705,11 @@ def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, opera
     webhook_url = _setting_text("BAZHUAYU_WEBHOOK_URL", default=_BAZHUAYU_DEFAULT_WEBHOOK_URL)
     signing_secret = _setting_text("BAZHUAYU_SIGNING_SECRET", default=_BAZHUAYU_DEFAULT_SIGNING_SECRET)
     specified_bot = _setting_text("BAZHUAYU_SPECIFIED_BOT")
-    timeout_seconds = _setting_int("BAZHUAYU_TIMEOUT_SECONDS", default=_BAZHUAYU_DEFAULT_TIMEOUT_SECONDS, minimum=1)
+    timeout_seconds = _setting_int(
+        "BAZHUAYU_TIMEOUT_SECONDS",
+        default=_BAZHUAYU_DEFAULT_TIMEOUT_SECONDS,
+        minimum=1,
+    )
     timestamp = str(int(time.time()))
     payload = {
         "sign": _compute_bazhuayu_sign(signing_secret, timestamp),

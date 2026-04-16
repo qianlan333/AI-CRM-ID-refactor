@@ -1421,7 +1421,7 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
         decision_source="system",
         joined_at="2026-04-08 10:00:00",
     )
-    workflow_bundle = _create_test_workflow(app, workflow_name="立即触发任务流")
+    workflow_bundle = _create_test_workflow(app, workflow_name="立即触发任务流", segmentation_basis="behavior")
     workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
 
     with app.app_context():
@@ -1431,7 +1431,11 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
                 "node_name": "入池即发",
                 "target_audience_code": "pending_questionnaire",
                 "trigger_mode": "audience_entered",
-                "standard_content_text": "欢迎进入自动化任务流",
+                "content_variants": [
+                    {"segment_key": "lt_2", "content_text": "欢迎进入自动化任务流"},
+                    {"segment_key": "between_2_9", "content_text": "欢迎进入自动化任务流"},
+                    {"segment_key": "gte_10", "content_text": "欢迎进入自动化任务流"},
+                ],
                 "enabled": True,
             },
             operator_id="tester",
@@ -1474,11 +1478,11 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
     assert item_rows[0]["rendered_content_text"] == "欢迎进入自动化任务流"
 
 
-def test_send_conversion_execution_item_via_bazhuayu_returns_expected_payload(app, monkeypatch):
-    _seed_contact(app, external_userid="wm_bazhuayu_001", mobile="13800002222", owner_userid="sales_01", customer_name="八爪鱼客户")
+def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payload(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_bazhuayu_send_001", mobile="13800002222", owner_userid="sales_01", customer_name="八爪鱼发送客户")
     _seed_automation_member(
         app,
-        external_contact_id="wm_bazhuayu_001",
+        external_contact_id="wm_bazhuayu_send_001",
         phone="13800002222",
         owner_staff_id="sales_01",
         current_pool="inactive_normal",
@@ -1526,30 +1530,64 @@ def test_send_conversion_execution_item_via_bazhuayu_returns_expected_payload(ap
             ).fetchone()["id"]
         )
 
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_service.requests.post",
-        lambda *args, **kwargs: type(
-            "_BazhuayuResponse",
-            (),
+    recorded_requests: list[dict[str, object]] = []
+
+    class _BazhuayuResponse:
+        ok = True
+        status_code = 200
+        text = '{"code":0,"message":"ok"}'
+
+        def json(self):
+            return {"code": 0, "message": "ok"}
+
+    def _fake_post(url, *, json=None, headers=None, timeout=None):
+        recorded_requests.append(
             {
-                "ok": True,
-                "status_code": 200,
-                "text": '{"code":0,"message":"ok"}',
-                "json": lambda self: {"code": 0, "message": "ok"},
-            },
-        )(),
-    )
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: 1713241999)
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "timeout": timeout,
+            }
+        )
+        return _BazhuayuResponse()
+
+    fixed_timestamp = 1713241810
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: fixed_timestamp)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.requests.post", _fake_post)
 
     with app.app_context():
-        payload = send_conversion_execution_item_via_bazhuayu(execution_item_id, operator_id="console-user")
+        result = send_conversion_execution_item_via_bazhuayu(execution_item_id, operator_id="bazhuayu-tester")
 
-    assert payload["ok"] is True
-    assert payload["execution_item_id"] == execution_item_id
-    assert payload["requested_by"] == "console-user"
-    assert payload["request"]["userid"] == "wm_bazhuayu_001"
-    assert payload["request"]["text"] == "欢迎体验自动化发送能力"
-    assert payload["response"] == {"code": 0, "message": "ok"}
+    expected_timestamp = str(fixed_timestamp)
+    expected_secret = "mPwS+MOxF0O9dyED6z5LlA=="
+    expected_sign = base64.b64encode(
+        hmac.new(f"{expected_timestamp}\n{expected_secret}".encode("utf-8"), digestmod=hashlib.sha256).digest()
+    ).decode("utf-8")
+
+    assert len(recorded_requests) == 1
+    assert recorded_requests[0]["url"] == "https://api-rpa.bazhuayu.com/api/v1/bots/webhooks/69cc9c20612e78c4472b2f4d/invoke"
+    assert recorded_requests[0]["headers"] == {"Content-Type": "application/json"}
+    assert recorded_requests[0]["timeout"] == 15
+    assert recorded_requests[0]["json"] == {
+        "sign": expected_sign,
+        "params": {
+            "userid": "wm_bazhuayu_send_001",
+            "text": "欢迎体验自动化发送能力",
+        },
+        "timestamp": expected_timestamp,
+    }
+    assert result == {
+        "ok": True,
+        "execution_item_id": execution_item_id,
+        "requested_by": "bazhuayu-tester",
+        "request": {
+            "userid": "wm_bazhuayu_send_001",
+            "text": "欢迎体验自动化发送能力",
+            "timestamp": expected_timestamp,
+            "specified_bot": "",
+        },
+        "response": {"code": 0, "message": "ok"},
+    }
 
 
 def test_execution_item_send_via_bazhuayu_api_accepts_admin_action_token_and_returns_payload(app, client, monkeypatch):

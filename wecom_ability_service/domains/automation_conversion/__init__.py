@@ -261,6 +261,7 @@ __all__ = [
     "save_reply_monitor_enabled",
     "save_settings",
     "set_follow_type",
+    "send_conversion_execution_item_via_bazhuayu",
     "script_create_draft",
     "script_diff_draft",
     "script_get_item",

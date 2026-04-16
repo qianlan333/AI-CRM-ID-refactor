@@ -54,6 +54,7 @@ from ..domains.automation_conversion import (
     save_default_channel_settings,
     save_model_infra_settings,
     pause_conversion_workflow,
+    send_conversion_execution_item_via_bazhuayu,
     set_follow_type,
     unmark_won,
     update_conversion_profile_segment_template,
