@@ -451,6 +451,7 @@
               <td>
                 <div class="ac-config-row-actions">
                   <button class="admin-button admin-button--secondary" type="button" data-agent-edit="{{ item.agent_code or '' }}">编辑</button>
+                  <button class="admin-button admin-button--ghost" type="button" data-agent-delete="{{ item.agent_code or '' }}">删除</button>
                 </div>
               </td>
             </tr>
@@ -1167,6 +1168,7 @@
             <td>
               <div class="ac-config-row-actions">
                 <button class="admin-button admin-button--secondary" type="button" data-agent-edit="${escapeHtml(item.agent_code)}">编辑</button>
+                <button class="admin-button admin-button--ghost" type="button" data-agent-delete="${escapeHtml(item.agent_code)}">删除</button>
               </div>
             </td>
           </tr>
@@ -1504,6 +1506,32 @@
       if (agentFields.displayName) requestAnimationFrame(() => agentFields.displayName.focus());
     }
 
+    async function deleteAgent(agentCode) {
+      const normalizedCode = String(agentCode || '').trim();
+      if (!normalizedCode) {
+        throw new Error('请选择 Agent');
+      }
+      const selected = state.agents.find((item) => item.agent_code === normalizedCode) || {};
+      const agentLabel = selected.agent_name || normalizedCode;
+      if (!window.confirm(`确认删除 Agent「${agentLabel}」吗？删除后会从可用 Agent 列表中移除。`)) {
+        return;
+      }
+      const result = await requestJson(withCode(apiUrls.agent_delete_base, normalizedCode), {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_action_token: adminActionToken }),
+      });
+      if (state.selectedAgentCode === normalizedCode) {
+        state.selectedAgentCode = null;
+        state.selectedAgentDetail = null;
+        closeAgentForm();
+        resetAgentForm();
+      }
+      await refreshAgents();
+      showFeedback((result || {}).message || 'Agent 已删除', 'success');
+    }
+
     function closeAgentForm() {
       elements.agentFormPanel.hidden = true;
       showAgentFormFeedback('', '');
@@ -1698,10 +1726,17 @@
 
     if (elements.agentTableBody) {
       elements.agentTableBody.addEventListener('click', function (event) {
-        const button = event.target.closest('button[data-agent-edit]');
-        if (!button) return;
-        openAgentEditForm(button.dataset.agentEdit || '').catch((error) => {
-          showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
+        const editButton = event.target.closest('button[data-agent-edit]');
+        if (editButton) {
+          openAgentEditForm(editButton.dataset.agentEdit || '').catch((error) => {
+            showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
+          });
+          return;
+        }
+        const deleteButton = event.target.closest('button[data-agent-delete]');
+        if (!deleteButton) return;
+        deleteAgent(deleteButton.dataset.agentDelete || '').catch((error) => {
+          showFeedback(error.message || '删除 Agent 失败', 'error');
         });
       });
     }

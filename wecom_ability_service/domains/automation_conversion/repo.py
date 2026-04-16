@@ -736,6 +736,16 @@ def update_agent_prompt_row(agent_code: str, payload: dict[str, Any]) -> dict[st
     return dict(row) if row else {}
 
 
+def delete_agent_prompt_row(agent_code: str) -> None:
+    get_db().execute(
+        """
+        DELETE FROM automation_agent_prompt_registry
+        WHERE agent_code = ?
+        """,
+        (_normalized_text(agent_code),),
+    )
+
+
 def insert_agent_llm_call_log(payload: dict[str, Any]) -> dict[str, Any]:
     row = get_db().execute(
         """
@@ -1026,6 +1036,16 @@ def update_agent_config_row(agent_code: str, payload: dict[str, Any]) -> dict[st
     return dict(row) if row else {}
 
 
+def delete_agent_config_row(agent_code: str) -> None:
+    get_db().execute(
+        """
+        DELETE FROM automation_agent_config
+        WHERE agent_code = ?
+        """,
+        (_normalized_text(agent_code),),
+    )
+
+
 def get_agent_skill_row(skill_code: str) -> dict[str, Any] | None:
     return _fetchone_dict(
         """
@@ -1045,6 +1065,18 @@ def list_agent_skill_rows() -> list[dict[str, Any]]:
         FROM automation_agent_skill_registry
         ORDER BY updated_at DESC, id DESC
         """
+    )
+
+
+def list_agent_skill_rows_for_agent(agent_code: str) -> list[dict[str, Any]]:
+    return _fetchall_dicts(
+        """
+        SELECT *
+        FROM automation_agent_skill_registry
+        WHERE agent_code = ?
+        ORDER BY skill_code ASC, id ASC
+        """,
+        (_normalized_text(agent_code),),
     )
 
 

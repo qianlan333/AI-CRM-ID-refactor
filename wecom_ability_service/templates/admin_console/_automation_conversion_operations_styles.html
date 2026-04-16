@@ -123,13 +123,29 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 8px 12px;
+    min-height: 42px;
+    padding: 10px 16px;
     border-radius: 999px;
     border: 1px solid rgba(15, 23, 42, 0.08);
     background: rgba(248, 250, 252, 0.9);
     color: #334155;
     text-decoration: none;
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .ac-ops-step-link {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .ac-ops-step-link:hover {
+    border-color: rgba(194, 65, 12, 0.22);
+    background: rgba(255, 247, 237, 0.98);
+  }
+
+  .ac-ops-step.is-locked {
+    opacity: 0.88;
   }
 
   .ac-ops-page-link:hover {

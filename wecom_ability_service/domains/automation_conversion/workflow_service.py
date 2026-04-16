@@ -1752,9 +1752,11 @@ def _send_text_via_bazhuayu(
     if not response.ok:
         if isinstance(response_payload, dict) and _normalized_text(response_payload.get("description")):
             message = _normalized_text(response_payload.get("description"))
+        elif isinstance(response_payload, dict) and _normalized_text(response_payload.get("message")):
+            message = _normalized_text(response_payload.get("message"))
         else:
-            message = f"Bazhuayu webhook request failed with status {response.status_code}"
-        raise ValueError(message)
+            message = raw_body.strip() or f"bazhuayu webhook failed: HTTP {response.status_code}"
+        raise requests.RequestException(message)
 
     return {
         "ok": True,
@@ -1766,7 +1768,7 @@ def _send_text_via_bazhuayu(
             "timestamp": timestamp,
             "specified_bot": specified_bot,
         },
-        "response": response_payload,
+        "response": response_payload if isinstance(response_payload, dict) else {"raw": raw_body},
     }
 
 
