@@ -241,13 +241,13 @@
     <div class="admin-card-head">
       <div>
         <h2>最近生成话术</h2>
-        <p>保留采用 / 未采用评审能力。未采用时会生成仅包含 recent_chats、tags、questionnaire、not_adopted_reason 的 JSON 并自动复制。</p>
+        <p>保留未采用评审能力，并补充复制话术、自动化发送能力。未采用时会生成仅包含 recent_chats、tags、questionnaire、not_adopted_reason 的 JSON 并自动复制。</p>
       </div>
       <div class="admin-muted" id="reply-review-status">正在加载最近话术...</div>
     </div>
     <div id="reply-output-empty" class="admin-state admin-state--inline" hidden>
       <strong>当前没有可评审话术</strong>
-      <span>这里会展示最近生成的自动化应答话术，并提供采用 / 未采用操作。</span>
+      <span>这里会展示最近生成的自动化应答话术，并提供复制、自动化发送、未采用操作。</span>
     </div>
     <div id="reply-output-list" class="reply-output-list" hidden></div>
   </section>
@@ -319,6 +319,10 @@
       return String(apiUrls.review_output_base || '').replace('__OUTPUT_ID__', encodeURIComponent(String(outputId || '')));
     }
 
+    function withSendOutputId(outputId) {
+      return String(apiUrls.review_output_bazhuayu_send_base || '').replace('__OUTPUT_ID__', encodeURIComponent(String(outputId || '')));
+    }
+
     async function requestJson(url, options = {}) {
       const response = await fetch(url, {
         credentials: 'same-origin',
@@ -374,6 +378,18 @@
       }
     }
 
+    async function copyReplyText(text) {
+      const normalized = String(text || '').trim();
+      if (!normalized) {
+        throw new Error('当前没有可复制的话术');
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(normalized);
+        return;
+      }
+      window.prompt('请复制以下话术', normalized);
+    }
+
     function renderOutputs() {
       const rows = Array.isArray(state.outputs) ? state.outputs : [];
       outputEmptyEl.hidden = rows.length > 0;
@@ -396,7 +412,8 @@
               </div>
             </div>
             <div class="reply-output-actions">
-              <button class="admin-button admin-button--secondary" type="button" data-review-action="adopted">采用</button>
+              <button class="admin-button admin-button--secondary" type="button" data-review-action="copy">复制话术</button>
+              <button class="admin-button" type="button" data-review-action="send">自动化发送</button>
               <button class="admin-button admin-button--ghost" type="button" data-review-action="rejected">未采用</button>
             </div>
           </div>
@@ -461,20 +478,48 @@
       const outputId = itemEl.getAttribute('data-output-id') || '';
       const action = button.getAttribute('data-review-action');
       if (!outputId || !action) return;
+      const output = state.outputs.find((item) => String(item.output_id || '') === outputId) || null;
       if (action === 'rejected') {
         openRejectModal(outputId);
         return;
       }
-      reviewStatusEl.textContent = '正在提交采用结果...';
-      try {
-        await requestJson(withOutputId(outputId), {
-          method: 'POST',
-          body: JSON.stringify({ decision: 'adopted' }),
-        });
-        reviewStatusEl.textContent = '已标记为采用';
-        await loadOutputs();
-      } catch (error) {
-        reviewStatusEl.textContent = error.message || '采用失败';
+      if (action === 'copy') {
+        const defaultLabel = button.textContent;
+        try {
+          await copyReplyText((output && (output.rendered_output_text || output.reason)) || '');
+          button.textContent = '已复制';
+          reviewStatusEl.textContent = '话术已复制到剪贴板';
+        } catch (error) {
+          reviewStatusEl.textContent = error.message || '复制失败';
+        } finally {
+          window.setTimeout(() => {
+            button.textContent = defaultLabel;
+            renderOutputs();
+          }, 1200);
+        }
+        return;
+      }
+      if (action === 'send') {
+        if (!window.confirm('确认通过八爪鱼自动发送这条话术？')) {
+          return;
+        }
+        const defaultLabel = button.textContent;
+        button.disabled = true;
+        button.textContent = '发送中...';
+        reviewStatusEl.textContent = '正在提交自动化发送...';
+        try {
+          await requestJson(withSendOutputId(outputId), {
+            method: 'POST',
+            body: JSON.stringify({ admin_action_token: "{{ admin_action_token }}", operator: "crm_console" }),
+          });
+          reviewStatusEl.textContent = '自动化发送已受理';
+        } catch (error) {
+          reviewStatusEl.textContent = error.message || '自动化发送失败';
+        } finally {
+          button.disabled = false;
+          button.textContent = defaultLabel;
+          await loadOutputs();
+        }
       }
     });
 

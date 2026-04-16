@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import requests
+
 from flask import jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
@@ -50,6 +52,8 @@ from ..domains.automation_conversion import (
     save_default_channel_settings,
     save_model_infra_settings,
     pause_conversion_workflow,
+    send_agent_reply_output_via_bazhuayu,
+    send_conversion_execution_item_via_bazhuayu,
     set_follow_type,
     unmark_won,
     update_conversion_profile_segment_template,
@@ -109,7 +113,7 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
     {
         "key": "overview",
         "label": "数据概览",
-        "summary": "三类大人群、任务流与最近执行摘要",
+        "summary": "概览、运行状态与任务流执行摘要",
         "endpoint": "api.admin_automation_conversion_overview",
         "params": {},
     },
@@ -229,6 +233,10 @@ def _build_execution_records_workspace() -> dict[str, object]:
             "list": url_for("api.admin_automation_conversion_operations"),
             "workflow_edit": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=workflow_id or 0),
             "workflow_nodes": url_for("api.admin_automation_conversion_workflow_nodes", workflow_id=workflow_id or 0),
+            "execution_item_bazhuayu_send_base": url_for(
+                "api.api_admin_automation_conversion_execution_item_send_via_bazhuayu",
+                execution_item_id=0,
+            ),
         },
     }
 
@@ -240,11 +248,6 @@ def _build_overview_workspace() -> dict[str, object]:
             "message_activity_sync_run": url_for("api.admin_automation_conversion_run_message_activity_sync"),
             "reply_monitor_capture": url_for("api.admin_automation_conversion_reply_monitor_capture"),
             "reply_monitor_run_due": url_for("api.admin_automation_conversion_reply_monitor_run_due"),
-        },
-        "entry_urls": {
-            "operations": url_for("api.admin_automation_conversion_operations"),
-            "auto_reply": url_for("api.admin_automation_conversion_auto_reply"),
-            "agent_config": url_for("api.admin_automation_conversion_agent_config"),
         },
     }
 
@@ -267,6 +270,7 @@ def _build_auto_reply_workspace() -> dict[str, object]:
         "api_urls": {
             "review_outputs": url_for("api.api_admin_automation_conversion_review_outputs"),
             "review_output_base": url_for("api.api_admin_automation_conversion_review_output", output_id="__OUTPUT_ID__"),
+            "review_output_bazhuayu_send_base": url_for("api.api_admin_automation_conversion_review_output_send_via_bazhuayu", output_id="__OUTPUT_ID__"),
         },
     }
 
@@ -329,7 +333,7 @@ def _render_overview_page(*, page_error: str = ""):
         "automation_conversion_overview_workspace.html",
         active_nav="automation_conversion",
         page_title="自动化转化",
-        page_summary="先看三类大人群、任务流运行情况和最近执行留痕，再进入模块内各工作面。",
+        page_summary="先看四个一级入口、当前运行状态和任务流执行摘要，再进入对应工作面处理。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
         workspace_tabs=_automation_conversion_workspace_tabs("overview"),
         overview_workspace=_build_overview_workspace(),
@@ -1008,6 +1012,24 @@ def api_admin_automation_conversion_execution_item_detail(execution_item_id: int
     return jsonify({"ok": True, **payload})
 
 
+def api_admin_automation_conversion_execution_item_send_via_bazhuayu(execution_item_id: int):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        payload = send_conversion_execution_item_via_bazhuayu(
+            int(execution_item_id),
+            operator_id=_operator_from_request(),
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify(payload)
+
+
 def api_admin_automation_conversion_profile_segment_template_options():
     return jsonify(
         {
@@ -1056,6 +1078,24 @@ def api_admin_automation_conversion_review_output(output_id: str):
             not_adopted_reason=review_note,
         )
     return jsonify(response_payload)
+
+
+def api_admin_automation_conversion_review_output_send_via_bazhuayu(output_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        payload = send_agent_reply_output_via_bazhuayu(
+            output_id,
+            operator_id=_operator_from_request(),
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify(payload)
 
 
 def api_admin_automation_conversion_run_message_activity_sync():
@@ -1202,6 +1242,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/profile-segment-templates/<int:template_id>", methods=["PUT"])(api_admin_automation_conversion_profile_segment_template_update)
     bp.route("/api/admin/automation-conversion/review-outputs", methods=["GET"])(api_admin_automation_conversion_review_outputs)
     bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/review", methods=["POST"])(api_admin_automation_conversion_review_output)
+    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/workflows/registry", methods=["GET"])(api_admin_automation_conversion_workflow_registry)
     bp.route("/api/admin/automation-conversion/workflows", methods=["GET"])(api_admin_automation_conversion_workflows)
     bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>", methods=["GET"])(api_admin_automation_conversion_workflow_detail)
@@ -1219,6 +1260,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/executions/<int:execution_id>", methods=["GET"])(api_admin_automation_conversion_execution_detail)
     bp.route("/api/admin/automation-conversion/executions/<int:execution_id>/items", methods=["GET"])(api_admin_automation_conversion_execution_items)
     bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>", methods=["GET"])(api_admin_automation_conversion_execution_item_detail)
+    bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_execution_item_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
     bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)

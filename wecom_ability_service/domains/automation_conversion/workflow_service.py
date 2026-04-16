@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
+import time
 from typing import Any
 
+import requests
+from flask import current_app
+
 from ...db import get_db
+from ...infra.settings import get_setting
 from ..user_ops import page_service as user_ops_page_service
-from . import workflow_repo
+from . import repo as orchestration_repo, workflow_repo
 from .workflow_definitions import (
     AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
     AGENT_BINDING_SCOPE_DEFAULT,
@@ -82,6 +90,9 @@ _ALLOWED_NODE_CONTENT_MODES = {
 }
 
 _NODE_CONTENT_META_KEY = "_automation_conversion_node_meta"
+_BAZHUAYU_DEFAULT_WEBHOOK_URL = "https://api-rpa.bazhuayu.com/api/v1/bots/webhooks/69cc9c20612e78c4472b2f4d/invoke"
+_BAZHUAYU_DEFAULT_SIGNING_SECRET = "mPwS+MOxF0O9dyED6z5LlA=="
+_BAZHUAYU_DEFAULT_TIMEOUT_SECONDS = 15
 
 
 def _normalized_text(value: Any) -> str:
@@ -116,6 +127,21 @@ def _truncate_text(value: Any, *, limit: int = 120) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: max(0, limit - 3)]}..."
+
+
+def _setting_text(key: str, *, default: str = "") -> str:
+    return _normalized_text(get_setting(key) or current_app.config.get(key, "") or default)
+
+
+def _setting_int(key: str, *, default: int, minimum: int = 1) -> int:
+    raw_value = get_setting(key)
+    if raw_value is None:
+        raw_value = current_app.config.get(key, default)
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = int(default)
+    return max(int(minimum), value)
 
 
 def _slugify_code(value: Any, *, prefix: str) -> str:
@@ -316,6 +342,13 @@ def _allowed_manual_variant_keys_for_basis(workflow_bundle: dict[str, Any], segm
     if normalized_basis == SEGMENTATION_BASIS_BEHAVIOR:
         return NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER, _behavior_tier_codes()
     return "", []
+
+
+def _content_mode_uses_standard_content(content_mode: str) -> bool:
+    return _normalized_text(content_mode) in {
+        NODE_CONTENT_MODE_STANDARD_DIRECT,
+        NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
+    }
 
 
 def _normalize_template_categories_payload(payload: Any) -> list[dict[str, Any]]:
@@ -844,6 +877,7 @@ def _build_node_bundle(
         variants=variants,
         node_bindings=node_binding_items,
     )
+    standard_content_text = _normalized_text(content.get("standard_content_text")) if _content_mode_uses_standard_content(content_mode) else ""
     return {
         "id": int(node["id"]),
         "node_code": _normalized_text(node.get("node_code")),
@@ -858,9 +892,9 @@ def _build_node_bundle(
         "status": "enabled" if bool(node.get("enabled")) else "disabled",
         "content_mode": content_mode,
         "segmentation_basis": segmentation_basis,
-        "standard_content_text": _normalized_text(content.get("standard_content_text")),
-        "standard_content_payload": _strip_node_content_meta(content.get("standard_content_payload_json") or {}),
-        "fallback_to_standard_content": bool(content.get("fallback_to_standard_content")) if content else True,
+        "standard_content_text": standard_content_text,
+        "standard_content_payload": _strip_node_content_meta(content.get("standard_content_payload_json") or {}) if _content_mode_uses_standard_content(content_mode) else {},
+        "fallback_to_standard_content": bool(content.get("fallback_to_standard_content")) if content and _content_mode_uses_standard_content(content_mode) else False,
         "agent_bindings": node_binding_items,
         "content_variants": [
             {
@@ -1125,16 +1159,22 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
             raise ValueError("content_variants is required for manual_layered")
         if not allowed_keys:
             raise ValueError("current node segmentation does not allow content_variants")
+        variant_by_key: dict[str, dict[str, Any]] = {}
         for item in content_variants:
             if item["segment_key"] not in allowed_keys:
                 raise ValueError(f"invalid content_variants.segment_key: {item['segment_key']}")
+            variant_by_key[item["segment_key"]] = item
+        missing_keys = [key for key in allowed_keys if key not in variant_by_key or not _normalized_text(variant_by_key[key].get("content_text"))]
+        if missing_keys:
+            raise ValueError("manual_layered requires content for every active segmentation target")
+        standard_content_text = ""
         agent_bindings = []
         content_variants = [
             {
                 "variant_scope": variant_scope,
-                **item,
+                **variant_by_key[key],
             }
-            for item in content_variants
+            for key in allowed_keys
         ]
     elif content_mode == NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE:
         if not standard_content_text:
@@ -1168,7 +1208,7 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
         "fallback_to_standard_content": _normalize_bool(
             source.get("fallback_to_standard_content"),
             default=_normalize_bool(current.get("fallback_to_standard_content"), default=True),
-        ),
+        ) if content_mode in {NODE_CONTENT_MODE_STANDARD_DIRECT, NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE} else False,
         "agent_bindings": agent_bindings,
         "content_variants": content_variants,
     }
@@ -1527,15 +1567,20 @@ def _build_execution_payload(execution: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def get_conversion_dashboard_payload(*, execution_limit: int = 8, recent_send_limit: int = 50) -> dict[str, Any]:
+def _build_workflow_execution_summary_item(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "workflow_name": _normalized_text(row.get("workflow_name")),
+        "execution_count": int(row.get("execution_count") or 0),
+        "latest_execution_at": _normalized_text(row.get("latest_execution_at")),
+    }
+
+
+def get_conversion_dashboard_payload() -> dict[str, Any]:
     audience_counts = workflow_repo.get_current_audience_member_counts()
-    recent_executions = [
-        _build_execution_payload(item)
-        for item in workflow_repo.list_workflow_execution_rows(limit=max(1, min(int(execution_limit), 50)))
+    workflow_execution_summary = [
+        _build_workflow_execution_summary_item(item)
+        for item in workflow_repo.list_workflow_execution_summary_rows()
     ]
-    recent_send_items = workflow_repo.list_recent_workflow_execution_item_rows(limit=max(1, min(int(recent_send_limit), 200)))
-    latest_sent_item = next((item for item in recent_send_items if _normalized_text(item.get("status")) == "sent"), {})
-    latest_failed_item = next((item for item in recent_send_items if _normalized_text(item.get("status")) == "failed"), {})
     return {
         "audience_overview": {
             "pending_questionnaire_count": int(audience_counts.get(AUDIENCE_PENDING_QUESTIONNAIRE) or 0),
@@ -1544,17 +1589,9 @@ def get_conversion_dashboard_payload(*, execution_limit: int = 8, recent_send_li
             "total_count": sum(int(value or 0) for value in audience_counts.values()),
         },
         "active_workflow_count": workflow_repo.count_workflow_rows(status=WORKFLOW_STATUS_ACTIVE),
-        "recent_execution_summary": {
-            "items": recent_executions,
-            "total": len(recent_executions),
-        },
-        "recent_send_summary": {
-            "total_count": len(recent_send_items),
-            "success_count": sum(1 for item in recent_send_items if _normalized_text(item.get("status")) == "sent"),
-            "failed_count": sum(1 for item in recent_send_items if _normalized_text(item.get("status")) == "failed"),
-            "skipped_count": sum(1 for item in recent_send_items if _normalized_text(item.get("status")) == "skipped"),
-            "latest_sent_at": _normalized_text(latest_sent_item.get("sent_at") or latest_sent_item.get("updated_at")),
-            "latest_failed_at": _normalized_text(latest_failed_item.get("updated_at") or latest_failed_item.get("created_at")),
+        "task_execution_summary": {
+            "items": workflow_execution_summary,
+            "total": len(workflow_execution_summary),
         },
     }
 
@@ -1654,3 +1691,119 @@ def get_conversion_workflow_execution_item_detail(execution_item_id: int) -> dic
         "execution": _build_execution_payload(execution) if execution else {},
         "item": _build_execution_item_payload(item, include_send_record_detail=True),
     }
+
+
+def _compute_bazhuayu_sign(secret: str, timestamp: str) -> str:
+    normalized_secret = _normalized_text(secret)
+    normalized_timestamp = _normalized_text(timestamp)
+    if not normalized_secret:
+        raise ValueError("bazhuayu signing secret is not configured")
+    if not normalized_timestamp:
+        raise ValueError("bazhuayu timestamp is required")
+    string_to_sign = f"{normalized_timestamp}\n{normalized_secret}"
+    digest = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("utf-8")
+
+
+def _send_text_via_bazhuayu(
+    *,
+    userid: str,
+    text: str,
+    operator_id: str = "",
+    result_id_key: str,
+    result_id_value: Any,
+) -> dict[str, Any]:
+    if not userid:
+        raise ValueError("missing external_contact_id")
+    if not text:
+        raise ValueError("rendered content is empty")
+
+    webhook_url = _setting_text("BAZHUAYU_WEBHOOK_URL", default=_BAZHUAYU_DEFAULT_WEBHOOK_URL)
+    signing_secret = _setting_text("BAZHUAYU_SIGNING_SECRET", default=_BAZHUAYU_DEFAULT_SIGNING_SECRET)
+    specified_bot = _setting_text("BAZHUAYU_SPECIFIED_BOT")
+    timeout_seconds = _setting_int(
+        "BAZHUAYU_TIMEOUT_SECONDS",
+        default=_BAZHUAYU_DEFAULT_TIMEOUT_SECONDS,
+        minimum=1,
+    )
+    timestamp = str(int(time.time()))
+    payload = {
+        "sign": _compute_bazhuayu_sign(signing_secret, timestamp),
+        "params": {
+            "userid": userid,
+            "text": text,
+        },
+        "timestamp": timestamp,
+    }
+    if specified_bot:
+        payload["SpecifiedBot"] = specified_bot
+
+    response = requests.post(
+        webhook_url,
+        json=payload,
+        headers={"Content-Type": "application/json"},
+        timeout=timeout_seconds,
+    )
+    raw_body = response.text or ""
+    try:
+        response_payload = response.json() if raw_body else {}
+    except ValueError:
+        response_payload = raw_body
+    if not response.ok:
+        if isinstance(response_payload, dict) and _normalized_text(response_payload.get("description")):
+            message = _normalized_text(response_payload.get("description"))
+        else:
+            message = f"Bazhuayu webhook request failed with status {response.status_code}"
+        raise ValueError(message)
+
+    return {
+        "ok": True,
+        result_id_key: result_id_value,
+        "requested_by": _normalized_text(operator_id) or "crm_console",
+        "request": {
+            "userid": userid,
+            "text": text,
+            "timestamp": timestamp,
+            "specified_bot": specified_bot,
+        },
+        "response": response_payload,
+    }
+
+
+def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, operator_id: str = "") -> dict[str, Any]:
+    detail = get_conversion_workflow_execution_item_detail(int(execution_item_id))
+    item = dict(detail.get("item") or {})
+    member = dict(item.get("member") or {})
+    userid = _normalized_text(item.get("external_contact_id")) or _normalized_text(member.get("external_contact_id"))
+    text = _normalized_text(item.get("rendered_content_text"))
+    if not userid:
+        raise ValueError("execution item missing external_contact_id")
+    if not text:
+        raise ValueError("execution item rendered content is empty")
+    return _send_text_via_bazhuayu(
+        userid=userid,
+        text=text,
+        operator_id=operator_id,
+        result_id_key="execution_item_id",
+        result_id_value=int(item.get("id") or 0),
+    )
+
+
+def send_agent_reply_output_via_bazhuayu(output_id: str, *, operator_id: str = "") -> dict[str, Any]:
+    row = orchestration_repo.get_agent_output_row(_normalized_text(output_id))
+    if not row:
+        raise LookupError("未找到对应话术输出")
+    output = orchestration_repo.deserialize_agent_output_row(row)
+    userid = _normalized_text(output.get("external_contact_id"))
+    text = _normalized_text(output.get("rendered_output_text"))
+    if not userid:
+        raise ValueError("reply output missing external_contact_id")
+    if not text:
+        raise ValueError("reply output rendered content is empty")
+    return _send_text_via_bazhuayu(
+        userid=userid,
+        text=text,
+        operator_id=operator_id,
+        result_id_key="output_id",
+        result_id_value=_normalized_text(output.get("output_id")),
+    )

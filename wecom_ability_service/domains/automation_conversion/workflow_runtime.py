@@ -438,6 +438,7 @@ def _select_manual_layered_content(
     workflow_bundle: dict[str, Any],
     segment_match: dict[str, Any],
 ) -> dict[str, Any]:
+    del workflow_bundle
     selected_variant = None
     if bool(segment_match.get("matched")):
         selected_variant = next(
@@ -454,10 +455,15 @@ def _select_manual_layered_content(
             "content_source": "manual_variant",
             "fallback_reason": "",
         }
+    fallback_reason = (
+        "segment_content_missing"
+        if bool(segment_match.get("matched"))
+        else (_normalized_text(segment_match.get("reason")) or "segment_not_matched")
+    )
     return {
-        "content_text": _normalized_text(node.get("standard_content_text")),
-        "content_source": "standard_content",
-        "fallback_reason": "" if selected_variant else _normalized_text(segment_match.get("reason")) or "segment_not_matched",
+        "content_text": "",
+        "content_source": "",
+        "fallback_reason": fallback_reason,
     }
 
 
@@ -830,7 +836,7 @@ def _process_execution_item(
         node=node,
         execution_request_id=f"workflow-node-{int(node['id'])}-item-{int(execution_item['id'])}",
     )
-    final_content = _normalized_text(rendered.get("content_text")) or _normalized_text(node.get("standard_content_text"))
+    final_content = _normalized_text(rendered.get("content_text"))
     snapshot = {
         "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
         "node_code": _normalized_text(node.get("node_code")),

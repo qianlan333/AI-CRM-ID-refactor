@@ -50,7 +50,7 @@ from . import local_projection
 from . import repo
 from .provider import load_channel_provider
 
-DEFAULT_OWNER_STAFF_ID = "QianLan"
+DEFAULT_OWNER_STAFF_ID = "HuangYouCan"
 DEFAULT_CHANNEL_CODE = "default_qrcode"
 DEFAULT_CHANNEL_NAME = "默认渠道二维码"
 AI_PUSH_SCENE_SIDEBAR_SCRIPT = "sidebar_script"
