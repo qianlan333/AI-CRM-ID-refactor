@@ -459,6 +459,42 @@ def list_workflow_rows(*, include_archived: bool = False, status: str = "") -> l
     return [_serialize_workflow_row(row) for row in _fetchall_dicts(sql, tuple(params))]
 
 
+def list_workflow_execution_summary_rows(*, include_archived: bool = False) -> list[dict[str, Any]]:
+    sql = """
+        SELECT
+            w.id AS workflow_id,
+            w.workflow_code,
+            w.workflow_name,
+            w.status AS workflow_status,
+            COUNT(e.id) AS execution_count,
+            MAX(
+                CASE
+                    WHEN COALESCE(CAST(e.scheduled_for AS TEXT), '') <> '' THEN CAST(e.scheduled_for AS TEXT)
+                    WHEN e.updated_at IS NOT NULL THEN CAST(e.updated_at AS TEXT)
+                    ELSE COALESCE(CAST(e.created_at AS TEXT), '')
+                END
+            ) AS latest_execution_at,
+            w.updated_at AS workflow_updated_at
+        FROM automation_workflow w
+        LEFT JOIN automation_workflow_execution e ON e.workflow_id = w.id
+        WHERE 1 = 1
+    """
+    params: list[Any] = []
+    if not include_archived:
+        sql += " AND w.status <> ?"
+        params.append("archived")
+    sql += """
+        GROUP BY w.id, w.workflow_code, w.workflow_name, w.status, w.updated_at
+        ORDER BY
+            CASE WHEN w.status = 'active' THEN 0 ELSE 1 END,
+            execution_count DESC,
+            latest_execution_at DESC,
+            w.updated_at DESC,
+            w.id DESC
+    """
+    return _fetchall_dicts(sql, tuple(params))
+
+
 def count_workflow_rows(*, include_archived: bool = False, status: str = "") -> int:
     sql = """
         SELECT COUNT(*) AS total

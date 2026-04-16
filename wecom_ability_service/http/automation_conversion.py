@@ -109,7 +109,7 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
     {
         "key": "overview",
         "label": "数据概览",
-        "summary": "三类大人群、任务流与最近执行摘要",
+        "summary": "概览、运行状态与任务流执行摘要",
         "endpoint": "api.admin_automation_conversion_overview",
         "params": {},
     },
@@ -241,11 +241,6 @@ def _build_overview_workspace() -> dict[str, object]:
             "reply_monitor_capture": url_for("api.admin_automation_conversion_reply_monitor_capture"),
             "reply_monitor_run_due": url_for("api.admin_automation_conversion_reply_monitor_run_due"),
         },
-        "entry_urls": {
-            "operations": url_for("api.admin_automation_conversion_operations"),
-            "auto_reply": url_for("api.admin_automation_conversion_auto_reply"),
-            "agent_config": url_for("api.admin_automation_conversion_agent_config"),
-        },
     }
 
 
@@ -329,7 +324,7 @@ def _render_overview_page(*, page_error: str = ""):
         "automation_conversion_overview_workspace.html",
         active_nav="automation_conversion",
         page_title="自动化转化",
-        page_summary="先看三类大人群、任务流运行情况和最近执行留痕，再进入模块内各工作面。",
+        page_summary="先看四个一级入口、当前运行状态和任务流执行摘要，再进入对应工作面处理。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("自动化转化", None)),
         workspace_tabs=_automation_conversion_workspace_tabs("overview"),
         overview_workspace=_build_overview_workspace(),

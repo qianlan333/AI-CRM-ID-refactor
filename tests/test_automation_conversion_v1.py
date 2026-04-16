@@ -23,6 +23,7 @@ from wecom_ability_service.domains.automation_conversion import (
     get_all_agent_prompts,
     get_agent_config_detail,
     get_agent_output_detail,
+    get_conversion_dashboard_payload,
     list_agent_configs,
     list_pending_agent_prompt_publish_requests,
     run_due_conversion_workflows,
@@ -572,6 +573,56 @@ def _seed_test_agent_config(app, *, agent_code: str, display_name: str = "") -> 
         get_db().commit()
 
 
+def _seed_workflow_execution(
+    app,
+    *,
+    workflow_id: int,
+    execution_id: str,
+    scheduled_for: str,
+    status: str = "finished",
+    success_count: int = 1,
+    skipped_count: int = 0,
+    failed_count: int = 0,
+) -> None:
+    total_count = success_count + skipped_count + failed_count
+    with app.app_context():
+        get_db().execute(
+            """
+            INSERT INTO automation_workflow_execution (
+                execution_id,
+                workflow_id,
+                node_id,
+                trigger_type,
+                audience_code,
+                scheduled_for,
+                status,
+                total_count,
+                success_count,
+                skipped_count,
+                failed_count,
+                summary_json,
+                created_at,
+                updated_at,
+                finished_at
+            )
+            VALUES (?, ?, NULL, 'scheduled_poll', 'pending_questionnaire', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+            """,
+            (
+                execution_id,
+                workflow_id,
+                scheduled_for,
+                status,
+                total_count,
+                success_count,
+                skipped_count,
+                failed_count,
+                json.dumps({"source": "test"}, ensure_ascii=False),
+                scheduled_for if status in {"finished", "partial_failed", "failed"} else "",
+            ),
+        )
+        get_db().commit()
+
+
 def test_init_db_adds_workflow_node_trigger_mode_column(app):
     with app.app_context():
         assert "trigger_mode" in _sqlite_table_columns(get_db(), "automation_workflow_node")
@@ -769,6 +820,57 @@ def test_operations_list_page_renders_split_navigation_without_legacy_panels(cli
     assert "编辑" in html
     assert "最近更新时间" not in html
     assert ">详情<" not in html
+
+
+def test_conversion_dashboard_payload_aggregates_execution_counts_by_workflow(app):
+    first_bundle = _create_test_workflow(app, workflow_name="任务流甲", status="active")
+    second_bundle = _create_test_workflow(app, workflow_name="任务流乙", status="draft")
+    first_workflow_id = int((((first_bundle.get("workflow_bundle") or {}).get("workflow")) or {}).get("id") or 0)
+    second_workflow_id = int((((second_bundle.get("workflow_bundle") or {}).get("workflow")) or {}).get("id") or 0)
+
+    _seed_workflow_execution(app, workflow_id=first_workflow_id, execution_id="exec-alpha-1", scheduled_for="2026-04-08 09:00:00")
+    _seed_workflow_execution(app, workflow_id=first_workflow_id, execution_id="exec-alpha-2", scheduled_for="2026-04-09 09:00:00")
+    _seed_workflow_execution(app, workflow_id=second_workflow_id, execution_id="exec-beta-1", scheduled_for="2026-04-07 09:00:00")
+
+    with app.app_context():
+        payload = get_conversion_dashboard_payload()
+
+    summary = payload["task_execution_summary"]
+    items = summary["items"]
+
+    assert payload["active_workflow_count"] == 1
+    assert summary["total"] == 2
+    assert [item["workflow_name"] for item in items] == ["任务流甲", "任务流乙"]
+    assert [item["execution_count"] for item in items] == [2, 1]
+    assert items[0]["latest_execution_at"] == "2026-04-09 09:00:00"
+    assert set(items[0].keys()) == {"workflow_name", "execution_count", "latest_execution_at"}
+    assert "recent_send_summary" not in payload
+    assert "recent_execution_summary" not in payload
+
+
+def test_conversion_dashboard_payload_returns_empty_task_execution_summary_without_workflows(app):
+    with app.app_context():
+        payload = get_conversion_dashboard_payload()
+
+    assert payload["task_execution_summary"] == {"items": [], "total": 0}
+
+
+def test_overview_page_keeps_only_core_sections_and_removes_duplicate_action_nav(client):
+    response = client.get("/admin/automation-conversion/overview")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "自动化转化当前运行状态" in html
+    assert "任务流执行摘要" in html
+    assert "刷新模块状态" in html
+    assert "最近执行节点摘要" not in html
+    assert "最近发送成功 / 失败摘要" not in html
+    assert "进入自动化运营" not in html
+    assert "进入自动化应答" not in html
+    assert "进入模型 / Agent 配置" not in html
+    assert 'href="/admin/automation-conversion/operations"' in html
+    assert 'href="/admin/automation-conversion/auto-reply"' in html
+    assert 'href="/admin/automation-conversion/agent-config"' in html
 
 
 def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_shells(app, client):

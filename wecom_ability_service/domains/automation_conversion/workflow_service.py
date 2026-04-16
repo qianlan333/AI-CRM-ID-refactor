@@ -1527,15 +1527,20 @@ def _build_execution_payload(execution: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def get_conversion_dashboard_payload(*, execution_limit: int = 8, recent_send_limit: int = 50) -> dict[str, Any]:
+def _build_workflow_execution_summary_item(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "workflow_name": _normalized_text(row.get("workflow_name")),
+        "execution_count": int(row.get("execution_count") or 0),
+        "latest_execution_at": _normalized_text(row.get("latest_execution_at")),
+    }
+
+
+def get_conversion_dashboard_payload() -> dict[str, Any]:
     audience_counts = workflow_repo.get_current_audience_member_counts()
-    recent_executions = [
-        _build_execution_payload(item)
-        for item in workflow_repo.list_workflow_execution_rows(limit=max(1, min(int(execution_limit), 50)))
+    workflow_execution_summary = [
+        _build_workflow_execution_summary_item(item)
+        for item in workflow_repo.list_workflow_execution_summary_rows()
     ]
-    recent_send_items = workflow_repo.list_recent_workflow_execution_item_rows(limit=max(1, min(int(recent_send_limit), 200)))
-    latest_sent_item = next((item for item in recent_send_items if _normalized_text(item.get("status")) == "sent"), {})
-    latest_failed_item = next((item for item in recent_send_items if _normalized_text(item.get("status")) == "failed"), {})
     return {
         "audience_overview": {
             "pending_questionnaire_count": int(audience_counts.get(AUDIENCE_PENDING_QUESTIONNAIRE) or 0),
@@ -1544,17 +1549,9 @@ def get_conversion_dashboard_payload(*, execution_limit: int = 8, recent_send_li
             "total_count": sum(int(value or 0) for value in audience_counts.values()),
         },
         "active_workflow_count": workflow_repo.count_workflow_rows(status=WORKFLOW_STATUS_ACTIVE),
-        "recent_execution_summary": {
-            "items": recent_executions,
-            "total": len(recent_executions),
-        },
-        "recent_send_summary": {
-            "total_count": len(recent_send_items),
-            "success_count": sum(1 for item in recent_send_items if _normalized_text(item.get("status")) == "sent"),
-            "failed_count": sum(1 for item in recent_send_items if _normalized_text(item.get("status")) == "failed"),
-            "skipped_count": sum(1 for item in recent_send_items if _normalized_text(item.get("status")) == "skipped"),
-            "latest_sent_at": _normalized_text(latest_sent_item.get("sent_at") or latest_sent_item.get("updated_at")),
-            "latest_failed_at": _normalized_text(latest_failed_item.get("updated_at") or latest_failed_item.get("created_at")),
+        "task_execution_summary": {
+            "items": workflow_execution_summary,
+            "total": len(workflow_execution_summary),
         },
     }
 

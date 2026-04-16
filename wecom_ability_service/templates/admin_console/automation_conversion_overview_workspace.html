@@ -7,8 +7,7 @@
   .ac-overview-top,
   .ac-overview-summary-grid,
   .ac-overview-status-row,
-  .ac-overview-section,
-  .ac-overview-actions {
+  .ac-overview-section {
     display: grid;
     gap: 18px;
   }
@@ -24,7 +23,6 @@
 
   .ac-overview-card,
   .ac-overview-section,
-  .ac-overview-action-card,
   .ac-overview-stat {
     padding: 18px;
     border: 1px solid rgba(15, 23, 42, 0.08);
@@ -33,8 +31,7 @@
   }
 
   .ac-overview-card,
-  .ac-overview-section,
-  .ac-overview-action-card {
+  .ac-overview-section {
     display: grid;
     gap: 14px;
   }
@@ -75,20 +72,6 @@
   .ac-overview-stat span {
     font-size: 12px;
     color: #64748b;
-  }
-
-  .ac-overview-actions {
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  }
-
-  .ac-overview-action-card {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .ac-overview-action-card:hover {
-    border-color: rgba(157, 99, 48, 0.26);
-    box-shadow: 0 16px 28px rgba(99, 67, 26, 0.08);
   }
 
   .ac-overview-table-wrap {
@@ -166,7 +149,7 @@
         <div>
           <div class="ac-eyebrow">数据概览</div>
           <h2>自动化转化当前运行状态</h2>
-          <p class="ac-overview-muted">先看三类大人群规模、启用中任务流、最近执行和最近发送结果，不做复杂 BI。</p>
+          <p class="ac-overview-muted">只保留自动化转化 overview 首屏核心信息，先看三类大人群规模、启用中任务流和任务流执行情况。</p>
         </div>
         <div class="ac-overview-status-row">
           <span class="admin-chip admin-chip--neutral" id="overview-last-updated">最近刷新：加载中</span>
@@ -204,28 +187,14 @@
       </div>
       <button class="admin-button admin-button--primary" type="button" id="overview-refresh-button">刷新模块状态</button>
       <div class="ac-overview-muted" id="overview-refresh-status">顺序执行消息活跃同步、自动接话扫描、自动接话放行。</div>
-      <div class="ac-overview-actions">
-        <a class="ac-overview-action-card" href="{{ (workspace.entry_urls or {}).operations }}">
-          <strong>进入自动化运营</strong>
-          <span class="ac-overview-muted">查看任务流、节点和执行记录。</span>
-        </a>
-        <a class="ac-overview-action-card" href="{{ (workspace.entry_urls or {}).auto_reply }}">
-          <strong>进入自动化应答</strong>
-          <span class="ac-overview-muted">查看自动接话监控和待处理队列。</span>
-        </a>
-        <a class="ac-overview-action-card" href="{{ (workspace.entry_urls or {}).agent_config }}">
-          <strong>进入模型 / Agent 配置</strong>
-          <span class="ac-overview-muted">查看可用 Agent 与基础画像分层模板，不把这里当作 Lobster 全量编辑器替代页。</span>
-        </a>
-      </div>
     </article>
   </section>
 
   <section class="ac-overview-section">
     <div class="ac-overview-head">
       <div>
-        <h3>最近执行节点摘要</h3>
-        <p class="ac-overview-muted">让人一进来就能知道当前自动化运营最近有没有正常跑起来。</p>
+        <h3>任务流执行摘要</h3>
+        <p class="ac-overview-muted">按任务流统计当前执行次数，保持 overview 只做经营摘要，不展开节点明细。</p>
       </div>
     </div>
     <div class="ac-overview-table-wrap">
@@ -233,44 +202,12 @@
         <thead>
           <tr>
             <th>任务流</th>
-            <th>节点</th>
-            <th>批次时间</th>
-            <th>状态</th>
-            <th>命中</th>
-            <th>成功</th>
-            <th>失败</th>
-            <th>跳过</th>
+            <th>执行次数</th>
+            <th>最近执行时间</th>
           </tr>
         </thead>
         <tbody id="overview-execution-body"></tbody>
       </table>
-    </div>
-  </section>
-
-  <section class="ac-overview-section">
-    <div class="ac-overview-head">
-      <div>
-        <h3>最近发送成功 / 失败摘要</h3>
-        <p class="ac-overview-muted">只展示最关键的结果型信息，不做复杂图表。</p>
-      </div>
-    </div>
-    <div class="ac-overview-summary-grid">
-      <article class="ac-overview-stat">
-        <span>最近成功数</span>
-        <strong id="overview-send-success">0</strong>
-      </article>
-      <article class="ac-overview-stat">
-        <span>最近失败数</span>
-        <strong id="overview-send-failed">0</strong>
-      </article>
-      <article class="ac-overview-stat">
-        <span>最近跳过数</span>
-        <strong id="overview-send-skipped">0</strong>
-      </article>
-      <article class="ac-overview-stat">
-        <span>最近成功 / 失败时间</span>
-        <strong id="overview-send-times">-</strong>
-      </article>
     </div>
   </section>
 </div>
@@ -312,8 +249,7 @@
 
     function renderDashboard(dashboard) {
       const audience = dashboard.audience_overview || {};
-      const recentExecution = (dashboard.recent_execution_summary || {}).items || [];
-      const recentSend = dashboard.recent_send_summary || {};
+      const taskExecutionSummary = (dashboard.task_execution_summary || {}).items || [];
       loading.hidden = true;
       summaryGrid.hidden = false;
       document.getElementById('overview-pending-questionnaire').textContent = String(audience.pending_questionnaire_count || 0);
@@ -322,24 +258,15 @@
       document.getElementById('overview-active-workflow-count').textContent = String(dashboard.active_workflow_count || 0);
       document.getElementById('overview-active-workflow-chip').textContent = '启用任务流 ' + String(dashboard.active_workflow_count || 0);
       document.getElementById('overview-last-updated').textContent = '最近刷新：' + new Date().toLocaleString();
-      document.getElementById('overview-send-success').textContent = String(recentSend.success_count || 0);
-      document.getElementById('overview-send-failed').textContent = String(recentSend.failed_count || 0);
-      document.getElementById('overview-send-skipped').textContent = String(recentSend.skipped_count || 0);
-      document.getElementById('overview-send-times').textContent = (recentSend.latest_sent_at || '暂无成功') + ' / ' + (recentSend.latest_failed_at || '暂无失败');
-      document.getElementById('overview-execution-body').innerHTML = recentExecution.length
-        ? recentExecution.map((item) => `
+      document.getElementById('overview-execution-body').innerHTML = taskExecutionSummary.length
+        ? taskExecutionSummary.map((item) => `
           <tr>
-            <td>${(item.workflow || {}).workflow_name || '-'}</td>
-            <td>${(item.node || {}).node_name || '-'}</td>
-            <td>${item.scheduled_for || item.updated_at || '-'}</td>
-            <td>${item.status || '-'}</td>
-            <td>${item.hit_count || 0}</td>
-            <td>${item.sent_count || 0}</td>
-            <td>${item.failed_count || 0}</td>
-            <td>${item.skipped_count || 0}</td>
+            <td>${item.workflow_name || '-'}</td>
+            <td>${item.execution_count || 0}</td>
+            <td>${item.latest_execution_at || '-'}</td>
           </tr>
         `).join('')
-        : '<tr><td colspan="8">当前还没有最近执行节点摘要。</td></tr>';
+        : '<tr><td colspan="3">当前还没有任务流执行摘要。</td></tr>';
     }
 
     async function loadDashboard() {
