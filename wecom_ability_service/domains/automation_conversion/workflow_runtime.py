@@ -30,6 +30,8 @@ from .workflow_definitions import (
     GENERATION_MODE_PERSONALIZED_SINGLE,
     NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
     NODE_TRIGGER_MODE_SCHEDULED,
+    RECIPIENT_FILTER_BASIS_BEHAVIOR,
+    RECIPIENT_FILTER_BASIS_NONE,
     SEGMENTATION_BASIS_BEHAVIOR,
     SEGMENTATION_BASIS_NONE,
     SEGMENTATION_BASIS_PROFILE,
@@ -40,7 +42,7 @@ from .workflow_service import get_conversion_workflow_model_bundle
 from . import workflow_repo
 
 
-DEFAULT_AUTOMATION_SENDER = "QianLan"
+DEFAULT_AUTOMATION_SENDER = "HuangYouCan"
 _FINAL_EXECUTION_STATUSES = {"finished", "partial_failed", "failed"}
 
 
@@ -115,6 +117,52 @@ def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
             continue
         return dict(item)
     return dict(_behavior_tier_items()[0])
+
+
+def _workflow_recipient_filter_config(workflow_bundle: dict[str, Any]) -> dict[str, Any]:
+    workflow = dict(workflow_bundle.get("workflow") or {})
+    basis = _normalized_text(workflow.get("recipient_filter_basis")) or RECIPIENT_FILTER_BASIS_NONE
+    if basis not in {RECIPIENT_FILTER_BASIS_NONE, RECIPIENT_FILTER_BASIS_BEHAVIOR}:
+        basis = RECIPIENT_FILTER_BASIS_NONE
+    tier_keys = []
+    seen: set[str] = set()
+    allowed = {_normalized_text(item.get("tier_code")) for item in _behavior_tier_items()}
+    for item in workflow.get("recipient_behavior_tier_keys") or []:
+        tier_key = _normalized_text(item)
+        if not tier_key or tier_key in seen or tier_key not in allowed:
+            continue
+        seen.add(tier_key)
+        tier_keys.append(tier_key)
+    if basis != RECIPIENT_FILTER_BASIS_BEHAVIOR:
+        tier_keys = []
+    return {
+        "recipient_filter_basis": basis,
+        "recipient_behavior_tier_keys": tier_keys,
+    }
+
+
+def _member_behavior_tier_match(member: dict[str, Any], selected_tier_keys: list[str]) -> dict[str, Any]:
+    resolved = _resolve_behavior_segment_match(member)
+    selected = {_normalized_text(item) for item in selected_tier_keys or [] if _normalized_text(item)}
+    tier_key = _normalized_text(resolved.get("segment_key"))
+    return {
+        **resolved,
+        "selected_tier_keys": sorted(selected),
+        "matched": bool(tier_key) and tier_key in selected,
+    }
+
+
+def _member_matches_workflow_recipient_filter(member: dict[str, Any], workflow_bundle: dict[str, Any]) -> bool:
+    config = _workflow_recipient_filter_config(workflow_bundle)
+    if _normalized_text(config.get("recipient_filter_basis")) != RECIPIENT_FILTER_BASIS_BEHAVIOR:
+        return True
+    if not (
+        int(member.get("id") or 0)
+        or _normalized_text(member.get("external_contact_id"))
+        or _normalized_text(member.get("phone"))
+    ):
+        return False
+    return bool(_member_behavior_tier_match(member, list(config.get("recipient_behavior_tier_keys") or [])).get("matched"))
 
 
 def _current_audience_source_snapshot(member: dict[str, Any], marketing_state: dict[str, Any] | None) -> dict[str, Any]:
@@ -862,6 +910,7 @@ def _upsert_node_execution_candidates(
     *,
     execution: dict[str, Any],
     node: dict[str, Any],
+    workflow_bundle: dict[str, Any],
 ) -> dict[int, dict[str, Any]]:
     scheduled_for = _normalized_text(execution.get("scheduled_for"))
     audience_rows = workflow_repo.list_current_member_audience_rows(_normalized_text(node.get("target_audience_code")))
@@ -878,6 +927,9 @@ def _upsert_node_execution_candidates(
                 expected_day_offset=int(node.get("day_offset") or 1),
             ):
                 continue
+        member = dict(row.get("member") or {})
+        if not _member_matches_workflow_recipient_filter(member, workflow_bundle):
+            continue
         workflow_repo.insert_workflow_execution_item_row(
             {
                 "execution_id": int(execution.get("id") or 0),
@@ -979,7 +1031,7 @@ def _run_due_node(
             "summary_json": dict(execution.get("summary_json") or {}),
         },
     )
-    audience_map = _upsert_node_execution_candidates(execution=execution, node=node)
+    audience_map = _upsert_node_execution_candidates(execution=execution, node=node, workflow_bundle=workflow_bundle)
     execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
     for item in execution_items:
         if _normalized_text(item.get("status")) != "pending":
@@ -1028,6 +1080,8 @@ def _run_immediate_node(
     for audience_entry in audience_rows:
         audience_entry_id = int(audience_entry.get("id") or 0)
         if audience_entry_id <= 0:
+            continue
+        if not _member_matches_workflow_recipient_filter(dict(audience_entry.get("member") or {}), workflow_bundle):
             continue
         execution_key = (
             f"acwf-immediate-"

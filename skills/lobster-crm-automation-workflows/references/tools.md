@@ -52,6 +52,7 @@ Example:
 Returns at least:
 
 - `audiences`
+- `recipient_filter_bases`
 - `segmentation_bases`
 - `generation_modes`
 - `node_trigger_modes`
@@ -99,7 +100,11 @@ Notes:
 
 - `workflow_id` is required.
 - Only send the fields you want to change.
-- If you change `segmentation_basis`, `generation_mode`, or `audiences`, make sure the existing node structure still remains valid.
+- Split workflow semantics:
+  - 发给谁: `recipient_filter_basis` + `recipient_behavior_tier_keys`
+  - 怎么发: `content_segmentation_basis` + `content_profile_segment_template_id`
+- Legacy `segmentation_basis` remains accepted, but only as the old content-dimension field.
+- If you change recipient filter, content segmentation, `generation_mode`, or `audiences`, make sure the existing node structure still remains valid.
 
 ### Workflow Nodes
 
@@ -128,7 +133,8 @@ Minimum safe payload:
   "workflow_name": "新客欢迎流",
   "workflow_code": "welcome_flow",
   "status": "draft",
-  "segmentation_basis": "none",
+  "recipient_filter_basis": "none",
+  "content_segmentation_basis": "none",
   "generation_mode": "manual_layered",
   "audiences": ["operating"]
 }
@@ -137,14 +143,18 @@ Minimum safe payload:
 Allowed values:
 
 - `status`: `draft`, `active`, `paused`
-- `segmentation_basis`: `none`, `profile`, `behavior`
+- `recipient_filter_basis`: `none`, `behavior`
+- `recipient_behavior_tier_keys`: `lt_2`, `between_2_9`, `gte_10`
+- `content_segmentation_basis`: `none`, `profile`, `behavior`
 - `generation_mode`: `manual_layered`, `auto_layered_rewrite`, `personalized_single`
 - `audiences`: `pending_questionnaire`, `operating`, `converted`
 
 Notes:
 
-- `profile_segment_template_id` is required only when `segmentation_basis = profile`.
+- `content_profile_segment_template_id` is required only when `content_segmentation_basis = profile`.
+- If `recipient_filter_basis = behavior`, `recipient_behavior_tier_keys` must contain at least one tier key.
 - `agent_bindings` are required only for non-manual generation modes.
+- Legacy payloads may still send `segmentation_basis` / `profile_segment_template_id`; treat them as old content-dimension fields only.
 
 ### Create Workflow Node
 

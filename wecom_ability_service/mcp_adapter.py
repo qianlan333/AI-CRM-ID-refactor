@@ -798,7 +798,7 @@ TOOL_DEFS = [
     },
     {
         "name": "crm.automation.create_workflow",
-        "description": "Create one CRM automation-conversion workflow draft.",
+        "description": "Create one CRM automation-conversion workflow draft. Supports split dimensions for recipient filtering and content segmentation.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -806,6 +806,13 @@ TOOL_DEFS = [
                 "workflow_code": {"type": "string"},
                 "description": {"type": "string"},
                 "status": {"type": "string", "enum": ["draft", "active", "paused"]},
+                "recipient_filter_basis": {"type": "string", "enum": ["none", "behavior"]},
+                "recipient_behavior_tier_keys": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["lt_2", "between_2_9", "gte_10"]},
+                },
+                "content_segmentation_basis": {"type": "string", "enum": ["none", "profile", "behavior"]},
+                "content_profile_segment_template_id": {"type": "integer", "minimum": 1},
                 "segmentation_basis": {"type": "string", "enum": ["none", "profile", "behavior"]},
                 "generation_mode": {
                     "type": "string",
@@ -864,7 +871,7 @@ TOOL_DEFS = [
     },
     {
         "name": "crm.automation.update_workflow",
-        "description": "Update one existing CRM automation-conversion workflow.",
+        "description": "Update one existing CRM automation-conversion workflow. Supports split dimensions for recipient filtering and content segmentation.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -873,6 +880,13 @@ TOOL_DEFS = [
                 "workflow_code": {"type": "string"},
                 "description": {"type": "string"},
                 "status": {"type": "string", "enum": ["draft", "active", "paused"]},
+                "recipient_filter_basis": {"type": "string", "enum": ["none", "behavior"]},
+                "recipient_behavior_tier_keys": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["lt_2", "between_2_9", "gte_10"]},
+                },
+                "content_segmentation_basis": {"type": "string", "enum": ["none", "profile", "behavior"]},
+                "content_profile_segment_template_id": {"type": "integer", "minimum": 1},
                 "segmentation_basis": {"type": "string", "enum": ["none", "profile", "behavior"]},
                 "generation_mode": {
                     "type": "string",
@@ -2438,6 +2452,10 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                         "workflow_code": arguments.get("workflow_code"),
                         "description": arguments.get("description"),
                         "status": arguments.get("status"),
+                        "recipient_filter_basis": arguments.get("recipient_filter_basis"),
+                        "recipient_behavior_tier_keys": arguments.get("recipient_behavior_tier_keys"),
+                        "content_segmentation_basis": arguments.get("content_segmentation_basis"),
+                        "content_profile_segment_template_id": arguments.get("content_profile_segment_template_id"),
                         "segmentation_basis": arguments.get("segmentation_basis"),
                         "generation_mode": arguments.get("generation_mode"),
                         "profile_segment_template_id": arguments.get("profile_segment_template_id"),
@@ -2496,6 +2514,10 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                         "workflow_code": arguments.get("workflow_code"),
                         "description": arguments.get("description"),
                         "status": arguments.get("status"),
+                        "recipient_filter_basis": arguments.get("recipient_filter_basis"),
+                        "recipient_behavior_tier_keys": arguments.get("recipient_behavior_tier_keys"),
+                        "content_segmentation_basis": arguments.get("content_segmentation_basis"),
+                        "content_profile_segment_template_id": arguments.get("content_profile_segment_template_id"),
                         "segmentation_basis": arguments.get("segmentation_basis"),
                         "generation_mode": arguments.get("generation_mode"),
                         "profile_segment_template_id": arguments.get("profile_segment_template_id"),

@@ -7,6 +7,7 @@ import pytest
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.domains.automation_conversion import create_conversion_profile_segment_template
 
 
 class FakeResponse:
@@ -172,6 +173,129 @@ def _mcp_call(client, name: str, arguments: dict):
             "params": {"name": name, "arguments": arguments},
         },
     )
+
+
+def _seed_settings_questionnaire(app, *, questionnaire_id: int = 901) -> dict[str, object]:
+    choice_question_id = questionnaire_id * 100 + 1
+    mobile_question_id = questionnaire_id * 100 + 2
+    option_ids = [questionnaire_id * 1000 + 1, questionnaire_id * 1000 + 2]
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO questionnaires (
+                id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                questionnaire_id,
+                f"mcp-settings-{questionnaire_id}",
+                f"mcp-settings-{questionnaire_id}",
+                f"MCP 自动化设置问卷 {questionnaire_id}",
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaire_questions (
+                id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, 'single_choice', '你当前更关注什么？', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (choice_question_id, questionnaire_id),
+        )
+        db.executemany(
+            """
+            INSERT INTO questionnaire_options (
+                id, question_id, option_text, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            [
+                (option_ids[0], choice_question_id, "效率", 1),
+                (option_ids[1], choice_question_id, "成交", 2),
+            ],
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaire_questions (
+                id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, 'mobile', '请填写手机号', 1, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (mobile_question_id, questionnaire_id),
+        )
+        db.commit()
+    return {
+        "questionnaire_id": questionnaire_id,
+        "choice_question_id": choice_question_id,
+        "option_ids": option_ids,
+        "mobile_question_id": mobile_question_id,
+    }
+
+
+def _seed_profile_segment_template(app, *, questionnaire_id: int = 901, template_name: str = "MCP 画像模板") -> dict[str, object]:
+    questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=questionnaire_id)
+    with app.app_context():
+        result = create_conversion_profile_segment_template(
+            {
+                "template_name": template_name,
+                "questionnaire_id": questionnaire_seed["questionnaire_id"],
+                "segmentation_question_id": questionnaire_seed["choice_question_id"],
+                "categories": [
+                    {
+                        "category_key": "efficiency",
+                        "category_name": "效率型",
+                        "option_ids": [questionnaire_seed["option_ids"][0]],
+                    },
+                    {
+                        "category_key": "closing",
+                        "category_name": "成交型",
+                        "option_ids": [questionnaire_seed["option_ids"][1]],
+                    },
+                ],
+            },
+            operator_id="tester-mcp",
+        )
+    return {
+        **questionnaire_seed,
+        "template_id": int(((result.get("template_bundle") or {}).get("template") or {}).get("id") or 0),
+    }
+
+
+def _seed_test_agent_config(app, *, agent_code: str, display_name: str = "") -> None:
+    with app.app_context():
+        get_db().execute(
+            """
+            INSERT INTO automation_agent_config (
+                agent_code,
+                display_name,
+                pool_keys_json,
+                enabled,
+                draft_role_prompt,
+                draft_task_prompt,
+                draft_variables_json,
+                draft_output_schema_json,
+                published_role_prompt,
+                published_task_prompt,
+                published_variables_json,
+                published_output_schema_json,
+                draft_version,
+                published_version,
+                last_change_summary,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, '[]', 1, '', '', '[]', '[]', '', '', '[]', '[]', 1, 1, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(agent_code) DO UPDATE SET
+                display_name = excluded.display_name,
+                enabled = 1,
+                published_version = MAX(automation_agent_config.published_version, 1),
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (agent_code, display_name or agent_code),
+        )
+        get_db().commit()
 
 
 class _FakeRefreshTagsClient:
@@ -655,9 +779,11 @@ def test_task_requires_confirm_when_dry_run_is_false(client, app, monkeypatch):
 
 
 def test_crm_automation_workflow_tools_can_list_and_create_workflows_and_nodes(client):
+    _seed_test_agent_config(client.application, agent_code="questionnaire_followup_agent", display_name="问卷提交 Agent")
     registry_response = _mcp_call(client, "crm.automation.get_workflow_registry", {})
     registry_payload = registry_response.get_json()["result"]["structuredContent"]
     assert registry_payload["audiences"]
+    assert registry_payload["recipient_filter_bases"]
     assert registry_payload["generation_modes"]
     assert registry_payload["node_trigger_modes"]
 
@@ -675,8 +801,15 @@ def test_crm_automation_workflow_tools_can_list_and_create_workflows_and_nodes(c
             "description": "给运营池新客的欢迎任务流",
             "status": "draft",
             "segmentation_basis": "none",
-            "generation_mode": "manual_layered",
+            "generation_mode": "personalized_single",
             "audiences": ["operating"],
+            "agent_bindings": [
+                {
+                    "binding_scope": "personalized",
+                    "segment_key": "",
+                    "agent_code": "questionnaire_followup_agent",
+                }
+            ],
             "operator": "tester-workflow",
         },
     )
@@ -684,6 +817,10 @@ def test_crm_automation_workflow_tools_can_list_and_create_workflows_and_nodes(c
     workflow_id = workflow_bundle["workflow"]["id"]
     assert workflow_bundle["workflow"]["workflow_code"] == "welcome_flow"
     assert workflow_bundle["workflow"]["workflow_name"] == "新客欢迎流"
+    assert workflow_bundle["workflow"]["recipient_filter_basis"] == "none"
+    assert workflow_bundle["workflow"]["recipient_behavior_tier_keys"] == []
+    assert workflow_bundle["workflow"]["content_segmentation_basis"] == "none"
+    assert workflow_bundle["workflow"]["content_profile_segment_template_id"] is None
     assert workflow_bundle["nodes"] == []
 
     create_node_response = _mcp_call(
@@ -695,8 +832,6 @@ def test_crm_automation_workflow_tools_can_list_and_create_workflows_and_nodes(c
             "node_code": "welcome_touch_1",
             "target_audience_code": "operating",
             "trigger_mode": "audience_entered",
-            "content_mode": "standard_direct",
-            "standard_content_text": "欢迎加入，我们先带你完成第一步设置。",
             "operator": "tester-workflow",
         },
     )
@@ -704,7 +839,7 @@ def test_crm_automation_workflow_tools_can_list_and_create_workflows_and_nodes(c
     assert node_payload["node_code"] == "welcome_touch_1"
     assert node_payload["node_name"] == "欢迎首触达"
     assert node_payload["target_audience_code"] == "operating"
-    assert node_payload["content_mode"] == "standard_direct"
+    assert node_payload["content_mode"] == "personalized_single"
 
     nodes_response = _mcp_call(
         client,
@@ -720,3 +855,85 @@ def test_crm_automation_workflow_tools_can_list_and_create_workflows_and_nodes(c
     assert list_payload["total"] == 1
     assert list_payload["items"][0]["workflow"]["workflow_code"] == "welcome_flow"
     assert list_payload["items"][0]["nodes"][0]["node_code"] == "welcome_touch_1"
+
+
+def test_crm_automation_create_workflow_supports_split_recipient_and_content_fields(client, app):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=902, template_name="MCP 拆维画像模板")
+    _seed_test_agent_config(app, agent_code="efficiency_agent", display_name="效率 Agent")
+    _seed_test_agent_config(app, agent_code="closing_agent", display_name="成交 Agent")
+
+    response = _mcp_call(
+        client,
+        "crm.automation.create_workflow",
+        {
+            "workflow_name": "拆维欢迎流",
+            "workflow_code": "split_flow",
+            "status": "draft",
+            "recipient_filter_basis": "behavior",
+            "recipient_behavior_tier_keys": ["lt_2"],
+            "content_segmentation_basis": "profile",
+            "content_profile_segment_template_id": template_seed["template_id"],
+            "generation_mode": "auto_layered_rewrite",
+            "audiences": ["operating"],
+            "agent_bindings": [
+                {"binding_scope": "profile_category", "segment_key": "efficiency", "agent_code": "efficiency_agent"},
+                {"binding_scope": "profile_category", "segment_key": "closing", "agent_code": "closing_agent"},
+            ],
+            "operator": "tester-workflow",
+        },
+    )
+
+    payload = response.get_json()["result"]["structuredContent"]["workflow_bundle"]
+    workflow = payload["workflow"]
+    assert workflow["workflow_code"] == "split_flow"
+    assert workflow["recipient_filter_basis"] == "behavior"
+    assert workflow["recipient_behavior_tier_keys"] == ["lt_2"]
+    assert workflow["content_segmentation_basis"] == "profile"
+    assert workflow["content_profile_segment_template_id"] == template_seed["template_id"]
+    assert workflow["segmentation_basis"] == "profile"
+    assert workflow["profile_segment_template_id"] == template_seed["template_id"]
+    assert json.loads(workflow["behavior_tier_scheme"]) == {
+        "recipient_filter_basis": "behavior",
+        "recipient_behavior_tier_keys": ["lt_2"],
+    }
+
+    list_response = _mcp_call(client, "crm.automation.list_workflows", {"status": "draft"})
+    list_payload = list_response.get_json()["result"]["structuredContent"]
+    saved_workflow = next(item["workflow"] for item in list_payload["items"] if item["workflow"]["workflow_code"] == "split_flow")
+    assert saved_workflow["recipient_filter_basis"] == "behavior"
+    assert saved_workflow["recipient_behavior_tier_keys"] == ["lt_2"]
+    assert saved_workflow["content_segmentation_basis"] == "profile"
+    assert saved_workflow["content_profile_segment_template_id"] == template_seed["template_id"]
+
+
+def test_crm_automation_create_workflow_keeps_legacy_segmentation_basis_payload_compatible(client):
+    _seed_test_agent_config(client.application, agent_code="tier_lt_2_agent", display_name="小于 2 Agent")
+    _seed_test_agent_config(client.application, agent_code="tier_2_9_agent", display_name="2~9 Agent")
+    _seed_test_agent_config(client.application, agent_code="tier_gte_10_agent", display_name="10+ Agent")
+    response = _mcp_call(
+        client,
+        "crm.automation.create_workflow",
+        {
+            "workflow_name": "旧写法行为流",
+            "workflow_code": "legacy_behavior_flow",
+            "status": "draft",
+            "segmentation_basis": "behavior",
+            "generation_mode": "auto_layered_rewrite",
+            "audiences": ["operating"],
+            "agent_bindings": [
+                {"binding_scope": "behavior_tier", "segment_key": "lt_2", "agent_code": "tier_lt_2_agent"},
+                {"binding_scope": "behavior_tier", "segment_key": "between_2_9", "agent_code": "tier_2_9_agent"},
+                {"binding_scope": "behavior_tier", "segment_key": "gte_10", "agent_code": "tier_gte_10_agent"},
+            ],
+            "operator": "tester-workflow",
+        },
+    )
+
+    workflow = response.get_json()["result"]["structuredContent"]["workflow_bundle"]["workflow"]
+    assert workflow["workflow_code"] == "legacy_behavior_flow"
+    assert workflow["recipient_filter_basis"] == "none"
+    assert workflow["recipient_behavior_tier_keys"] == []
+    assert workflow["content_segmentation_basis"] == "behavior"
+    assert workflow["content_profile_segment_template_id"] is None
+    assert workflow["segmentation_basis"] == "behavior"
+    assert workflow["behavior_tier_scheme"] == "fixed_v1"
