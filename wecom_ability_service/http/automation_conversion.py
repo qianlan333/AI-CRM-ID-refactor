@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import requests
+
 from flask import jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
@@ -50,6 +52,7 @@ from ..domains.automation_conversion import (
     save_default_channel_settings,
     save_model_infra_settings,
     pause_conversion_workflow,
+    send_conversion_execution_item_via_bazhuayu,
     set_follow_type,
     unmark_won,
     update_conversion_profile_segment_template,
@@ -229,6 +232,10 @@ def _build_execution_records_workspace() -> dict[str, object]:
             "list": url_for("api.admin_automation_conversion_operations"),
             "workflow_edit": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=workflow_id or 0),
             "workflow_nodes": url_for("api.admin_automation_conversion_workflow_nodes", workflow_id=workflow_id or 0),
+            "execution_item_bazhuayu_send_base": url_for(
+                "api.api_admin_automation_conversion_execution_item_send_via_bazhuayu",
+                execution_item_id=0,
+            ),
         },
     }
 
@@ -1008,6 +1015,24 @@ def api_admin_automation_conversion_execution_item_detail(execution_item_id: int
     return jsonify({"ok": True, **payload})
 
 
+def api_admin_automation_conversion_execution_item_send_via_bazhuayu(execution_item_id: int):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        payload = send_conversion_execution_item_via_bazhuayu(
+            int(execution_item_id),
+            operator_id=_operator_from_request(),
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify(payload)
+
+
 def api_admin_automation_conversion_profile_segment_template_options():
     return jsonify(
         {
@@ -1219,6 +1244,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/executions/<int:execution_id>", methods=["GET"])(api_admin_automation_conversion_execution_detail)
     bp.route("/api/admin/automation-conversion/executions/<int:execution_id>/items", methods=["GET"])(api_admin_automation_conversion_execution_items)
     bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>", methods=["GET"])(api_admin_automation_conversion_execution_item_detail)
+    bp.route("/api/admin/automation-conversion/execution-items/<int:execution_item_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_execution_item_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(api_admin_automation_conversion_run_message_activity_sync)
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
     bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)
