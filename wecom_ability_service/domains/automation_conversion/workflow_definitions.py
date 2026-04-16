@@ -7,6 +7,9 @@ AUDIENCE_PENDING_QUESTIONNAIRE = "pending_questionnaire"
 AUDIENCE_OPERATING = "operating"
 AUDIENCE_CONVERTED = "converted"
 
+RECIPIENT_FILTER_BASIS_NONE = "none"
+RECIPIENT_FILTER_BASIS_BEHAVIOR = "behavior"
+
 SEGMENTATION_BASIS_NONE = "none"
 SEGMENTATION_BASIS_PROFILE = "profile"
 SEGMENTATION_BASIS_BEHAVIOR = "behavior"
@@ -35,21 +38,21 @@ WORKFLOW_STATUS_ARCHIVED = "archived"
 BEHAVIOR_TIER_DEFINITIONS = (
     {
         "tier_code": "lt_2",
-        "label": "<2",
+        "label": "小于 2",
         "description": "近统计窗口内行为次数小于 2。",
         "min_value": None,
         "max_value": 1,
     },
     {
         "tier_code": "between_2_9",
-        "label": "2~9",
+        "label": "2 ~ 9",
         "description": "近统计窗口内行为次数在 2 到 9 之间。",
         "min_value": 2,
         "max_value": 9,
     },
     {
         "tier_code": "gte_10",
-        "label": "10+",
+        "label": "大于等于 10",
         "description": "近统计窗口内行为次数大于等于 10。",
         "min_value": 10,
         "max_value": None,
@@ -96,7 +99,22 @@ def list_supported_segmentation_bases() -> list[dict[str, str]]:
         {
             "basis_code": SEGMENTATION_BASIS_BEHAVIOR,
             "label": "按行为层级分层",
-            "description": "使用系统固定行为层级 <2 / 2~9 / 10+。",
+            "description": "使用系统固定行为层级：小于 2、2 ~ 9、大于等于 10。",
+        },
+    ]
+
+
+def list_supported_recipient_filter_bases() -> list[dict[str, str]]:
+    return [
+        {
+            "basis_code": RECIPIENT_FILTER_BASIS_NONE,
+            "label": "不分层",
+            "description": "不额外筛选收件人，命中目标人群即可发送。",
+        },
+        {
+            "basis_code": RECIPIENT_FILTER_BASIS_BEHAVIOR,
+            "label": "按行为层级发",
+            "description": "仅给命中所选行为层级的成员发送。",
         },
     ]
 

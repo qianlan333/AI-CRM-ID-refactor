@@ -40,8 +40,13 @@ Do not assume native `crm.automation.*` tools are visible in the current session
 ## Operating Rules
 
 - Prefer creating workflows in `draft` status unless the user explicitly asks to activate them immediately.
-- Do not invent `profile_segment_template_id` or `agent_bindings`. If the user has not provided them, default to the simplest valid workflow:
-  - `segmentation_basis = none`
+- Treat workflow config as two independent dimensions:
+  - `recipient_filter_basis` / `recipient_behavior_tier_keys` = 发给谁
+  - `content_segmentation_basis` / `content_profile_segment_template_id` = 怎么发
+- Legacy `segmentation_basis` is still accepted for compatibility, but it is old syntax for the content dimension only. Do not use it as “发给谁”.
+- Do not invent `content_profile_segment_template_id` or `agent_bindings`. If the user has not provided them, default to the simplest valid workflow:
+  - `recipient_filter_basis = none`
+  - `content_segmentation_basis = none`
   - `generation_mode = manual_layered`
 - When creating a node, do not invent a `target_audience_code`. It must already belong to the workflow audiences.
 - If the user does not provide schedule details, prefer `trigger_mode = audience_entered`.

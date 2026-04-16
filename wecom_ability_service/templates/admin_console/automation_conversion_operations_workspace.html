@@ -329,7 +329,8 @@
             <tr>
               <th>任务流名称</th>
               <th>适用人群</th>
-              <th>分层依据</th>
+              <th>发给谁</th>
+              <th>怎么发</th>
               <th>生成方式</th>
               <th>Agent 绑定情况</th>
               <th>节点数量</th>
@@ -374,17 +375,25 @@
         </div>
         <div class="ac-ops-field-grid">
           <label class="admin-field">
-            <span>分层依据</span>
-            <select name="segmentation_basis"></select>
+            <span>发给谁</span>
+            <select name="recipient_filter_basis"></select>
+          </label>
+          <label class="admin-field">
+            <span>怎么发</span>
+            <select name="content_segmentation_basis"></select>
           </label>
           <label class="admin-field">
             <span>生成方式</span>
             <select name="generation_mode"></select>
           </label>
         </div>
+        <div class="admin-field" id="workflow-recipient-tier-field" hidden>
+          <span>行为层级</span>
+          <div class="ac-ops-checkbox-grid" id="workflow-recipient-tier-options"></div>
+        </div>
         <label class="admin-field" id="workflow-template-field" hidden>
           <span>分层规则模板</span>
-          <select name="profile_segment_template_id">
+          <select name="content_profile_segment_template_id">
             <option value="">请选择基础画像分层模板</option>
           </select>
         </label>
@@ -445,7 +454,6 @@
             <th>时间</th>
             <th>标准版内容</th>
             <th>分层内容</th>
-            <th>Agent 绑定</th>
             <th>状态</th>
             <th>操作</th>
           </tr>
@@ -459,7 +467,7 @@
       <div class="ac-ops-head">
         <div>
           <h4 id="node-form-title">新增节点</h4>
-          <p class="ac-ops-muted">节点表单按“触发方式 / 内容方式 / 分层依据”三层组织，只显示当前真的需要填写的字段。</p>
+          <p class="ac-ops-muted">节点层只配置节点名称、目标人群、触发方式和节点内容；内容方式、分层依据、Agent 绑定都继承任务流。</p>
         </div>
         <button class="admin-button admin-button--ghost" id="node-form-cancel" type="button">收起</button>
       </div>
@@ -493,28 +501,11 @@
           </label>
         </div>
         <p class="ac-ops-muted" id="node-trigger-help">按时间点运行时，会在进入目标人群后的第 N 天指定时间执行。</p>
-        <label class="admin-field">
-          <span>内容方式</span>
-          <select name="content_mode"></select>
-        </label>
-        <label class="admin-field" id="node-segmentation-field" hidden>
-          <span>分层依据</span>
-          <select name="segmentation_basis"></select>
-        </label>
         <p class="ac-ops-muted" id="node-content-help"></p>
         <label class="admin-field" id="node-standard-content-field">
           <span id="node-standard-content-label">标准版内容</span>
           <textarea name="standard_content_text" rows="6" placeholder="输入标准版原文"></textarea>
         </label>
-        <section class="ac-ops-panel" id="node-agent-binding-section" hidden>
-          <div class="ac-ops-head">
-            <div>
-              <h4>Agent 绑定</h4>
-              <p class="ac-ops-muted" id="node-agent-binding-help"></p>
-            </div>
-          </div>
-          <div class="ac-ops-binding-grid" id="node-agent-binding-grid"></div>
-        </section>
         <label class="admin-checkbox">
           <input type="checkbox" name="enabled" value="1" checked>
           <span>启用当前节点</span>
@@ -621,6 +612,8 @@
       workflowFormReset: document.getElementById('workflow-form-reset'),
       workflowFormFeedback: document.getElementById('workflow-form-feedback'),
       workflowAudienceOptions: document.getElementById('workflow-audience-options'),
+      workflowRecipientTierField: document.getElementById('workflow-recipient-tier-field'),
+      workflowRecipientTierOptions: document.getElementById('workflow-recipient-tier-options'),
       workflowTemplateField: document.getElementById('workflow-template-field'),
       workflowBindingSection: document.getElementById('workflow-binding-section'),
       workflowBindingHelp: document.getElementById('workflow-binding-help'),
@@ -643,13 +636,9 @@
       nodeForm: document.getElementById('node-form'),
       nodeFormCancel: document.getElementById('node-form-cancel'),
       nodeTriggerHelp: document.getElementById('node-trigger-help'),
-      nodeSegmentationField: document.getElementById('node-segmentation-field'),
       nodeContentHelp: document.getElementById('node-content-help'),
       nodeStandardContentField: document.getElementById('node-standard-content-field'),
       nodeStandardContentLabel: document.getElementById('node-standard-content-label'),
-      nodeAgentBindingSection: document.getElementById('node-agent-binding-section'),
-      nodeAgentBindingHelp: document.getElementById('node-agent-binding-help'),
-      nodeAgentBindingGrid: document.getElementById('node-agent-binding-grid'),
       nodeVariantSection: document.getElementById('node-variant-section'),
       nodeVariantHelp: document.getElementById('node-variant-help'),
       nodeVariantGrid: document.getElementById('node-variant-grid'),
@@ -680,7 +669,7 @@
       agentOptions: [],
       profileTemplateOptions: [],
       profileTemplateDetails: {},
-      nodeFormAgentBindingSelections: {},
+      workflowBindingRenderToken: 0,
     };
 
     const NODE_CONTENT_MODE_OPTIONS = [
@@ -739,9 +728,21 @@
 
     async function requestJson(url, options) {
       const response = await fetch(url, options);
-      const payload = await response.json().catch(() => ({}));
+      const rawText = await response.text();
+      let payload = {};
+      if (rawText) {
+        try {
+          payload = JSON.parse(rawText);
+        } catch (error) {
+          payload = {};
+        }
+      }
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || payload.message || '请求失败');
+        const backendError = String(payload.error || payload.message || rawText || '').trim();
+        if (backendError) {
+          throw new Error(backendError);
+        }
+        throw new Error(`HTTP ${response.status} ${response.statusText || 'request failed'}`);
       }
       return payload;
     }
@@ -749,7 +750,7 @@
     function humanizeNodeSaveError(rawError) {
       const error = String(rawError || '').trim();
       const triggerMode = String((elements.nodeForm.elements.trigger_mode || {}).value || '').trim();
-      const contentMode = String((elements.nodeForm.elements.content_mode || {}).value || '').trim();
+      const contentMode = defaultNodeContentMode(state.selectedWorkflowBundle, null);
       if (!error) {
         return '保存失败，请检查节点配置后重试。';
       }
@@ -758,11 +759,21 @@
       }
       const directMap = {
         'node_name is required': '节点名称不能为空',
+        'target_audience_code is required': '目标人群不能为空',
         'target_audience_code must belong to workflow audiences': '当前目标人群不属于任务流适用人群',
         'send_time must be HH:MM': '时间格式不正确，请按 HH:MM 填写',
         'segmentation_basis must be profile or behavior when content_mode requires layered segmentation': '当前内容方式需要分层，请先选择分层依据',
         'agent_bindings does not match expected segmentation targets': '当前内容方式需要为每个分层目标绑定 Agent',
         'personalized_single requires exactly 1 agent_binding': '当前内容方式需要绑定 1 个 Agent',
+        'workflow generation_mode is required for node inheritance': '当前任务流配置缺失，节点无法保存',
+        'workflow generation_mode is invalid for node inheritance': '当前任务流配置缺失，节点无法保存',
+        'workflow configuration is incomplete for inherited content_mode': '当前任务流配置缺失，节点无法保存',
+        'workflow segmentation_basis is invalid for inherited layered content_mode': '当前任务流配置缺失，节点无法保存',
+        'workflow segmentation targets are not configured for inherited content_mode': '当前任务流配置缺失，节点无法保存',
+        'workflow profile_segment_template_id is required for inherited profile segmentation': '当前任务流配置缺失，节点无法保存',
+        'workflow agent_bindings are invalid for inherited layered content_mode': '当前任务流配置缺失，节点无法保存',
+        'workflow personalized_single requires exactly 1 agent_binding': '当前任务流未绑定 Agent，单人定制化节点无法保存',
+        'workflow personalized_single agent_binding is invalid': '当前任务流未绑定 Agent，单人定制化节点无法保存',
         'trigger_mode must be one of scheduled, audience_entered': '触发方式不合法，请刷新页面后重试',
         'content_mode must be one of standard_direct, manual_layered, standard_layered_rewrite, personalized_single': '内容方式不合法，请刷新页面后重试',
         'day_offset and send_time are not allowed when trigger_mode is audience_entered': '当前触发方式为“立即运行”，不能同时填写“第几天”和“时间”',
@@ -772,28 +783,29 @@
       if (directMap[error]) {
         return directMap[error];
       }
-      if (error === 'agent_code is required') {
-        return contentMode === 'personalized_single'
-          ? '当前内容方式需要绑定 1 个 Agent'
-          : '当前内容方式需要为每个分层目标绑定 Agent';
-      }
       if (error === 'standard_content_text is required') {
         if (contentMode === 'personalized_single') {
           return '当前内容方式为“单人定制化生成”，不需要填写标准版内容';
         }
-        return '请填写标准版内容';
+        return '当前任务流内容方式需要标准版内容，请先填写节点内容';
       }
       if (error === 'day_offset is required when trigger_mode is scheduled' || error === 'send_time is required when trigger_mode is scheduled') {
         return '当前触发方式为“第 N 天指定时间运行”，请填写“第几天”和“时间”';
       }
+      if (error === 'content_variants is required for manual_layered') {
+        return '当前任务流内容方式需要分层内容，请先填写分层内容明细';
+      }
+      if (error === 'profile segmentation requires a workflow profile segment template' || error === 'current node segmentation does not allow content_variants') {
+        return '当前任务流配置缺失，节点无法保存';
+      }
       if (triggerMode === 'audience_entered' && error.includes('day_offset') && error.includes('send_time')) {
         return '当前触发方式为“立即运行”，不能同时填写“第几天”和“时间”';
       }
-      if (error.startsWith('invalid agent_code:')) {
-        return '当前内容方式需要绑定 Agent，请至少选择一个可用 Agent';
+      if (error.startsWith('HTTP ')) {
+        return '保存失败，服务暂时没有返回可识别的错误信息，请稍后重试。';
       }
-      if (error === 'agent_bindings must cover every segmentation target') {
-        return '当前内容方式需要为每个分层目标绑定 Agent';
+      if (error === '请求失败') {
+        return '保存失败，请稍后重试或联系管理员检查节点保存接口。';
       }
       return `保存失败：${error}`;
     }
@@ -802,6 +814,8 @@
       const items = Array.isArray((state.registry || {})[groupKey]) ? state.registry[groupKey] : [];
       const keyName = groupKey === 'audiences'
         ? 'audience_code'
+        : groupKey === 'recipient_filter_bases'
+        ? 'basis_code'
         : groupKey === 'segmentation_bases'
         ? 'basis_code'
         : groupKey === 'generation_modes'
@@ -821,6 +835,10 @@
       return labelFromRegistry('audiences', code, code);
     }
 
+    function recipientFilterLabel(code) {
+      return labelFromRegistry('recipient_filter_bases', code, code);
+    }
+
     function segmentationLabel(code) {
       return labelFromRegistry('segmentation_bases', code, code);
     }
@@ -829,17 +847,59 @@
       return labelFromRegistry('generation_modes', code, code);
     }
 
-    function nodeContentModeLabel(code) {
-      const match = NODE_CONTENT_MODE_OPTIONS.find((item) => item.value === String(code || '').trim());
-      return match ? match.label : (code || '-');
-    }
-
     function nodeTriggerModeLabel(code) {
       return labelFromRegistry('node_trigger_modes', code, code);
     }
 
     function statusLabel(code) {
       return labelFromRegistry('workflow_statuses', code, code);
+    }
+
+    function behaviorTierLabel(code, fallback) {
+      const normalized = String(code || '').trim();
+      if (normalized === 'lt_2') return '小于 2';
+      if (normalized === 'between_2_9') return '2 ~ 9';
+      if (normalized === 'gte_10') return '大于等于 10';
+      return labelFromRegistry('behavior_tiers', normalized, fallback || normalized);
+    }
+
+    function workflowUsesLayeredSegmentation(generationMode) {
+      return ['manual_layered', 'auto_layered_rewrite'].includes(String(generationMode || '').trim());
+    }
+
+    function checkedInputValues(container, selector) {
+      return Array.from(container.querySelectorAll(selector)).filter((input) => input.checked).map((input) => input.value);
+    }
+
+    function renderWorkflowRecipientTierOptions() {
+      elements.workflowRecipientTierOptions.innerHTML = (state.registry.behavior_tiers || []).map((item) => `
+        <label class="ac-ops-checkbox-item">
+          <input type="checkbox" name="recipient_behavior_tier_keys" value="${escapeHtml(item.tier_code)}">
+          <span>
+            <strong>${escapeHtml(behaviorTierLabel(item.tier_code, item.label))}</strong><br>
+            <span class="ac-ops-muted">${escapeHtml(item.description || '')}</span>
+          </span>
+        </label>
+      `).join('');
+    }
+
+    function workflowRecipientSummary(workflow) {
+      const basis = String((workflow || {}).recipient_filter_basis || '').trim();
+      if (basis !== 'behavior') {
+        return recipientFilterLabel(basis || 'none');
+      }
+      const tierKeys = Array.isArray((workflow || {}).recipient_behavior_tier_keys) ? workflow.recipient_behavior_tier_keys : [];
+      const tierLabels = tierKeys.map((item) => behaviorTierLabel(item, item)).filter(Boolean);
+      return tierLabels.length ? `按行为层级发：${tierLabels.join(' / ')}` : '按行为层级发';
+    }
+
+    function workflowContentSummary(workflow, bundle) {
+      const basis = String((workflow || {}).content_segmentation_basis || (workflow || {}).segmentation_basis || '').trim() || 'none';
+      if (basis !== 'profile') {
+        return segmentationLabel(basis);
+      }
+      const templateName = ((((bundle || {}).profile_segment_template || {}).template) || {}).template_name || '';
+      return templateName ? `按基础画像分层 · ${templateName}` : segmentationLabel(basis);
     }
 
     function escapeHtml(value) {
@@ -860,7 +920,7 @@
         return (state.registry.behavior_tiers || []).map((item) => ({
           binding_scope: 'behavior_tier',
           segment_key: item.tier_code,
-          label: item.label,
+          label: behaviorTierLabel(item.tier_code, item.label),
         }));
       }
       if (segmentationBasis === 'profile') {
@@ -881,7 +941,7 @@
         return (state.registry.behavior_tiers || []).map((item) => ({
           variant_scope: 'behavior_tier',
           segment_key: item.tier_code,
-          label: item.label,
+          label: behaviorTierLabel(item.tier_code, item.label),
         }));
       }
       if (String(segmentationBasis || '') === 'profile') {
@@ -960,24 +1020,16 @@
     }
 
     function renderWorkflowSelectOptions() {
-      const segmentationSelect = elements.workflowForm.elements.segmentation_basis;
+      const recipientSelect = elements.workflowForm.elements.recipient_filter_basis;
+      recipientSelect.innerHTML = (state.registry.recipient_filter_bases || []).map((item) => `<option value="${escapeHtml(item.basis_code)}">${escapeHtml(item.label || item.basis_code)}</option>`).join('');
+      const segmentationSelect = elements.workflowForm.elements.content_segmentation_basis;
       segmentationSelect.innerHTML = (state.registry.segmentation_bases || []).map((item) => `<option value="${escapeHtml(item.basis_code)}">${escapeHtml(item.label || item.basis_code)}</option>`).join('');
       const generationSelect = elements.workflowForm.elements.generation_mode;
       generationSelect.innerHTML = (state.registry.generation_modes || []).map((item) => `<option value="${escapeHtml(item.mode_code)}">${escapeHtml(item.label || item.mode_code)}</option>`).join('');
       const statusSelect = elements.workflowForm.elements.status;
       statusSelect.innerHTML = (state.registry.workflow_statuses || []).map((item) => `<option value="${escapeHtml(item.status_code)}">${escapeHtml(item.label || item.status_code)}</option>`).join('');
-      const templateSelect = elements.workflowForm.elements.profile_segment_template_id;
+      const templateSelect = elements.workflowForm.elements.content_profile_segment_template_id;
       templateSelect.innerHTML = `<option value="">请选择基础画像分层模板</option>` + state.profileTemplateOptions.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.template_name || item.template_code)}</option>`).join('');
-    }
-
-    function renderNodeSelectOptions() {
-      const contentModeSelect = elements.nodeForm.elements.content_mode;
-      contentModeSelect.innerHTML = NODE_CONTENT_MODE_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('');
-      const segmentationSelect = elements.nodeForm.elements.segmentation_basis;
-      segmentationSelect.innerHTML = (state.registry.segmentation_bases || [])
-        .filter((item) => item.basis_code !== 'none')
-        .map((item) => `<option value="${escapeHtml(item.basis_code)}">${escapeHtml(item.label || item.basis_code)}</option>`)
-        .join('');
     }
 
     function filteredWorkflows() {
@@ -1007,7 +1059,8 @@
               <div class="ac-ops-code">${escapeHtml(workflow.workflow_code || '')}</div>
             </td>
             <td>${(item.audiences || []).map((row) => `<span class="admin-chip admin-chip--neutral">${escapeHtml(audienceLabel(row.audience_code))}</span>`).join(' ') || '-'}</td>
-            <td>${escapeHtml(segmentationLabel(workflow.segmentation_basis))}</td>
+            <td>${escapeHtml(workflowRecipientSummary(workflow))}</td>
+            <td>${escapeHtml(workflowContentSummary(workflow, item))}</td>
             <td>${escapeHtml(generationLabel(workflow.generation_mode))}</td>
             <td>${escapeHtml(workflowBindingsSummary(item))}</td>
             <td>${escapeHtml((item.nodes || []).length)}</td>
@@ -1040,9 +1093,11 @@
         workflowName: String(elements.workflowForm.elements.workflow_name.value || '').trim(),
         description: String(elements.workflowForm.elements.description.value || '').trim(),
         status: String(elements.workflowForm.elements.status.value || '').trim(),
-        segmentationBasis: String(elements.workflowForm.elements.segmentation_basis.value || '').trim(),
+        recipientFilterBasis: String(elements.workflowForm.elements.recipient_filter_basis.value || '').trim(),
+        recipientBehaviorTierKeys: checkedInputValues(elements.workflowRecipientTierOptions, 'input[name="recipient_behavior_tier_keys"]'),
+        contentSegmentationBasis: String(elements.workflowForm.elements.content_segmentation_basis.value || '').trim(),
         generationMode: String(elements.workflowForm.elements.generation_mode.value || '').trim(),
-        profileSegmentTemplateId: Number(elements.workflowForm.elements.profile_segment_template_id.value || 0),
+        contentProfileSegmentTemplateId: Number(elements.workflowForm.elements.content_profile_segment_template_id.value || 0),
         audiences: Array.from(elements.workflowForm.querySelectorAll('input[name="audiences"]:checked')).map((input) => input.value),
       };
     }
@@ -1060,18 +1115,24 @@
     }
 
     async function renderWorkflowBindingControls() {
+      const renderToken = state.workflowBindingRenderToken + 1;
+      state.workflowBindingRenderToken = renderToken;
       const values = getWorkflowFormValues();
+      const usesLayeredSegmentation = workflowUsesLayeredSegmentation(values.generationMode);
+      const contentSegmentationBasis = usesLayeredSegmentation ? values.contentSegmentationBasis : 'none';
+      const needsProfileTemplate = contentSegmentationBasis === 'profile';
       const currentSelections = {};
       elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]').forEach((select) => {
         const key = `${select.dataset.bindingScope || ''}:${select.dataset.segmentKey || ''}`;
         currentSelections[key] = String(select.value || '').trim();
       });
       showFormFeedback(elements.workflowFormFeedback, '', '');
-      if (values.segmentationBasis === 'profile') {
+      elements.workflowBindingHelp.textContent = '';
+      elements.workflowRecipientTierField.hidden = values.recipientFilterBasis !== 'behavior';
+      if (needsProfileTemplate) {
         elements.workflowTemplateField.hidden = false;
       } else {
         elements.workflowTemplateField.hidden = true;
-        elements.workflowForm.elements.profile_segment_template_id.value = '';
       }
 
       if (values.generationMode === 'manual_layered') {
@@ -1081,7 +1142,7 @@
         return;
       }
 
-      if (values.generationMode === 'auto_layered_rewrite' && values.segmentationBasis === 'none') {
+      if (values.generationMode === 'auto_layered_rewrite' && contentSegmentationBasis === 'none') {
         elements.workflowBindingSection.hidden = false;
         elements.workflowBindingHelp.textContent = '标准版自动分层改写必须选择“基础画像分层”或“行为层级分层”。';
         elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">当前配置还不能绑定 Agent。</div>';
@@ -1089,22 +1150,26 @@
       }
 
       let templateDetail = null;
-      if (values.segmentationBasis === 'profile' && values.profileSegmentTemplateId) {
-        templateDetail = await ensureProfileTemplateDetail(values.profileSegmentTemplateId);
+      if (needsProfileTemplate && values.contentProfileSegmentTemplateId) {
+        elements.workflowBindingSection.hidden = false;
+        elements.workflowBindingHelp.textContent = '正在加载基础画像分层模板...';
+        elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">正在加载分层目标...</div>';
+        templateDetail = await ensureProfileTemplateDetail(values.contentProfileSegmentTemplateId);
+        if (renderToken !== state.workflowBindingRenderToken) return;
       }
-      if (values.segmentationBasis === 'profile' && !values.profileSegmentTemplateId) {
+      if (needsProfileTemplate && !values.contentProfileSegmentTemplateId) {
         elements.workflowBindingSection.hidden = false;
         elements.workflowBindingHelp.textContent = '基础画像分层时，请先选择分层规则模板，再绑定 Agent。';
         elements.workflowBindingGrid.innerHTML = '<div class="ac-ops-empty">当前还没有可绑定的画像分类。</div>';
         return;
       }
-      const targets = workflowBindingTargets(values.segmentationBasis, values.generationMode, templateDetail);
+      const targets = workflowBindingTargets(contentSegmentationBasis, values.generationMode, templateDetail);
       elements.workflowBindingSection.hidden = false;
       elements.workflowBindingHelp.textContent =
         values.generationMode === 'personalized_single'
           ? '单人定制化生成只允许绑定 1 个 Agent。'
-          : values.segmentationBasis === 'behavior'
-          ? '行为层级分层固定为 <2 / 2~9 / 10+。'
+          : contentSegmentationBasis === 'behavior'
+          ? '行为层级分层固定为：小于 2、2 ~ 9、大于等于 10。'
           : '标准版自动分层改写需要按分层类别逐项绑定 Agent。';
 
       const editingBundle = currentWorkflowEditingBundle();
@@ -1144,15 +1209,20 @@
         elements.workflowForm.elements.workflow_name.value = workflow.workflow_name || '';
         elements.workflowForm.elements.description.value = workflow.description || '';
         elements.workflowForm.elements.status.value = workflow.status || 'draft';
-        elements.workflowForm.elements.segmentation_basis.value = workflow.segmentation_basis || 'none';
+        elements.workflowForm.elements.recipient_filter_basis.value = workflow.recipient_filter_basis || 'none';
+        setCheckboxValues(elements.workflowRecipientTierOptions, workflow.recipient_behavior_tier_keys || []);
+        elements.workflowForm.elements.content_segmentation_basis.value = workflow.content_segmentation_basis || workflow.segmentation_basis || 'none';
         elements.workflowForm.elements.generation_mode.value = workflow.generation_mode || 'manual_layered';
-        elements.workflowForm.elements.profile_segment_template_id.value = workflow.profile_segment_template_id || '';
+        elements.workflowForm.elements.content_profile_segment_template_id.value = workflow.content_profile_segment_template_id || workflow.profile_segment_template_id || '';
         setCheckboxValues(elements.workflowAudienceOptions, (item.audiences || []).map((row) => row.audience_code));
       } else {
         elements.workflowFormTitle.textContent = '新建任务流';
         elements.workflowForm.elements.status.value = 'draft';
-        elements.workflowForm.elements.segmentation_basis.value = 'none';
+        elements.workflowForm.elements.recipient_filter_basis.value = 'none';
+        setCheckboxValues(elements.workflowRecipientTierOptions, []);
+        elements.workflowForm.elements.content_segmentation_basis.value = 'none';
         elements.workflowForm.elements.generation_mode.value = 'manual_layered';
+        elements.workflowForm.elements.content_profile_segment_template_id.value = '';
       }
       renderWorkflowBindingControls().catch((error) => {
         showFormFeedback(elements.workflowFormFeedback, error.message || '加载 Agent 绑定失败', 'error');
@@ -1169,13 +1239,19 @@
       const expectedBindingCount = elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]').length;
       if (!payload.workflow_name) throw new Error('任务流名称不能为空');
       if (!payload.audiences.length) throw new Error('请至少选择一个适用人群');
-      if (payload.segmentation_basis === 'profile' && !payload.profile_segment_template_id) {
+      if (payload.recipient_filter_basis === 'none' && payload.recipient_behavior_tier_keys.length) {
+        throw new Error('不分层发送时不应选择行为层级');
+      }
+      if (payload.recipient_filter_basis === 'behavior' && !payload.recipient_behavior_tier_keys.length) {
+        throw new Error('按行为层级发时至少选择一个行为层级');
+      }
+      if (payload.content_segmentation_basis === 'profile' && !payload.content_profile_segment_template_id) {
         throw new Error('基础画像分层时必须选择分层规则模板');
       }
       if (payload.generation_mode === 'manual_layered' && payload.agent_bindings.length) {
         throw new Error('手动分层录入不允许绑定 Agent');
       }
-      if (payload.generation_mode === 'auto_layered_rewrite' && payload.segmentation_basis === 'none') {
+      if (payload.generation_mode === 'auto_layered_rewrite' && payload.content_segmentation_basis === 'none') {
         throw new Error('标准版自动分层改写必须选择基础画像分层或行为层级分层');
       }
       if (payload.generation_mode === 'auto_layered_rewrite' && payload.agent_bindings.length !== expectedBindingCount) {
@@ -1188,6 +1264,7 @@
 
     async function buildWorkflowPayload() {
       const values = getWorkflowFormValues();
+      const contentSegmentationBasis = workflowUsesLayeredSegmentation(values.generationMode) ? values.contentSegmentationBasis : 'none';
       const bindingInputs = Array.from(elements.workflowBindingGrid.querySelectorAll('select[data-binding-scope]'));
       const bindings = bindingInputs
         .map((select) => ({
@@ -1200,8 +1277,10 @@
         workflow_name: values.workflowName,
         description: values.description,
         audiences: values.audiences,
-        segmentation_basis: values.segmentationBasis,
-        profile_segment_template_id: values.segmentationBasis === 'profile' ? values.profileSegmentTemplateId || null : null,
+        recipient_filter_basis: values.recipientFilterBasis || 'none',
+        recipient_behavior_tier_keys: values.recipientFilterBasis === 'behavior' ? values.recipientBehaviorTierKeys : [],
+        content_segmentation_basis: contentSegmentationBasis,
+        content_profile_segment_template_id: contentSegmentationBasis === 'profile' ? values.contentProfileSegmentTemplateId || null : null,
         generation_mode: values.generationMode,
         agent_bindings: bindings,
         status: values.status || 'draft',
@@ -1252,12 +1331,15 @@
       elements.workflowStatusButton.textContent = workflow.status === 'active' ? '停用任务流' : '启用任务流';
       elements.workflowDetailChips.innerHTML = [
         workflow.status ? `<span class="admin-chip admin-chip--neutral">${escapeHtml(statusLabel(workflow.status))}</span>` : '',
-        workflow.segmentation_basis ? `<span class="admin-chip admin-chip--neutral">${escapeHtml(segmentationLabel(workflow.segmentation_basis))}</span>` : '',
+        `<span class="admin-chip admin-chip--neutral">发给谁：${escapeHtml(workflowRecipientSummary(workflow))}</span>`,
+        `<span class="admin-chip admin-chip--neutral">怎么发：${escapeHtml(workflowContentSummary(workflow, bundle))}</span>`,
         workflow.generation_mode ? `<span class="admin-chip admin-chip--neutral">${escapeHtml(generationLabel(workflow.generation_mode))}</span>` : '',
         ...(bundle.audiences || []).map((item) => `<span class="admin-chip admin-chip--neutral">${escapeHtml(audienceLabel(item.audience_code))}</span>`),
       ].join('');
       elements.workflowDetailSummary.innerHTML = `
         <div><dt>节点数量</dt><dd>${escapeHtml(summary.node_count || (bundle.nodes || []).length)}</dd></div>
+        <div><dt>发给谁</dt><dd>${escapeHtml(workflowRecipientSummary(workflow))}</dd></div>
+        <div><dt>怎么发</dt><dd>${escapeHtml(workflowContentSummary(workflow, bundle))}</dd></div>
         <div><dt>Agent 绑定</dt><dd>${escapeHtml((summary.agent_binding_summary || []).map((item) => item.agent_name || item.agent_code || '-').join(' / ') || '无')}</dd></div>
         <div><dt>最近执行时间</dt><dd>${escapeHtml(summary.latest_execution_at || '暂无记录')}</dd></div>
         <div><dt>最近更新时间</dt><dd>${escapeHtml(workflow.updated_at || '-')}</dd></div>
@@ -1273,8 +1355,9 @@
       const nodes = Array.isArray(bundle.nodes) ? bundle.nodes : [];
       elements.nodeSummaryGrid.innerHTML = `
         <article class="ac-ops-stat"><span>节点数量</span><strong>${escapeHtml(nodes.length)}</strong></article>
+        <article class="ac-ops-stat"><span>发给谁</span><strong>${escapeHtml(workflowRecipientSummary(workflow))}</strong></article>
+        <article class="ac-ops-stat"><span>怎么发</span><strong>${escapeHtml(workflowContentSummary(workflow, bundle))}</strong></article>
         <article class="ac-ops-stat"><span>生成方式</span><strong>${escapeHtml(generationLabel(workflow.generation_mode))}</strong></article>
-        <article class="ac-ops-stat"><span>分层依据</span><strong>${escapeHtml(segmentationLabel(workflow.segmentation_basis))}</strong></article>
       `;
       elements.nodeTableBody.innerHTML = nodes.map((node) => `
         <tr>
@@ -1285,7 +1368,6 @@
           <td>${escapeHtml(node.trigger_mode === 'audience_entered' ? '立即运行' : (node.send_time || '-'))}</td>
           <td>${escapeHtml(node.standard_content_text || '-').slice(0, 60)}</td>
           <td>${escapeHtml((node.content_variants || []).length)}</td>
-          <td>${escapeHtml(nodeAgentBindingsSummary(node, bundle))}</td>
           <td>${escapeHtml(node.status || '-')}</td>
           <td>
             <div class="ac-ops-inline-actions">
@@ -1310,10 +1392,6 @@
     }
 
     function defaultNodeContentMode(bundle, node) {
-      const explicitMode = String((node || {}).content_mode || '').trim();
-      if (NODE_CONTENT_MODE_SET.has(explicitMode)) {
-        return explicitMode;
-      }
       const workflowMode = String((((bundle || {}).workflow) || {}).generation_mode || '').trim();
       if (workflowMode === 'manual_layered') return 'manual_layered';
       if (workflowMode === 'auto_layered_rewrite') return 'standard_layered_rewrite';
@@ -1325,11 +1403,7 @@
       if (!['manual_layered', 'standard_layered_rewrite'].includes(String(contentMode || '').trim())) {
         return '';
       }
-      const explicitBasis = String((node || {}).segmentation_basis || '').trim();
-      if (explicitBasis === 'profile' || explicitBasis === 'behavior') {
-        return explicitBasis;
-      }
-      const workflowBasis = String((((bundle || {}).workflow) || {}).segmentation_basis || '').trim();
+      const workflowBasis = String((((bundle || {}).workflow) || {}).content_segmentation_basis || (((bundle || {}).workflow) || {}).segmentation_basis || '').trim();
       if (workflowBasis === 'profile' || workflowBasis === 'behavior') {
         return workflowBasis;
       }
@@ -1341,164 +1415,6 @@
       return agent.agent_name || binding.agent_name || binding.agent_code || agent.agent_code || '未绑定 Agent';
     }
 
-    function nodeAgentBindingKey(target) {
-      const scope = String((target || {}).binding_scope || '').trim();
-      const segmentKey = String((target || {}).segment_key || (scope === 'personalized' ? 'personalized' : '')).trim();
-      return `${scope}:${segmentKey}`;
-    }
-
-    function nodeAgentBindingSelectionsFromBindings(bindings) {
-      const selections = {};
-      (Array.isArray(bindings) ? bindings : []).forEach((binding) => {
-        const scope = String(binding.binding_scope || '').trim();
-        const segmentKey = String(binding.segment_key || (scope === 'personalized' ? 'personalized' : '')).trim();
-        const agentCode = String(binding.agent_code || (((binding || {}).agent) || {}).agent_code || '').trim();
-        if (!scope || !agentCode) return;
-        selections[`${scope}:${segmentKey}`] = agentCode;
-      });
-      return selections;
-    }
-
-    function hydrateNodeFormAgentBindings(node) {
-      state.nodeFormAgentBindingSelections = nodeAgentBindingSelectionsFromBindings((node || {}).agent_bindings || []);
-    }
-
-    function syncNodeAgentBindingSelectionsFromInputs() {
-      if (!elements.nodeAgentBindingGrid) return;
-      const nextSelections = { ...(state.nodeFormAgentBindingSelections || {}) };
-      elements.nodeAgentBindingGrid.querySelectorAll('select[data-binding-scope]').forEach((select) => {
-        const key = nodeAgentBindingKey({
-          binding_scope: select.dataset.bindingScope || '',
-          segment_key: select.dataset.segmentKey || '',
-        });
-        const value = String(select.value || '').trim();
-        if (value) {
-          nextSelections[key] = value;
-        } else {
-          delete nextSelections[key];
-        }
-      });
-      state.nodeFormAgentBindingSelections = nextSelections;
-    }
-
-    function clearNodeFormAgentBindings() {
-      state.nodeFormAgentBindingSelections = {};
-    }
-
-    function nodeAgentBindingLabelMap(bundle, contentMode, segmentationBasis) {
-      return nodeAgentBindingTargets(bundle, contentMode, segmentationBasis).reduce((accumulator, target) => {
-        accumulator[nodeAgentBindingKey(target)] = target.label;
-        return accumulator;
-      }, {});
-    }
-
-    function nodeAgentBindingsSummary(node, bundle) {
-      const bindings = Array.isArray((node || {}).agent_bindings) ? node.agent_bindings : [];
-      if (!bindings.length) return '无';
-      const labelMap = nodeAgentBindingLabelMap(bundle, node.content_mode, node.segmentation_basis);
-      return bindings.map((binding) => {
-        const key = nodeAgentBindingKey({
-          binding_scope: binding.binding_scope || '',
-          segment_key: binding.segment_key || '',
-        });
-        const label = labelMap[key] || (binding.binding_scope === 'personalized' ? '单人定制化' : (binding.segment_key || '未命名分层'));
-        const agentName = workflowAgentName(binding);
-        return binding.binding_scope === 'personalized' ? agentName : `${label} -> ${agentName}`;
-      }).join(' / ');
-    }
-
-    function findWorkflowAgentBinding(bindings, target) {
-      const scope = String((target || {}).binding_scope || '').trim();
-      const segmentKey = String((target || {}).segment_key || '').trim();
-      return (Array.isArray(bindings) ? bindings : []).find((item) => {
-        const itemScope = String(item.binding_scope || '').trim();
-        const itemSegmentKey = String(item.segment_key || '').trim();
-        if (scope === 'personalized') {
-          return itemScope === 'personalized';
-        }
-        return itemScope === scope && itemSegmentKey === segmentKey;
-      }) || null;
-    }
-
-    function nodeAgentBindingTargets(bundle, contentMode, segmentationBasis) {
-      if (!bundle) return [];
-      if (contentMode === 'personalized_single') {
-        return [{ binding_scope: 'personalized', segment_key: 'personalized', label: '单人定制化' }];
-      }
-      if (contentMode !== 'standard_layered_rewrite') {
-        return [];
-      }
-      if (segmentationBasis === 'behavior') {
-        return (state.registry.behavior_tiers || []).map((item) => ({
-          binding_scope: 'behavior_tier',
-          segment_key: item.tier_code,
-          label: item.label,
-        }));
-      }
-      if (segmentationBasis === 'profile') {
-        return (((bundle.profile_segment_template || {}).categories) || [])
-          .filter((item) => item.enabled)
-          .map((item) => ({
-            binding_scope: 'profile_category',
-            segment_key: item.category_key,
-            label: item.category_name || item.category_key,
-          }));
-      }
-      return [];
-    }
-
-    function renderNodeAgentBindingControls(contentMode, segmentationBasis) {
-      if (!elements.nodeAgentBindingSection || !elements.nodeAgentBindingGrid || !elements.nodeAgentBindingHelp) return;
-      const shouldShow = ['standard_layered_rewrite', 'personalized_single'].includes(String(contentMode || '').trim());
-      if (!shouldShow) {
-        clearNodeFormAgentBindings();
-        elements.nodeAgentBindingSection.hidden = true;
-        elements.nodeAgentBindingHelp.textContent = '';
-        elements.nodeAgentBindingGrid.innerHTML = '';
-        return;
-      }
-      const bundle = state.selectedWorkflowBundle;
-      const targets = nodeAgentBindingTargets(bundle, contentMode, segmentationBasis);
-      const options = state.agentOptions || [];
-      const allowedKeys = new Set(targets.map((target) => nodeAgentBindingKey(target)));
-      const filteredSelections = {};
-      allowedKeys.forEach((key) => {
-        const selectedAgentCode = String((state.nodeFormAgentBindingSelections || {})[key] || '').trim();
-        if (selectedAgentCode) {
-          filteredSelections[key] = selectedAgentCode;
-        }
-      });
-      state.nodeFormAgentBindingSelections = filteredSelections;
-      elements.nodeAgentBindingSection.hidden = false;
-      elements.nodeAgentBindingHelp.textContent = contentMode === 'personalized_single'
-        ? '当前节点需要直接绑定 1 个 Agent。'
-        : segmentationBasis === 'behavior'
-        ? '行为层级分层固定为 <2 / 2~9 / 10+，请逐项绑定 Agent。'
-        : '请按当前分层目标逐项绑定 Agent。';
-      if (!targets.length) {
-        elements.nodeAgentBindingGrid.innerHTML = `
-          <article class="ac-ops-binding-item">
-            <strong>暂无可编辑的 Agent 绑定项</strong>
-            <span class="ac-ops-muted">${contentMode === 'standard_layered_rewrite' ? '请先准备好分层目标，再逐项选择 Agent。' : '当前内容方式下没有需要绑定的 Agent。'}</span>
-          </article>
-        `;
-        return;
-      }
-      elements.nodeAgentBindingGrid.innerHTML = targets.map((target) => {
-        const key = nodeAgentBindingKey(target);
-        const selectedAgentCode = String((state.nodeFormAgentBindingSelections || {})[key] || '').trim();
-        return `
-          <label class="ac-ops-binding-item">
-            <span>${escapeHtml(target.label)}</span>
-            <select data-binding-scope="${escapeHtml(target.binding_scope)}" data-segment-key="${escapeHtml(target.segment_key || '')}">
-              <option value="">请选择 Agent</option>
-              ${options.map((item) => `<option value="${escapeHtml(item.agent_code)}" ${String(item.agent_code || '') === selectedAgentCode ? 'selected' : ''}>${escapeHtml(item.agent_name || item.agent_code)} · ${escapeHtml(item.status || '')}</option>`).join('')}
-            </select>
-          </label>
-        `;
-      }).join('');
-    }
-
     function collectNodeContentVariants() {
       return Array.from(elements.nodeVariantGrid.querySelectorAll('textarea[data-segment-key]'))
         .map((input) => ({
@@ -1508,65 +1424,35 @@
         .filter((item) => item.segment_key && item.content_text);
     }
 
-    function collectNodeAgentBindings(bundle, contentMode, segmentationBasis) {
-      syncNodeAgentBindingSelectionsFromInputs();
-      const targets = nodeAgentBindingTargets(bundle, contentMode, segmentationBasis);
-      const resolvedBindings = targets
-        .map((target) => {
-          const agentCode = String((state.nodeFormAgentBindingSelections || {})[nodeAgentBindingKey(target)] || '').trim();
-          if (!agentCode) return null;
-          return {
-            agent_code: agentCode,
-            binding_scope: target.binding_scope || '',
-            segment_key: contentMode === 'personalized_single' ? '' : (target.segment_key || ''),
-          };
-        })
-        .filter(Boolean);
-      return { targets, bindings: resolvedBindings };
-    }
-
     function nodeFormValues(node) {
       const bundle = state.selectedWorkflowBundle;
-      const contentMode = String(elements.nodeForm.elements.content_mode.value || defaultNodeContentMode(bundle, node)).trim();
-      const segmentationBasis = String(elements.nodeForm.elements.segmentation_basis.value || defaultNodeSegmentationBasis(bundle, node, contentMode)).trim();
+      const contentMode = defaultNodeContentMode(bundle, node);
+      const segmentationBasis = defaultNodeSegmentationBasis(bundle, node, contentMode);
       return { contentMode, segmentationBasis };
     }
 
     function syncNodeContentFields(node) {
-      const bundle = state.selectedWorkflowBundle;
-      syncNodeAgentBindingSelectionsFromInputs();
       const values = nodeFormValues(node);
-      const showSegmentation = ['manual_layered', 'standard_layered_rewrite'].includes(values.contentMode);
       const showStandardContent = values.contentMode !== 'personalized_single';
       const showVariants = values.contentMode === 'manual_layered';
-      if (elements.nodeSegmentationField) {
-        elements.nodeSegmentationField.hidden = !showSegmentation;
-      }
       if (elements.nodeStandardContentField) {
         elements.nodeStandardContentField.hidden = !showStandardContent;
       }
       if (elements.nodeStandardContentLabel) {
-        elements.nodeStandardContentLabel.textContent = values.contentMode === 'manual_layered' ? '标准版内容（可选）' : '标准版内容';
+        elements.nodeStandardContentLabel.textContent = values.contentMode === 'manual_layered' ? '标准版回退内容（可选）' : '标准版内容';
       }
       if (elements.nodeContentHelp) {
         if (values.contentMode === 'standard_direct') {
-          elements.nodeContentHelp.textContent = '只显示标准版内容，不显示分层依据、Agent 绑定和分层内容明细。';
+          elements.nodeContentHelp.textContent = '当前节点继承任务流“标准内容直发”，这里只填写标准版内容。';
         } else if (values.contentMode === 'manual_layered') {
-          elements.nodeContentHelp.textContent = '显示分层依据和分层内容明细，标准版内容作为可选兜底。';
+          elements.nodeContentHelp.textContent = `当前节点继承任务流“手动分层录入”与“${segmentationLabel(values.segmentationBasis)}”；这里只填写分层内容明细，标准版内容作为可选回退。`;
         } else if (values.contentMode === 'standard_layered_rewrite') {
-          elements.nodeContentHelp.textContent = '显示分层依据、标准版内容和 Agent 绑定，分层内容明细保持隐藏。';
+          elements.nodeContentHelp.textContent = `当前节点继承任务流“标准内容分层改写”与“${segmentationLabel(values.segmentationBasis)}”；分层依据和 Agent 绑定都在任务流层维护，这里只填写标准版内容。`;
         } else {
-          elements.nodeContentHelp.textContent = '只显示 Agent 绑定，隐藏标准版内容、分层依据和分层内容明细。';
+          elements.nodeContentHelp.textContent = '当前节点继承任务流“单人定制化生成”；将使用任务流已配置的 Agent 和信息来源，节点层无需填写标准版内容或分层内容明细。';
         }
       }
-      if (!showSegmentation) {
-        elements.nodeForm.elements.segmentation_basis.value = '';
-      } else if (!elements.nodeForm.elements.segmentation_basis.value) {
-        elements.nodeForm.elements.segmentation_basis.value = defaultNodeSegmentationBasis(bundle, node, values.contentMode);
-      }
-      const effectiveSegmentationBasis = String(elements.nodeForm.elements.segmentation_basis.value || '').trim();
-      renderNodeAgentBindingControls(values.contentMode, effectiveSegmentationBasis);
-      renderNodeVariantControls(node || null, effectiveSegmentationBasis, showVariants);
+      renderNodeVariantControls(node || null, values.segmentationBasis, showVariants);
     }
 
     function renderNodeVariantControls(node, segmentationBasis, forceShow) {
@@ -1585,7 +1471,7 @@
       elements.nodeVariantHelp.textContent =
         segmentationBasis === 'profile'
           ? '展示当前任务流画像模板里的分类，未命中时默认仍可回落到标准版内容。'
-          : '行为层级固定为 <2 / 2~9 / 10+。';
+          : '行为层级固定为：小于 2、2 ~ 9、大于等于 10。';
       elements.nodeVariantGrid.innerHTML = targets.map((target) => `
         <label class="ac-ops-variant-item">
           <span>${escapeHtml(target.label)}</span>
@@ -1614,8 +1500,6 @@
       elements.nodeFormCard.hidden = false;
       showFormFeedback(elements.nodeFormFeedback, '', '');
       elements.nodeForm.reset();
-      clearNodeFormAgentBindings();
-      renderNodeSelectOptions();
       renderNodeTargetOptions();
       if (node) {
         elements.nodeFormTitle.textContent = mode === 'view' ? '查看节点' : '编辑节点';
@@ -1625,21 +1509,15 @@
         elements.nodeForm.elements.trigger_mode.value = node.trigger_mode || 'scheduled';
         elements.nodeForm.elements.day_offset.value = node.day_offset || 1;
         elements.nodeForm.elements.send_time.value = node.send_time || '09:00';
-        elements.nodeForm.elements.content_mode.value = defaultNodeContentMode(state.selectedWorkflowBundle, node);
-        elements.nodeForm.elements.segmentation_basis.value = defaultNodeSegmentationBasis(state.selectedWorkflowBundle, node, elements.nodeForm.elements.content_mode.value);
         elements.nodeForm.elements.standard_content_text.value = node.standard_content_text || '';
         elements.nodeForm.elements.enabled.checked = !!node.enabled;
-        hydrateNodeFormAgentBindings(node);
       } else {
         elements.nodeFormTitle.textContent = '新增节点';
         elements.nodeForm.elements.node_id.value = '';
         elements.nodeForm.elements.trigger_mode.value = 'scheduled';
         elements.nodeForm.elements.day_offset.value = 1;
         elements.nodeForm.elements.send_time.value = '09:00';
-        elements.nodeForm.elements.content_mode.value = defaultNodeContentMode(state.selectedWorkflowBundle, null);
-        elements.nodeForm.elements.segmentation_basis.value = defaultNodeSegmentationBasis(state.selectedWorkflowBundle, null, elements.nodeForm.elements.content_mode.value);
         elements.nodeForm.elements.enabled.checked = true;
-        clearNodeFormAgentBindings();
       }
       syncNodeTriggerModeFields();
       syncNodeContentFields(node || null);
@@ -1656,7 +1534,6 @@
       elements.nodeForm.querySelectorAll('input, select, textarea').forEach((field) => {
         field.disabled = false;
       });
-      clearNodeFormAgentBindings();
       syncNodeTriggerModeFields();
       syncNodeContentFields(null);
       elements.nodeFormActions.hidden = false;
@@ -1689,45 +1566,24 @@
 
       if (context.contentMode === 'standard_direct') {
         if (!payload.standard_content_text) throw new Error('标准内容直发必须填写标准版内容');
-        if ('segmentation_basis' in payload || 'content_variants' in payload || 'agent_bindings' in payload) {
-          throw new Error('标准内容直发只能提交标准版内容');
-        }
         return;
       }
 
       if (context.contentMode === 'manual_layered') {
-        if (!payload.segmentation_basis) throw new Error('手动分层录入必须选择分层依据');
         if (!Array.isArray(payload.content_variants) || !payload.content_variants.length) {
           throw new Error('手动分层录入必须填写分层内容');
-        }
-        if ('agent_bindings' in payload) {
-          throw new Error('手动分层录入不允许提交 Agent 绑定');
         }
         return;
       }
 
       if (context.contentMode === 'standard_layered_rewrite') {
-        if (!payload.segmentation_basis) throw new Error('标准内容分层改写必须选择分层依据');
         if (!payload.standard_content_text) throw new Error('标准内容分层改写必须填写标准版内容');
-        if ('content_variants' in payload) {
-          throw new Error('标准内容分层改写不允许提交分层内容明细');
-        }
-        if (!Array.isArray(payload.agent_bindings) || !payload.agent_bindings.length) {
-          throw new Error('当前内容方式需要为每个分层目标绑定 Agent');
-        }
-        if (payload.agent_bindings.length !== context.expectedAgentBindingCount) {
-          throw new Error('当前内容方式需要为每个分层目标绑定 Agent');
-        }
+        if ('content_variants' in payload) throw new Error('标准内容分层改写不允许提交分层内容明细');
         return;
       }
 
       if (context.contentMode === 'personalized_single') {
-        if ('segmentation_basis' in payload || 'standard_content_text' in payload || 'content_variants' in payload) {
-          throw new Error('单人定制化生成只能提交 Agent 绑定');
-        }
-        if (!Array.isArray(payload.agent_bindings) || payload.agent_bindings.length !== 1) {
-          throw new Error('当前内容方式需要绑定 1 个 Agent');
-        }
+        if ('standard_content_text' in payload || 'content_variants' in payload) throw new Error('单人定制化生成不需要填写节点内容');
         return;
       }
 
@@ -1739,16 +1595,13 @@
       if (!bundle) throw new Error('请先选择任务流');
       const targetAudience = String(elements.nodeForm.elements.target_audience_code.value || '').trim();
       const triggerMode = String(elements.nodeForm.elements.trigger_mode.value || 'scheduled').trim();
-      const contentMode = String(elements.nodeForm.elements.content_mode.value || defaultNodeContentMode(bundle, null)).trim();
-      const segmentationBasis = String(elements.nodeForm.elements.segmentation_basis.value || '').trim();
+      const contentMode = defaultNodeContentMode(bundle, null);
       const standardContentText = String(elements.nodeForm.elements.standard_content_text.value || '').trim();
-      const { targets: agentBindingTargets, bindings: agentBindings } = collectNodeAgentBindings(bundle, contentMode, segmentationBasis);
       const contentVariants = collectNodeContentVariants();
       const payload = {
         node_name: String(elements.nodeForm.elements.node_name.value || '').trim(),
         target_audience_code: targetAudience,
         trigger_mode: triggerMode,
-        content_mode: contentMode,
         enabled: !!elements.nodeForm.elements.enabled.checked,
       };
       if (triggerMode === 'scheduled') {
@@ -1759,24 +1612,18 @@
       if (contentMode === 'standard_direct') {
         payload.standard_content_text = standardContentText;
       } else if (contentMode === 'manual_layered') {
-        payload.segmentation_basis = segmentationBasis;
         if (standardContentText) {
           payload.standard_content_text = standardContentText;
         }
         payload.content_variants = contentVariants;
       } else if (contentMode === 'standard_layered_rewrite') {
-        payload.segmentation_basis = segmentationBasis;
         payload.standard_content_text = standardContentText;
-        payload.agent_bindings = agentBindings;
-      } else if (contentMode === 'personalized_single') {
-        payload.agent_bindings = agentBindings;
       }
 
       validateNodePayload(payload, {
         bundle,
         triggerMode,
         contentMode,
-        expectedAgentBindingCount: agentBindingTargets.length,
       });
       return payload;
     }
@@ -1905,7 +1752,6 @@
       renderWorkflowTable();
       renderWorkflowDetail();
       renderNodeSection();
-      renderNodeSelectOptions();
       renderNodeTargetOptions();
       syncNodeContentFields(null);
       await loadExecutions(normalizedId);
@@ -1945,8 +1791,8 @@
 
         renderSummary();
         renderWorkflowAudienceOptions();
+        renderWorkflowRecipientTierOptions();
         renderWorkflowSelectOptions();
-        renderNodeSelectOptions();
         renderWorkflowTable();
 
         if (state.workflows.length) {
@@ -2019,13 +1865,19 @@
     elements.workflowFormCancel.addEventListener('click', closeWorkflowForm);
     elements.workflowFormReset.addEventListener('click', () => openWorkflowForm('create'));
     elements.workflowForm.addEventListener('submit', saveWorkflow);
-    elements.workflowForm.elements.segmentation_basis.addEventListener('change', () => {
+    elements.workflowForm.elements.recipient_filter_basis.addEventListener('change', () => {
+      renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
+    });
+    elements.workflowRecipientTierOptions.addEventListener('change', () => {
+      renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
+    });
+    elements.workflowForm.elements.content_segmentation_basis.addEventListener('change', () => {
       renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
     });
     elements.workflowForm.elements.generation_mode.addEventListener('change', () => {
       renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
     });
-    elements.workflowForm.elements.profile_segment_template_id.addEventListener('change', () => {
+    elements.workflowForm.elements.content_profile_segment_template_id.addEventListener('change', () => {
       renderWorkflowBindingControls().catch((error) => showFormFeedback(elements.workflowFormFeedback, error.message || '刷新绑定区失败', 'error'));
     });
 
@@ -2084,13 +1936,6 @@
     elements.nodeCreateButton.addEventListener('click', () => openNodeForm(null, 'create'));
     elements.nodeFormCancel.addEventListener('click', closeNodeForm);
     elements.nodeForm.elements.trigger_mode.addEventListener('change', syncNodeTriggerModeFields);
-    elements.nodeForm.elements.content_mode.addEventListener('change', () => syncNodeContentFields(null));
-    elements.nodeForm.elements.segmentation_basis.addEventListener('change', () => syncNodeContentFields(null));
-    elements.nodeAgentBindingGrid.addEventListener('change', (event) => {
-      const select = event.target.closest('select[data-binding-scope]');
-      if (!select) return;
-      syncNodeAgentBindingSelectionsFromInputs();
-    });
     elements.nodeForm.addEventListener('submit', saveNode);
 
     elements.nodeTableBody.addEventListener('click', async (event) => {

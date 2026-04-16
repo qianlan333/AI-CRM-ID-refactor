@@ -15,6 +15,7 @@ from wecom_ability_service.db import _sqlite_table_columns, get_db, init_db
 from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
     backfill_missing_child_agent_replies,
+    create_conversion_profile_segment_template,
     create_agent_run,
     create_conversion_workflow,
     create_conversion_workflow_node,
@@ -41,16 +42,28 @@ from wecom_ability_service.domains.automation_conversion.service import (
     get_model_infra_payload,
     record_sop_pool_entry,
     run_due_reply_monitor,
-    run_due_sop,
     run_message_activity_sync,
     run_reply_monitor_capture,
     save_model_infra_prompt,
     save_model_infra_settings,
-    save_sop_v1_pool_config,
     save_reply_monitor_enabled,
-    save_sop_v1_template,
     sync_member_activation,
 )
+
+try:
+    from wecom_ability_service.domains.automation_conversion.service import run_due_sop
+except ImportError:  # pragma: no cover - compatibility for environments where SOP runner export was removed
+    run_due_sop = None
+
+try:
+    from wecom_ability_service.domains.automation_conversion.service import save_sop_v1_pool_config
+except ImportError:  # pragma: no cover - compatibility for environments where SOP pool config export was removed
+    save_sop_v1_pool_config = None
+
+try:
+    from wecom_ability_service.domains.automation_conversion.service import save_sop_v1_template
+except ImportError:  # pragma: no cover - compatibility for environments where SOP template export was removed
+    save_sop_v1_template = None
 
 
 def _test_png_bytes() -> bytes:
@@ -275,6 +288,42 @@ def _seed_settings_questionnaire(app, *, questionnaire_id: int = 501) -> dict[st
     }
 
 
+def _seed_profile_segment_template(
+    app,
+    *,
+    questionnaire_id: int = 701,
+    template_name: str = "测试画像模板",
+) -> dict[str, object]:
+    questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=questionnaire_id)
+    with app.app_context():
+        result = create_conversion_profile_segment_template(
+            {
+                "template_name": template_name,
+                "questionnaire_id": questionnaire_seed["questionnaire_id"],
+                "segmentation_question_id": questionnaire_seed["choice_question_id"],
+                "categories": [
+                    {
+                        "category_key": "efficiency",
+                        "category_name": "效率型",
+                        "option_ids": [questionnaire_seed["option_ids"][0]],
+                    },
+                    {
+                        "category_key": "closing",
+                        "category_name": "成交型",
+                        "option_ids": [questionnaire_seed["option_ids"][1]],
+                    },
+                ],
+            },
+            operator_id="tester",
+        )
+    return {
+        **questionnaire_seed,
+        "template_bundle": result["template_bundle"],
+        "template_id": int(((result.get("template_bundle") or {}).get("template") or {}).get("id") or 0),
+        "category_keys": ["efficiency", "closing"],
+    }
+
+
 def _configure_message_activity_db(app) -> None:
     app.config["MESSAGE_ACTIVITY_DB_HOST"] = "127.0.0.1"
     app.config["MESSAGE_ACTIVITY_DB_PORT"] = 3306
@@ -460,22 +509,32 @@ def _create_test_workflow(
     generation_mode: str = "manual_layered",
     agent_bindings: list[dict[str, object]] | None = None,
     profile_segment_template_id: int | None = None,
+    recipient_filter_basis: str | None = None,
+    recipient_behavior_tier_keys: list[str] | None = None,
+    content_segmentation_basis: str | None = None,
+    content_profile_segment_template_id: int | None = None,
 ) -> dict[str, object]:
     with app.app_context():
-        return create_conversion_workflow(
-            {
-                "workflow_name": workflow_name,
-                "workflow_code": workflow_name,
-                "description": "test workflow",
-                "status": status,
-                "segmentation_basis": segmentation_basis,
-                "generation_mode": generation_mode,
-                "profile_segment_template_id": profile_segment_template_id,
-                "audiences": list(audiences or ["pending_questionnaire"]),
-                "agent_bindings": list(agent_bindings or []),
-            },
-            operator_id="tester",
-        )
+        payload = {
+            "workflow_name": workflow_name,
+            "workflow_code": workflow_name,
+            "description": "test workflow",
+            "status": status,
+            "segmentation_basis": segmentation_basis,
+            "generation_mode": generation_mode,
+            "profile_segment_template_id": profile_segment_template_id,
+            "audiences": list(audiences or ["pending_questionnaire"]),
+            "agent_bindings": list(agent_bindings or []),
+        }
+        if recipient_filter_basis is not None:
+            payload["recipient_filter_basis"] = recipient_filter_basis
+        if recipient_behavior_tier_keys is not None:
+            payload["recipient_behavior_tier_keys"] = list(recipient_behavior_tier_keys)
+        if content_segmentation_basis is not None:
+            payload["content_segmentation_basis"] = content_segmentation_basis
+        if content_profile_segment_template_id is not None:
+            payload["content_profile_segment_template_id"] = content_profile_segment_template_id
+        return create_conversion_workflow(payload, operator_id="tester")
 
 
 def _seed_test_agent_config(app, *, agent_code: str, display_name: str = "") -> None:
@@ -516,6 +575,188 @@ def _seed_test_agent_config(app, *, agent_code: str, display_name: str = "") -> 
 def test_init_db_adds_workflow_node_trigger_mode_column(app):
     with app.app_context():
         assert "trigger_mode" in _sqlite_table_columns(get_db(), "automation_workflow_node")
+
+
+def test_create_workflow_supports_split_recipient_filter_and_content_segmentation(app):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=711, template_name="拆维度画像模板")
+    _seed_test_agent_config(app, agent_code="efficiency_agent", display_name="效率 Agent")
+    _seed_test_agent_config(app, agent_code="closing_agent", display_name="成交 Agent")
+
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="拆维度任务流",
+        status="draft",
+        recipient_filter_basis="behavior",
+        recipient_behavior_tier_keys=["lt_2"],
+        content_segmentation_basis="profile",
+        content_profile_segment_template_id=template_seed["template_id"],
+        generation_mode="auto_layered_rewrite",
+        agent_bindings=[
+            {
+                "binding_scope": "profile_category",
+                "segment_key": "efficiency",
+                "agent_code": "efficiency_agent",
+            },
+            {
+                "binding_scope": "profile_category",
+                "segment_key": "closing",
+                "agent_code": "closing_agent",
+            },
+        ],
+    )
+
+    workflow = ((workflow_bundle.get("workflow_bundle") or {}).get("workflow")) or {}
+    assert workflow["recipient_filter_basis"] == "behavior"
+    assert workflow["recipient_behavior_tier_keys"] == ["lt_2"]
+    assert workflow["content_segmentation_basis"] == "profile"
+    assert workflow["content_profile_segment_template_id"] == template_seed["template_id"]
+    assert workflow["segmentation_basis"] == "profile"
+    assert workflow["profile_segment_template_id"] == template_seed["template_id"]
+    assert json.loads(workflow["behavior_tier_scheme"]) == {
+        "recipient_filter_basis": "behavior",
+        "recipient_behavior_tier_keys": ["lt_2"],
+    }
+
+
+def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_profile_content_segmentation(app, monkeypatch):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=712, template_name="行为筛选画像发内容")
+    _seed_contact(app, external_userid="wm_profile_low_001", mobile="13800002221", owner_userid="sales_01", customer_name="低行为客户")
+    _seed_contact(app, external_userid="wm_profile_high_001", mobile="13800002222", owner_userid="sales_01", customer_name="高行为客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_profile_low_001",
+        phone="13800002221",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 10:00:00",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_profile_high_001",
+        phone="13800002222",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 10:00:00",
+    )
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="行为筛选画像内容",
+        recipient_filter_basis="behavior",
+        recipient_behavior_tier_keys=["lt_2"],
+        content_segmentation_basis="profile",
+        content_profile_segment_template_id=template_seed["template_id"],
+        generation_mode="manual_layered",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "行为筛选画像内容节点",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "standard_content_text": "标准回退内容",
+                "content_variants": [
+                    {
+                        "segment_key": "efficiency",
+                        "content_text": "效率型定向内容",
+                    },
+                    {
+                        "segment_key": "closing",
+                        "content_text": "成交型定向内容",
+                    },
+                ],
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime._resolve_profile_segment_match",
+        lambda *, workflow_bundle, member: {
+            "matched": True,
+            "segment_key": "efficiency",
+            "segment_label": "效率型",
+            "reason": "",
+        },
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.workflow_repo.count_archived_customer_messages",
+        lambda external_contact_id: 1 if external_contact_id == "wm_profile_low_001" else 8,
+    )
+
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 991, "wecom_result": {"msgid": "msg-991"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        item_rows = get_db().execute(
+            """
+            SELECT external_contact_id, rendered_content_text, status
+            FROM automation_workflow_execution_item
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    assert result["ok"] is True
+    assert len(dispatched) == 1
+    assert dispatched[0]["external_userid"] == ["wm_profile_low_001"]
+    assert [dict(row) for row in item_rows] == [
+        {
+            "external_contact_id": "wm_profile_low_001",
+            "rendered_content_text": "效率型定向内容",
+            "status": "sent",
+        }
+    ]
+
+
+def test_create_workflow_remains_compatible_with_legacy_segmentation_basis_behavior_payload(app):
+    _seed_test_agent_config(app, agent_code="behavior_lt_2_agent", display_name="低行为 Agent")
+    _seed_test_agent_config(app, agent_code="behavior_2_9_agent", display_name="中行为 Agent")
+    _seed_test_agent_config(app, agent_code="behavior_10_agent", display_name="高行为 Agent")
+
+    with app.app_context():
+        result = create_conversion_workflow(
+            {
+                "workflow_name": "旧版行为分层兼容",
+                "workflow_code": "旧版行为分层兼容",
+                "description": "legacy behavior payload",
+                "status": "draft",
+                "segmentation_basis": "behavior",
+                "generation_mode": "auto_layered_rewrite",
+                "audiences": ["pending_questionnaire"],
+                "agent_bindings": [
+                    {"binding_scope": "behavior_tier", "segment_key": "lt_2", "agent_code": "behavior_lt_2_agent"},
+                    {"binding_scope": "behavior_tier", "segment_key": "between_2_9", "agent_code": "behavior_2_9_agent"},
+                    {"binding_scope": "behavior_tier", "segment_key": "gte_10", "agent_code": "behavior_10_agent"},
+                ],
+            },
+            operator_id="tester",
+        )
+
+    workflow = ((result.get("workflow_bundle") or {}).get("workflow")) or {}
+    assert workflow["recipient_filter_basis"] == "none"
+    assert workflow["recipient_behavior_tier_keys"] == []
+    assert workflow["content_segmentation_basis"] == "behavior"
+    assert workflow["segmentation_basis"] == "behavior"
+    assert workflow["behavior_tier_scheme"] == "fixed_v1"
+    assert [item["tier_code"] for item in ((result.get("workflow_bundle") or {}).get("behavior_tiers") or [])] == [
+        "lt_2",
+        "between_2_9",
+        "gte_10",
+    ]
 
 
 def test_create_workflow_node_supports_immediate_trigger_mode(app):
@@ -675,6 +916,14 @@ def test_workflow_node_api_supports_operating_immediate_personalized_single_with
         workflow_name="问卷提交后进入运营中立即触发",
         audiences=["operating"],
         status="active",
+        generation_mode="personalized_single",
+        agent_bindings=[
+            {
+                "binding_scope": "personalized",
+                "segment_key": "",
+                "agent_code": "questionnaire_followup_agent",
+            }
+        ],
     )
     workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
 
@@ -684,14 +933,6 @@ def test_workflow_node_api_supports_operating_immediate_personalized_single_with
             "node_name": "问卷提交后进入运营中立即发送",
             "target_audience_code": "operating",
             "trigger_mode": "audience_entered",
-            "content_mode": "personalized_single",
-            "agent_bindings": [
-                {
-                    "binding_scope": "personalized",
-                    "segment_key": "",
-                    "agent_code": "questionnaire_followup_agent",
-                }
-            ],
             "enabled": True,
             "operator": "tester-node-api",
         },
@@ -705,9 +946,7 @@ def test_workflow_node_api_supports_operating_immediate_personalized_single_with
     assert payload["node"]["content_mode"] == "personalized_single"
     assert payload["node"]["segmentation_basis"] == "none"
     assert payload["node"]["standard_content_text"] == ""
-    assert len(payload["node"]["agent_bindings"]) == 1
-    assert payload["node"]["agent_bindings"][0]["agent_code"] == "questionnaire_followup_agent"
-    assert payload["node"]["agent_bindings"][0]["binding_scope"] == "personalized"
+    assert payload["node"]["agent_bindings"] == []
 
     with app.app_context():
         binding_rows = get_db().execute(
@@ -727,6 +966,85 @@ def test_workflow_node_api_supports_operating_immediate_personalized_single_with
             "agent_code": "questionnaire_followup_agent",
         }
     ]
+
+
+def test_workflow_node_api_rejects_immediate_trigger_with_day_offset_and_send_time(app, client):
+    _seed_test_agent_config(app, agent_code="questionnaire_followup_agent", display_name="问卷提交 agent")
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="立即触发节点非法时间字段",
+        audiences=["operating"],
+        status="active",
+        generation_mode="personalized_single",
+        agent_bindings=[
+            {
+                "binding_scope": "personalized",
+                "segment_key": "",
+                "agent_code": "questionnaire_followup_agent",
+            }
+        ],
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "立即触发节点",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "day_offset": 1,
+            "send_time": "09:00",
+            "enabled": True,
+            "operator": "tester-node-api",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "day_offset and send_time are not allowed when trigger_mode is audience_entered"
+
+
+def test_workflow_node_api_rejects_personalized_single_when_workflow_agent_binding_is_missing(app, client):
+    _seed_test_agent_config(app, agent_code="questionnaire_followup_agent", display_name="问卷提交 agent")
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="缺失 Agent 绑定的单人定制任务流",
+        audiences=["operating"],
+        status="active",
+        generation_mode="personalized_single",
+        agent_bindings=[
+            {
+                "binding_scope": "personalized",
+                "segment_key": "",
+                "agent_code": "questionnaire_followup_agent",
+            }
+        ],
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        get_db().execute(
+            "DELETE FROM automation_workflow_agent_binding WHERE workflow_id = ? AND node_id IS NULL",
+            (workflow_id,),
+        )
+        get_db().commit()
+
+    response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "立即触发问卷跟进",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "enabled": True,
+            "operator": "tester-node-api",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "workflow personalized_single requires exactly 1 agent_binding"
 
 
 def test_workflow_node_api_reopens_personalized_single_agent_binding_from_workflow_detail(app, client):
@@ -1670,7 +1988,7 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
     assert payload["generated"] is True
     assert payload["provider_available"] is True
     assert payload["channel"]["channel_code"] == "default_qrcode"
-    assert payload["channel"]["owner_staff_id"] == "QianLan"
+    assert payload["channel"]["owner_staff_id"] == "HuangYouCan"
     assert payload["channel"]["qr_url"] == "https://wecom.example/qr/cfg-001"
     assert payload["channel"]["qr_ticket"] == "cfg-001"
     assert payload["channel"]["status"] == "active"
@@ -1682,7 +2000,7 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
     assert captured["payload"]["scene"] == 2
     assert captured["payload"]["style"] == 1
     assert captured["payload"]["skip_verify"] is True
-    assert captured["payload"]["user"] == ["QianLan"]
+    assert captured["payload"]["user"] == ["HuangYouCan"]
     assert captured["payload"]["state"] == payload["channel"]["scene_value"]
     assert "conclusions" not in captured["payload"]
     assert len(str(captured["payload"]["state"])) <= 30
@@ -1699,7 +2017,7 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
         ).fetchone()
         assert row is not None
         assert row["channel_code"] == "default_qrcode"
-        assert row["owner_staff_id"] == "QianLan"
+        assert row["owner_staff_id"] == "HuangYouCan"
         assert row["qr_url"] == "https://wecom.example/qr/cfg-001"
         assert row["qr_ticket"] == "cfg-001"
         assert str(row["scene_value"]).startswith("aqr_")
@@ -1787,7 +2105,7 @@ def test_generate_default_channel_reports_config_incomplete_when_wecom_config_mi
     assert payload["provider_available"] is True
     assert payload["generated"] is False
     assert payload["channel"]["channel_code"] == "default_qrcode"
-    assert payload["channel"]["owner_staff_id"] == "QianLan"
+    assert payload["channel"]["owner_staff_id"] == "HuangYouCan"
     assert payload["channel"]["status"] == "config_incomplete"
     assert payload["error_code"] == "config_incomplete"
     assert "WECOM_CORP_ID or WECOM_CONTACT_SECRET is not configured" in payload["error"]
@@ -4883,7 +5201,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
     assert len(dispatched_payloads) == 1
     assert dispatched_payloads[0]["task_type"] == "private_message"
     assert dispatched_payloads[0]["fn_name"] == "create_private_message_task"
-    assert dispatched_payloads[0]["payload"]["sender"] == "QianLan"
+    assert dispatched_payloads[0]["payload"]["sender"] == "HuangYouCan"
     assert sorted(dispatched_payloads[0]["payload"]["external_userid"]) == ["wm_manual_new_001", "wm_manual_new_002"]
     assert dispatched_payloads[0]["payload"]["image_media_ids"] == ["img-media-001", "img-media-002"]
     assert "attachments" not in dispatched_payloads[0]["payload"]
@@ -4902,7 +5220,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
         assert filter_snapshot["stage_key"] == "new-user"
         assert filter_snapshot["pool_key"] == "new_user"
         assert "owner_userid" not in filter_snapshot
-        assert json.loads(row["sender_userids_json"]) == ["QianLan"]
+        assert json.loads(row["sender_userids_json"]) == ["HuangYouCan"]
         assert row["selected_count"] == 2
         assert row["eligible_count"] == 2
         assert row["sent_count"] == 2
@@ -4937,8 +5255,8 @@ def test_manual_send_preview_supports_local_images_and_uses_qianlan_sender(app, 
     assert payload["content_preview"] == "图片预览🙂"
     assert payload["image_count"] == 1
     assert payload["eligible_count"] == 1
-    assert payload["final_targets"][0]["owner_userid"] == "QianLan"
-    assert payload["final_targets"][0]["owner_display_name"] == "QianLan"
+    assert payload["final_targets"][0]["owner_userid"] == "HuangYouCan"
+    assert payload["final_targets"][0]["owner_display_name"] == "HuangYouCan"
 
 
 def test_manual_send_preview_rejects_fourth_local_image(app, client):
@@ -5114,7 +5432,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     assert "发送记录 ID" in html
     assert 'id="stage-send-image-input"' in html
     assert len(captured_payloads) == 1
-    assert captured_payloads[0]["sender"] == "QianLan"
+    assert captured_payloads[0]["sender"] == "HuangYouCan"
     assert "images" in captured_payloads[0]
     assert "image_media_ids" not in captured_payloads[0]
 
@@ -7006,7 +7324,7 @@ def test_qrcode_callback_creates_member_and_event(app):
             INSERT INTO automation_channel (
                 channel_code, channel_name, scene_value, owner_staff_id, status, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'HuangYouCan', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.commit()
@@ -7030,7 +7348,7 @@ def test_qrcode_callback_creates_member_and_event(app):
         assert dict(member) == {
             "external_contact_id": "wm_qrcode_001",
             "phone": "13800004001",
-            "owner_staff_id": "QianLan",
+            "owner_staff_id": "HuangYouCan",
             "in_pool": 1,
             "current_pool": "new_user",
             "source_type": "qrcode",
@@ -7063,7 +7381,7 @@ def test_qrcode_callback_sends_official_welcome_message(app, monkeypatch):
             INSERT INTO automation_channel (
                 channel_code, channel_name, scene_value, owner_staff_id, welcome_message, status, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'scene-welcome', 'QianLan', '欢迎加入', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-welcome', 'HuangYouCan', '欢迎加入', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.commit()
@@ -7104,7 +7422,7 @@ def test_qrcode_callback_welcome_message_requires_welcome_code(app, monkeypatch)
             INSERT INTO automation_channel (
                 channel_code, channel_name, scene_value, owner_staff_id, welcome_message, status, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'scene-no-code', 'QianLan', '欢迎加入', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-no-code', 'HuangYouCan', '欢迎加入', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.commit()
