@@ -13,7 +13,7 @@ from flask import current_app
 from ...db import get_db
 from ...infra.settings import get_setting
 from ..user_ops import page_service as user_ops_page_service
-from . import workflow_repo
+from . import repo as orchestration_repo, workflow_repo
 from .workflow_definitions import (
     AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
     AGENT_BINDING_SCOPE_DEFAULT,
@@ -342,6 +342,13 @@ def _allowed_manual_variant_keys_for_basis(workflow_bundle: dict[str, Any], segm
     if normalized_basis == SEGMENTATION_BASIS_BEHAVIOR:
         return NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER, _behavior_tier_codes()
     return "", []
+
+
+def _content_mode_uses_standard_content(content_mode: str) -> bool:
+    return _normalized_text(content_mode) in {
+        NODE_CONTENT_MODE_STANDARD_DIRECT,
+        NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
+    }
 
 
 def _normalize_template_categories_payload(payload: Any) -> list[dict[str, Any]]:
@@ -870,6 +877,7 @@ def _build_node_bundle(
         variants=variants,
         node_bindings=node_binding_items,
     )
+    standard_content_text = _normalized_text(content.get("standard_content_text")) if _content_mode_uses_standard_content(content_mode) else ""
     return {
         "id": int(node["id"]),
         "node_code": _normalized_text(node.get("node_code")),
@@ -884,9 +892,9 @@ def _build_node_bundle(
         "status": "enabled" if bool(node.get("enabled")) else "disabled",
         "content_mode": content_mode,
         "segmentation_basis": segmentation_basis,
-        "standard_content_text": _normalized_text(content.get("standard_content_text")),
-        "standard_content_payload": _strip_node_content_meta(content.get("standard_content_payload_json") or {}),
-        "fallback_to_standard_content": bool(content.get("fallback_to_standard_content")) if content else True,
+        "standard_content_text": standard_content_text,
+        "standard_content_payload": _strip_node_content_meta(content.get("standard_content_payload_json") or {}) if _content_mode_uses_standard_content(content_mode) else {},
+        "fallback_to_standard_content": bool(content.get("fallback_to_standard_content")) if content and _content_mode_uses_standard_content(content_mode) else False,
         "agent_bindings": node_binding_items,
         "content_variants": [
             {
@@ -1151,16 +1159,22 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
             raise ValueError("content_variants is required for manual_layered")
         if not allowed_keys:
             raise ValueError("current node segmentation does not allow content_variants")
+        variant_by_key: dict[str, dict[str, Any]] = {}
         for item in content_variants:
             if item["segment_key"] not in allowed_keys:
                 raise ValueError(f"invalid content_variants.segment_key: {item['segment_key']}")
+            variant_by_key[item["segment_key"]] = item
+        missing_keys = [key for key in allowed_keys if key not in variant_by_key or not _normalized_text(variant_by_key[key].get("content_text"))]
+        if missing_keys:
+            raise ValueError("manual_layered requires content for every active segmentation target")
+        standard_content_text = ""
         agent_bindings = []
         content_variants = [
             {
                 "variant_scope": variant_scope,
-                **item,
+                **variant_by_key[key],
             }
-            for item in content_variants
+            for key in allowed_keys
         ]
     elif content_mode == NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE:
         if not standard_content_text:
@@ -1194,7 +1208,7 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
         "fallback_to_standard_content": _normalize_bool(
             source.get("fallback_to_standard_content"),
             default=_normalize_bool(current.get("fallback_to_standard_content"), default=True),
-        ),
+        ) if content_mode in {NODE_CONTENT_MODE_STANDARD_DIRECT, NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE} else False,
         "agent_bindings": agent_bindings,
         "content_variants": content_variants,
     }
@@ -1691,16 +1705,18 @@ def _compute_bazhuayu_sign(secret: str, timestamp: str) -> str:
     return base64.b64encode(digest).decode("utf-8")
 
 
-def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, operator_id: str = "") -> dict[str, Any]:
-    detail = get_conversion_workflow_execution_item_detail(int(execution_item_id))
-    item = dict(detail.get("item") or {})
-    member = dict(item.get("member") or {})
-    userid = _normalized_text(item.get("external_contact_id")) or _normalized_text(member.get("external_contact_id"))
-    text = _normalized_text(item.get("rendered_content_text"))
+def _send_text_via_bazhuayu(
+    *,
+    userid: str,
+    text: str,
+    operator_id: str = "",
+    result_id_key: str,
+    result_id_value: Any,
+) -> dict[str, Any]:
     if not userid:
-        raise ValueError("execution item missing external_contact_id")
+        raise ValueError("missing external_contact_id")
     if not text:
-        raise ValueError("execution item rendered content is empty")
+        raise ValueError("rendered content is empty")
 
     webhook_url = _setting_text("BAZHUAYU_WEBHOOK_URL", default=_BAZHUAYU_DEFAULT_WEBHOOK_URL)
     signing_secret = _setting_text("BAZHUAYU_SIGNING_SECRET", default=_BAZHUAYU_DEFAULT_SIGNING_SECRET)
@@ -1744,7 +1760,7 @@ def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, opera
 
     return {
         "ok": True,
-        "execution_item_id": int(item.get("id") or 0),
+        result_id_key: result_id_value,
         "requested_by": _normalized_text(operator_id) or "crm_console",
         "request": {
             "userid": userid,
@@ -1754,3 +1770,42 @@ def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, opera
         },
         "response": response_payload if isinstance(response_payload, dict) else {"raw": raw_body},
     }
+
+
+def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, operator_id: str = "") -> dict[str, Any]:
+    detail = get_conversion_workflow_execution_item_detail(int(execution_item_id))
+    item = dict(detail.get("item") or {})
+    member = dict(item.get("member") or {})
+    userid = _normalized_text(item.get("external_contact_id")) or _normalized_text(member.get("external_contact_id"))
+    text = _normalized_text(item.get("rendered_content_text"))
+    if not userid:
+        raise ValueError("execution item missing external_contact_id")
+    if not text:
+        raise ValueError("execution item rendered content is empty")
+    return _send_text_via_bazhuayu(
+        userid=userid,
+        text=text,
+        operator_id=operator_id,
+        result_id_key="execution_item_id",
+        result_id_value=int(item.get("id") or 0),
+    )
+
+
+def send_agent_reply_output_via_bazhuayu(output_id: str, *, operator_id: str = "") -> dict[str, Any]:
+    row = orchestration_repo.get_agent_output_row(_normalized_text(output_id))
+    if not row:
+        raise LookupError("未找到对应话术输出")
+    output = orchestration_repo.deserialize_agent_output_row(row)
+    userid = _normalized_text(output.get("external_contact_id"))
+    text = _normalized_text(output.get("rendered_output_text"))
+    if not userid:
+        raise ValueError("reply output missing external_contact_id")
+    if not text:
+        raise ValueError("reply output rendered content is empty")
+    return _send_text_via_bazhuayu(
+        userid=userid,
+        text=text,
+        operator_id=operator_id,
+        result_id_key="output_id",
+        result_id_value=_normalized_text(output.get("output_id")),
+    )

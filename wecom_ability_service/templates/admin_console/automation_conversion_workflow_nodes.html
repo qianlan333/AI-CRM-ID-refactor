@@ -119,8 +119,8 @@
       <p class="ac-ops-muted" id="node-content-help"></p>
 
       <label class="admin-field" id="node-standard-content-field" hidden>
-        <span id="node-standard-content-label">标准版内容</span>
-        <textarea name="standard_content_text" rows="7" placeholder="输入节点标准内容"></textarea>
+        <span id="node-standard-content-label">标准内容</span>
+        <textarea name="standard_content_text" rows="7" placeholder="输入统一标准内容"></textarea>
       </label>
 
       <section class="ac-ops-panel" id="node-variant-section" hidden>
@@ -420,8 +420,8 @@
       elements.nodeVariantSection.hidden = false;
       elements.nodeVariantHelp.textContent =
         segmentationBasis === 'profile'
-          ? '填写每个画像分类对应的节点内容。'
-          : '填写固定行为层级三层对应的节点内容：小于 2、2 ~ 9、大于等于 10。';
+          ? '填写当前有效画像分类对应的节点内容，输入区会随画像分类配置动态变化。'
+          : '填写当前有效行为层级对应的节点内容，输入区会随行为层级配置动态变化。';
       elements.nodeVariantGrid.innerHTML = targets.map((target) => `
         <label class="ac-ops-variant-item">
           <span>${escapeHtml(target.label)}</span>
@@ -433,19 +433,22 @@
     function syncNodeContentFields(node) {
       const contentMode = defaultNodeContentMode(state.workflowBundle);
       const segmentationBasis = defaultNodeSegmentationBasis(state.workflowBundle, contentMode);
-      const showStandard = contentMode !== 'personalized_single';
+      const showStandard = ['standard_direct', 'standard_layered_rewrite'].includes(contentMode);
       const showVariants = contentMode === 'manual_layered';
       elements.nodeStandardContentField.hidden = !showStandard;
-      elements.nodeStandardContentLabel.textContent = contentMode === 'manual_layered' ? '标准版回退内容（可选）' : '标准版内容';
+      elements.nodeStandardContentLabel.textContent = '标准内容';
+      if (!showStandard) {
+        elements.nodeForm.elements.standard_content_text.value = '';
+      }
 
       if (contentMode === 'standard_direct') {
-        elements.nodeContentHelp.textContent = '当前任务流是标准内容直发，节点层只填写标准内容。';
+        elements.nodeContentHelp.textContent = '当前任务流是统一内容录入，节点层只填写一份统一标准内容。';
       } else if (contentMode === 'manual_layered') {
-        elements.nodeContentHelp.textContent = `当前任务流是手动分层录入，节点层填写分层内容明细；标准版内容可作为回退内容。`;
+        elements.nodeContentHelp.textContent = '当前任务流是手动分层录入，节点层只填写当前有效分层的内容明细。';
       } else if (contentMode === 'standard_layered_rewrite') {
-        elements.nodeContentHelp.textContent = '当前任务流是标准内容分层改写，节点层只填写标准版内容。';
+        elements.nodeContentHelp.textContent = '当前任务流是自动生成配置，节点层填写统一标准内容，执行时按当前分层和 Agent 配置改写。';
       } else {
-        elements.nodeContentHelp.textContent = '当前任务流是单人定制化生成，节点层不要求填写标准内容，将直接继承任务流 Agent 配置。';
+        elements.nodeContentHelp.textContent = '当前任务流是单人定制化生成，节点层只继承任务流 Agent 配置，不填写人工内容。';
       }
 
       renderNodeVariantControls(node || null, segmentationBasis, showVariants);
@@ -490,7 +493,7 @@
           segment_key: String(input.dataset.segmentKey || '').trim(),
           content_text: String(input.value || '').trim(),
         }))
-        .filter((item) => item.segment_key && item.content_text);
+        .filter((item) => item.segment_key);
     }
 
     function validateNodePayload(payload, triggerMode, contentMode) {
@@ -514,13 +517,22 @@
         }
       }
       if (contentMode === 'standard_direct' && !payload.standard_content_text) {
-        throw new Error('当前任务流内容方式需要标准版内容');
+        throw new Error('当前任务流内容方式需要标准内容');
       }
-      if (contentMode === 'manual_layered' && (!Array.isArray(payload.content_variants) || !payload.content_variants.length)) {
-        throw new Error('当前任务流内容方式需要分层内容');
+      if (contentMode === 'manual_layered') {
+        const segmentationBasis = defaultNodeSegmentationBasis(bundle, contentMode);
+        const targets = manualVariantTargets(bundle, segmentationBasis);
+        if (!targets.length) {
+          throw new Error('当前任务流还没有可用的分层项，暂时无法录入分层内容');
+        }
+        const variantMap = new Map((payload.content_variants || []).map((item) => [item.segment_key, item.content_text]));
+        const missingTargets = targets.filter((target) => !String(variantMap.get(target.segment_key) || '').trim());
+        if (missingTargets.length) {
+          throw new Error(`请补全所有有效分层的内容：${missingTargets.map((item) => item.label).join('、')}`);
+        }
       }
       if (contentMode === 'standard_layered_rewrite' && !payload.standard_content_text) {
-        throw new Error('当前任务流内容方式需要标准版内容');
+        throw new Error('当前任务流内容方式需要标准内容');
       }
     }
 
@@ -543,9 +555,6 @@
       if (contentMode === 'standard_direct') {
         payload.standard_content_text = standardContentText;
       } else if (contentMode === 'manual_layered') {
-        if (standardContentText) {
-          payload.standard_content_text = standardContentText;
-        }
         payload.content_variants = collectNodeContentVariants();
       } else if (contentMode === 'standard_layered_rewrite') {
         payload.standard_content_text = standardContentText;

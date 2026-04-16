@@ -54,6 +54,7 @@ from ..domains.automation_conversion import (
     save_default_channel_settings,
     save_model_infra_settings,
     pause_conversion_workflow,
+    send_agent_reply_output_via_bazhuayu,
     send_conversion_execution_item_via_bazhuayu,
     set_follow_type,
     unmark_won,
@@ -271,6 +272,7 @@ def _build_auto_reply_workspace() -> dict[str, object]:
         "api_urls": {
             "review_outputs": url_for("api.api_admin_automation_conversion_review_outputs"),
             "review_output_base": url_for("api.api_admin_automation_conversion_review_output", output_id="__OUTPUT_ID__"),
+            "review_output_bazhuayu_send_base": url_for("api.api_admin_automation_conversion_review_output_send_via_bazhuayu", output_id="__OUTPUT_ID__"),
         },
     }
 
@@ -1101,6 +1103,24 @@ def api_admin_automation_conversion_review_output(output_id: str):
     return jsonify(response_payload)
 
 
+def api_admin_automation_conversion_review_output_send_via_bazhuayu(output_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        payload = send_agent_reply_output_via_bazhuayu(
+            output_id,
+            operator_id=_operator_from_request(),
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    return jsonify(payload)
+
+
 def api_admin_automation_conversion_run_message_activity_sync():
     auth_failure = require_internal_api_token(require_configured=True)
     if auth_failure is not None:
@@ -1246,6 +1266,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/profile-segment-templates/<int:template_id>", methods=["PUT"])(api_admin_automation_conversion_profile_segment_template_update)
     bp.route("/api/admin/automation-conversion/review-outputs", methods=["GET"])(api_admin_automation_conversion_review_outputs)
     bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/review", methods=["POST"])(api_admin_automation_conversion_review_output)
+    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/workflows/registry", methods=["GET"])(api_admin_automation_conversion_workflow_registry)
     bp.route("/api/admin/automation-conversion/workflows", methods=["GET"])(api_admin_automation_conversion_workflows)
     bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>", methods=["GET"])(api_admin_automation_conversion_workflow_detail)

@@ -29,6 +29,7 @@ from wecom_ability_service.domains.automation_conversion import (
     run_due_conversion_workflows,
     run_router_pending_callback_check,
     save_agent_config_draft,
+    send_agent_reply_output_via_bazhuayu,
     send_conversion_execution_item_via_bazhuayu,
     save_agent_router_settings,
     submit_agent_prompt_for_publish,
@@ -66,6 +67,8 @@ try:
     from wecom_ability_service.domains.automation_conversion.service import save_sop_v1_template
 except ImportError:  # pragma: no cover - compatibility for environments where SOP template export was removed
     save_sop_v1_template = None
+
+from wecom_ability_service.domains.automation_conversion.workflow_service import _normalize_node_payload
 
 
 def _test_png_bytes() -> bytes:
@@ -824,7 +827,17 @@ def test_operations_list_page_renders_split_navigation_without_legacy_panels(cli
     assert "最近更新时间" not in html
     assert ">详情<" not in html
 
+def test_workflow_nodes_page_removes_manual_layered_fallback_copy(app, client):
+    workflow_bundle = _create_test_workflow(app, workflow_name="手动分层节点页")
+    workflow_id = int((((workflow_bundle.get("workflow_bundle") or {}).get("workflow")) or {}).get("id") or 0)
 
+    response = client.get(f"/admin/automation-conversion/operations/workflows/{workflow_id}/nodes")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "标准版回退内容（可选）" not in html
+    assert "当前任务流是手动分层录入，节点层只填写当前有效分层的内容明细。" in html
+    assert "填写当前有效行为层级对应的节点内容，输入区会随行为层级配置动态变化。" in html
 def test_conversion_dashboard_payload_aggregates_execution_counts_by_workflow(app):
     first_bundle = _create_test_workflow(app, workflow_name="任务流甲", status="active")
     second_bundle = _create_test_workflow(app, workflow_name="任务流乙", status="draft")
@@ -1093,7 +1106,7 @@ def test_create_workflow_node_supports_immediate_personalized_single_with_one_ag
 
 
 def test_create_workflow_node_rejects_manual_layered_without_variants(app):
-    workflow_bundle = _create_test_workflow(app, workflow_name="手动分层校验工作流")
+    workflow_bundle = _create_test_workflow(app, workflow_name="手动分层校验工作流", segmentation_basis="behavior")
     workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
 
     with app.app_context():
@@ -1113,6 +1126,214 @@ def test_create_workflow_node_rejects_manual_layered_without_variants(app):
                 },
                 operator_id="tester",
             )
+
+
+def test_normalize_node_payload_standard_direct_uses_only_standard_content():
+    normalized = _normalize_node_payload(
+        {
+            "node_name": "统一内容节点",
+            "target_audience_code": "pending_questionnaire",
+            "trigger_mode": "scheduled",
+            "day_offset": 2,
+            "send_time": "10:30",
+            "standard_content_text": "统一标准内容",
+            "content_variants": [
+                {"segment_key": "lt_2", "content_text": "不应继续保留"},
+            ],
+            "enabled": True,
+        },
+        {
+            "workflow": {
+                "generation_mode": "legacy_standard_direct",
+                "segmentation_basis": "none",
+            },
+            "audiences": [{"audience_code": "pending_questionnaire"}],
+            "nodes": [],
+        },
+    )
+
+    assert normalized["content_mode"] == "standard_direct"
+    assert normalized["standard_content_text"] == "统一标准内容"
+    assert normalized["content_variants"] == []
+
+
+def test_create_workflow_node_manual_layered_profile_requires_every_active_variant_and_clears_standard_content(app, client):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=713, template_name="节点分层录入模板")
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="画像分层节点校验",
+        segmentation_basis="profile",
+        content_segmentation_basis="profile",
+        profile_segment_template_id=template_seed["template_id"],
+        content_profile_segment_template_id=template_seed["template_id"],
+        generation_mode="manual_layered",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    incomplete_response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "画像分层节点",
+            "target_audience_code": "pending_questionnaire",
+            "trigger_mode": "scheduled",
+            "day_offset": 1,
+            "send_time": "09:30",
+            "standard_content_text": "历史标准内容",
+            "content_variants": [
+                {
+                    "segment_key": "efficiency",
+                    "content_text": "效率型内容",
+                }
+            ],
+            "enabled": True,
+            "operator": "tester-profile-node",
+        },
+    )
+    incomplete_payload = incomplete_response.get_json()
+
+    assert incomplete_response.status_code == 400
+    assert incomplete_payload["error"] == "manual_layered requires content for every active segmentation target"
+
+    create_response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "画像分层节点",
+            "target_audience_code": "pending_questionnaire",
+            "trigger_mode": "scheduled",
+            "day_offset": 1,
+            "send_time": "09:30",
+            "standard_content_text": "历史标准内容",
+            "content_variants": [
+                {
+                    "segment_key": "efficiency",
+                    "content_text": "效率型内容",
+                },
+                {
+                    "segment_key": "closing",
+                    "content_text": "成交型内容",
+                },
+            ],
+            "enabled": True,
+            "operator": "tester-profile-node",
+        },
+    )
+    create_payload = create_response.get_json()
+
+    assert create_response.status_code == 201
+    assert create_payload["node"]["content_mode"] == "manual_layered"
+    assert create_payload["node"]["segmentation_basis"] == "profile"
+    assert create_payload["node"]["standard_content_text"] == ""
+    assert sorted(item["segment_key"] for item in create_payload["node"]["content_variants"]) == ["closing", "efficiency"]
+
+    with app.app_context():
+        content_row = get_db().execute(
+            """
+            SELECT id, standard_content_text, fallback_to_standard_content
+            FROM automation_workflow_node_content
+            WHERE node_id = ?
+            """,
+            (int(create_payload["node"]["id"]),),
+        ).fetchone()
+        variant_rows = get_db().execute(
+            """
+            SELECT segment_key, content_text
+            FROM automation_workflow_node_content_variant
+            WHERE node_content_id = ?
+            ORDER BY id ASC
+            """,
+            (int(content_row["id"]),),
+        ).fetchall()
+
+    assert dict(content_row)["standard_content_text"] == ""
+    assert not bool(content_row["fallback_to_standard_content"])
+    assert [dict(row) for row in variant_rows] == [
+        {"segment_key": "efficiency", "content_text": "效率型内容"},
+        {"segment_key": "closing", "content_text": "成交型内容"},
+    ]
+
+
+def test_workflow_node_detail_masks_manual_layered_dirty_standard_content_and_resave_cleans_it(app, client):
+    workflow_bundle = _create_test_workflow(app, workflow_name="手动分层脏数据清理", segmentation_basis="behavior")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    create_response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "行为分层节点",
+            "target_audience_code": "pending_questionnaire",
+            "trigger_mode": "scheduled",
+            "day_offset": 2,
+            "send_time": "10:20",
+            "content_variants": [
+                {"segment_key": "lt_2", "content_text": "低行为内容"},
+                {"segment_key": "between_2_9", "content_text": "中行为内容"},
+                {"segment_key": "gte_10", "content_text": "高行为内容"},
+            ],
+            "enabled": True,
+            "operator": "tester-node-dirty",
+        },
+    )
+    create_payload = create_response.get_json()
+    node_id = int((create_payload.get("node") or {}).get("id") or 0)
+
+    assert create_response.status_code == 201
+
+    with app.app_context():
+        get_db().execute(
+            """
+            UPDATE automation_workflow_node_content
+            SET standard_content_text = ?, fallback_to_standard_content = 1
+            WHERE node_id = ?
+            """,
+            ("历史脏标准内容", node_id),
+        )
+        get_db().commit()
+
+    detail_response = client.get(f"/api/admin/automation-conversion/workflows/{workflow_id}")
+    detail_payload = detail_response.get_json()
+    reopened_node = next(
+        item for item in (((detail_payload.get("workflow_bundle") or {}).get("nodes")) or [])
+        if int(item.get("id") or 0) == node_id
+    )
+
+    assert detail_response.status_code == 200
+    assert reopened_node["content_mode"] == "manual_layered"
+    assert reopened_node["standard_content_text"] == ""
+
+    update_response = client.put(
+        f"/api/admin/automation-conversion/workflow-nodes/{node_id}",
+        json={
+            "node_name": "行为分层节点",
+            "target_audience_code": "pending_questionnaire",
+            "trigger_mode": "scheduled",
+            "day_offset": 2,
+            "send_time": "10:20",
+            "content_variants": [
+                {"segment_key": "lt_2", "content_text": "低行为新内容"},
+                {"segment_key": "between_2_9", "content_text": "中行为新内容"},
+                {"segment_key": "gte_10", "content_text": "高行为新内容"},
+            ],
+            "enabled": True,
+            "operator": "tester-node-dirty",
+        },
+    )
+    update_payload = update_response.get_json()
+
+    assert update_response.status_code == 200
+    assert update_payload["node"]["standard_content_text"] == ""
+
+    with app.app_context():
+        refreshed_row = get_db().execute(
+            """
+            SELECT standard_content_text, fallback_to_standard_content
+            FROM automation_workflow_node_content
+            WHERE node_id = ?
+            """,
+            (node_id,),
+        ).fetchone()
+
+    assert dict(refreshed_row)["standard_content_text"] == ""
+    assert not bool(refreshed_row["fallback_to_standard_content"])
 
 
 def test_create_workflow_node_rejects_layered_rewrite_without_full_agent_bindings(app):
@@ -1291,6 +1512,14 @@ def test_workflow_node_api_reopens_personalized_single_agent_binding_from_workfl
         workflow_name="问卷提交个性化节点回显",
         audiences=["operating"],
         status="active",
+        generation_mode="personalized_single",
+        agent_bindings=[
+            {
+                "binding_scope": "personalized",
+                "segment_key": "",
+                "agent_code": "questionnaire_followup_agent",
+            }
+        ],
     )
     workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
 
@@ -1327,14 +1556,15 @@ def test_workflow_node_api_reopens_personalized_single_agent_binding_from_workfl
     )
     assert reopened_node["content_mode"] == "personalized_single"
     assert reopened_node["trigger_mode"] == "audience_entered"
-    assert reopened_node["agent_bindings"] == [
+    assert reopened_node["agent_bindings"] == []
+    assert ((detail_payload.get("workflow_bundle") or {}).get("agent_bindings") or []) == [
         {
-            "id": reopened_node["agent_bindings"][0]["id"],
-            "node_id": node_id,
+            "id": ((detail_payload.get("workflow_bundle") or {}).get("agent_bindings") or [])[0]["id"],
+            "node_id": None,
             "binding_scope": "personalized",
             "segment_key": "",
             "agent_code": "questionnaire_followup_agent",
-            "agent": reopened_node["agent_bindings"][0]["agent"],
+            "agent": ((detail_payload.get("workflow_bundle") or {}).get("agent_bindings") or [])[0]["agent"],
         }
     ]
 
@@ -1347,6 +1577,25 @@ def test_workflow_node_api_reopens_behavior_layered_rewrite_agent_bindings_from_
         app,
         workflow_name="行为分层改写节点回显",
         status="active",
+        segmentation_basis="behavior",
+        generation_mode="auto_layered_rewrite",
+        agent_bindings=[
+            {
+                "binding_scope": "behavior_tier",
+                "segment_key": "lt_2",
+                "agent_code": "behavior_lt_2_agent",
+            },
+            {
+                "binding_scope": "behavior_tier",
+                "segment_key": "between_2_9",
+                "agent_code": "behavior_2_9_agent",
+            },
+            {
+                "binding_scope": "behavior_tier",
+                "segment_key": "gte_10",
+                "agent_code": "behavior_10_agent",
+            },
+        ],
     )
     workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
 
@@ -1395,11 +1644,13 @@ def test_workflow_node_api_reopens_behavior_layered_rewrite_agent_bindings_from_
         item for item in (((detail_payload.get("workflow_bundle") or {}).get("nodes")) or [])
         if int(item.get("id") or 0) == node_id
     )
-    reopened_bindings = {(item["binding_scope"], item["segment_key"]): item["agent_code"] for item in reopened_node["agent_bindings"]}
+    workflow_bindings = ((detail_payload.get("workflow_bundle") or {}).get("agent_bindings")) or []
+    reopened_bindings = {(item["binding_scope"], item["segment_key"]): item["agent_code"] for item in workflow_bindings}
 
     assert reopened_node["content_mode"] == "standard_layered_rewrite"
     assert reopened_node["segmentation_basis"] == "behavior"
     assert reopened_node["standard_content_text"] == "请根据行为层级改写内容"
+    assert reopened_node["agent_bindings"] == []
     assert reopened_bindings == {
         ("behavior_tier", "lt_2"): "behavior_lt_2_agent",
         ("behavior_tier", "between_2_9"): "behavior_2_9_agent",
@@ -1477,7 +1728,99 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
     assert item_rows[0]["audience_entry_id"] is not None
     assert item_rows[0]["rendered_content_text"] == "欢迎进入自动化任务流"
 
+def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standard_content(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_no_fallback_001", mobile="13800004444", owner_userid="sales_01", customer_name="纯分层客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_no_fallback_001",
+        phone="13800004444",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 10:00:00",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="手动分层无回退", segmentation_basis="behavior")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
 
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "纯分层节点",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "content_variants": [
+                    {"segment_key": "lt_2", "content_text": "低行为内容"},
+                    {"segment_key": "between_2_9", "content_text": "中行为内容"},
+                    {"segment_key": "gte_10", "content_text": "高行为内容"},
+                ],
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+        node_id = int(
+            get_db().execute(
+                """
+                SELECT id
+                FROM automation_workflow_node
+                WHERE workflow_id = ?
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (workflow_id,),
+            ).fetchone()["id"]
+        )
+        get_db().execute(
+            """
+            UPDATE automation_workflow_node_content
+            SET standard_content_text = ?, fallback_to_standard_content = 1
+            WHERE node_id = ?
+            """,
+            ("历史回退内容", node_id),
+        )
+        get_db().commit()
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime._resolve_behavior_segment_match",
+        lambda member: {
+            "matched": False,
+            "segment_key": "",
+            "segment_label": "",
+            "reason": "segment_not_matched",
+            "message_count": 0,
+        },
+    )
+
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 902, "wecom_result": {"msgid": "msg-902"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        item_row = get_db().execute(
+            """
+            SELECT status, error_message, rendered_content_text, content_snapshot_json
+            FROM automation_workflow_execution_item
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    snapshot = json.loads(item_row["content_snapshot_json"])
+
+    assert result["ok"] is True
+    assert dispatched == []
+    assert dict(item_row)["status"] == "failed"
+    assert dict(item_row)["error_message"] == "rendered_content_empty"
+    assert dict(item_row)["rendered_content_text"] == ""
+    assert snapshot["standard_content_text"] == ""
+    assert snapshot["fallback_reason"] == "segment_not_matched"
+    assert snapshot["content_source"] == ""
 def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payload(app, monkeypatch):
     _seed_contact(app, external_userid="wm_bazhuayu_send_001", mobile="13800002222", owner_userid="sales_01", customer_name="八爪鱼发送客户")
     _seed_automation_member(
@@ -1675,7 +2018,168 @@ def test_execution_item_send_via_bazhuayu_api_accepts_admin_action_token_and_ret
     assert payload["request"]["text"] == "接口触发自动化发送"
     assert payload["response"] == {"code": 0, "message": "ok"}
 
+def test_send_agent_reply_output_via_bazhuayu_posts_signed_webhook_payload(app, monkeypatch):
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-reply-bazhuayu-001",
+                "request_id": "req-reply-bazhuayu-001",
+                "userid": "sales_agent",
+                "external_contact_id": "wm_reply_bazhuayu_send_001",
+                "agent_code": "welcome_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        output = append_agent_output(
+            {
+                "output_id": "aout-reply-bazhuayu-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wm_reply_bazhuayu_send_001",
+                "agent_code": "welcome_agent",
+                "output_type": "agent_reply_draft",
+                "raw_output_text": "欢迎体验最近话术自动发送",
+                "normalized_output": {"draft_reply": "欢迎体验最近话术自动发送"},
+                "rendered_output_text": "欢迎体验最近话术自动发送",
+                "target_agent_code": "welcome_agent",
+                "target_pool": "new_user",
+                "confidence": 0.91,
+                "reason": "新用户欢迎",
+                "applied_status": "generated",
+            }
+        )
 
+    recorded_requests: list[dict[str, object]] = []
+
+    class _BazhuayuResponse:
+        ok = True
+        status_code = 200
+        text = '{"code":0,"message":"ok"}'
+
+        def json(self):
+            return {"code": 0, "message": "ok"}
+
+    def _fake_post(url, *, json=None, headers=None, timeout=None):
+        recorded_requests.append(
+            {
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "timeout": timeout,
+            }
+        )
+        return _BazhuayuResponse()
+
+    fixed_timestamp = 1713242888
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: fixed_timestamp)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.requests.post", _fake_post)
+
+    with app.app_context():
+        result = send_agent_reply_output_via_bazhuayu(output["output_id"], operator_id="bazhuayu-tester")
+
+    expected_timestamp = str(fixed_timestamp)
+    expected_secret = "mPwS+MOxF0O9dyED6z5LlA=="
+    expected_sign = base64.b64encode(
+        hmac.new(f"{expected_timestamp}\n{expected_secret}".encode("utf-8"), digestmod=hashlib.sha256).digest()
+    ).decode("utf-8")
+
+    assert len(recorded_requests) == 1
+    assert recorded_requests[0]["url"] == "https://api-rpa.bazhuayu.com/api/v1/bots/webhooks/69cc9c20612e78c4472b2f4d/invoke"
+    assert recorded_requests[0]["headers"] == {"Content-Type": "application/json"}
+    assert recorded_requests[0]["timeout"] == 15
+    assert recorded_requests[0]["json"] == {
+        "sign": expected_sign,
+        "params": {
+            "userid": "wm_reply_bazhuayu_send_001",
+            "text": "欢迎体验最近话术自动发送",
+        },
+        "timestamp": expected_timestamp,
+    }
+    assert result == {
+        "ok": True,
+        "output_id": "aout-reply-bazhuayu-001",
+        "requested_by": "bazhuayu-tester",
+        "request": {
+            "userid": "wm_reply_bazhuayu_send_001",
+            "text": "欢迎体验最近话术自动发送",
+            "timestamp": expected_timestamp,
+            "specified_bot": "",
+        },
+        "response": {"code": 0, "message": "ok"},
+    }
+
+
+def test_review_output_send_via_bazhuayu_api_accepts_admin_action_token_and_returns_payload(app, client, monkeypatch):
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-reply-api-001",
+                "request_id": "req-reply-api-001",
+                "userid": "sales_agent",
+                "external_contact_id": "wm_reply_bazhuayu_api_001",
+                "agent_code": "welcome_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        output = append_agent_output(
+            {
+                "output_id": "aout-reply-api-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wm_reply_bazhuayu_api_001",
+                "agent_code": "welcome_agent",
+                "output_type": "agent_reply_draft",
+                "raw_output_text": "接口触发最近话术自动发送",
+                "normalized_output": {"draft_reply": "接口触发最近话术自动发送"},
+                "rendered_output_text": "接口触发最近话术自动发送",
+                "target_agent_code": "welcome_agent",
+                "target_pool": "new_user",
+                "confidence": 0.9,
+                "reason": "欢迎语",
+                "applied_status": "generated",
+            }
+        )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_service.requests.post",
+        lambda *args, **kwargs: type(
+            "_BazhuayuResponse",
+            (),
+            {
+                "ok": True,
+                "status_code": 200,
+                "text": '{"code":0,"message":"ok"}',
+                "json": lambda self: {"code": 0, "message": "ok"},
+            },
+        )(),
+    )
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: 1713242999)
+
+    action_token = _admin_action_token(client, "/admin/automation-conversion/auto-reply")
+    response = client.post(
+        f"/api/admin/automation-conversion/review-outputs/{output['output_id']}/send-via-bazhuayu",
+        json={
+            "admin_action_token": action_token,
+            "operator": "console-user",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["output_id"] == output["output_id"]
+    assert payload["requested_by"] == "console-user"
+    assert payload["request"]["userid"] == "wm_reply_bazhuayu_api_001"
+    assert payload["request"]["text"] == "接口触发最近话术自动发送"
+    assert payload["response"] == {"code": 0, "message": "ok"}
 def _test_png_data_url() -> str:
     encoded = base64.b64encode(_test_png_bytes()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
@@ -6449,6 +6953,51 @@ def test_admin_can_review_generated_reply_and_feedback_is_visible_in_output_quer
     assert outputs_by_user.status_code == 200
     assert outputs_payload["rows"][0]["applied_status"] == "adopted"
     assert outputs_payload["rows"][0]["review_note"] == "这条话术太硬了，改得更自然一点"
+
+
+def test_auto_reply_page_exposes_copy_send_and_reject_actions_without_adopt_button(app, client):
+    with app.app_context():
+        run = create_agent_run(
+            {
+                "run_id": "arun-auto-reply-page-001",
+                "request_id": "req-auto-reply-page-001",
+                "userid": "sales_agent",
+                "external_contact_id": "wm_auto_reply_page_001",
+                "agent_code": "welcome_agent",
+                "agent_type": "child_agent",
+                "provider": "deepseek",
+                "status": "success",
+                "source": "test",
+            }
+        )
+        append_agent_output(
+            {
+                "output_id": "aout-auto-reply-page-001",
+                "run_id": run["run_id"],
+                "request_id": run["request_id"],
+                "userid": "sales_agent",
+                "external_contact_id": "wm_auto_reply_page_001",
+                "agent_code": "welcome_agent",
+                "output_type": "agent_reply_draft",
+                "raw_output_text": "页面动作测试话术",
+                "normalized_output": {"draft_reply": "页面动作测试话术"},
+                "rendered_output_text": "页面动作测试话术",
+                "target_agent_code": "welcome_agent",
+                "target_pool": "new_user",
+                "confidence": 0.87,
+                "reason": "页面动作测试",
+                "applied_status": "generated",
+            }
+        )
+
+    response = client.get("/admin/automation-conversion/auto-reply")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "复制话术" in html
+    assert "自动化发送" in html
+    assert 'data-review-action="adopted"' not in html
+    assert "review_output_bazhuayu_send_base" in html
 
 
 def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):
