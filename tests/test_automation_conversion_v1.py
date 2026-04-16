@@ -816,6 +816,8 @@ def test_operations_list_page_renders_split_navigation_without_legacy_panels(cli
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
+    assert 'class="admin-topbar"' not in html
+    assert "当前页面只保留自动化运营列表和一级入口。" not in html
     assert "执行记录" in html
     assert "新建任务流" in html
     assert "编辑" in html
@@ -886,16 +888,24 @@ def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_she
     new_response = client.get("/admin/automation-conversion/operations/workflows/new")
     new_html = new_response.get_data(as_text=True)
     assert new_response.status_code == 200
+    assert 'class="admin-topbar"' not in new_html
     assert "新建任务流" in new_html
     assert "第一步" in new_html
     assert "第二步" in new_html
+    assert "当前页面只承载任务流编辑骨架。" not in new_html
+    assert "保存并进入节点配置" in new_html
+    assert "workflow-nodes-entry-button" not in new_html
 
     edit_response = client.get(f"/admin/automation-conversion/operations/workflows/{workflow_id}/edit")
     edit_html = edit_response.get_data(as_text=True)
     assert edit_response.status_code == 200
+    assert 'class="admin-topbar"' not in edit_html
     assert "编辑任务流" in edit_html
-    assert "保存并进入节点配置" in edit_html
+    assert "保存任务流" in edit_html
+    assert "进入节点配置" in edit_html
     assert "返回列表" in edit_html
+    assert f'href="/admin/automation-conversion/operations/workflows/{workflow_id}/nodes"' in edit_html
+    assert "当前页面只承载任务流编辑骨架。" not in edit_html
     assert "execution-table-body" not in edit_html
     assert "execution-items-body" not in edit_html
 
@@ -912,6 +922,7 @@ def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_she
     executions_response = client.get("/admin/automation-conversion/operations/executions")
     executions_html = executions_response.get_data(as_text=True)
     assert executions_response.status_code == 200
+    assert 'class="admin-topbar"' not in executions_html
     assert "执行记录" in executions_html
     assert "执行批次" in executions_html
     assert "批次详情" in executions_html
@@ -923,6 +934,66 @@ def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_she
     assert "Asia/Shanghai" in executions_html
     assert "复制内容" in executions_html
     assert "自动化发送" in executions_html
+    assert "当前页面只承载执行记录骨架。" not in executions_html
+
+
+def test_agent_config_page_renders_delete_button_for_agent_rows(app, client):
+    _seed_test_agent_config(app, agent_code="custom_delete_agent", display_name="待删 Agent")
+
+    response = client.get("/admin/automation-conversion/agent-config")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'data-agent-delete="custom_delete_agent"' in html
+
+
+def test_agent_delete_api_removes_unreferenced_custom_agent(app, client):
+    _seed_test_agent_config(app, agent_code="custom_delete_agent", display_name="待删 Agent")
+    action_token = _admin_action_token(client, "/admin/automation-conversion/agent-config")
+
+    response = client.delete(
+        "/api/admin/automation-conversion/agents/custom_delete_agent",
+        json={"admin_action_token": action_token},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["deleted"] is True
+    with app.app_context():
+        row = get_db().execute(
+            "SELECT agent_code FROM automation_agent_config WHERE agent_code = ?",
+            ("custom_delete_agent",),
+        ).fetchone()
+    assert row is None
+
+
+def test_agent_delete_api_blocks_referenced_agent_with_clear_message(app, client):
+    _seed_test_agent_config(app, agent_code="bound_delete_agent", display_name="绑定 Agent")
+    _create_test_workflow(
+        app,
+        workflow_name="引用删除校验任务流",
+        generation_mode="personalized_single",
+        agent_bindings=[
+            {
+                "binding_scope": "personalized",
+                "segment_key": "",
+                "agent_code": "bound_delete_agent",
+            }
+        ],
+    )
+    action_token = _admin_action_token(client, "/admin/automation-conversion/agent-config")
+
+    response = client.delete(
+        "/api/admin/automation-conversion/agents/bound_delete_agent",
+        json={"admin_action_token": action_token},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert "当前 Agent 已被任务流引用" in payload["error"]
+    assert "引用删除校验任务流" in payload["error"]
 
 
 def test_create_workflow_node_supports_immediate_trigger_mode(app):

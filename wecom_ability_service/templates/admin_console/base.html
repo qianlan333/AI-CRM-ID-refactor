@@ -35,7 +35,10 @@
     </aside>
 
     <div class="admin-main-wrap">
+      {% set page_header_visible = show_page_header if show_page_header is defined else True %}
+      {% if page_header_visible or show_shell_meta %}
       <header class="admin-topbar">
+        {% if page_header_visible %}
         <div class="admin-topbar-head">
           <nav class="admin-breadcrumbs" aria-label="Breadcrumb">
             {% for crumb in breadcrumbs %}
@@ -51,6 +54,7 @@
             <p class="admin-page-summary">{{ page_summary }}</p>
           </div>
         </div>
+        {% endif %}
 
         {% if show_shell_meta %}
         <div class="admin-topbar-meta">
@@ -69,6 +73,7 @@
         </div>
         {% endif %}
       </header>
+      {% endif %}
 
       <main class="admin-page">
         {% if page_notice %}

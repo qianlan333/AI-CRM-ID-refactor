@@ -43,6 +43,7 @@ def _render_admin_template(
         nav_items=list_admin_navigation(active_nav),
         shell_status=build_admin_shell_status(),
         show_shell_meta=extra.pop("show_shell_meta", True),
+        show_page_header=extra.pop("show_page_header", True),
         **extra,
     )
 
