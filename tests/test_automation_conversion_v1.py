@@ -14,6 +14,7 @@ from wecom_ability_service import create_app
 from wecom_ability_service.db import _sqlite_table_columns, get_db, init_db
 from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
+    apply_dashboard_signup_tag,
     backfill_missing_child_agent_replies,
     create_conversion_profile_segment_template,
     create_agent_run,
@@ -439,6 +440,94 @@ def _seed_archived_message(
         ).fetchone()
         db.commit()
         return int(row["id"])
+
+
+def _assign_member_to_current_audience(
+    app,
+    *,
+    external_contact_id: str,
+    audience_code: str,
+    entered_at: str,
+) -> None:
+    with app.app_context():
+        db = get_db()
+        member = db.execute(
+            """
+            SELECT id
+            FROM automation_member
+            WHERE external_contact_id = ?
+            LIMIT 1
+            """,
+            (external_contact_id,),
+        ).fetchone()
+        assert member is not None
+        member_id = int(member["id"])
+        db.execute(
+            """
+            UPDATE automation_member
+            SET current_audience_code = ?, current_audience_entered_at = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (audience_code, entered_at, member_id),
+        )
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, exited_at, is_current,
+                entry_source, entry_reason, source_snapshot_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, '', 1, 'test', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (member_id, audience_code, entered_at),
+        )
+        db.commit()
+
+
+def _seed_questionnaire_submission_for_member(
+    app,
+    *,
+    questionnaire_id: int,
+    question_id: int,
+    option_id: int,
+    submission_id: int,
+    external_userid: str,
+    mobile_snapshot: str,
+    submitted_at: str,
+) -> None:
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                id, questionnaire_id, respondent_key, external_userid, mobile_snapshot, total_score, final_tags, redirect_url_snapshot, submitted_at
+            )
+            VALUES (?, ?, ?, ?, ?, 10, '[]', '', ?)
+            """,
+            (
+                submission_id,
+                questionnaire_id,
+                f"overview-{submission_id}",
+                external_userid,
+                mobile_snapshot,
+                submitted_at,
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaire_submission_answers (
+                submission_id, question_id, question_type, question_title_snapshot,
+                selected_option_ids, selected_option_texts_snapshot, selected_option_scores_snapshot,
+                selected_option_tags_snapshot, text_value, score_contribution, created_at
+            )
+            VALUES (?, ?, 'single_choice', '概览分层题', ?, '[]', '[]', '[]', '', 10, CURRENT_TIMESTAMP)
+            """,
+            (
+                submission_id,
+                question_id,
+                json.dumps([option_id], ensure_ascii=False),
+            ),
+        )
+        db.commit()
 
 
 def _patch_reply_monitor_payload_context(monkeypatch, *, external_userid: str, owner_display_name: str = "销售一") -> None:
@@ -871,6 +960,210 @@ def test_conversion_dashboard_payload_returns_empty_task_execution_summary_witho
     assert payload["task_execution_summary"] == {"items": [], "total": 0}
 
 
+def test_conversion_dashboard_payload_includes_audience_member_details(app):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=731, template_name="概览画像模板")
+
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_operating_001",
+        phone="13800008101",
+        owner_staff_id="sales_overview",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_operating_001",
+        audience_code="operating",
+        entered_at="2026-04-10 10:00:00",
+    )
+    _seed_questionnaire_submission_for_member(
+        app,
+        questionnaire_id=int(template_seed["questionnaire_id"]),
+        question_id=int(template_seed["choice_question_id"]),
+        option_id=int(template_seed["option_ids"][0]),
+        submission_id=73101,
+        external_userid="wm_dashboard_operating_001",
+        mobile_snapshot="13800008101",
+        submitted_at="2026-04-10 09:58:00",
+    )
+    for seq in range(1, 4):
+        _seed_archived_message(
+            app,
+            msgid=f"overview-operating-{seq}",
+            seq=seq,
+            external_userid="wm_dashboard_operating_001",
+            owner_userid="sales_overview",
+            sender="wm_dashboard_operating_001",
+        )
+
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_pending_001",
+        phone="13800008102",
+        owner_staff_id="sales_overview",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_pending_001",
+        audience_code="pending_questionnaire",
+        entered_at="2026-04-10 11:00:00",
+    )
+
+    with app.app_context():
+        payload = get_conversion_dashboard_payload()
+
+    detail = payload["audience_member_details"]
+    groups = {item["audience_code"]: item for item in detail["groups"]}
+
+    assert detail["profile_segment_template"]["template_name"] == "概览画像模板"
+    assert detail["total"] == 2
+    assert groups["pending_questionnaire"]["count"] == 1
+    assert groups["operating"]["count"] == 1
+    assert groups["converted"]["count"] == 0
+
+    pending_item = groups["pending_questionnaire"]["items"][0]
+    assert pending_item["external_contact_id"] == "wm_dashboard_pending_001"
+    assert pending_item["questionnaire_status_label"] == "待提交"
+    assert pending_item["profile_segment_label"] == ""
+    assert pending_item["behavior_segment_label"] == "小于 2"
+    assert pending_item["conversation_count"] == 0
+
+    operating_item = groups["operating"]["items"][0]
+    assert operating_item["external_contact_id"] == "wm_dashboard_operating_001"
+    assert operating_item["activation_status_label"] == "已激活"
+    assert operating_item["questionnaire_result_label"] == "普通跟进"
+    assert operating_item["profile_segment_label"] == "效率型"
+    assert operating_item["behavior_segment_label"] == "2 ~ 9"
+    assert operating_item["conversation_count"] == 3
+
+
+def test_apply_dashboard_signup_tag_marks_current_audience_members(app, monkeypatch):
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_tag_001",
+        phone="13800009101",
+        owner_staff_id="sales_tag_01",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        decision_source="system",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_tag_001",
+        audience_code="pending_questionnaire",
+        entered_at="2026-04-17 09:00:00",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_tag_002",
+        phone="13800009102",
+        owner_staff_id="sales_tag_02",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_result="normal",
+        decision_source="questionnaire",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_tag_002",
+        audience_code="operating",
+        entered_at="2026-04-17 09:30:00",
+    )
+
+    captured_calls: list[dict[str, object]] = []
+
+    class _StubClient:
+        def mark_external_contact_tags(
+            self,
+            *,
+            external_userid: str,
+            follow_user_userid: str,
+            add_tags: list[str],
+            remove_tags: list[str],
+        ) -> dict[str, object]:
+            captured_calls.append(
+                {
+                    "external_userid": external_userid,
+                    "follow_user_userid": follow_user_userid,
+                    "add_tags": list(add_tags),
+                    "remove_tags": list(remove_tags),
+                }
+            )
+            return {"errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_service.get_app_runtime_client",
+        lambda: _StubClient(),
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active, updated_at)
+            VALUES
+                ('tag-lead', '报名引流品', 'lead', 1, CURRENT_TIMESTAMP),
+                ('tag-paid', '已报名999', 'paid_999', 1, CURRENT_TIMESTAMP)
+            """
+        )
+        db.commit()
+
+        payload = apply_dashboard_signup_tag(operator_id="overview-admin")
+
+        assert payload["ok"] is True
+        assert payload["target_tag_id"] == "tag-lead"
+        assert payload["success_count"] == 2
+        assert payload["failed_count"] == 0
+        assert payload["skipped_count"] == 0
+        assert captured_calls == [
+            {
+                "external_userid": "wm_dashboard_tag_001",
+                "follow_user_userid": "sales_tag_01",
+                "add_tags": ["tag-lead"],
+                "remove_tags": ["tag-paid"],
+            },
+            {
+                "external_userid": "wm_dashboard_tag_002",
+                "follow_user_userid": "sales_tag_02",
+                "add_tags": ["tag-lead"],
+                "remove_tags": ["tag-paid"],
+            },
+        ]
+        tag_rows = db.execute(
+            """
+            SELECT external_userid, userid, tag_id, tag_name
+            FROM contact_tags
+            ORDER BY external_userid ASC
+            """
+        ).fetchall()
+        assert [dict(row) for row in tag_rows] == [
+            {
+                "external_userid": "wm_dashboard_tag_001",
+                "userid": "sales_tag_01",
+                "tag_id": "tag-lead",
+                "tag_name": "报名引流品",
+            },
+            {
+                "external_userid": "wm_dashboard_tag_002",
+                "userid": "sales_tag_02",
+                "tag_id": "tag-lead",
+                "tag_name": "报名引流品",
+            },
+        ]
+
+
 def test_overview_page_keeps_only_core_sections_and_removes_duplicate_action_nav(client):
     response = client.get("/admin/automation-conversion/overview")
     html = response.get_data(as_text=True)
@@ -879,14 +1172,44 @@ def test_overview_page_keeps_only_core_sections_and_removes_duplicate_action_nav
     assert "自动化转化当前运行状态" in html
     assert "任务流执行摘要" in html
     assert "刷新模块状态" in html
+    assert "给当前列表用户打报名引流品标签" in html
     assert "最近执行节点摘要" not in html
     assert "最近发送成功 / 失败摘要" not in html
     assert "进入自动化运营" not in html
     assert "进入自动化应答" not in html
     assert "进入模型 / Agent 配置" not in html
+    assert "池子用户明细" in html
+    assert "自然画像分层、行为画像分层、对话次数以及当前状态" in html
+    assert 'id="overview-member-groups"' in html
+    assert html.index('id="overview-member-groups"') < html.index('id="overview-execution-body"')
+    assert "先看三类大人群规模、池子用户列表、启用中任务流和任务流执行情况" in html
     assert 'href="/admin/automation-conversion/operations"' in html
     assert 'href="/admin/automation-conversion/auto-reply"' in html
     assert 'href="/admin/automation-conversion/agent-config"' in html
+
+
+def test_admin_overview_apply_signup_tag_endpoint_returns_json(app, client, monkeypatch):
+    action_token = _admin_action_token(client, "/admin/automation-conversion/overview")
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.apply_dashboard_signup_tag",
+        lambda operator_id: {
+            "ok": True,
+            "target_tag_name": "报名引流品",
+            "message": "已处理 2 个用户，成功打标 2 个，跳过 0 个，失败 0 个。",
+        },
+    )
+
+    response = client.post(
+        "/admin/automation-conversion/overview/signup-tag/apply",
+        data={"admin_action_token": action_token},
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["target_tag_name"] == "报名引流品"
+    assert "成功打标 2 个" in payload["message"]
 
 
 def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_shells(app, client):
@@ -2259,6 +2582,7 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
         db = get_db()
         table_names = _sqlite_object_names(db, "table")
         index_names = _sqlite_object_names(db, "index")
+        channel_columns = _sqlite_table_columns(db, "automation_channel")
         agent_output_columns = _sqlite_table_columns(db, "automation_agent_output")
 
         assert {
@@ -2323,6 +2647,7 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "uq_automation_sop_batch_item_member_pool_day_success",
         }.issubset(index_names)
         assert {"adopted_by", "adopted_action", "adopted_at", "outcome_status", "outcome_value"}.issubset(agent_output_columns)
+        assert {"entry_tag_id", "entry_tag_name", "entry_tag_group_name"}.issubset(channel_columns)
 
 
 def test_automation_overview_counts_only_from_automation_member(app, client):
@@ -3028,6 +3353,45 @@ def test_default_channel_settings_save_and_readback_welcome_and_auto_accept(app,
         assert row["status"] == "configured"
 
 
+def test_default_channel_settings_save_and_readback_entry_tag(app):
+    from wecom_ability_service.domains.automation_conversion.service import save_default_channel_settings
+
+    with app.app_context():
+        saved_tags = [
+            {"tag_id": "tag-channel-001", "tag_name": "渠道报名", "group_name": "渠道来源"},
+        ]
+        original = save_default_channel_settings.__globals__["list_available_wecom_tags"]
+        save_default_channel_settings.__globals__["list_available_wecom_tags"] = lambda: list(saved_tags)
+        try:
+            payload = save_default_channel_settings(
+                {
+                    "channel_name": "默认渠道二维码",
+                    "entry_tag_id": "tag-channel-001",
+                }
+            )
+        finally:
+            save_default_channel_settings.__globals__["list_available_wecom_tags"] = original
+
+        default_channel = payload["default_channel"]
+        assert default_channel["entry_tag_id"] == "tag-channel-001"
+        assert default_channel["entry_tag_name"] == "渠道报名"
+        assert default_channel["entry_tag_group_name"] == "渠道来源"
+        assert default_channel["field_statuses"]["entry_tag"]["status"] == "applied"
+
+        row = get_db().execute(
+            """
+            SELECT entry_tag_id, entry_tag_name, entry_tag_group_name
+            FROM automation_channel
+            WHERE channel_code = 'default_qrcode'
+            """
+        ).fetchone()
+        assert dict(row) == {
+            "entry_tag_id": "tag-channel-001",
+            "entry_tag_name": "渠道报名",
+            "entry_tag_group_name": "渠道来源",
+        }
+
+
 def test_generate_default_channel_reports_config_incomplete_when_wecom_config_missing(app, client, monkeypatch):
     from wecom_ability_service.wecom_client import WeComClientError
 
@@ -3665,6 +4029,31 @@ def test_automation_conversion_settings_page_focuses_on_flow_design_sections(app
     assert "立即刷新一次" not in html
     assert "消息活跃同步已迁到运行中心" in html
     assert "前往运行中心校验" in html
+
+
+def test_agent_config_page_renders_entry_tag_fields_for_default_channel(app, client):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_channel (
+                channel_code, channel_name, entry_tag_id, entry_tag_name, entry_tag_group_name, owner_staff_id, status, created_at, updated_at
+            )
+            VALUES ('default_qrcode', '默认渠道二维码', 'tag-channel-001', '渠道报名', '渠道来源', 'HuangYouCan', 'configured', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        db.commit()
+
+    response = client.get("/admin/automation-conversion/agent-config")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'name="entry_tag_id"' in html
+    assert 'name="entry_tag_id_manual"' in html
+    assert "扫码自动打标签" in html
+    assert "选择已有标签" in html
+    assert "default-channel-tag-modal-overlay" in html
+    assert "按标签组选择，确认后仅保存 tag_id" in html
 
 
 def test_legacy_admin_automation_conversion_routes_redirect_to_new_workspaces(app, client):
@@ -8433,3 +8822,80 @@ def test_qrcode_callback_welcome_message_requires_welcome_code(app, monkeypatch)
             "action": "qrcode_welcome_failed",
             "remark": "missing_welcome_code",
         }
+
+
+def test_qrcode_callback_applies_entry_tag_and_persists_snapshot(app, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import service as automation_service
+
+    captured: dict[str, object] = {}
+
+    class _StubClient:
+        def mark_external_contact_tags(
+            self,
+            *,
+            external_userid: str,
+            follow_user_userid: str,
+            add_tags: list[str],
+            remove_tags: list[str],
+        ) -> dict[str, object]:
+            captured["payload"] = {
+                "external_userid": external_userid,
+                "follow_user_userid": follow_user_userid,
+                "add_tags": list(add_tags),
+                "remove_tags": list(remove_tags),
+            }
+            return {"errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setattr(automation_service, "get_app_runtime_client", lambda: _StubClient())
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_channel (
+                channel_code, channel_name, scene_value, owner_staff_id, entry_tag_id, entry_tag_name, entry_tag_group_name, status, created_at, updated_at
+            )
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-tag', 'HuangYouCan', 'tag-channel-001', '渠道报名', '渠道来源', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        db.commit()
+
+        result = automation_service.handle_qrcode_enter_from_callback(
+            external_contact_id="wm_qrcode_tag_001",
+            phone="13800004004",
+            payload_json={"state": "scene-tag"},
+            operator_id="callback-user",
+        )
+
+        assert result["handled"] is True
+        assert result["entry_tag"]["applied"] is True
+        assert result["entry_tag"]["entry_tag_id"] == "tag-channel-001"
+        assert captured["payload"] == {
+            "external_userid": "wm_qrcode_tag_001",
+            "follow_user_userid": "HuangYouCan",
+            "add_tags": ["tag-channel-001"],
+            "remove_tags": [],
+        }
+
+        snapshot = db.execute(
+            """
+            SELECT external_userid, userid, tag_id, tag_name
+            FROM contact_tags
+            WHERE external_userid = ?
+            LIMIT 1
+            """,
+            ("wm_qrcode_tag_001",),
+        ).fetchone()
+        assert dict(snapshot) == {
+            "external_userid": "wm_qrcode_tag_001",
+            "userid": "HuangYouCan",
+            "tag_id": "tag-channel-001",
+            "tag_name": "渠道报名",
+        }
+        events = db.execute(
+            "SELECT action, remark FROM automation_event ORDER BY id DESC LIMIT 2"
+        ).fetchall()
+        assert [dict(row) for row in events] == [
+            {"action": "qrcode_entry_tag_applied", "remark": "渠道报名"},
+            {"action": "qrcode_enter", "remark": ""},
+        ]

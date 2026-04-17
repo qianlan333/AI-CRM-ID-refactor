@@ -17,7 +17,7 @@ from ...infra.settings import (
     mask_value,
     set_settings,
 )
-from ...infra.wecom_runtime import get_contact_runtime_client
+from ...infra.wecom_runtime import get_app_runtime_client, get_contact_runtime_client
 from ...wecom_client import WeComClientError
 from ..automation_state.renderer import business_pool_label
 from ..automation_state.state_defs import (
@@ -32,7 +32,8 @@ from ..automation_state.state_defs import (
 )
 from ..marketing_automation.service import get_customer_marketing_profile, get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
-from ..questionnaire.service import get_questionnaire_detail, list_questionnaires
+from ..questionnaire.service import get_questionnaire_detail, list_available_wecom_tags, list_questionnaires
+from ..tags import repo as tags_repo
 from ..tasks.service import dispatch_wecom_task
 from ..user_ops import page_service as user_ops_page_service
 from .agents import (
@@ -131,6 +132,8 @@ ACTION_LABELS = {
     "router_apply_pool": "龙虾异步回调改池",
     "qrcode_welcome_sent": "扫码欢迎语已发送",
     "qrcode_welcome_failed": "扫码欢迎语发送失败",
+    "qrcode_entry_tag_applied": "扫码渠道标签已打上",
+    "qrcode_entry_tag_failed": "扫码渠道标签打标失败",
 }
 
 POOL_LABELS = local_projection.POOL_LABELS
@@ -2258,6 +2261,7 @@ def _default_channel_field_statuses(
     channel_status: str,
     welcome_message: str,
     auto_accept_friend: bool,
+    entry_tag_name: str,
 ) -> dict[str, dict[str, Any]]:
     support = (
         dict(provider.get_default_channel_field_support() or {})
@@ -2306,6 +2310,13 @@ def _default_channel_field_statuses(
             else "当前未开启免验证直接添加好友。"
         )
 
+    if entry_tag_name:
+        entry_tag_status = "applied"
+        entry_tag_detail = "扫码回调命中当前渠道码后，会直接给客户打上这个标签。"
+    else:
+        entry_tag_status = "not_set"
+        entry_tag_detail = "当前未配置扫码自动打标签。"
+
     return {
         "welcome_message": {
             "status": welcome_status,
@@ -2317,6 +2328,65 @@ def _default_channel_field_statuses(
             "supported": auto_accept_supported,
             "detail": auto_accept_detail,
         },
+        "entry_tag": {
+            "status": entry_tag_status,
+            "supported": True,
+            "detail": entry_tag_detail,
+        },
+    }
+
+
+def _resolve_channel_entry_tag_payload(
+    *,
+    entry_tag_id: Any,
+    entry_tag_name: Any,
+    entry_tag_group_name: Any,
+) -> dict[str, str]:
+    normalized_tag_id = _normalized_text(entry_tag_id)
+    normalized_tag_name = _normalized_text(entry_tag_name)
+    normalized_group_name = _normalized_text(entry_tag_group_name)
+    if not normalized_tag_id and not normalized_tag_name and not normalized_group_name:
+        return {
+            "entry_tag_id": "",
+            "entry_tag_name": "",
+            "entry_tag_group_name": "",
+        }
+    live_tags = list_available_wecom_tags()
+    matched_tag: dict[str, Any] | None = None
+    if normalized_tag_id:
+        matched_tag = next((item for item in live_tags if _normalized_text(item.get("tag_id")) == normalized_tag_id), None)
+        if not matched_tag:
+            raise ValueError("扫码自动打标签未找到对应的企微标签 ID")
+    else:
+        matched_tags = [
+            item
+            for item in live_tags
+            if _normalized_text(item.get("tag_name")) == normalized_tag_name
+            and (not normalized_group_name or _normalized_text(item.get("group_name")) == normalized_group_name)
+        ]
+        if not matched_tags:
+            raise ValueError("扫码自动打标签未找到对应的企微标签")
+        if len(matched_tags) > 1:
+            raise ValueError("存在多个同名企微标签，请补充标签分组")
+        matched_tag = matched_tags[0]
+    return {
+        "entry_tag_id": _normalized_text((matched_tag or {}).get("tag_id")),
+        "entry_tag_name": _normalized_text((matched_tag or {}).get("tag_name")),
+        "entry_tag_group_name": _normalized_text((matched_tag or {}).get("group_name")),
+    }
+
+
+def _effective_channel_entry_tag_payload(payload: dict[str, Any], existing: dict[str, Any]) -> dict[str, str]:
+    if any(key in payload for key in ("entry_tag_id", "entry_tag_name", "entry_tag_group_name")):
+        return _resolve_channel_entry_tag_payload(
+            entry_tag_id=payload.get("entry_tag_id"),
+            entry_tag_name=payload.get("entry_tag_name"),
+            entry_tag_group_name=payload.get("entry_tag_group_name"),
+        )
+    return {
+        "entry_tag_id": _normalized_text(existing.get("entry_tag_id")),
+        "entry_tag_name": _normalized_text(existing.get("entry_tag_name")),
+        "entry_tag_group_name": _normalized_text(existing.get("entry_tag_group_name")),
     }
 
 
@@ -2785,6 +2855,7 @@ def get_default_channel_settings_payload() -> dict[str, Any]:
 
 def save_default_channel_settings(payload: dict[str, Any]) -> dict[str, Any]:
     existing = repo.get_default_channel() or {}
+    entry_tag_payload = _effective_channel_entry_tag_payload(payload, existing)
     next_channel_name = _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
     next_welcome_message = (
         _normalized_text(payload.get("welcome_message"))
@@ -2803,6 +2874,9 @@ def save_default_channel_settings(payload: dict[str, Any]) -> dict[str, Any]:
         next_channel_name != current_channel_name
         or next_welcome_message != current_welcome_message
         or next_auto_accept_friend != current_auto_accept_friend
+        or entry_tag_payload["entry_tag_id"] != _normalized_text(existing.get("entry_tag_id"))
+        or entry_tag_payload["entry_tag_name"] != _normalized_text(existing.get("entry_tag_name"))
+        or entry_tag_payload["entry_tag_group_name"] != _normalized_text(existing.get("entry_tag_group_name"))
     )
     repo.save_channel(
         {
@@ -2813,6 +2887,9 @@ def save_default_channel_settings(payload: dict[str, Any]) -> dict[str, Any]:
             "scene_value": _normalized_text(payload.get("scene_value")) or _normalized_text(existing.get("scene_value")),
             "welcome_message": next_welcome_message,
             "auto_accept_friend": next_auto_accept_friend,
+            "entry_tag_id": entry_tag_payload["entry_tag_id"],
+            "entry_tag_name": entry_tag_payload["entry_tag_name"],
+            "entry_tag_group_name": entry_tag_payload["entry_tag_group_name"],
             "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
             "status": (
                 CHANNEL_STATUS_CONFIGURED
@@ -2945,6 +3022,9 @@ def get_settings_payload() -> dict[str, Any]:
             "scene_value": _normalized_text(channel.get("scene_value")),
             "welcome_message": _normalized_text(channel.get("welcome_message")),
             "auto_accept_friend": _normalize_bool(channel.get("auto_accept_friend")),
+            "entry_tag_id": _normalized_text(channel.get("entry_tag_id")),
+            "entry_tag_name": _normalized_text(channel.get("entry_tag_name")),
+            "entry_tag_group_name": _normalized_text(channel.get("entry_tag_group_name")),
             "owner_staff_id": _normalized_text(channel.get("owner_staff_id")) or DEFAULT_OWNER_STAFF_ID,
             "status": _normalized_text(channel.get("status")) or CHANNEL_STATUS_NOT_GENERATED,
             "field_statuses": _default_channel_field_statuses(
@@ -2952,6 +3032,7 @@ def get_settings_payload() -> dict[str, Any]:
                 channel_status=_normalized_text(channel.get("status")) or CHANNEL_STATUS_NOT_GENERATED,
                 welcome_message=_normalized_text(channel.get("welcome_message")),
                 auto_accept_friend=_normalize_bool(channel.get("auto_accept_friend")),
+                entry_tag_name=_normalized_text(channel.get("entry_tag_name")),
             ),
         },
         "default_owner_staff_id": DEFAULT_OWNER_STAFF_ID,
@@ -2975,6 +3056,7 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
     }
     save_signup_conversion_config(config_payload, enforce_required_mobile_question=True)
     existing = repo.get_default_channel() or {}
+    entry_tag_payload = _effective_channel_entry_tag_payload(payload, existing)
     next_channel_name = _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
     next_welcome_message = (
         _normalized_text(payload.get("welcome_message"))
@@ -2993,6 +3075,9 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
         next_channel_name != current_channel_name
         or next_welcome_message != current_welcome_message
         or next_auto_accept_friend != current_auto_accept_friend
+        or entry_tag_payload["entry_tag_id"] != _normalized_text(existing.get("entry_tag_id"))
+        or entry_tag_payload["entry_tag_name"] != _normalized_text(existing.get("entry_tag_name"))
+        or entry_tag_payload["entry_tag_group_name"] != _normalized_text(existing.get("entry_tag_group_name"))
     )
     repo.save_channel(
         {
@@ -3003,6 +3088,9 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
             "scene_value": _normalized_text(payload.get("scene_value")) or _normalized_text(existing.get("scene_value")),
             "welcome_message": next_welcome_message,
             "auto_accept_friend": next_auto_accept_friend,
+            "entry_tag_id": entry_tag_payload["entry_tag_id"],
+            "entry_tag_name": entry_tag_payload["entry_tag_name"],
+            "entry_tag_group_name": entry_tag_payload["entry_tag_group_name"],
             "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
             "status": (
                 CHANNEL_STATUS_CONFIGURED
@@ -3030,6 +3118,9 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
         }
     welcome_message = _normalized_text(existing.get("welcome_message"))
     auto_accept_friend = _normalize_bool(existing.get("auto_accept_friend"))
+    entry_tag_id = _normalized_text(existing.get("entry_tag_id"))
+    entry_tag_name = _normalized_text(existing.get("entry_tag_name"))
+    entry_tag_group_name = _normalized_text(existing.get("entry_tag_group_name"))
     try:
         channel_payload = provider.create_default_channel(
             owner_staff_id=DEFAULT_OWNER_STAFF_ID,
@@ -3046,6 +3137,9 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 "scene_value": _normalized_text(existing.get("scene_value")),
                 "welcome_message": welcome_message,
                 "auto_accept_friend": auto_accept_friend,
+                "entry_tag_id": entry_tag_id,
+                "entry_tag_name": entry_tag_name,
+                "entry_tag_group_name": entry_tag_group_name,
                 "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
                 "status": "generation_failed",
             }
@@ -3064,6 +3158,7 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 channel_status=_normalized_text(saved.get("status")) or "generation_failed",
                 welcome_message=welcome_message,
                 auto_accept_friend=auto_accept_friend,
+                entry_tag_name=entry_tag_name,
             ),
         }
     except WeComClientError as exc:
@@ -3076,6 +3171,9 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 "scene_value": _normalized_text(existing.get("scene_value")),
                 "welcome_message": welcome_message,
                 "auto_accept_friend": auto_accept_friend,
+                "entry_tag_id": entry_tag_id,
+                "entry_tag_name": entry_tag_name,
+                "entry_tag_group_name": entry_tag_group_name,
                 "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
                 "status": "config_incomplete" if "not configured" in str(exc).lower() else "generation_failed",
             }
@@ -3098,6 +3196,7 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 channel_status=_normalized_text(saved.get("status")) or "generation_failed",
                 welcome_message=welcome_message,
                 auto_accept_friend=auto_accept_friend,
+                entry_tag_name=entry_tag_name,
             ),
         }
     saved = repo.save_channel(
@@ -3109,6 +3208,9 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
             "scene_value": _normalized_text(channel_payload.get("scene_value")),
             "welcome_message": welcome_message,
             "auto_accept_friend": auto_accept_friend,
+            "entry_tag_id": entry_tag_id,
+            "entry_tag_name": entry_tag_name,
+            "entry_tag_group_name": entry_tag_group_name,
             "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
             "status": _normalized_text(channel_payload.get("status")) or CHANNEL_STATUS_ACTIVE,
         }
@@ -3125,6 +3227,7 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
                 channel_status=_normalized_text(saved.get("status")) or CHANNEL_STATUS_ACTIVE,
                 welcome_message=welcome_message,
                 auto_accept_friend=auto_accept_friend,
+                entry_tag_name=entry_tag_name,
             )
         ),
     }
@@ -4188,6 +4291,69 @@ def _send_channel_welcome_message(
     }
 
 
+def _apply_channel_entry_tag(
+    *,
+    member: dict[str, Any],
+    channel: dict[str, Any],
+    operator_id: str = "",
+) -> dict[str, Any]:
+    entry_tag_id = _normalized_text(channel.get("entry_tag_id"))
+    entry_tag_name = _normalized_text(channel.get("entry_tag_name"))
+    entry_tag_group_name = _normalized_text(channel.get("entry_tag_group_name"))
+    serialized_member = _serialize_member(member)
+    external_contact_id = _normalized_text(serialized_member.get("external_contact_id"))
+    owner_staff_id = _normalized_text(serialized_member.get("owner_staff_id"))
+    if not entry_tag_id:
+        return {"attempted": False, "applied": False, "reason": "not_configured"}
+    if not external_contact_id:
+        return {"attempted": False, "applied": False, "reason": "missing_external_contact_id"}
+    if not owner_staff_id:
+        return {"attempted": False, "applied": False, "reason": "missing_owner_staff_id"}
+    try:
+        wecom_result = get_app_runtime_client().mark_external_contact_tags(
+            external_userid=external_contact_id,
+            follow_user_userid=owner_staff_id,
+            add_tags=[entry_tag_id],
+            remove_tags=[],
+        )
+        tags_repo.save_tag_snapshot(owner_staff_id, external_contact_id, [entry_tag_id], {entry_tag_id: entry_tag_name})
+    except (WeComClientError, AttributeError, ValueError) as exc:
+        _write_event(
+            member_id=int(member["id"]),
+            action="qrcode_entry_tag_failed",
+            operator_type="system",
+            operator_id=_normalized_text(operator_id) or "wecom_callback",
+            before_snapshot=_member_snapshot(serialized_member),
+            after_snapshot=_member_snapshot(serialized_member),
+            remark=str(exc),
+        )
+        return {
+            "attempted": True,
+            "applied": False,
+            "error": str(exc),
+            "entry_tag_id": entry_tag_id,
+            "entry_tag_name": entry_tag_name,
+            "entry_tag_group_name": entry_tag_group_name,
+        }
+    _write_event(
+        member_id=int(member["id"]),
+        action="qrcode_entry_tag_applied",
+        operator_type="system",
+        operator_id=_normalized_text(operator_id) or "wecom_callback",
+        before_snapshot=_member_snapshot(serialized_member),
+        after_snapshot=_member_snapshot(serialized_member),
+        remark=entry_tag_name or entry_tag_id,
+    )
+    return {
+        "attempted": True,
+        "applied": True,
+        "entry_tag_id": entry_tag_id,
+        "entry_tag_name": entry_tag_name,
+        "entry_tag_group_name": entry_tag_group_name,
+        "wecom_result": dict(wecom_result or {}),
+    }
+
+
 def handle_qrcode_enter_from_callback(
     *,
     external_contact_id: str,
@@ -4235,7 +4401,18 @@ def handle_qrcode_enter_from_callback(
             if send_welcome_message
             else {"attempted": False, "sent": False, "reason": "disabled"}
         )
-        return {"handled": True, "member": _serialize_member(saved), "won_kept": True, "welcome_message": welcome_result}
+        entry_tag_result = _apply_channel_entry_tag(
+            member=saved,
+            channel=channel,
+            operator_id=operator_id,
+        )
+        return {
+            "handled": True,
+            "member": _serialize_member(saved),
+            "won_kept": True,
+            "welcome_message": welcome_result,
+            "entry_tag": entry_tag_result,
+        }
     current["current_pool"] = recompute_pool(current, {**context, "settings": get_signup_conversion_config()}, action="qrcode_enter")
     saved = _persist_member(member, current)
     _write_event(
@@ -4256,4 +4433,14 @@ def handle_qrcode_enter_from_callback(
         if send_welcome_message
         else {"attempted": False, "sent": False, "reason": "disabled"}
     )
-    return {"handled": True, "member": _serialize_member(saved), "welcome_message": welcome_result}
+    entry_tag_result = _apply_channel_entry_tag(
+        member=saved,
+        channel=channel,
+        operator_id=operator_id,
+    )
+    return {
+        "handled": True,
+        "member": _serialize_member(saved),
+        "welcome_message": welcome_result,
+        "entry_tag": entry_tag_result,
+    }

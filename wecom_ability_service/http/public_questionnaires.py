@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlencode
 
 from flask import abort, current_app, jsonify, redirect, render_template, request, session, url_for
@@ -32,6 +34,148 @@ from .questionnaire_support import (
 )
 
 
+_QUESTIONNAIRE_META_FIELDS = (
+    "respondent_key",
+    "openid",
+    "unionid",
+    "external_userid",
+    "source_channel",
+    "campaign_id",
+    "staff_id",
+)
+
+
+def _questionnaire_request_hints() -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for key in _QUESTIONNAIRE_META_FIELDS:
+        value = str(request.values.get(key) or "").strip()
+        if value:
+            payload[key] = value
+    return payload
+
+
+def _normalize_prefill_fields(questionnaire: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    answers = payload.get("answers") if isinstance(payload, dict) else None
+    if not isinstance(answers, dict):
+        return {}
+
+    prefill_fields: dict[str, Any] = {}
+    for question in questionnaire.get("questions") or []:
+        field_name = f"q_{question.get('id')}"
+        answer = answers.get(str(question.get("id")))
+        if answer in (None, "", []):
+            continue
+        if question.get("type") == "multi_choice":
+            if isinstance(answer, list):
+                prefill_fields[field_name] = [str(item).strip() for item in answer if str(item).strip()]
+            else:
+                normalized = str(answer).strip()
+                if normalized:
+                    prefill_fields[field_name] = [normalized]
+            continue
+        if isinstance(answer, list):
+            answer = answer[0] if answer else ""
+        normalized = str(answer).strip()
+        if normalized:
+            prefill_fields[field_name] = normalized
+    return prefill_fields
+
+
+def _build_questionnaire_page_state(
+    questionnaire: dict[str, Any],
+    *,
+    page_mode: str,
+    env_notice: str,
+    oauth_start_url: str,
+    is_wechat_browser: bool,
+    is_authorized: bool,
+    form_error: str = "",
+    prefill_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    slug = str(questionnaire.get("slug") or "").strip()
+    return {
+        "slug": slug,
+        "mode": page_mode,
+        "api_url": f"/api/h5/questionnaires/{slug}",
+        "submit_url": f"/api/h5/questionnaires/{slug}/submit",
+        "diagnostics_url": f"/api/h5/questionnaires/{slug}/client-diagnostics",
+        "submitted_url": _questionnaire_submitted_path(slug),
+        "title": questionnaire.get("title", ""),
+        "description": questionnaire.get("description", ""),
+        "env_notice": env_notice,
+        "oauth_start_url": oauth_start_url if _wechat_oauth_is_configured() else "",
+        "is_wechat_browser": is_wechat_browser,
+        "is_authorized": is_authorized,
+        "initial_questionnaire": questionnaire if page_mode == "questionnaire" else None,
+        "request_hints": _questionnaire_request_hints(),
+        "prefill_fields": _normalize_prefill_fields(questionnaire, prefill_payload),
+        "form_error": form_error,
+    }
+
+
+def _render_questionnaire_form_page(
+    questionnaire: dict[str, Any],
+    *,
+    page_mode: str,
+    env_notice: str,
+    oauth_start_url: str,
+    is_wechat_browser: bool,
+    is_authorized: bool,
+    form_error: str = "",
+    prefill_payload: dict[str, Any] | None = None,
+    status_code: int = 200,
+):
+    page_state = _build_questionnaire_page_state(
+        questionnaire,
+        page_mode=page_mode,
+        env_notice=env_notice,
+        oauth_start_url=oauth_start_url,
+        is_wechat_browser=is_wechat_browser,
+        is_authorized=is_authorized,
+        form_error=form_error,
+        prefill_payload=prefill_payload,
+    )
+    return render_template("questionnaire_h5_page.html", page_state=page_state), status_code
+
+
+def _parse_form_submit_payload(questionnaire: dict[str, Any]) -> dict[str, Any]:
+    payload = _questionnaire_request_hints()
+    answers: dict[str, Any] = {}
+
+    for question in questionnaire.get("questions") or []:
+        question_id = str(question.get("id") or "").strip()
+        if not question_id:
+            continue
+        field_name = f"q_{question_id}"
+        question_type = str(question.get("type") or "").strip()
+        if question_type == "single_choice":
+            raw_value = str(request.form.get(field_name) or "").strip()
+            if raw_value:
+                try:
+                    answers[question_id] = int(raw_value)
+                except ValueError:
+                    answers[question_id] = raw_value
+            continue
+        if question_type == "multi_choice":
+            raw_values = [str(item).strip() for item in request.form.getlist(field_name)]
+            normalized_values = [item for item in raw_values if item]
+            if normalized_values:
+                parsed_values: list[Any] = []
+                for item in normalized_values:
+                    try:
+                        parsed_values.append(int(item))
+                    except ValueError:
+                        parsed_values.append(item)
+                answers[question_id] = parsed_values
+            continue
+        raw_value = str(request.form.get(field_name) or "").strip()
+        if raw_value:
+            answers[question_id] = raw_value
+
+    payload["answers"] = answers
+    return payload
+
+
 def questionnaire_h5_page(slug: str):
     questionnaire = get_public_questionnaire_by_slug(slug)
     if not questionnaire:
@@ -58,22 +202,16 @@ def questionnaire_h5_page(slug: str):
             env_notice = "授权后即可填写问卷信息。"
         else:
             env_notice = "当前为微信环境，但未配置公众号 OAuth，当前页面仅供测试。"
-    page_state = {
-        "slug": slug,
-        "mode": page_mode,
-        "api_url": f"/api/h5/questionnaires/{slug}",
-        "submit_url": f"/api/h5/questionnaires/{slug}/submit",
-        "submitted_url": _questionnaire_submitted_path(slug),
-        "title": questionnaire.get("title", ""),
-        "description": questionnaire.get("description", ""),
-        "env_notice": env_notice,
-        "oauth_start_url": oauth_start_url if _wechat_oauth_is_configured() else "",
-        "is_wechat_browser": is_wechat_browser,
-        "is_authorized": bool(session_identity.get("openid")),
-    }
     return render_template(
         "questionnaire_h5_page.html",
-        page_state=page_state,
+        page_state=_build_questionnaire_page_state(
+            questionnaire,
+            page_mode=page_mode,
+            env_notice=env_notice,
+            oauth_start_url=oauth_start_url,
+            is_wechat_browser=is_wechat_browser,
+            is_authorized=bool(session_identity.get("openid")),
+        ),
     )
 
 
@@ -104,23 +242,40 @@ def public_get_questionnaire(slug: str):
 
 
 def public_submit_questionnaire(slug: str):
+    is_form_submit = not request.is_json
     wechat_gate = _require_wechat_browser_api()
     if wechat_gate is not None:
         return wechat_gate
     questionnaire = get_public_questionnaire_by_slug(slug)
     if not questionnaire:
+        if is_form_submit:
+            abort(404)
         return jsonify({"success": False, "error": "questionnaire not found"}), 404
     payload = request.get_json(silent=True) or {}
+    if is_form_submit:
+        payload = _parse_form_submit_payload(questionnaire)
     request_meta = {
         "ip": (request.headers.get("X-Forwarded-For", "").split(",")[0] or request.remote_addr or "").strip(),
         "user_agent": request.headers.get("User-Agent", ""),
     }
+    is_wechat_browser = _is_wechat_browser()
+    session_identity = _questionnaire_session_identity()
+    oauth_query = {"slug": slug, **_questionnaire_source_params()}
+    oauth_start_url = f"{url_for('api.h5_wechat_oauth_start')}?{urlencode(oauth_query)}"
     try:
         result = submit_questionnaire(slug, payload, request_meta=request_meta)
+        if is_form_submit:
+            target = str(result.get("redirect_url") or "").strip() or _questionnaire_submitted_path(slug)
+            return redirect(target, code=302)
         return jsonify(result)
     except LookupError as exc:
+        if is_form_submit:
+            abort(404)
         return jsonify({"success": False, "error": str(exc)}), 404
     except QuestionnaireAlreadySubmittedError as exc:
+        if is_form_submit:
+            target = str(questionnaire.get("redirect_url") or "").strip() or _questionnaire_submitted_path(slug)
+            return redirect(target, code=302)
         return (
             jsonify(
                 {
@@ -133,7 +288,56 @@ def public_submit_questionnaire(slug: str):
             409,
         )
     except ValueError as exc:
+        if is_form_submit:
+            return _render_questionnaire_form_page(
+                questionnaire,
+                page_mode="questionnaire",
+                env_notice="",
+                oauth_start_url=oauth_start_url,
+                is_wechat_browser=is_wechat_browser,
+                is_authorized=bool(session_identity.get("openid")),
+                form_error=str(exc).strip() or "提交失败，请稍后重试",
+                prefill_payload=payload,
+                status_code=400,
+            )
         return jsonify({"success": False, "error": str(exc)}), 400
+
+
+def public_questionnaire_client_diagnostics(slug: str):
+    questionnaire = get_public_questionnaire_by_slug(slug)
+    if not questionnaire:
+        return jsonify({"ok": False, "error": "questionnaire not found"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    identity = _questionnaire_request_identity()
+    stage = str(payload.get("stage") or "").strip()[:64]
+    message = str(payload.get("message") or "").strip()[:500]
+    extra = payload.get("extra")
+    extra_text = ""
+    if extra not in (None, "", {}, []):
+        try:
+            extra_text = json.dumps(extra, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError):
+            extra_text = str(extra)
+        extra_text = extra_text[:1200]
+
+    _questionnaire_logger().warning(
+        "questionnaire client diagnostics slug=%s questionnaire_id=%s stage=%s message=%s "
+        "respondent_key=%s openid=%s unionid=%s external_userid=%s ua=%s extra=%s",
+        slug,
+        int(questionnaire["id"]),
+        stage or "-",
+        message or "-",
+        _mask_identity_value(identity.get("respondent_key", "")),
+        _mask_identity_value(identity.get("openid", "")),
+        _mask_identity_value(identity.get("unionid", "")),
+        _mask_identity_value(identity.get("external_userid", "")),
+        str(request.headers.get("User-Agent") or "").strip()[:240],
+        extra_text,
+    )
+    return jsonify({"ok": True})
 
 
 def debug_questionnaire_session():
@@ -262,6 +466,7 @@ def register_routes(bp):
     bp.route('/s/<slug>/submitted', methods=['GET'])(questionnaire_h5_submitted)
     bp.route('/api/h5/questionnaires/<slug>', methods=['GET'])(public_get_questionnaire)
     bp.route('/api/h5/questionnaires/<slug>/submit', methods=['POST'])(public_submit_questionnaire)
+    bp.route('/api/h5/questionnaires/<slug>/client-diagnostics', methods=['POST'])(public_questionnaire_client_diagnostics)
     bp.route('/api/debug/questionnaire/session', methods=['GET'])(debug_questionnaire_session)
     bp.route('/api/h5/wechat/oauth/start', methods=['GET'])(h5_wechat_oauth_start)
     bp.route('/api/h5/wechat/oauth/callback', methods=['GET'])(h5_wechat_oauth_callback)

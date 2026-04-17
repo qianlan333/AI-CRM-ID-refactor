@@ -2946,8 +2946,138 @@ def test_questionnaire_h5_page_renders_title_and_description_only_once(client):
     assert 'id="title"' not in body
     assert 'id="desc"' not in body
     assert 'id="questionnaire-form"' in body
+    assert '你的预算' in body
+    assert 'button type="submit" class="submit-btn">提交</button>' in body
     assert f'/api/h5/questionnaires/{slug}' in body
     assert f'/api/h5/questionnaires/{slug}/submit' in body
+
+
+def test_questionnaire_h5_page_supports_html_form_fallback(client):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    questionnaire = create_response.get_json()["questionnaire"]
+    slug = questionnaire["slug"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1 = detail["questions"][0]
+
+    with client.session_transaction() as session:
+        session["questionnaire_h5_identity"] = {
+            "openid": "openid-test-h5-fallback",
+            "respondent_key": "openid-test-h5-fallback",
+            "slug": slug,
+        }
+
+    response = client.get(
+        f"/s/{slug}?external_userid=wm_ext_html_001&campaign_id=cmp-h5-001",
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert f'<form id="questionnaire-form" method="post" action="/api/h5/questionnaires/{slug}/submit">' in body
+    assert 'type="hidden" name="external_userid" value="wm_ext_html_001"' in body
+    assert 'type="hidden" name="campaign_id" value="cmp-h5-001"' in body
+    assert f'name="q_{q1["id"]}"' in body
+
+
+def test_questionnaire_client_diagnostics_logs_payload(client, caplog):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    slug = create_response.get_json()["questionnaire"]["slug"]
+
+    with client.session_transaction() as session:
+        session["questionnaire_h5_identity"] = {
+            "openid": "openid-diagnostics-001",
+            "unionid": "union-diagnostics-001",
+            "respondent_key": "union-diagnostics-001",
+            "slug": slug,
+        }
+
+    response = client.post(
+        f"/api/h5/questionnaires/{slug}/client-diagnostics",
+        json={
+            "stage": "load_failed",
+            "message": "render exploded",
+            "extra": {"questionCount": 3, "apiUrl": f"/api/h5/questionnaires/{slug}"},
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True}
+    assert "questionnaire client diagnostics" in caplog.text
+    assert "load_failed" in caplog.text
+    assert "render exploded" in caplog.text
+
+
+def test_questionnaire_html_form_submit_fallback_redirects(client):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1, q2, q3 = detail["questions"]
+
+    with client.session_transaction() as session:
+        session["questionnaire_h5_identity"] = {
+            "openid": "openid-html-submit-001",
+            "unionid": "union-html-submit-001",
+            "respondent_key": "union-html-submit-001",
+            "slug": questionnaire["slug"],
+        }
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        data={
+            f"q_{q1['id']}": str(q1["options"][0]["id"]),
+            f"q_{q2['id']}": [str(q2["options"][0]["id"]), str(q2["options"][1]["id"])],
+            f"q_{q3['id']}": "鸿蒙微信走表单兜底提交",
+            "external_userid": "wm_html_submit_001",
+            "campaign_id": "cmp-html-submit-001",
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == questionnaire["redirect_url"]
+
+    public_response = client.get(
+        f"/api/h5/questionnaires/{questionnaire['slug']}",
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert public_response.status_code == 409
+    assert public_response.get_json()["error"] == "already_submitted"
+
+
+def test_questionnaire_html_form_submit_validation_error_preserves_values(client):
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1, q2, q3 = detail["questions"]
+
+    with client.session_transaction() as session:
+        session["questionnaire_h5_identity"] = {
+            "openid": "openid-html-invalid-001",
+            "respondent_key": "openid-html-invalid-001",
+            "slug": questionnaire["slug"],
+        }
+
+    response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        data={
+            f"q_{q2['id']}": str(q2["options"][1]["id"]),
+            f"q_{q3['id']}": "这段说明应该被保留",
+            "external_userid": "wm_html_invalid_001",
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 400
+    assert "question &#39;你的预算&#39; is required" in body
+    assert '这段说明应该被保留' in body
+    assert f'name="q_{q2["id"]}"' in body
+    assert f'value="{q2["options"][1]["id"]}"' in body
+    assert "checked" in body
+    assert 'type="hidden" name="external_userid" value="wm_html_invalid_001"' in body
+    assert f'name="q_{q1["id"]}"' in body
 
 
 def test_questionnaire_submit_matches_identity_and_marks_tags(client, app, monkeypatch):

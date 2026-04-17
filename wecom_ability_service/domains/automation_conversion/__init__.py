@@ -69,6 +69,7 @@ from .workflow_definitions import (
 )
 from .workflow_service import (
     activate_conversion_workflow,
+    apply_dashboard_signup_tag,
     create_conversion_profile_segment_template,
     create_conversion_workflow,
     create_conversion_workflow_node,
@@ -154,6 +155,7 @@ __all__ = [
     "apply_router_target_pool",
     "audit_agent_skill_call",
     "activate_conversion_workflow",
+    "apply_dashboard_signup_tag",
     "backfill_missing_child_agent_replies",
     "build_rejected_feedback_clipboard_payload",
     "build_rejected_feedback_payload",

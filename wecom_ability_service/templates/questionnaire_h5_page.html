@@ -255,11 +255,58 @@
       {% endif %}
       {% if page_state.env_notice %}
       <p class="notice">{{ page_state.env_notice }}</p>
-      {% endif %}
+    {% endif %}
     </section>
     <section class="questionnaire-card">
-      <form id="questionnaire-form"></form>
-      <div id="state" class="state"></div>
+      <form id="questionnaire-form" method="post" action="{{ page_state.submit_url }}">
+        {% for key, value in page_state.request_hints.items() %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        {% if page_state.initial_questionnaire %}
+        {% for question in page_state.initial_questionnaire.questions %}
+        {% set field_name = 'q_' ~ question.id %}
+        <section class="question">
+          <h2 class="question-title">
+            {{ question.title }}
+            {% if question.required %}
+            <span class="required">*</span>
+            {% endif %}
+          </h2>
+          {% if question.type == "textarea" %}
+          <textarea
+            name="{{ field_name }}"
+            placeholder="{{ question.placeholder_text or '' }}"
+          >{{ page_state.prefill_fields.get(field_name, '') }}</textarea>
+          {% elif question.type == "mobile" %}
+          <input
+            type="tel"
+            name="{{ field_name }}"
+            inputmode="numeric"
+            autocomplete="tel"
+            placeholder="{{ question.placeholder_text or '请输入手机号' }}"
+            maxlength="20"
+            value="{{ page_state.prefill_fields.get(field_name, '') }}"
+          >
+          {% else %}
+          {% for option in question.options %}
+          <label class="option">
+            <input
+              type="{{ 'radio' if question.type == 'single_choice' else 'checkbox' }}"
+              name="{{ field_name }}"
+              value="{{ option.id }}"
+              {% if question.type == 'single_choice' and page_state.prefill_fields.get(field_name, '') == (option.id|string) %}checked{% endif %}
+              {% if question.type == 'multi_choice' and (option.id|string) in page_state.prefill_fields.get(field_name, []) %}checked{% endif %}
+            >
+            <span>{{ option.option_text }}</span>
+          </label>
+          {% endfor %}
+          {% endif %}
+        </section>
+        {% endfor %}
+        <button type="submit" class="submit-btn">提交</button>
+        {% endif %}
+      </form>
+      <div id="state" class="state{% if page_state.form_error %} error{% endif %}">{{ page_state.form_error or '' }}</div>
     </section>
     {% endif %}
   </div>
@@ -268,6 +315,7 @@
     const slug = pageState.slug;
     const apiUrl = pageState.api_url;
     const submitUrl = pageState.submit_url;
+    const diagnosticsUrl = pageState.diagnostics_url;
     const formEl = document.getElementById('questionnaire-form');
     const stateEl = document.getElementById('state');
     let questionnaire = null;
@@ -278,10 +326,47 @@
     } else {
       window.pageState = pageState;
       const submittedUrl = pageState.submitted_url;
+      const reportedDiagnostics = new Set();
 
       function setState(message, isError = false) {
         stateEl.textContent = message || '';
         stateEl.className = isError ? 'state error' : 'state';
+      }
+
+      function normalizedErrorMessage(error, fallback) {
+        if (!error) return fallback;
+        if (typeof error === 'string') return error;
+        if (error instanceof Error && error.message) return error.message;
+        return fallback;
+      }
+
+      function reportClientIssue(stage, message, extra = {}) {
+        if (!diagnosticsUrl || !stage) return;
+        const normalizedMessage = normalizedErrorMessage(message, '');
+        const dedupeKey = `${stage}:${normalizedMessage}`;
+        if (reportedDiagnostics.has(dedupeKey)) return;
+        reportedDiagnostics.add(dedupeKey);
+
+        const payload = JSON.stringify({
+          stage,
+          message: normalizedMessage,
+          extra,
+        });
+        try {
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon(diagnosticsUrl, new Blob([payload], { type: 'application/json' }));
+            return;
+          }
+        } catch (error) {
+          console.warn('questionnaire diagnostics beacon failed', error);
+        }
+
+        fetch(diagnosticsUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
       }
 
       function collectMetaFromQuery() {
@@ -294,7 +379,17 @@
         }, {});
       }
 
+      function validateQuestionnaire(data) {
+        if (!data || typeof data !== 'object') {
+          throw new Error('问卷数据格式异常');
+        }
+        if (!Array.isArray(data.questions) || !data.questions.length) {
+          throw new Error('问卷题目为空，请稍后重试');
+        }
+      }
+
       function renderQuestionnaire(data) {
+        validateQuestionnaire(data);
         questionnaire = data;
         formEl.innerHTML = '';
 
@@ -353,7 +448,57 @@
         formEl.appendChild(submitButton);
       }
 
+      function hydrateInitialQuestionnaire() {
+        if (!pageState.initial_questionnaire) return false;
+        validateQuestionnaire(pageState.initial_questionnaire);
+        questionnaire = pageState.initial_questionnaire;
+        if (!formEl.querySelector('button[type="submit"]')) {
+          renderQuestionnaire(questionnaire);
+        }
+        return true;
+      }
+
+      function loadQuestionnaire() {
+        try {
+          if (hydrateInitialQuestionnaire()) {
+            if (pageState.form_error) {
+              setState(pageState.form_error, true);
+            }
+            return Promise.resolve();
+          }
+        } catch (error) {
+          reportClientIssue('initial_hydrate_failed', error, {
+            questionCount: (pageState.initial_questionnaire && pageState.initial_questionnaire.questions || []).length,
+          });
+          setState('问卷已返回，但页面渲染失败，请刷新后重试。', true);
+        }
+
+        setState('正在加载问卷...');
+        return fetch(apiUrl)
+          .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+          .then(({ ok, data }) => {
+            if (data && data.error === 'already_submitted') {
+              if (data.redirect_url) {
+                window.location.href = data.redirect_url;
+                return;
+              }
+              window.location.href = submittedUrl;
+              return;
+            }
+            if (!ok || !data.ok) throw new Error(data.error || '问卷不存在');
+            renderQuestionnaire(data.questionnaire);
+            setState('');
+          })
+          .catch((error) => {
+            reportClientIssue('load_failed', error, { apiUrl });
+            setState(`${normalizedErrorMessage(error, '加载失败')}。如果持续异常，请关闭页面后重试。`, true);
+          });
+      }
+
       function collectAnswers() {
+        if (!questionnaire || !Array.isArray(questionnaire.questions)) {
+          throw new Error('问卷尚未完成初始化');
+        }
         const answers = {};
         questionnaire.questions.forEach((question) => {
           const name = `q_${question.id}`;
@@ -409,28 +554,27 @@
           }
           window.location.href = submittedUrl;
         } catch (error) {
-          setState(error.message || '提交失败，请稍后重试', true);
+          reportClientIssue('submit_failed', error, { submitUrl });
+          setState(normalizedErrorMessage(error, '提交失败，请稍后重试'), true);
         } finally {
           submitInFlight = false;
           submitButton.disabled = false;
         }
       });
 
-      fetch(apiUrl)
-        .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
-        .then(({ ok, data }) => {
-          if (data && data.error === 'already_submitted') {
-            if (data.redirect_url) {
-              window.location.href = data.redirect_url;
-              return;
-            }
-            window.location.href = submittedUrl;
-            return;
-          }
-          if (!ok || !data.ok) throw new Error(data.error || '问卷不存在');
-          renderQuestionnaire(data.questionnaire);
-        })
-        .catch((error) => setState(error.message || '加载失败', true));
+      window.addEventListener('error', (event) => {
+        reportClientIssue('window_error', event.error || event.message || 'unknown_error', {
+          filename: event.filename || '',
+          lineno: event.lineno || 0,
+          colno: event.colno || 0,
+        });
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        reportClientIssue('unhandled_rejection', event.reason || 'unknown_rejection');
+      });
+
+      loadQuestionnaire();
     }
   </script>
 </body>

@@ -2834,6 +2834,9 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("scene_value")),
         _normalized_text(payload.get("welcome_message")),
         _db_bool(bool(payload.get("auto_accept_friend"))),
+        _normalized_text(payload.get("entry_tag_id")),
+        _normalized_text(payload.get("entry_tag_name")),
+        _normalized_text(payload.get("entry_tag_group_name")),
         _normalized_text(payload.get("owner_staff_id")),
         _normalized_text(payload.get("status")),
     )
@@ -2847,6 +2850,9 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
                 scene_value = ?,
                 welcome_message = ?,
                 auto_accept_friend = ?,
+                entry_tag_id = ?,
+                entry_tag_name = ?,
+                entry_tag_group_name = ?,
                 owner_staff_id = ?,
                 status = ?,
                 updated_at = CURRENT_TIMESTAMP
@@ -2860,6 +2866,9 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
                 _normalized_text(payload.get("scene_value")),
                 _normalized_text(payload.get("welcome_message")),
                 _db_bool(bool(payload.get("auto_accept_friend"))),
+                _normalized_text(payload.get("entry_tag_id")),
+                _normalized_text(payload.get("entry_tag_name")),
+                _normalized_text(payload.get("entry_tag_group_name")),
                 _normalized_text(payload.get("owner_staff_id")),
                 _normalized_text(payload.get("status")),
                 int(existing["id"]),
@@ -2876,12 +2885,15 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
             scene_value,
             welcome_message,
             auto_accept_friend,
+            entry_tag_id,
+            entry_tag_name,
+            entry_tag_group_name,
             owner_staff_id,
             status,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         params,
