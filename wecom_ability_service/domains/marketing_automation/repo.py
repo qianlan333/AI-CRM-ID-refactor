@@ -1376,7 +1376,7 @@ def get_latest_class_user_restore_status(external_userid: str) -> dict[str, Any]
         FROM class_user_status_history
         WHERE external_userid = ?
           AND old_signup_status <> ''
-          AND old_signup_status NOT LIKE 'signed_%'
+          AND old_signup_status NOT LIKE 'signed_%%'
         ORDER BY id DESC
         LIMIT 1
         """,

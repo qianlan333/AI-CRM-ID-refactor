@@ -30,7 +30,12 @@ from ..automation_state.state_defs import (
     POOL_NEW_USER as SHARED_POOL_NEW_USER,
     POOL_SILENT as SHARED_POOL_SILENT,
 )
-from ..marketing_automation.service import get_customer_marketing_profile, get_signup_conversion_config, save_signup_conversion_config
+from ..marketing_automation.service import (
+    evaluate_customer_marketing_state,
+    get_customer_marketing_profile,
+    get_signup_conversion_config,
+    save_signup_conversion_config,
+)
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail, list_available_wecom_tags, list_questionnaires
 from ..tags import repo as tags_repo
@@ -3354,6 +3359,27 @@ def _mutate_member(
     }
 
 
+def _refresh_member_conversion_truth(*, member: dict[str, Any], operator_id: str, action: str, source: str) -> dict[str, Any]:
+    normalized_external_contact_id = _normalized_text(member.get("external_contact_id"))
+    if not normalized_external_contact_id:
+        return _serialize_member(member)
+    evaluate_customer_marketing_state(
+        external_userid=normalized_external_contact_id,
+        state_payload_overrides={
+            "manual_conversion_operator": _normalized_text(operator_id) or "crm_console",
+            "manual_conversion_source": _normalized_text(source) or "automation_conversion",
+            "manual_conversion_action": _normalized_text(action),
+        },
+        history_change_reason="unmark_enrolled" if _normalized_text(action) == "unmark_won" else _normalized_text(action),
+    )
+    refreshed = repo.get_member_by_id(int(member.get("id") or 0)) or repo.get_member_by_external_contact_id(normalized_external_contact_id) or member
+    from .workflow_runtime import sync_conversion_member_audience
+
+    sync_conversion_member_audience(refreshed)
+    get_db().commit()
+    return repo.get_member_by_id(int(refreshed.get("id") or 0)) or refreshed
+
+
 def apply_router_target_pool(
     *,
     external_contact_id: str = "",
@@ -3507,13 +3533,27 @@ def unmark_won(*, external_contact_id: str = "", phone: str = "", operator_id: s
             current["last_active_pool"] = _normalized_text(current.get("current_pool"))
         return current, "", False
 
-    return _mutate_member(
+    normalized_operator_id = _normalized_text(operator_id) or "crm_console"
+    result = _mutate_member(
         external_contact_id=external_contact_id,
         phone=phone,
         action="unmark_won",
-        operator_id=_normalized_text(operator_id) or "crm_console",
+        operator_id=normalized_operator_id,
         mutate=mutate,
     )
+    refreshed = _refresh_member_conversion_truth(
+        member=dict(result.get("member") or {}),
+        operator_id=normalized_operator_id,
+        action="unmark_won",
+        source="automation_conversion_unmark_won",
+    )
+    serialized = _serialize_member(refreshed)
+    result["member"] = serialized
+    result["detail"] = get_member_detail(
+        external_contact_id=serialized.get("external_contact_id", ""),
+        phone=serialized.get("phone", ""),
+    )
+    return result
 
 
 def _build_openclaw_payload(member: dict[str, Any]) -> dict[str, Any]:

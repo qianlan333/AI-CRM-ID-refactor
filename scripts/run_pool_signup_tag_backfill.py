@@ -13,13 +13,16 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from wecom_ability_service import create_app
+from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.automation_conversion import repo as automation_repo
 from wecom_ability_service.domains.automation_conversion.local_projection import POOL_TO_STAGE_DEF
+from wecom_ability_service.domains.automation_conversion.workflow_runtime import sync_conversion_member_audience
 from wecom_ability_service.domains.class_user.service import (
     apply_class_user_status_change,
     get_class_user_status_current,
     update_class_user_status_sync_result,
 )
+from wecom_ability_service.domains.marketing_automation.service import evaluate_customer_marketing_state
 from wecom_ability_service.domains.questionnaire.service import list_available_wecom_tags
 from wecom_ability_service.domains.tags.repo import (
     list_contact_tag_ids_for_user,
@@ -182,6 +185,29 @@ def _build_member_snapshot(member: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _sync_member_marketing_truth(*, external_userid: str, operator: str) -> None:
+    normalized_external_userid = _text(external_userid)
+    if not normalized_external_userid:
+        return
+    current_status = get_class_user_status_current(normalized_external_userid) or {}
+    current_signup_status = _text(current_status.get("signup_status"))
+    history_reason = "mark_enrolled" if current_signup_status.startswith("signed_") else "unmark_enrolled"
+    evaluate_customer_marketing_state(
+        external_userid=normalized_external_userid,
+        automation_key="signup_conversion_v1",
+        state_payload_overrides={
+            "manual_conversion_operator": _text(operator),
+            "manual_conversion_source": "pool_signup_tag_backfill",
+            "manual_conversion_action": "sync_signup_status",
+        },
+        history_change_reason=history_reason,
+    )
+    member_row = automation_repo.get_member_by_external_contact_id(normalized_external_userid)
+    if member_row:
+        sync_conversion_member_audience(dict(member_row))
+        get_db().commit()
+
+
 def _apply_member_signup_tag(
     *,
     member: dict[str, Any],
@@ -201,6 +227,10 @@ def _apply_member_signup_tag(
         customer_name_snapshot=snapshot["customer_name_snapshot"],
         owner_userid_snapshot=snapshot["owner_userid_snapshot"] or owner_userid,
         mobile_snapshot=snapshot["mobile_snapshot"],
+    )
+    _sync_member_marketing_truth(
+        external_userid=external_userid,
+        operator=operator or owner_userid,
     )
 
     sync_status = "success"

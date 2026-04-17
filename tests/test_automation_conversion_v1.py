@@ -3202,6 +3202,266 @@ def test_unmark_won_falls_back_when_last_active_pool_missing(app, client, monkey
         }
 
 
+def test_unmark_won_recomputes_marketing_state_and_current_audience(app, client, monkeypatch):
+    _seed_contact(
+        app,
+        external_userid="wm_restore_truth_001",
+        mobile="13800005004",
+        owner_userid="sales_restore",
+        customer_name="成交回退客户",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_restore_truth_001",
+        phone="13800005004",
+        owner_staff_id="sales_restore",
+        in_pool=0,
+        current_pool="won",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+        last_active_pool="new_user",
+    )
+    _patch_live_context(
+        monkeypatch,
+        external_contact_id="wm_restore_truth_001",
+        phone="13800005004",
+        owner_staff_id="sales_restore",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO class_user_status_current (
+                external_userid, signup_status, signup_label_name, customer_name_snapshot, owner_userid_snapshot,
+                mobile_snapshot, set_by_userid, set_at, wecom_tag_sync_status, wecom_tag_sync_error, status_flags_json
+            )
+            VALUES (?, 'lead', '报名引流品', '成交回退客户', 'sales_restore', '13800005004', 'tester', CURRENT_TIMESTAMP, 'success', '', '{}')
+            """,
+            ("wm_restore_truth_001",),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_marketing_state_current (
+                external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                eligible_for_conversion, lifecycle_status, last_activation_at, last_conversion_marked_at,
+                last_message_at, state_payload_json, created_at, updated_at
+            )
+            VALUES (?, 'signup_conversion_v1', 'converted', 'enrolled', 0, 1, 0, 'converted', '', ?, '', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "wm_restore_truth_001",
+                "2026-03-24 10:54:10",
+                json.dumps({"converted_signup_status": "signed_3999"}, ensure_ascii=False),
+            ),
+        )
+        db.execute(
+            """
+            UPDATE automation_member
+            SET current_audience_code = 'converted',
+                current_audience_entered_at = '2026-03-24 10:54:10'
+            WHERE external_contact_id = ?
+            """,
+            ("wm_restore_truth_001",),
+        )
+        member_id = db.execute(
+            "SELECT id FROM automation_member WHERE external_contact_id = ?",
+            ("wm_restore_truth_001",),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, exited_at, is_current,
+                entry_source, entry_reason, source_snapshot_json, created_at, updated_at
+            )
+            VALUES (?, 'converted', '2026-03-24 10:54:10', '', 1, 'marketing_state', 'seed', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (member_id,),
+        )
+        db.commit()
+
+    restored = client.post(
+        "/api/admin/automation-conversion/member/unmark-won",
+        json={"external_contact_id": "wm_restore_truth_001", "operator": "tester"},
+    )
+
+    assert restored.status_code == 200
+    payload = restored.get_json()
+    assert payload["member"]["current_pool"] == "new_user"
+    assert payload["member"]["current_audience_code"] == "pending_questionnaire"
+
+    with app.app_context():
+        db = get_db()
+        member = db.execute(
+            """
+            SELECT current_pool, in_pool, last_active_pool, current_audience_code
+            FROM automation_member
+            WHERE external_contact_id = ?
+            """,
+            ("wm_restore_truth_001",),
+        ).fetchone()
+        marketing = db.execute(
+            """
+            SELECT main_stage, sub_stage, converted, lifecycle_status, last_conversion_marked_at
+            FROM customer_marketing_state_current
+            WHERE external_userid = ?
+            """,
+            ("wm_restore_truth_001",),
+        ).fetchone()
+        current_entry = db.execute(
+            """
+            SELECT audience_code, is_current
+            FROM automation_member_audience_entry
+            WHERE member_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (member_id,),
+        ).fetchone()
+
+    assert dict(member) == {
+        "current_pool": "new_user",
+        "in_pool": 1,
+        "last_active_pool": "new_user",
+        "current_audience_code": "pending_questionnaire",
+    }
+    assert marketing["main_stage"] == "pool"
+    assert marketing["sub_stage"] == "new_user"
+    assert bool(marketing["converted"]) is False
+    assert marketing["lifecycle_status"] == "pool"
+    assert marketing["last_conversion_marked_at"] == ""
+    assert dict(current_entry) == {"audience_code": "pending_questionnaire", "is_current": 1}
+
+
+def test_pool_signup_tag_backfill_recomputes_marketing_state_for_non_enrolled_status(app, monkeypatch):
+    import scripts.run_pool_signup_tag_backfill as backfill_script
+
+    _seed_contact(
+        app,
+        external_userid="wm_backfill_truth_001",
+        mobile="13800005005",
+        owner_userid="sales_restore",
+        customer_name="回填回退客户",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_backfill_truth_001",
+        phone="13800005005",
+        owner_staff_id="sales_restore",
+        in_pool=1,
+        current_pool="new_user",
+        follow_type="normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_result="unknown",
+    )
+
+    class _StubClient:
+        def mark_external_contact_tags(self, *, external_userid: str, follow_user_userid: str, add_tags: list[str], remove_tags: list[str]) -> dict[str, object]:
+            return {"ok": True, "errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setattr(backfill_script, "get_app_runtime_client", lambda: _StubClient())
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO class_user_status_current (
+                external_userid, signup_status, signup_label_name, customer_name_snapshot, owner_userid_snapshot,
+                mobile_snapshot, set_by_userid, set_at, wecom_tag_sync_status, wecom_tag_sync_error, status_flags_json
+            )
+            VALUES (?, 'signed_3999', '已报名3999', '回填回退客户', 'sales_restore', '13800005005', 'tester', CURRENT_TIMESTAMP, 'success', '', '{}')
+            """,
+            ("wm_backfill_truth_001",),
+        )
+        db.execute(
+            """
+            INSERT INTO customer_marketing_state_current (
+                external_userid, automation_key, main_stage, sub_stage, activated, converted,
+                eligible_for_conversion, lifecycle_status, last_activation_at, last_conversion_marked_at,
+                last_message_at, state_payload_json, created_at, updated_at
+            )
+            VALUES (?, 'signup_conversion_v1', 'converted', 'enrolled', 0, 1, 0, 'converted', '', ?, '', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "wm_backfill_truth_001",
+                "2026-03-24 10:54:10",
+                json.dumps({"converted_signup_status": "signed_3999"}, ensure_ascii=False),
+            ),
+        )
+        db.execute(
+            """
+            UPDATE automation_member
+            SET current_audience_code = 'converted',
+                current_audience_entered_at = '2026-03-24 10:54:10'
+            WHERE external_contact_id = ?
+            """,
+            ("wm_backfill_truth_001",),
+        )
+        member_id = db.execute(
+            "SELECT id FROM automation_member WHERE external_contact_id = ?",
+            ("wm_backfill_truth_001",),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, exited_at, is_current,
+                entry_source, entry_reason, source_snapshot_json, created_at, updated_at
+            )
+            VALUES (?, 'converted', '2026-03-24 10:54:10', '', 1, 'marketing_state', 'seed', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (member_id,),
+        )
+        db.commit()
+
+        result = backfill_script._apply_member_signup_tag(
+            member={
+                "external_contact_id": "wm_backfill_truth_001",
+                "owner_staff_id": "sales_restore",
+                "phone": "13800005005",
+            },
+            operator="tester",
+            signup_status="lead",
+            target_tag={"tag_id": "tag-lead", "tag_name": "报名引流品"},
+            remove_tag_ids=["tag-paid"],
+        )
+
+        current_status = db.execute(
+            "SELECT signup_status, wecom_tag_sync_status FROM class_user_status_current WHERE external_userid = ?",
+            ("wm_backfill_truth_001",),
+        ).fetchone()
+        marketing = db.execute(
+            """
+            SELECT main_stage, sub_stage, converted, lifecycle_status, last_conversion_marked_at
+            FROM customer_marketing_state_current
+            WHERE external_userid = ?
+            """,
+            ("wm_backfill_truth_001",),
+        ).fetchone()
+        member = db.execute(
+            """
+            SELECT current_audience_code
+            FROM automation_member
+            WHERE external_contact_id = ?
+            """,
+            ("wm_backfill_truth_001",),
+        ).fetchone()
+
+    assert result["sync_status"] == "success"
+    assert dict(current_status) == {"signup_status": "lead", "wecom_tag_sync_status": "success"}
+    assert marketing["main_stage"] == "pool"
+    assert marketing["sub_stage"] == "new_user"
+    assert bool(marketing["converted"]) is False
+    assert marketing["lifecycle_status"] == "pool"
+    assert marketing["last_conversion_marked_at"] == ""
+    assert dict(member) == {"current_audience_code": "pending_questionnaire"}
+
+
 def test_generate_default_channel_generates_real_channel_via_wecom_provider(app, client, monkeypatch):
     captured = {}
     questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=601)
