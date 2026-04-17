@@ -11,7 +11,11 @@ import requests
 from flask import current_app
 
 from ...db import get_db
+from ...infra.wecom_runtime import get_app_runtime_client
 from ...infra.settings import get_setting
+from ...wecom_client import WeComClientError
+from ..tags import repo as tags_repo
+from ..tags import service as tags_service
 from ..user_ops import page_service as user_ops_page_service
 from . import repo as orchestration_repo, workflow_repo
 from .workflow_definitions import (
@@ -93,6 +97,7 @@ _NODE_CONTENT_META_KEY = "_automation_conversion_node_meta"
 _BAZHUAYU_DEFAULT_WEBHOOK_URL = "https://api-rpa.bazhuayu.com/api/v1/bots/webhooks/69cc9c20612e78c4472b2f4d/invoke"
 _BAZHUAYU_DEFAULT_SIGNING_SECRET = "mPwS+MOxF0O9dyED6z5LlA=="
 _BAZHUAYU_DEFAULT_TIMEOUT_SECONDS = 15
+_OVERVIEW_SIGNUP_TAG_NAME = "报名引流品"
 
 
 def _normalized_text(value: Any) -> str:
@@ -1575,6 +1580,320 @@ def _build_workflow_execution_summary_item(row: dict[str, Any]) -> dict[str, Any
     }
 
 
+def _conversion_audience_meta_map() -> dict[str, dict[str, str]]:
+    return {
+        _normalized_text(item.get("audience_code")): {
+            "label": _normalized_text(item.get("label")),
+            "description": _normalized_text(item.get("description")),
+        }
+        for item in list_supported_conversion_audiences()
+    }
+
+
+def _activation_status_label(value: Any) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "unknown": "未知",
+        "inactive": "未激活",
+        "active": "已激活",
+    }.get(normalized, normalized or "未知")
+
+
+def _questionnaire_status_label(value: Any) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "pending": "待提交",
+        "submitted": "已提交",
+    }.get(normalized, normalized or "待提交")
+
+
+def _questionnaire_result_label(value: Any) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "unknown": "未知",
+        "normal": "普通跟进",
+        "focus": "重点跟进",
+    }.get(normalized, normalized or "未知")
+
+
+def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
+    normalized_count = max(0, int(message_count or 0))
+    for item in list_supported_behavior_tiers():
+        min_value = item.get("min_value")
+        max_value = item.get("max_value")
+        if min_value is not None and normalized_count < int(min_value):
+            continue
+        if max_value is not None and normalized_count > int(max_value):
+            continue
+        return dict(item)
+    return dict(list_supported_behavior_tiers()[0])
+
+
+def _latest_enabled_profile_segment_template_bundle() -> dict[str, Any]:
+    template = next(iter(workflow_repo.list_profile_segment_template_rows(enabled_only=True)), None)
+    if not template:
+        return {}
+    return _build_profile_segment_template_bundle(template)
+
+
+def _resolve_profile_segment_for_member(
+    *,
+    member: dict[str, Any],
+    profile_segment_template_bundle: dict[str, Any],
+) -> dict[str, Any]:
+    template = dict(profile_segment_template_bundle.get("template") or {})
+    questionnaire_id = int(template.get("questionnaire_id") or 0)
+    question_id = int(template.get("segmentation_question_id") or 0)
+    if questionnaire_id <= 0 or question_id <= 0:
+        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "profile_segment_template_missing"}
+    submission = workflow_repo.get_latest_questionnaire_submission_row(
+        questionnaire_id=questionnaire_id,
+        external_contact_ids=[_normalized_text(member.get("external_contact_id"))],
+        phone=_normalized_text(member.get("phone")),
+    )
+    if not submission:
+        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "questionnaire_submission_missing"}
+    answer = next(
+        (
+            item
+            for item in workflow_repo.list_questionnaire_submission_answer_rows(int(submission.get("id") or 0))
+            if int(item.get("question_id") or 0) == question_id
+        ),
+        None,
+    )
+    if not answer:
+        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "segmentation_question_answer_missing"}
+    try:
+        selected_option_ids = {int(option_id) for option_id in json.loads(_normalized_text(answer.get("selected_option_ids")) or "[]")}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        selected_option_ids = set()
+    if not selected_option_ids:
+        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "selected_option_ids_empty"}
+    matched_categories = [
+        {
+            "category_key": _normalized_text(category.get("category_key")),
+            "category_name": _normalized_text(category.get("category_name")),
+        }
+        for category in profile_segment_template_bundle.get("categories") or []
+        if set(int(option_id) for option_id in (category.get("option_ids") or [])) & selected_option_ids
+    ]
+    if len(matched_categories) != 1:
+        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "multiple_or_zero_profile_categories"}
+    matched_category = dict(matched_categories[0])
+    return {
+        "matched": True,
+        "segment_key": _normalized_text(matched_category.get("category_key")),
+        "segment_label": _normalized_text(matched_category.get("category_name")),
+        "reason": "",
+    }
+
+
+def _build_dashboard_member_detail_item(
+    row: dict[str, Any],
+    *,
+    message_counts: dict[str, int],
+    profile_segment_template_bundle: dict[str, Any],
+    audience_meta_map: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    member = dict(row.get("member") or {})
+    audience_code = _normalized_text(member.get("current_audience_code") or row.get("audience_code"))
+    external_contact_id = _normalized_text(member.get("external_contact_id"))
+    message_count = int(message_counts.get(external_contact_id) or 0)
+    behavior_tier = _behavior_tier_for_count(message_count)
+    profile_segment = _resolve_profile_segment_for_member(
+        member=member,
+        profile_segment_template_bundle=profile_segment_template_bundle,
+    )
+    return {
+        "member_id": int(member.get("id") or 0) or None,
+        "external_contact_id": external_contact_id,
+        "phone": _normalized_text(member.get("phone")),
+        "owner_staff_id": _normalized_text(member.get("owner_staff_id")),
+        "audience_code": audience_code,
+        "audience_label": _normalized_text((audience_meta_map.get(audience_code) or {}).get("label")),
+        "activation_status": _normalized_text(member.get("activation_status")),
+        "activation_status_label": _activation_status_label(member.get("activation_status")),
+        "questionnaire_status": _normalized_text(member.get("questionnaire_status")),
+        "questionnaire_status_label": _questionnaire_status_label(member.get("questionnaire_status")),
+        "questionnaire_result": _normalized_text(member.get("questionnaire_result")),
+        "questionnaire_result_label": _questionnaire_result_label(member.get("questionnaire_result")),
+        "profile_segment_key": _normalized_text(profile_segment.get("segment_key")),
+        "profile_segment_label": _normalized_text(profile_segment.get("segment_label")),
+        "behavior_segment_key": _normalized_text(behavior_tier.get("tier_code")),
+        "behavior_segment_label": _normalized_text(behavior_tier.get("label")),
+        "conversation_count": message_count,
+        "entered_at": _normalized_text(row.get("entered_at") or member.get("current_audience_entered_at")),
+    }
+
+
+def _build_dashboard_audience_member_details() -> dict[str, Any]:
+    audience_definitions = list_supported_conversion_audiences()
+    audience_meta_map = _conversion_audience_meta_map()
+    rows_by_audience: dict[str, list[dict[str, Any]]] = {}
+    external_contact_ids: list[str] = []
+    for definition in audience_definitions:
+        audience_code = _normalized_text(definition.get("audience_code"))
+        rows = workflow_repo.list_current_member_audience_rows(audience_code)
+        rows_by_audience[audience_code] = rows
+        external_contact_ids.extend(
+            _normalized_text((row.get("member") or {}).get("external_contact_id"))
+            for row in rows
+            if _normalized_text((row.get("member") or {}).get("external_contact_id"))
+        )
+    message_counts = workflow_repo.get_archived_customer_message_counts(external_contact_ids)
+    profile_segment_template_bundle = _latest_enabled_profile_segment_template_bundle()
+    groups: list[dict[str, Any]] = []
+    total = 0
+    for definition in audience_definitions:
+        audience_code = _normalized_text(definition.get("audience_code"))
+        rows = rows_by_audience.get(audience_code) or []
+        items = [
+            _build_dashboard_member_detail_item(
+                row,
+                message_counts=message_counts,
+                profile_segment_template_bundle=profile_segment_template_bundle,
+                audience_meta_map=audience_meta_map,
+            )
+            for row in rows
+        ]
+        total += len(items)
+        groups.append(
+            {
+                "audience_code": audience_code,
+                "audience_label": _normalized_text(definition.get("label")),
+                "audience_description": _normalized_text(definition.get("description")),
+                "count": len(items),
+                "items": items,
+            }
+        )
+    template = dict(profile_segment_template_bundle.get("template") or {})
+    return {
+        "groups": groups,
+        "total": total,
+        "profile_segment_template": {
+            "id": int(template.get("id") or 0) or None,
+            "template_name": _normalized_text(template.get("template_name")),
+            "enabled": bool(template),
+        },
+    }
+
+
+def apply_dashboard_signup_tag(*, operator_id: str = "") -> dict[str, Any]:
+    signup_rules = list(tags_service.get_signup_tag_rules_config().get("items") or [])
+    target_rule = next(
+        (
+            dict(item)
+            for item in signup_rules
+            if _normalized_text(item.get("tag_name")) == _OVERVIEW_SIGNUP_TAG_NAME
+            and _normalized_text(item.get("tag_id"))
+        ),
+        None,
+    )
+    if not target_rule:
+        raise ValueError(f"未找到已启用的报名标签规则：{_OVERVIEW_SIGNUP_TAG_NAME}")
+    target_tag_id = _normalized_text(target_rule.get("tag_id"))
+    target_tag_name = _normalized_text(target_rule.get("tag_name")) or _OVERVIEW_SIGNUP_TAG_NAME
+    remove_tag_ids = sorted(
+        {
+            _normalized_text(item.get("tag_id"))
+            for item in signup_rules
+            if _normalized_text(item.get("tag_id")) and _normalized_text(item.get("tag_id")) != target_tag_id
+        }
+    )
+    deduped_targets: list[dict[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for definition in list_supported_conversion_audiences():
+        audience_code = _normalized_text(definition.get("audience_code"))
+        for row in workflow_repo.list_current_member_audience_rows(audience_code):
+            member = dict(row.get("member") or {})
+            external_contact_id = _normalized_text(member.get("external_contact_id"))
+            owner_staff_id = _normalized_text(member.get("owner_staff_id"))
+            if not external_contact_id or not owner_staff_id:
+                deduped_targets.append(
+                    {
+                        "audience_code": audience_code,
+                        "external_contact_id": external_contact_id,
+                        "owner_staff_id": owner_staff_id,
+                        "skipped_reason": "missing_external_or_owner",
+                    }
+                )
+                continue
+            pair = (external_contact_id, owner_staff_id)
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            deduped_targets.append(
+                {
+                    "audience_code": audience_code,
+                    "external_contact_id": external_contact_id,
+                    "owner_staff_id": owner_staff_id,
+                }
+            )
+    client = get_app_runtime_client()
+    attempted = 0
+    success_count = 0
+    skipped_count = 0
+    failed: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    for item in deduped_targets:
+        external_contact_id = _normalized_text(item.get("external_contact_id"))
+        owner_staff_id = _normalized_text(item.get("owner_staff_id"))
+        if not external_contact_id or not owner_staff_id:
+            skipped_count += 1
+            skipped.append(
+                {
+                    "audience_code": _normalized_text(item.get("audience_code")),
+                    "external_contact_id": external_contact_id,
+                    "owner_staff_id": owner_staff_id,
+                    "reason": _normalized_text(item.get("skipped_reason")) or "missing_external_or_owner",
+                }
+            )
+            continue
+        attempted += 1
+        try:
+            client.mark_external_contact_tags(
+                external_userid=external_contact_id,
+                follow_user_userid=owner_staff_id,
+                add_tags=[target_tag_id],
+                remove_tags=remove_tag_ids,
+            )
+            tags_repo.save_tag_snapshot(
+                owner_staff_id,
+                external_contact_id,
+                [target_tag_id],
+                {target_tag_id: target_tag_name},
+            )
+            if remove_tag_ids:
+                tags_repo.remove_tag_snapshot(owner_staff_id, external_contact_id, remove_tag_ids)
+            success_count += 1
+        except (WeComClientError, AttributeError, ValueError) as exc:
+            failed.append(
+                {
+                    "audience_code": _normalized_text(item.get("audience_code")),
+                    "external_contact_id": external_contact_id,
+                    "owner_staff_id": owner_staff_id,
+                    "error": str(exc),
+                }
+            )
+    return {
+        "ok": not failed,
+        "operator_id": _normalized_text(operator_id),
+        "target_tag_id": target_tag_id,
+        "target_tag_name": target_tag_name,
+        "remove_tag_ids": remove_tag_ids,
+        "attempted_count": attempted,
+        "success_count": success_count,
+        "skipped_count": skipped_count,
+        "failed_count": len(failed),
+        "failed": failed,
+        "skipped": skipped,
+        "message": (
+            f"已处理 {attempted} 个用户，成功打标 {success_count} 个，"
+            f"跳过 {skipped_count} 个，失败 {len(failed)} 个。"
+        ),
+    }
+
+
 def get_conversion_dashboard_payload() -> dict[str, Any]:
     audience_counts = workflow_repo.get_current_audience_member_counts()
     workflow_execution_summary = [
@@ -1589,6 +1908,7 @@ def get_conversion_dashboard_payload() -> dict[str, Any]:
             "total_count": sum(int(value or 0) for value in audience_counts.values()),
         },
         "active_workflow_count": workflow_repo.count_workflow_rows(status=WORKFLOW_STATUS_ACTIVE),
+        "audience_member_details": _build_dashboard_audience_member_details(),
         "task_execution_summary": {
             "items": workflow_execution_summary,
             "total": len(workflow_execution_summary),

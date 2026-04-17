@@ -538,6 +538,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             scene_value TEXT NOT NULL DEFAULT '',
             welcome_message TEXT NOT NULL DEFAULT '',
             auto_accept_friend INTEGER NOT NULL DEFAULT 0,
+            entry_tag_id TEXT NOT NULL DEFAULT '',
+            entry_tag_name TEXT NOT NULL DEFAULT '',
+            entry_tag_group_name TEXT NOT NULL DEFAULT '',
             owner_staff_id TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'inactive',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -550,6 +553,12 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         db.execute("ALTER TABLE automation_channel ADD COLUMN welcome_message TEXT NOT NULL DEFAULT ''")
     if "auto_accept_friend" not in channel_columns:
         db.execute("ALTER TABLE automation_channel ADD COLUMN auto_accept_friend INTEGER NOT NULL DEFAULT 0")
+    if "entry_tag_id" not in channel_columns:
+        db.execute("ALTER TABLE automation_channel ADD COLUMN entry_tag_id TEXT NOT NULL DEFAULT ''")
+    if "entry_tag_name" not in channel_columns:
+        db.execute("ALTER TABLE automation_channel ADD COLUMN entry_tag_name TEXT NOT NULL DEFAULT ''")
+    if "entry_tag_group_name" not in channel_columns:
+        db.execute("ALTER TABLE automation_channel ADD COLUMN entry_tag_group_name TEXT NOT NULL DEFAULT ''")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS automation_member (
@@ -2307,6 +2316,24 @@ def _init_postgres(db) -> None:
         """
         ALTER TABLE IF EXISTS automation_channel
         ADD COLUMN IF NOT EXISTS auto_accept_friend BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_channel
+        ADD COLUMN IF NOT EXISTS entry_tag_id TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_channel
+        ADD COLUMN IF NOT EXISTS entry_tag_name TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_channel
+        ADD COLUMN IF NOT EXISTS entry_tag_group_name TEXT NOT NULL DEFAULT ''
         """
     )
     db.execute(

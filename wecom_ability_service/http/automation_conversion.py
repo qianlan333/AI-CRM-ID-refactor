@@ -6,6 +6,7 @@ from flask import jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
     activate_conversion_workflow,
+    apply_dashboard_signup_tag,
     build_rejected_feedback_clipboard_payload,
     create_agent_config,
     create_conversion_profile_segment_template,
@@ -247,6 +248,7 @@ def _build_overview_workspace() -> dict[str, object]:
     return {
         "api_urls": {
             "dashboard": url_for("api.api_admin_automation_conversion_dashboard"),
+            "apply_signup_tag": url_for("api.admin_automation_conversion_apply_overview_signup_tag"),
             "message_activity_sync_run": url_for("api.admin_automation_conversion_run_message_activity_sync"),
             "reply_monitor_capture": url_for("api.admin_automation_conversion_reply_monitor_capture"),
             "reply_monitor_run_due": url_for("api.admin_automation_conversion_reply_monitor_run_due"),
@@ -291,6 +293,7 @@ def _build_agent_config_workspace() -> dict[str, object]:
             "agent_publish_base": url_for("api.api_admin_automation_conversion_agent_publish", agent_code="__AGENT_CODE__"),
             "default_channel_settings": url_for("api.api_admin_automation_conversion_default_channel_settings"),
             "default_channel_generate_qr": url_for("api.api_admin_automation_conversion_default_channel_generate_qr"),
+            "wecom_tags": "/api/admin/wecom/tags",
             "model_settings": url_for("api.api_admin_automation_conversion_model_settings"),
             "model_settings_test": url_for("api.api_admin_automation_conversion_model_settings_test"),
             "profile_segment_templates": url_for("api.api_admin_automation_conversion_profile_segment_templates", enabled_only=0),
@@ -630,6 +633,26 @@ def admin_automation_conversion_run_message_activity_sync():
             url_for("api.admin_automation_conversion_overview", message_activity_sync=1),
             code=302,
         )
+
+
+def admin_automation_conversion_apply_overview_signup_tag():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": action_token_error}), 400
+        return _render_overview_page(page_error=action_token_error)
+    try:
+        result = apply_dashboard_signup_tag(operator_id=_operator_from_request())
+    except ValueError as exc:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return _render_overview_page(page_error=str(exc))
+    status_code = 200 if result.get("ok") else 502
+    if _wants_json_response():
+        return jsonify(result), status_code
+    if result.get("ok"):
+        return redirect(url_for("api.admin_automation_conversion_overview"), code=302)
+    return _render_overview_page(page_error=str(result.get("message") or "批量打标失败"))
     if result.get("status") == "not_configured":
         missing_keys = "、".join(result.get("missing_keys") or [])
         return _render_overview_page(page_error=f"消息库尚未配置，请先补齐 {missing_keys}")
@@ -1232,6 +1255,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/flow-design", methods=["GET"])(admin_automation_conversion_flow_design)
     bp.route("/admin/automation-conversion/member-ops", methods=["GET"])(admin_automation_conversion_member_ops)
     bp.route("/admin/automation-conversion/run-center", methods=["GET"])(admin_automation_conversion_run_center)
+    bp.route("/admin/automation-conversion/overview/signup-tag/apply", methods=["POST"])(admin_automation_conversion_apply_overview_signup_tag)
     bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/reply-monitor/toggle", methods=["POST"])(admin_automation_conversion_reply_monitor_toggle)
     bp.route("/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(admin_automation_conversion_reply_monitor_capture)

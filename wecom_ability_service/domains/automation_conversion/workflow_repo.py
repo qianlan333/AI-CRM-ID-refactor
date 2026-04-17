@@ -1283,6 +1283,27 @@ def count_archived_customer_messages(external_userid: str) -> int:
     return int(row.get("total") or 0)
 
 
+def get_archived_customer_message_counts(external_userids: list[str]) -> dict[str, int]:
+    normalized_userids = [_normalized_text(item) for item in external_userids if _normalized_text(item)]
+    if not normalized_userids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_userids)
+    rows = _fetchall_dicts(
+        f"""
+        SELECT external_userid, COUNT(*) AS total
+        FROM archived_messages
+        WHERE external_userid IN ({placeholders})
+          AND sender = external_userid
+        GROUP BY external_userid
+        """,
+        tuple(normalized_userids),
+    )
+    counts = {_normalized_text(row.get("external_userid")): int(row.get("total") or 0) for row in rows}
+    for external_userid in normalized_userids:
+        counts.setdefault(external_userid, 0)
+    return counts
+
+
 def list_workflow_execution_rows(*, workflow_id: int | None = None, node_id: int | None = None, limit: int = 20) -> list[dict[str, Any]]:
     sql = """
         SELECT *
