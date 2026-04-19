@@ -1112,7 +1112,7 @@ def validate_questionnaire_answers(questionnaire: dict[str, Any], answers: Any) 
     return validated
 
 
-def compute_questionnaire_result(questionnaire: dict[str, Any], answers: Any) -> dict[str, Any]:
+def compute_questionnaire_submission_outcome(questionnaire: dict[str, Any], answers: Any) -> dict[str, Any]:
     validated_answers = answers if isinstance(answers, list) and answers and "question" in answers[0] else validate_questionnaire_answers(questionnaire, answers)
     total_score = 0.0
     option_tags: list[str] = []
@@ -1863,7 +1863,7 @@ def _log_questionnaire_scrm_apply(
     get_db().commit()
 
 
-def apply_questionnaire_result_to_scrm(submission_id: int) -> dict[str, Any]:
+def apply_questionnaire_submission_tags_to_scrm(submission_id: int) -> dict[str, Any]:
     submission = get_db().execute(
         """
         SELECT id, external_userid, follow_user_userid, final_tags
@@ -2033,7 +2033,7 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
         raise QuestionnaireAlreadySubmittedError("已经提交")
 
     validated_answers = validate_questionnaire_answers(questionnaire, answers)
-    computed_result = compute_questionnaire_result(questionnaire, validated_answers)
+    computed_result = compute_questionnaire_submission_outcome(questionnaire, validated_answers)
     computed_result["mobile_snapshot"] = _extract_mobile_snapshot_from_validated_answers(
         computed_result.get("validated_answers") or validated_answers
     )
@@ -2045,7 +2045,7 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
         request_meta=submit_meta,
     )
     apply_questionnaire_mobile_binding(submission)
-    apply_questionnaire_result_to_scrm(submission["id"])
+    apply_questionnaire_submission_tags_to_scrm(submission["id"])
     try:
         from ..automation_conversion.service import sync_member_from_questionnaire_submission
 

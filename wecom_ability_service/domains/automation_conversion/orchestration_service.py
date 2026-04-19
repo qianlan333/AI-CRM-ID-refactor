@@ -878,7 +878,6 @@ def _build_member_variable_snapshot(external_contact_id: str = "", phone: str = 
         "recent_messages": [str(item.get("content") or item.get("message_text") or item.get("text") or "") for item in recent_messages[:20]],
         "current_pool": _normalized_text(member.get("current_pool")),
         "current_stage": _normalized_text(member.get("current_stage")),
-        "questionnaire_result": _normalized_text(questionnaire.get("result")),
         "questionnaire_answers": questionnaire_answers,
         "focus_reason": "、".join(questionnaire.get("matched_questions") or []),
         "owner_name": _normalized_text(profile.get("owner_display_name") or profile.get("owner_staff_id")),
@@ -900,7 +899,6 @@ def _build_member_variable_snapshot(external_contact_id: str = "", phone: str = 
             "current_pool": _normalized_text(member.get("current_pool")),
             "current_stage": _normalized_text(member.get("current_stage")),
             "follow_type": _normalized_text(member.get("follow_type")),
-            "questionnaire_result": _normalized_text(questionnaire.get("result")),
         },
     }
 
@@ -947,7 +945,6 @@ def _build_router_member_snapshot(detail: dict[str, Any]) -> dict[str, Any]:
         "current_stage": _normalized_text(member.get("current_stage")),
         "follow_type": _normalized_text(member.get("follow_type")),
         "questionnaire_status": _normalized_text(questionnaire.get("status")),
-        "questionnaire_result": _normalized_text(questionnaire.get("result")),
         "decision_source": _normalized_text(member.get("decision_source")),
         "in_pool": bool(member.get("in_pool")),
     }
@@ -2712,8 +2709,6 @@ def _feedback_questionnaire_items(*, external_contact_id: str, phone: str, snaps
     fallback_items: list[dict[str, Any]] = []
     if _normalized_text(questionnaire.get("status_label")):
         fallback_items.append({"question": "问卷状态", "answer": _normalized_text(questionnaire.get("status_label"))})
-    if _normalized_text(questionnaire.get("result_label")):
-        fallback_items.append({"question": "问卷结果", "answer": _normalized_text(questionnaire.get("result_label"))})
     matched_questions = [str(item).strip() for item in list(questionnaire.get("matched_questions") or []) if str(item).strip()]
     if matched_questions:
         fallback_items.append({"question": "命中问题", "answer": " / ".join(matched_questions)})
@@ -2859,8 +2854,6 @@ def crm_get_member_questionnaire(*, external_contact_id: str = "", phone: str = 
         "questionnaire": {
             "status": _normalized_text(questionnaire.get("status")),
             "status_label": _normalized_text(questionnaire.get("status_label")),
-            "result": _normalized_text(questionnaire.get("result")),
-            "result_label": _normalized_text(questionnaire.get("result_label")),
             "hit_count": int(questionnaire.get("hit_count") or 0),
             "matched_questions": list(questionnaire.get("matched_questions") or []),
             "submitted_at": _normalized_text(questionnaire.get("submitted_at")),
@@ -2942,8 +2935,6 @@ def crm_get_member_snapshot(*, external_contact_id: str = "", phone: str = "") -
         "questionnaire": {
             "status": _normalized_text(questionnaire.get("status")),
             "status_label": _normalized_text(questionnaire.get("status_label")),
-            "result": _normalized_text(questionnaire.get("result")),
-            "result_label": _normalized_text(questionnaire.get("result_label")),
             "hit_count": int(questionnaire.get("hit_count") or 0),
             "matched_questions": list(questionnaire.get("matched_questions") or []),
             "submitted_at": _normalized_text(questionnaire.get("submitted_at")),

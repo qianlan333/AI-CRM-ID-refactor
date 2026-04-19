@@ -308,20 +308,22 @@ def _seed_automation_member(
     follow_type: str = "",
     activation_status: str = "inactive",
     questionnaire_status: str = "submitted",
-    questionnaire_result: str = "focus",
+    questionnaire_follow_type: str = "",
     decision_source: str = "questionnaire",
     last_active_pool: str = "",
 ):
+    if questionnaire_follow_type in {"normal", "focus"} and not follow_type:
+        follow_type = questionnaire_follow_type
     with app.app_context():
         db = get_db()
         db.execute(
             """
             INSERT INTO automation_member (
                 external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, questionnaire_result, decision_source,
+                activation_status, questionnaire_status, decision_source,
                 source_type, last_active_pool, joined_at, created_at, updated_at
             )
-            VALUES (?, ?, 'sales_01', ?, ?, ?, ?, ?, ?, ?, 'manual', ?, '2026-04-04 09:20:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'sales_01', ?, ?, ?, ?, ?, ?, 'manual', ?, '2026-04-04 09:20:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 external_contact_id,
@@ -331,7 +333,6 @@ def _seed_automation_member(
                 follow_type,
                 activation_status,
                 questionnaire_status,
-                questionnaire_result,
                 decision_source,
                 last_active_pool,
             ),
@@ -385,7 +386,7 @@ def test_automation_conversion_removed_projection_freezes_buttons_and_stage_targ
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
         decision_source="manual",
         last_active_pool="active_focus",
     )

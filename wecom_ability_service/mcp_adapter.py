@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from .application.integration_gateway import DispatchMcpToolCommand
 from .application.platform_foundation import AuthorizeInternalRequestQuery, ListMcpRuntimeToolsQuery
+from .infra.settings import get_setting
 
 mcp_bp = Blueprint("mcp", __name__)
 mcp_logger = logging.getLogger("mcp")
@@ -14,6 +15,8 @@ mcp_logger = logging.getLogger("mcp")
 
 def _check_mcp_auth() -> Response | None:
     expected = str(request.environ.get("mcp_bearer_token_override") or "").strip()
+    if not expected:
+        expected = str(get_setting("MCP_BEARER_TOKEN") or current_app.config.get("MCP_BEARER_TOKEN") or "").strip()
     if expected:
         auth_header = (request.headers.get("Authorization") or "").strip()
         if not auth_header.startswith("Bearer "):

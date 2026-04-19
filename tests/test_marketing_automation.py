@@ -571,8 +571,12 @@ def test_signup_conversion_batch_api_filters_candidates_and_attaches_customer_co
     assert candidate["current_stage"] == "pool/inactive_focus"
     assert candidate["current_segment"] == "focus"
     assert candidate["dispatch_status"] == "pending"
+    assert candidate["customer_context"]["external_userid"] == "wm_conv_001"
     assert candidate["customer_context"]["customer"]["marketing_profile"]["marketing_state"]["marketing_phase"] == "awaiting_trigger"
     assert candidate["customer_context"]["customer"]["marketing_profile"]["value_segment"]["value_segment"] == "focus"
+    assert isinstance(candidate["customer_context"]["recent_messages"], list)
+    assert candidate["customer_context"]["timeline"]["external_userid"] == "wm_conv_001"
+    assert candidate["customer_context"]["recent_timeline_events"] == candidate["customer_context"]["timeline"]["items"]
     assert detail_payload["skipped_count"] == 1
 
     signed_detail = client.get("/api/customers/wm_conv_002").get_json()["customer"]
@@ -2525,7 +2529,8 @@ def test_openclaw_webhook_keeps_legacy_url_as_fallback(app):
     assert result["delivery"]["target_url"] == "https://openclaw.local/focus-message"
 
 
-def test_focus_pool_webhook_failure_schedules_retry_and_manual_retry_succeeds(app, client):
+def test_focus_pool_webhook_failure_schedules_retry_and_manual_retry_succeeds(app, client, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-05 16:06:00")
     seed = _save_default_signup_conversion_config(client, app, questionnaire_id=348)
     _seed_customer(
         app,
@@ -2623,7 +2628,8 @@ def test_focus_pool_webhook_failure_schedules_retry_and_manual_retry_succeeds(ap
             customer_profile_service.get_customer_profile_tags_payload = original_tags_payload
 
 
-def test_focus_pool_webhook_retry_exhausted_and_list_endpoint_filters_failed_items(app, client):
+def test_focus_pool_webhook_retry_exhausted_and_list_endpoint_filters_failed_items(app, client, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-05 16:12:00")
     seed = _save_default_signup_conversion_config(client, app, questionnaire_id=349)
     _seed_customer(
         app,
@@ -2721,7 +2727,8 @@ def test_focus_pool_webhook_retry_exhausted_and_list_endpoint_filters_failed_ite
             customer_profile_service.get_customer_profile_tags_payload = original_tags_payload
 
 
-def test_focus_pool_webhook_missing_url_records_unconfigured_delivery(app, client):
+def test_focus_pool_webhook_missing_url_records_unconfigured_delivery(app, client, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-05 16:22:00")
     seed = _save_default_signup_conversion_config(client, app, questionnaire_id=350)
     _seed_customer(
         app,
@@ -2795,7 +2802,8 @@ def test_focus_pool_webhook_missing_url_records_unconfigured_delivery(app, clien
         assert row["target_url"] == ""
 
 
-def test_activation_webhook_moves_inactive_pools_and_refreshes_active_pool(app, client):
+def test_activation_webhook_moves_inactive_pools_and_refreshes_active_pool(app, client, monkeypatch):
+    _freeze_router_time(monkeypatch, timestamp="2026-04-05 15:05:00")
     seed = _save_default_signup_conversion_config(client, app, questionnaire_id=249)
     _seed_customer(
         app,

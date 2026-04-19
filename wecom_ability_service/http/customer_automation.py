@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import jsonify, request
 
+from ..domains.automation_conversion.service import sync_member_activation
 from ..application.automation_engine.queries import (
     ApplyActivationWebhookCommand,
     GetSignupConversionBatchQuery,

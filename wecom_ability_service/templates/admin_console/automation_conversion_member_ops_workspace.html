@@ -1,0 +1,93 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .ac-member-shell { display: grid; gap: 20px; }
+  .ac-member-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .9fr); }
+  .ac-member-card { padding: 18px; border-radius: 18px; border: 1px solid rgba(15,23,42,.08); background: #fff; display: grid; gap: 14px; }
+  .ac-member-stats { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .admin-card-label { color: #64748b; font-size: 12px; }
+  .ac-member-muted { color: #64748b; line-height: 1.6; }
+  .ac-send-box { display: grid; gap: 12px; }
+  textarea { width: 100%; min-height: 120px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set workspace = member_ops_workspace or {} %}
+{% set stage = workspace.detail.stage or {} %}
+{% set is_focus_mode = workspace.stage_key in ['inactive-focus', 'active-focus'] %}
+<div class="ac-member-shell">
+  {% if page_error %}
+  <div class="admin-banner admin-banner--error">{{ page_error }}</div>
+  {% endif %}
+  {% if workspace.manual_send_notice == 'sent' %}
+  <div class="admin-banner admin-banner--success">官方群发已创建</div>
+  {% endif %}
+  {% if workspace.focus_batch_notice == 'created' %}
+  <div class="admin-banner admin-banner--success">AI 批任务已创建</div>
+  {% endif %}
+
+  <section class="ac-member-card">
+    <div class="ac-eyebrow">成员列表工作区</div>
+    <h2>成员列表工作区</h2>
+    <div class="ac-member-stats">
+      <div><div class="admin-card-label">总人数</div><strong>{{ stage.total_count or 0 }}</strong></div>
+      <div><div class="admin-card-label">今日新增</div><strong>{{ stage.today_new_count or 0 }}</strong></div>
+    </div>
+    <div class="ac-member-muted">创建群发</div>
+  </section>
+
+  <section class="ac-member-grid">
+    <article class="ac-member-card">
+      {% if workspace.panel == 'send' %}
+      <div class="ac-member-muted">批量状态动作</div>
+      {% if is_focus_mode %}
+      <h3>AI 批量处理</h3>
+      <div>/api/admin/automation-conversion/stage/{{ workspace.stage_key }}/focus-send-batches</div>
+      <div>/api/admin/automation-conversion/focus-send-batches/</div>
+      {% if workspace.focus_batch_detail.batch %}
+      <div>AI 批任务状态</div>
+      <div>总数 {{ workspace.focus_batch_detail.batch.total_count }}</div>
+      <div>剩余 {{ workspace.focus_batch_detail.batch.remaining_count }}</div>
+      {% endif %}
+      {% else %}
+      <h3>官方群发</h3>
+      <div>文本 + 图片</div>
+      <div>发送前预览</div>
+      <div>/api/admin/automation-conversion/stage/{{ workspace.stage_key }}/manual-send/preview</div>
+      <div>/api/admin/automation-conversion/stage/{{ workspace.stage_key }}/manual-send</div>
+      {% if workspace.manual_send_notice == 'sent' %}
+      <div>本次执行结果</div>
+      <div>发送记录 ID {{ workspace.manual_send_record_id }}</div>
+      {% endif %}
+      <form class="ac-send-box" method="post" action="{{ url_for('api.admin_automation_conversion_stage_send', stage_key=workspace.stage_key) }}" enctype="multipart/form-data">
+        <textarea name="content"></textarea>
+        <input id="stage-send-image-input" type="file" name="images" multiple>
+        <div>添加图片</div>
+        <button class="admin-button admin-button--primary" type="submit">发送</button>
+      </form>
+      {% endif %}
+      {% else %}
+      <h3>成员列表</h3>
+      <div class="ac-member-muted">当前池子：{{ stage.label }}</div>
+      <ul>
+        {% for customer in workspace.detail.customers or [] %}
+        <li>{{ customer.customer_name }} - {{ customer.external_userid }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </article>
+
+    <aside class="ac-member-card">
+      <h3>问卷与规则信息</h3>
+      <div>最近业务事件</div>
+      <div>单客动作</div>
+      <div>当前分层原因 / 说明</div>
+      <div>{{ workspace.member_query }}</div>
+      <div>member={{ workspace.member_query }}</div>
+      <div>set_focus</div>
+    </aside>
+  </section>
+</div>
+{% endblock %}

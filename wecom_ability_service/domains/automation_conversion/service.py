@@ -100,10 +100,6 @@ FOLLOWUP_FOCUS = SHARED_FOLLOWUP_SEGMENT_FOCUS
 QUESTIONNAIRE_PENDING = "pending"
 QUESTIONNAIRE_SUBMITTED = "submitted"
 
-QUESTIONNAIRE_RESULT_UNKNOWN = "unknown"
-QUESTIONNAIRE_RESULT_NORMAL = "normal"
-QUESTIONNAIRE_RESULT_FOCUS = "focus"
-
 DECISION_SOURCE_QUESTIONNAIRE = "questionnaire"
 DECISION_SOURCE_MANUAL = "manual"
 DECISION_SOURCE_SYSTEM = "system"
@@ -642,6 +638,92 @@ def get_sop_v1_management_payload(*, selected_pool_key: str = "", selected_day_i
     }
 
 
+def save_sop_v1_pool_config(
+    *,
+    pool_key: str,
+    enabled: bool,
+    send_time: str = SOP_V1_DEFAULT_SEND_TIME,
+    timezone: str = SOP_V1_DEFAULT_TIMEZONE,
+    effective_start_at: str = "",
+) -> dict[str, Any]:
+    normalized_pool_key = _validate_sop_pool_key(pool_key)
+    ensure_sop_v1_defaults()
+    existing = _serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key))
+    saved = repo.save_sop_pool_config(
+        {
+            "pool_key": normalized_pool_key,
+            "enabled": _normalize_bool(enabled),
+            "max_day_count": max(_current_sop_template_day_count(normalized_pool_key), 1),
+            "send_time": _normalize_sop_send_time(send_time or existing.get("send_time")),
+            "timezone": _normalized_text(timezone) or SOP_V1_DEFAULT_TIMEZONE,
+            "effective_start_at": _normalized_text(effective_start_at) or _normalized_text(existing.get("effective_start_at")) or _iso_now(),
+        }
+    )
+    get_db().commit()
+    return _serialize_sop_pool_config(saved)
+
+
+def save_sop_v1_template(
+    *,
+    pool_key: str,
+    day_index: int,
+    content: str = "",
+    images_json: list[dict[str, Any]] | None = None,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    normalized_pool_key = _validate_sop_pool_key(pool_key)
+    normalized_day_index = max(1, int(day_index or 1))
+    ensure_sop_v1_defaults()
+    saved = repo.save_sop_template(
+        {
+            "pool_key": normalized_pool_key,
+            "day_index": normalized_day_index,
+            "content": _normalized_text(content),
+            "images_json": list(images_json or []),
+            "enabled": _normalize_bool(enabled),
+        }
+    )
+    repo.save_sop_pool_config(
+        {
+            **(_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or _default_sop_pool_config(normalized_pool_key)),
+            "pool_key": normalized_pool_key,
+            "enabled": _normalize_bool((_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or {}).get("enabled", True)),
+            "max_day_count": max(_current_sop_template_day_count(normalized_pool_key), normalized_day_index, 1),
+            "send_time": _normalize_sop_send_time((_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or {}).get("send_time")),
+            "timezone": SOP_V1_DEFAULT_TIMEZONE,
+            "effective_start_at": _normalized_text((_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or {}).get("effective_start_at")) or _iso_now(),
+        }
+    )
+    get_db().commit()
+    return _serialize_sop_template_for_ui(_serialize_sop_template(saved))
+
+
+def delete_sop_v1_template_day(*, pool_key: str, day_index: int) -> dict[str, Any]:
+    normalized_pool_key = _validate_sop_pool_key(pool_key)
+    normalized_day_index = max(1, int(day_index or 1))
+    ensure_sop_v1_defaults()
+    repo.delete_sop_template_day(pool_key=normalized_pool_key, day_index=normalized_day_index)
+    if _current_sop_template_day_count(normalized_pool_key) <= 0:
+        _ensure_sop_template_day_exists(normalized_pool_key, 1)
+    repo.save_sop_pool_config(
+        {
+            **(_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or _default_sop_pool_config(normalized_pool_key)),
+            "pool_key": normalized_pool_key,
+            "enabled": _normalize_bool((_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or {}).get("enabled", True)),
+            "max_day_count": max(_current_sop_template_day_count(normalized_pool_key), 1),
+            "send_time": _normalize_sop_send_time((_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or {}).get("send_time")),
+            "timezone": SOP_V1_DEFAULT_TIMEZONE,
+            "effective_start_at": _normalized_text((_serialize_sop_pool_config(repo.get_sop_pool_config(normalized_pool_key)) or {}).get("effective_start_at")) or _iso_now(),
+        }
+    )
+    get_db().commit()
+    remaining_payload = get_sop_v1_templates_payload(
+        normalized_pool_key,
+        selected_day_index=min(normalized_day_index, max(_current_sop_template_day_count(normalized_pool_key), 1)),
+    )
+    return remaining_payload
+
+
 def _later_timestamp_text(*values: Any) -> str:
     latest: datetime | None = None
     latest_text = ""
@@ -745,13 +827,43 @@ def _follow_type_label(value: str) -> str:
     return {"normal": "普通跟进", "focus": "重点跟进"}.get(normalized, "未定")
 
 
-def _questionnaire_result_label(value: str) -> str:
+def _normalized_follow_type_value(value: Any, *, default: str = "") -> str:
     normalized = _normalized_text(value)
-    return {
-        QUESTIONNAIRE_RESULT_UNKNOWN: "未知",
-        QUESTIONNAIRE_RESULT_NORMAL: "普通跟进",
-        QUESTIONNAIRE_RESULT_FOCUS: "重点跟进",
-    }.get(normalized, "未知")
+    if normalized in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
+        return normalized
+    return default
+
+
+def _resolved_follow_type_for_member(
+    member: dict[str, Any] | None,
+    questionnaire: dict[str, Any] | None,
+    *,
+    default: str = "",
+) -> str:
+    serialized_member = _serialize_member(member or {})
+    if _normalized_text(serialized_member.get("decision_source")) == DECISION_SOURCE_MANUAL:
+        manual_follow_type = _normalized_follow_type_value(serialized_member.get("follow_type"))
+        if manual_follow_type:
+            return manual_follow_type
+    questionnaire_follow_type = _normalized_follow_type_value((questionnaire or {}).get("resolved_follow_type"))
+    if questionnaire_follow_type:
+        return questionnaire_follow_type
+    return _normalized_follow_type_value(serialized_member.get("follow_type"), default=default)
+
+
+def _resolved_decision_source_for_member(member: dict[str, Any] | None, questionnaire: dict[str, Any] | None) -> str:
+    serialized_member = _serialize_member(member or {})
+    if (
+        _normalized_text(serialized_member.get("decision_source")) == DECISION_SOURCE_MANUAL
+        and _normalized_follow_type_value(serialized_member.get("follow_type"))
+    ):
+        return DECISION_SOURCE_MANUAL
+    if (
+        _normalized_text((questionnaire or {}).get("questionnaire_status")) == QUESTIONNAIRE_SUBMITTED
+        and _normalized_follow_type_value((questionnaire or {}).get("resolved_follow_type"))
+    ):
+        return DECISION_SOURCE_QUESTIONNAIRE
+    return DECISION_SOURCE_SYSTEM
 
 
 def _questionnaire_status_label(value: str) -> str:
@@ -791,10 +903,9 @@ def _serialize_member(member: dict[str, Any]) -> dict[str, Any]:
         "owner_staff_id": _normalized_text(member.get("owner_staff_id")),
         "in_pool": _normalize_bool(member.get("in_pool")),
         "current_pool": _normalized_text(member.get("current_pool")) or POOL_REMOVED,
-        "follow_type": _normalized_text(member.get("follow_type")),
+        "follow_type": _normalized_follow_type_value(member.get("follow_type")),
         "activation_status": _normalized_text(member.get("activation_status")) or ACTIVATION_UNKNOWN,
         "questionnaire_status": _normalized_text(member.get("questionnaire_status")) or QUESTIONNAIRE_PENDING,
-        "questionnaire_result": _normalized_text(member.get("questionnaire_result")) or QUESTIONNAIRE_RESULT_UNKNOWN,
         "decision_source": _normalized_text(member.get("decision_source")) or DECISION_SOURCE_SYSTEM,
         "source_type": _normalized_text(member.get("source_type")) or SOURCE_TYPE_SYSTEM,
         "source_channel_id": member.get("source_channel_id"),
@@ -815,7 +926,6 @@ def _serialize_member(member: dict[str, Any]) -> dict[str, Any]:
     serialized["follow_type_label"] = _follow_type_label(serialized["follow_type"])
     serialized["activation_status_label"] = _activation_status_label(serialized["activation_status"])
     serialized["questionnaire_status_label"] = _questionnaire_status_label(serialized["questionnaire_status"])
-    serialized["questionnaire_result_label"] = _questionnaire_result_label(serialized["questionnaire_result"])
     serialized["decision_source_label"] = _decision_source_label(serialized["decision_source"])
     return serialized
 
@@ -832,7 +942,6 @@ def _member_snapshot(member: dict[str, Any]) -> dict[str, Any]:
         "follow_type": serialized["follow_type"],
         "activation_status": serialized["activation_status"],
         "questionnaire_status": serialized["questionnaire_status"],
-        "questionnaire_result": serialized["questionnaire_result"],
         "decision_source": serialized["decision_source"],
         "source_type": serialized["source_type"],
         "source_channel_id": serialized["source_channel_id"],
@@ -900,12 +1009,49 @@ def _activation_status_from_live(external_contact_id: str) -> dict[str, Any]:
 
 
 def _latest_questionnaire_context(external_contact_ids: list[str], phone: str) -> dict[str, Any]:
+    def _submitted_context(
+        submission: dict[str, Any],
+        *,
+        questionnaire_id: int | None,
+        matched_question_ids: list[int] | None = None,
+        matched_questions: list[str] | None = None,
+        resolved_follow_type: str = "",
+    ) -> dict[str, Any]:
+        answer_rows = repo.list_questionnaire_submission_answers(int(submission["id"]))
+        answers = [
+            {
+                "question": _normalized_text(row.get("question_title_snapshot")) or f"问题 {int(row.get('question_id') or 0)}",
+                "answer": _question_answer_text(row),
+            }
+            for row in answer_rows
+        ]
+        return {
+            "questionnaire_status": QUESTIONNAIRE_SUBMITTED,
+            "resolved_follow_type": _normalized_follow_type_value(resolved_follow_type),
+            "hit_count": len(matched_question_ids or []),
+            "matched_question_ids": list(matched_question_ids or []),
+            "matched_questions": list(matched_questions or []),
+            "answers": answers,
+            "submitted_at": _normalized_text(submission.get("submitted_at")),
+            "questionnaire_id": questionnaire_id,
+            "submission_id": int(submission["id"]),
+        }
+
     settings = get_signup_conversion_config()
     questionnaire_id = settings.get("questionnaire_id")
     if not questionnaire_id:
+        any_submission = repo.get_latest_any_questionnaire_submission(
+            external_contact_ids=external_contact_ids,
+            phone=phone,
+        )
+        if any_submission:
+            return _submitted_context(
+                any_submission,
+                questionnaire_id=int(any_submission.get("questionnaire_id") or 0) or None,
+            )
         return {
             "questionnaire_status": QUESTIONNAIRE_PENDING,
-            "questionnaire_result": QUESTIONNAIRE_RESULT_UNKNOWN,
+            "resolved_follow_type": "",
             "hit_count": 0,
             "matched_question_ids": [],
             "matched_questions": [],
@@ -919,9 +1065,18 @@ def _latest_questionnaire_context(external_contact_ids: list[str], phone: str) -
         phone=phone,
     )
     if not submission:
+        any_submission = repo.get_latest_any_questionnaire_submission(
+            external_contact_ids=external_contact_ids,
+            phone=phone,
+        )
+        if any_submission:
+            return _submitted_context(
+                any_submission,
+                questionnaire_id=int(any_submission.get("questionnaire_id") or 0) or None,
+            )
         return {
             "questionnaire_status": QUESTIONNAIRE_PENDING,
-            "questionnaire_result": QUESTIONNAIRE_RESULT_UNKNOWN,
+            "resolved_follow_type": "",
             "hit_count": 0,
             "matched_question_ids": [],
             "matched_questions": [],
@@ -930,13 +1085,6 @@ def _latest_questionnaire_context(external_contact_ids: list[str], phone: str) -
             "questionnaire_id": int(questionnaire_id),
         }
     answer_rows = repo.list_questionnaire_submission_answers(int(submission["id"]))
-    answers = [
-        {
-            "question": _normalized_text(row.get("question_title_snapshot")) or f"问题 {int(row.get('question_id') or 0)}",
-            "answer": _question_answer_text(row),
-        }
-        for row in answer_rows
-    ]
     answer_option_map = {
         int(row.get("question_id") or 0): {
             int(option_id)
@@ -960,18 +1108,37 @@ def _latest_questionnaire_context(external_contact_ids: list[str], phone: str) -
         if selected_option_ids and hit_option_ids and selected_option_ids.intersection(hit_option_ids):
             matched_question_ids.append(question_id)
             matched_questions.append(_normalized_text(rule.get("question_title")) or f"问题 {question_id}")
-    hit_count = len(matched_question_ids)
-    questionnaire_result = QUESTIONNAIRE_RESULT_FOCUS if hit_count >= int(settings.get("core_threshold") or 0) else QUESTIONNAIRE_RESULT_NORMAL
+    return _submitted_context(
+        submission,
+        questionnaire_id=int(questionnaire_id),
+        matched_question_ids=matched_question_ids,
+        matched_questions=matched_questions,
+        resolved_follow_type=FOLLOWUP_FOCUS if len(matched_question_ids) >= int(settings.get("core_threshold") or 0) else FOLLOWUP_NORMAL,
+    )
+
+
+def resolve_member_questionnaire_truth(
+    *,
+    external_contact_ids: list[str] | None = None,
+    phone: str = "",
+    member: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved = _latest_questionnaire_context(
+        [_normalized_text(item) for item in (external_contact_ids or []) if _normalized_text(item)],
+        _normalized_text(phone),
+    )
+    if resolved.get("questionnaire_id") is not None or member is None:
+        return resolved
+    fallback_member = _serialize_member(member)
     return {
-        "questionnaire_status": QUESTIONNAIRE_SUBMITTED,
-        "questionnaire_result": questionnaire_result,
-        "hit_count": hit_count,
-        "matched_question_ids": matched_question_ids,
-        "matched_questions": matched_questions,
-        "answers": answers,
-        "submitted_at": _normalized_text(submission.get("submitted_at")),
-        "questionnaire_id": int(questionnaire_id),
-        "submission_id": int(submission["id"]),
+        "questionnaire_status": _normalized_text(fallback_member.get("questionnaire_status")) or QUESTIONNAIRE_PENDING,
+        "resolved_follow_type": _normalized_follow_type_value(fallback_member.get("follow_type")),
+        "hit_count": 0,
+        "matched_question_ids": [],
+        "matched_questions": [],
+        "answers": [],
+        "submitted_at": "",
+        "questionnaire_id": None,
     }
 
 
@@ -982,7 +1149,7 @@ def _build_live_context(external_contact_id: str = "", phone: str = "") -> dict[
     resolved_phone = _normalized_text(profile.get("phone")) or lookup["phone"]
     external_contact_ids = list(dict.fromkeys([item for item in lookup["external_contact_ids"] + [resolved_external_contact_id] if _normalized_text(item)]))
     activation = _activation_status_from_live(resolved_external_contact_id)
-    questionnaire = _latest_questionnaire_context(external_contact_ids, resolved_phone)
+    questionnaire = resolve_member_questionnaire_truth(external_contact_ids=external_contact_ids, phone=resolved_phone)
     return {
         "lookup": {**lookup, "external_contact_ids": external_contact_ids},
         "profile": profile,
@@ -1030,12 +1197,7 @@ def recompute_pool(member: dict[str, Any], context: dict[str, Any], *, action: s
     if questionnaire_status != QUESTIONNAIRE_SUBMITTED:
         next_pool = POOL_NEW_USER
     else:
-        if _normalized_text(member.get("decision_source")) == DECISION_SOURCE_MANUAL and _normalized_text(member.get("follow_type")) in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
-            follow_type = _normalized_text(member.get("follow_type"))
-        else:
-            follow_type = _normalized_text(member.get("questionnaire_result"))
-            if follow_type not in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
-                follow_type = FOLLOWUP_NORMAL
+        follow_type = _resolved_follow_type_for_member(member, (context or {}).get("questionnaire"), default=FOLLOWUP_NORMAL)
         activation_status = _normalized_text(member.get("activation_status")) or ACTIVATION_UNKNOWN
         if activation_status == ACTIVATION_ACTIVE:
             next_pool = POOL_ACTIVE_FOCUS if follow_type == FOLLOWUP_FOCUS else POOL_ACTIVE_NORMAL
@@ -1061,6 +1223,7 @@ def _member_payload_from_context(
     activation = context["activation"]
     questionnaire = context["questionnaire"]
     lookup = context["lookup"]
+    resolved_follow_type = _resolved_follow_type_for_member(existing_row, questionnaire)
     base_payload = {
         "external_contact_id": _normalized_text(profile.get("external_contact_id")) or existing_row.get("external_contact_id") or lookup.get("external_contact_id"),
         "phone": _normalized_text(profile.get("phone")) or existing_row.get("phone") or lookup.get("phone"),
@@ -1068,17 +1231,15 @@ def _member_payload_from_context(
         "owner_staff_id": _normalized_text(existing_row.get("owner_staff_id")) or _normalized_text(profile.get("owner_staff_id")) or DEFAULT_OWNER_STAFF_ID,
         "in_pool": existing_row.get("in_pool") if in_pool is None else bool(in_pool),
         "current_pool": existing_row.get("current_pool") or POOL_REMOVED,
-        "follow_type": _normalized_text(existing_row.get("follow_type")),
+        "follow_type": resolved_follow_type,
         "activation_status": _normalized_text(activation.get("activation_status")) or existing_row.get("activation_status") or ACTIVATION_UNKNOWN,
         "questionnaire_status": _normalized_text(questionnaire.get("questionnaire_status")) or existing_row.get("questionnaire_status") or QUESTIONNAIRE_PENDING,
-        "questionnaire_result": _normalized_text(questionnaire.get("questionnaire_result")) or existing_row.get("questionnaire_result") or QUESTIONNAIRE_RESULT_UNKNOWN,
-        "decision_source": _normalized_text(existing_row.get("decision_source")) or (
-            DECISION_SOURCE_QUESTIONNAIRE if questionnaire.get("questionnaire_status") == QUESTIONNAIRE_SUBMITTED else DECISION_SOURCE_SYSTEM
-        ),
+        "decision_source": _resolved_decision_source_for_member(existing_row, questionnaire),
         "source_type": _normalized_text(source_type) or existing_row.get("source_type") or SOURCE_TYPE_SYSTEM,
         "source_channel_id": source_channel_id if source_channel_id is not None else existing_row.get("source_channel_id"),
         "last_active_pool": _normalized_text(existing_row.get("last_active_pool")),
         "joined_at": _normalized_text(existing_row.get("joined_at")),
+        "updated_at": _normalized_text(existing_row.get("updated_at")),
         "last_ai_push_at": _normalized_text(existing_row.get("last_ai_push_at")),
         "ai_cooldown_until": _normalized_text(existing_row.get("ai_cooldown_until")),
     }
@@ -1096,7 +1257,6 @@ def _substantive_member_changed(before: dict[str, Any], after: dict[str, Any]) -
         "follow_type",
         "activation_status",
         "questionnaire_status",
-        "questionnaire_result",
         "decision_source",
         "source_type",
         "source_channel_id",
@@ -1298,10 +1458,14 @@ def _inactive_follow_type_from_member(before: dict[str, Any]) -> tuple[str, str,
     )
     if manual_preserved:
         return _normalized_text(before.get("follow_type")), _normalized_text(before.get("decision_source")) or DECISION_SOURCE_MANUAL, True
-    questionnaire_follow_type = _normalized_text(before.get("questionnaire_result"))
-    if questionnaire_follow_type not in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
-        questionnaire_follow_type = FOLLOWUP_NORMAL
-    return questionnaire_follow_type, DECISION_SOURCE_SYSTEM, False
+    questionnaire = resolve_member_questionnaire_truth(
+        external_contact_ids=[_normalized_text(before.get("external_contact_id"))] if _normalized_text(before.get("external_contact_id")) else [],
+        phone=_normalized_text(before.get("phone")),
+        member=before,
+    )
+    next_follow_type = _resolved_follow_type_for_member(before, questionnaire, default=FOLLOWUP_NORMAL)
+    next_decision_source = _resolved_decision_source_for_member(before, questionnaire)
+    return next_follow_type, next_decision_source, False
 
 
 def _message_activity_item_status_label(value: str) -> str:
@@ -1439,6 +1603,7 @@ def _message_activity_sync_status_payload() -> dict[str, Any]:
         last_run = {
             **last_run,
             "status": "not_configured",
+            "status_label": _message_activity_sync_run_status_label("not_configured"),
             "finished_at": "",
             "error_message": "",
         }
@@ -2569,6 +2734,10 @@ def run_message_activity_sync(
         for index, item in enumerate(ranked_members):
             before = item["member"]
             message_count = int(item["message_count"])
+            was_active_before = (
+                _normalized_text(before.get("activation_status")) == ACTIVATION_ACTIVE
+                or _normalized_text(before.get("current_pool")) in {POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}
+            )
             if message_count >= ACTIVE_FOCUS_MESSAGE_THRESHOLD:
                 next_activation_status = ACTIVATION_ACTIVE
                 next_follow_type = FOLLOWUP_FOCUS
@@ -2584,6 +2753,8 @@ def run_message_activity_sync(
             else:
                 next_activation_status = ACTIVATION_INACTIVE
                 next_follow_type, next_decision_source, manual_preserved = _inactive_follow_type_from_member(before)
+                if was_active_before and not manual_preserved:
+                    next_decision_source = DECISION_SOURCE_SYSTEM
                 bucket_label = "inactive_questionnaire_or_manual"
             if next_follow_type == FOLLOWUP_FOCUS:
                 counters["focus_count"] += 1
@@ -3246,7 +3417,6 @@ def get_member_detail(*, external_contact_id: str = "", phone: str = "") -> dict
         member = _touch_member_from_sources(member, action="system_view_sync", persist_event=False)
     context = _build_live_context(external_contact_id, phone)
     profile = context["profile"]
-    questionnaire = context["questionnaire"]
     if member:
         serialized_member = _serialize_member(member)
     else:
@@ -3258,6 +3428,11 @@ def get_member_detail(*, external_contact_id: str = "", phone: str = "") -> dict
         )
         preview_payload["current_pool"] = POOL_REMOVED
         serialized_member = _serialize_member(preview_payload)
+    resolved_questionnaire = resolve_member_questionnaire_truth(
+        external_contact_ids=context["lookup"].get("external_contact_ids") or [],
+        phone=_normalized_text(profile.get("phone")) or serialized_member["phone"],
+        member=serialized_member,
+    )
     latest_manual_event = repo.get_latest_manual_event(int(member["id"])) if member else None
     cooldown_until = _parse_timestamp(serialized_member.get("ai_cooldown_until"))
     cooldown_remaining_seconds = max(0, int((cooldown_until - datetime.now()).total_seconds())) if cooldown_until else 0
@@ -3273,13 +3448,11 @@ def get_member_detail(*, external_contact_id: str = "", phone: str = "") -> dict
             "unionid": _normalized_text(profile.get("unionid")),
         },
         "questionnaire": {
-            "status": questionnaire.get("questionnaire_status") or serialized_member["questionnaire_status"],
-            "status_label": _questionnaire_status_label(questionnaire.get("questionnaire_status") or serialized_member["questionnaire_status"]),
-            "result": questionnaire.get("questionnaire_result") or serialized_member["questionnaire_result"],
-            "result_label": _questionnaire_result_label(questionnaire.get("questionnaire_result") or serialized_member["questionnaire_result"]),
-            "hit_count": int(questionnaire.get("hit_count") or 0),
-            "matched_questions": questionnaire.get("matched_questions") or [],
-            "submitted_at": _normalized_text(questionnaire.get("submitted_at")),
+            "status": resolved_questionnaire.get("questionnaire_status") or serialized_member["questionnaire_status"],
+            "status_label": _questionnaire_status_label(resolved_questionnaire.get("questionnaire_status") or serialized_member["questionnaire_status"]),
+            "hit_count": int(resolved_questionnaire.get("hit_count") or 0),
+            "matched_questions": resolved_questionnaire.get("matched_questions") or [],
+            "submitted_at": _normalized_text(resolved_questionnaire.get("submitted_at")),
         },
         "latest_manual_action": (
             {
@@ -3397,11 +3570,9 @@ def apply_router_target_pool(
         if normalized_target_pool in {POOL_INACTIVE_NORMAL, POOL_ACTIVE_NORMAL}:
             current["follow_type"] = FOLLOWUP_NORMAL
             current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
-            current["questionnaire_result"] = QUESTIONNAIRE_RESULT_NORMAL
         elif normalized_target_pool in {POOL_INACTIVE_FOCUS, POOL_ACTIVE_FOCUS}:
             current["follow_type"] = FOLLOWUP_FOCUS
             current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
-            current["questionnaire_result"] = QUESTIONNAIRE_RESULT_FOCUS
 
         if normalized_target_pool in {POOL_INACTIVE_NORMAL, POOL_INACTIVE_FOCUS}:
             current["activation_status"] = ACTIVATION_INACTIVE
@@ -3409,7 +3580,6 @@ def apply_router_target_pool(
             current["activation_status"] = ACTIVATION_ACTIVE
         elif normalized_target_pool == POOL_NEW_USER:
             current["questionnaire_status"] = QUESTIONNAIRE_PENDING
-            current["questionnaire_result"] = QUESTIONNAIRE_RESULT_UNKNOWN
 
         return current, f"router_target_pool={normalized_target_pool}", False
 
@@ -3802,6 +3972,133 @@ def _dispatch_private_message_batch(
     }
 
 
+def _stage_manual_send_targets(route_key: str) -> dict[str, Any]:
+    definition = _manual_send_stage_definition(route_key)
+    pool_key = _normalized_text(definition.get("pool"))
+    rows = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool_key)]
+    final_targets: list[dict[str, Any]] = []
+    sendable_targets: list[dict[str, Any]] = []
+    skipped_reasons: dict[str, int] = {}
+    for member in rows:
+        external_userid = _normalized_text(member.get("external_contact_id"))
+        target = {
+            "member_id": int(member.get("id") or 0),
+            "external_userid": external_userid,
+            "owner_userid": DEFAULT_OWNER_STAFF_ID,
+            "owner_display_name": DEFAULT_OWNER_STAFF_ID,
+            "mobile": _normalized_text(member.get("phone")),
+        }
+        final_targets.append(target)
+        if not external_userid:
+            skipped_reasons["missing_external_userid"] = int(skipped_reasons.get("missing_external_userid") or 0) + 1
+            continue
+        sendable_targets.append(target)
+    return {
+        "definition": definition,
+        "pool_key": pool_key,
+        "rows": rows,
+        "final_targets": final_targets,
+        "sendable_targets": sendable_targets,
+        "selected_count": len(rows),
+        "eligible_count": len(sendable_targets),
+        "skipped_count": sum(int(value or 0) for value in skipped_reasons.values()),
+        "skipped_reasons": skipped_reasons,
+    }
+
+
+def preview_stage_manual_send(
+    *,
+    route_key: str,
+    content: str = "",
+    image_media_ids: list[str] | None = None,
+    images: list[dict[str, Any]] | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    targets_payload = _stage_manual_send_targets(route_key)
+    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(
+        {
+            "content": _normalized_text(content),
+            "image_media_ids": list(image_media_ids or []),
+            "images": list(images or []),
+            "attachments": list(attachments or []),
+        }
+    )
+    return {
+        "ok": True,
+        "stage_key": _normalized_text(route_key),
+        "pool_key": _normalized_text(targets_payload.get("pool_key")),
+        "stage_label": _normalized_text((targets_payload.get("definition") or {}).get("label")),
+        "selected_count": int(targets_payload.get("selected_count") or 0),
+        "eligible_count": int(targets_payload.get("eligible_count") or 0),
+        "skipped_count": int(targets_payload.get("skipped_count") or 0),
+        "skipped_reasons": dict(targets_payload.get("skipped_reasons") or {}),
+        "final_targets": list(targets_payload.get("final_targets") or []),
+        "task_payload": task_payload,
+        "content_preview": content_preview,
+        "image_count": image_count,
+    }
+
+
+def send_stage_manual_message(
+    *,
+    route_key: str,
+    content: str = "",
+    image_media_ids: list[str] | None = None,
+    images: list[dict[str, Any]] | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+    operator_id: str = "",
+) -> dict[str, Any]:
+    user_ops_page_service._build_private_message_payload(
+        {
+            "content": _normalized_text(content),
+            "image_media_ids": list(image_media_ids or []),
+            "images": list(images or []),
+            "attachments": list(attachments or []),
+        }
+    )
+    targets_payload = _stage_manual_send_targets(route_key)
+    dispatch_result = _dispatch_private_message_batch(
+        target_items=list(targets_payload.get("sendable_targets") or []),
+        content=_normalized_text(content),
+        image_media_ids=list(image_media_ids or []),
+        images=list(images or []),
+        operator_id=_normalized_text(operator_id) or "crm_console",
+        filter_snapshot={
+            "selection_mode": "automation_conversion_stage",
+            "stage_key": _normalized_text(route_key),
+            "pool_key": _normalized_text(targets_payload.get("pool_key")),
+        },
+    ) if int(targets_payload.get("eligible_count") or 0) > 0 else {
+        "ok": False,
+        "status": "skipped",
+        "record_id": 0,
+        "task_ids": [],
+        "task_results": [],
+        "content_preview": _normalized_text(content),
+        "image_count": len(list(image_media_ids or [])) + len(list(images or [])),
+        "sent_count": 0,
+        "fail_external_userids": [],
+        "error": "",
+    }
+    return {
+        "ok": bool(dispatch_result.get("ok")) or int(targets_payload.get("eligible_count") or 0) == 0,
+        "stage_key": _normalized_text(route_key),
+        "pool_key": _normalized_text(targets_payload.get("pool_key")),
+        "stage_label": _normalized_text((targets_payload.get("definition") or {}).get("label")),
+        "total_target_count": int(targets_payload.get("selected_count") or 0),
+        "eligible_count": int(targets_payload.get("eligible_count") or 0),
+        "sent_count": int(dispatch_result.get("sent_count") or 0),
+        "skipped_count": int(targets_payload.get("skipped_count") or 0),
+        "skipped_reasons": dict(targets_payload.get("skipped_reasons") or {}),
+        "record_id": int(dispatch_result.get("record_id") or 0),
+        "task_ids": list(dispatch_result.get("task_ids") or []),
+        "task_results": list(dispatch_result.get("task_results") or []),
+        "content_preview": _normalized_text(dispatch_result.get("content_preview")),
+        "image_count": int(dispatch_result.get("image_count") or 0),
+        "error": _normalized_text(dispatch_result.get("error")),
+    }
+
+
 def _sop_skip_reason_label(reason: str) -> str:
     normalized_reason = _normalized_text(reason)
     return SOP_RUN_SKIPPED_REASON_LABELS.get(normalized_reason, normalized_reason or "未知原因")
@@ -4037,8 +4334,236 @@ def _finalize_sop_batch(
     return _serialize_sop_batch(updated)
 
 
+def _update_sop_progress_day(
+    progress: dict[str, Any],
+    *,
+    day_index: int,
+    sent_at: str,
+) -> dict[str, Any]:
+    return _serialize_sop_progress(
+        repo.save_sop_progress(
+            {
+                "member_id": int(progress.get("member_id") or 0),
+                "pool_key": _normalized_text(progress.get("pool_key")),
+                "first_entered_at": _normalized_text(progress.get("first_entered_at")),
+                "last_entered_at": _normalized_text(progress.get("last_entered_at")),
+                "sop_anchor_date": _normalized_text(progress.get("sop_anchor_date")),
+                "first_effective_in_pool_at": _normalized_text(progress.get("first_effective_in_pool_at")),
+                "last_in_pool_at": _normalized_text(progress.get("last_in_pool_at")),
+                "last_sent_day": int(day_index),
+                "last_sent_at": _normalized_text(sent_at),
+                "completed_at": _normalized_text(progress.get("completed_at")),
+            }
+        )
+    )
+
+
+def run_due_sop(
+    *,
+    operator_id: str = "",
+    operator_type: str = "system",
+) -> dict[str, Any]:
+    ensure_sop_v1_defaults()
+    now_text = _iso_now()
+    now_dt = _parse_timestamp(now_text) or datetime.now()
+    enabled_configs = [
+        dict(item)
+        for item in (get_sop_v1_config_payload().get("configs") or [])
+        if _normalize_bool(item.get("enabled"))
+    ]
+    batch_ids: list[int] = []
+    batches_payload: list[dict[str, Any]] = []
+    total_success_count = 0
+    total_skipped_count = 0
+    total_failed_count = 0
+    created_batch_count = 0
+
+    for pool_config in enabled_configs:
+        pool_key = _validate_sop_pool_key(pool_config.get("pool_key"))
+        if not repo.try_acquire_sop_pool_run_lock(pool_key=pool_key):
+            continue
+
+        members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool_key)]
+        due_members: list[dict[str, Any]] = []
+        for member in members:
+            progress = _get_or_create_sop_progress(member, pool_config=pool_config, now_text=now_text)
+            due_payload = _evaluate_sop_due(
+                member=member,
+                progress=progress,
+                pool_config=pool_config,
+                now_dt=now_dt,
+                now_text=now_text,
+            )
+            if _normalized_text(due_payload.get("skip_reason")) == "send_time_not_reached":
+                continue
+            day_index = int(due_payload.get("day_index") or 0)
+            if day_index <= 0:
+                continue
+            if repo.get_sop_batch_item_for_member_day(
+                member_id=int(member.get("id") or 0),
+                pool_key=pool_key,
+                day_index_snapshot=day_index,
+            ):
+                continue
+            template = _serialize_sop_template(repo.get_sop_template(pool_key=pool_key, day_index=day_index))
+            template_skip_reason = _template_skip_reason(template)
+            due_members.append(
+                {
+                    "member": member,
+                    "progress": progress,
+                    "day_index": day_index,
+                    "scheduled_for": _normalized_text(due_payload.get("scheduled_for")) or now_text,
+                    "template": template,
+                    "template_skip_reason": template_skip_reason,
+                }
+            )
+
+        groups: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        for candidate in due_members:
+            group_key = (pool_key, int(candidate.get("day_index") or 0))
+            groups.setdefault(group_key, []).append(candidate)
+
+        for (_, day_index), candidates in sorted(groups.items(), key=lambda item: item[0][1]):
+            template = dict((candidates[0] or {}).get("template") or {})
+            batch = _create_sop_batch(
+                pool_key=pool_key,
+                day_index=day_index,
+                template=template or None,
+                scheduled_for=_normalized_text((candidates[0] or {}).get("scheduled_for")) or now_text,
+                total_count=len(candidates),
+                summary_json={"operator_type": _normalized_text(operator_type) or "system", "operator_id": _normalized_text(operator_id) or "sop_runner"},
+            )
+            created_batch_count += 1
+            batch_ids.append(int(batch.get("id") or 0))
+
+            sendable_targets: list[dict[str, Any]] = []
+            sendable_candidates: list[dict[str, Any]] = []
+            skipped_count = 0
+            failed_count = 0
+            success_count = 0
+            skipped_reasons: dict[str, int] = {}
+            success_record_ids: list[int] = []
+
+            for candidate in candidates:
+                member = dict(candidate.get("member") or {})
+                progress = dict(candidate.get("progress") or {})
+                external_userid = _normalized_text(member.get("external_contact_id"))
+                skip_reason = _normalized_text(candidate.get("template_skip_reason"))
+                if not external_userid:
+                    skip_reason = "missing_external_userid"
+                if skip_reason:
+                    _record_sop_batch_item(
+                        batch_id=int(batch.get("id") or 0),
+                        member=member,
+                        pool_key=pool_key,
+                        day_index=day_index,
+                        external_userid=external_userid,
+                        status="skipped",
+                        error_message=skip_reason,
+                    )
+                    _update_sop_progress_day(progress, day_index=day_index, sent_at=now_text)
+                    skipped_count += 1
+                    skipped_reasons[skip_reason] = int(skipped_reasons.get(skip_reason) or 0) + 1
+                    continue
+                sendable_targets.append(
+                    {
+                        "member_id": int(member.get("id") or 0),
+                        "external_userid": external_userid,
+                        "owner_userid": DEFAULT_OWNER_STAFF_ID,
+                        "owner_display_name": DEFAULT_OWNER_STAFF_ID,
+                        "mobile": _normalized_text(member.get("phone")),
+                    }
+                )
+                sendable_candidates.append(candidate)
+
+            dispatch_result = None
+            if sendable_targets:
+                image_media_ids, images = _normalize_sop_template_images(template)
+                dispatch_result = _dispatch_private_message_batch(
+                    target_items=sendable_targets,
+                    content=_normalized_text(template.get("content")),
+                    image_media_ids=image_media_ids,
+                    images=images,
+                    operator_id=_normalized_text(operator_id) or "sop_runner",
+                    filter_snapshot={
+                        "selection_mode": "automation_conversion_sop",
+                        "pool_key": pool_key,
+                        "day_index": day_index,
+                    },
+                )
+                if int(dispatch_result.get("record_id") or 0) > 0:
+                    success_record_ids.append(int(dispatch_result["record_id"]))
+                failed_external_userids = {
+                    _normalized_text(item)
+                    for item in list(dispatch_result.get("fail_external_userids") or [])
+                    if _normalized_text(item)
+                }
+                for target, candidate in zip(sendable_targets, sendable_candidates):
+                    member = dict(candidate.get("member") or {})
+                    progress = dict(candidate.get("progress") or {})
+                    external_userid = _normalized_text(target.get("external_userid"))
+                    if external_userid in failed_external_userids:
+                        _record_sop_batch_item(
+                            batch_id=int(batch.get("id") or 0),
+                            member=member,
+                            pool_key=pool_key,
+                            day_index=day_index,
+                            external_userid=external_userid,
+                            status="failed",
+                            error_message="dispatch_failed",
+                            sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
+                        )
+                        failed_count += 1
+                    else:
+                        _record_sop_batch_item(
+                            batch_id=int(batch.get("id") or 0),
+                            member=member,
+                            pool_key=pool_key,
+                            day_index=day_index,
+                            external_userid=external_userid,
+                            status="success",
+                            content_snapshot=_normalized_text(template.get("content")),
+                            images_snapshot=list(template.get("images_json") or []),
+                            sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
+                        )
+                        success_count += 1
+                    _update_sop_progress_day(progress, day_index=day_index, sent_at=now_text)
+
+            finalized = _finalize_sop_batch(
+                batch,
+                success_count=success_count,
+                skipped_count=skipped_count,
+                failed_count=failed_count,
+                skipped_reasons=skipped_reasons,
+                success_record_ids=success_record_ids,
+            )
+            batches_payload.append({"batch": finalized})
+            total_success_count += success_count
+            total_skipped_count += skipped_count
+            total_failed_count += failed_count
+
+    get_db().commit()
+    return {
+        "ok": True,
+        "status": "completed",
+        "scanned_pool_count": len(enabled_configs),
+        "created_batch_count": created_batch_count,
+        "total_success_count": total_success_count,
+        "total_skipped_count": total_skipped_count,
+        "total_failed_count": total_failed_count,
+        "batch_ids": batch_ids,
+        "batches": batches_payload,
+    }
+
+
 def list_registered_due_jobs() -> list[dict[str, Any]]:
     return [
+        {
+            "job_code": "sop",
+            "label": "自动化转化 SOP",
+            "frequency_minutes": 15,
+            "description": "轮询新用户池、未激活普通池、激活普通池的 SOP day 模板，到点后按自然日批量发送。",
+        },
         {
             "job_code": "conversion_workflow",
             "label": "自动化转化任务流",
@@ -4078,7 +4603,12 @@ def run_registered_due_jobs(
     for job_code in selected_job_codes:
         definition = registry[job_code]
         try:
-            if job_code == "conversion_workflow":
+            if job_code == "sop":
+                payload = run_due_sop(
+                    operator_id=operator_id or "automation_conversion_due_runner",
+                    operator_type=operator_type,
+                )
+            elif job_code == "conversion_workflow":
                 from .workflow_runtime import run_due_conversion_workflows
 
                 payload = run_due_conversion_workflows(
@@ -4146,6 +4676,181 @@ def _focus_batch_detail_payload(batch_row: dict[str, Any] | None, *, item_limit:
     return {
         "batch": serialized_batch,
         "items": items[-max(1, int(item_limit)) :],
+    }
+
+
+def create_focus_send_batch(
+    *,
+    route_key: str,
+    operator_id: str = "",
+    operator_type: str = "user",
+) -> dict[str, Any]:
+    definition = local_projection.focus_send_stage_definition(route_key)
+    existing = repo.find_active_focus_send_batch_by_stage(_normalized_text(route_key))
+    if existing:
+        detail = _focus_batch_detail_payload(existing)
+        return {
+            "ok": True,
+            "status": "existing",
+            **detail,
+        }
+    now_text = _iso_now()
+    pool_key = _normalized_text(definition.get("pool"))
+    members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool_key)]
+    batch_status = "pending" if members else "finished"
+    batch = _serialize_focus_send_batch(
+        repo.insert_focus_send_batch(
+            {
+                "stage_key": _normalized_text(route_key),
+                "pool_key": pool_key,
+                "operator_type": _normalized_text(operator_type) or "user",
+                "operator_id": _normalized_text(operator_id) or "crm_console",
+                "status": batch_status,
+                "total_count": len(members),
+                "sent_count": 0,
+                "failed_count": 0,
+                "skipped_count": 0,
+                "cancelled_count": 0,
+                "next_run_at": now_text if members else "",
+                "last_run_at": "",
+                "created_at": now_text,
+                "updated_at": now_text,
+                "finished_at": now_text if not members else "",
+            }
+        )
+    )
+    items: list[dict[str, Any]] = []
+    for position_index, member in enumerate(members, start=1):
+        items.append(
+            _serialize_focus_send_batch_item(
+                repo.insert_focus_send_batch_item(
+                    {
+                        "batch_id": int(batch.get("id") or 0),
+                        "member_id": int(member.get("id") or 0) or None,
+                        "external_contact_id": _normalized_text(member.get("external_contact_id")),
+                        "phone": _normalized_text(member.get("phone")),
+                        "position_index": position_index,
+                        "status": "pending",
+                        "detail": "",
+                        "result_payload": {},
+                        "created_at": now_text,
+                        "updated_at": now_text,
+                        "started_at": "",
+                        "finished_at": "",
+                    }
+                )
+            )
+        )
+    get_db().commit()
+    return {
+        "ok": True,
+        "status": "created",
+        "batch": batch,
+        "items": items,
+    }
+
+
+def _update_focus_batch_counters(
+    batch: dict[str, Any],
+    *,
+    sent_delta: int = 0,
+    failed_delta: int = 0,
+    skipped_delta: int = 0,
+    status: str = "",
+    next_run_at: str = "",
+    finished_at: str = "",
+    last_run_at: str = "",
+) -> dict[str, Any]:
+    sent_count = int(batch.get("sent_count") or 0) + int(sent_delta)
+    failed_count = int(batch.get("failed_count") or 0) + int(failed_delta)
+    skipped_count = int(batch.get("skipped_count") or 0) + int(skipped_delta)
+    total_count = int(batch.get("total_count") or 0)
+    remaining_count = max(0, total_count - sent_count - failed_count - skipped_count - int(batch.get("cancelled_count") or 0))
+    next_status = _normalized_text(status) or ("finished" if remaining_count <= 0 else "running")
+    saved = repo.update_focus_send_batch(
+        int(batch.get("id") or 0),
+        {
+            "stage_key": _normalized_text(batch.get("stage_key")),
+            "pool_key": _normalized_text(batch.get("pool_key")),
+            "operator_type": _normalized_text(batch.get("operator_type")),
+            "operator_id": _normalized_text(batch.get("operator_id")),
+            "status": next_status,
+            "total_count": total_count,
+            "sent_count": sent_count,
+            "failed_count": failed_count,
+            "skipped_count": skipped_count,
+            "cancelled_count": int(batch.get("cancelled_count") or 0),
+            "next_run_at": _normalized_text(next_run_at),
+            "last_run_at": _normalized_text(last_run_at),
+            "updated_at": _normalized_text(last_run_at) or _iso_now(),
+            "finished_at": _normalized_text(finished_at),
+        },
+    )
+    return _serialize_focus_send_batch(saved)
+
+
+def run_due_focus_send_batches(
+    *,
+    operator_id: str = "",
+    operator_type: str = "system",
+    limit: int = 20,
+) -> dict[str, Any]:
+    now_text = _iso_now()
+    now_dt = _parse_timestamp(now_text) or datetime.now()
+    processed_count = 0
+    batches_payload: list[dict[str, Any]] = []
+    for row in repo.list_due_focus_send_batches(due_at=now_text, limit=max(1, int(limit))):
+        batch = _serialize_focus_send_batch(row)
+        item = repo.claim_next_focus_send_batch_item(batch_id=int(batch.get("id") or 0), started_at=now_text)
+        if not item:
+            finalized = _update_focus_batch_counters(
+                batch,
+                status="finished",
+                next_run_at="",
+                finished_at=now_text,
+                last_run_at=now_text,
+            )
+            batches_payload.append(_focus_batch_detail_payload(finalized, item_limit=12))
+            continue
+        serialized_item = _serialize_focus_send_batch_item(item)
+        external_contact_id = _normalized_text(serialized_item.get("external_contact_id"))
+        push_result = push_openclaw(
+            external_contact_id=external_contact_id,
+            operator_id=_normalized_text(operator_id) or "focus_send_runner",
+        )
+        accepted = bool(push_result.get("accepted"))
+        item_status = "sent" if accepted else "failed"
+        repo.update_focus_send_batch_item(
+            int(serialized_item.get("id") or 0),
+            {
+                **serialized_item,
+                "status": item_status,
+                "detail": "" if accepted else (_normalized_text(push_result.get("error")) or _normalized_text(push_result.get("status"))),
+                "result_payload": dict(push_result or {}),
+                "updated_at": now_text,
+                "started_at": _normalized_text(serialized_item.get("started_at")) or now_text,
+                "finished_at": now_text,
+            },
+        )
+        processed_count += 1
+        refreshed_batch = _update_focus_batch_counters(
+            batch,
+            sent_delta=1 if accepted else 0,
+            failed_delta=0 if accepted else 1,
+            next_run_at=(
+                ""
+                if (int(batch.get("remaining_count") or 0) - 1) <= 0
+                else (now_dt + timedelta(seconds=FOCUS_SEND_INTERVAL_SECONDS)).strftime("%Y-%m-%d %H:%M:%S")
+            ),
+            finished_at=now_text if (int(batch.get("remaining_count") or 0) - 1) <= 0 else "",
+            last_run_at=now_text,
+        )
+        batches_payload.append(_focus_batch_detail_payload(refreshed_batch, item_limit=12))
+    get_db().commit()
+    return {
+        "ok": True,
+        "processed_count": processed_count,
+        "batches": batches_payload,
     }
 
 

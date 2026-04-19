@@ -25,6 +25,7 @@ from wecom_ability_service.domains.automation_conversion import (
     get_agent_config_detail,
     get_agent_output_detail,
     get_conversion_dashboard_payload,
+    get_conversion_profile_segment_template_bundle,
     list_agent_configs,
     list_pending_agent_prompt_publish_requests,
     run_due_conversion_workflows,
@@ -34,6 +35,7 @@ from wecom_ability_service.domains.automation_conversion import (
     send_conversion_execution_item_via_bazhuayu,
     save_agent_router_settings,
     submit_agent_prompt_for_publish,
+    update_conversion_profile_segment_template,
 )
 from wecom_ability_service.domains.automation_conversion.agents.llm_client import (
     DeepSeekClientError,
@@ -42,6 +44,7 @@ from wecom_ability_service.domains.automation_conversion.agents.llm_client impor
 from wecom_ability_service.domains.automation_conversion.service import (
     ensure_sop_v1_defaults,
     get_member_detail,
+    get_overview_payload,
     get_stage_detail_payload,
     get_model_infra_payload,
     record_sop_pool_entry,
@@ -199,22 +202,24 @@ def _seed_automation_member(
     follow_type: str = "normal",
     activation_status: str = "active",
     questionnaire_status: str = "submitted",
-    questionnaire_result: str = "normal",
+    questionnaire_follow_type: str = "",
     decision_source: str = "manual",
     source_type: str = "manual",
     last_active_pool: str = "",
     joined_at: str = "2026-04-06 10:00:00",
 ) -> None:
+    if questionnaire_follow_type in {"normal", "focus"} and follow_type in {"", "normal"}:
+        follow_type = questionnaire_follow_type
     with app.app_context():
         db = get_db()
         db.execute(
             """
             INSERT INTO automation_member (
                 external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, questionnaire_result, decision_source,
+                activation_status, questionnaire_status, decision_source,
                 source_type, last_active_pool, joined_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 external_contact_id,
@@ -225,7 +230,6 @@ def _seed_automation_member(
                 follow_type,
                 activation_status,
                 questionnaire_status,
-                questionnaire_result,
                 decision_source,
                 source_type,
                 last_active_pool,
@@ -328,6 +332,45 @@ def _seed_profile_segment_template(
         "template_id": int(((result.get("template_bundle") or {}).get("template") or {}).get("id") or 0),
         "category_keys": ["efficiency", "closing"],
     }
+
+
+def _save_signup_conversion_settings(
+    app,
+    *,
+    questionnaire_id: int,
+    question_id: int,
+    hit_option_ids: list[int],
+    core_threshold: int = 1,
+) -> dict[str, object]:
+    from wecom_ability_service.domains.marketing_automation.service import save_signup_conversion_config
+
+    with app.app_context():
+        return save_signup_conversion_config(
+            {
+                "enabled": True,
+                "questionnaire_id": questionnaire_id,
+                "core_threshold": core_threshold,
+                "top_threshold": core_threshold,
+                "quiet_hour_start": 23,
+                "day_start_hour": 9,
+                "timezone": "Asia/Shanghai",
+                "question_rules": [
+                    {
+                        "questionnaire_question_id": question_id,
+                        "hit_option_ids_json": hit_option_ids,
+                        "sort_order": 1,
+                    }
+                ],
+                "silent_threshold_days_by_pool": {
+                    "new_user": 7,
+                    "inactive_normal": 7,
+                    "inactive_focus": 7,
+                    "active_normal": 7,
+                    "active_focus": 7,
+                },
+            },
+            enforce_required_mobile_question=True,
+        )
 
 
 def _configure_message_activity_db(app) -> None:
@@ -774,7 +817,7 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
         current_pool="inactive_normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 10:00:00",
     )
@@ -786,7 +829,7 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
         current_pool="inactive_normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 10:00:00",
     )
@@ -962,6 +1005,13 @@ def test_conversion_dashboard_payload_returns_empty_task_execution_summary_witho
 
 def test_conversion_dashboard_payload_includes_audience_member_details(app):
     template_seed = _seed_profile_segment_template(app, questionnaire_id=731, template_name="概览画像模板")
+    _save_signup_conversion_settings(
+        app,
+        questionnaire_id=int(template_seed["questionnaire_id"]),
+        question_id=int(template_seed["choice_question_id"]),
+        hit_option_ids=[int(template_seed["option_ids"][1])],
+        core_threshold=1,
+    )
 
     _seed_automation_member(
         app,
@@ -971,7 +1021,7 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app):
         current_pool="active_normal",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
     _assign_member_to_current_audience(
@@ -1008,7 +1058,7 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app):
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
     _assign_member_to_current_audience(
@@ -1031,19 +1081,437 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app):
     assert groups["converted"]["count"] == 0
 
     pending_item = groups["pending_questionnaire"]["items"][0]
+    expected_dashboard_item_keys = {
+        "member_id",
+        "external_contact_id",
+        "phone",
+        "audience_code",
+        "audience_label",
+        "activation_status",
+        "activation_status_label",
+        "questionnaire_status",
+        "questionnaire_status_label",
+        "profile_segment_key",
+        "profile_segment_label",
+        "behavior_segment_key",
+        "behavior_segment_label",
+        "conversation_count",
+    }
     assert pending_item["external_contact_id"] == "wm_dashboard_pending_001"
     assert pending_item["questionnaire_status_label"] == "待提交"
     assert pending_item["profile_segment_label"] == ""
     assert pending_item["behavior_segment_label"] == "小于 2"
     assert pending_item["conversation_count"] == 0
+    assert set(pending_item) == expected_dashboard_item_keys
 
     operating_item = groups["operating"]["items"][0]
     assert operating_item["external_contact_id"] == "wm_dashboard_operating_001"
     assert operating_item["activation_status_label"] == "已激活"
-    assert operating_item["questionnaire_result_label"] == "普通跟进"
     assert operating_item["profile_segment_label"] == "效率型"
     assert operating_item["behavior_segment_label"] == "2 ~ 9"
     assert operating_item["conversation_count"] == 3
+    assert set(operating_item) == expected_dashboard_item_keys
+
+
+def test_dashboard_questionnaire_status_prefers_latest_submission_truth_over_stale_member_mirror(app):
+    from wecom_ability_service.domains.automation_conversion.workflow_runtime import sync_conversion_member_audience
+
+    questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=732)
+    _save_signup_conversion_settings(
+        app,
+        questionnaire_id=int(questionnaire_seed["questionnaire_id"]),
+        question_id=int(questionnaire_seed["choice_question_id"]),
+        hit_option_ids=[int(questionnaire_seed["option_ids"][0])],
+        core_threshold=1,
+    )
+    _seed_contact(
+        app,
+        external_userid="wm_dashboard_truth_001",
+        mobile="13800008103",
+        owner_userid="sales_overview",
+        customer_name="问卷真相客户",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_truth_001",
+        phone="13800008103",
+        owner_staff_id="sales_overview",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+    )
+    _seed_questionnaire_submission_for_member(
+        app,
+        questionnaire_id=int(questionnaire_seed["questionnaire_id"]),
+        question_id=int(questionnaire_seed["choice_question_id"]),
+        option_id=int(questionnaire_seed["option_ids"][0]),
+        submission_id=73201,
+        external_userid="wm_dashboard_truth_001",
+        mobile_snapshot="13800008103",
+        submitted_at="2026-04-10 12:34:56",
+    )
+
+    with app.app_context():
+        db = get_db()
+        member = dict(
+            db.execute(
+                """
+                SELECT *
+                FROM automation_member
+                WHERE external_contact_id = ?
+                """,
+                ("wm_dashboard_truth_001",),
+            ).fetchone()
+        )
+        assert member["questionnaire_status"] == "pending"
+        audience_sync = sync_conversion_member_audience(member)
+        stale_row = db.execute(
+            """
+            SELECT questionnaire_status, current_audience_code
+            FROM automation_member
+            WHERE external_contact_id = ?
+            """,
+            ("wm_dashboard_truth_001",),
+        ).fetchone()
+        payload = get_conversion_dashboard_payload()
+        detail = get_member_detail(external_contact_id="wm_dashboard_truth_001")
+
+    groups = {item["audience_code"]: item for item in payload["audience_member_details"]["groups"]}
+    operating_item = next(
+        item
+        for item in groups["operating"]["items"]
+        if item["external_contact_id"] == "wm_dashboard_truth_001"
+    )
+
+    assert audience_sync["audience_code"] == "operating"
+    assert stale_row["questionnaire_status"] == "pending"
+    assert stale_row["current_audience_code"] == "operating"
+    assert operating_item["questionnaire_status"] == "submitted"
+    assert operating_item["questionnaire_status_label"] == "已提交"
+    assert set(operating_item) == {
+        "member_id",
+        "external_contact_id",
+        "phone",
+        "audience_code",
+        "audience_label",
+        "activation_status",
+        "activation_status_label",
+        "questionnaire_status",
+        "questionnaire_status_label",
+        "profile_segment_key",
+        "profile_segment_label",
+        "behavior_segment_key",
+        "behavior_segment_label",
+        "conversation_count",
+    }
+    assert detail["questionnaire"]["status"] == "submitted"
+    assert detail["questionnaire"]["status_label"] == "已提交"
+    assert detail["questionnaire"]["matched_questions"] == ["你当前更关注什么？"]
+    assert set(detail["questionnaire"]) == {
+        "status",
+        "status_label",
+        "hit_count",
+        "matched_questions",
+        "submitted_at",
+    }
+
+
+def test_dashboard_questionnaire_status_uses_latest_any_submission_when_signup_settings_are_unconfigured(app):
+    questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=7321)
+    _seed_contact(
+        app,
+        external_userid="wm_dashboard_truth_fallback_001",
+        mobile="13800008113",
+        owner_userid="sales_overview",
+        customer_name="问卷回落真相客户",
+    )
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_truth_fallback_001",
+        phone="13800008113",
+        owner_staff_id="sales_overview",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_truth_fallback_001",
+        audience_code="operating",
+        entered_at="2026-04-10 12:30:00",
+    )
+    _seed_questionnaire_submission_for_member(
+        app,
+        questionnaire_id=int(questionnaire_seed["questionnaire_id"]),
+        question_id=int(questionnaire_seed["choice_question_id"]),
+        option_id=int(questionnaire_seed["option_ids"][0]),
+        submission_id=732101,
+        external_userid="wm_dashboard_truth_fallback_001",
+        mobile_snapshot="13800008113",
+        submitted_at="2026-04-10 12:34:56",
+    )
+
+    with app.app_context():
+        payload = get_conversion_dashboard_payload()
+        detail = get_member_detail(external_contact_id="wm_dashboard_truth_fallback_001")
+
+    groups = {item["audience_code"]: item for item in payload["audience_member_details"]["groups"]}
+    operating_item = next(
+        item
+        for item in groups["operating"]["items"]
+        if item["external_contact_id"] == "wm_dashboard_truth_fallback_001"
+    )
+
+    assert operating_item["questionnaire_status"] == "submitted"
+    assert operating_item["questionnaire_status_label"] == "已提交"
+    assert detail["questionnaire"]["status"] == "submitted"
+    assert detail["questionnaire"]["status_label"] == "已提交"
+    assert detail["questionnaire"]["submitted_at"] == "2026-04-10 12:34:56"
+
+
+def test_invalid_enabled_profile_segment_template_is_exposed_without_silent_dashboard_fallback(app):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=733, template_name="脏启用模板")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_invalid_template_001",
+        phone="13800008104",
+        owner_staff_id="sales_overview",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_invalid_template_001",
+        audience_code="operating",
+        entered_at="2026-04-10 12:00:00",
+    )
+    _seed_questionnaire_submission_for_member(
+        app,
+        questionnaire_id=int(template_seed["questionnaire_id"]),
+        question_id=int(template_seed["choice_question_id"]),
+        option_id=int(template_seed["option_ids"][0]),
+        submission_id=73301,
+        external_userid="wm_dashboard_invalid_template_001",
+        mobile_snapshot="13800008104",
+        submitted_at="2026-04-10 11:55:00",
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            "DELETE FROM questionnaire_questions WHERE id = ?",
+            (int(template_seed["choice_question_id"]),),
+        )
+        db.commit()
+        template_bundle = get_conversion_profile_segment_template_bundle(int(template_seed["template_id"]))
+        payload = get_conversion_dashboard_payload()
+
+    detail = payload["audience_member_details"]
+    groups = {item["audience_code"]: item for item in detail["groups"]}
+    operating_item = groups["operating"]["items"][0]
+
+    assert template_bundle["validity"]["is_valid"] is False
+    assert "segmentation_question_missing" in template_bundle["validity"]["reason_codes"]
+    assert "enabled_category_without_mappings" in template_bundle["validity"]["reason_codes"]
+    assert detail["profile_segment_template"]["valid"] is False
+    assert detail["profile_segment_template"]["selection_status"] == "no_valid_enabled_template"
+    assert detail["profile_segment_template"]["skipped_invalid_enabled_template_count"] == 1
+    assert operating_item["profile_segment_label"] == ""
+
+
+def test_invalid_latest_enabled_profile_segment_template_is_skipped_in_dashboard_selection(app):
+    valid_seed = _seed_profile_segment_template(app, questionnaire_id=734, template_name="有效模板")
+    invalid_seed = _seed_profile_segment_template(app, questionnaire_id=735, template_name="后建脏模板")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_profile_selection_001",
+        phone="13800008105",
+        owner_staff_id="sales_overview",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_profile_selection_001",
+        audience_code="operating",
+        entered_at="2026-04-10 13:00:00",
+    )
+    _seed_questionnaire_submission_for_member(
+        app,
+        questionnaire_id=int(valid_seed["questionnaire_id"]),
+        question_id=int(valid_seed["choice_question_id"]),
+        option_id=int(valid_seed["option_ids"][0]),
+        submission_id=73401,
+        external_userid="wm_dashboard_profile_selection_001",
+        mobile_snapshot="13800008105",
+        submitted_at="2026-04-10 12:58:00",
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            "DELETE FROM questionnaire_questions WHERE id = ?",
+            (int(invalid_seed["choice_question_id"]),),
+        )
+        db.commit()
+        payload = get_conversion_dashboard_payload()
+
+    detail = payload["audience_member_details"]
+    groups = {item["audience_code"]: item for item in detail["groups"]}
+    operating_item = groups["operating"]["items"][0]
+
+    assert detail["profile_segment_template"]["template_name"] == "有效模板"
+    assert detail["profile_segment_template"]["valid"] is True
+    assert detail["profile_segment_template"]["selection_status"] == "selected"
+    assert detail["profile_segment_template"]["skipped_invalid_enabled_template_count"] == 1
+    assert operating_item["profile_segment_label"] == "效率型"
+
+
+def test_dashboard_profile_segment_selection_prefers_latest_valid_enabled_template(app):
+    questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=736)
+    with app.app_context():
+        create_conversion_profile_segment_template(
+            {
+                "template_name": "旧模板",
+                "questionnaire_id": questionnaire_seed["questionnaire_id"],
+                "segmentation_question_id": questionnaire_seed["choice_question_id"],
+                "enabled": True,
+                "categories": [
+                    {
+                        "category_key": "efficiency_old",
+                        "category_name": "效率型旧版",
+                        "option_ids": [questionnaire_seed["option_ids"][0]],
+                    },
+                    {
+                        "category_key": "closing_old",
+                        "category_name": "成交型旧版",
+                        "option_ids": [questionnaire_seed["option_ids"][1]],
+                    },
+                ],
+            },
+            operator_id="tester",
+        )
+        latest_template = create_conversion_profile_segment_template(
+            {
+                "template_name": "新模板",
+                "questionnaire_id": questionnaire_seed["questionnaire_id"],
+                "segmentation_question_id": questionnaire_seed["choice_question_id"],
+                "enabled": True,
+                "categories": [
+                    {
+                        "category_key": "efficiency",
+                        "category_name": "效率型新版",
+                        "option_ids": [questionnaire_seed["option_ids"][0]],
+                    },
+                    {
+                        "category_key": "closing",
+                        "category_name": "成交型新版",
+                        "option_ids": [questionnaire_seed["option_ids"][1]],
+                    },
+                ],
+            },
+            operator_id="tester",
+        )
+
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_profile_latest_001",
+        phone="13800008106",
+        owner_staff_id="sales_overview",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_profile_latest_001",
+        audience_code="operating",
+        entered_at="2026-04-10 14:00:00",
+    )
+    _seed_questionnaire_submission_for_member(
+        app,
+        questionnaire_id=int(questionnaire_seed["questionnaire_id"]),
+        question_id=int(questionnaire_seed["choice_question_id"]),
+        option_id=int(questionnaire_seed["option_ids"][0]),
+        submission_id=73601,
+        external_userid="wm_dashboard_profile_latest_001",
+        mobile_snapshot="13800008106",
+        submitted_at="2026-04-10 13:58:00",
+    )
+
+    with app.app_context():
+        payload = get_conversion_dashboard_payload()
+
+    detail = payload["audience_member_details"]
+    groups = {item["audience_code"]: item for item in detail["groups"]}
+    operating_item = groups["operating"]["items"][0]
+
+    assert detail["profile_segment_template"]["template_name"] == "新模板"
+    assert detail["profile_segment_template"]["selection_strategy"] == "latest_valid_enabled"
+    assert detail["profile_segment_template"]["selection_status"] == "selected"
+    assert detail["profile_segment_template"]["id"] == int(
+        (((latest_template.get("template_bundle") or {}).get("template") or {}).get("id") or 0)
+    )
+    assert operating_item["profile_segment_label"] == "效率型新版"
+
+
+def test_update_invalid_profile_segment_template_can_disable_it_without_repairing_structure(app):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=737, template_name="待停用脏模板")
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            "DELETE FROM questionnaire_questions WHERE id = ?",
+            (int(template_seed["choice_question_id"]),),
+        )
+        db.commit()
+        result = update_conversion_profile_segment_template(
+            int(template_seed["template_id"]),
+            {
+                "template_name": "待停用脏模板",
+                "enabled": False,
+            },
+            operator_id="tester",
+        )
+
+    assert result["template_bundle"]["template"]["enabled"] is False
+    assert result["template_bundle"]["template"]["valid"] is False
+    assert result["template_bundle"]["validity"]["is_valid"] is False
+
+
+def test_create_enabled_profile_segment_template_requires_enabled_category_mappings(app):
+    questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=738)
+
+    with app.app_context():
+        with pytest.raises(ValueError, match="must bind at least one option"):
+            create_conversion_profile_segment_template(
+                {
+                    "template_name": "无映射启用模板",
+                    "questionnaire_id": questionnaire_seed["questionnaire_id"],
+                    "segmentation_question_id": questionnaire_seed["choice_question_id"],
+                    "enabled": True,
+                    "categories": [
+                        {
+                            "category_key": "efficiency",
+                            "category_name": "效率型",
+                            "option_ids": [],
+                        }
+                    ],
+                },
+                operator_id="tester",
+            )
 
 
 def test_apply_dashboard_signup_tag_marks_current_audience_members(app, monkeypatch):
@@ -1055,7 +1523,7 @@ def test_apply_dashboard_signup_tag_marks_current_audience_members(app, monkeypa
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
     _assign_member_to_current_audience(
@@ -1072,7 +1540,7 @@ def test_apply_dashboard_signup_tag_marks_current_audience_members(app, monkeypa
         current_pool="active_normal",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
     _assign_member_to_current_audience(
@@ -1991,7 +2459,7 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
         current_pool="inactive_normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 10:00:00",
     )
@@ -2061,7 +2529,7 @@ def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standa
         current_pool="inactive_normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 10:00:00",
     )
@@ -2154,7 +2622,7 @@ def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payloa
         current_pool="inactive_normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 10:00:00",
     )
@@ -2266,7 +2734,7 @@ def test_execution_item_send_via_bazhuayu_api_accepts_admin_action_token_and_ret
         current_pool="inactive_normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 11:00:00",
     )
@@ -2535,7 +3003,7 @@ def _patch_live_context(
     owner_staff_id: str = "sales_01",
     activation_status: str = "active",
     questionnaire_status: str = "submitted",
-    questionnaire_result: str = "normal",
+    questionnaire_follow_type: str = "normal",
 ):
     def _fake_build_live_context(request_external_contact_id: str = "", request_phone: str = "") -> dict:
         resolved_external_contact_id = external_contact_id or request_external_contact_id
@@ -2561,10 +3029,10 @@ def _patch_live_context(
             },
             "questionnaire": {
                 "questionnaire_status": questionnaire_status,
-                "questionnaire_result": questionnaire_result,
-                "hit_count": 1 if questionnaire_result == "focus" else 0,
-                "matched_question_ids": [1] if questionnaire_result == "focus" else [],
-                "matched_questions": ["关键题"] if questionnaire_result == "focus" else [],
+                "resolved_follow_type": questionnaire_follow_type if questionnaire_status == "submitted" else "",
+                "hit_count": 1 if questionnaire_follow_type == "focus" else 0,
+                "matched_question_ids": [1] if questionnaire_follow_type == "focus" else [],
+                "matched_questions": ["关键题"] if questionnaire_follow_type == "focus" else [],
                 "answers": [],
                 "submitted_at": "2026-04-06 09:00:00" if questionnaire_status == "submitted" else "",
                 "questionnaire_id": 1 if questionnaire_status == "submitted" else None,
@@ -2654,32 +3122,30 @@ def test_automation_overview_counts_only_from_automation_member(app, client):
     with app.app_context():
         db = get_db()
         rows = [
-            ("wm_overview_001", "13800001001", "sales_01", 1, "new_user", "", "unknown", "pending", "unknown", "2026-04-06 09:00:00"),
-            ("wm_overview_002", "13800001002", "sales_01", 1, "inactive_normal", "normal", "inactive", "submitted", "normal", "2026-04-06 09:10:00"),
-            ("wm_overview_003", "13800001003", "sales_01", 1, "inactive_focus", "focus", "inactive", "submitted", "focus", "2026-04-05 09:20:00"),
-            ("wm_overview_004", "13800001004", "sales_01", 1, "silent", "normal", "inactive", "submitted", "normal", "2026-04-05 09:30:00"),
-            ("wm_overview_005", "13800001005", "sales_01", 0, "won", "focus", "active", "submitted", "focus", "2026-04-06 09:40:00"),
+            ("wm_overview_001", "13800001001", "sales_01", 1, "new_user", "", "unknown", "pending", "2026-04-06 09:00:00"),
+            ("wm_overview_002", "13800001002", "sales_01", 1, "inactive_normal", "normal", "inactive", "submitted", "2026-04-06 09:10:00"),
+            ("wm_overview_003", "13800001003", "sales_01", 1, "inactive_focus", "focus", "inactive", "submitted", "2026-04-05 09:20:00"),
+            ("wm_overview_004", "13800001004", "sales_01", 1, "silent", "normal", "inactive", "submitted", "2026-04-05 09:30:00"),
+            ("wm_overview_005", "13800001005", "sales_01", 0, "won", "focus", "active", "submitted", "2026-04-06 09:40:00"),
         ]
         for item in rows:
             db.execute(
                 """
                 INSERT INTO automation_member (
                     external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                    activation_status, questionnaire_status, questionnaire_result, decision_source,
+                    activation_status, questionnaire_status, decision_source,
                     source_type, joined_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 item,
             )
         db.commit()
 
-    response = client.get("/api/admin/automation-conversion/overview")
-    payload = response.get_json()
+    with app.app_context():
+        payload = get_overview_payload()
 
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    counts = payload["overview"]["counts"]
+    counts = payload["counts"]
     assert counts["in_pool_total"] == 4
     assert counts["questionnaire_pending"] == 1
     assert counts["normal_followup"] == 1
@@ -2740,10 +3206,10 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
             """
             INSERT INTO automation_member (
                 external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, questionnaire_result, decision_source,
+                activation_status, questionnaire_status, decision_source,
                 source_type, joined_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, 1, 'active_focus', 'focus', 'active', 'submitted', 'focus', 'manual', 'manual', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, 1, 'active_focus', 'focus', 'active', 'submitted', 'manual', 'manual', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             ("wm_ai_001", "13800003001", "sales_ai"),
         )
@@ -2845,7 +3311,7 @@ def test_openclaw_push_does_not_recompute_active_focus_member_before_send(app, c
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
         decision_source="system",
         source_type="message_activity_sync",
         joined_at="2026-04-06 10:00:00",
@@ -2857,7 +3323,7 @@ def test_openclaw_push_does_not_recompute_active_focus_member_before_send(app, c
         owner_staff_id="sales_ai",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
     monkeypatch.setattr(
         "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_profile_tags_payload",
@@ -2919,10 +3385,10 @@ def test_automation_member_detail_uses_sidebar_button_rules_for_won_members(app,
             """
             INSERT INTO automation_member (
                 external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, questionnaire_result, decision_source,
+                activation_status, questionnaire_status, decision_source,
                 source_type, last_active_pool, joined_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, 0, 'won', 'focus', 'active', 'submitted', 'focus', 'manual', 'manual', 'active_focus', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, 0, 'won', 'focus', 'active', 'submitted', 'manual', 'manual', 'active_focus', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             ("wm_won_001", "13800003099", "sales_won"),
         )
@@ -2959,7 +3425,7 @@ def test_sync_member_activation_recomputes_pool_from_inactive_focus_to_active_fo
         follow_type="focus",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
         decision_source="questionnaire",
         source_type="manual",
         joined_at="2026-04-06 10:00:00",
@@ -2971,7 +3437,7 @@ def test_sync_member_activation_recomputes_pool_from_inactive_focus_to_active_fo
         owner_staff_id="sales_sync",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
 
     with app.app_context():
@@ -3024,7 +3490,7 @@ def test_get_member_detail_view_sync_updates_activation_status_and_pool(app, mon
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
         source_type="manual",
         joined_at="2026-04-06 10:00:00",
@@ -3036,7 +3502,7 @@ def test_get_member_detail_view_sync_updates_activation_status_and_pool(app, mon
         owner_staff_id="sales_view",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
     )
 
     with app.app_context():
@@ -3067,7 +3533,7 @@ def test_mark_won_and_unmark_restore_active_normal(app, client, monkeypatch):
         follow_type="normal",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
     )
     _patch_live_context(
         monkeypatch,
@@ -3076,7 +3542,7 @@ def test_mark_won_and_unmark_restore_active_normal(app, client, monkeypatch):
         owner_staff_id="sales_restore",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
     )
 
     marked = client.post(
@@ -3117,7 +3583,7 @@ def test_mark_won_and_unmark_restore_active_focus(app, client, monkeypatch):
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
     _patch_live_context(
         monkeypatch,
@@ -3126,7 +3592,7 @@ def test_mark_won_and_unmark_restore_active_focus(app, client, monkeypatch):
         owner_staff_id="sales_restore",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
 
     marked = client.post(
@@ -3168,7 +3634,7 @@ def test_unmark_won_falls_back_when_last_active_pool_missing(app, client, monkey
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         last_active_pool="",
     )
     _patch_live_context(
@@ -3178,7 +3644,7 @@ def test_unmark_won_falls_back_when_last_active_pool_missing(app, client, monkey
         owner_staff_id="sales_restore",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
     )
 
     restored = client.post(
@@ -3468,7 +3934,7 @@ def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monk
             follow_type="normal",
             activation_status="inactive",
             questionnaire_status="submitted",
-            questionnaire_result="normal",
+            questionnaire_follow_type="normal",
             decision_source="questionnaire",
         )
 
@@ -3557,7 +4023,7 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
         decision_source="manual",
     )
     _seed_automation_member(
@@ -3569,7 +4035,7 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="manual",
     )
 
@@ -3617,7 +4083,7 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
     ]
 
 
-def test_message_activity_sync_uses_questionnaire_result_for_inactive_members(app, monkeypatch):
+def test_message_activity_sync_uses_follow_type_fallback_for_inactive_members(app, monkeypatch):
     _configure_message_activity_db(app)
     _seed_contact(app, external_userid="wm_questionnaire_sync_001", mobile="13800002441", owner_userid="sales_questionnaire", customer_name="questionnaire-focus")
     _seed_contact(app, external_userid="wm_questionnaire_sync_002", mobile="13800002442", owner_userid="sales_questionnaire", customer_name="questionnaire-normal")
@@ -3630,7 +4096,7 @@ def test_message_activity_sync_uses_questionnaire_result_for_inactive_members(ap
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
         decision_source="system",
     )
     _seed_automation_member(
@@ -3639,10 +4105,10 @@ def test_message_activity_sync_uses_questionnaire_result_for_inactive_members(ap
         phone="13800002442",
         owner_staff_id="sales_questionnaire",
         current_pool="inactive_focus",
-        follow_type="focus",
+        follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="system",
     )
 
@@ -3675,14 +4141,14 @@ def test_message_activity_sync_uses_questionnaire_result_for_inactive_members(ap
             "external_contact_id": "wm_questionnaire_sync_001",
             "activation_status": "inactive",
             "follow_type": "focus",
-            "decision_source": "system",
+            "decision_source": "questionnaire",
             "current_pool": "inactive_focus",
         },
         {
             "external_contact_id": "wm_questionnaire_sync_002",
             "activation_status": "inactive",
             "follow_type": "normal",
-            "decision_source": "system",
+            "decision_source": "questionnaire",
             "current_pool": "inactive_normal",
         },
     ]
@@ -3707,7 +4173,7 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
             follow_type="normal",
             activation_status="inactive",
             questionnaire_status="submitted",
-            questionnaire_result="normal",
+            questionnaire_follow_type="normal",
             decision_source="questionnaire",
         )
 
@@ -3791,7 +4257,7 @@ def test_message_activity_sync_requires_same_prefix3_and_last4(app, monkeypatch)
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
 
@@ -3834,7 +4300,7 @@ def test_message_activity_sync_same_last4_different_prefix_does_not_match(app, m
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
 
@@ -3882,7 +4348,7 @@ def test_message_activity_sync_skips_same_phone_match_key_as_ambiguous(app, monk
             follow_type="normal",
             activation_status="inactive",
             questionnaire_status="submitted",
-            questionnaire_result="normal",
+            questionnaire_follow_type="normal",
             decision_source="questionnaire",
         )
 
@@ -3933,7 +4399,7 @@ def test_message_activity_sync_skips_invalid_short_phone(app, monkeypatch):
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
 
@@ -3978,7 +4444,7 @@ def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, 
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
     monkeypatch.setattr(
@@ -4629,7 +5095,7 @@ def test_run_center_agent_orchestration_metrics_subtab_renders_shadow_metrics(ap
 def test_reply_monitor_dispatch_runs_router_shadow_mode_and_applies_async_callback(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_shadow_001", mobile="13800009181", owner_userid="sales_01", customer_name="shadow")
-    _seed_automation_member(app, external_contact_id="wm_reply_shadow_001", phone="13800009181", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_shadow_001", phone="13800009181", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     for idx in range(1, 26):
         _seed_archived_message(
             app,
@@ -4797,7 +5263,7 @@ def test_reply_monitor_dispatch_runs_router_shadow_mode_and_applies_async_callba
 def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_idempotent_001", mobile="13800009182", owner_userid="sales_01", customer_name="idempotent")
-    _seed_automation_member(app, external_contact_id="wm_reply_idempotent_001", phone="13800009182", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_idempotent_001", phone="13800009182", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-idempotent-001", seq=1, external_userid="wm_reply_idempotent_001", owner_userid="sales_01", sender="wm_reply_idempotent_001", receiver="sales_01", content="我想继续了解", send_time="2026-04-09 11:00:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -4901,7 +5367,7 @@ def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatc
 def test_router_callback_stores_reply_draft_output_when_payload_contains_reply_text(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_draft_001", mobile="13800009187", owner_userid="sales_01", customer_name="draft")
-    _seed_automation_member(app, external_contact_id="wm_reply_draft_001", phone="13800009187", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_draft_001", phone="13800009187", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-draft-001", seq=1, external_userid="wm_reply_draft_001", owner_userid="sales_01", sender="wm_reply_draft_001", receiver="sales_01", content="价格怎么安排", send_time="2026-04-09 11:30:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -4976,7 +5442,7 @@ def test_router_callback_stores_reply_draft_output_when_payload_contains_reply_t
 def test_router_callback_generates_child_reply_draft_when_callback_only_routes(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_autodraft_001", mobile="13800009188", owner_userid="sales_01", customer_name="auto-draft")
-    _seed_automation_member(app, external_contact_id="wm_reply_autodraft_001", phone="13800009188", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_autodraft_001", phone="13800009188", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-autodraft-001", seq=1, external_userid="wm_reply_autodraft_001", owner_userid="sales_01", sender="wm_reply_autodraft_001", receiver="sales_01", content="能说下价格吗", send_time="2026-04-09 11:45:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -5176,7 +5642,7 @@ def test_router_callback_rejects_invalid_target_pool_and_records_error(app, clie
         quiet_hours_end="03:00",
     )
     _seed_contact(app, external_userid="wm_reply_invalid_pool_001", mobile="13800009183", owner_userid="sales_01", customer_name="invalid-pool")
-    _seed_automation_member(app, external_contact_id="wm_reply_invalid_pool_001", phone="13800009183", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_invalid_pool_001", phone="13800009183", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-invalid-pool-001", seq=1, external_userid="wm_reply_invalid_pool_001", owner_userid="sales_01", sender="wm_reply_invalid_pool_001", receiver="sales_01", content="给我个方案", send_time="2026-04-09 12:00:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -5275,7 +5741,7 @@ def test_router_callback_rejects_invalid_target_pool_and_records_error(app, clie
 def test_router_pending_callbacks_api_lists_acked_runs_without_callback(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_pending_001", mobile="13800009184", owner_userid="sales_01", customer_name="pending")
-    _seed_automation_member(app, external_contact_id="wm_reply_pending_001", phone="13800009184", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_pending_001", phone="13800009184", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-pending-001", seq=1, external_userid="wm_reply_pending_001", owner_userid="sales_01", sender="wm_reply_pending_001", receiver="sales_01", content="我想再了解一下", send_time="2026-04-09 13:00:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -5328,7 +5794,7 @@ def test_router_pending_callbacks_api_lists_acked_runs_without_callback(app, cli
 def test_router_callback_uses_optional_metadata_and_configurable_review_pool(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_meta_001", mobile="13800009185", owner_userid="sales_01", customer_name="meta")
-    _seed_automation_member(app, external_contact_id="wm_reply_meta_001", phone="13800009185", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_meta_001", phone="13800009185", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-meta-001", seq=1, external_userid="wm_reply_meta_001", owner_userid="sales_01", sender="wm_reply_meta_001", receiver="sales_01", content="这个方案需要人工讲一下", send_time="2026-04-09 14:00:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -5418,7 +5884,7 @@ def test_router_callback_uses_optional_metadata_and_configurable_review_pool(app
 def test_router_callback_replay_api_replays_stored_callback_payload(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_replay_001", mobile="13800009186", owner_userid="sales_01", customer_name="replay")
-    _seed_automation_member(app, external_contact_id="wm_reply_replay_001", phone="13800009186", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_replay_001", phone="13800009186", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-replay-001", seq=1, external_userid="wm_reply_replay_001", owner_userid="sales_01", sender="wm_reply_replay_001", receiver="sales_01", content="我要价格", send_time="2026-04-09 15:00:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -5494,7 +5960,7 @@ def test_special_router_pools_are_recognized_by_crm_stage_payloads(app, client):
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="system",
     )
     _seed_automation_member(
@@ -5506,7 +5972,7 @@ def test_special_router_pools_are_recognized_by_crm_stage_payloads(app, client):
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="system",
     )
 
@@ -5554,7 +6020,7 @@ def test_automation_conversion_home_page_renders_message_activity_sync_summary(a
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
     monkeypatch.setattr(
@@ -5596,7 +6062,7 @@ def test_admin_automation_conversion_run_message_activity_sync_returns_json_for_
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
@@ -5645,8 +6111,8 @@ def test_reply_monitor_capture_filters_private_inbound_messages_and_groups_by_us
     _seed_contact(app, external_userid="wm_reply_001", mobile="13800009101", owner_userid="sales_01", customer_name="reply-1")
     _seed_contact(app, external_userid="wm_reply_002", mobile="13800009102", owner_userid="sales_01", customer_name="reply-2")
     _seed_contact(app, external_userid="wm_reply_003", mobile="13800009103", owner_userid="sales_01", customer_name="reply-3")
-    _seed_automation_member(app, external_contact_id="wm_reply_001", phone="13800009101", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
-    _seed_automation_member(app, external_contact_id="wm_reply_002", phone="13800009102", owner_staff_id="sales_01", current_pool="active_normal", follow_type="normal", activation_status="active", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_001", phone="13800009101", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_follow_type="focus", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_002", phone="13800009102", owner_staff_id="sales_01", current_pool="active_normal", follow_type="normal", activation_status="active", questionnaire_follow_type="normal", decision_source="questionnaire")
 
     _seed_archived_message(app, msgid="msg-rm-001", seq=1, external_userid="wm_reply_001", owner_userid="sales_01", sender="wm_reply_001", receiver="sales_01", content="你好 1", send_time="2026-04-09 10:00:01")
     _seed_archived_message(app, msgid="msg-rm-002", seq=2, external_userid="wm_reply_001", owner_userid="sales_01", sender="wm_reply_001", receiver="sales_01", content="你好 2", send_time="2026-04-09 10:00:02")
@@ -5699,7 +6165,7 @@ def test_reply_monitor_capture_filters_private_inbound_messages_and_groups_by_us
 def test_reply_monitor_capture_merges_new_messages_into_existing_pending_item(app, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
     _seed_contact(app, external_userid="wm_reply_merge_001", mobile="13800009111", owner_userid="sales_01", customer_name="reply-merge")
-    _seed_automation_member(app, external_contact_id="wm_reply_merge_001", phone="13800009111", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_merge_001", phone="13800009111", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_follow_type="focus", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-merge-001", seq=1, external_userid="wm_reply_merge_001", owner_userid="sales_01", sender="wm_reply_merge_001", receiver="sales_01", content="第一条", send_time="2026-04-09 10:00:01")
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:01:00")
@@ -5735,7 +6201,7 @@ def test_reply_monitor_capture_merges_new_messages_into_existing_pending_item(ap
 def test_reply_monitor_capture_and_dispatch_respect_quiet_hours(app, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="23:00", quiet_hours_end="09:00")
     _seed_contact(app, external_userid="wm_reply_quiet_001", mobile="13800009121", owner_userid="sales_01", customer_name="reply-quiet")
-    _seed_automation_member(app, external_contact_id="wm_reply_quiet_001", phone="13800009121", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_quiet_001", phone="13800009121", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_follow_type="focus", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-quiet-001", seq=1, external_userid="wm_reply_quiet_001", owner_userid="sales_01", sender="wm_reply_quiet_001", receiver="sales_01", content="夜间消息", send_time="2026-04-09 23:14:00")
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 23:15:00")
@@ -5773,7 +6239,7 @@ def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, dispatch_interval_seconds=30)
     for external_userid, mobile in [("wm_reply_due_001", "13800009131"), ("wm_reply_due_002", "13800009132")]:
         _seed_contact(app, external_userid=external_userid, mobile=mobile, owner_userid="sales_01", customer_name=external_userid)
-        _seed_automation_member(app, external_contact_id=external_userid, phone=mobile, owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_result="focus", decision_source="manual")
+        _seed_automation_member(app, external_contact_id=external_userid, phone=mobile, owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_follow_type="focus", decision_source="manual")
     _seed_archived_message(app, msgid="msg-rm-due-001", seq=1, external_userid="wm_reply_due_001", owner_userid="sales_01", sender="wm_reply_due_001", receiver="sales_01", content="白天发送一", send_time="2026-04-09 23:29:01")
     _seed_archived_message(app, msgid="msg-rm-due-002", seq=2, external_userid="wm_reply_due_002", owner_userid="sales_01", sender="wm_reply_due_002", receiver="sales_01", content="白天发送二", send_time="2026-04-09 23:29:02")
     _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_due_001")
@@ -5870,7 +6336,7 @@ def test_reply_monitor_reenable_starts_from_current_cursor_without_history_repla
     assert first_capture["summary"]["scanned_new_messages"] == 0
 
     _seed_contact(app, external_userid="wm_reply_reenable_001", mobile="13800009141", owner_userid="sales_01", customer_name="reenable")
-    _seed_automation_member(app, external_contact_id="wm_reply_reenable_001", phone="13800009141", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_reenable_001", phone="13800009141", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_follow_type="focus", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-reenable-002", seq=2, external_userid="wm_reply_reenable_001", owner_userid="sales_01", sender="wm_reply_reenable_001", receiver="sales_01", content="新消息", send_time="2026-04-09 10:02:00")
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:03:00")
 
@@ -5884,7 +6350,7 @@ def test_reply_monitor_reenable_starts_from_current_cursor_without_history_repla
 def test_reply_monitor_capture_uses_storage_cursor_instead_of_send_time(app, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
     _seed_contact(app, external_userid="wm_reply_cursor_001", mobile="13800009151", owner_userid="sales_01", customer_name="cursor")
-    _seed_automation_member(app, external_contact_id="wm_reply_cursor_001", phone="13800009151", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_cursor_001", phone="13800009151", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_follow_type="focus", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-cursor-001", seq=1, external_userid="wm_reply_cursor_001", owner_userid="sales_01", sender="wm_reply_cursor_001", receiver="sales_01", content="较新 send_time", send_time="2026-04-09 10:05:00")
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:06:00")
 
@@ -5917,7 +6383,7 @@ def test_reply_monitor_capture_uses_storage_cursor_instead_of_send_time(app, mon
 def test_reply_monitor_dispatch_ingress_payload_contains_only_async_minimal_fields(app, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
     _seed_contact(app, external_userid="wm_reply_payload_001", mobile="13800009161", owner_userid="sales_01", customer_name="payload")
-    _seed_automation_member(app, external_contact_id="wm_reply_payload_001", phone="13800009161", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_result="focus", decision_source="manual")
+    _seed_automation_member(app, external_contact_id="wm_reply_payload_001", phone="13800009161", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_follow_type="focus", decision_source="manual")
     _seed_archived_message(app, msgid="msg-rm-payload-001", seq=1, external_userid="wm_reply_payload_001", owner_userid="sales_01", sender="wm_reply_payload_001", receiver="sales_01", content="我要继续了解", send_time="2026-04-09 10:20:00")
     _patch_reply_monitor_payload_context(monkeypatch, external_userid="wm_reply_payload_001")
     captured: dict[str, object] = {}
@@ -6016,7 +6482,7 @@ def test_router_test_dispatch_api_requires_internal_token(app, client, monkeypat
 def test_router_test_dispatch_api_triggers_router_request_id_for_specific_member(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0)
     _seed_contact(app, external_userid="wm_router_test_001", mobile="13800009199", owner_userid="sales_01", customer_name="router-test")
-    _seed_automation_member(app, external_contact_id="wm_router_test_001", phone="13800009199", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_router_test_001", phone="13800009199", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-router-test-001", seq=1, external_userid="wm_router_test_001", owner_userid="sales_01", sender="wm_router_test_001", receiver="sales_01", content="我想再了解一下方案", send_time="2026-04-09 15:00:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -6125,7 +6591,7 @@ def test_process_inbound_messages_for_openclaw_skips_automation_scope_users(app,
 
     _seed_contact(app, external_userid="wm_reply_scope_001", mobile="13800009171", owner_userid="sales_01", customer_name="scope-1")
     _seed_contact(app, external_userid="wm_reply_scope_002", mobile="13800009172", owner_userid="sales_01", customer_name="scope-2")
-    _seed_automation_member(app, external_contact_id="wm_reply_scope_001", phone="13800009171", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_result="focus", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_scope_001", phone="13800009171", owner_staff_id="sales_01", current_pool="inactive_focus", follow_type="focus", activation_status="inactive", questionnaire_follow_type="focus", decision_source="questionnaire")
 
     triggered: list[str] = []
     monkeypatch.setattr(
@@ -6166,7 +6632,7 @@ def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metri
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
 
@@ -6192,7 +6658,7 @@ def test_member_ops_page_renders_business_detail_sidebar_with_member_query(app, 
         follow_type="normal",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="system",
     )
 
@@ -6283,7 +6749,7 @@ def test_focus_send_batch_can_be_created_for_inactive_focus_stage(app, client):
         follow_type="focus",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
 
     response = client.post(
@@ -6318,7 +6784,7 @@ def test_focus_send_batch_can_be_created_for_active_focus_stage(app, client):
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
 
     response = client.post(
@@ -6347,7 +6813,7 @@ def test_focus_send_batch_runner_only_advances_due_items_and_updates_next_run_at
         follow_type="focus",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
     _seed_automation_member(
         app,
@@ -6358,7 +6824,7 @@ def test_focus_send_batch_runner_only_advances_due_items_and_updates_next_run_at
         follow_type="focus",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
     times = iter(
         [
@@ -6426,7 +6892,7 @@ def test_focus_send_batch_runner_item_failure_does_not_block_batch(app, client, 
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
     _seed_automation_member(
         app,
@@ -6437,7 +6903,7 @@ def test_focus_send_batch_runner_item_failure_does_not_block_batch(app, client, 
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
     times = iter(
         [
@@ -6495,7 +6961,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
     _seed_automation_member(
@@ -6506,7 +6972,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
     dispatched_payloads: list[dict[str, object]] = []
@@ -6568,7 +7034,7 @@ def test_manual_send_preview_supports_local_images_and_uses_qianlan_sender(app, 
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
 
@@ -6616,7 +7082,7 @@ def test_manual_send_silent_stage_can_send(app, client, monkeypatch):
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
     )
 
     monkeypatch.setattr(
@@ -6650,7 +7116,7 @@ def test_manual_send_won_stage_can_send(app, client, monkeypatch):
         follow_type="normal",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         last_active_pool="active_normal",
     )
 
@@ -6684,7 +7150,7 @@ def test_manual_send_skips_members_missing_external_userid(app, client, monkeypa
         follow_type="normal",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
     )
     _seed_automation_member(
         app,
@@ -6695,7 +7161,7 @@ def test_manual_send_skips_members_missing_external_userid(app, client, monkeypa
         follow_type="normal",
         activation_status="active",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
     )
     dispatched_payloads: list[dict[str, object]] = []
 
@@ -6730,7 +7196,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
     monkeypatch.setattr(
@@ -6780,7 +7246,7 @@ def test_admin_stage_send_page_shows_focus_batch_summary(app, client, monkeypatc
         follow_type="focus",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="focus",
+        questionnaire_follow_type="focus",
     )
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
 
@@ -6952,7 +7418,7 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
     )
 
@@ -7464,7 +7930,7 @@ def test_mcp_agent_orchestration_tools_list_and_call_outputs(app, client):
         follow_type="normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
     )
     with app.app_context():
@@ -7831,7 +8297,7 @@ def test_pending_publish_query_lists_submitted_child_agent_requests(app, client)
 def test_router_pending_callback_check_creates_alert_output_without_duplicate_alerts(app, client, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     _seed_contact(app, external_userid="wm_reply_alert_001", mobile="13800009187", owner_userid="sales_01", customer_name="alert")
-    _seed_automation_member(app, external_contact_id="wm_reply_alert_001", phone="13800009187", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_result="normal", decision_source="questionnaire")
+    _seed_automation_member(app, external_contact_id="wm_reply_alert_001", phone="13800009187", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
     _seed_archived_message(app, msgid="msg-rm-alert-001", seq=1, external_userid="wm_reply_alert_001", owner_userid="sales_01", sender="wm_reply_alert_001", receiver="sales_01", content="今天怎么还没回我", send_time="2026-04-09 16:00:00")
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
 
@@ -8083,7 +8549,7 @@ def test_sop_run_due_uses_natural_calendar_day_two_after_entry(app, monkeypatch)
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:30:00",
     )
@@ -8124,7 +8590,7 @@ def test_sop_run_due_entry_after_send_time_starts_day1_next_day(app, monkeypatch
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 09:00:00",
     )
@@ -8169,7 +8635,7 @@ def test_sop_run_due_groups_same_day_candidates_into_one_dispatch(app, monkeypat
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8181,7 +8647,7 @@ def test_sop_run_due_groups_same_day_candidates_into_one_dispatch(app, monkeypat
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:10:00",
     )
@@ -8225,7 +8691,7 @@ def test_record_sop_pool_entry_reentry_preserves_anchor_date(app):
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8267,7 +8733,7 @@ def test_sop_run_due_reentry_keeps_anchor_and_does_not_backfill(app, monkeypatch
         current_pool="inactive_normal",
         activation_status="inactive",
         questionnaire_status="submitted",
-        questionnaire_result="normal",
+        questionnaire_follow_type="normal",
         decision_source="questionnaire",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8312,7 +8778,7 @@ def test_manual_send_does_not_change_sop_anchor_or_progress(app, client, monkeyp
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8373,7 +8839,7 @@ def test_sop_run_due_template_empty_skips_today_and_moves_to_next_day(app, monke
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8427,7 +8893,7 @@ def test_sop_historical_member_uses_real_entry_date_and_clamps_to_last_day(app, 
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-01 08:00:00",
     )
@@ -8508,7 +8974,7 @@ def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeyp
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8551,7 +9017,7 @@ def test_sop_run_due_api_fails_closed_when_token_is_not_configured(app, client, 
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8580,7 +9046,7 @@ def test_due_jobs_api_runs_registered_sop_job(app, client, monkeypatch):
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8631,7 +9097,7 @@ def test_sop_run_due_second_pass_does_not_create_duplicate_empty_batch(app, monk
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
@@ -8671,7 +9137,7 @@ def test_sop_run_due_skips_pool_when_lock_is_held(app, monkeypatch):
         current_pool="new_user",
         activation_status="inactive",
         questionnaire_status="pending",
-        questionnaire_result="unknown",
+        questionnaire_follow_type="unknown",
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )

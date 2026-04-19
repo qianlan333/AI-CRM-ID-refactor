@@ -1480,7 +1480,6 @@ CREATE TABLE IF NOT EXISTS automation_member (
     follow_type TEXT NOT NULL DEFAULT '',
     activation_status TEXT NOT NULL DEFAULT 'unknown',
     questionnaire_status TEXT NOT NULL DEFAULT 'pending',
-    questionnaire_result TEXT NOT NULL DEFAULT 'unknown',
     decision_source TEXT NOT NULL DEFAULT 'system',
     source_type TEXT NOT NULL DEFAULT 'system',
     source_channel_id INTEGER REFERENCES automation_channel(id) ON DELETE SET NULL,

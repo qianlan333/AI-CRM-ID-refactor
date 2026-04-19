@@ -223,7 +223,6 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("follow_type")),
         _normalized_text(payload.get("activation_status")),
         _normalized_text(payload.get("questionnaire_status")),
-        _normalized_text(payload.get("questionnaire_result")),
         _normalized_text(payload.get("decision_source")),
         _normalized_text(payload.get("source_type")),
         payload.get("source_channel_id"),
@@ -244,7 +243,6 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
             follow_type,
             activation_status,
             questionnaire_status,
-            questionnaire_result,
             decision_source,
             source_type,
             source_channel_id,
@@ -255,7 +253,7 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         params,
@@ -275,7 +273,6 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("follow_type")),
         _normalized_text(payload.get("activation_status")),
         _normalized_text(payload.get("questionnaire_status")),
-        _normalized_text(payload.get("questionnaire_result")),
         _normalized_text(payload.get("decision_source")),
         _normalized_text(payload.get("source_type")),
         payload.get("source_channel_id"),
@@ -297,7 +294,6 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             follow_type = ?,
             activation_status = ?,
             questionnaire_status = ?,
-            questionnaire_result = ?,
             decision_source = ?,
             source_type = ?,
             source_channel_id = ?,
@@ -2970,6 +2966,40 @@ def get_latest_questionnaire_submission(
     FROM questionnaire_submissions
     WHERE questionnaire_id = ?
       AND (
+    """
+    sql += " OR ".join(filters)
+    sql += """
+      )
+    ORDER BY submitted_at DESC, id DESC
+    LIMIT 1
+    """
+    return _fetchone_dict(sql, tuple(params))
+
+
+def get_latest_any_questionnaire_submission(
+    *,
+    external_contact_ids: list[str] | None = None,
+    phone: str = "",
+) -> dict[str, Any] | None:
+    normalized_external_contact_ids = [
+        _normalized_text(item) for item in (external_contact_ids or []) if _normalized_text(item)
+    ]
+    normalized_phone = _normalized_text(phone)
+    filters: list[str] = []
+    params: list[Any] = []
+    if normalized_external_contact_ids:
+        placeholders = ",".join("?" for _ in normalized_external_contact_ids)
+        filters.append(f"external_userid IN ({placeholders})")
+        params.extend(normalized_external_contact_ids)
+    if normalized_phone:
+        filters.append("mobile_snapshot = ?")
+        params.append(normalized_phone)
+    if not filters:
+        return None
+    sql = """
+    SELECT *
+    FROM questionnaire_submissions
+    WHERE (
     """
     sql += " OR ".join(filters)
     sql += """

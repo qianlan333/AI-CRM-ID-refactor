@@ -1000,7 +1000,6 @@ def list_current_member_audience_rows(audience_code: str) -> list[dict[str, Any]
             m.follow_type AS member_follow_type,
             m.activation_status AS member_activation_status,
             m.questionnaire_status AS member_questionnaire_status,
-            m.questionnaire_result AS member_questionnaire_result,
             m.decision_source AS member_decision_source,
             m.source_type AS member_source_type,
             m.source_channel_id AS member_source_channel_id,
@@ -1035,7 +1034,6 @@ def list_current_member_audience_rows(audience_code: str) -> list[dict[str, Any]
                         "follow_type": row.get("member_follow_type"),
                         "activation_status": row.get("member_activation_status"),
                         "questionnaire_status": row.get("member_questionnaire_status"),
-                        "questionnaire_result": row.get("member_questionnaire_result"),
                         "decision_source": row.get("member_decision_source"),
                         "source_type": row.get("member_source_type"),
                         "source_channel_id": row.get("member_source_channel_id"),
@@ -1456,6 +1454,41 @@ def list_workflow_execution_item_rows(execution_row_id: int) -> list[dict[str, A
             (int(execution_row_id),),
         )
     ]
+
+
+def list_workflow_sent_scheduled_execution_history_rows(
+    *,
+    workflow_id: int,
+    audience_entry_ids: list[int],
+) -> list[dict[str, Any]]:
+    normalized_entry_ids = [int(item) for item in audience_entry_ids if int(item or 0) > 0]
+    if not normalized_entry_ids:
+        return []
+    placeholders = ",".join("?" for _ in normalized_entry_ids)
+    return _fetchall_dicts(
+        f"""
+        SELECT
+            ei.execution_id,
+            ei.workflow_id,
+            ei.node_id,
+            ei.member_id,
+            ei.audience_entry_id,
+            ei.status,
+            ei.error_message,
+            ei.sent_at,
+            e.scheduled_for,
+            e.trigger_type
+        FROM automation_workflow_execution_item AS ei
+        INNER JOIN automation_workflow_execution AS e
+          ON e.id = ei.execution_id
+        WHERE ei.workflow_id = ?
+          AND ei.audience_entry_id IN ({placeholders})
+          AND COALESCE(e.trigger_type, '') = 'scheduled_poll'
+          AND ei.status = 'sent'
+        ORDER BY e.scheduled_for ASC, ei.id ASC
+        """,
+        (int(workflow_id), *normalized_entry_ids),
+    )
 
 
 def list_recent_workflow_execution_item_rows(*, limit: int = 50, status: str = "") -> list[dict[str, Any]]:

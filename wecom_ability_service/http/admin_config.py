@@ -19,6 +19,7 @@ from ..domains.admin_config import (
     save_signup_tag_setting,
 )
 from ..services import (
+    get_signup_conversion_config,
     preview_signup_conversion_customer,
     recompute_signup_conversion_customers,
     save_signup_conversion_config,
