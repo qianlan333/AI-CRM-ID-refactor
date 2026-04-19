@@ -209,6 +209,24 @@ def _seed_automation_member(
     last_active_pool: str = "",
     joined_at: str = "2026-04-06 10:00:00",
 ) -> None:
+    pool_aliases = {
+        "new_user": "pending_questionnaire",
+        "inactive_normal": "operating",
+        "inactive_focus": "operating",
+        "active_normal": "operating",
+        "active_focus": "operating",
+        "silent": "operating",
+        "won": "converted",
+    }
+    normalized_current_pool = pool_aliases.get(current_pool, current_pool)
+    normalized_last_active_pool = pool_aliases.get(last_active_pool, last_active_pool)
+    current_audience_code = (
+        "converted"
+        if normalized_current_pool == "converted"
+        else "operating"
+        if questionnaire_status == "submitted"
+        else "pending_questionnaire"
+    )
     if questionnaire_follow_type in {"normal", "focus"} and follow_type in {"", "normal"}:
         follow_type = questionnaire_follow_type
     with app.app_context():
@@ -217,23 +235,24 @@ def _seed_automation_member(
             """
             INSERT INTO automation_member (
                 external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, decision_source,
-                source_type, last_active_pool, joined_at, created_at, updated_at
+                questionnaire_status, decision_source, source_type, last_active_pool,
+                current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 external_contact_id,
                 phone,
                 owner_staff_id,
                 in_pool,
-                current_pool,
+                normalized_current_pool,
                 follow_type,
-                activation_status,
                 questionnaire_status,
                 decision_source,
                 source_type,
-                last_active_pool,
+                normalized_last_active_pool,
+                current_audience_code,
+                joined_at,
                 joined_at,
             ),
         )

@@ -363,7 +363,11 @@ def _resolve_member_conversion_audience(member: dict[str, Any]) -> dict[str, Any
     questionnaire_submitted_at = _normalized_text(questionnaire_state.get("submitted_at"))
     current_audience_code = _normalized_text(member.get("current_audience_code"))
     current_audience_entered_at = _normalized_text(member.get("current_audience_entered_at"))
-    if bool((marketing_state or {}).get("converted")) or _normalized_text((marketing_state or {}).get("main_stage")) == "converted" or _normalized_text(member.get("current_pool")) == "won":
+    if (
+        bool((marketing_state or {}).get("converted"))
+        or _normalized_text((marketing_state or {}).get("main_stage")) == "converted"
+        or _normalized_text(member.get("current_pool")) in {"won", "converted"}
+    ):
         return {
             "audience_code": AUDIENCE_CONVERTED,
             "entered_at": current_audience_entered_at if current_audience_code == AUDIENCE_CONVERTED and current_audience_entered_at else (
@@ -736,7 +740,6 @@ def _build_generation_variables(
             "current_pool": _normalized_text(member.get("current_pool")),
             "current_audience_code": _normalized_text(member.get("current_audience_code")),
             "current_audience_entered_at": _normalized_text(member.get("current_audience_entered_at")),
-            "activation_status": _normalized_text(member.get("activation_status")),
         },
         "standard_content_text": _normalized_text(standard_content_text),
         "profile_segment": {
@@ -761,12 +764,6 @@ def _build_generation_variables(
         },
         "recent_messages": recent_messages,
         "user_tags": user_tags,
-        "activation_info": {
-            "activation_status": _normalized_text(member.get("activation_status")),
-            "current_pool": _normalized_text(member.get("current_pool")),
-            "current_audience_code": _normalized_text(member.get("current_audience_code")),
-            "current_audience_entered_at": _normalized_text(member.get("current_audience_entered_at")),
-        },
     }
 
 

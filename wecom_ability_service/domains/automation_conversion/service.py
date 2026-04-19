@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from flask import current_app
@@ -23,14 +23,8 @@ from ..automation_state.renderer import business_pool_label
 from ..automation_state.state_defs import (
     FOLLOWUP_SEGMENT_FOCUS as SHARED_FOLLOWUP_SEGMENT_FOCUS,
     FOLLOWUP_SEGMENT_NORMAL as SHARED_FOLLOWUP_SEGMENT_NORMAL,
-    POOL_ACTIVE_FOCUS as SHARED_POOL_ACTIVE_FOCUS,
-    POOL_ACTIVE_NORMAL as SHARED_POOL_ACTIVE_NORMAL,
-    POOL_INACTIVE_FOCUS as SHARED_POOL_INACTIVE_FOCUS,
-    POOL_INACTIVE_NORMAL as SHARED_POOL_INACTIVE_NORMAL,
-    POOL_NEW_USER as SHARED_POOL_NEW_USER,
-    POOL_SILENT as SHARED_POOL_SILENT,
 )
-from ..marketing_automation.service import get_customer_marketing_profile, get_signup_conversion_config, save_signup_conversion_config
+from ..marketing_automation.service import get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail, list_available_wecom_tags, list_questionnaires
 from ..tags import repo as tags_repo
@@ -83,16 +77,20 @@ CHANNEL_STATUS_NOT_GENERATED = "not_generated"
 CHANNEL_STATUS_CONFIGURED = "configured"
 CHANNEL_STATUS_ACTIVE = "active"
 
-POOL_NEW_USER = SHARED_POOL_NEW_USER
-POOL_INACTIVE_NORMAL = SHARED_POOL_INACTIVE_NORMAL
-POOL_INACTIVE_FOCUS = SHARED_POOL_INACTIVE_FOCUS
-POOL_ACTIVE_NORMAL = SHARED_POOL_ACTIVE_NORMAL
-POOL_ACTIVE_FOCUS = SHARED_POOL_ACTIVE_FOCUS
-POOL_SILENT = SHARED_POOL_SILENT
 POOL_WON = local_projection.POOL_WON
 POOL_REMOVED = local_projection.POOL_REMOVED
 POOL_NO_REPLY = local_projection.POOL_NO_REPLY
 POOL_HUMAN_REPLY = local_projection.POOL_HUMAN_REPLY
+POOL_PENDING_QUESTIONNAIRE = local_projection.POOL_PENDING_QUESTIONNAIRE
+POOL_OPERATING = local_projection.POOL_OPERATING
+POOL_CONVERTED = local_projection.POOL_CONVERTED
+
+POOL_NEW_USER = POOL_PENDING_QUESTIONNAIRE
+POOL_INACTIVE_NORMAL = POOL_OPERATING
+POOL_INACTIVE_FOCUS = POOL_OPERATING
+POOL_ACTIVE_NORMAL = POOL_OPERATING
+POOL_ACTIVE_FOCUS = POOL_OPERATING
+POOL_SILENT = POOL_OPERATING
 
 FOLLOWUP_NORMAL = SHARED_FOLLOWUP_SEGMENT_NORMAL
 FOLLOWUP_FOCUS = SHARED_FOLLOWUP_SEGMENT_FOCUS
@@ -103,10 +101,6 @@ QUESTIONNAIRE_SUBMITTED = "submitted"
 DECISION_SOURCE_QUESTIONNAIRE = "questionnaire"
 DECISION_SOURCE_MANUAL = "manual"
 DECISION_SOURCE_SYSTEM = "system"
-
-ACTIVATION_UNKNOWN = "unknown"
-ACTIVATION_INACTIVE = "inactive"
-ACTIVATION_ACTIVE = "active"
 
 SOURCE_TYPE_MANUAL = "manual"
 SOURCE_TYPE_QRCODE = "qrcode"
@@ -142,16 +136,13 @@ STAGE_DEFINITIONS = local_projection.STAGE_DEFINITIONS
 ROUTE_KEY_TO_POOL = local_projection.ROUTE_KEY_TO_POOL
 POOL_TO_STAGE_DEF = local_projection.POOL_TO_STAGE_DEF
 MESSAGE_ACTIVITY_SYNC_POOLS = (
-    POOL_INACTIVE_NORMAL,
-    POOL_INACTIVE_FOCUS,
-    POOL_ACTIVE_NORMAL,
-    POOL_ACTIVE_FOCUS,
+    POOL_OPERATING,
 )
 FOCUS_SEND_ALLOWED_POOLS = local_projection.FOCUS_SEND_ALLOWED_POOLS
 SOP_V1_ALLOWED_POOLS = (
-    POOL_NEW_USER,
-    POOL_INACTIVE_NORMAL,
-    POOL_ACTIVE_NORMAL,
+    POOL_PENDING_QUESTIONNAIRE,
+    POOL_OPERATING,
+    POOL_CONVERTED,
 )
 SOP_V1_DEFAULT_SEND_TIME = "09:00"
 SOP_V1_DEFAULT_TIMEZONE = "Asia/Shanghai"
@@ -299,9 +290,17 @@ def _normalize_manual_send_image_media_ids(image_media_ids: list[str] | None = N
 
 
 def _validate_sop_pool_key(pool_key: str) -> str:
-    normalized_pool_key = _normalized_text(pool_key)
+    normalized_pool_key = {
+        "new_user": POOL_PENDING_QUESTIONNAIRE,
+        "inactive_normal": POOL_OPERATING,
+        "inactive_focus": POOL_OPERATING,
+        "active_normal": POOL_OPERATING,
+        "active_focus": POOL_OPERATING,
+        "silent": POOL_OPERATING,
+        "won": POOL_CONVERTED,
+    }.get(_normalized_text(pool_key), _normalized_text(pool_key))
     if normalized_pool_key not in SOP_V1_ALLOWED_POOLS:
-        raise ValueError("sop pool_key must be one of new_user, inactive_normal, active_normal")
+        raise ValueError("sop pool_key must be one of pending_questionnaire, operating, converted")
     return normalized_pool_key
 
 
@@ -631,7 +630,7 @@ def get_sop_v1_management_payload(*, selected_pool_key: str = "", selected_day_i
         )
     current_pool = get_sop_v1_templates_payload(normalized_pool_key, selected_day_index=selected_day_index)
     return {
-        "subtitle": "只覆盖新用户池、未激活普通池、激活普通池",
+        "subtitle": "只覆盖未填问卷人群、运营中人群、已转化人群",
         "selected_pool_key": normalized_pool_key,
         "pool_cards": pool_cards,
         "current_pool": current_pool,
@@ -880,15 +879,6 @@ def _decision_source_label(value: str) -> str:
     }.get(normalized, "系统")
 
 
-def _activation_status_label(value: str) -> str:
-    normalized = _normalized_text(value)
-    return {
-        ACTIVATION_UNKNOWN: "未知",
-        ACTIVATION_INACTIVE: "未激活",
-        ACTIVATION_ACTIVE: "已激活",
-    }.get(normalized, "未知")
-
-
 def _automation_action_label(value: str) -> str:
     normalized = _normalized_text(value)
     return ACTION_LABELS.get(normalized, normalized or "未知操作")
@@ -904,7 +894,6 @@ def _serialize_member(member: dict[str, Any]) -> dict[str, Any]:
         "in_pool": _normalize_bool(member.get("in_pool")),
         "current_pool": _normalized_text(member.get("current_pool")) or POOL_REMOVED,
         "follow_type": _normalized_follow_type_value(member.get("follow_type")),
-        "activation_status": _normalized_text(member.get("activation_status")) or ACTIVATION_UNKNOWN,
         "questionnaire_status": _normalized_text(member.get("questionnaire_status")) or QUESTIONNAIRE_PENDING,
         "decision_source": _normalized_text(member.get("decision_source")) or DECISION_SOURCE_SYSTEM,
         "source_type": _normalized_text(member.get("source_type")) or SOURCE_TYPE_SYSTEM,
@@ -924,7 +913,6 @@ def _serialize_member(member: dict[str, Any]) -> dict[str, Any]:
     serialized["current_target_label"] = _target_label(serialized["current_target"])
     serialized["current_pool_label"] = _pool_label(serialized["current_pool"])
     serialized["follow_type_label"] = _follow_type_label(serialized["follow_type"])
-    serialized["activation_status_label"] = _activation_status_label(serialized["activation_status"])
     serialized["questionnaire_status_label"] = _questionnaire_status_label(serialized["questionnaire_status"])
     serialized["decision_source_label"] = _decision_source_label(serialized["decision_source"])
     return serialized
@@ -940,7 +928,6 @@ def _member_snapshot(member: dict[str, Any]) -> dict[str, Any]:
         "in_pool": serialized["in_pool"],
         "current_pool": serialized["current_pool"],
         "follow_type": serialized["follow_type"],
-        "activation_status": serialized["activation_status"],
         "questionnaire_status": serialized["questionnaire_status"],
         "decision_source": serialized["decision_source"],
         "source_type": serialized["source_type"],
@@ -989,22 +976,6 @@ def _load_profile(external_contact_id: str = "", phone: str = "") -> dict[str, A
         "owner_staff_id": _normalized_text(profile.get("owner_userid")) or _normalized_text(profile.get("owner_display_name")),
         "owner_display_name": _normalized_text(profile.get("owner_display_name")) or _normalized_text(profile.get("owner_userid")),
         "unionid": _normalized_text(profile.get("unionid")),
-    }
-
-
-def _activation_status_from_live(external_contact_id: str) -> dict[str, Any]:
-    normalized_external_contact_id = _normalized_text(external_contact_id)
-    if not normalized_external_contact_id:
-        return {"activation_status": ACTIVATION_UNKNOWN, "last_activation_at": ""}
-    try:
-        marketing_profile = get_customer_marketing_profile(normalized_external_contact_id)
-    except Exception:
-        return {"activation_status": ACTIVATION_UNKNOWN, "last_activation_at": ""}
-    marketing_state = dict((marketing_profile or {}).get("marketing_state") or {})
-    activated = bool(marketing_state.get("activated")) or bool(_normalized_text(marketing_state.get("last_activation_at")))
-    return {
-        "activation_status": ACTIVATION_ACTIVE if activated else ACTIVATION_INACTIVE,
-        "last_activation_at": _normalized_text(marketing_state.get("last_activation_at")),
     }
 
 
@@ -1148,32 +1119,12 @@ def _build_live_context(external_contact_id: str = "", phone: str = "") -> dict[
     resolved_external_contact_id = _normalized_text(profile.get("external_contact_id")) or lookup["external_contact_id"]
     resolved_phone = _normalized_text(profile.get("phone")) or lookup["phone"]
     external_contact_ids = list(dict.fromkeys([item for item in lookup["external_contact_ids"] + [resolved_external_contact_id] if _normalized_text(item)]))
-    activation = _activation_status_from_live(resolved_external_contact_id)
     questionnaire = resolve_member_questionnaire_truth(external_contact_ids=external_contact_ids, phone=resolved_phone)
     return {
         "lookup": {**lookup, "external_contact_ids": external_contact_ids},
         "profile": profile,
-        "activation": activation,
         "questionnaire": questionnaire,
     }
-
-
-def _silent_threshold_days(pool_key: str, settings: dict[str, Any]) -> int:
-    thresholds = dict(settings.get("silent_threshold_days_by_pool") or {})
-    try:
-        return int(thresholds.get(pool_key) or 7)
-    except (TypeError, ValueError):
-        return 7
-
-
-def _should_be_silent(member: dict[str, Any], settings: dict[str, Any]) -> bool:
-    current_pool = _normalized_text(member.get("current_pool"))
-    if current_pool not in {POOL_NEW_USER, POOL_INACTIVE_NORMAL, POOL_INACTIVE_FOCUS, POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}:
-        return False
-    base_timestamp = _parse_timestamp(member.get("updated_at")) or _parse_timestamp(member.get("joined_at"))
-    if base_timestamp is None:
-        return False
-    return datetime.now() >= (base_timestamp + timedelta(days=_silent_threshold_days(current_pool, settings)))
 
 
 def recompute_pool(member: dict[str, Any], context: dict[str, Any], *, action: str = "") -> str:
@@ -1191,23 +1142,10 @@ def recompute_pool(member: dict[str, Any], context: dict[str, Any], *, action: s
         return current_pool
     if not _normalize_bool(member.get("in_pool")):
         return POOL_REMOVED
-    if current_pool == POOL_SILENT and action not in {"put_in_pool", "unmark_won"}:
-        return POOL_SILENT
     questionnaire_status = _normalized_text(member.get("questionnaire_status")) or QUESTIONNAIRE_PENDING
     if questionnaire_status != QUESTIONNAIRE_SUBMITTED:
-        next_pool = POOL_NEW_USER
-    else:
-        follow_type = _resolved_follow_type_for_member(member, (context or {}).get("questionnaire"), default=FOLLOWUP_NORMAL)
-        activation_status = _normalized_text(member.get("activation_status")) or ACTIVATION_UNKNOWN
-        if activation_status == ACTIVATION_ACTIVE:
-            next_pool = POOL_ACTIVE_FOCUS if follow_type == FOLLOWUP_FOCUS else POOL_ACTIVE_NORMAL
-        else:
-            next_pool = POOL_INACTIVE_FOCUS if follow_type == FOLLOWUP_FOCUS else POOL_INACTIVE_NORMAL
-    settings = context.get("settings") or get_signup_conversion_config()
-    temp_member = {**member, "current_pool": next_pool}
-    if _should_be_silent(temp_member, settings):
-        return POOL_SILENT
-    return next_pool
+        return POOL_PENDING_QUESTIONNAIRE
+    return POOL_OPERATING
 
 
 def _member_payload_from_context(
@@ -1220,7 +1158,6 @@ def _member_payload_from_context(
 ) -> dict[str, Any]:
     existing_row = _serialize_member(existing or {})
     profile = context["profile"]
-    activation = context["activation"]
     questionnaire = context["questionnaire"]
     lookup = context["lookup"]
     resolved_follow_type = _resolved_follow_type_for_member(existing_row, questionnaire)
@@ -1232,7 +1169,6 @@ def _member_payload_from_context(
         "in_pool": existing_row.get("in_pool") if in_pool is None else bool(in_pool),
         "current_pool": existing_row.get("current_pool") or POOL_REMOVED,
         "follow_type": resolved_follow_type,
-        "activation_status": _normalized_text(activation.get("activation_status")) or existing_row.get("activation_status") or ACTIVATION_UNKNOWN,
         "questionnaire_status": _normalized_text(questionnaire.get("questionnaire_status")) or existing_row.get("questionnaire_status") or QUESTIONNAIRE_PENDING,
         "decision_source": _resolved_decision_source_for_member(existing_row, questionnaire),
         "source_type": _normalized_text(source_type) or existing_row.get("source_type") or SOURCE_TYPE_SYSTEM,
@@ -1255,7 +1191,6 @@ def _substantive_member_changed(before: dict[str, Any], after: dict[str, Any]) -
         "in_pool",
         "current_pool",
         "follow_type",
-        "activation_status",
         "questionnaire_status",
         "decision_source",
         "source_type",
@@ -1417,38 +1352,11 @@ def _touch_member_from_sources(
 
 
 def refresh_expired_silent_members() -> dict[str, Any]:
-    settings = get_signup_conversion_config()
-    refreshed = 0
-    for row in repo.list_members_for_silent_refresh():
-        serialized = _serialize_member(row)
-        if not _should_be_silent(serialized, settings):
-            continue
-        next_payload = {
-            **serialized,
-            "current_pool": POOL_SILENT,
-        }
-        saved = _persist_member(serialized, next_payload)
-        _write_event(
-            member_id=int(saved["id"]),
-            action="system_silent_refresh",
-            operator_type="system",
-            operator_id="system",
-            before_snapshot=_member_snapshot(serialized),
-            after_snapshot=_member_snapshot(saved),
-            remark="silent threshold reached",
-        )
-        refreshed += 1
-    return {"refreshed_count": refreshed}
+    return {"refreshed_count": 0}
 
 
-def _message_activity_pool(*, activation_status: str, follow_type: str) -> str:
-    normalized_follow_type = _normalized_text(follow_type)
-    if normalized_follow_type not in {FOLLOWUP_NORMAL, FOLLOWUP_FOCUS}:
-        normalized_follow_type = FOLLOWUP_NORMAL
-    normalized_activation_status = _normalized_text(activation_status)
-    if normalized_activation_status == ACTIVATION_ACTIVE:
-        return POOL_ACTIVE_FOCUS if normalized_follow_type == FOLLOWUP_FOCUS else POOL_ACTIVE_NORMAL
-    return POOL_INACTIVE_FOCUS if normalized_follow_type == FOLLOWUP_FOCUS else POOL_INACTIVE_NORMAL
+def _message_activity_pool(*, questionnaire_status: str) -> str:
+    return POOL_OPERATING if _normalized_text(questionnaire_status) == QUESTIONNAIRE_SUBMITTED else POOL_PENDING_QUESTIONNAIRE
 
 
 def _inactive_follow_type_from_member(before: dict[str, Any]) -> tuple[str, str, bool]:
@@ -2734,41 +2642,29 @@ def run_message_activity_sync(
         for index, item in enumerate(ranked_members):
             before = item["member"]
             message_count = int(item["message_count"])
-            was_active_before = (
-                _normalized_text(before.get("activation_status")) == ACTIVATION_ACTIVE
-                or _normalized_text(before.get("current_pool")) in {POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}
-            )
             if message_count >= ACTIVE_FOCUS_MESSAGE_THRESHOLD:
-                next_activation_status = ACTIVATION_ACTIVE
                 next_follow_type = FOLLOWUP_FOCUS
                 next_decision_source = DECISION_SOURCE_SYSTEM
                 bucket_label = "active_focus_threshold"
                 manual_preserved = False
             elif message_count >= ACTIVE_MESSAGE_MIN_THRESHOLD:
-                next_activation_status = ACTIVATION_ACTIVE
                 next_follow_type = FOLLOWUP_NORMAL
                 next_decision_source = DECISION_SOURCE_SYSTEM
                 bucket_label = "active_normal_threshold"
                 manual_preserved = False
             else:
-                next_activation_status = ACTIVATION_INACTIVE
                 next_follow_type, next_decision_source, manual_preserved = _inactive_follow_type_from_member(before)
-                if was_active_before and not manual_preserved:
-                    next_decision_source = DECISION_SOURCE_SYSTEM
                 bucket_label = "inactive_questionnaire_or_manual"
             if next_follow_type == FOLLOWUP_FOCUS:
                 counters["focus_count"] += 1
             else:
                 counters["normal_count"] += 1
+            questionnaire_status = _normalized_text(before.get("questionnaire_status")) or QUESTIONNAIRE_PENDING
             next_payload = {
                 **before,
-                "activation_status": next_activation_status,
                 "follow_type": next_follow_type,
                 "decision_source": next_decision_source,
-                "current_pool": _message_activity_pool(
-                    activation_status=next_activation_status,
-                    follow_type=next_follow_type,
-                ),
+                "current_pool": _message_activity_pool(questionnaire_status=questionnaire_status),
             }
             changed = _substantive_member_changed(before, next_payload)
             if changed:
@@ -3535,14 +3431,19 @@ def apply_router_target_pool(
     operator_id: str = "",
     operator_type: str = "system",
 ) -> dict[str, Any]:
-    normalized_target_pool = _normalized_text(target_pool)
+    legacy_target_pool_aliases = {
+        "new_user": POOL_PENDING_QUESTIONNAIRE,
+        "inactive_normal": POOL_OPERATING,
+        "inactive_focus": POOL_OPERATING,
+        "active_normal": POOL_OPERATING,
+        "active_focus": POOL_OPERATING,
+        "silent": POOL_OPERATING,
+        "won": POOL_CONVERTED,
+    }
+    normalized_target_pool = legacy_target_pool_aliases.get(_normalized_text(target_pool), _normalized_text(target_pool))
     allowed_pools = {
-        POOL_NEW_USER,
-        POOL_INACTIVE_NORMAL,
-        POOL_INACTIVE_FOCUS,
-        POOL_ACTIVE_NORMAL,
-        POOL_ACTIVE_FOCUS,
-        POOL_SILENT,
+        POOL_PENDING_QUESTIONNAIRE,
+        POOL_OPERATING,
         POOL_WON,
         POOL_NO_REPLY,
         POOL_HUMAN_REPLY,
@@ -3560,25 +3461,18 @@ def apply_router_target_pool(
         current["joined_at"] = current.get("joined_at") or _iso_now()
 
         if normalized_target_pool == POOL_WON:
-            current["in_pool"] = False
+            current["in_pool"] = True
             current["current_pool"] = POOL_WON
+            current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
             return current, f"router_target_pool={normalized_target_pool}", False
 
         current["in_pool"] = True
         current["current_pool"] = normalized_target_pool
 
-        if normalized_target_pool in {POOL_INACTIVE_NORMAL, POOL_ACTIVE_NORMAL}:
+        if normalized_target_pool == POOL_OPERATING:
             current["follow_type"] = FOLLOWUP_NORMAL
             current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
-        elif normalized_target_pool in {POOL_INACTIVE_FOCUS, POOL_ACTIVE_FOCUS}:
-            current["follow_type"] = FOLLOWUP_FOCUS
-            current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
-
-        if normalized_target_pool in {POOL_INACTIVE_NORMAL, POOL_INACTIVE_FOCUS}:
-            current["activation_status"] = ACTIVATION_INACTIVE
-        elif normalized_target_pool in {POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}:
-            current["activation_status"] = ACTIVATION_ACTIVE
-        elif normalized_target_pool == POOL_NEW_USER:
+        elif normalized_target_pool == POOL_PENDING_QUESTIONNAIRE:
             current["questionnaire_status"] = QUESTIONNAIRE_PENDING
 
         return current, f"router_target_pool={normalized_target_pool}", False
@@ -3652,8 +3546,9 @@ def set_follow_type(*, external_contact_id: str = "", phone: str = "", follow_ty
 def mark_won(*, external_contact_id: str = "", phone: str = "", operator_id: str = "") -> dict[str, Any]:
     def mutate(current: dict[str, Any], context: dict[str, Any]) -> tuple[dict[str, Any], str]:
         current["last_active_pool"] = _normalized_text(current.get("current_pool")) if _normalized_text(current.get("current_pool")) not in {POOL_WON, POOL_REMOVED} else _normalized_text(current.get("last_active_pool"))
-        current["in_pool"] = False
+        current["in_pool"] = True
         current["current_pool"] = POOL_WON
+        current["questionnaire_status"] = QUESTIONNAIRE_SUBMITTED
         return current, ""
 
     return _mutate_member(
@@ -3806,11 +3701,9 @@ def get_overview_payload() -> dict[str, Any]:
     cards = [
         {"key": "in_pool_total", "label": "在池总人数", "value": counts["in_pool_total"], "description": "当前仍在自动化池里的成员数量。"},
         {"key": "today_joined", "label": "今日入池", "value": counts["today_joined"], "description": "今天新进入自动化池的成员数量。"},
-        {"key": "questionnaire_pending", "label": "待问卷", "value": counts["questionnaire_pending"], "description": "已入池但还没提交问卷。"},
-        {"key": "normal_followup", "label": "普通跟进", "value": counts["normal_followup"], "description": "当前普通跟进成员数量。"},
-        {"key": "focus_followup", "label": "重点跟进", "value": counts["focus_followup"], "description": "当前重点跟进成员数量。"},
-        {"key": "silent_total", "label": "沉默池", "value": counts["silent_total"], "description": "达到沉默阈值后进入沉默池。"},
-        {"key": "won_total", "label": "已成交", "value": counts["won_total"], "description": "确认已成交的成员数量。"},
+        {"key": "questionnaire_pending", "label": "未填问卷人群", "value": counts["questionnaire_pending"], "description": "已入池但还没提交问卷。"},
+        {"key": "operating_total", "label": "运营中人群", "value": counts["operating_total"], "description": "问卷提交后的统一运营人群。"},
+        {"key": "converted_total", "label": "已转化人群", "value": counts["converted_total"], "description": "确认转化后的成员数量。"},
     ]
     stage_columns = []
     for definition in STAGE_DEFINITIONS:
@@ -4562,7 +4455,7 @@ def list_registered_due_jobs() -> list[dict[str, Any]]:
             "job_code": "sop",
             "label": "自动化转化 SOP",
             "frequency_minutes": 15,
-            "description": "轮询新用户池、未激活普通池、激活普通池的 SOP day 模板，到点后按自然日批量发送。",
+            "description": "轮询未填问卷人群、运营中人群、已转化人群的 SOP day 模板，到点后按自然日批量发送。",
         },
         {
             "job_code": "conversion_workflow",
@@ -4906,9 +4799,9 @@ def sync_member_activation(*, external_contact_id: str = "", phone: str = "", op
     before = _serialize_member(member)
     saved = _touch_member_from_sources(
         member,
-        action="activation_refresh",
+        action="member_refresh",
         operator_type="system",
-        operator_id=_normalized_text(operator_id) or "activation_webhook",
+        operator_id=_normalized_text(operator_id) or "member_refresh",
         persist_event=True,
     )
     after = _serialize_member(saved)

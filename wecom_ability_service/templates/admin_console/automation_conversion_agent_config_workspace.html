@@ -688,7 +688,7 @@
                 <li>写了 {% raw %}{{问卷信息}}{% endraw %}，才会注入问卷题目与答案摘要。</li>
                 <li>写了 {% raw %}{{最近20条聊天信息}}{% endraw %}，才会注入最近 20 条聊天信息。</li>
                 <li>写了 {% raw %}{{用户标签}}{% endraw %}，才会注入当前用户标签。</li>
-                <li>写了 {% raw %}{{激活信息}}{% endraw %}，才会注入激活状态、当前池子和当前大人群。</li>
+                <li>写了 {% raw %}{{阶段信息}}{% endraw %}，才会注入当前池子、当前阶段、当前大人群和跟进类型。</li>
               </ul>
             </section>
 
@@ -701,7 +701,7 @@
                 <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{问卷信息}}{% endraw %}">{% raw %}{{问卷信息}}{% endraw %}</button>
                 <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{最近20条聊天信息}}{% endraw %}">{% raw %}{{最近20条聊天信息}}{% endraw %}</button>
                 <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{用户标签}}{% endraw %}">{% raw %}{{用户标签}}{% endraw %}</button>
-                <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{激活信息}}{% endraw %}">{% raw %}{{激活信息}}{% endraw %}</button>
+                <button class="admin-button admin-button--secondary ac-config-placeholder-button" type="button" data-agent-placeholder="{% raw %}{{阶段信息}}{% endraw %}">{% raw %}{{阶段信息}}{% endraw %}</button>
               </div>
               <p class="ac-config-placeholder-help">系统内部固定只生成一条话术，保存和发布时会自动按 `draft_reply` 收口，不再让你配置输出协议 JSON。</p>
             </section>
@@ -1276,7 +1276,7 @@
         { code: 'questionnaire', label: '问卷信息', placeholder: '{{问卷信息}}' },
         { code: 'recent_messages', label: '最近20条聊天信息', placeholder: '{{最近20条聊天信息}}' },
         { code: 'user_tags', label: '用户标签', placeholder: '{{用户标签}}' },
-        { code: 'activation_info', label: '激活信息', placeholder: '{{激活信息}}' },
+        { code: 'activation_info', label: '阶段信息', placeholder: '{{阶段信息}}' },
       ];
     }
 
