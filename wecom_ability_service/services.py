@@ -140,7 +140,6 @@ ack_message_batch = archive_domain_service.ack_message_batch
 save_outbound_task = tasks_domain_service.save_outbound_task
 record_conversion_feedback = tasks_domain_service.record_conversion_feedback
 ack_conversion_batch = marketing_automation_domain_service.ack_conversion_batch
-apply_activation_webhook = marketing_automation_domain_service.apply_activation_webhook
 get_conversion_batch = marketing_automation_domain_service.get_conversion_batch
 get_customer_marketing_profile = marketing_automation_domain_service.get_customer_marketing_profile
 get_customer_trial_opening_fact = marketing_automation_domain_service.get_customer_trial_opening_fact
@@ -150,11 +149,8 @@ get_openclaw_customer_marketing_profile = marketing_automation_domain_service.ge
 get_pending_conversion_batches = marketing_automation_domain_service.get_pending_conversion_batches
 process_inbound_messages_for_openclaw = marketing_automation_domain_service.process_inbound_messages_for_openclaw
 send_pool_private_message = marketing_automation_domain_service.send_pool_private_message
-list_outbound_webhook_deliveries = outbound_webhook_domain_service.list_outbound_webhook_deliveries
 get_outbound_webhook_delivery_counts = outbound_webhook_domain_service.get_outbound_webhook_delivery_counts
 get_signup_conversion_config = marketing_automation_domain_service.get_signup_conversion_config
-list_signup_conversion_batches = marketing_automation_domain_service.list_signup_conversion_batches
-get_signup_conversion_batch = marketing_automation_domain_service.get_signup_conversion_batch
 route_signup_conversion_batch_candidates = marketing_automation_domain_service.route_signup_conversion_batch_candidates
 list_signup_conversion_question_rules = marketing_automation_domain_service.list_signup_conversion_question_rules
 mark_enrolled = marketing_automation_domain_service.mark_enrolled
@@ -165,8 +161,6 @@ set_manual_followup_segment = marketing_automation_domain_service.set_manual_fol
 trigger_openclaw_focus_message_webhook = marketing_automation_domain_service.trigger_openclaw_focus_message_webhook
 unmark_enrolled = marketing_automation_domain_service.unmark_enrolled
 upsert_customer_trial_opening_fact = marketing_automation_domain_service.upsert_customer_trial_opening_fact
-retry_outbound_webhook_delivery = outbound_webhook_domain_service.retry_outbound_webhook_delivery
-run_due_outbound_webhook_retries = outbound_webhook_domain_service.run_due_outbound_webhook_retries
 
 save_tag_snapshot = tags_repo.save_tag_snapshot
 remove_tag_snapshot = tags_repo.remove_tag_snapshot
@@ -196,7 +190,11 @@ delete_questionnaire = questionnaire_domain_service.delete_questionnaire
 export_questionnaire_submissions = questionnaire_domain_service.export_questionnaire_submissions
 get_public_questionnaire_by_slug = questionnaire_domain_service.get_public_questionnaire_by_slug
 validate_questionnaire_answers = questionnaire_domain_service.validate_questionnaire_answers
-compute_questionnaire_result = questionnaire_domain_service.compute_questionnaire_result
+if hasattr(questionnaire_domain_service, "compute_questionnaire_submission_outcome"):
+    compute_questionnaire_submission_outcome = questionnaire_domain_service.compute_questionnaire_submission_outcome
+else:
+    compute_questionnaire_submission_outcome = questionnaire_domain_service.compute_questionnaire_result
+compute_questionnaire_result = compute_questionnaire_submission_outcome
 
 
 def _bind_questionnaire_domain() -> None:
@@ -208,6 +206,8 @@ def _bind_questionnaire_domain() -> None:
 
 
 def _user_ops_contact_client():
+    # Historical monkeypatch / DI hook. Keep the symbol stable for tests and
+    # user-ops runtime overrides even as callers move away from services.py.
     return get_contact_runtime_client()
 
 
@@ -243,6 +243,95 @@ def _resolve_signup_status_for_contact(external_userid: str, owner_userid: str) 
         }
     )
     return str(payload.get("signup_status") or "").strip()
+
+
+# Wave 1 compatibility wrappers:
+# prefer the formal application API where it already exists, but keep the
+# historical services.py symbols stable for legacy imports and monkeypatching.
+
+
+def list_outbound_webhook_deliveries(
+    *,
+    event_type: str = "",
+    status: str = "",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 1 automation-engine query."""
+
+    from .application.automation_engine.queries import ListOutboundWebhookDeliveriesQuery
+
+    return ListOutboundWebhookDeliveriesQuery()(
+        event_type=event_type,
+        status=status,
+        limit=limit,
+    )
+
+
+def retry_outbound_webhook_delivery(delivery_id: int) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 1 automation-engine command."""
+
+    from .application.automation_engine import RetryOutboundWebhookDeliveryCommand
+
+    return RetryOutboundWebhookDeliveryCommand()(int(delivery_id))
+
+
+def run_due_outbound_webhook_retries(*, limit: int = 20) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 1 automation-engine command."""
+
+    from .application.automation_engine.queries import RunDueOutboundWebhookRetriesCommand
+
+    return RunDueOutboundWebhookRetriesCommand()(limit=int(limit))
+
+
+def apply_activation_webhook(
+    *,
+    mobile: str,
+    activated_at: str = "",
+    operator: str = "",
+    source: str = "activation_webhook",
+) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 1 automation-engine command."""
+
+    from .application.automation_engine.queries import ApplyActivationWebhookCommand
+
+    return ApplyActivationWebhookCommand()(
+        mobile=mobile,
+        activated_at=activated_at,
+        operator=operator,
+        source=source,
+    )
+
+
+def list_signup_conversion_batches(
+    *,
+    limit: int = 20,
+    cursor: str = "",
+    scenario_key: str = "",
+) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 1 automation-engine query."""
+
+    from .application.automation_engine import ListSignupConversionBatchesQuery, SignupConversionBatchListQueryDTO
+
+    return ListSignupConversionBatchesQuery()(
+        SignupConversionBatchListQueryDTO(
+            limit=int(limit),
+            cursor=str(cursor or ""),
+            scenario_key=str(scenario_key or ""),
+        )
+    )
+
+
+def get_signup_conversion_batch(batch_id: int, *, scenario_key: str = "") -> dict[str, Any] | None:
+    """Backward-compatible wrapper around the Wave 1 automation-engine query."""
+
+    from .application.automation_engine import GetSignupConversionBatchQuery, SignupConversionBatchDetailQueryDTO
+
+    return GetSignupConversionBatchQuery()(
+        SignupConversionBatchDetailQueryDTO(
+            batch_id=int(batch_id),
+            scenario_key=str(scenario_key or ""),
+        )
+    )
 
 
 def get_routing_config() -> dict[str, Any]:
@@ -842,9 +931,17 @@ def apply_questionnaire_mobile_binding(submission: dict[str, Any]) -> dict[str, 
     return questionnaire_domain_service.apply_questionnaire_mobile_binding(submission)
 
 
-def apply_questionnaire_result_to_scrm(submission_id: int) -> dict[str, Any]:
+def apply_questionnaire_submission_tags_to_scrm(submission_id: int) -> dict[str, Any]:
     _bind_questionnaire_domain()
-    return questionnaire_domain_service.apply_questionnaire_result_to_scrm(submission_id)
+    if hasattr(questionnaire_domain_service, "apply_questionnaire_submission_tags_to_scrm"):
+        apply_fn = questionnaire_domain_service.apply_questionnaire_submission_tags_to_scrm
+    else:
+        apply_fn = questionnaire_domain_service.apply_questionnaire_result_to_scrm
+    return apply_fn(submission_id)
+
+
+def apply_questionnaire_result_to_scrm(submission_id: int) -> dict[str, Any]:
+    return apply_questionnaire_submission_tags_to_scrm(submission_id)
 
 
 def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[str, Any] | None = None) -> dict[str, Any]:

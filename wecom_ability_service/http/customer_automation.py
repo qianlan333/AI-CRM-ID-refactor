@@ -2,65 +2,66 @@ from __future__ import annotations
 
 from flask import jsonify, request
 
-from ..customer_center.service import get_customer_detail
-from ..customer_timeline.service import get_customer_timeline
-from ..domains.automation_conversion.service import sync_member_activation
-from ..services import (
-    apply_activation_webhook,
-    get_recent_messages_by_user,
-    get_signup_conversion_batch,
-    list_outbound_webhook_deliveries,
-    list_signup_conversion_batches,
-    retry_outbound_webhook_delivery,
-    run_due_outbound_webhook_retries,
+from ..application.automation_engine.queries import (
+    ApplyActivationWebhookCommand,
+    GetSignupConversionBatchQuery,
+    ListOutboundWebhookDeliveriesQuery,
+    ListSignupConversionBatchesQuery,
+    RetryOutboundWebhookDeliveryCommand,
+    RunDueOutboundWebhookRetriesCommand,
 )
-from .internal_auth import require_internal_api_token
+from ..application.customer_read_model import CustomerChatContextQueryDTO, GetCustomerChatContextQuery
+from ..application.customer_read_model.dto import InternalAuthQueryDTO, SignupConversionBatchDetailQueryDTO, SignupConversionBatchListQueryDTO
+from ..application.platform_foundation import AuthorizeInternalRequestQuery
 
 
 def _candidate_context(external_userid: str) -> dict[str, object]:
-    timeline_limit = 20
-    timeline = get_customer_timeline(
-        external_userid,
-        {
-            "normalized_limit": timeline_limit,
-            "normalized_offset": 0,
-            "limit": timeline_limit,
-            "offset": 0,
-            "event_type": "",
-        },
-    ) or {
-        "external_userid": external_userid,
-        "items": [],
-        "count": 0,
-        "limit": timeline_limit,
-        "offset": 0,
-        "filters": {"event_type": "", "limit": str(timeline_limit), "offset": "0"},
-        "total": 0,
-    }
+    payload = GetCustomerChatContextQuery()(
+        CustomerChatContextQueryDTO(
+            external_userid=external_userid,
+            recent_message_limit=20,
+            timeline_limit=20,
+        )
+    )
     return {
-        "external_userid": external_userid,
-        "customer": get_customer_detail(external_userid),
-        "recent_messages": get_recent_messages_by_user(external_userid, limit=20),
-        "timeline": timeline,
-        "recent_timeline_events": timeline.get("items", []),
-        "source_status": "live",
-        "degraded": False,
-        "warnings": [],
+        "external_userid": str(payload.get("external_userid") or external_userid).strip() or external_userid,
+        "customer": payload.get("customer"),
+        "recent_messages": list(payload.get("recent_messages") or []),
+        "timeline": dict(payload.get("timeline") or {}),
+        "recent_timeline_events": list(payload.get("recent_timeline_events") or []),
+        "source_status": str(payload.get("source_status") or "live"),
+        "degraded": bool(payload.get("degraded")),
+        "warnings": list(payload.get("warnings") or []),
     }
+
+
+def _authorize_internal_request(
+    *,
+    token_keys: tuple[str, ...] = (),
+    legacy_header_names: tuple[str, ...] = (),
+):
+    return AuthorizeInternalRequestQuery()(
+        InternalAuthQueryDTO(
+            token_keys=token_keys,
+            legacy_header_names=legacy_header_names,
+        )
+    )
 
 
 def signup_conversion_batch_list():
     limit = request.args.get("limit", 20)
     cursor = str(request.args.get("cursor", "") or "")
     try:
-        payload = list_signup_conversion_batches(limit=int(limit), cursor=cursor)
+        payload = ListSignupConversionBatchesQuery()(
+            SignupConversionBatchListQueryDTO(limit=int(limit), cursor=cursor)
+        )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "automation_batches": payload})
 
 
 def signup_conversion_batch_detail(batch_id: int):
-    payload = get_signup_conversion_batch(batch_id)
+    payload = GetSignupConversionBatchQuery()(SignupConversionBatchDetailQueryDTO(batch_id=int(batch_id)))
     if not payload:
         return jsonify({"ok": False, "error": "batch not found"}), 404
     candidates = []
@@ -73,7 +74,7 @@ def signup_conversion_batch_detail(batch_id: int):
     return jsonify({"ok": True, "automation_batch": payload})
 
 def activation_webhook():
-    auth_failure = require_internal_api_token(
+    auth_failure = _authorize_internal_request(
         token_keys=("AUTOMATION_ACTIVATION_WEBHOOK_TOKEN",),
         legacy_header_names=("X-Automation-Token",),
     )
@@ -85,16 +86,11 @@ def activation_webhook():
     operator = str(payload.get("operator") or "").strip() or "activation_webhook"
     source = str(payload.get("source") or "").strip() or "activation_webhook"
     try:
-        result = apply_activation_webhook(
+        result = ApplyActivationWebhookCommand()(
             mobile=mobile,
             activated_at=activated_at,
             operator=operator,
             source=source,
-        )
-        sync_member_activation(
-            external_contact_id=str((result.get("customer") or {}).get("external_userid") or "").strip(),
-            phone=mobile,
-            operator_id=operator,
         )
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
@@ -108,7 +104,7 @@ def webhook_delivery_list():
     status = str(request.args.get("status", "") or "")
     limit = request.args.get("limit", 50)
     try:
-        payload = list_outbound_webhook_deliveries(
+        payload = ListOutboundWebhookDeliveriesQuery()(
             event_type=event_type,
             status=status,
             limit=int(limit),
@@ -119,11 +115,11 @@ def webhook_delivery_list():
 
 
 def webhook_delivery_retry(delivery_id: int):
-    auth_failure = require_internal_api_token()
+    auth_failure = _authorize_internal_request()
     if auth_failure is not None:
         return auth_failure
     try:
-        payload = retry_outbound_webhook_delivery(int(delivery_id))
+        payload = RetryOutboundWebhookDeliveryCommand()(int(delivery_id))
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
     except ValueError as exc:
@@ -132,13 +128,13 @@ def webhook_delivery_retry(delivery_id: int):
 
 
 def webhook_delivery_retry_due():
-    auth_failure = require_internal_api_token()
+    auth_failure = _authorize_internal_request()
     if auth_failure is not None:
         return auth_failure
     payload = request.get_json(silent=True) or {}
     limit = payload.get("limit", request.args.get("limit", 20))
     try:
-        result = run_due_outbound_webhook_retries(limit=int(limit))
+        result = RunDueOutboundWebhookRetriesCommand()(limit=int(limit))
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify(result)

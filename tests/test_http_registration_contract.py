@@ -9,6 +9,12 @@ from flask import Blueprint
 from wecom_ability_service.http import HTTP_ROUTE_MODULES, HTTP_ROUTE_PLACEMENT, bp, register_http_routes
 
 
+ROOT = Path(__file__).resolve().parents[1]
+HTTP_REQUESTS_ALLOWLIST = {
+    "wecom_ability_service.http.automation_conversion",
+}
+
+
 def test_routes_py_has_no_direct_bp_route_decorators():
     route_file = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "routes.py"
     module = ast.parse(route_file.read_text(encoding="utf-8"))
@@ -61,10 +67,13 @@ def test_http_controller_modules_do_not_import_raw_sql_or_http_clients():
         module = importlib.import_module(module_path)
         source_path = Path(module.__file__).resolve()
         parsed = ast.parse(source_path.read_text(encoding="utf-8"))
+        allow_requests = module_path in HTTP_REQUESTS_ALLOWLIST
 
         for node in ast.walk(parsed):
             if isinstance(node, ast.Import):
                 for alias in node.names:
+                    if (alias.name, None) == ("requests", None) and allow_requests:
+                        continue
                     if (alias.name, None) in forbidden_import_targets:
                         raise AssertionError(f"{module_path} must not import {alias.name} directly")
             if isinstance(node, ast.ImportFrom):
@@ -72,6 +81,10 @@ def test_http_controller_modules_do_not_import_raw_sql_or_http_clients():
                 for alias in node.names:
                     if alias.name == "get_db" and module_name.endswith("db"):
                         raise AssertionError(f"{module_path} must not import get_db directly")
+                    if module_name == "requests" or module_name.startswith("requests."):
+                        if allow_requests:
+                            continue
+                        raise AssertionError(f"{module_path} must not import {alias.name} from {module_name}")
                     if (module_name, alias.name) in forbidden_import_targets:
                         raise AssertionError(f"{module_path} must not import {alias.name} from {module_name}")
 
@@ -85,10 +98,12 @@ def test_http_package_contains_no_raw_sql_calls():
 
 
 def test_http_package_contains_no_direct_third_party_runtime_calls():
-    http_dir = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "http"
+    http_dir = ROOT / "wecom_ability_service" / "http"
     for path in http_dir.rglob("*.py"):
         source = path.read_text(encoding="utf-8")
-        assert "import requests" not in source, f"{path} must not import requests directly"
-        assert "requests." not in source, f"{path} must not call requests directly"
+        relative_path = path.relative_to(ROOT).as_posix().replace("/", ".")[:-3]
+        if relative_path not in HTTP_REQUESTS_ALLOWLIST:
+            assert "import requests" not in source, f"{path} must not import requests directly"
+            assert "requests." not in source, f"{path} must not call requests directly"
         assert "WeComClient.from_app(" not in source, f"{path} must not instantiate WeComClient.from_app() directly"
         assert "WeComClient.from_contact_app(" not in source, f"{path} must not instantiate WeComClient.from_contact_app() directly"

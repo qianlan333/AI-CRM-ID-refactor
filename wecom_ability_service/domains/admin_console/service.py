@@ -6,10 +6,7 @@ from typing import Any
 
 from flask import current_app, url_for
 
-from ...customer_center.routes import parse_customer_filters
-from ...customer_center.service import get_customer_detail, list_customers
-from ...customer_timeline import get_customer_timeline
-from ...customer_timeline.routes import parse_timeline_filters
+from ...application.customer_read_model import CustomerDetailQueryDTO, GetCustomerDetailQuery
 from ...services import (
     backfill_owner_class_terms_into_lead_pool,
     count_external_contact_identity_maps,
@@ -419,6 +416,10 @@ def build_customer_list_payload(args: Any) -> dict[str, Any]:
     return build_customer_search_payload(args)
 
 
+def _load_customer_detail(external_userid: str) -> dict[str, Any] | None:
+    return GetCustomerDetailQuery()(CustomerDetailQueryDTO(external_userid=_normalized_text(external_userid)))
+
+
 def _build_recent_messages(external_userid: str, *, limit: int = 20) -> list[dict[str, Any]]:
     rows = repo.list_recent_customer_messages(external_userid, limit=limit)
     group_map = get_group_chat_map([extract_roomid_from_raw_payload(row.get("raw_payload")) for row in rows])
@@ -466,7 +467,7 @@ def preview_customer_tag_action(
     action: str,
     tag_ids: list[str],
 ) -> dict[str, Any]:
-    detail = get_customer_detail(external_userid)
+    detail = _load_customer_detail(external_userid)
     if not detail:
         raise ValueError("未找到客户")
     normalized_action = _normalized_text(action)
@@ -516,7 +517,7 @@ def execute_customer_tag_action(
         result = mark_customer_tags(payload)
     else:
         result = unmark_customer_tags(payload)
-    after_detail = get_customer_detail(external_userid) or {}
+    after_detail = _load_customer_detail(external_userid) or {}
     _audit_log(
         operator=operator,
         action_type=f"execute_{preview['action']}",
@@ -545,7 +546,7 @@ def preview_customer_task_action(
     userid: str,
     content: str,
 ) -> dict[str, Any]:
-    detail = get_customer_detail(external_userid)
+    detail = _load_customer_detail(external_userid)
     if not detail:
         raise ValueError("未找到客户")
     normalized_task_type = _normalized_text(task_type)
