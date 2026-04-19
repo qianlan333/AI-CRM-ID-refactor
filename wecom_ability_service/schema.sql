@@ -1478,7 +1478,6 @@ CREATE TABLE IF NOT EXISTS automation_member (
     in_pool INTEGER NOT NULL DEFAULT 0,
     current_pool TEXT NOT NULL DEFAULT 'removed',
     follow_type TEXT NOT NULL DEFAULT '',
-    activation_status TEXT NOT NULL DEFAULT 'unknown',
     questionnaire_status TEXT NOT NULL DEFAULT 'pending',
     decision_source TEXT NOT NULL DEFAULT 'system',
     source_type TEXT NOT NULL DEFAULT 'system',
@@ -2199,7 +2198,7 @@ ON automation_focus_send_batch_item (status, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_sop_pool_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     enabled INTEGER NOT NULL DEFAULT 1,
     max_day_count INTEGER NOT NULL DEFAULT 5,
     send_time TEXT NOT NULL DEFAULT '09:00',
@@ -2214,7 +2213,7 @@ ON automation_sop_pool_config (updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_sop_template (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     day_index INTEGER NOT NULL DEFAULT 1,
     content TEXT NOT NULL DEFAULT '',
     images_json TEXT NOT NULL DEFAULT '[]',
@@ -2229,7 +2228,7 @@ ON automation_sop_template (pool_key, day_index);
 CREATE TABLE IF NOT EXISTS automation_sop_progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     first_entered_at TEXT NOT NULL DEFAULT '',
     last_entered_at TEXT NOT NULL DEFAULT '',
     sop_anchor_date TEXT NOT NULL DEFAULT '',
@@ -2253,7 +2252,7 @@ ON automation_sop_progress (pool_key, sop_anchor_date, updated_at DESC, id DESC)
 
 CREATE TABLE IF NOT EXISTS automation_sop_batch (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     day_index INTEGER NOT NULL DEFAULT 0,
     template_id INTEGER REFERENCES automation_sop_template(id) ON DELETE SET NULL,
     scheduled_for TEXT NOT NULL DEFAULT '',
@@ -2274,7 +2273,7 @@ CREATE TABLE IF NOT EXISTS automation_sop_batch_item (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     batch_id INTEGER NOT NULL REFERENCES automation_sop_batch(id) ON DELETE CASCADE,
     member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     day_index INTEGER NOT NULL DEFAULT 0,
     day_index_snapshot INTEGER NOT NULL DEFAULT 0,
     external_userid TEXT NOT NULL DEFAULT '',

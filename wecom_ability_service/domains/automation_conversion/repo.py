@@ -221,7 +221,6 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
         _db_bool(bool(payload.get("in_pool"))),
         _normalized_text(payload.get("current_pool")),
         _normalized_text(payload.get("follow_type")),
-        _normalized_text(payload.get("activation_status")),
         _normalized_text(payload.get("questionnaire_status")),
         _normalized_text(payload.get("decision_source")),
         _normalized_text(payload.get("source_type")),
@@ -241,7 +240,6 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
             in_pool,
             current_pool,
             follow_type,
-            activation_status,
             questionnaire_status,
             decision_source,
             source_type,
@@ -253,7 +251,7 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         params,
@@ -271,7 +269,6 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _db_bool(bool(payload.get("in_pool"))),
         _normalized_text(payload.get("current_pool")),
         _normalized_text(payload.get("follow_type")),
-        _normalized_text(payload.get("activation_status")),
         _normalized_text(payload.get("questionnaire_status")),
         _normalized_text(payload.get("decision_source")),
         _normalized_text(payload.get("source_type")),
@@ -292,7 +289,6 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             in_pool = ?,
             current_pool = ?,
             follow_type = ?,
-            activation_status = ?,
             questionnaire_status = ?,
             decision_source = ?,
             source_type = ?,
@@ -2929,11 +2925,9 @@ def get_overview_counts() -> dict[str, int]:
         SELECT
             COALESCE(SUM(CASE WHEN in_pool THEN 1 ELSE 0 END), 0) AS in_pool_total,
             COALESCE(SUM(CASE WHEN joined_at IS NOT NULL AND joined_at <> '' AND DATE(joined_at) = DATE(CURRENT_TIMESTAMP) THEN 1 ELSE 0 END), 0) AS today_joined,
-            COALESCE(SUM(CASE WHEN questionnaire_status = 'pending' AND in_pool THEN 1 ELSE 0 END), 0) AS questionnaire_pending,
-            COALESCE(SUM(CASE WHEN current_pool IN ('inactive_normal', 'active_normal') THEN 1 ELSE 0 END), 0) AS normal_followup,
-            COALESCE(SUM(CASE WHEN current_pool IN ('inactive_focus', 'active_focus') THEN 1 ELSE 0 END), 0) AS focus_followup,
-            COALESCE(SUM(CASE WHEN current_pool = 'silent' THEN 1 ELSE 0 END), 0) AS silent_total,
-            COALESCE(SUM(CASE WHEN current_pool = 'won' THEN 1 ELSE 0 END), 0) AS won_total
+            COALESCE(SUM(CASE WHEN current_audience_code = 'pending_questionnaire' AND in_pool THEN 1 ELSE 0 END), 0) AS questionnaire_pending,
+            COALESCE(SUM(CASE WHEN current_audience_code = 'operating' AND in_pool THEN 1 ELSE 0 END), 0) AS operating_total,
+            COALESCE(SUM(CASE WHEN current_audience_code = 'converted' AND in_pool THEN 1 ELSE 0 END), 0) AS converted_total
         FROM automation_member
         """
     ) or {}
@@ -3082,16 +3076,7 @@ def count_stage_members(*, current_pool: str, keyword: str = "") -> int:
 
 
 def list_members_for_silent_refresh() -> list[dict[str, Any]]:
-    return _fetchall_dicts(
-        """
-        SELECT *
-        FROM automation_member
-        WHERE in_pool = ?
-          AND current_pool IN ('new_user', 'inactive_normal', 'inactive_focus', 'active_normal', 'active_focus')
-        ORDER BY updated_at ASC, id ASC
-        """,
-        (_db_bool(True),),
-    )
+    return []
 
 
 def list_members_for_message_activity_sync(*, current_pools: list[str]) -> list[dict[str, Any]]:

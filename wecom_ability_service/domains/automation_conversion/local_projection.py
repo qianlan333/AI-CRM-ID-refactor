@@ -2,74 +2,53 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..automation_state.state_defs import (
-    FOCUS_POOL_KEYS as SHARED_FOCUS_POOL_KEYS,
-    POOL_ACTIVE_FOCUS,
-    POOL_ACTIVE_NORMAL,
-    POOL_INACTIVE_FOCUS,
-    POOL_INACTIVE_NORMAL,
-    POOL_LABELS as SHARED_POOL_LABELS,
-    POOL_NEW_USER,
-    POOL_SILENT,
-)
-
-POOL_WON = "won"
+POOL_PENDING_QUESTIONNAIRE = "pending_questionnaire"
+POOL_OPERATING = "operating"
+POOL_CONVERTED = "converted"
+POOL_WON = POOL_CONVERTED
 POOL_REMOVED = "removed"
 POOL_NO_REPLY = "no_reply"
 POOL_HUMAN_REPLY = "human_reply"
 
 POOL_LABELS = {
-    **SHARED_POOL_LABELS,
-    POOL_WON: "已成交",
+    POOL_PENDING_QUESTIONNAIRE: "未填问卷人群",
+    POOL_OPERATING: "运营中人群",
+    POOL_CONVERTED: "已转化人群",
     POOL_REMOVED: "已移出",
     POOL_NO_REPLY: "不回复池",
     POOL_HUMAN_REPLY: "人工回复池",
 }
 
 MANUAL_SEND_ALLOWED_POOLS = {
-    POOL_NEW_USER,
-    POOL_INACTIVE_NORMAL,
-    POOL_ACTIVE_NORMAL,
-    POOL_SILENT,
-    POOL_WON,
+    POOL_PENDING_QUESTIONNAIRE,
+    POOL_OPERATING,
+    POOL_CONVERTED,
 }
 
-FOCUS_SEND_ALLOWED_POOLS = set(SHARED_FOCUS_POOL_KEYS)
+FOCUS_SEND_ALLOWED_POOLS: set[str] = set()
 
 STAGE_BY_POOL = {
-    POOL_NEW_USER: "new_user_wait_questionnaire",
-    POOL_INACTIVE_NORMAL: "inactive_normal_followup",
-    POOL_INACTIVE_FOCUS: "inactive_focus_followup",
-    POOL_ACTIVE_NORMAL: "active_normal_followup",
-    POOL_ACTIVE_FOCUS: "active_focus_followup",
-    POOL_SILENT: "silent_waiting",
-    POOL_WON: "won",
+    POOL_PENDING_QUESTIONNAIRE: "pending_questionnaire_followup",
+    POOL_OPERATING: "operating_followup",
+    POOL_CONVERTED: "converted",
     POOL_REMOVED: "removed",
     POOL_NO_REPLY: "no_reply_waiting",
     POOL_HUMAN_REPLY: "human_reply_waiting",
 }
 
 TARGET_BY_POOL = {
-    POOL_NEW_USER: "submit_questionnaire",
-    POOL_INACTIVE_NORMAL: "activate",
-    POOL_INACTIVE_FOCUS: "focus_activate",
-    POOL_ACTIVE_NORMAL: "normal_followup",
-    POOL_ACTIVE_FOCUS: "focus_followup",
-    POOL_SILENT: "revive",
-    POOL_WON: "post_deal",
+    POOL_PENDING_QUESTIONNAIRE: "submit_questionnaire",
+    POOL_OPERATING: "followup",
+    POOL_CONVERTED: "post_deal",
     POOL_REMOVED: "none",
     POOL_NO_REPLY: "no_action",
     POOL_HUMAN_REPLY: "manual_reply",
 }
 
 STAGE_LABELS = {
-    "new_user_wait_questionnaire": "等待提交问卷",
-    "inactive_normal_followup": "未激活普通跟进",
-    "inactive_focus_followup": "未激活重点跟进",
-    "active_normal_followup": "已激活普通跟进",
-    "active_focus_followup": "已激活重点跟进",
-    "silent_waiting": "沉默等待",
-    "won": "已成交",
+    "pending_questionnaire_followup": "等待提交问卷",
+    "operating_followup": "运营中跟进",
+    "converted": "已转化",
     "removed": "已移出",
     "no_reply_waiting": "不回复待观察",
     "human_reply_waiting": "等待人工回复",
@@ -77,11 +56,7 @@ STAGE_LABELS = {
 
 TARGET_LABELS = {
     "submit_questionnaire": "推动提交问卷",
-    "activate": "促活",
-    "focus_activate": "重点促活",
-    "normal_followup": "普通跟进",
-    "focus_followup": "重点跟进",
-    "revive": "唤醒",
+    "followup": "运营跟进",
     "post_deal": "成交后维护",
     "none": "无",
     "no_action": "不自动处理",
@@ -89,13 +64,9 @@ TARGET_LABELS = {
 }
 
 STAGE_DEFINITIONS = (
-    {"pool": POOL_NEW_USER, "route_key": "new-user", "label": "新用户池", "description": "已入池但还没完成问卷的客户。"},
-    {"pool": POOL_INACTIVE_NORMAL, "route_key": "inactive-normal", "label": "未激活普通池", "description": "问卷已提交，当前按普通跟进推进。"},
-    {"pool": POOL_INACTIVE_FOCUS, "route_key": "inactive-focus", "label": "未激活重点跟进池", "description": "问卷已提交，当前按重点跟进推进。"},
-    {"pool": POOL_ACTIVE_NORMAL, "route_key": "active-normal", "label": "激活普通池", "description": "已激活，当前按普通跟进推进。"},
-    {"pool": POOL_ACTIVE_FOCUS, "route_key": "active-focus", "label": "激活重点跟进池", "description": "已激活，当前按重点跟进推进。"},
-    {"pool": POOL_SILENT, "route_key": "silent", "label": "沉默池", "description": "达到沉默阈值后进入沉默池。"},
-    {"pool": POOL_WON, "route_key": "won", "label": "已成交", "description": "人工确认成交后进入成交池。"},
+    {"pool": POOL_PENDING_QUESTIONNAIRE, "route_key": "pending-questionnaire", "label": "未填问卷人群", "description": "尚未完成问卷采集，等待提交问卷。"},
+    {"pool": POOL_OPERATING, "route_key": "operating", "label": "运营中人群", "description": "问卷已提交后的统一运营主人群。"},
+    {"pool": POOL_CONVERTED, "route_key": "converted", "label": "已转化人群", "description": "人工确认转化后进入成交后运营。"},
 )
 
 SPECIAL_STAGE_DEFINITIONS = (
@@ -103,7 +74,20 @@ SPECIAL_STAGE_DEFINITIONS = (
     {"pool": POOL_HUMAN_REPLY, "route_key": "human-reply", "label": "人工回复池", "description": "路由判断需人工接管时进入该池，等待人工处理。"},
 )
 
-ROUTE_KEY_TO_POOL = {item["route_key"]: item["pool"] for item in (*STAGE_DEFINITIONS, *SPECIAL_STAGE_DEFINITIONS)}
+ROUTE_KEY_TO_POOL = {
+    item["route_key"]: item["pool"] for item in (*STAGE_DEFINITIONS, *SPECIAL_STAGE_DEFINITIONS)
+}
+ROUTE_KEY_TO_POOL.update(
+    {
+        "new-user": POOL_PENDING_QUESTIONNAIRE,
+        "inactive-normal": POOL_OPERATING,
+        "inactive-focus": POOL_OPERATING,
+        "active-normal": POOL_OPERATING,
+        "active-focus": POOL_OPERATING,
+        "silent": POOL_OPERATING,
+        "won": POOL_CONVERTED,
+    }
+)
 POOL_TO_STAGE_DEF = {item["pool"]: item for item in (*STAGE_DEFINITIONS, *SPECIAL_STAGE_DEFINITIONS)}
 
 

@@ -62,13 +62,9 @@ class DraftVersionConflictError(ValueError):
         }
 
 _POOL_TO_ROUTE_KEY = {
-    "new_user": "new-user",
-    "inactive_normal": "inactive-normal",
-    "inactive_focus": "inactive-focus",
-    "active_normal": "active-normal",
-    "active_focus": "active-focus",
-    "silent": "silent",
-    "won": "won",
+    local_projection.POOL_PENDING_QUESTIONNAIRE: "pending-questionnaire",
+    local_projection.POOL_OPERATING: "operating",
+    local_projection.POOL_CONVERTED: "converted",
     local_projection.POOL_NO_REPLY: "no-reply",
     local_projection.POOL_HUMAN_REPLY: "human-reply",
 }
@@ -168,11 +164,11 @@ _AGENT_CONTEXT_SOURCE_SPECS = (
     },
     {
         "code": "activation_info",
-        "label": "激活信息",
-        "placeholder": "{{激活信息}}",
+        "label": "阶段信息",
+        "placeholder": "{{阶段信息}}",
         "variable_key": "activation_info",
-        "description": "激活状态、当前池子与最近激活情况",
-        "aliases": {"activation_info", "activation_status", "message_activity_level", "activity"},
+        "description": "当前池子、大人群、阶段与跟进方式",
+        "aliases": {"activation_info", "stage_info", "current_pool", "current_stage", "current_audience", "activity"},
     },
 )
 _AGENT_CONTEXT_SOURCE_CODE_SET = {item["code"] for item in _AGENT_CONTEXT_SOURCE_SPECS}
@@ -878,16 +874,17 @@ def _build_member_variable_snapshot(external_contact_id: str = "", phone: str = 
         "recent_messages": [str(item.get("content") or item.get("message_text") or item.get("text") or "") for item in recent_messages[:20]],
         "current_pool": _normalized_text(member.get("current_pool")),
         "current_stage": _normalized_text(member.get("current_stage")),
+        "current_audience_code": _normalized_text(member.get("current_audience_code")),
         "questionnaire_answers": questionnaire_answers,
         "focus_reason": "、".join(questionnaire.get("matched_questions") or []),
         "owner_name": _normalized_text(profile.get("owner_display_name") or profile.get("owner_staff_id")),
         "last_touch_at": _normalized_text(member.get("updated_at")),
         "member_tags": user_tags,
-        "message_activity_level": _normalized_text(member.get("activation_status")),
         "activation_info": {
-            "activation_status": _normalized_text(member.get("activation_status")),
-            "last_activation_at": _normalized_text(member.get("last_activation_at")),
             "current_pool": _normalized_text(member.get("current_pool")),
+            "current_stage": _normalized_text(member.get("current_stage")),
+            "current_audience_code": _normalized_text(member.get("current_audience_code")),
+            "follow_type": _normalized_text(member.get("follow_type")),
         },
         "latest_agent_outputs": [
             item["rendered_output_text"] or item["reason"]
@@ -1117,10 +1114,10 @@ def _agent_context_source_sections(variable_snapshot: dict[str, Any], enabled_co
     activation_payload = dict(snapshot.get("activation_info") or {})
     if not activation_payload:
         activation_payload = {
-            "activation_status": _normalized_text(snapshot.get("message_activity_level") or snapshot.get("activation_status")),
-            "last_activation_at": _normalized_text(snapshot.get("last_activation_at")),
             "current_pool": _normalized_text(snapshot.get("current_pool") or ((snapshot.get("member") or {}).get("current_pool"))),
+            "current_stage": _normalized_text(snapshot.get("current_stage") or ((snapshot.get("member") or {}).get("current_stage"))),
             "current_audience_code": _normalized_text((snapshot.get("member") or {}).get("current_audience_code")),
+            "follow_type": _normalized_text(snapshot.get("follow_type") or ((snapshot.get("member") or {}).get("follow_type"))),
         }
 
     questionnaire_lines: list[str] = []
@@ -1164,10 +1161,10 @@ def _agent_context_source_sections(variable_snapshot: dict[str, Any], enabled_co
 
     normalized_tags = [item for item in (_normalized_text(tag) for tag in user_tags) if item]
     activation_lines = [
-        f"激活状态：{_normalized_text(activation_payload.get('activation_status'))}" if _normalized_text(activation_payload.get("activation_status")) else "",
-        f"最近激活时间：{_normalized_text(activation_payload.get('last_activation_at'))}" if _normalized_text(activation_payload.get("last_activation_at")) else "",
         f"当前池子：{_normalized_text(activation_payload.get('current_pool'))}" if _normalized_text(activation_payload.get("current_pool")) else "",
+        f"当前阶段：{_normalized_text(activation_payload.get('current_stage'))}" if _normalized_text(activation_payload.get("current_stage")) else "",
         f"当前大人群：{_normalized_text(activation_payload.get('current_audience_code'))}" if _normalized_text(activation_payload.get("current_audience_code")) else "",
+        f"跟进类型：{_normalized_text(activation_payload.get('follow_type'))}" if _normalized_text(activation_payload.get("follow_type")) else "",
     ]
 
     section_map = {
@@ -1295,7 +1292,7 @@ def _router_fallback_payload(
     raw_response_text: str = "",
 ) -> dict[str, Any]:
     strategy = _router_runtime_strategy(router_config)
-    default_pool = _normalized_text(strategy.get("default_pool")) or "new_user"
+    default_pool = _normalized_text(strategy.get("default_pool")) or local_projection.POOL_PENDING_QUESTIONNAIRE
     return {
         "request_id": _normalized_text(request_payload.get("request_id")),
         "external_contact_id": _normalized_text(request_payload.get("external_contact_id")),
@@ -1319,13 +1316,9 @@ def _router_fallback_payload(
 
 def _router_allowed_target_pools() -> set[str]:
     return {
-        "new_user",
-        "inactive_normal",
-        "inactive_focus",
-        "active_normal",
-        "active_focus",
-        "silent",
-        "won",
+        local_projection.POOL_PENDING_QUESTIONNAIRE,
+        local_projection.POOL_OPERATING,
+        local_projection.POOL_CONVERTED,
         local_projection.POOL_NO_REPLY,
         local_projection.POOL_HUMAN_REPLY,
     }
@@ -2680,7 +2673,6 @@ def _feedback_tags_from_member_snapshot(snapshot: dict[str, Any]) -> list[str]:
         stage.get("current_stage_label"),
         stage.get("current_target_label"),
         stage.get("follow_type"),
-        stage.get("activation_status"),
     ):
         text = _normalized_text(value)
         if text and text not in tags:
@@ -2838,7 +2830,6 @@ def crm_get_member_stage(*, external_contact_id: str = "", phone: str = "") -> d
             "current_target": _normalized_text(member.get("current_target")),
             "current_target_label": _normalized_text(member.get("current_target_label")),
             "follow_type": _normalized_text(member.get("follow_type")),
-            "activation_status": _normalized_text(member.get("activation_status")),
             "decision_source": _normalized_text(member.get("decision_source")),
             "in_pool": bool(member.get("in_pool")),
             "updated_at": _normalized_text(member.get("updated_at")),
@@ -2927,7 +2918,6 @@ def crm_get_member_snapshot(*, external_contact_id: str = "", phone: str = "") -
             "current_target": _normalized_text(member.get("current_target")),
             "current_target_label": _normalized_text(member.get("current_target_label")),
             "follow_type": _normalized_text(member.get("follow_type")),
-            "activation_status": _normalized_text(member.get("activation_status")),
             "decision_source": _normalized_text(member.get("decision_source")),
             "in_pool": bool(member.get("in_pool")),
             "updated_at": _normalized_text(member.get("updated_at")),
@@ -3152,7 +3142,7 @@ def get_agent_orchestration_metrics(*, date_from: str = "", date_to: str = "") -
         for external_id in {
             _normalized_text(item.get("external_contact_id")) for item in adopted_outputs if _normalized_text(item.get("external_contact_id"))
         }
-        if _normalized_text((repo.get_member_by_external_contact_id(external_id) or {}).get("current_pool")) == "won"
+        if _normalized_text((repo.get_member_by_external_contact_id(external_id) or {}).get("current_pool")) in {"won", "converted"}
     }
     error_counts: dict[str, int] = {}
     for item in decision_outputs:
@@ -4373,19 +4363,15 @@ def suggest_pool_action(*, external_contact_id: str = "", phone: str = "", opera
     reason = "当前阶段无需额外改池，建议继续按照现有跟进节奏推进。"
     if not bool(member.get("in_pool")):
         next_action = "put_in_pool"
-        target_pool = "new_user"
+        target_pool = local_projection.POOL_PENDING_QUESTIONNAIRE
         reason = "成员当前不在自动化池内，建议先重新入池。"
     elif _normalized_text(questionnaire.get("status")) == "pending":
         next_action = "wait_questionnaire"
-        target_pool = "new_user"
-        reason = "成员尚未完成问卷，应继续停留在新用户池等待分层。"
-    elif current_pool == "silent":
-        next_action = "human_review"
-        target_pool = "silent"
-        reason = "成员已进入沉默池，建议先人工复核再决定是否唤醒。"
-    elif current_pool == "won":
+        target_pool = local_projection.POOL_PENDING_QUESTIONNAIRE
+        reason = "成员尚未完成问卷，应继续停留在未填问卷人群等待分层。"
+    elif current_pool == local_projection.POOL_CONVERTED:
         next_action = "no_action"
-        target_pool = "won"
+        target_pool = local_projection.POOL_CONVERTED
         reason = "成员已经标记成交，不建议自动改池。"
     run_id = f"arun-{uuid.uuid4().hex}"
     request_id = f"skill-{uuid.uuid4().hex}"

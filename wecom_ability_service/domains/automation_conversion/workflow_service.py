@@ -1811,15 +1811,6 @@ def _conversion_audience_meta_map() -> dict[str, dict[str, str]]:
     }
 
 
-def _activation_status_label(value: Any) -> str:
-    normalized = _normalized_text(value)
-    return {
-        "unknown": "未知",
-        "inactive": "未激活",
-        "active": "已激活",
-    }.get(normalized, normalized or "未知")
-
-
 def _questionnaire_status_label(value: Any) -> str:
     normalized = _normalized_text(value)
     return {
@@ -2035,8 +2026,6 @@ def _build_dashboard_member_detail_item(
         "phone": _normalized_text(member.get("phone")),
         "audience_code": audience_code,
         "audience_label": _normalized_text((audience_meta_map.get(audience_code) or {}).get("label")),
-        "activation_status": _normalized_text(member.get("activation_status")),
-        "activation_status_label": _activation_status_label(member.get("activation_status")),
         "questionnaire_status": questionnaire_status,
         "questionnaire_status_label": _questionnaire_status_label(questionnaire_status),
         "profile_segment_key": _normalized_text(profile_segment.get("segment_key")),
