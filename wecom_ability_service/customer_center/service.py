@@ -321,7 +321,7 @@ def _matches_filters(item: CustomerListItemDTO, filters: dict[str, Any], marketi
     return True
 
 
-def list_customers(filters: dict[str, Any] | None = None) -> dict[str, Any]:
+def _list_customers_impl(filters: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized_filters = {key: str(value or "").strip() for key, value in (filters or {}).items()}
     limit = _normalize_limit(normalized_filters.get("limit"))
     offset = _normalize_offset(normalized_filters.get("offset"))
@@ -361,7 +361,31 @@ def list_customers(filters: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
-def get_customer_detail(external_userid: str, *, refresh_tags: bool = False) -> dict[str, Any] | None:
+def list_customers(filters: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Legacy compatibility wrapper around the Wave 1 customer read-model query."""
+
+    from ..application.customer_read_model import CustomerListQueryDTO, ListCustomersQuery
+
+    raw_filters = dict(filters or {})
+    return ListCustomersQuery()(
+        CustomerListQueryDTO(
+            owner_userid=str(raw_filters.get("owner_userid", "") or ""),
+            tag=str(raw_filters.get("tag", "") or ""),
+            status=str(raw_filters.get("status", "") or ""),
+            is_bound=str(raw_filters.get("is_bound", "") or ""),
+            marketing_segment=str(raw_filters.get("marketing_segment", "") or ""),
+            marketing_main_stage=str(raw_filters.get("marketing_main_stage", "") or ""),
+            marketing_sub_stage=str(raw_filters.get("marketing_sub_stage", "") or ""),
+            eligible_for_conversion=str(raw_filters.get("eligible_for_conversion", "") or ""),
+            mobile=str(raw_filters.get("mobile", "") or ""),
+            keyword=str(raw_filters.get("keyword", "") or ""),
+            limit=raw_filters.get("limit", ""),
+            offset=raw_filters.get("offset", ""),
+        )
+    )
+
+
+def _get_customer_detail_impl(external_userid: str, *, refresh_tags: bool = False) -> dict[str, Any] | None:
     normalized_external_userid = str(external_userid or "").strip()
     if not normalized_external_userid:
         return None
@@ -446,3 +470,16 @@ def get_customer_detail(external_userid: str, *, refresh_tags: bool = False) -> 
     if is_customer_pulse_enabled():
         detail_payload["customer_pulse"] = build_customer_pulse(normalized_external_userid)
     return detail_payload
+
+
+def get_customer_detail(external_userid: str, *, refresh_tags: bool = False) -> dict[str, Any] | None:
+    """Legacy compatibility wrapper around the Wave 1 customer read-model query."""
+
+    from ..application.customer_read_model import CustomerDetailQueryDTO, GetCustomerDetailQuery
+
+    return GetCustomerDetailQuery()(
+        CustomerDetailQueryDTO(
+            external_userid=external_userid,
+            refresh_tags=refresh_tags,
+        )
+    )

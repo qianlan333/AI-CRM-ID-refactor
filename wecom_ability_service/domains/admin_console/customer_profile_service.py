@@ -2,22 +2,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...customer_center.service import get_customer_detail as get_unified_customer_detail, list_customers
-from ...customer_center.pulse_service import build_customer_pulse
+from ...application.ai_assist import CustomerPulseDetailQueryDTO, GetCustomerPulseDetailQuery
+from ...application.customer_read_model import (
+    CustomerDetailQueryDTO,
+    CustomerListQueryDTO,
+    GetCustomerDetailQuery,
+    ListCustomersQuery,
+)
+from ...domains.archive.service import extract_roomid_from_raw_payload, format_message_row
+from ...domains.customer_pulse import is_customer_pulse_inbox_enabled
 from ...domains.marketing_automation.presenter import business_marketing_display
-from ...domains.marketing_automation.service import get_customer_marketing_profile
-from ...domains.customer_pulse import (
-    build_customer_pulse_customer_detail_payload,
-    is_customer_pulse_inbox_enabled,
-    refresh_customer_pulse_cards,
-)
 from ...domains.customer_pulse.access import (
-    assert_customer_pulse_request_context,
-    assert_customer_pulse_widget_view,
     current_customer_pulse_request_access_context,
-    resolve_customer_pulse_read_scope,
 )
-from ...services import extract_roomid_from_raw_payload, format_message_row, get_group_chat_map
+from ...domains.group_chats.repo import get_group_chat_map
 from ...infra.wecom_runtime import get_contact_runtime_client
 from . import customer_profile_repo as repo
 
@@ -150,6 +148,52 @@ def _message_speaker(message: dict[str, Any], customer: dict[str, Any]) -> str:
         return sender
     return customer_name
 
+
+def _load_customer_detail_with_lookup(
+    *,
+    external_userid: str = "",
+    mobile: str = "",
+    user_id: str = "",
+    refresh_tags: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any]] | tuple[None, None]:
+    lookup = repo.resolve_profile_lookup(
+        external_userid=external_userid,
+        mobile=mobile,
+        user_id=user_id,
+    )
+    if not lookup:
+        return None, None
+    resolved_external_userid = _normalized_text(lookup.get("external_userid"))
+    detail = GetCustomerDetailQuery()(
+        CustomerDetailQueryDTO(
+            external_userid=resolved_external_userid,
+            refresh_tags=refresh_tags,
+        )
+    )
+    if not detail:
+        return None, None
+    return lookup, detail
+
+
+def _profile_payload_from_detail(detail: dict[str, Any], *, lookup: dict[str, Any]) -> dict[str, Any]:
+    external_userid = _normalized_text(detail.get("external_userid"))
+    identity = dict(detail.get("identity") or {})
+    return {
+        "profile": {
+            "customer_name": _normalized_text(detail.get("customer_name")) or external_userid or "未命名客户",
+            "mobile": _normalized_text(detail.get("mobile")),
+            "owner": _normalized_text(detail.get("owner_display_name")) or _normalized_text(detail.get("owner_userid")),
+            "owner_userid": _normalized_text(detail.get("owner_userid")),
+            "user_id": external_userid,
+            "external_userid": external_userid,
+            "unionid": _normalized_text(identity.get("unionid")),
+            "marketing_profile": dict(detail.get("marketing_profile") or {}),
+            "marketing_summary": dict(detail.get("marketing_summary") or _empty_marketing_summary()),
+        },
+        "lookup": dict(lookup or {}),
+    }
+
+
 def build_customer_list_payload(args: Any) -> dict[str, Any]:
     keyword = _normalized_text(getattr(args, "get", lambda *_: "")("keyword"))
     owner = _normalized_text(getattr(args, "get", lambda *_: "")("owner")) or _normalized_text(
@@ -157,14 +201,14 @@ def build_customer_list_payload(args: Any) -> dict[str, Any]:
     )
     mobile = _normalized_text(getattr(args, "get", lambda *_: "")("mobile"))
     offset = _normalized_text(getattr(args, "get", lambda *_: "")("offset")) or "0"
-    payload = list_customers(
-        {
-            "keyword": keyword,
-            "owner_userid": owner,
-            "mobile": mobile,
-            "limit": str(CUSTOMER_PAGE_LIMIT),
-            "offset": offset,
-        }
+    payload = ListCustomersQuery()(
+        CustomerListQueryDTO(
+            keyword=keyword,
+            owner_userid=owner,
+            mobile=mobile,
+            limit=CUSTOMER_PAGE_LIMIT,
+            offset=offset,
+        )
     )
     rows = payload.get("items") or payload.get("customers") or []
     customers = [
@@ -207,35 +251,23 @@ def get_customer_profile_payload(
     mobile: str = "",
     user_id: str = "",
 ) -> dict[str, Any] | None:
-    profile = repo.load_customer_base_profile(
+    lookup, detail = _load_customer_detail_with_lookup(
         external_userid=external_userid,
         mobile=mobile,
         user_id=user_id,
     )
-    if not profile:
+    if not lookup or not detail:
         return None
-    return {
-        "profile": {
-            "customer_name": _normalized_text(profile.get("customer_name")) or _normalized_text(profile.get("external_userid")) or "未命名客户",
-            "mobile": _normalized_text(profile.get("mobile")),
-            "owner": _normalized_text(profile.get("owner_display_name")) or _normalized_text(profile.get("owner_userid")),
-            "owner_userid": _normalized_text(profile.get("owner_userid")),
-            "user_id": _normalized_text(profile.get("external_userid")),
-            "external_userid": _normalized_text(profile.get("external_userid")),
-            "unionid": _normalized_text(profile.get("unionid")),
-            "marketing_profile": get_customer_marketing_profile(_normalized_text(profile.get("external_userid"))),
-        },
-        "lookup": profile.get("lookup") or {},
-    }
+    return _profile_payload_from_detail(detail, lookup=lookup)
 
 
 def build_customer_detail_payload(external_userid: str, *, legacy_tab: str = "") -> dict[str, Any] | None:
-    payload = get_customer_profile_payload(external_userid=external_userid)
-    if not payload:
+    lookup, detail = _load_customer_detail_with_lookup(external_userid=external_userid)
+    if not lookup or not detail:
         return None
+    payload = _profile_payload_from_detail(detail, lookup=lookup)
     access_context = current_customer_pulse_request_access_context()
-    detail = get_unified_customer_detail(_normalized_text(payload["profile"].get("external_userid"))) or {}
-    marketing_summary = dict(detail.get("marketing_summary") or _empty_marketing_summary())
+    marketing_summary = dict(payload["profile"].get("marketing_summary") or _empty_marketing_summary())
     marketing_profile = dict(payload["profile"].get("marketing_profile") or {})
     marketing_page_summary = _build_customer_page_marketing_summary(marketing_summary, marketing_profile)
     payload["profile"]["marketing_summary"] = marketing_summary
@@ -375,47 +407,15 @@ def get_customer_pulse_payload(
     profile = profile_payload["profile"]
     resolved_external_userid = _normalized_text(profile.get("external_userid"))
     access_context = current_customer_pulse_request_access_context()
-    assert_customer_pulse_request_context(access_context)
-    if not is_customer_pulse_inbox_enabled(access_context=access_context):
-        return {
-            "external_userid": resolved_external_userid,
-            "pulse": build_customer_pulse(resolved_external_userid),
-            "customer_pulse": build_customer_pulse_customer_detail_payload(
-                resolved_external_userid,
-                tenant_context=dict(access_context),
-            ),
-            "lookup": profile_payload.get("lookup") or {},
-        }
-    assert_customer_pulse_widget_view(access_context)
-    read_scope = resolve_customer_pulse_read_scope(access_context=access_context)
-    customer_pulse = build_customer_pulse_customer_detail_payload(
-        resolved_external_userid,
-        track_metrics=True,
-        metric_source="customer_profile_widget_api",
-        tenant_context=read_scope.get("tenant_context"),
-        tenant_key=_normalized_text(read_scope.get("tenant_key")),
-        allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+    pulse_payload = GetCustomerPulseDetailQuery()(
+        CustomerPulseDetailQueryDTO(
+            external_userid=resolved_external_userid,
+            access_context=dict(access_context),
+        )
     )
-    if customer_pulse.get("enabled") and not customer_pulse.get("card"):
-        refresh_customer_pulse_cards(
-            limit=1,
-            operator=_normalized_text(read_scope.get("operator")) or "customer_profile_page",
-            external_userids=[resolved_external_userid],
-            tenant_context=read_scope.get("tenant_context"),
-            tenant_key=_normalized_text(read_scope.get("tenant_key")),
-            allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
-        )
-        customer_pulse = build_customer_pulse_customer_detail_payload(
-            resolved_external_userid,
-            track_metrics=True,
-            metric_source="customer_profile_widget_api",
-            tenant_context=read_scope.get("tenant_context"),
-            tenant_key=_normalized_text(read_scope.get("tenant_key")),
-            allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
-        )
     return {
         "external_userid": resolved_external_userid,
-        "pulse": build_customer_pulse(resolved_external_userid),
-        "customer_pulse": customer_pulse,
+        "pulse": pulse_payload["pulse"],
+        "customer_pulse": pulse_payload["customer_pulse"],
         "lookup": profile_payload.get("lookup") or {},
     }

@@ -162,17 +162,21 @@ def _insert_customer(
         db.commit()
 
 
-def _mcp_call(client, name: str, arguments: dict):
+def _mcp_rpc(client, method: str, params: dict | None = None):
     return client.post(
         "/mcp",
         headers={"Authorization": "Bearer mcp-token"},
         json={
             "jsonrpc": "2.0",
             "id": 1,
-            "method": "tools/call",
-            "params": {"name": name, "arguments": arguments},
+            "method": method,
+            "params": params or {},
         },
     )
+
+
+def _mcp_call(client, name: str, arguments: dict):
+    return _mcp_rpc(client, "tools/call", {"name": name, "arguments": arguments})
 
 
 def _seed_settings_questionnaire(app, *, questionnaire_id: int = 901) -> dict[str, object]:
@@ -305,6 +309,49 @@ class _FakeRefreshTagsClient:
     def get_contact(self, external_userid: str) -> dict[str, object]:
         assert external_userid in self._details
         return dict(self._details[external_userid])
+
+
+def test_mcp_initialize_returns_protocol_schema(client):
+    response = _mcp_rpc(client, "initialize")
+
+    payload = response.get_json()["result"]
+    assert response.status_code == 200
+    assert payload["protocolVersion"] == "2025-03-26"
+    assert payload["capabilities"]["tools"]["listChanged"] is False
+    assert payload["serverInfo"]["name"] == "openclaw-wecom-mcp"
+
+
+def test_mcp_tools_list_returns_enabled_runtime_tools(client):
+    response = _mcp_rpc(client, "tools/list")
+
+    payload = response.get_json()["result"]
+    tool_names = {item["name"] for item in payload["tools"]}
+    assert response.status_code == 200
+    assert "resolve_customer" in tool_names
+    assert "get_customer_context" in tool_names
+
+
+def test_resolve_customer_returns_available_actions(client, app):
+    _insert_customer(
+        app,
+        external_userid="wm_resolve_001",
+        mobile="13800138066",
+        customer_name="解析客户",
+        owner_userid="sales_09",
+    )
+
+    response = _mcp_call(
+        client,
+        "resolve_customer",
+        {"customer_ref": "13800138066"},
+    )
+
+    payload = response.get_json()["result"]["structuredContent"]
+    assert payload["ok"] is True
+    assert payload["external_userid"] == "wm_resolve_001"
+    assert payload["matched_by"] == "mobile"
+    assert "get_customer_context" in payload["available_actions"]
+    assert "send_pool_private_message" in payload["available_actions"]
 
 
 def test_create_private_message_task_resolves_mobile_then_executes(client, app, monkeypatch):
@@ -526,7 +573,7 @@ def test_get_customer_context_supports_legacy_timeline_signature(client, app, mo
             "total": 2,
         }
 
-    monkeypatch.setattr("wecom_ability_service.mcp_adapter.get_customer_timeline", fake_legacy_timeline)
+    monkeypatch.setattr("wecom_ability_service.application.integration_gateway.mcp_dispatch.get_customer_timeline", fake_legacy_timeline)
 
     response = _mcp_call(
         client,

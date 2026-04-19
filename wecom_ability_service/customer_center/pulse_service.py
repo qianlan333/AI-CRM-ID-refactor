@@ -6,7 +6,7 @@ from typing import Any
 
 from flask import current_app
 
-from ..customer_timeline.service import get_customer_timeline
+from ..customer_timeline.service import _get_customer_timeline_impl
 from ..infra.settings import get_setting
 from .repo import (
     fetch_customer_marketing_state_current,
@@ -78,7 +78,7 @@ def _safe_preview_text(value: Any, *, max_length: int = 60) -> str:
 
 
 def _timeline_payload(external_userid: str) -> dict[str, Any]:
-    timeline = get_customer_timeline(
+    timeline = _get_customer_timeline_impl(
         external_userid,
         {
             "normalized_limit": CUSTOMER_PULSE_TIMELINE_LIMIT,
