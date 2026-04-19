@@ -501,6 +501,119 @@ def _validate_segmentation_question(questionnaire_id: int, question_id: int, cat
     }
 
 
+def _profile_segment_category_label(category: dict[str, Any], *, fallback_index: int = 0) -> str:
+    return (
+        _normalized_text(category.get("category_name"))
+        or _normalized_text(category.get("category_key"))
+        or (f"分类{fallback_index}" if fallback_index > 0 else "分类")
+    )
+
+
+def _build_profile_segment_template_validity(
+    *,
+    template: dict[str, Any],
+    questionnaire: dict[str, Any] | None,
+    question: dict[str, Any] | None,
+    categories: list[dict[str, Any]],
+) -> dict[str, Any]:
+    reason_codes: list[str] = []
+    reason_messages: list[str] = []
+
+    def add_reason(code: str, message: str) -> None:
+        normalized_code = _normalized_text(code)
+        normalized_message = _normalized_text(message)
+        if not normalized_code or normalized_code in reason_codes:
+            return
+        reason_codes.append(normalized_code)
+        reason_messages.append(normalized_message or normalized_code)
+
+    questionnaire_id = int(template.get("questionnaire_id") or 0)
+    question_id = int(template.get("segmentation_question_id") or 0)
+    enabled_categories = [dict(item) for item in categories if bool(item.get("enabled"))]
+
+    if questionnaire_id <= 0 or not questionnaire:
+        add_reason("questionnaire_missing", "绑定问卷不存在，请重新选择问卷。")
+
+    if question_id <= 0 or not question:
+        add_reason("segmentation_question_missing", "分层题目不存在，请重新选择分层题目。")
+    else:
+        question_type = _normalized_text(question.get("type"))
+        if question_type not in {"single_choice", "multi_choice"}:
+            add_reason("segmentation_question_invalid_type", "分层题目必须是单选题或多选题。")
+
+    if not enabled_categories:
+        add_reason("enabled_categories_missing", "至少需要一个启用分类。")
+
+    categories_without_mappings: list[str] = []
+    categories_with_mismatched_question: list[str] = []
+    categories_with_missing_options: list[str] = []
+    mapping_count = 0
+
+    for index, category in enumerate(enabled_categories, start=1):
+        mappings = list(category.get("option_mappings") or [])
+        option_ids = [int(option_id) for option_id in list(category.get("option_ids") or []) if int(option_id or 0) > 0]
+        label = _profile_segment_category_label(category, fallback_index=index)
+        if not option_ids or not mappings:
+            categories_without_mappings.append(label)
+            continue
+        has_mismatched_question = False
+        has_missing_option = False
+        for mapping in mappings:
+            mapping_count += 1
+            if question_id > 0 and int(mapping.get("question_id") or 0) != question_id:
+                has_mismatched_question = True
+            option = dict(mapping.get("option") or {})
+            if int(option.get("id") or 0) <= 0:
+                has_missing_option = True
+        if has_mismatched_question:
+            categories_with_mismatched_question.append(label)
+        if has_missing_option:
+            categories_with_missing_options.append(label)
+
+    if categories_without_mappings:
+        add_reason(
+            "enabled_category_without_mappings",
+            f"启用分类未绑定当前分层题目的选项：{'、'.join(categories_without_mappings)}。",
+        )
+    if categories_with_mismatched_question:
+        add_reason(
+            "mapping_question_mismatch",
+            f"存在分类映射不属于当前分层题目：{'、'.join(categories_with_mismatched_question)}。",
+        )
+    if categories_with_missing_options:
+        add_reason(
+            "mapping_option_missing",
+            f"存在分类映射引用的问卷选项已失效：{'、'.join(categories_with_missing_options)}。",
+        )
+
+    return {
+        "is_valid": not reason_codes,
+        "status": "valid" if not reason_codes else "invalid",
+        "reason_codes": reason_codes,
+        "reason_messages": reason_messages,
+        "enabled_category_count": len(enabled_categories),
+        "mapping_count": mapping_count,
+    }
+
+
+def _profile_segment_template_is_valid(bundle: dict[str, Any]) -> bool:
+    return bool((bundle.get("validity") or {}).get("is_valid"))
+
+
+def _profile_segment_template_primary_reason(bundle: dict[str, Any]) -> str:
+    validity = dict(bundle.get("validity") or {})
+    reason_messages = [str(item).strip() for item in list(validity.get("reason_messages") or []) if str(item).strip()]
+    if reason_messages:
+        return reason_messages[0]
+    return "画像模板结构无效，请修复后再启用。"
+
+
+def _ensure_profile_segment_template_bundle_valid(bundle: dict[str, Any]) -> dict[str, Any]:
+    if _profile_segment_template_is_valid(bundle):
+        return bundle
+    raise ValueError(_profile_segment_template_primary_reason(bundle))
+
+
 def _serialize_agent_reference(agent: dict[str, Any]) -> dict[str, Any]:
     status_code = _normalized_text(agent.get("status_code")) or "draft"
     return {
@@ -599,11 +712,21 @@ def _build_profile_segment_template_bundle(template: dict[str, Any]) -> dict[str
             "enabled": bool(category.get("enabled")),
             "option_ids": option_ids_by_category.get(int(category["id"]), []),
             "option_mappings": mappings_by_category.get(int(category["id"]), []),
+            "mapping_count": len(mappings_by_category.get(int(category["id"]), [])),
         }
         for category in categories
     ]
+    validity = _build_profile_segment_template_validity(
+        template=template,
+        questionnaire=questionnaire,
+        question=question,
+        categories=category_items,
+    )
+    serialized_template = _serialize_profile_segment_template(template)
+    serialized_template["valid"] = bool(validity.get("is_valid"))
+    serialized_template["validity_status"] = _normalized_text(validity.get("status")) or "invalid"
     return {
-        "template": _serialize_profile_segment_template(template),
+        "template": serialized_template,
         "questionnaire": {
             "id": int((questionnaire or {}).get("id") or 0) or None,
             "name": _normalized_text((questionnaire or {}).get("title")) or _normalized_text((questionnaire or {}).get("name")),
@@ -624,6 +747,7 @@ def _build_profile_segment_template_bundle(template: dict[str, Any]) -> dict[str
             for item in options
         ],
         "categories": category_items,
+        "validity": validity,
         "supports_standard_fallback": True,
     }
 
@@ -678,7 +802,9 @@ def _workflow_expected_binding_targets(
     if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
         return {"binding_scope": AGENT_BINDING_SCOPE_PERSONALIZED, "segment_keys": ["personalized"]}
     if segmentation_basis == SEGMENTATION_BASIS_PROFILE:
-        template = get_conversion_profile_segment_template_bundle(int(profile_segment_template_id or 0))
+        template = _ensure_profile_segment_template_bundle_valid(
+            get_conversion_profile_segment_template_bundle(int(profile_segment_template_id or 0))
+        )
         category_keys = [
             _normalized_text(item.get("category_key"))
             for item in template.get("categories") or []
@@ -851,6 +977,20 @@ def _resolve_node_content_mode_and_basis(
     variants: list[dict[str, Any]],
     node_bindings: list[dict[str, Any]],
 ) -> tuple[str, str]:
+    if node_bindings:
+        scopes = {_normalized_text(item.get("binding_scope")) for item in node_bindings if _normalized_text(item.get("binding_scope"))}
+        if AGENT_BINDING_SCOPE_PERSONALIZED in scopes:
+            return NODE_CONTENT_MODE_PERSONALIZED_SINGLE, SEGMENTATION_BASIS_NONE
+        if AGENT_BINDING_SCOPE_PROFILE_CATEGORY in scopes:
+            return NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE, SEGMENTATION_BASIS_PROFILE
+        if AGENT_BINDING_SCOPE_BEHAVIOR_TIER in scopes:
+            return NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE, SEGMENTATION_BASIS_BEHAVIOR
+    if variants:
+        scopes = {_normalized_text(item.get("variant_scope")) for item in variants if _normalized_text(item.get("variant_scope"))}
+        if NODE_CONTENT_VARIANT_SCOPE_PROFILE_CATEGORY in scopes:
+            return NODE_CONTENT_MODE_MANUAL_LAYERED, SEGMENTATION_BASIS_PROFILE
+        if NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER in scopes:
+            return NODE_CONTENT_MODE_MANUAL_LAYERED, SEGMENTATION_BASIS_BEHAVIOR
     fallback_mode = _workflow_generation_mode_to_node_content_mode(workflow.get("generation_mode"))
     fallback_basis = _normalized_text(workflow.get("segmentation_basis")) or SEGMENTATION_BASIS_NONE
     if fallback_mode in {
@@ -983,11 +1123,31 @@ def _build_workflow_bundle(workflow: dict[str, Any]) -> dict[str, Any]:
         )
         else [],
     }
+    workflow_binding_signature = {
+        (
+            _normalized_text(item.get("binding_scope")),
+            _normalized_text(item.get("segment_key")),
+            _normalized_text(item.get("agent_code")),
+        )
+        for item in binding_items
+    }
     bundle["nodes"] = [
         _build_node_bundle(
             node,
             bundle,
-            node_bindings=node_bindings_by_node_id.get(int(node["id"]), []),
+            node_bindings=(
+                []
+                if {
+                    (
+                        _normalized_text(item.get("binding_scope")),
+                        _normalized_text(item.get("segment_key")),
+                        _normalized_text(item.get("agent_code")),
+                    )
+                    for item in node_bindings_by_node_id.get(int(node["id"]), [])
+                }
+                == workflow_binding_signature
+                else node_bindings_by_node_id.get(int(node["id"]), [])
+            ),
         )
         for node in nodes
     ]
@@ -1115,23 +1275,34 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
         day_offset = 1
         send_time = "00:00"
 
-    content_mode = _workflow_generation_mode_to_node_content_mode(workflow.get("generation_mode"))
-    if content_mode not in _ALLOWED_NODE_CONTENT_MODES:
-        raise ValueError("workflow generation_mode is invalid for node inheritance")
+    raw_content_mode = source.get("content_mode") if "content_mode" in source else current.get("content_mode")
+    raw_segmentation_basis = source.get("segmentation_basis") if "segmentation_basis" in source else current.get("segmentation_basis")
+    inherited_content_mode = _workflow_generation_mode_to_node_content_mode(workflow.get("generation_mode"))
+    content_mode = _normalize_node_content_mode(raw_content_mode, default=inherited_content_mode)
+    explicit_content_mode = _normalized_text(raw_content_mode) != ""
+    explicit_segmentation_basis = _normalized_text(raw_segmentation_basis) != ""
+    bindings_input = source.get("agent_bindings") if "agent_bindings" in source else current.get("agent_bindings") or []
+    normalized_binding_payloads = _normalize_workflow_agent_bindings(bindings_input)
+    uses_inherited_workflow_config = not explicit_content_mode and not explicit_segmentation_basis and not normalized_binding_payloads
     if content_mode in {
         NODE_CONTENT_MODE_MANUAL_LAYERED,
         NODE_CONTENT_MODE_STANDARD_LAYERED_REWRITE,
     }:
-        segmentation_basis = _normalized_text(workflow.get("segmentation_basis"))
+        segmentation_basis = _normalized_text(raw_segmentation_basis if explicit_segmentation_basis else workflow.get("segmentation_basis"))
         if segmentation_basis not in {SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
-            raise ValueError("segmentation_basis must be profile or behavior when content_mode requires layered segmentation")
+            if explicit_content_mode or explicit_segmentation_basis:
+                raise ValueError("segmentation_basis must be profile or behavior when content_mode requires layered segmentation")
+            content_mode = NODE_CONTENT_MODE_STANDARD_DIRECT
+            segmentation_basis = SEGMENTATION_BASIS_NONE
     else:
+        content_mode = NODE_CONTENT_MODE_PERSONALIZED_SINGLE if content_mode == NODE_CONTENT_MODE_PERSONALIZED_SINGLE else NODE_CONTENT_MODE_STANDARD_DIRECT
         segmentation_basis = SEGMENTATION_BASIS_NONE
-    _ensure_node_inherited_workflow_ready(
-        workflow_bundle,
-        content_mode=content_mode,
-        segmentation_basis=segmentation_basis,
-    )
+    if uses_inherited_workflow_config:
+        _ensure_node_inherited_workflow_ready(
+            workflow_bundle,
+            content_mode=content_mode,
+            segmentation_basis=segmentation_basis,
+        )
 
     raw_standard_content_text = (
         source.get("standard_content_text")
@@ -1185,9 +1356,27 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
         if not standard_content_text:
             raise ValueError("standard_content_text is required")
         content_variants = []
+        if uses_inherited_workflow_config:
+            agent_bindings = _workflow_binding_payload_items(workflow_bundle)
+        else:
+            agent_bindings = _validate_workflow_agent_bindings(
+                segmentation_basis=segmentation_basis,
+                generation_mode=GENERATION_MODE_AUTO_LAYERED_REWRITE,
+                profile_segment_template_id=int(workflow.get("profile_segment_template_id") or 0) or None,
+                bindings=normalized_binding_payloads,
+            )
     else:
         standard_content_text = ""
         content_variants = []
+        if uses_inherited_workflow_config:
+            agent_bindings = _workflow_binding_payload_items(workflow_bundle)
+        else:
+            agent_bindings = _validate_workflow_agent_bindings(
+                segmentation_basis=SEGMENTATION_BASIS_NONE,
+                generation_mode=GENERATION_MODE_PERSONALIZED_SINGLE,
+                profile_segment_template_id=None,
+                bindings=normalized_binding_payloads,
+            )
 
     return {
         "node_code": node_code,
@@ -1310,6 +1499,14 @@ def create_conversion_profile_segment_template(payload: dict[str, Any], *, opera
     if question_id <= 0:
         raise ValueError("segmentation_question_id is required")
     categories = _normalize_template_categories_payload(payload.get("categories") or [])
+    if not categories:
+        raise ValueError("at least one category is required")
+    enabled_categories = [item for item in categories if bool(item.get("enabled"))]
+    if not enabled_categories:
+        raise ValueError("at least one enabled category is required")
+    for category in enabled_categories:
+        if not list(category.get("option_ids") or []):
+            raise ValueError(f"enabled category '{_profile_segment_category_label(category)}' must bind at least one option")
     _validate_segmentation_question(questionnaire_id, question_id, categories)
     saved_template = workflow_repo.insert_profile_segment_template_row(
         {
@@ -1341,21 +1538,39 @@ def update_conversion_profile_segment_template(template_id: int, payload: dict[s
     duplicate = workflow_repo.get_profile_segment_template_row_by_code(next_template_code)
     if duplicate and int(duplicate["id"]) != int(existing["id"]):
         raise ValueError("template_code already exists")
-    next_questionnaire_id = _normalize_int(payload.get("questionnaire_id") if "questionnaire_id" in payload else existing.get("questionnaire_id"), default=0, minimum=1)
-    next_question_id = _normalize_int(payload.get("segmentation_question_id") if "segmentation_question_id" in payload else existing.get("segmentation_question_id"), default=0, minimum=1)
-    if next_questionnaire_id <= 0:
-        raise ValueError("questionnaire_id is required")
-    if next_question_id <= 0:
-        raise ValueError("segmentation_question_id is required")
+    next_enabled = _normalize_bool(payload.get("enabled"), default=bool(existing.get("enabled")))
+    next_questionnaire_id = _normalize_int(
+        payload.get("questionnaire_id") if "questionnaire_id" in payload else existing.get("questionnaire_id"),
+        default=0,
+        minimum=0,
+    )
+    next_question_id = _normalize_int(
+        payload.get("segmentation_question_id") if "segmentation_question_id" in payload else existing.get("segmentation_question_id"),
+        default=0,
+        minimum=0,
+    )
     next_categories = _normalize_template_categories_payload(payload.get("categories")) if "categories" in payload else _extract_bundle_categories(existing_bundle)
-    _validate_segmentation_question(next_questionnaire_id, next_question_id, next_categories)
+    if next_enabled:
+        if next_questionnaire_id <= 0:
+            raise ValueError("questionnaire_id is required")
+        if next_question_id <= 0:
+            raise ValueError("segmentation_question_id is required")
+        if not next_categories:
+            raise ValueError("at least one category is required")
+        enabled_categories = [item for item in next_categories if bool(item.get("enabled"))]
+        if not enabled_categories:
+            raise ValueError("at least one enabled category is required")
+        for category in enabled_categories:
+            if not list(category.get("option_ids") or []):
+                raise ValueError(f"enabled category '{_profile_segment_category_label(category)}' must bind at least one option")
+        _validate_segmentation_question(next_questionnaire_id, next_question_id, next_categories)
     next_state = {
         "template_code": next_template_code,
         "template_name": next_template_name,
-        "questionnaire_id": next_questionnaire_id,
-        "segmentation_question_id": next_question_id,
+        "questionnaire_id": next_questionnaire_id or None,
+        "segmentation_question_id": next_question_id or None,
         "description": _normalized_text(payload.get("description") if "description" in payload else existing.get("description")),
-        "enabled": _normalize_bool(payload.get("enabled"), default=bool(existing.get("enabled"))),
+        "enabled": next_enabled,
         "categories": next_categories,
     }
     previous_state = {
@@ -1607,15 +1822,6 @@ def _questionnaire_status_label(value: Any) -> str:
     }.get(normalized, normalized or "待提交")
 
 
-def _questionnaire_result_label(value: Any) -> str:
-    normalized = _normalized_text(value)
-    return {
-        "unknown": "未知",
-        "normal": "普通跟进",
-        "focus": "重点跟进",
-    }.get(normalized, normalized or "未知")
-
-
 def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
     normalized_count = max(0, int(message_count or 0))
     for item in list_supported_behavior_tiers():
@@ -1630,10 +1836,66 @@ def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
 
 
 def _latest_enabled_profile_segment_template_bundle() -> dict[str, Any]:
-    template = next(iter(workflow_repo.list_profile_segment_template_rows(enabled_only=True)), None)
-    if not template:
-        return {}
-    return _build_profile_segment_template_bundle(template)
+    invalid_enabled_templates: list[dict[str, Any]] = []
+    for template in workflow_repo.list_profile_segment_template_rows(enabled_only=True):
+        bundle = _build_profile_segment_template_bundle(template)
+        if _profile_segment_template_is_valid(bundle):
+            bundle["selection"] = {
+                "strategy": "latest_valid_enabled",
+                "status": "selected",
+                "invalid_enabled_templates": invalid_enabled_templates,
+            }
+            return bundle
+        invalid_enabled_templates.append(
+            {
+                "id": int(((bundle.get("template") or {}).get("id")) or 0) or None,
+                "template_name": _normalized_text(((bundle.get("template") or {}).get("template_name"))),
+                "reason_messages": list((bundle.get("validity") or {}).get("reason_messages") or []),
+            }
+        )
+    if invalid_enabled_templates:
+        return {
+            "template": {},
+            "questionnaire": {},
+            "segmentation_question": {},
+            "question_options": [],
+            "categories": [],
+            "validity": {
+                "is_valid": False,
+                "status": "invalid",
+                "reason_codes": ["no_valid_enabled_template"],
+                "reason_messages": ["当前没有有效的启用自然画像模板。"],
+                "enabled_category_count": 0,
+                "mapping_count": 0,
+            },
+            "selection": {
+                "strategy": "latest_valid_enabled",
+                "status": "no_valid_enabled_template",
+                "invalid_enabled_templates": invalid_enabled_templates,
+            },
+            "supports_standard_fallback": True,
+        }
+    return {
+        "template": {},
+        "questionnaire": {},
+        "segmentation_question": {},
+        "question_options": [],
+        "categories": [],
+        "validity": {
+            "is_valid": False,
+            "status": "empty",
+            "reason_codes": ["no_enabled_template"],
+            "reason_messages": ["当前未启用自然画像模板。"],
+            "enabled_category_count": 0,
+            "mapping_count": 0,
+        },
+        "selection": {
+            "strategy": "latest_valid_enabled",
+            "status": "no_enabled_template",
+            "invalid_enabled_templates": [],
+        },
+        "supports_standard_fallback": True,
+    }
 
 
 def _resolve_profile_segment_for_member(
@@ -1641,18 +1903,43 @@ def _resolve_profile_segment_for_member(
     member: dict[str, Any],
     profile_segment_template_bundle: dict[str, Any],
 ) -> dict[str, Any]:
+    validity = dict(profile_segment_template_bundle.get("validity") or {})
+    if validity and not bool(validity.get("is_valid")):
+        reason_codes = [str(item).strip() for item in list(validity.get("reason_codes") or []) if str(item).strip()]
+        return {
+            "matched": False,
+            "segment_key": "",
+            "segment_label": "",
+            "reason": reason_codes[0] if reason_codes else "profile_segment_template_invalid",
+            "submission_id": None,
+            "selected_option_ids": [],
+        }
     template = dict(profile_segment_template_bundle.get("template") or {})
     questionnaire_id = int(template.get("questionnaire_id") or 0)
     question_id = int(template.get("segmentation_question_id") or 0)
     if questionnaire_id <= 0 or question_id <= 0:
-        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "profile_segment_template_missing"}
+        return {
+            "matched": False,
+            "segment_key": "",
+            "segment_label": "",
+            "reason": "profile_segment_template_missing",
+            "submission_id": None,
+            "selected_option_ids": [],
+        }
     submission = workflow_repo.get_latest_questionnaire_submission_row(
         questionnaire_id=questionnaire_id,
         external_contact_ids=[_normalized_text(member.get("external_contact_id"))],
         phone=_normalized_text(member.get("phone")),
     )
     if not submission:
-        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "questionnaire_submission_missing"}
+        return {
+            "matched": False,
+            "segment_key": "",
+            "segment_label": "",
+            "reason": "questionnaire_submission_missing",
+            "submission_id": None,
+            "selected_option_ids": [],
+        }
     answer = next(
         (
             item
@@ -1662,29 +1949,53 @@ def _resolve_profile_segment_for_member(
         None,
     )
     if not answer:
-        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "segmentation_question_answer_missing"}
+        return {
+            "matched": False,
+            "segment_key": "",
+            "segment_label": "",
+            "reason": "segmentation_question_answer_missing",
+            "submission_id": int(submission.get("id") or 0) or None,
+            "selected_option_ids": [],
+        }
     try:
         selected_option_ids = {int(option_id) for option_id in json.loads(_normalized_text(answer.get("selected_option_ids")) or "[]")}
     except (TypeError, ValueError, json.JSONDecodeError):
         selected_option_ids = set()
     if not selected_option_ids:
-        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "selected_option_ids_empty"}
+        return {
+            "matched": False,
+            "segment_key": "",
+            "segment_label": "",
+            "reason": "selected_option_ids_empty",
+            "submission_id": int(submission.get("id") or 0) or None,
+            "selected_option_ids": [],
+        }
     matched_categories = [
         {
             "category_key": _normalized_text(category.get("category_key")),
             "category_name": _normalized_text(category.get("category_name")),
         }
         for category in profile_segment_template_bundle.get("categories") or []
-        if set(int(option_id) for option_id in (category.get("option_ids") or [])) & selected_option_ids
+        if bool(category.get("enabled")) and set(int(option_id) for option_id in (category.get("option_ids") or [])) & selected_option_ids
     ]
     if len(matched_categories) != 1:
-        return {"matched": False, "segment_key": "", "segment_label": "", "reason": "multiple_or_zero_profile_categories"}
+        return {
+            "matched": False,
+            "segment_key": "",
+            "segment_label": "",
+            "reason": "multiple_or_zero_profile_categories",
+            "submission_id": int(submission.get("id") or 0) or None,
+            "selected_option_ids": sorted(selected_option_ids),
+            "matched_categories": matched_categories,
+        }
     matched_category = dict(matched_categories[0])
     return {
         "matched": True,
         "segment_key": _normalized_text(matched_category.get("category_key")),
         "segment_label": _normalized_text(matched_category.get("category_name")),
         "reason": "",
+        "submission_id": int(submission.get("id") or 0) or None,
+        "selected_option_ids": sorted(selected_option_ids),
     }
 
 
@@ -1695,9 +2006,17 @@ def _build_dashboard_member_detail_item(
     profile_segment_template_bundle: dict[str, Any],
     audience_meta_map: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
+    from .service import resolve_member_questionnaire_truth
+
     member = dict(row.get("member") or {})
     audience_code = _normalized_text(member.get("current_audience_code") or row.get("audience_code"))
     external_contact_id = _normalized_text(member.get("external_contact_id"))
+    questionnaire = resolve_member_questionnaire_truth(
+        external_contact_ids=[external_contact_id] if external_contact_id else [],
+        phone=_normalized_text(member.get("phone")),
+        member=member,
+    )
+    questionnaire_status = _normalized_text(questionnaire.get("questionnaire_status"))
     message_count = int(message_counts.get(external_contact_id) or 0)
     behavior_tier = _behavior_tier_for_count(message_count)
     profile_segment = _resolve_profile_segment_for_member(
@@ -1708,21 +2027,17 @@ def _build_dashboard_member_detail_item(
         "member_id": int(member.get("id") or 0) or None,
         "external_contact_id": external_contact_id,
         "phone": _normalized_text(member.get("phone")),
-        "owner_staff_id": _normalized_text(member.get("owner_staff_id")),
         "audience_code": audience_code,
         "audience_label": _normalized_text((audience_meta_map.get(audience_code) or {}).get("label")),
         "activation_status": _normalized_text(member.get("activation_status")),
         "activation_status_label": _activation_status_label(member.get("activation_status")),
-        "questionnaire_status": _normalized_text(member.get("questionnaire_status")),
-        "questionnaire_status_label": _questionnaire_status_label(member.get("questionnaire_status")),
-        "questionnaire_result": _normalized_text(member.get("questionnaire_result")),
-        "questionnaire_result_label": _questionnaire_result_label(member.get("questionnaire_result")),
+        "questionnaire_status": questionnaire_status,
+        "questionnaire_status_label": _questionnaire_status_label(questionnaire_status),
         "profile_segment_key": _normalized_text(profile_segment.get("segment_key")),
         "profile_segment_label": _normalized_text(profile_segment.get("segment_label")),
         "behavior_segment_key": _normalized_text(behavior_tier.get("tier_code")),
         "behavior_segment_label": _normalized_text(behavior_tier.get("label")),
         "conversation_count": message_count,
-        "entered_at": _normalized_text(row.get("entered_at") or member.get("current_audience_entered_at")),
     }
 
 
@@ -1767,6 +2082,8 @@ def _build_dashboard_audience_member_details() -> dict[str, Any]:
             }
         )
     template = dict(profile_segment_template_bundle.get("template") or {})
+    validity = dict(profile_segment_template_bundle.get("validity") or {})
+    selection = dict(profile_segment_template_bundle.get("selection") or {})
     return {
         "groups": groups,
         "total": total,
@@ -1774,6 +2091,13 @@ def _build_dashboard_audience_member_details() -> dict[str, Any]:
             "id": int(template.get("id") or 0) or None,
             "template_name": _normalized_text(template.get("template_name")),
             "enabled": bool(template),
+            "valid": bool(validity.get("is_valid")),
+            "validity_status": _normalized_text(validity.get("status")),
+            "reason_messages": list(validity.get("reason_messages") or []),
+            "selection_strategy": _normalized_text(selection.get("strategy")) or "latest_valid_enabled",
+            "selection_status": _normalized_text(selection.get("status")) or ("selected" if template else "no_enabled_template"),
+            "skipped_invalid_enabled_template_count": len(list(selection.get("invalid_enabled_templates") or [])),
+            "skipped_invalid_enabled_templates": list(selection.get("invalid_enabled_templates") or []),
         },
     }
 
@@ -1948,17 +2272,21 @@ def get_conversion_workflow_detail_summary(workflow_id: int) -> dict[str, Any]:
 
 
 def list_conversion_profile_segment_template_options(*, enabled_only: bool = True) -> dict[str, Any]:
+    bundles = [_build_profile_segment_template_bundle(item) for item in workflow_repo.list_profile_segment_template_rows(enabled_only=enabled_only)]
+    if enabled_only:
+        bundles = [item for item in bundles if _profile_segment_template_is_valid(item)]
     items = [
         {
-            "id": int(item.get("id") or 0),
-            "template_code": _normalized_text(item.get("template_code")),
-            "template_name": _normalized_text(item.get("template_name")),
-            "questionnaire_id": int(item.get("questionnaire_id") or 0) or None,
-            "segmentation_question_id": int(item.get("segmentation_question_id") or 0) or None,
-            "enabled": bool(item.get("enabled")),
-            "updated_at": _normalized_text(item.get("updated_at")),
+            "id": int(((item.get("template") or {}).get("id")) or 0),
+            "template_code": _normalized_text(((item.get("template") or {}).get("template_code"))),
+            "template_name": _normalized_text(((item.get("template") or {}).get("template_name"))),
+            "questionnaire_id": int((((item.get("template") or {}).get("questionnaire_id")) or 0)) or None,
+            "segmentation_question_id": int((((item.get("template") or {}).get("segmentation_question_id")) or 0)) or None,
+            "enabled": bool(((item.get("template") or {}).get("enabled"))),
+            "valid": bool((item.get("validity") or {}).get("is_valid")),
+            "updated_at": _normalized_text(((item.get("template") or {}).get("updated_at"))),
         }
-        for item in workflow_repo.list_profile_segment_template_rows(enabled_only=enabled_only)
+        for item in bundles
     ]
     return {"items": items, "total": len(items)}
 

@@ -435,6 +435,96 @@ def _rebuild_sqlite_customer_marketing_state_current_table(db) -> None:
     )
 
 
+def _rebuild_sqlite_automation_member_table(db) -> None:
+    member_columns = _sqlite_table_columns(db, "automation_member")
+    if not member_columns:
+        return
+    db.execute("DROP TABLE IF EXISTS automation_member__new")
+    db.execute(
+        """
+        CREATE TABLE automation_member__new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            master_customer_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+            owner_staff_id TEXT NOT NULL DEFAULT '',
+            in_pool INTEGER NOT NULL DEFAULT 0,
+            current_pool TEXT NOT NULL DEFAULT 'removed',
+            follow_type TEXT NOT NULL DEFAULT '',
+            activation_status TEXT NOT NULL DEFAULT 'unknown',
+            questionnaire_status TEXT NOT NULL DEFAULT 'pending',
+            decision_source TEXT NOT NULL DEFAULT 'system',
+            source_type TEXT NOT NULL DEFAULT 'system',
+            source_channel_id INTEGER REFERENCES automation_channel(id) ON DELETE SET NULL,
+            current_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
+                CHECK (current_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            current_audience_entered_at TEXT NOT NULL DEFAULT '',
+            last_active_pool TEXT NOT NULL DEFAULT '',
+            joined_at TEXT NOT NULL DEFAULT '',
+            last_ai_push_at TEXT NOT NULL DEFAULT '',
+            ai_cooldown_until TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        f"""
+        INSERT INTO automation_member__new (
+            id,
+            external_contact_id,
+            phone,
+            master_customer_id,
+            owner_staff_id,
+            in_pool,
+            current_pool,
+            follow_type,
+            activation_status,
+            questionnaire_status,
+            decision_source,
+            source_type,
+            source_channel_id,
+            current_audience_code,
+            current_audience_entered_at,
+            last_active_pool,
+            joined_at,
+            last_ai_push_at,
+            ai_cooldown_until,
+            created_at,
+            updated_at
+        )
+        SELECT
+            id,
+            COALESCE(external_contact_id, ''),
+            COALESCE(phone, ''),
+            {"master_customer_id" if "master_customer_id" in member_columns else "NULL"} AS master_customer_id,
+            COALESCE(owner_staff_id, ''),
+            COALESCE(in_pool, 0),
+            COALESCE(current_pool, 'removed'),
+            COALESCE(follow_type, ''),
+            COALESCE(activation_status, 'unknown'),
+            COALESCE(questionnaire_status, 'pending'),
+            COALESCE(decision_source, 'system'),
+            COALESCE(source_type, 'system'),
+            {"source_channel_id" if "source_channel_id" in member_columns else "NULL"} AS source_channel_id,
+            COALESCE({"current_audience_code" if "current_audience_code" in member_columns else "'pending_questionnaire'"}, 'pending_questionnaire'),
+            COALESCE({"current_audience_entered_at" if "current_audience_entered_at" in member_columns else "''"}, ''),
+            COALESCE(last_active_pool, ''),
+            COALESCE(joined_at, ''),
+            COALESCE(last_ai_push_at, ''),
+            COALESCE(ai_cooldown_until, ''),
+            COALESCE(created_at, CURRENT_TIMESTAMP),
+            COALESCE(updated_at, CURRENT_TIMESTAMP)
+        FROM automation_member
+        """
+    )
+    db.execute("DROP TABLE automation_member")
+    db.execute("ALTER TABLE automation_member__new RENAME TO automation_member")
+
+
+_LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN = "questionnaire" "_result"
+
+
 def _ensure_sqlite_customer_marketing_state_tables(db) -> None:
     current_columns = _sqlite_table_columns(db, "customer_marketing_state_current")
     if current_columns:
@@ -572,7 +662,6 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             follow_type TEXT NOT NULL DEFAULT '',
             activation_status TEXT NOT NULL DEFAULT 'unknown',
             questionnaire_status TEXT NOT NULL DEFAULT 'pending',
-            questionnaire_result TEXT NOT NULL DEFAULT 'unknown',
             decision_source TEXT NOT NULL DEFAULT 'system',
             source_type TEXT NOT NULL DEFAULT 'system',
             source_channel_id INTEGER REFERENCES automation_channel(id) ON DELETE SET NULL,
@@ -589,6 +678,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
     )
     member_columns = _sqlite_table_columns(db, "automation_member")
+    if _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN in member_columns:
+        _rebuild_sqlite_automation_member_table(db)
+        member_columns = _sqlite_table_columns(db, "automation_member")
     if "current_audience_code" not in member_columns:
         db.execute(
             "ALTER TABLE automation_member ADD COLUMN current_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'"
@@ -2434,6 +2526,12 @@ def _init_postgres(db) -> None:
         ALTER TABLE IF EXISTS automation_member
         ADD COLUMN IF NOT EXISTS current_audience_entered_at TEXT NOT NULL DEFAULT ''
         """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        DROP COLUMN IF EXISTS """
+        + _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN
     )
 
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"

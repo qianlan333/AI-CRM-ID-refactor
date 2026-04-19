@@ -190,11 +190,7 @@ delete_questionnaire = questionnaire_domain_service.delete_questionnaire
 export_questionnaire_submissions = questionnaire_domain_service.export_questionnaire_submissions
 get_public_questionnaire_by_slug = questionnaire_domain_service.get_public_questionnaire_by_slug
 validate_questionnaire_answers = questionnaire_domain_service.validate_questionnaire_answers
-if hasattr(questionnaire_domain_service, "compute_questionnaire_submission_outcome"):
-    compute_questionnaire_submission_outcome = questionnaire_domain_service.compute_questionnaire_submission_outcome
-else:
-    compute_questionnaire_submission_outcome = questionnaire_domain_service.compute_questionnaire_result
-compute_questionnaire_result = compute_questionnaire_submission_outcome
+compute_questionnaire_submission_outcome = questionnaire_domain_service.compute_questionnaire_submission_outcome
 
 
 def _bind_questionnaire_domain() -> None:
@@ -933,15 +929,7 @@ def apply_questionnaire_mobile_binding(submission: dict[str, Any]) -> dict[str, 
 
 def apply_questionnaire_submission_tags_to_scrm(submission_id: int) -> dict[str, Any]:
     _bind_questionnaire_domain()
-    if hasattr(questionnaire_domain_service, "apply_questionnaire_submission_tags_to_scrm"):
-        apply_fn = questionnaire_domain_service.apply_questionnaire_submission_tags_to_scrm
-    else:
-        apply_fn = questionnaire_domain_service.apply_questionnaire_result_to_scrm
-    return apply_fn(submission_id)
-
-
-def apply_questionnaire_result_to_scrm(submission_id: int) -> dict[str, Any]:
-    return apply_questionnaire_submission_tags_to_scrm(submission_id)
+    return questionnaire_domain_service.apply_questionnaire_submission_tags_to_scrm(submission_id)
 
 
 def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[str, Any] | None = None) -> dict[str, Any]:

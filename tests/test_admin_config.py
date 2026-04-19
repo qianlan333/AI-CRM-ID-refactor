@@ -321,7 +321,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "in_pool": 1,
             "activation_status": "unknown",
             "questionnaire_status": "pending",
-            "questionnaire_result": "unknown",
             "joined_at": f"{today} 09:00:00",
         },
         {
@@ -333,7 +332,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "in_pool": 1,
             "activation_status": "inactive",
             "questionnaire_status": "submitted",
-            "questionnaire_result": "normal",
             "joined_at": f"{today} 10:00:00",
         },
         {
@@ -345,7 +343,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "in_pool": 1,
             "activation_status": "inactive",
             "questionnaire_status": "submitted",
-            "questionnaire_result": "focus",
             "joined_at": f"{yesterday} 11:00:00",
         },
         {
@@ -357,7 +354,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "in_pool": 1,
             "activation_status": "active",
             "questionnaire_status": "submitted",
-            "questionnaire_result": "normal",
             "joined_at": f"{today} 12:00:00",
         },
         {
@@ -369,7 +365,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "in_pool": 1,
             "activation_status": "active",
             "questionnaire_status": "submitted",
-            "questionnaire_result": "focus",
             "joined_at": f"{yesterday} 13:00:00",
         },
         {
@@ -381,7 +376,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "in_pool": 1,
             "activation_status": "inactive",
             "questionnaire_status": "submitted",
-            "questionnaire_result": "normal",
             "joined_at": f"{yesterday} 14:00:00",
         },
         {
@@ -393,7 +387,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "in_pool": 0,
             "activation_status": "active",
             "questionnaire_status": "submitted",
-            "questionnaire_result": "focus",
             "joined_at": f"{today} 15:00:00",
         },
     ]
@@ -411,10 +404,10 @@ def _seed_automation_conversion_stage_board(app) -> None:
                 """
                 INSERT INTO automation_member (
                     external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                    activation_status, questionnaire_status, questionnaire_result, decision_source,
+                    activation_status, questionnaire_status, decision_source,
                     source_type, joined_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (
                     item["external_userid"],
@@ -425,7 +418,6 @@ def _seed_automation_conversion_stage_board(app) -> None:
                     item["follow_type"],
                     item["activation_status"],
                     item["questionnaire_status"],
-                    item["questionnaire_result"],
                     item["joined_at"],
                 ),
             )

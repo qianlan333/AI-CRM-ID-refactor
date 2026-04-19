@@ -106,12 +106,31 @@ def insert_archived_messages(messages: list[dict[str, Any]]) -> int:
     normalized_messages = [normalize_archived_message(item) for item in messages]
     inserted_rows = repo.insert_archived_messages_detailed(normalized_messages)
     if inserted_rows:
+        should_run_marketing_openclaw = False
         try:
-            from ..marketing_automation.service import process_inbound_messages_for_openclaw
+            from ..marketing_automation import evaluate_customer_marketing_state
 
-            process_inbound_messages_for_openclaw(inserted_rows)
+            for external_userid in {
+                str(row.get("external_userid") or "").strip()
+                for row in inserted_rows
+                if str(row.get("external_userid") or "").strip()
+            }:
+                marketing_state = evaluate_customer_marketing_state(
+                    external_userid=external_userid,
+                    persist=False,
+                )
+                if str((marketing_state or {}).get("pool_key") or "").strip() in {"inactive_focus", "active_focus"}:
+                    should_run_marketing_openclaw = True
+                    break
         except Exception:
-            archive_domain_logger.exception("post-insert inbound message automation failed")
+            archive_domain_logger.exception("pre-check marketing openclaw scope failed")
+        if should_run_marketing_openclaw:
+            try:
+                from ..marketing_automation.service import process_inbound_messages_for_openclaw
+
+                process_inbound_messages_for_openclaw(inserted_rows)
+            except Exception:
+                archive_domain_logger.exception("post-insert inbound message automation failed")
         try:
             from ..customer_pulse.access import build_customer_pulse_legacy_tenant_context
             from ..customer_pulse.service import enqueue_customer_pulse_recompute
