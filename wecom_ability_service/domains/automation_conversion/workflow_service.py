@@ -1022,7 +1022,13 @@ def _build_node_bundle(
         variants=variants,
         node_bindings=node_binding_items,
     )
-    standard_content_text = _normalized_text(content.get("standard_content_text")) if _content_mode_uses_standard_content(content_mode) else ""
+    legacy_standard_fallback_enabled = (
+        content_mode == "manual_layered"
+        and bool(content.get("fallback_to_standard_content"))
+        and bool(_normalized_text(content.get("standard_content_text")))
+    )
+    exposes_standard_content = _content_mode_uses_standard_content(content_mode) or legacy_standard_fallback_enabled
+    standard_content_text = _normalized_text(content.get("standard_content_text")) if exposes_standard_content else ""
     return {
         "id": int(node["id"]),
         "node_code": _normalized_text(node.get("node_code")),
@@ -1038,8 +1044,8 @@ def _build_node_bundle(
         "content_mode": content_mode,
         "segmentation_basis": segmentation_basis,
         "standard_content_text": standard_content_text,
-        "standard_content_payload": _strip_node_content_meta(content.get("standard_content_payload_json") or {}) if _content_mode_uses_standard_content(content_mode) else {},
-        "fallback_to_standard_content": bool(content.get("fallback_to_standard_content")) if content and _content_mode_uses_standard_content(content_mode) else False,
+        "standard_content_payload": _strip_node_content_meta(content.get("standard_content_payload_json") or {}) if exposes_standard_content else {},
+        "fallback_to_standard_content": bool(content.get("fallback_to_standard_content")) if content and exposes_standard_content else False,
         "agent_bindings": node_binding_items,
         "content_variants": [
             {

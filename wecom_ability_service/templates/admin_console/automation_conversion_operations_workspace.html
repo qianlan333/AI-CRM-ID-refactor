@@ -178,9 +178,9 @@
 
     function behaviorTierLabel(code) {
       const normalized = String(code || '').trim();
-      if (normalized === 'lt_2') return '小于 2';
-      if (normalized === 'between_2_9') return '2 ~ 9';
-      if (normalized === 'gte_10') return '大于等于 10';
+      if (normalized === 'lt_2') return '消息少于 2';
+      if (normalized === 'between_2_9') return '消息 2 ~ 9';
+      if (normalized === 'gte_10') return '消息大于等于 10';
       return normalized || '-';
     }
 
@@ -191,7 +191,7 @@
       }
       const tierKeys = Array.isArray((workflow || {}).recipient_behavior_tier_keys) ? workflow.recipient_behavior_tier_keys : [];
       const tierLabels = tierKeys.map((item) => behaviorTierLabel(item)).filter(Boolean);
-      return tierLabels.length ? `按行为层级发：${tierLabels.join(' / ')}` : '按行为层级发';
+      return tierLabels.length ? `按消息条数发：${tierLabels.join(' / ')}` : '按消息条数发';
     }
 
     function workflowContentSummary(workflow, bundle) {
