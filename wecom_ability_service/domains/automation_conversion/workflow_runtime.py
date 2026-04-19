@@ -81,9 +81,27 @@ def _parse_timestamp(value: Any) -> datetime | None:
     text = _normalized_text(value)
     if not text:
         return None
-    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+    except ValueError:
+        pass
+    for pattern in (
+        "%Y-%m-%d %H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+    ):
         try:
-            return datetime.strptime(text, pattern)
+            parsed = datetime.strptime(text, pattern)
+            return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
         except ValueError:
             continue
     return None
@@ -275,17 +293,35 @@ def _member_behavior_tier_match(member: dict[str, Any], selected_tier_keys: list
     }
 
 
-def _member_matches_workflow_recipient_filter(member: dict[str, Any], workflow_bundle: dict[str, Any]) -> bool:
+def _member_workflow_recipient_filter_result(member: dict[str, Any], workflow_bundle: dict[str, Any]) -> dict[str, Any]:
     config = _workflow_recipient_filter_config(workflow_bundle)
-    if _normalized_text(config.get("recipient_filter_basis")) != RECIPIENT_FILTER_BASIS_BEHAVIOR:
-        return True
+    basis = _normalized_text(config.get("recipient_filter_basis"))
+    if basis != RECIPIENT_FILTER_BASIS_BEHAVIOR:
+        return {
+            "matched": True,
+            "basis": basis or RECIPIENT_FILTER_BASIS_NONE,
+            "reason": "",
+        }
     if not (
         int(member.get("id") or 0)
         or _normalized_text(member.get("external_contact_id"))
         or _normalized_text(member.get("phone"))
     ):
-        return False
-    return bool(_member_behavior_tier_match(member, list(config.get("recipient_behavior_tier_keys") or [])).get("matched"))
+        return {
+            "matched": False,
+            "basis": basis,
+            "reason": "member_identity_missing",
+        }
+    behavior_match = _member_behavior_tier_match(member, list(config.get("recipient_behavior_tier_keys") or []))
+    return {
+        **behavior_match,
+        "basis": basis,
+        "reason": _normalized_text(behavior_match.get("reason")) or ("recipient_filter_not_matched" if not bool(behavior_match.get("matched")) else ""),
+    }
+
+
+def _member_matches_workflow_recipient_filter(member: dict[str, Any], workflow_bundle: dict[str, Any]) -> bool:
+    return bool(_member_workflow_recipient_filter_result(member, workflow_bundle).get("matched"))
 
 
 def _current_audience_source_snapshot(
@@ -616,6 +652,13 @@ def _select_manual_layered_content(
         if bool(segment_match.get("matched"))
         else (_normalized_text(segment_match.get("reason")) or "segment_not_matched")
     )
+    standard_content_text = _normalized_text(node.get("standard_content_text"))
+    if bool(node.get("fallback_to_standard_content")) and standard_content_text:
+        return {
+            "content_text": standard_content_text,
+            "content_source": "standard_content_fallback",
+            "fallback_reason": fallback_reason,
+        }
     return {
         "content_text": "",
         "content_source": "",
@@ -1187,11 +1230,46 @@ def _base_execution_diagnostics(*, execution: dict[str, Any], node: dict[str, An
         "day_offset_miss_count": 0,
         "audience_miss_count": 0,
         "recipient_filter_miss_count": 0,
+        "recipient_filter_usage_source_unavailable_count": 0,
+        "recipient_filter_usage_source_not_found_count": 0,
+        "recipient_filter_usage_phone_missing_count": 0,
+        "recipient_filter_behavior_tier_miss_count": 0,
+        "recipient_filter_member_identity_missing_count": 0,
         "already_sent_count": 0,
         "sent_today_count": 0,
         "sequence_wait_count": 0,
         "inserted_pending_count": 0,
     }
+
+
+def _update_recipient_filter_diagnostics(diagnostics: dict[str, Any], filter_result: dict[str, Any]) -> None:
+    if bool(filter_result.get("matched")):
+        return
+    diagnostics["recipient_filter_miss_count"] = int(diagnostics.get("recipient_filter_miss_count") or 0) + 1
+    reason = _normalized_text(filter_result.get("reason"))
+    if reason in {"message_activity_db_not_configured", "usage_source_unavailable"}:
+        diagnostics["recipient_filter_usage_source_unavailable_count"] = int(
+            diagnostics.get("recipient_filter_usage_source_unavailable_count") or 0
+        ) + 1
+        return
+    if reason == "usage_source_not_found":
+        diagnostics["recipient_filter_usage_source_not_found_count"] = int(
+            diagnostics.get("recipient_filter_usage_source_not_found_count") or 0
+        ) + 1
+        return
+    if reason == "usage_phone_missing":
+        diagnostics["recipient_filter_usage_phone_missing_count"] = int(
+            diagnostics.get("recipient_filter_usage_phone_missing_count") or 0
+        ) + 1
+        return
+    if reason == "member_identity_missing":
+        diagnostics["recipient_filter_member_identity_missing_count"] = int(
+            diagnostics.get("recipient_filter_member_identity_missing_count") or 0
+        ) + 1
+        return
+    diagnostics["recipient_filter_behavior_tier_miss_count"] = int(
+        diagnostics.get("recipient_filter_behavior_tier_miss_count") or 0
+    ) + 1
 
 
 def _upsert_node_execution_candidates(
@@ -1245,8 +1323,9 @@ def _upsert_node_execution_candidates(
                 diagnostics["sequence_wait_count"] += 1
                 continue
         member = dict(row.get("member") or {})
-        if not _member_matches_workflow_recipient_filter(member, workflow_bundle):
-            diagnostics["recipient_filter_miss_count"] += 1
+        recipient_filter_result = _member_workflow_recipient_filter_result(member, workflow_bundle)
+        if not bool(recipient_filter_result.get("matched")):
+            _update_recipient_filter_diagnostics(diagnostics, recipient_filter_result)
             continue
         workflow_repo.insert_workflow_execution_item_row(
             {
@@ -1331,14 +1410,31 @@ def _zero_hit_reasons(diagnostics: dict[str, Any], counters: dict[str, int]) -> 
         reasons.append("current_audience_empty")
     if int(counters.get("total_count") or 0) > 0:
         return reasons
+    has_specific_recipient_reason = any(
+        int(diagnostics.get(counter_key) or 0) > 0
+        for counter_key in (
+            "recipient_filter_usage_source_unavailable_count",
+            "recipient_filter_usage_source_not_found_count",
+            "recipient_filter_usage_phone_missing_count",
+            "recipient_filter_member_identity_missing_count",
+            "recipient_filter_behavior_tier_miss_count",
+        )
+    )
     reason_map = (
         ("day_offset_miss_count", "day_offset_not_due"),
+        ("recipient_filter_usage_source_unavailable_count", "message_activity_db_not_configured"),
+        ("recipient_filter_usage_source_not_found_count", "usage_source_not_found"),
+        ("recipient_filter_usage_phone_missing_count", "usage_phone_missing"),
+        ("recipient_filter_member_identity_missing_count", "member_identity_missing"),
+        ("recipient_filter_behavior_tier_miss_count", "recipient_filter_not_matched"),
         ("recipient_filter_miss_count", "recipient_filter_not_matched"),
         ("already_sent_count", "node_already_sent_for_current_audience_entry"),
         ("sent_today_count", "workflow_already_sent_today"),
         ("sequence_wait_count", "waiting_for_earlier_scheduled_node"),
     )
     for counter_key, reason_code in reason_map:
+        if counter_key == "recipient_filter_miss_count" and has_specific_recipient_reason:
+            continue
         if int(diagnostics.get(counter_key) or 0) > 0:
             reasons.append(reason_code)
     if not reasons:
@@ -1520,6 +1616,11 @@ def _run_immediate_node(
         "day_offset_miss_count": 0,
         "audience_miss_count": 0,
         "recipient_filter_miss_count": 0,
+        "recipient_filter_usage_source_unavailable_count": 0,
+        "recipient_filter_usage_source_not_found_count": 0,
+        "recipient_filter_usage_phone_missing_count": 0,
+        "recipient_filter_behavior_tier_miss_count": 0,
+        "recipient_filter_member_identity_missing_count": 0,
         "already_sent_count": 0,
         "sent_today_count": 0,
         "sequence_wait_count": 0,
@@ -1529,8 +1630,9 @@ def _run_immediate_node(
         audience_entry_id = int(audience_entry.get("id") or 0)
         if audience_entry_id <= 0:
             continue
-        if not _member_matches_workflow_recipient_filter(dict(audience_entry.get("member") or {}), workflow_bundle):
-            diagnostics["recipient_filter_miss_count"] += 1
+        recipient_filter_result = _member_workflow_recipient_filter_result(dict(audience_entry.get("member") or {}), workflow_bundle)
+        if not bool(recipient_filter_result.get("matched")):
+            _update_recipient_filter_diagnostics(diagnostics, recipient_filter_result)
             continue
         execution_key = (
             f"acwf-immediate-"
@@ -1568,6 +1670,7 @@ def _run_immediate_node(
             int(execution["id"]),
             {
                 **execution,
+                "trigger_type": "scheduled_poll",
                 "status": "running",
                 "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now(),
                 "finished_at": "",

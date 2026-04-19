@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import re
+from datetime import datetime
 from io import BytesIO
 
 import pytest
@@ -379,6 +380,43 @@ def _configure_message_activity_db(app) -> None:
     app.config["MESSAGE_ACTIVITY_DB_NAME"] = "lobster"
     app.config["MESSAGE_ACTIVITY_DB_USER"] = "lobster_user"
     app.config["MESSAGE_ACTIVITY_DB_PASS"] = "lobster_pass"
+
+
+def _mock_workflow_runtime_usage_counts(
+    monkeypatch,
+    *,
+    usage_by_phone: dict[str, int] | None = None,
+    configured: bool = True,
+) -> None:
+    status_payload = {
+        "configured": configured,
+        "missing_keys": [] if configured else ["MESSAGE_ACTIVITY_DB_HOST"],
+    }
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.get_message_activity_db_status",
+        lambda: dict(status_payload),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.query_message_activity_counts",
+        lambda: [
+            {
+                "phone_prefix3": digits[:3],
+                "phone_last4": digits[-4:],
+                "phone_match_key": f"{digits[:3]}_{digits[-4:]}",
+                "message_count": int(count),
+            }
+            for phone, count in (usage_by_phone or {}).items()
+            for digits in ["".join(char for char in str(phone) if char.isdigit())]
+            if len(digits) >= 7
+        ],
+    )
+
+
+def _mock_workflow_runtime_now(monkeypatch, value: str) -> None:
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime._now_dt",
+        lambda: datetime.strptime(value, "%Y-%m-%d %H:%M:%S"),
+    )
 
 
 class _FakeDeepSeekResponse:
@@ -876,9 +914,31 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
             "reason": "",
         },
     )
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.workflow_repo.count_archived_customer_messages",
-        lambda external_contact_id: 1 if external_contact_id == "wm_profile_low_001" else 8,
+    _mock_workflow_runtime_usage_counts(
+        monkeypatch,
+        usage_by_phone={
+            "13800002221": 1,
+            "13800002222": 8,
+        },
+    )
+    for seq in range(1, 9):
+        _seed_archived_message(
+            app,
+            msgid=f"profile-high-archive-{seq}",
+            seq=seq,
+            external_userid="wm_profile_low_001",
+            owner_userid="sales_01",
+            sender="wm_profile_low_001",
+            content="旧口径高频客户消息",
+        )
+    _seed_archived_message(
+        app,
+        msgid="profile-low-archive-1",
+        seq=101,
+        external_userid="wm_profile_high_001",
+        owner_userid="sales_01",
+        sender="wm_profile_high_001",
+        content="旧口径低频客户消息",
     )
 
     dispatched: list[dict[str, object]] = []
@@ -907,6 +967,401 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
             "status": "sent",
         }
     ]
+
+
+def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3_in_sequence(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_pending_sequence_001", mobile="13800005551", owner_userid="sales_01", customer_name="问卷待填写序列客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_pending_sequence_001",
+        phone="13800005551",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="问卷待填写三次推送", status="active")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        for day_offset, content_text in (
+            (1, "第1天提醒填写问卷"),
+            (2, "第2天继续提醒填写问卷"),
+            (3, "第3天最后提醒填写问卷"),
+        ):
+            create_conversion_workflow_node(
+                workflow_id,
+                {
+                    "node_name": f"问卷提醒 Day {day_offset}",
+                    "target_audience_code": "pending_questionnaire",
+                    "trigger_mode": "scheduled",
+                    "day_offset": day_offset,
+                    "send_time": "09:00",
+                    "content_mode": "standard_direct",
+                    "standard_content_text": content_text,
+                    "enabled": True,
+                },
+                operator_id="tester",
+            )
+
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1100 + len(dispatched), "wecom_result": {"msgid": f"msg-{1100 + len(dispatched)}"}},
+    )
+
+    with app.app_context():
+        _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
+        first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _mock_workflow_runtime_now(monkeypatch, "2026-04-09 09:05:00")
+        second = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _mock_workflow_runtime_now(monkeypatch, "2026-04-10 09:05:00")
+        third = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        execution_items = get_db().execute(
+            """
+            SELECT rendered_content_text, status
+            FROM automation_workflow_execution_item
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    assert first["total_success_count"] == 1
+    assert second["total_success_count"] == 1
+    assert third["total_success_count"] == 1
+    assert [item["text"]["content"] for item in dispatched] == [
+        "第1天提醒填写问卷",
+        "第2天继续提醒填写问卷",
+        "第3天最后提醒填写问卷",
+    ]
+    assert [dict(row) for row in execution_items] == [
+        {"rendered_content_text": "第1天提醒填写问卷", "status": "sent"},
+        {"rendered_content_text": "第2天继续提醒填写问卷", "status": "sent"},
+        {"rendered_content_text": "第3天最后提醒填写问卷", "status": "sent"},
+    ]
+
+
+def test_run_due_conversion_workflows_supports_operating_audience_scheduled_node_with_timezone_entered_at(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_operating_scheduled_001", mobile="13800005552", owner_userid="sales_01", customer_name="运营中客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_operating_scheduled_001",
+        phone="13800005552",
+        owner_staff_id="sales_01",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+        joined_at="2026-04-08 08:00:00",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_operating_scheduled_001",
+        audience_code="operating",
+        entered_at="2026-04-08 08:00:00+08:00",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="运营中计划", audiences=["operating"], status="active")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "运营中定时触达",
+                "target_audience_code": "operating",
+                "trigger_mode": "scheduled",
+                "day_offset": 1,
+                "send_time": "09:00",
+                "content_mode": "standard_direct",
+                "standard_content_text": "运营中人群定时触达",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    dispatched: list[dict[str, object]] = []
+    _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1201, "wecom_result": {"msgid": "msg-1201"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+
+    assert result["total_success_count"] == 1
+    assert len(dispatched) == 1
+    assert dispatched[0]["external_userid"] == ["wm_operating_scheduled_001"]
+    assert dispatched[0]["text"]["content"] == "运营中人群定时触达"
+
+
+def test_run_due_conversion_workflows_backfills_existing_audience_members_after_workflow_activation(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_backfill_existing_001", mobile="13800005553", owner_userid="sales_01", customer_name="存量客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_backfill_existing_001",
+        phone="13800005553",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-04-05 08:00:00",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_backfill_existing_001",
+        audience_code="pending_questionnaire",
+        entered_at="2026-04-05 08:00:00",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="存量补发计划", status="active")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "补发第2天提醒",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "scheduled",
+                "day_offset": 2,
+                "send_time": "09:00",
+                "content_mode": "standard_direct",
+                "standard_content_text": "存量补发仍可命中",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    dispatched: list[dict[str, object]] = []
+    _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1301, "wecom_result": {"msgid": "msg-1301"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        execution_rows = get_db().execute(
+            """
+            SELECT success_count, failed_count, summary_json
+            FROM automation_workflow_execution
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    assert result["total_success_count"] == 1
+    assert len(dispatched) == 1
+    summary = json.loads(execution_rows[0]["summary_json"])
+    assert summary["result"]["success_count"] == 1
+    assert summary["zero_hit_reasons"] == []
+
+
+def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_renders_node_segment_content(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_legacy_layered_001", mobile="13800005554", owner_userid="sales_01", customer_name="legacy 脏配置客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_legacy_layered_001",
+        phone="13800005554",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 10:00:00",
+    )
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="legacy 手动分层脏配置",
+        segmentation_basis="behavior",
+        generation_mode="manual_layered",
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "legacy 行为分层节点",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "content_variants": [
+                    {"segment_key": "lt_2", "content_text": "低行为脏配置仍可发送"},
+                    {"segment_key": "between_2_9", "content_text": "中行为脏配置仍可发送"},
+                    {"segment_key": "gte_10", "content_text": "高行为脏配置仍可发送"},
+                ],
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+        get_db().execute(
+            """
+            UPDATE automation_workflow
+            SET segmentation_basis = 'none', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (workflow_id,),
+        )
+        get_db().commit()
+
+    _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800005554": 1})
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1401, "wecom_result": {"msgid": "msg-1401"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        item_row = get_db().execute(
+            """
+            SELECT rendered_content_text, content_snapshot_json, status
+            FROM automation_workflow_execution_item
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    snapshot = json.loads(item_row["content_snapshot_json"])
+    assert result["total_success_count"] == 1
+    assert len(dispatched) == 1
+    assert dict(item_row)["rendered_content_text"] == "低行为脏配置仍可发送"
+    assert dict(item_row)["status"] == "sent"
+    assert snapshot["workflow_segmentation_basis"] == "none"
+    assert snapshot["node_segmentation_basis"] == "behavior"
+
+
+def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_to_standard_content(app, monkeypatch):
+    template_seed = _seed_profile_segment_template(app, questionnaire_id=739, template_name="画像分层 fallback 模板")
+    _seed_contact(app, external_userid="wm_profile_fallback_001", mobile="13800005556", owner_userid="sales_01", customer_name="画像缺失 fallback 客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_profile_fallback_001",
+        phone="13800005556",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 10:00:00",
+    )
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="画像 fallback 任务流",
+        segmentation_basis="profile",
+        generation_mode="manual_layered",
+        profile_segment_template_id=int(template_seed["template_id"]),
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        node_result = create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "画像 fallback 节点",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "standard_content_text": "没有命中画像时走标准 fallback",
+                "fallback_to_standard_content": True,
+                "content_variants": [
+                    {"segment_key": "efficiency", "content_text": "效率型定制内容"},
+                    {"segment_key": "closing", "content_text": "成交型定制内容"},
+                ],
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+        node_id = int(((node_result.get("node") or {}).get("id") or 0))
+        get_db().execute(
+            """
+            UPDATE automation_workflow_node_content
+            SET standard_content_text = ?, fallback_to_standard_content = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE node_id = ?
+            """,
+            ("没有命中画像时走标准 fallback", node_id),
+        )
+        get_db().commit()
+
+    dispatched: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1451, "wecom_result": {"msgid": "msg-1451"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        item_row = get_db().execute(
+            """
+            SELECT rendered_content_text, content_snapshot_json, status
+            FROM automation_workflow_execution_item
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    snapshot = json.loads(item_row["content_snapshot_json"])
+    assert result["total_success_count"] == 1
+    assert len(dispatched) == 1
+    assert dict(item_row)["rendered_content_text"] == "没有命中画像时走标准 fallback"
+    assert dict(item_row)["status"] == "sent"
+    assert snapshot["content_source"] == "standard_content_fallback"
+    assert snapshot["fallback_reason"] == "questionnaire_submission_missing"
+
+
+def test_run_due_conversion_workflows_reports_message_activity_config_error_in_zero_hit_summary(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_usage_config_missing_001", mobile="13800005555", owner_userid="sales_01", customer_name="usage 配置缺失客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_usage_config_missing_001",
+        phone="13800005555",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 10:00:00",
+    )
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="usage 配置缺失",
+        recipient_filter_basis="behavior",
+        recipient_behavior_tier_keys=["lt_2"],
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "usage 配置缺失节点",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "content_mode": "standard_direct",
+                "standard_content_text": "不应执行发送",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    _mock_workflow_runtime_usage_counts(monkeypatch, configured=False)
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+
+    summary = dict((result.get("executions") or [])[0].get("summary") or {})
+    assert result["total_success_count"] == 0
+    assert summary["diagnostics"]["recipient_filter_usage_source_unavailable_count"] == 1
+    assert summary["zero_hit_reasons"] == ["message_activity_db_not_configured"]
 
 
 def test_create_workflow_remains_compatible_with_legacy_segmentation_basis_behavior_payload(app):
@@ -2484,6 +2939,7 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
         )
 
     dispatched: list[dict[str, object]] = []
+    _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800001111": 1})
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
         lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 901, "wecom_result": {"msgid": "msg-901"}},
@@ -2646,6 +3102,7 @@ def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payloa
             operator_id="tester",
         )
 
+    _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800002222": 1})
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
         lambda task_type, fn_name, payload: {"task_id": 1001, "wecom_result": {"msgid": "msg-1001"}},
@@ -2758,6 +3215,7 @@ def test_execution_item_send_via_bazhuayu_api_accepts_admin_action_token_and_ret
             operator_id="tester",
         )
 
+    _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800003333": 1})
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
         lambda task_type, fn_name, payload: {"task_id": 1002, "wecom_result": {"msgid": "msg-1002"}},
@@ -9069,6 +9527,70 @@ def test_due_jobs_api_runs_registered_sop_job(app, client, monkeypatch):
     assert payload["jobs"][0]["job_code"] == "sop"
     assert payload["jobs"][0]["result"]["created_batch_count"] == 1
     assert payload["total_success_count"] == 1
+
+
+def test_due_jobs_api_runs_registered_conversion_workflow_job(app, client, monkeypatch):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "runner-token"
+    _seed_contact(app, external_userid="wm_due_workflow_job_001", mobile="13800009592", owner_userid="sales_01", customer_name="任务流 Runner 客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_due_workflow_job_001",
+        phone="13800009592",
+        owner_staff_id="sales_01",
+        current_pool="inactive_normal",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-04-08 08:00:00",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="due job 任务流", status="active")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "runner 立即触发节点",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "audience_entered",
+                "content_mode": "standard_direct",
+                "standard_content_text": "jobs/run-due 触发任务流",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: {"task_id": 1820, "wecom_result": {"msgid": "msg-1820"}},
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/jobs/run-due",
+        json={"operator": "due-runner", "jobs": ["conversion_workflow"]},
+        headers={"Authorization": "Bearer runner-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["requested_job_codes"] == ["conversion_workflow"]
+    assert payload["jobs"][0]["job_code"] == "conversion_workflow"
+    assert payload["jobs"][0]["result"]["total_success_count"] == 1
+    assert payload["total_success_count"] == 1
+
+
+def test_due_jobs_api_rejects_invalid_internal_token_for_conversion_workflow_job(app, client):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "runner-token"
+
+    response = client.post(
+        "/api/admin/automation-conversion/jobs/run-due",
+        json={"jobs": ["conversion_workflow"]},
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "invalid internal token"
 
 
 def test_due_jobs_api_rejects_unknown_job_code(app, client):

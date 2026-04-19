@@ -278,9 +278,9 @@
 
     function behaviorTierLabel(code, fallback) {
       const normalized = String(code || '').trim();
-      if (normalized === 'lt_2') return '小于 2';
-      if (normalized === 'between_2_9') return '2 ~ 9';
-      if (normalized === 'gte_10') return '大于等于 10';
+      if (normalized === 'lt_2') return '消息少于 2';
+      if (normalized === 'between_2_9') return '消息 2 ~ 9';
+      if (normalized === 'gte_10') return '消息大于等于 10';
       return labelFromRegistry('behavior_tiers', normalized, fallback || normalized);
     }
 
@@ -291,7 +291,7 @@
       }
       const tierKeys = Array.isArray((workflow || {}).recipient_behavior_tier_keys) ? workflow.recipient_behavior_tier_keys : [];
       const tierLabels = tierKeys.map((item) => behaviorTierLabel(item, item)).filter(Boolean);
-      return tierLabels.length ? `按行为层级发：${tierLabels.join(' / ')}` : '按行为层级发';
+      return tierLabels.length ? `按消息条数发：${tierLabels.join(' / ')}` : '按消息条数发';
     }
 
     function workflowContentSummary(workflow, bundle) {
@@ -421,7 +421,7 @@
       elements.nodeVariantHelp.textContent =
         segmentationBasis === 'profile'
           ? '填写当前有效画像分类对应的节点内容，输入区会随画像分类配置动态变化。'
-          : '填写当前有效行为层级对应的节点内容，输入区会随行为层级配置动态变化。';
+          : '填写当前有效消息条数层级对应的节点内容，输入区会随消息条数层级配置动态变化。';
       elements.nodeVariantGrid.innerHTML = targets.map((target) => `
         <label class="ac-ops-variant-item">
           <span>${escapeHtml(target.label)}</span>

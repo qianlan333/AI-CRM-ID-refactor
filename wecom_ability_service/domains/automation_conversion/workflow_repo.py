@@ -1481,9 +1481,11 @@ def list_workflow_sent_scheduled_execution_history_rows(
         FROM automation_workflow_execution_item AS ei
         INNER JOIN automation_workflow_execution AS e
           ON e.id = ei.execution_id
+        INNER JOIN automation_workflow_node AS n
+          ON n.id = ei.node_id
         WHERE ei.workflow_id = ?
           AND ei.audience_entry_id IN ({placeholders})
-          AND COALESCE(e.trigger_type, '') = 'scheduled_poll'
+          AND COALESCE(n.trigger_mode, '') = 'scheduled'
           AND ei.status = 'sent'
         ORDER BY e.scheduled_for ASC, ei.id ASC
         """,
