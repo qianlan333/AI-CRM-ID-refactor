@@ -3125,30 +3125,60 @@ def get_settings_payload() -> dict[str, Any]:
     }
 
 
+def _coerce_legacy_settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized_payload = dict(payload or {})
+
+    if "question_rules" not in normalized_payload and "question_rules_json" in normalized_payload:
+        raw_question_rules = normalized_payload.get("question_rules_json")
+        normalized_payload["question_rules"] = _json_loads(
+            raw_question_rules,
+            default=raw_question_rules,
+        )
+
+    if "silent_threshold_days_by_pool" not in normalized_payload:
+        legacy_threshold_keys = {
+            "silent_threshold_new_user": "new_user",
+            "silent_threshold_inactive_normal": "inactive_normal",
+            "silent_threshold_inactive_focus": "inactive_focus",
+            "silent_threshold_active_normal": "active_normal",
+            "silent_threshold_active_focus": "active_focus",
+        }
+        legacy_thresholds = {
+            pool_key: normalized_payload.get(legacy_key)
+            for legacy_key, pool_key in legacy_threshold_keys.items()
+            if legacy_key in normalized_payload
+        }
+        if legacy_thresholds:
+            normalized_payload["silent_threshold_days_by_pool"] = legacy_thresholds
+
+    return normalized_payload
+
+
 def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized_payload = _coerce_legacy_settings_payload(payload or {})
     config_payload = {
-        "enabled": _normalize_bool(payload.get("enabled", True)),
-        "questionnaire_id": payload.get("questionnaire_id"),
-        "core_threshold": payload.get("core_threshold"),
-        "top_threshold": payload.get("top_threshold", payload.get("core_threshold")),
-        "day_start_hour": payload.get("day_start_hour"),
-        "quiet_hour_start": payload.get("quiet_hour_start"),
-        "timezone": payload.get("timezone"),
-        "silent_threshold_days_by_pool": payload.get("silent_threshold_days_by_pool"),
-        "question_rules": payload.get("question_rules"),
+        "enabled": _normalize_bool(normalized_payload.get("enabled", True)),
+        "questionnaire_id": normalized_payload.get("questionnaire_id"),
+        "core_threshold": normalized_payload.get("core_threshold"),
+        "top_threshold": normalized_payload.get("top_threshold", normalized_payload.get("core_threshold")),
+        "day_start_hour": normalized_payload.get("day_start_hour"),
+        "quiet_hour_start": normalized_payload.get("quiet_hour_start"),
+        "timezone": normalized_payload.get("timezone"),
+        "silent_threshold_days_by_pool": normalized_payload.get("silent_threshold_days_by_pool"),
+        "question_rules": normalized_payload.get("question_rules"),
     }
     save_signup_conversion_config(config_payload, enforce_required_mobile_question=True)
     existing = repo.get_default_channel() or {}
-    entry_tag_payload = _effective_channel_entry_tag_payload(payload, existing)
-    next_channel_name = _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
+    entry_tag_payload = _effective_channel_entry_tag_payload(normalized_payload, existing)
+    next_channel_name = _normalized_text(normalized_payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
     next_welcome_message = (
-        _normalized_text(payload.get("welcome_message"))
-        if "welcome_message" in payload
+        _normalized_text(normalized_payload.get("welcome_message"))
+        if "welcome_message" in normalized_payload
         else _normalized_text(existing.get("welcome_message"))
     )
     next_auto_accept_friend = (
-        _normalize_bool(payload.get("auto_accept_friend"))
-        if "auto_accept_friend" in payload
+        _normalize_bool(normalized_payload.get("auto_accept_friend"))
+        if "auto_accept_friend" in normalized_payload
         else _normalize_bool(existing.get("auto_accept_friend"))
     )
     current_channel_name = _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
@@ -3166,9 +3196,9 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
         {
             "channel_code": DEFAULT_CHANNEL_CODE,
             "channel_name": next_channel_name,
-            "qr_url": _normalized_text(payload.get("qr_url")) or _normalized_text(existing.get("qr_url")),
-            "qr_ticket": _normalized_text(payload.get("qr_ticket")) or _normalized_text(existing.get("qr_ticket")),
-            "scene_value": _normalized_text(payload.get("scene_value")) or _normalized_text(existing.get("scene_value")),
+            "qr_url": _normalized_text(normalized_payload.get("qr_url")) or _normalized_text(existing.get("qr_url")),
+            "qr_ticket": _normalized_text(normalized_payload.get("qr_ticket")) or _normalized_text(existing.get("qr_ticket")),
+            "scene_value": _normalized_text(normalized_payload.get("scene_value")) or _normalized_text(existing.get("scene_value")),
             "welcome_message": next_welcome_message,
             "auto_accept_friend": next_auto_accept_friend,
             "entry_tag_id": entry_tag_payload["entry_tag_id"],
@@ -3178,7 +3208,11 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
             "status": (
                 CHANNEL_STATUS_CONFIGURED
                 if channel_settings_changed
-                else (_normalized_text(payload.get("channel_status")) or _normalized_text(existing.get("status")) or CHANNEL_STATUS_CONFIGURED)
+                else (
+                    _normalized_text(normalized_payload.get("channel_status"))
+                    or _normalized_text(existing.get("status"))
+                    or CHANNEL_STATUS_CONFIGURED
+                )
             ),
         }
     )
@@ -4775,6 +4809,35 @@ def _event_payloads(member_id: int, limit: int = 10) -> list[dict[str, Any]]:
 
 
 def get_debug_payload(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    normalized_external_contact_id = _normalized_text(external_contact_id)
+    normalized_phone = _normalized_text(phone)
+    if not normalized_external_contact_id and not normalized_phone:
+        empty_member = _serialize_member({})
+        return {
+            "lookup": {"external_contact_id": "", "phone": ""},
+            "member_exists": False,
+            "member": empty_member,
+            "profile": {
+                "customer_name": "未命名客户",
+                "owner_staff_id": "",
+                "owner_display_name": "",
+                "external_contact_id": "",
+                "phone": "",
+                "unionid": "",
+            },
+            "questionnaire": {
+                "status": QUESTIONNAIRE_PENDING,
+                "status_label": _questionnaire_status_label(QUESTIONNAIRE_PENDING),
+                "hit_count": 0,
+                "matched_questions": [],
+                "submitted_at": "",
+            },
+            "current_pool": empty_member["current_pool"],
+            "current_stage": empty_member["current_stage"],
+            "current_target": empty_member["current_target"],
+            "manual_override_preferred": False,
+            "recent_events": [],
+        }
     detail = get_member_detail(external_contact_id=external_contact_id, phone=phone)
     member = detail["member"]
     events = _event_payloads(int(member["id"]), 10) if detail["member_exists"] and int(member["id"] or 0) > 0 else []

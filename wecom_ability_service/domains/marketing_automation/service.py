@@ -10,6 +10,20 @@ import requests
 from flask import current_app
 
 from ...db import get_db
+from ...application.class_user.commands import (
+    ApplyClassUserStatusChangeCommand,
+    ClearClassUserStatusCurrentCommand,
+)
+from ...application.class_user.dto import (
+    ApplyClassUserStatusChangeCommandDTO,
+    ClearClassUserStatusCurrentCommandDTO,
+    GetClassUserStatusCurrentQueryDTO,
+    GetClassUserStatusDefinitionQueryDTO,
+)
+from ...application.class_user.queries import (
+    GetClassUserStatusCurrentQuery,
+    GetClassUserStatusDefinitionQuery,
+)
 from ...infra.settings import get_setting
 from ...wecom_client import WeComClientError
 from ..automation_state.calculator import (
@@ -31,12 +45,6 @@ from ..automation_state.state_defs import (
     POOL_LABELS as SHARED_POOL_LABELS,
     POOL_NEW_USER as SHARED_POOL_NEW_USER,
     POOL_SILENT as SHARED_POOL_SILENT,
-)
-from ..class_user.service import (
-    apply_class_user_status_change,
-    clear_class_user_status_current,
-    get_class_user_status_current,
-    get_class_user_status_definition,
 )
 from ..archive import repo as archive_repo
 from ..archive.service import extract_roomid_from_raw_payload, format_message_row, get_recent_messages_by_user
@@ -122,6 +130,58 @@ _POOL_SENDABLE_POOL_KEYS = {
     POOL_ACTIVE_NORMAL,
     POOL_ACTIVE_FOCUS,
 }
+
+
+def _get_class_user_status_definition(signup_status: str) -> dict[str, Any] | None:
+    return GetClassUserStatusDefinitionQuery()(
+        GetClassUserStatusDefinitionQueryDTO(signup_status=str(signup_status or "").strip())
+    )
+
+
+def _get_class_user_status_current(external_userid: str) -> dict[str, Any] | None:
+    return GetClassUserStatusCurrentQuery()(
+        GetClassUserStatusCurrentQueryDTO(external_userid=str(external_userid or "").strip())
+    )
+
+
+def _apply_class_user_status_change(
+    *,
+    external_userid: str,
+    signup_status: str,
+    set_by_userid: str,
+    customer_name_snapshot: str,
+    owner_userid_snapshot: str,
+    mobile_snapshot: str,
+) -> dict[str, Any]:
+    return ApplyClassUserStatusChangeCommand()(
+        ApplyClassUserStatusChangeCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            signup_status=str(signup_status or "").strip(),
+            set_by_userid=str(set_by_userid or "").strip(),
+            customer_name_snapshot=str(customer_name_snapshot or "").strip(),
+            owner_userid_snapshot=str(owner_userid_snapshot or "").strip(),
+            mobile_snapshot=str(mobile_snapshot or "").strip(),
+        )
+    )
+
+
+def _clear_class_user_status_current(
+    *,
+    external_userid: str,
+    set_by_userid: str,
+    customer_name_snapshot: str,
+    owner_userid_snapshot: str,
+    mobile_snapshot: str,
+) -> None:
+    return ClearClassUserStatusCurrentCommand()(
+        ClearClassUserStatusCurrentCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            set_by_userid=str(set_by_userid or "").strip(),
+            customer_name_snapshot=str(customer_name_snapshot or "").strip(),
+            owner_userid_snapshot=str(owner_userid_snapshot or "").strip(),
+            mobile_snapshot=str(mobile_snapshot or "").strip(),
+        )
+    )
 _FOCUS_POOL_KEYS = set(SHARED_FOCUS_POOL_KEYS)
 
 automation_webhook_logger = logging.getLogger("automation_webhook")
@@ -2187,7 +2247,7 @@ def _normalize_conversion_source(value: Any, *, default: str) -> str:
 
 def _normalize_enrolled_signup_status(value: Any) -> str:
     normalized = _normalized_text(value) or DEFAULT_ENROLLED_SIGNUP_STATUS
-    definition = get_class_user_status_definition(normalized)
+    definition = _get_class_user_status_definition(normalized)
     if not definition or not _is_signup_success(normalized):
         raise ValueError("signup_status must be an enrolled status")
     return normalized
@@ -2196,7 +2256,7 @@ def _normalize_enrolled_signup_status(value: Any) -> str:
 def _restore_signup_status_for_unmark(external_userid: str, *, restore_signup_status: str = "") -> str:
     normalized_restore_signup_status = _normalized_text(restore_signup_status)
     if normalized_restore_signup_status:
-        definition = get_class_user_status_definition(normalized_restore_signup_status)
+        definition = _get_class_user_status_definition(normalized_restore_signup_status)
         if not definition:
             raise ValueError("restore_signup_status is invalid")
         if _is_signup_success(normalized_restore_signup_status):
@@ -2204,7 +2264,7 @@ def _restore_signup_status_for_unmark(external_userid: str, *, restore_signup_st
         return normalized_restore_signup_status
     restore_row = repo.get_latest_class_user_restore_status(external_userid) or {}
     restored = _normalized_text(restore_row.get("old_signup_status"))
-    if restored and get_class_user_status_definition(restored) and not _is_signup_success(restored):
+    if restored and _get_class_user_status_definition(restored) and not _is_signup_success(restored):
         return restored
     return ""
 
@@ -2214,7 +2274,7 @@ def _build_class_user_snapshot_for_conversion(
     *,
     owner_userid: str = "",
 ) -> dict[str, str]:
-    current = get_class_user_status_current(external_userid) or {}
+    current = _get_class_user_status_current(external_userid) or {}
     base = repo.load_customer_marketing_base(external_userid)
     if not _normalized_text(base.get("external_userid")) and not current:
         raise LookupError("customer not found")
@@ -2378,9 +2438,9 @@ def mark_enrolled(
         normalized_external_userid,
         scenario_key=automation_key,
     )
-    current_class_status = get_class_user_status_current(normalized_external_userid) or {}
+    current_class_status = _get_class_user_status_current(normalized_external_userid) or {}
     if _normalized_text(current_class_status.get("signup_status")) != normalized_signup_status:
-        current_class_status = apply_class_user_status_change(
+        current_class_status = _apply_class_user_status_change(
             external_userid=normalized_external_userid,
             signup_status=normalized_signup_status,
             set_by_userid=normalized_operator,
@@ -2442,9 +2502,9 @@ def unmark_enrolled(
         normalized_external_userid,
         restore_signup_status=restore_signup_status,
     )
-    current_class_status = get_class_user_status_current(normalized_external_userid) or {}
+    current_class_status = _get_class_user_status_current(normalized_external_userid) or {}
     if target_signup_status and _normalized_text(current_class_status.get("signup_status")) != target_signup_status:
-        current_class_status = apply_class_user_status_change(
+        current_class_status = _apply_class_user_status_change(
             external_userid=normalized_external_userid,
             signup_status=target_signup_status,
             set_by_userid=normalized_operator,
@@ -2453,7 +2513,7 @@ def unmark_enrolled(
             mobile_snapshot=_normalized_text(snapshot.get("mobile_snapshot")),
         )
     elif not target_signup_status:
-        clear_class_user_status_current(
+        _clear_class_user_status_current(
             external_userid=normalized_external_userid,
             set_by_userid=normalized_operator,
             customer_name_snapshot=_normalized_text(snapshot.get("customer_name_snapshot")) or normalized_external_userid,

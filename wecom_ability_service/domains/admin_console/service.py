@@ -7,25 +7,35 @@ from typing import Any
 from flask import current_app, url_for
 
 from ...application.customer_read_model import CustomerDetailQueryDTO, GetCustomerDetailQuery
+from ...application.user_ops import (
+    BackfillOwnerClassTermsCommand,
+    BackfillOwnerClassTermsCommandDTO,
+    GetUserOpsOverviewQuery,
+    GetUserOpsOverviewQueryDTO,
+    ImportActivationStatusCommand,
+    ImportActivationStatusCommandDTO,
+    ImportMobileClassTermCommand,
+    ImportMobileClassTermCommandDTO,
+    LeadPoolFiltersDTO,
+    ListLeadPoolQuery,
+    ListLeadPoolQueryDTO,
+    ListUserOpsHistoryQuery,
+    ListUserOpsHistoryQueryDTO,
+    RunDueUserOpsDeferredJobsCommand,
+    RunDueUserOpsDeferredJobsCommandDTO,
+)
 from ...services import (
-    backfill_owner_class_terms_into_lead_pool,
     count_external_contact_identity_maps,
     get_group_chat_map,
     get_latest_questionnaire_submit_debug,
     get_owner_role,
     get_routing_config,
     get_signup_status_definition,
-    get_user_ops_overview,
-    import_activation_status_source,
-    import_mobile_class_term_source,
     list_class_user_management_records,
     list_class_user_status_history,
     list_questionnaires,
-    list_user_ops_history,
-    list_user_ops_pool,
     migrate_class_user_status_from_contact_tags,
     resolve_contact_routing_context,
-    run_due_user_ops_deferred_jobs,
     update_questionnaire,
     disable_questionnaire,
     get_questionnaire_detail,
@@ -993,11 +1003,30 @@ def operations_tabs(active_key: str) -> list[dict[str, Any]]:
     ]
 
 
+def _lead_pool_filters_dto(
+    *,
+    is_wecom_added: str = "",
+    is_mobile_bound: str = "",
+    huangxiaocan_activation_state: str = "",
+    class_term_no: str = "",
+    owner_userid: str = "",
+    query: str = "",
+) -> LeadPoolFiltersDTO:
+    return LeadPoolFiltersDTO(
+        is_wecom_added=is_wecom_added,
+        is_mobile_bound=is_mobile_bound,
+        huangxiaocan_activation_state=huangxiaocan_activation_state,
+        class_term_no=class_term_no,
+        owner_userid=owner_userid,
+        query=query,
+    )
+
+
 def build_operations_payload(args: Any) -> dict[str, Any]:
     active_tab = _normalized_text(args.get("tab")) or "overview"
     if active_tab not in {item["key"] for item in OPERATIONS_TABS}:
         active_tab = "overview"
-    overview = get_user_ops_overview()
+    overview = GetUserOpsOverviewQuery()(GetUserOpsOverviewQueryDTO())
     user_ops_filters = {
         "is_wecom_added": _normalized_text(args.get("is_wecom_added")),
         "is_mobile_bound": _normalized_text(args.get("is_mobile_bound")),
@@ -1008,8 +1037,17 @@ def build_operations_payload(args: Any) -> dict[str, Any]:
     }
     class_status_filter = _normalized_text(args.get("signup_status"))
     history_limit = _normalized_int(args.get("limit"), default=100, minimum=1, maximum=200)
-    user_ops_list_payload = list_user_ops_pool(**user_ops_filters) if active_tab in {"overview", "user-ops"} else {}
-    user_ops_history_payload = list_user_ops_history(limit=history_limit) if active_tab in {"overview", "history"} else {}
+    user_ops_filters_dto = _lead_pool_filters_dto(**user_ops_filters)
+    user_ops_list_payload = (
+        ListLeadPoolQuery()(ListLeadPoolQueryDTO(filters=user_ops_filters_dto))
+        if active_tab in {"overview", "user-ops"}
+        else {}
+    )
+    user_ops_history_payload = (
+        ListUserOpsHistoryQuery()(ListUserOpsHistoryQueryDTO(limit=history_limit))
+        if active_tab in {"overview", "history"}
+        else {}
+    )
     class_user_payload = (
         list_class_user_management_records(signup_status=class_status_filter) if active_tab in {"overview", "class-users"} else {}
     )
@@ -1049,13 +1087,15 @@ def execute_operations_action(
         class_term_min = _normalized_int(form.get("class_term_min"), default=1, minimum=1, maximum=99)
         class_term_max = _normalized_int(form.get("class_term_max"), default=5, minimum=1, maximum=99)
         confirm = _normalize_bool(form.get("confirm"))
-        payload = backfill_owner_class_terms_into_lead_pool(
-            owner_userid=owner_userid,
-            class_term_min=class_term_min,
-            class_term_max=class_term_max,
-            dry_run=not confirm,
-            operator=operator_value,
-            entry_source=_normalized_text(form.get("entry_source")),
+        payload = BackfillOwnerClassTermsCommand()(
+            BackfillOwnerClassTermsCommandDTO(
+                owner_userid=owner_userid,
+                class_term_min=class_term_min,
+                class_term_max=class_term_max,
+                dry_run=not confirm,
+                operator=operator_value,
+                entry_source=_normalized_text(form.get("entry_source")),
+            )
         )
         _audit_log(
             operator=operator_value,
@@ -1071,7 +1111,7 @@ def execute_operations_action(
         if not _normalize_bool(form.get("confirm")):
             raise ValueError("执行待处理作业前请先勾选确认")
         limit = _normalized_int(form.get("limit"), default=20, minimum=1, maximum=200)
-        payload = run_due_user_ops_deferred_jobs(limit=limit)
+        payload = RunDueUserOpsDeferredJobsCommand()(RunDueUserOpsDeferredJobsCommandDTO(limit=limit))
         _audit_log(
             operator=operator_value,
             action_type="run_deferred_jobs",
@@ -1105,27 +1145,35 @@ def execute_operations_action(
             raise ValueError("请上传文件或粘贴内容")
         if normalized_action == "import-mobile-class-terms":
             if uploaded_file and uploaded_file.filename:
-                payload = import_mobile_class_term_source(
-                    file_name=uploaded_file.filename,
-                    file_bytes=uploaded_file.read(),
-                    created_by=operator_value,
+                payload = ImportMobileClassTermCommand()(
+                    ImportMobileClassTermCommandDTO(
+                        file_name=uploaded_file.filename,
+                        file_bytes=uploaded_file.read(),
+                        created_by=operator_value,
+                    )
                 )
             else:
-                payload = import_mobile_class_term_source(
-                    pasted_text=pasted_text,
-                    created_by=operator_value,
+                payload = ImportMobileClassTermCommand()(
+                    ImportMobileClassTermCommandDTO(
+                        pasted_text=pasted_text,
+                        created_by=operator_value,
+                    )
                 )
         else:
             if uploaded_file and uploaded_file.filename:
-                payload = import_activation_status_source(
-                    file_name=uploaded_file.filename,
-                    file_bytes=uploaded_file.read(),
-                    created_by=operator_value,
+                payload = ImportActivationStatusCommand()(
+                    ImportActivationStatusCommandDTO(
+                        file_name=uploaded_file.filename,
+                        file_bytes=uploaded_file.read(),
+                        created_by=operator_value,
+                    )
                 )
             else:
-                payload = import_activation_status_source(
-                    pasted_text=pasted_text,
-                    created_by=operator_value,
+                payload = ImportActivationStatusCommand()(
+                    ImportActivationStatusCommandDTO(
+                        pasted_text=pasted_text,
+                        created_by=operator_value,
+                    )
                 )
         _audit_log(
             operator=operator_value,

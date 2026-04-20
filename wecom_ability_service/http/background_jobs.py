@@ -5,6 +5,37 @@ from datetime import datetime
 
 from flask import current_app
 
+from ..application.identity_contact.commands import (
+    BuildExternalContactIdentityRecordCommand,
+    MarkExternalContactFollowUserStatusCommand,
+    MarkExternalContactIdentityStatusCommand,
+    RefreshExternalContactIdentityOwnerCommand,
+    ReplaceFollowUsersCommand,
+    UpsertExternalContactIdentityCommand,
+)
+from ..application.identity_contact.dto import (
+    MarkExternalContactFollowUserStatusCommandDTO,
+    MarkExternalContactIdentityStatusCommandDTO,
+    RefreshExternalContactIdentityOwnerCommandDTO,
+    ReplaceFollowUsersCommandDTO,
+    UpsertExternalContactIdentityCommandDTO,
+)
+from ..application.user_ops.commands import (
+    RunDueUserOpsDeferredJobsCommand,
+    ScheduleUserOpsAutoAssignClassTermJobCommand,
+)
+from ..application.user_ops.dto import (
+    RunDueUserOpsDeferredJobsCommandDTO,
+    ScheduleUserOpsAutoAssignClassTermJobCommandDTO,
+)
+from ..domains.callbacks.service import (
+    finish_external_contact_event_log,
+    get_external_contact_event_log,
+    mark_external_contact_event_processing,
+)
+from ..domains.contacts.repo import upsert_contacts
+from ..domains.group_chats.repo import get_group_chat_by_chat_id, upsert_group_chats
+from ..domains.group_chats.service import normalize_group_chat_record
 from ..infra.wecom_runtime import get_app_runtime_client
 from ..observability import (
     bind_background_context,
@@ -15,23 +46,6 @@ from ..observability import (
     get_task_name,
     unbind_background_context,
 )
-from ..services import (
-    finish_external_contact_event_log,
-    get_external_contact_event_log,
-    get_group_chat_by_chat_id,
-    mark_external_contact_event_processing,
-    mark_external_contact_follow_user_status,
-    mark_external_contact_identity_status,
-    normalize_external_contact_identity,
-    normalize_group_chat_record,
-    refresh_external_contact_identity_owner,
-    replace_external_contact_follow_users,
-    run_due_user_ops_deferred_jobs,
-    schedule_user_ops_auto_assign_class_term_job,
-    upsert_contacts,
-    upsert_external_contact_identity,
-    upsert_group_chats,
-)
 from ..domains.automation_conversion.service import handle_qrcode_enter_from_callback
 from .common import (
     _contact_sync_retry_limit,
@@ -40,6 +54,87 @@ from .common import (
     callback_logger,
 )
 from .sync_support import _sync_contact_detail_with_description_fix
+
+
+def _build_external_contact_identity_record(
+    *,
+    corp_id: str,
+    detail: dict[str, object],
+    follow_user_userid: str = "",
+    status: str = "",
+) -> dict[str, object]:
+    return BuildExternalContactIdentityRecordCommand()(
+        corp_id=str(corp_id or "").strip(),
+        detail=dict(detail or {}),
+        follow_user_userid=str(follow_user_userid or "").strip(),
+        status=str(status or "").strip(),
+    )
+
+
+def _upsert_external_contact_identity(record: dict[str, object]) -> int:
+    return UpsertExternalContactIdentityCommand()(
+        UpsertExternalContactIdentityCommandDTO(record=dict(record or {}))
+    )
+
+
+def _replace_external_contact_follow_users(
+    *,
+    corp_id: str,
+    external_userid: str,
+    follow_users: list[dict[str, object]],
+    preferred_userid: str = "",
+) -> None:
+    return ReplaceFollowUsersCommand()(
+        ReplaceFollowUsersCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+            follow_users=list(follow_users or []),
+            preferred_userid=str(preferred_userid or "").strip(),
+        )
+    )
+
+
+def _refresh_external_contact_identity_owner(*, corp_id: str, external_userid: str) -> None:
+    return RefreshExternalContactIdentityOwnerCommand()(
+        RefreshExternalContactIdentityOwnerCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+        )
+    )
+
+
+def _mark_external_contact_identity_status(
+    *,
+    corp_id: str,
+    external_userid: str,
+    status: str,
+    follow_user_userid: str = "",
+) -> None:
+    return MarkExternalContactIdentityStatusCommand()(
+        MarkExternalContactIdentityStatusCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+            status=str(status or "").strip(),
+            follow_user_userid=str(follow_user_userid or "").strip(),
+        )
+    )
+
+
+def _mark_external_contact_follow_user_status(
+    *,
+    corp_id: str,
+    external_userid: str,
+    status: str,
+    user_id: str = "",
+) -> None:
+    return MarkExternalContactFollowUserStatusCommand()(
+        MarkExternalContactFollowUserStatusCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+            status=str(status or "").strip(),
+            user_id=str(user_id or "").strip(),
+        )
+    )
 
 
 def _run_app_task(
@@ -113,7 +208,7 @@ def _run_user_ops_deferred_jobs_after_delay(wait_seconds: int = 10, limit: int =
     delay = max(int(wait_seconds or 0), 0)
     if delay:
         time.sleep(delay)
-    result = run_due_user_ops_deferred_jobs(limit=limit)
+    result = RunDueUserOpsDeferredJobsCommand()(RunDueUserOpsDeferredJobsCommandDTO(limit=int(limit or 20)))
     callback_logger.info(
         "background task summary job_id=%s task_name=%s parent_request_id=%s "
         "stage=user_ops_auto_assign scanned=%s success=%s conflict=%s skipped=%s failed=%s",
@@ -189,20 +284,20 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                 log_stage="external_contact.callback",
             )
             upsert_contacts([normalized_contact])
-            identity = normalize_external_contact_identity(
-                corp_id,
-                detail,
+            identity = _build_external_contact_identity_record(
+                corp_id=corp_id,
+                detail=detail,
                 follow_user_userid=user_id,
                 status="active",
             )
-            upsert_external_contact_identity(identity)
-            replace_external_contact_follow_users(
-                corp_id,
-                external_userid,
-                detail.get("follow_user") or [],
+            _upsert_external_contact_identity(identity)
+            _replace_external_contact_follow_users(
+                corp_id=corp_id,
+                external_userid=external_userid,
+                follow_users=detail.get("follow_user") or [],
                 preferred_userid=user_id,
             )
-            refresh_external_contact_identity_owner(corp_id, external_userid)
+            _refresh_external_contact_identity_owner(corp_id=corp_id, external_userid=external_userid)
             try:
                 from ..domains.customer_pulse.access import build_customer_pulse_legacy_tenant_context
                 from ..domains.customer_pulse.service import enqueue_customer_pulse_recompute
@@ -238,26 +333,28 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                     qrcode_result.get("entry_tag"),
                 )
             if change_type in {"add_external_contact", "add_half_external_contact"}:
-                scheduled_auto_assign_job = schedule_user_ops_auto_assign_class_term_job(
-                    external_userid=external_userid,
-                    owner_userid=str(normalized_contact.get("owner_userid") or user_id or "").strip(),
-                    delay_seconds=10,
-                    operator="system_auto_assign",
+                scheduled_auto_assign_job = ScheduleUserOpsAutoAssignClassTermJobCommand()(
+                    ScheduleUserOpsAutoAssignClassTermJobCommandDTO(
+                        external_userid=external_userid,
+                        owner_userid=str(normalized_contact.get("owner_userid") or user_id or "").strip(),
+                        delay_seconds=10,
+                        operator="system_auto_assign",
+                    )
                 )
         elif change_type in {"del_external_contact", "del_follow_user"}:
-            mark_external_contact_identity_status(
-                corp_id,
-                external_userid,
+            _mark_external_contact_identity_status(
+                corp_id=corp_id,
+                external_userid=external_userid,
                 status="inactive",
                 follow_user_userid=user_id,
             )
-            mark_external_contact_follow_user_status(
-                corp_id,
-                external_userid,
+            _mark_external_contact_follow_user_status(
+                corp_id=corp_id,
+                external_userid=external_userid,
                 user_id=user_id if change_type == "del_follow_user" else "",
                 status="inactive",
             )
-            refresh_external_contact_identity_owner(corp_id, external_userid)
+            _refresh_external_contact_identity_owner(corp_id=corp_id, external_userid=external_userid)
             try:
                 from ..domains.customer_pulse.access import build_customer_pulse_legacy_tenant_context
                 from ..domains.customer_pulse.service import enqueue_customer_pulse_recompute

@@ -2,23 +2,38 @@ from __future__ import annotations
 
 from flask import current_app, jsonify, render_template, request
 
+from ..application.identity_contact.commands import BindExternalContactIdentityCommand
+from ..application.identity_contact.dto import (
+    BindExternalContactIdentityCommandDTO,
+    GetContactBindingStatusQueryDTO,
+    GetPrimaryFollowUserUseridQueryDTO,
+    ResolvePersonIdentityQueryDTO,
+)
+from ..application.identity_contact.queries import (
+    GetContactBindingStatusQuery,
+    GetPrimaryFollowUserUseridQuery,
+    ResolvePersonIdentityQuery,
+)
+from ..application.user_ops.commands import (
+    UpsertSidebarLeadPoolClassTermCommand,
+    UpsertSidebarLeadPoolClassTermCommandDTO,
+)
+from ..application.user_ops.queries import (
+    GetSidebarLeadPoolStatusQuery,
+    GetSidebarLeadPoolStatusQueryDTO,
+)
 from ..domains.marketing_automation.presenter import business_marketing_display, business_segment_label
 from ..domains.marketing_automation.service import get_customer_marketing_profile
 from ..infra.wecom_runtime import build_jsapi_payload
 from ..services import (
     ContactBindingConflictError,
     ThirdPartyUserSyncError,
-    bind_mobile_to_external_contact,
     get_contact_by_external_userid,
     get_class_user_status_current,
-    get_contact_binding_status,
-    get_primary_follow_user_userid,
-    get_sidebar_lead_pool_status,
     mark_enrolled,
     preview_signup_conversion_customer,
     set_manual_followup_segment,
     unmark_enrolled,
-    upsert_sidebar_lead_pool_class_term,
 )
 from ..wecom_client import WeComClientError
 from .admin_support import (
@@ -37,6 +52,76 @@ _SIDEBAR_SWITCHABLE_POOL_STAGE_KEYS = {
     "pool/active_focus",
     "pool/silent",
 }
+
+
+def _get_contact_binding_status_payload(external_userid: str, owner_userid: str = "") -> dict[str, object]:
+    return GetContactBindingStatusQuery()(
+        GetContactBindingStatusQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
+    )
+
+
+def _resolve_person_identity_payload(external_userid: str = "", mobile: str = "", unionid: str = "") -> dict[str, object]:
+    return ResolvePersonIdentityQuery()(
+        ResolvePersonIdentityQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            mobile=str(mobile or "").strip(),
+            unionid=str(unionid or "").strip(),
+        )
+    )
+
+
+def _get_primary_follow_user_userid_payload(external_userid: str) -> str:
+    return GetPrimaryFollowUserUseridQuery()(
+        GetPrimaryFollowUserUseridQueryDTO(external_userid=str(external_userid or "").strip())
+    )
+
+
+def _bind_external_contact_identity_payload(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    bind_by_userid: str,
+    mobile: str,
+    force_rebind: bool,
+) -> dict[str, object]:
+    return BindExternalContactIdentityCommand()(
+        BindExternalContactIdentityCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+            bind_by_userid=str(bind_by_userid or "").strip(),
+            mobile=str(mobile or "").strip(),
+            force_rebind=bool(force_rebind),
+        )
+    )
+
+
+def _get_sidebar_lead_pool_status_payload(external_userid: str, owner_userid: str = "") -> dict[str, object]:
+    return GetSidebarLeadPoolStatusQuery()(
+        GetSidebarLeadPoolStatusQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
+    )
+
+
+def _upsert_sidebar_lead_pool_class_term_payload(
+    *,
+    external_userid: str,
+    owner_userid: str,
+    class_term_no: int,
+    operator: str,
+) -> dict[str, object]:
+    return UpsertSidebarLeadPoolClassTermCommand()(
+        UpsertSidebarLeadPoolClassTermCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+            class_term_no=int(class_term_no),
+            operator=str(operator or "").strip(),
+        )
+    )
 
 
 def _sidebar_followup_source_label(source: str) -> str:
@@ -133,10 +218,13 @@ def _sidebar_marketing_target_exists(external_userid: str) -> bool:
         return True
     if get_class_user_status_current(normalized_external_userid):
         return True
-    if get_primary_follow_user_userid(normalized_external_userid):
+    if _get_primary_follow_user_userid_payload(normalized_external_userid):
         return True
-    binding_status = get_contact_binding_status(normalized_external_userid)
-    return bool(binding_status.get("is_bound"))
+    binding_status = _get_contact_binding_status_payload(normalized_external_userid)
+    if not binding_status.get("is_bound"):
+        return False
+    resolved_identity = _resolve_person_identity_payload(external_userid=normalized_external_userid)
+    return bool(resolved_identity.get("is_bound"))
 
 
 def sidebar_bind_mobile_page():
@@ -151,7 +239,7 @@ def sidebar_contact_binding_status():
     owner_userid = request.args.get("owner_userid", "").strip()
     if not external_userid:
         return jsonify({"ok": False, "error": "external_userid is required"}), 400
-    status = get_contact_binding_status(external_userid, owner_userid)
+    status = _get_contact_binding_status_payload(external_userid, owner_userid)
     status["ok"] = True
     if _sidebar_marketing_target_exists(external_userid):
         try:
@@ -185,7 +273,7 @@ def sidebar_jssdk_config():
 def sidebar_bind_mobile():
     payload = request.get_json(silent=True) or {}
     try:
-        binding = bind_mobile_to_external_contact(
+        binding = _bind_external_contact_identity_payload(
             external_userid=str(payload.get("external_userid") or "").strip(),
             owner_userid=str(payload.get("owner_userid") or "").strip(),
             bind_by_userid=str(payload.get("bind_by_userid") or "").strip(),
@@ -206,7 +294,7 @@ def sidebar_lead_pool_status():
     if not external_userid:
         return jsonify({"ok": False, "error": "external_userid is required"}), 400
     try:
-        payload = get_sidebar_lead_pool_status(external_userid=external_userid, owner_userid=owner_userid)
+        payload = _get_sidebar_lead_pool_status_payload(external_userid=external_userid, owner_userid=owner_userid)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, **payload})
@@ -215,13 +303,13 @@ def sidebar_lead_pool_status():
 def sidebar_lead_pool_upsert_class_term():
     payload = request.get_json(silent=True) or {}
     try:
-        result = upsert_sidebar_lead_pool_class_term(
+        result = _upsert_sidebar_lead_pool_class_term_payload(
             external_userid=str(payload.get("external_userid") or "").strip(),
             owner_userid=str(payload.get("owner_userid") or "").strip(),
             class_term_no=int(payload.get("class_term_no")),
             operator=str(payload.get("operator") or "").strip(),
         )
-        status_payload = get_sidebar_lead_pool_status(
+        status_payload = _get_sidebar_lead_pool_status_payload(
             external_userid=str(payload.get("external_userid") or "").strip(),
             owner_userid=str(payload.get("owner_userid") or "").strip(),
         )
