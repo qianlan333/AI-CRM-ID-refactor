@@ -247,6 +247,15 @@ def _usage_activity_for_member(member: dict[str, Any]) -> dict[str, Any]:
         }
     usage_row = dict((snapshot.get("counts_by_match_key") or {}).get(phone_match_key) or {})
     if not usage_row:
+        current_audience_code = _normalized_text(member.get("current_audience_code"))
+        if current_audience_code in {AUDIENCE_OPERATING, AUDIENCE_CONVERTED}:
+            return {
+                "available": True,
+                "reason": "usage_source_missing_treated_as_zero",
+                "usage_count": 0,
+                "phone_match_key": phone_match_key,
+                "source": "message_activity_db_missing_as_zero",
+            }
         return {
             "available": False,
             "reason": "usage_source_not_found",
