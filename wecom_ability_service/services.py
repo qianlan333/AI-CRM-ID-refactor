@@ -5,7 +5,6 @@ from typing import Any
 from .domains.archive import repo as archive_repo
 from .domains.archive import service as archive_domain_service
 from .domains.callbacks import service as callbacks_domain_service
-from .domains.class_user import service as class_user_domain_service
 from .domains.contacts import repo as contacts_repo
 from .domains.contacts import service as contacts_domain_service
 from .domains.group_chats import repo as group_chat_repo
@@ -15,11 +14,7 @@ from .domains.marketing_automation import service as marketing_automation_domain
 from .domains.outbound_webhook import service as outbound_webhook_domain_service
 from .domains.questionnaire import service as questionnaire_domain_service
 from .domains.routing_config.service import (
-    build_routing_config as _build_routing_config,
     get_owner_class_term_backfill_entry_source_override,
-    get_owner_role as _get_owner_role,
-    list_owner_role_map as _list_owner_role_map,
-    resolve_contact_routing_context as _resolve_contact_routing_context,
 )
 from .domains.tags import repo as tags_repo
 from .domains.tags import service as tags_domain_service
@@ -31,7 +26,7 @@ from .infra.helpers import (
     normalize_optional_timestamp as _normalize_optional_timestamp,
     stringify_db_timestamp as _stringify_db_timestamp,
 )
-from .infra.wecom_runtime import get_contact_runtime_client
+from .infra import user_ops_runtime
 
 
 # Thin compatibility facade:
@@ -60,8 +55,6 @@ plan_contact_description_fix = contacts_domain_service.plan_contact_description_
 upsert_contacts = contacts_repo.upsert_contacts
 list_contacts = contacts_repo.list_contacts
 get_contact_tag_snapshots = tags_repo.get_contact_tag_snapshots
-get_owner_role = _get_owner_role
-list_owner_role_map = _list_owner_role_map
 list_signup_tag_rules = tags_repo.list_signup_tag_rules
 _signup_tag_group_name = tags_domain_service.signup_tag_group_name
 get_signup_status_definitions = tags_domain_service.get_signup_status_definitions
@@ -72,34 +65,17 @@ get_signup_tag_rules_config = tags_domain_service.get_signup_tag_rules_config
 resolve_signup_status_from_tags = tags_domain_service.resolve_signup_status_from_tags
 build_class_user_tag_view = tags_domain_service.build_class_user_tag_view
 
-get_class_user_status_definition = class_user_domain_service.get_class_user_status_definition
-get_class_user_status_current = class_user_domain_service.get_class_user_status_current
-upsert_class_user_status_current = class_user_domain_service.upsert_class_user_status_current
-append_class_user_status_history = class_user_domain_service.append_class_user_status_history
-update_class_user_status_sync_result = class_user_domain_service.update_class_user_status_sync_result
-list_class_user_status_history = class_user_domain_service.list_class_user_status_history
-apply_class_user_status_change = class_user_domain_service.apply_class_user_status_change
-
 update_contact_description_snapshot = contacts_repo.update_contact_description_snapshot
 count_contacts = contacts_repo.count_contacts
 get_last_contacts_sync_time = contacts_repo.get_last_contacts_sync_time
 
 normalize_external_contact_identity = identity_domain_service.normalize_external_contact_identity
-replace_external_contact_follow_users = identity_domain_service.replace_external_contact_follow_users
-mark_external_contact_follow_user_status = identity_domain_service.mark_external_contact_follow_user_status
-refresh_external_contact_identity_owner = identity_domain_service.refresh_external_contact_identity_owner
-upsert_external_contact_identity = identity_domain_service.upsert_external_contact_identity
-mark_external_contact_identity_status = identity_domain_service.mark_external_contact_identity_status
-count_external_contact_identity_maps = identity_domain_service.count_external_contact_identity_maps
-resolve_external_contact_identity = identity_domain_service.resolve_external_contact_identity
-bind_openid_to_external_contact = identity_domain_service.bind_openid_to_external_contact
 _normalize_mobile = identity_domain_service.normalize_mobile
 
 _normalize_legacy_user_ops_current_status = user_ops_domain_service._normalize_legacy_user_ops_current_status
 _legacy_user_ops_status_rank = user_ops_domain_service._legacy_user_ops_status_rank
 _user_ops_merge_key = user_ops_domain_service._user_ops_merge_key
 _extract_third_party_user_id = user_ops_domain_service._extract_third_party_user_id
-_user_ops_resolve_third_party_user_id_by_mobile_impl = user_ops_domain_service._resolve_third_party_user_id_by_mobile
 _normalize_user_ops_lead_pool_activation_state = user_ops_domain_service._normalize_user_ops_lead_pool_activation_state
 _serialize_user_ops_lead_pool_current_row = user_ops_domain_service._serialize_user_ops_lead_pool_current_row
 _get_user_ops_lead_pool_current_row_by_id = user_ops_domain_service._get_user_ops_lead_pool_current_row_by_id
@@ -204,7 +180,7 @@ def _bind_questionnaire_domain() -> None:
 def _user_ops_contact_client():
     # Historical monkeypatch / DI hook. Keep the symbol stable for tests and
     # user-ops runtime overrides even as callers move away from services.py.
-    return get_contact_runtime_client()
+    return user_ops_runtime.get_user_ops_contact_client()
 
 
 def _bind_user_ops_domain() -> None:
@@ -331,20 +307,52 @@ def get_signup_conversion_batch(batch_id: int, *, scenario_key: str = "") -> dic
 
 
 def get_routing_config() -> dict[str, Any]:
-    return _build_routing_config(
-        owner_role_map=list_owner_role_map(active_only=True),
-        signup_tag_rules=get_signup_tag_rules_config(),
+    """Backward-compatible wrapper around the Wave 2 routing-config query."""
+
+    from .application.routing_config.dto import GetRoutingRuleConfigQueryDTO
+    from .application.routing_config.queries import GetRoutingRuleConfigQuery
+
+    return GetRoutingRuleConfigQuery()(
+        GetRoutingRuleConfigQueryDTO(
+            active_only=True,
+            signup_tag_rules=get_signup_tag_rules_config(),
+        )
     )
 
 
 def resolve_contact_routing_context(owner_userid: str, owner_role: str, signup_status: str) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 2 routing-config query."""
+
+    from .application.routing_config.dto import ResolveContactRoutingContextQueryDTO
+    from .application.routing_config.queries import ResolveContactRoutingContextQuery
+
     definition = get_signup_status_definition(signup_status)
-    return _resolve_contact_routing_context(
-        owner_userid=owner_userid,
-        owner_role=owner_role,
-        signup_status=signup_status,
-        routing_alias=str(definition.get("routing_alias") or "") if definition else "",
+    return ResolveContactRoutingContextQuery()(
+        ResolveContactRoutingContextQueryDTO(
+            owner_userid=str(owner_userid or "").strip(),
+            owner_role=str(owner_role or "").strip(),
+            signup_status=str(signup_status or "").strip(),
+            routing_alias=str(definition.get("routing_alias") or "") if definition else "",
+        )
     )
+
+
+def get_owner_role(userid: str) -> dict[str, Any] | None:
+    """Backward-compatible wrapper around the Wave 2 routing-config query."""
+
+    from .application.routing_config.dto import GetOwnerRoleQueryDTO
+    from .application.routing_config.queries import GetOwnerRoleQuery
+
+    return GetOwnerRoleQuery()(GetOwnerRoleQueryDTO(userid=str(userid or "").strip()))
+
+
+def list_owner_role_map(*, active_only: bool = False) -> list[dict[str, Any]]:
+    """Backward-compatible wrapper around the Wave 2 routing-config query."""
+
+    from .application.routing_config.dto import GetOwnerRoleMapQueryDTO
+    from .application.routing_config.queries import GetOwnerRoleMapQuery
+
+    return GetOwnerRoleMapQuery()(GetOwnerRoleMapQueryDTO(active_only=bool(active_only)))
 
 
 def enrich_contact_context(contact: dict[str, Any]) -> dict[str, Any]:
@@ -367,49 +375,171 @@ def get_contact_by_external_userid(external_userid: str, *, refresh_tags: bool =
 
 
 def get_primary_follow_user_userid(external_userid: str) -> str:
-    return identity_domain_service.get_primary_follow_user_userid(
-        external_userid,
-        active_value=_db_bool(True),
-        contact_loader=get_contact_by_external_userid,
-        resolve_identity=lambda corp_id, value: resolve_external_contact_identity(corp_id, external_userid=value),
+    """Backward-compatible wrapper around the Wave 2 identity query."""
+
+    from .application.identity_contact.dto import GetPrimaryFollowUserUseridQueryDTO
+    from .application.identity_contact.queries import GetPrimaryFollowUserUseridQuery
+
+    return GetPrimaryFollowUserUseridQuery()(GetPrimaryFollowUserUseridQueryDTO(external_userid=external_userid))
+
+
+def get_class_user_status_definition(signup_status: str) -> dict[str, Any] | None:
+    """Backward-compatible wrapper around the Wave 2 class-user query."""
+
+    from .application.class_user.dto import GetClassUserStatusDefinitionQueryDTO
+    from .application.class_user.queries import GetClassUserStatusDefinitionQuery
+
+    return GetClassUserStatusDefinitionQuery()(
+        GetClassUserStatusDefinitionQueryDTO(signup_status=str(signup_status or "").strip())
+    )
+
+
+def get_class_user_status_current(external_userid: str) -> dict[str, Any] | None:
+    """Backward-compatible wrapper around the Wave 2 class-user query."""
+
+    from .application.class_user.dto import GetClassUserStatusCurrentQueryDTO
+    from .application.class_user.queries import GetClassUserStatusCurrentQuery
+
+    return GetClassUserStatusCurrentQuery()(
+        GetClassUserStatusCurrentQueryDTO(external_userid=str(external_userid or "").strip())
     )
 
 
 def get_class_user_snapshot(external_userid: str, owner_userid: str = "") -> dict[str, str]:
-    return class_user_domain_service.get_class_user_snapshot(
-        external_userid,
-        owner_userid,
-        contact_loader=lambda value: get_contact_by_external_userid(value),
-        person_identity_resolver=lambda **kwargs: resolve_person_identity(**kwargs),
+    """Backward-compatible wrapper around the Wave 2 class-user query."""
+
+    from .application.class_user.dto import GetClassUserSnapshotQueryDTO
+    from .application.class_user.queries import GetClassUserSnapshotQuery
+
+    return GetClassUserSnapshotQuery()(
+        GetClassUserSnapshotQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
     )
 
 
+def list_class_user_status_history(limit: int = 100) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 2 class-user query."""
+
+    from .application.class_user.dto import ListClassUserStatusHistoryQueryDTO
+    from .application.class_user.queries import ListClassUserStatusHistoryQuery
+
+    return ListClassUserStatusHistoryQuery()(ListClassUserStatusHistoryQueryDTO(limit=int(limit)))
+
+
 def list_class_user_management_records(signup_status: str = "") -> dict[str, Any]:
-    return class_user_domain_service.list_class_user_management_records(
-        signup_status=signup_status,
-        get_signup_status_definitions=get_signup_status_definitions,
+    """Backward-compatible wrapper around the Wave 2 class-user query."""
+
+    from .application.class_user.dto import ListClassUserManagementRecordsQueryDTO
+    from .application.class_user.queries import ListClassUserManagementRecordsQuery
+
+    return ListClassUserManagementRecordsQuery()(
+        ListClassUserManagementRecordsQueryDTO(signup_status=str(signup_status or "").strip())
     )
 
 
 def export_class_user_management_records(signup_status: str = "") -> dict[str, Any]:
-    return class_user_domain_service.export_class_user_management_records(
-        signup_status=signup_status,
-        get_signup_status_definitions=get_signup_status_definitions,
+    """Backward-compatible wrapper around the Wave 2 class-user query."""
+
+    from .application.class_user.dto import ExportClassUserManagementRecordsQueryDTO
+    from .application.class_user.queries import ExportClassUserManagementRecordsQuery
+
+    return ExportClassUserManagementRecordsQuery()(
+        ExportClassUserManagementRecordsQueryDTO(signup_status=str(signup_status or "").strip())
+    )
+
+
+def apply_class_user_status_change(
+    *,
+    external_userid: str,
+    signup_status: str,
+    set_by_userid: str,
+    customer_name_snapshot: str,
+    owner_userid_snapshot: str,
+    mobile_snapshot: str,
+) -> dict[str, Any]:
+    """Backward-compatible wrapper around the Wave 2 class-user command."""
+
+    from .application.class_user.commands import ApplyClassUserStatusChangeCommand
+    from .application.class_user.dto import ApplyClassUserStatusChangeCommandDTO
+
+    return ApplyClassUserStatusChangeCommand()(
+        ApplyClassUserStatusChangeCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            signup_status=str(signup_status or "").strip(),
+            set_by_userid=str(set_by_userid or "").strip(),
+            customer_name_snapshot=str(customer_name_snapshot or "").strip(),
+            owner_userid_snapshot=str(owner_userid_snapshot or "").strip(),
+            mobile_snapshot=str(mobile_snapshot or "").strip(),
+        )
+    )
+
+
+def update_class_user_status_sync_result(
+    external_userid: str,
+    *,
+    wecom_tag_sync_status: str,
+    wecom_tag_sync_error: str = "",
+) -> None:
+    """Backward-compatible wrapper around the Wave 2 class-user command."""
+
+    from .application.class_user.commands import UpdateClassUserStatusSyncResultCommand
+    from .application.class_user.dto import UpdateClassUserStatusSyncResultCommandDTO
+
+    return UpdateClassUserStatusSyncResultCommand()(
+        UpdateClassUserStatusSyncResultCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            wecom_tag_sync_status=str(wecom_tag_sync_status or "").strip(),
+            wecom_tag_sync_error=str(wecom_tag_sync_error or "").strip(),
+        )
     )
 
 
 def migrate_class_user_status_from_contact_tags() -> dict[str, Any]:
-    return class_user_domain_service.migrate_class_user_status_from_contact_tags(
-        get_signup_status_definition_by_tag_name=get_signup_status_definition_by_tag_name,
-    )
+    """Backward-compatible wrapper around the Wave 2 class-user command."""
+
+    from .application.class_user.commands import MigrateClassUserStatusFromContactTagsCommand
+
+    return MigrateClassUserStatusFromContactTagsCommand()()
+
+
+def upsert_class_user_status_current(**kwargs: Any) -> None:
+    """Compatibility shim around the Wave 2 class-user write primitive.
+
+    This symbol remains visible for legacy monkeypatch and DI paths, but it is a
+    low-level primitive and must not be used as a new caller entrypoint.
+    """
+
+    from .application.class_user.commands import upsert_class_user_status_current_primitive
+
+    return upsert_class_user_status_current_primitive(**kwargs)
+
+
+def append_class_user_status_history(**kwargs: Any) -> None:
+    """Compatibility shim around the Wave 2 class-user history primitive.
+
+    This symbol remains visible for legacy monkeypatch and DI paths, but it is a
+    low-level primitive and must not be used as a new caller entrypoint.
+    """
+
+    from .application.class_user.commands import append_class_user_status_history_primitive
+
+    return append_class_user_status_history_primitive(**kwargs)
 
 
 def resolve_person_identity(*, external_userid: str = "", mobile: str = "", unionid: str = "") -> dict[str, Any]:
-    return identity_domain_service.resolve_person_identity(
-        external_userid=external_userid,
-        mobile=mobile,
-        unionid=unionid,
-        resolve_signup_status_for_contact=_resolve_signup_status_for_contact,
+    """Backward-compatible wrapper around the Wave 2 identity query."""
+
+    from .application.identity_contact.dto import ResolvePersonIdentityQueryDTO
+    from .application.identity_contact.queries import ResolvePersonIdentityQuery
+
+    return ResolvePersonIdentityQuery()(
+        ResolvePersonIdentityQueryDTO(
+            external_userid=external_userid,
+            mobile=mobile,
+            unionid=unionid,
+        )
     )
 
 
@@ -424,15 +554,23 @@ def _resolve_binding_owner_userid(external_userid: str, owner_userid: str = "") 
 
 
 def get_contact_binding_status(external_userid: str, owner_userid: str = "") -> dict[str, Any]:
-    return identity_domain_service.get_contact_binding_status(
-        external_userid,
-        owner_userid,
-        contact_profile_loader=_sidebar_contact_profile,
+    """Backward-compatible wrapper around the Wave 2 identity query."""
+
+    from .application.identity_contact.dto import GetContactBindingStatusQueryDTO
+    from .application.identity_contact.queries import GetContactBindingStatusQuery
+
+    return GetContactBindingStatusQuery()(
+        GetContactBindingStatusQueryDTO(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+        )
     )
 
 
 def _resolve_third_party_user_id_by_mobile(mobile: str) -> str:
-    return _user_ops_resolve_third_party_user_id_by_mobile_impl(mobile)
+    # Historical monkeypatch / DI hook. The stable Wave 2 anchor now lives in
+    # infra.user_ops_runtime; keep this wrapper for backward compatibility.
+    return user_ops_runtime.resolve_third_party_user_id_by_mobile(mobile)
 
 
 def _select_user_ops_lead_pool_member_for_sidebar(
@@ -450,10 +588,18 @@ def _select_user_ops_lead_pool_member_for_sidebar(
 
 
 def get_sidebar_lead_pool_status(*, external_userid: str, owner_userid: str = "") -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.get_sidebar_lead_pool_status(
-        external_userid=external_userid,
-        owner_userid=owner_userid,
+    """Backward-compatible wrapper around the Wave 2 sidebar lead-pool query."""
+
+    from .application.user_ops.queries import (
+        GetSidebarLeadPoolStatusQuery,
+        GetSidebarLeadPoolStatusQueryDTO,
+    )
+
+    return GetSidebarLeadPoolStatusQuery()(
+        GetSidebarLeadPoolStatusQueryDTO(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+        )
     )
 
 
@@ -464,12 +610,20 @@ def upsert_sidebar_lead_pool_class_term(
     class_term_no: int,
     operator: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.upsert_sidebar_lead_pool_class_term(
-        external_userid=external_userid,
-        owner_userid=owner_userid,
-        class_term_no=class_term_no,
-        operator=operator,
+    """Backward-compatible wrapper around the Wave 2 sidebar lead-pool write command."""
+
+    from .application.user_ops.commands import (
+        UpsertSidebarLeadPoolClassTermCommand,
+        UpsertSidebarLeadPoolClassTermCommandDTO,
+    )
+
+    return UpsertSidebarLeadPoolClassTermCommand()(
+        UpsertSidebarLeadPoolClassTermCommandDTO(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+            class_term_no=class_term_no,
+            operator=operator,
+        )
     )
 
 
@@ -497,19 +651,170 @@ def bind_mobile_to_external_contact(
     mobile: str,
     force_rebind: bool = False,
 ) -> dict[str, Any]:
-    return identity_domain_service.bind_mobile_to_external_contact(
-        external_userid=external_userid,
-        owner_userid=owner_userid,
-        bind_by_userid=bind_by_userid,
-        mobile=mobile,
-        force_rebind=force_rebind,
-        resolve_binding_owner_userid=_resolve_binding_owner_userid,
-        contact_profile_loader=_sidebar_contact_profile,
-        resolve_third_party_user_id_by_mobile=_resolve_third_party_user_id_by_mobile,
-        merge_lead_pool_after_mobile_bind=_merge_lead_pool_after_mobile_bind,
-        conflict_error_cls=ContactBindingConflictError,
-        sync_error_cls=ThirdPartyUserSyncError,
+    """Backward-compatible wrapper around the Wave 2 identity command."""
+
+    from .application.identity_contact.commands import BindExternalContactIdentityCommand
+    from .application.identity_contact.dto import BindExternalContactIdentityCommandDTO
+
+    return BindExternalContactIdentityCommand()(
+        BindExternalContactIdentityCommandDTO(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+            bind_by_userid=bind_by_userid,
+            mobile=mobile,
+            force_rebind=force_rebind,
+        )
     )
+
+
+def bind_openid_to_external_contact(
+    corp_id: str,
+    external_userid: str,
+    openid: str,
+    unionid: str = "",
+) -> dict[str, Any] | None:
+    """Backward-compatible wrapper around the Wave 2 identity command."""
+
+    from .application.identity_contact.commands import BindExternalContactIdentityCommand
+    from .application.identity_contact.dto import BindExternalContactIdentityCommandDTO
+
+    return BindExternalContactIdentityCommand()(
+        BindExternalContactIdentityCommandDTO(
+            corp_id=corp_id,
+            external_userid=external_userid,
+            openid=openid,
+            unionid=unionid,
+        )
+    )
+
+
+def resolve_external_contact_identity(
+    corp_id: str,
+    *,
+    unionid: str = "",
+    openid: str = "",
+    external_userid: str = "",
+) -> dict[str, Any] | None:
+    """Backward-compatible wrapper around the Wave 2 identity query."""
+
+    from .application.identity_contact.dto import ResolveExternalContactIdentityQueryDTO
+    from .application.identity_contact.queries import (
+        ResolveExternalContactIdentityQuery,
+    )
+
+    return ResolveExternalContactIdentityQuery()(
+        ResolveExternalContactIdentityQueryDTO(
+            corp_id=corp_id,
+            unionid=unionid,
+            openid=openid,
+            external_userid=external_userid,
+        )
+    )
+
+
+def upsert_external_contact_identity(record: dict[str, object]) -> int:
+    """Backward-compatible wrapper around the Wave 2 identity command."""
+
+    from .application.identity_contact.commands import (
+        UpsertExternalContactIdentityCommand,
+    )
+    from .application.identity_contact.dto import UpsertExternalContactIdentityCommandDTO
+
+    return UpsertExternalContactIdentityCommand()(UpsertExternalContactIdentityCommandDTO(record=dict(record or {})))
+
+
+def replace_external_contact_follow_users(
+    corp_id: str,
+    external_userid: str,
+    follow_users: list[dict[str, object]],
+    *,
+    preferred_userid: str = "",
+) -> None:
+    """Backward-compatible wrapper around the Wave 2 identity command."""
+
+    from .application.identity_contact.commands import ReplaceFollowUsersCommand
+    from .application.identity_contact.dto import ReplaceFollowUsersCommandDTO
+
+    return ReplaceFollowUsersCommand()(
+        ReplaceFollowUsersCommandDTO(
+            corp_id=corp_id,
+            external_userid=external_userid,
+            follow_users=list(follow_users or []),
+            preferred_userid=preferred_userid,
+        )
+    )
+
+
+def refresh_external_contact_identity_owner(corp_id: str, external_userid: str) -> None:
+    """Backward-compatible wrapper around the Wave 2 identity command."""
+
+    from .application.identity_contact.commands import (
+        RefreshExternalContactIdentityOwnerCommand,
+    )
+    from .application.identity_contact.dto import RefreshExternalContactIdentityOwnerCommandDTO
+
+    return RefreshExternalContactIdentityOwnerCommand()(
+        RefreshExternalContactIdentityOwnerCommandDTO(
+            corp_id=corp_id,
+            external_userid=external_userid,
+        )
+    )
+
+
+def mark_external_contact_follow_user_status(
+    corp_id: str,
+    external_userid: str,
+    *,
+    user_id: str = "",
+    status: str,
+) -> None:
+    """Backward-compatible wrapper around the Wave 2 identity command."""
+
+    from .application.identity_contact.commands import (
+        MarkExternalContactFollowUserStatusCommand,
+    )
+    from .application.identity_contact.dto import MarkExternalContactFollowUserStatusCommandDTO
+
+    return MarkExternalContactFollowUserStatusCommand()(
+        MarkExternalContactFollowUserStatusCommandDTO(
+            corp_id=corp_id,
+            external_userid=external_userid,
+            user_id=user_id,
+            status=status,
+        )
+    )
+
+
+def mark_external_contact_identity_status(
+    corp_id: str,
+    external_userid: str,
+    *,
+    status: str,
+    follow_user_userid: str = "",
+) -> None:
+    """Backward-compatible wrapper around the Wave 2 identity command."""
+
+    from .application.identity_contact.commands import (
+        MarkExternalContactIdentityStatusCommand,
+    )
+    from .application.identity_contact.dto import MarkExternalContactIdentityStatusCommandDTO
+
+    return MarkExternalContactIdentityStatusCommand()(
+        MarkExternalContactIdentityStatusCommandDTO(
+            corp_id=corp_id,
+            external_userid=external_userid,
+            status=status,
+            follow_user_userid=follow_user_userid,
+        )
+    )
+
+
+def count_external_contact_identity_maps() -> int:
+    """Backward-compatible wrapper around the Wave 2 identity query."""
+
+    from .application.identity_contact.queries import CountExternalContactIdentityMapsQuery
+
+    return CountExternalContactIdentityMapsQuery()()
 
 
 def sync_user_ops_class_term_tag_definitions() -> dict[str, Any]:
@@ -528,11 +833,23 @@ def refresh_contact_tags_for_external_userid(
     owner_userid: str = "",
     scoped_tag_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.refresh_contact_tags_for_external_userid(
-        external_userid=external_userid,
-        owner_userid=owner_userid,
-        scoped_tag_ids=scoped_tag_ids,
+    """Backward-compatible wrapper around the Wave 2 user-ops maintenance command.
+
+    Compatibility note: this keeps the legacy "full refresh when scoped_tag_ids is None"
+    contract, but the formal owner now lives under ``application.user_ops``.
+    """
+
+    from .application.user_ops.commands import (
+        RefreshContactTagsForExternalUseridCommand,
+        RefreshContactTagsForExternalUseridCommandDTO,
+    )
+
+    return RefreshContactTagsForExternalUseridCommand()(
+        RefreshContactTagsForExternalUseridCommandDTO(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+            scoped_tag_ids=None if scoped_tag_ids is None else list(scoped_tag_ids),
+        )
     )
 
 
@@ -541,16 +858,32 @@ def refresh_user_ops_contact_tags_for_external_userid(
     external_userid: str,
     owner_userid: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.refresh_user_ops_contact_tags_for_external_userid(
-        external_userid=external_userid,
-        owner_userid=owner_userid,
+    """Backward-compatible wrapper around the Wave 2 user-ops maintenance command."""
+
+    from .application.user_ops.commands import RefreshUserOpsContactTagsCommand
+    from .application.user_ops.dto import RefreshUserOpsContactTagsCommandDTO
+
+    return RefreshUserOpsContactTagsCommand()(
+        RefreshUserOpsContactTagsCommandDTO(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+            refresh_scope="external_userid",
+        )
     )
 
 
 def refresh_user_ops_contact_tags_for_owner(owner_userid: str) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.refresh_user_ops_contact_tags_for_owner(owner_userid)
+    """Backward-compatible wrapper around the Wave 2 user-ops maintenance command."""
+
+    from .application.user_ops.commands import RefreshUserOpsContactTagsCommand
+    from .application.user_ops.dto import RefreshUserOpsContactTagsCommandDTO
+
+    return RefreshUserOpsContactTagsCommand()(
+        RefreshUserOpsContactTagsCommandDTO(
+            owner_userid=owner_userid,
+            refresh_scope="owner",
+        )
+    )
 
 
 def backfill_owner_class_terms_into_lead_pool(
@@ -562,20 +895,37 @@ def backfill_owner_class_terms_into_lead_pool(
     operator: str = "",
     entry_source: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.backfill_owner_class_terms_into_lead_pool(
-        owner_userid=owner_userid,
-        class_term_min=class_term_min,
-        class_term_max=class_term_max,
-        dry_run=dry_run,
-        operator=operator,
-        entry_source=entry_source,
+    """Backward-compatible wrapper around the Wave 2 owner-backfill command."""
+
+    from .application.user_ops.commands import BackfillOwnerClassTermsCommand
+    from .application.user_ops.dto import BackfillOwnerClassTermsCommandDTO
+
+    return BackfillOwnerClassTermsCommand()(
+        BackfillOwnerClassTermsCommandDTO(
+            owner_userid=owner_userid,
+            class_term_min=class_term_min,
+            class_term_max=class_term_max,
+            dry_run=dry_run,
+            operator=operator,
+            entry_source=entry_source,
+        )
     )
 
 
 def backfill_class_term_for_owner(owner_userid: str, *, operator: str = "") -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.backfill_class_term_for_owner(owner_userid, operator=operator)
+    """Backward-compatible wrapper around the Wave 2 legacy owner-backfill compatibility command."""
+
+    from .application.user_ops.commands import (
+        BackfillClassTermForOwnerCommand,
+        BackfillClassTermForOwnerCommandDTO,
+    )
+
+    return BackfillClassTermForOwnerCommand()(
+        BackfillClassTermForOwnerCommandDTO(
+            owner_userid=owner_userid,
+            operator=operator,
+        )
+    )
 
 
 def _default_owner_class_term_backfill_entry_source(owner_userid: str) -> str:
@@ -591,18 +941,25 @@ def schedule_user_ops_auto_assign_class_term_job(
     run_after_seconds: int = 10,
     operator: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.schedule_user_ops_auto_assign_class_term_job(
-        external_userid=external_userid,
-        owner_userid=owner_userid,
-        delay_seconds=run_after_seconds if delay_seconds is None else delay_seconds,
-        operator=operator,
+    from .application.user_ops.commands import ScheduleUserOpsAutoAssignClassTermJobCommand
+    from .application.user_ops.dto import ScheduleUserOpsAutoAssignClassTermJobCommandDTO
+
+    return ScheduleUserOpsAutoAssignClassTermJobCommand()(
+        ScheduleUserOpsAutoAssignClassTermJobCommandDTO(
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+            delay_seconds=delay_seconds,
+            run_after_seconds=run_after_seconds,
+            operator=operator,
+        )
     )
 
 
 def run_due_user_ops_deferred_jobs(limit: int = 20) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.run_due_user_ops_deferred_jobs(limit=limit)
+    from .application.user_ops.commands import RunDueUserOpsDeferredJobsCommand
+    from .application.user_ops.dto import RunDueUserOpsDeferredJobsCommandDTO
+
+    return RunDueUserOpsDeferredJobsCommand()(RunDueUserOpsDeferredJobsCommandDTO(limit=limit))
 
 
 def list_user_ops_pool(
@@ -619,18 +976,25 @@ def list_user_ops_pool(
     owner_userid: str = "",
     query: str = "",
 ) -> dict[str, Any]:
-    return user_ops_page_service.list_user_ops_pool(
-        wecom_status=wecom_status,
-        mobile_binding_status=mobile_binding_status,
-        activation_bucket=activation_bucket,
-        is_wecom_added=is_wecom_added,
-        is_mobile_bound=is_mobile_bound,
-        huangxiaocan_activation_state=huangxiaocan_activation_state,
-        class_term_no=class_term_no,
-        keyword=keyword,
-        mobile=mobile,
-        owner_userid=owner_userid,
-        query=query,
+    from .application.user_ops.dto import LeadPoolFiltersDTO, ListLeadPoolQueryDTO
+    from .application.user_ops.queries import ListLeadPoolQuery
+
+    return ListLeadPoolQuery()(
+        ListLeadPoolQueryDTO(
+            filters=LeadPoolFiltersDTO(
+                wecom_status=wecom_status,
+                mobile_binding_status=mobile_binding_status,
+                activation_bucket=activation_bucket,
+                is_wecom_added=is_wecom_added,
+                is_mobile_bound=is_mobile_bound,
+                huangxiaocan_activation_state=huangxiaocan_activation_state,
+                class_term_no=class_term_no,
+                keyword=keyword,
+                mobile=mobile,
+                owner_userid=owner_userid,
+                query=query,
+            )
+        )
     )
 
 
@@ -648,24 +1012,33 @@ def get_user_ops_overview(
     owner_userid: str = "",
     query: str = "",
 ) -> dict[str, Any]:
-    return user_ops_page_service.get_user_ops_overview(
-        wecom_status=wecom_status,
-        mobile_binding_status=mobile_binding_status,
-        activation_bucket=activation_bucket,
-        is_wecom_added=is_wecom_added,
-        is_mobile_bound=is_mobile_bound,
-        huangxiaocan_activation_state=huangxiaocan_activation_state,
-        class_term_no=class_term_no,
-        keyword=keyword,
-        mobile=mobile,
-        owner_userid=owner_userid,
-        query=query,
+    from .application.user_ops.dto import GetUserOpsOverviewQueryDTO, LeadPoolFiltersDTO
+    from .application.user_ops.queries import GetUserOpsOverviewQuery
+
+    return GetUserOpsOverviewQuery()(
+        GetUserOpsOverviewQueryDTO(
+            filters=LeadPoolFiltersDTO(
+                wecom_status=wecom_status,
+                mobile_binding_status=mobile_binding_status,
+                activation_bucket=activation_bucket,
+                is_wecom_added=is_wecom_added,
+                is_mobile_bound=is_mobile_bound,
+                huangxiaocan_activation_state=huangxiaocan_activation_state,
+                class_term_no=class_term_no,
+                keyword=keyword,
+                mobile=mobile,
+                owner_userid=owner_userid,
+                query=query,
+            )
+        )
     )
 
 
 def list_user_ops_history(limit: int = 100) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.list_user_ops_history(limit=limit)
+    from .application.user_ops.dto import ListUserOpsHistoryQueryDTO
+    from .application.user_ops.queries import ListUserOpsHistoryQuery
+
+    return ListUserOpsHistoryQuery()(ListUserOpsHistoryQueryDTO(limit=limit))
 
 
 def export_user_ops_pool(
@@ -682,18 +1055,25 @@ def export_user_ops_pool(
     owner_userid: str = "",
     query: str = "",
 ) -> dict[str, Any]:
-    return user_ops_page_service.export_user_ops_pool(
-        wecom_status=wecom_status,
-        mobile_binding_status=mobile_binding_status,
-        activation_bucket=activation_bucket,
-        is_wecom_added=is_wecom_added,
-        is_mobile_bound=is_mobile_bound,
-        huangxiaocan_activation_state=huangxiaocan_activation_state,
-        class_term_no=class_term_no,
-        keyword=keyword,
-        mobile=mobile,
-        owner_userid=owner_userid,
-        query=query,
+    from .application.user_ops.dto import ExportUserOpsPoolQueryDTO, LeadPoolFiltersDTO
+    from .application.user_ops.queries import ExportUserOpsPoolQuery
+
+    return ExportUserOpsPoolQuery()(
+        ExportUserOpsPoolQueryDTO(
+            filters=LeadPoolFiltersDTO(
+                wecom_status=wecom_status,
+                mobile_binding_status=mobile_binding_status,
+                activation_bucket=activation_bucket,
+                is_wecom_added=is_wecom_added,
+                is_mobile_bound=is_mobile_bound,
+                huangxiaocan_activation_state=huangxiaocan_activation_state,
+                class_term_no=class_term_no,
+                keyword=keyword,
+                mobile=mobile,
+                owner_userid=owner_userid,
+                query=query,
+            )
+        )
     )
 
 
@@ -732,22 +1112,40 @@ def write_user_ops_lead_pool_history(
     after_payload: dict[str, Any] | None,
     remark: str = "",
 ) -> None:
-    _bind_user_ops_domain()
-    user_ops_domain_service.write_user_ops_lead_pool_history(
-        mobile=mobile,
-        external_userid=external_userid,
-        action_type=action_type,
-        source_type=source_type,
-        operator=operator,
-        before_payload=before_payload,
-        after_payload=after_payload,
-        remark=remark,
+    """Internal primitive compatibility shim.
+
+    This symbol remains visible for legacy monkeypatch and compatibility paths,
+    but new caller-layer code must not use it as a primary write entry.
+    """
+
+    from .application.user_ops.commands import WriteLeadPoolHistoryCommand
+    from .application.user_ops.dto import WriteLeadPoolHistoryCommandDTO
+
+    return WriteLeadPoolHistoryCommand()(
+        WriteLeadPoolHistoryCommandDTO(
+            mobile=mobile,
+            external_userid=external_userid,
+            action_type=action_type,
+            source_type=source_type,
+            operator=operator,
+            before_payload=before_payload,
+            after_payload=after_payload,
+            remark=remark,
+        )
     )
 
 
 def upsert_user_ops_lead_pool_member(**kwargs: Any) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.upsert_user_ops_lead_pool_member(**kwargs)
+    """Internal primitive compatibility shim.
+
+    This symbol remains visible for legacy monkeypatch and compatibility paths,
+    but new caller-layer code must not use it as a primary write entry.
+    """
+
+    from .application.user_ops.commands import UpsertLeadPoolMemberCommand
+    from .application.user_ops.dto import UpsertLeadPoolMemberCommandDTO
+
+    return UpsertLeadPoolMemberCommand()(UpsertLeadPoolMemberCommandDTO(**kwargs))
 
 
 def upsert_user_ops_huangxiaocan_activation_source(
@@ -759,13 +1157,27 @@ def upsert_user_ops_huangxiaocan_activation_source(
     created_by: str = "",
     import_batch_id: int | None = None,
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.upsert_user_ops_huangxiaocan_activation_source(
-        mobile=mobile,
-        activation_state=activation_state,
-        import_batch_id=import_batch_id,
-        created_by=created_by,
-        is_active=is_active,
+    """Backward-compatible wrapper around the Wave 2 activation-source maintenance command.
+
+    Compatibility note: ``activation_remark`` remains in the public shim
+    signature for old callers even though the legacy domain write API does not
+    currently persist that field.
+    """
+
+    from .application.user_ops.commands import (
+        UpsertUserOpsHuangxiaocanActivationSourceCommand,
+        UpsertUserOpsHuangxiaocanActivationSourceCommandDTO,
+    )
+
+    return UpsertUserOpsHuangxiaocanActivationSourceCommand()(
+        UpsertUserOpsHuangxiaocanActivationSourceCommandDTO(
+            mobile=mobile,
+            activation_state=activation_state,
+            activation_remark=activation_remark,
+            import_batch_id=import_batch_id,
+            created_by=created_by,
+            is_active=is_active,
+        )
     )
 
 
@@ -776,12 +1188,18 @@ def import_experience_leads(
     file_bytes: bytes | None = None,
     created_by: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.import_experience_leads(
-        pasted_text=pasted_text,
-        file_name=file_name,
-        file_bytes=file_bytes,
-        created_by=created_by,
+    """Backward-compatible wrapper around the Wave 2 import command."""
+
+    from .application.user_ops.commands import ImportExperienceLeadsCommand
+    from .application.user_ops.dto import ImportExperienceLeadsCommandDTO
+
+    return ImportExperienceLeadsCommand()(
+        ImportExperienceLeadsCommandDTO(
+            pasted_text=pasted_text,
+            file_name=file_name,
+            file_bytes=file_bytes,
+            created_by=created_by,
+        )
     )
 
 
@@ -792,12 +1210,18 @@ def import_mobile_class_term_source(
     file_bytes: bytes | None = None,
     created_by: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.import_mobile_class_term_source(
-        pasted_text=pasted_text,
-        file_name=file_name,
-        file_bytes=file_bytes,
-        created_by=created_by,
+    """Backward-compatible wrapper around the Wave 2 import command."""
+
+    from .application.user_ops.commands import ImportMobileClassTermCommand
+    from .application.user_ops.dto import ImportMobileClassTermCommandDTO
+
+    return ImportMobileClassTermCommand()(
+        ImportMobileClassTermCommandDTO(
+            pasted_text=pasted_text,
+            file_name=file_name,
+            file_bytes=file_bytes,
+            created_by=created_by,
+        )
     )
 
 
@@ -808,18 +1232,32 @@ def import_activation_status_source(
     file_bytes: bytes | None = None,
     created_by: str = "",
 ) -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.import_activation_status_source(
-        pasted_text=pasted_text,
-        file_name=file_name,
-        file_bytes=file_bytes,
-        created_by=created_by,
+    """Backward-compatible wrapper around the Wave 2 import command."""
+
+    from .application.user_ops.commands import ImportActivationStatusCommand
+    from .application.user_ops.dto import ImportActivationStatusCommandDTO
+
+    return ImportActivationStatusCommand()(
+        ImportActivationStatusCommandDTO(
+            pasted_text=pasted_text,
+            file_name=file_name,
+            file_bytes=file_bytes,
+            created_by=created_by,
+        )
     )
 
 
 def migrate_legacy_user_ops_pool_to_lead_pool(*, operator: str = "") -> dict[str, Any]:
-    _bind_user_ops_domain()
-    return user_ops_domain_service.migrate_legacy_user_ops_pool_to_lead_pool(operator=operator)
+    """Backward-compatible wrapper around the Wave 2 legacy-pool migration command."""
+
+    from .application.user_ops.commands import (
+        MigrateLegacyUserOpsPoolToLeadPoolCommand,
+        MigrateLegacyUserOpsPoolToLeadPoolCommandDTO,
+    )
+
+    return MigrateLegacyUserOpsPoolToLeadPoolCommand()(
+        MigrateLegacyUserOpsPoolToLeadPoolCommandDTO(operator=operator)
+    )
 
 
 def _list_class_term_matches_for_external_contact(external_userid: str, owner_userid: str = "") -> dict[str, Any]:

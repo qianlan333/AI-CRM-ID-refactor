@@ -2,32 +2,40 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..application.identity_contact.commands import (
+    BuildExternalContactIdentityRecordCommand,
+    RefreshExternalContactIdentityOwnerCommand,
+    ReplaceFollowUsersCommand,
+    UpsertExternalContactIdentityCommand,
+)
+from ..application.identity_contact.dto import (
+    RefreshExternalContactIdentityOwnerCommandDTO,
+    ReplaceFollowUsersCommandDTO,
+    ResolveExternalContactIdentityQueryDTO,
+    UpsertExternalContactIdentityCommandDTO,
+)
+from ..application.identity_contact.queries import (
+    CountExternalContactIdentityMapsQuery,
+    ListIdentityExternalUseridsForCorpQuery,
+    ResolveExternalContactIdentityQuery,
+)
 from ..archive_adapter import ArchiveAdapterClient
-from ..domains.identity.service import list_identity_external_userids_for_corp
-from ..infra.wecom_runtime import get_app_runtime_client
-from ..services import (
+from ..domains.archive.service import create_sync_run, finish_sync_run
+from ..domains.contacts.repo import count_contacts, list_contacts as list_contacts_from_db, upsert_contacts
+from ..domains.contacts.service import (
     contact_description_state,
-    count_contacts,
-    count_external_contact_identity_maps,
-    count_group_chats,
-    create_sync_run,
-    finish_sync_run,
-    list_contacts as list_contacts_from_db,
-    list_group_chats as list_group_chats_from_db,
-    normalize_external_contact_identity,
-    normalize_group_chat_record,
-    refresh_external_contact_identity_owner,
-    replace_external_contact_follow_users,
-    resolve_external_contact_identity,
+    normalize_contact_record,
+    sync_contact_detail_with_description_fix as _sync_contact_detail_with_description_fix,
     target_contact_description,
-    upsert_external_contact_identity,
+    update_contact_description_snapshot,
+)
+from ..domains.group_chats.repo import (
+    count_group_chats,
+    list_group_chats as list_group_chats_from_db,
     upsert_group_chats,
 )
-from ..domains.contacts.service import (
-    sync_contact_detail_with_description_fix as _sync_contact_detail_with_description_fix,
-    update_contact_description_snapshot,
-    upsert_contacts,
-)
+from ..domains.group_chats.service import normalize_group_chat_record
+from ..infra.wecom_runtime import get_app_runtime_client
 from ..wecom_client import WeComClientError
 from .common import (
     _contact_client,
@@ -39,6 +47,78 @@ from .common import (
     contacts_logger,
     wecom_logger,
 )
+
+
+def _list_identity_external_userids_for_corp(corp_id: str) -> list[str]:
+    return ListIdentityExternalUseridsForCorpQuery()(str(corp_id or "").strip())
+
+
+def _resolve_external_contact_identity(
+    *,
+    corp_id: str,
+    unionid: str = "",
+    openid: str = "",
+    external_userid: str = "",
+) -> dict[str, Any] | None:
+    return ResolveExternalContactIdentityQuery()(
+        ResolveExternalContactIdentityQueryDTO(
+            corp_id=str(corp_id or "").strip(),
+            unionid=str(unionid or "").strip(),
+            openid=str(openid or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+        )
+    )
+
+
+def _build_external_contact_identity_record(
+    *,
+    corp_id: str,
+    detail: dict[str, object],
+    follow_user_userid: str = "",
+    status: str = "",
+) -> dict[str, object]:
+    return BuildExternalContactIdentityRecordCommand()(
+        corp_id=str(corp_id or "").strip(),
+        detail=dict(detail or {}),
+        follow_user_userid=str(follow_user_userid or "").strip(),
+        status=str(status or "").strip(),
+    )
+
+
+def _upsert_external_contact_identity(record: dict[str, object]) -> int:
+    return UpsertExternalContactIdentityCommand()(
+        UpsertExternalContactIdentityCommandDTO(record=dict(record or {}))
+    )
+
+
+def _replace_external_contact_follow_users(
+    *,
+    corp_id: str,
+    external_userid: str,
+    follow_users: list[dict[str, object]],
+    preferred_userid: str = "",
+) -> None:
+    return ReplaceFollowUsersCommand()(
+        ReplaceFollowUsersCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+            follow_users=list(follow_users or []),
+            preferred_userid=str(preferred_userid or "").strip(),
+        )
+    )
+
+
+def _refresh_external_contact_identity_owner(*, corp_id: str, external_userid: str) -> None:
+    return RefreshExternalContactIdentityOwnerCommand()(
+        RefreshExternalContactIdentityOwnerCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+        )
+    )
+
+
+def _count_external_contact_identity_maps() -> int:
+    return CountExternalContactIdentityMapsQuery()()
 
 
 def _collect_owner_userids(client: Any) -> list[str]:
@@ -111,7 +191,7 @@ def _sync_external_contact_identity_map(*, only_new: bool) -> dict:
     owner_userids = _collect_owner_userids(client)
     existing_external_userids = set()
     if only_new:
-        existing_external_userids.update(list_identity_external_userids_for_corp(corp_id))
+        existing_external_userids.update(_list_identity_external_userids_for_corp(corp_id))
 
     fetched_count = 0
     inserted_count = 0
@@ -133,7 +213,7 @@ def _sync_external_contact_identity_map(*, only_new: bool) -> dict:
             for external_userid in external_userids[start : start + batch_size]:
                 if only_new and external_userid in existing_external_userids:
                     continue
-                existing = resolve_external_contact_identity(corp_id, external_userid=external_userid)
+                existing = _resolve_external_contact_identity(corp_id=corp_id, external_userid=external_userid)
                 try:
                     detail = client.get_contact(external_userid)
                 except WeComClientError as exc:
@@ -144,20 +224,20 @@ def _sync_external_contact_identity_map(*, only_new: bool) -> dict:
                         stage="external_contact.get",
                     )
                     continue
-                identity = normalize_external_contact_identity(
-                    corp_id,
-                    detail,
+                identity = _build_external_contact_identity_record(
+                    corp_id=corp_id,
+                    detail=detail,
                     follow_user_userid=owner_userid,
                     status="active",
                 )
-                upsert_external_contact_identity(identity)
-                replace_external_contact_follow_users(
-                    corp_id,
-                    external_userid,
-                    detail.get("follow_user") or [],
+                _upsert_external_contact_identity(identity)
+                _replace_external_contact_follow_users(
+                    corp_id=corp_id,
+                    external_userid=external_userid,
+                    follow_users=detail.get("follow_user") or [],
                     preferred_userid=owner_userid,
                 )
-                refresh_external_contact_identity_owner(corp_id, external_userid)
+                _refresh_external_contact_identity_owner(corp_id=corp_id, external_userid=external_userid)
                 if external_userid not in counted_external_userids:
                     fetched_count += 1
                     if existing:
@@ -170,7 +250,7 @@ def _sync_external_contact_identity_map(*, only_new: bool) -> dict:
         "fetched_count": fetched_count,
         "inserted_count": inserted_count,
         "updated_count": updated_count,
-        "identity_map_total": count_external_contact_identity_maps(),
+        "identity_map_total": _count_external_contact_identity_maps(),
     }
 
 

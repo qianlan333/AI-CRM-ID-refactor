@@ -853,6 +853,15 @@ def admin_automation_conversion_debug():
     )
 
 
+def admin_automation_conversion_preview():
+    return _redirect_to(
+        "api.admin_automation_conversion_run_center",
+        tab="debug",
+        external_contact_id=_query_text("external_contact_id") or None,
+        phone=_query_text("phone") or None,
+    )
+
+
 def admin_automation_conversion_save_settings():
     section = str(request.form.get("section") or "questionnaire").strip() or "questionnaire"
     action_token_error = validate_admin_console_action_token()
@@ -2079,6 +2088,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/run-center", methods=["GET"])(admin_automation_conversion_run_center)
     bp.route("/admin/automation-conversion/model-infra", methods=["GET"])(admin_automation_conversion_model_infra)
     bp.route("/admin/automation-conversion/debug", methods=["GET"])(admin_automation_conversion_debug)
+    bp.route("/admin/automation-conversion/preview", methods=["GET"])(admin_automation_conversion_preview)
     bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage)
     bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET", "POST"])(admin_automation_conversion_stage_send)
     bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft", methods=["POST"])(admin_automation_conversion_agent_orchestration_save_draft)

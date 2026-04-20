@@ -10,6 +10,16 @@ from uuid import uuid4
 import requests
 from flask import current_app, has_request_context, session
 
+from ...application.identity_contact.commands import BindExternalContactIdentityCommand
+from ...application.identity_contact.dto import (
+    BindExternalContactIdentityCommandDTO,
+    ResolveExternalContactIdentityQueryDTO,
+    ResolvePersonIdentityQueryDTO,
+)
+from ...application.identity_contact.queries import (
+    ResolveExternalContactIdentityQuery,
+    ResolvePersonIdentityQuery,
+)
 from ...db import get_db
 from ...infra.settings import get_setting
 from ..outbound_webhook.service import EVENT_QUESTIONNAIRE_SUBMIT, send_outbound_webhook
@@ -36,6 +46,65 @@ QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS = {
 
 class QuestionnaireAlreadySubmittedError(ValueError):
     pass
+
+
+def _resolve_external_contact_identity_payload(
+    *,
+    corp_id: str = "",
+    unionid: str = "",
+    openid: str = "",
+    external_userid: str = "",
+) -> dict[str, Any] | None:
+    return ResolveExternalContactIdentityQuery()(
+        ResolveExternalContactIdentityQueryDTO(
+            corp_id=str(corp_id or "").strip(),
+            unionid=str(unionid or "").strip(),
+            openid=str(openid or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+        )
+    )
+
+
+def _resolve_questionnaire_person_identity(
+    *,
+    external_userid: str = "",
+    mobile: str = "",
+    unionid: str = "",
+) -> dict[str, Any]:
+    return ResolvePersonIdentityQuery()(
+        ResolvePersonIdentityQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            mobile=str(mobile or "").strip(),
+            unionid=str(unionid or "").strip(),
+        )
+    )
+
+
+def _bind_questionnaire_identity(
+    *,
+    external_userid: str,
+    owner_userid: str = "",
+    bind_by_userid: str = "",
+    mobile: str = "",
+    openid: str = "",
+    unionid: str = "",
+    force_rebind: bool = False,
+    corp_id: str = "",
+) -> dict[str, Any] | None:
+    return BindExternalContactIdentityCommand()(
+        BindExternalContactIdentityCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+            bind_by_userid=str(bind_by_userid or "").strip(),
+            mobile=str(mobile or "").strip(),
+            openid=str(openid or "").strip(),
+            unionid=str(unionid or "").strip(),
+            force_rebind=bool(force_rebind),
+            corp_id=str(corp_id or "").strip(),
+        )
+    )
+
+
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
@@ -1182,7 +1251,7 @@ def resolve_questionnaire_submit_identity(
     for matched_by, value in lookup_order:
         if not value:
             continue
-        resolved = resolve_external_contact_identity(corp_id, **{matched_by: value})
+        resolved = _resolve_external_contact_identity_payload(corp_id=corp_id, **{matched_by: value})
         if resolved:
             identity = dict(resolved)
             identity["matched_by"] = matched_by
@@ -1811,19 +1880,20 @@ def apply_questionnaire_mobile_binding(submission: dict[str, Any]) -> dict[str, 
     if not external_userid:
         return {"bound": False, "reason": "no_external_userid"}
     try:
-        binding = bind_mobile_to_external_contact(
+        binding = _bind_questionnaire_identity(
             external_userid=external_userid,
             owner_userid=follow_user_userid,
             bind_by_userid="questionnaire_submit",
             mobile=mobile_snapshot,
             force_rebind=True,
         )
+        resolved_identity = _resolve_questionnaire_person_identity(external_userid=external_userid)
         questionnaire_logger.info(
             "questionnaire mobile bound submission_id=%s external_userid=%s mobile=%s person_id=%s",
             int(submission.get("id") or 0),
             external_userid,
             mobile_snapshot,
-            str(binding.get("person_id") or ""),
+            str((resolved_identity or {}).get("person_id") or (binding or {}).get("person_id") or ""),
         )
         return {"bound": True, "binding": binding}
     except Exception as exc:
@@ -2000,10 +2070,10 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     )
     if identity and identity.get("matched_by") == "unionid" and resolved_openid and not str(identity.get("openid") or "").strip():
         corp_id = str(current_app.config.get("WECOM_CORP_ID", "") or "").strip()
-        rebound = bind_openid_to_external_contact(
-            corp_id,
-            str(identity.get("external_userid") or "").strip(),
-            resolved_openid,
+        rebound = _bind_questionnaire_identity(
+            corp_id=corp_id,
+            external_userid=str(identity.get("external_userid") or "").strip(),
+            openid=resolved_openid,
             unionid=resolved_unionid,
         )
         if rebound:

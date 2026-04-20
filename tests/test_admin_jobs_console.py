@@ -311,7 +311,7 @@ def test_admin_jobs_run_deferred_jobs_action_writes_audit(app, client, monkeypat
     _seed_jobs_data(app)
     action_token = _admin_action_token(client)
     monkeypatch.setattr(
-        "wecom_ability_service.domains.admin_jobs.service.run_due_user_ops_deferred_jobs",
+        "wecom_ability_service.domains.admin_jobs.service._run_user_ops_deferred_jobs_payload",
         lambda limit: {
             "ok": True,
             "limit": limit,
@@ -605,7 +605,7 @@ def test_api_admin_jobs_deferred_jobs_run_requires_confirm_and_returns_summary(a
     assert missing_confirm.get_json()["error"] == "执行待处理作业前请先勾选确认"
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.admin_jobs.service.run_due_user_ops_deferred_jobs",
+        "wecom_ability_service.domains.admin_jobs.service._run_user_ops_deferred_jobs_payload",
         lambda limit: {
             "ok": True,
             "limit": limit,

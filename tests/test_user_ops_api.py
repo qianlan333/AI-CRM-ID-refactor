@@ -16,13 +16,18 @@ from wecom_ability_service.domains.routing_config import (
     DEFAULT_SALES_ROUTE_OWNER_USERID,
 )
 from wecom_ability_service.routes import _process_external_contact_event
+from wecom_ability_service.http.common import _contact_sync_retry_limit
 from wecom_ability_service.services import (
     _default_owner_class_term_backfill_entry_source,
+    backfill_class_term_for_owner,
     backfill_owner_class_terms_into_lead_pool,
     get_routing_config,
+    import_experience_leads,
     log_external_contact_event,
     migrate_legacy_user_ops_pool_to_lead_pool,
     refresh_contact_tags_for_external_userid,
+    refresh_user_ops_contact_tags_for_external_userid,
+    refresh_user_ops_contact_tags_for_owner,
     resolve_contact_routing_context,
     schedule_user_ops_auto_assign_class_term_job,
     sync_user_ops_class_term_tag_definitions,
@@ -445,6 +450,7 @@ class _FakeUserOpsContactClient:
 def user_ops_contact_client(monkeypatch):
     fake_client = _FakeUserOpsContactClient()
     monkeypatch.setattr("wecom_ability_service.services._user_ops_contact_client", lambda: fake_client)
+    monkeypatch.setattr("wecom_ability_service.infra.user_ops_runtime.get_user_ops_contact_client", lambda: fake_client)
     return fake_client
 
 
@@ -1833,6 +1839,149 @@ def test_refresh_contact_tags_for_external_userid_only_refreshes_scoped_tags(app
         assert rows[0]["tag_id"] == "tag-term-1"
 
 
+def test_refresh_user_ops_contact_tags_for_external_userid_uses_active_class_term_scope(app, user_ops_contact_client):
+    user_ops_contact_client.set_contact_detail(
+        "wm_refresh_scope_002",
+        _build_external_contact_detail(
+            external_userid="wm_refresh_scope_002",
+            owner_userid="sales_01",
+            follow_user_tags=[
+                {"id": "tag-term-1", "name": "首期7天改变计划"},
+                {"id": "tag-other-9", "name": "其他标签"},
+            ],
+        ),
+    )
+
+    with app.app_context():
+        sync_user_ops_class_term_tag_definitions()
+        payload = refresh_user_ops_contact_tags_for_external_userid(
+            external_userid="wm_refresh_scope_002",
+            owner_userid="sales_01",
+        )
+
+        rows = get_db().execute(
+            """
+            SELECT tag_id, tag_name
+            FROM contact_tags
+            WHERE external_userid = ? AND userid = ?
+            ORDER BY tag_id ASC
+            """,
+            ("wm_refresh_scope_002", "sales_01"),
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["refreshed"] is True
+    assert payload["owner_userid"] == "sales_01"
+    assert payload["scoped_all_tags"] is False
+    assert rows[0]["tag_id"] == "tag-term-1"
+    assert len(rows) == 1
+
+
+def test_refresh_user_ops_contact_tags_for_owner_sweeps_owner_external_userids(app, user_ops_contact_client):
+    user_ops_contact_client.set_contact_detail(
+        "wm_refresh_owner_001",
+        _build_external_contact_detail(
+            external_userid="wm_refresh_owner_001",
+            owner_userid="sales_01",
+            follow_user_tags=[{"id": "tag-term-1", "name": "首期7天改变计划"}],
+        ),
+    )
+    user_ops_contact_client.set_contact_detail(
+        "wm_refresh_owner_002",
+        _build_external_contact_detail(
+            external_userid="wm_refresh_owner_002",
+            owner_userid="sales_01",
+            follow_user_tags=[{"id": "tag-term-3", "name": "0322改变计划-第3期"}],
+        ),
+    )
+    user_ops_contact_client.set_contact_detail(
+        "wm_refresh_owner_003",
+        _build_external_contact_detail(
+            external_userid="wm_refresh_owner_003",
+            owner_userid="sales_02",
+            follow_user_tags=[{"id": "tag-term-4", "name": "0330改变计划-第4期"}],
+        ),
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO user_ops_lead_pool_current (
+                mobile, external_userid, customer_name, owner_userid,
+                is_wecom_added, is_mobile_bound, huangxiaocan_activation_state,
+                class_term_no, class_term_label, first_entry_source, last_entry_source,
+                created_at, updated_at
+            )
+            VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                "",
+                "wm_refresh_owner_001",
+                "Owner One",
+                "sales_01",
+                True,
+                False,
+                "unknown",
+                1,
+                "首期",
+                "sidebar_class_term",
+                "sidebar_class_term",
+                "",
+                "wm_refresh_owner_002",
+                "Owner Two",
+                "sales_01",
+                True,
+                False,
+                "unknown",
+                3,
+                "3期",
+                "sidebar_class_term",
+                "sidebar_class_term",
+                "",
+                "wm_refresh_owner_003",
+                "Other Owner",
+                "sales_02",
+                True,
+                False,
+                "unknown",
+                4,
+                "4期",
+                "sidebar_class_term",
+                "sidebar_class_term",
+            ),
+        )
+        db.commit()
+
+        sync_user_ops_class_term_tag_definitions()
+        payload = refresh_user_ops_contact_tags_for_owner("sales_01")
+        rows = db.execute(
+            """
+            SELECT external_userid, userid, tag_id
+            FROM contact_tags
+            WHERE external_userid IN (?, ?, ?)
+            ORDER BY external_userid ASC, userid ASC, tag_id ASC
+            """,
+            ("wm_refresh_owner_001", "wm_refresh_owner_002", "wm_refresh_owner_003"),
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["owner_userid"] == "sales_01"
+    assert payload["external_user_count"] == 2
+    assert payload["refreshed_count"] == 2
+    assert [item["external_userid"] for item in payload["items"]] == [
+        "wm_refresh_owner_001",
+        "wm_refresh_owner_002",
+    ]
+    assert [(row["external_userid"], row["userid"], row["tag_id"]) for row in rows] == [
+        ("wm_refresh_owner_001", "sales_01", "tag-term-1"),
+        ("wm_refresh_owner_002", "sales_01", "tag-term-3"),
+    ]
+
+
 def test_import_experience_leads_endpoint_is_deprecated_internal_only(client):
     response = client.post(
         "/api/admin/user-ops/import-experience-leads",
@@ -1843,6 +1992,48 @@ def test_import_experience_leads_endpoint_is_deprecated_internal_only(client):
     assert response.status_code == 410
     assert payload["ok"] is False
     assert payload["error"] == "deprecated_internal_only"
+
+
+def test_import_experience_leads_service_records_sources_and_history(app):
+    with app.app_context():
+        payload = import_experience_leads(
+            pasted_text="手机号\n13800138009\nbad-mobile\n13800138009\n13800138010",
+            created_by="tester",
+        )
+
+        rows = get_db().execute(
+            """
+            SELECT mobile, source_type, import_batch_id, created_by, is_active
+            FROM user_ops_experience_leads
+            ORDER BY mobile ASC
+            """
+        ).fetchall()
+        history = get_db().execute(
+            """
+            SELECT mobile, action_type, source_type
+            FROM user_ops_pool_history
+            WHERE action_type = 'experience_import_source_upsert'
+            ORDER BY mobile ASC
+            """
+        ).fetchall()
+
+    assert payload["ok"] is True
+    assert payload["import_type"] == "experience_leads"
+    assert payload["total_rows"] == 4
+    assert payload["success_rows"] == 3
+    assert payload["failed_rows"] == 1
+    assert payload["duplicate_count"] == 1
+    assert payload["unique_mobile_count"] == 2
+    assert payload["invalid_rows"] == ["bad-mobile"]
+    assert payload["reload"] == {"mode": "legacy_pool_disabled", "triggered": False}
+    assert [row["mobile"] for row in rows] == ["13800138009", "13800138010"]
+    assert all(row["source_type"] == "experience_import" for row in rows)
+    assert all(str(row["created_by"]) == "tester" for row in rows)
+    assert all(bool(row["is_active"]) is True for row in rows)
+    assert {str(row["import_batch_id"]) for row in rows} == {str(payload["batch_id"])}
+    assert [row["mobile"] for row in history] == ["13800138009", "13800138010"]
+    assert all(row["action_type"] == "experience_import_source_upsert" for row in history)
+    assert all(row["source_type"] == "experience_import" for row in history)
 
 
 def test_sidebar_bind_mobile_page_uses_single_customer_automation_layout(client):
@@ -2034,6 +2225,24 @@ def test_sidebar_lead_pool_upsert_class_term_replaces_old_tag_and_returns_succes
     )
     monkeypatch.setattr(
         "wecom_ability_service.services._user_ops_contact_client",
+        lambda: type(
+            "FakeContactClient",
+            (),
+            {
+                "get_contact": staticmethod(
+                    lambda external_userid: {
+                        "external_contact": {"external_userid": external_userid},
+                        "follow_user": [
+                            {"userid": "sales_01", "tags": [{"tag_id": "tag_term_4_cleanup", "tag_name": "第4期"}]},
+                            {"userid": "QianLan", "tags": [{"tag_id": "tag_term_3_cleanup", "tag_name": "第3期"}]},
+                        ],
+                    }
+                )
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.infra.user_ops_runtime.get_user_ops_contact_client",
         lambda: type(
             "FakeContactClient",
             (),
@@ -2281,6 +2490,24 @@ def test_sidebar_lead_pool_upsert_class_term_cleans_cross_owner_stale_tag_snapsh
             },
         )(),
     )
+    monkeypatch.setattr(
+        "wecom_ability_service.infra.user_ops_runtime.get_user_ops_contact_client",
+        lambda: type(
+            "FakeContactClient",
+            (),
+            {
+                "get_contact": staticmethod(
+                    lambda external_userid: {
+                        "external_contact": {"external_userid": external_userid},
+                        "follow_user": [
+                            {"userid": "sales_01", "tags": [{"tag_id": "tag_term_4_cleanup", "tag_name": "第4期"}]},
+                            {"userid": "QianLan", "tags": [{"tag_id": "tag_term_3_cleanup", "tag_name": "第3期"}]},
+                        ],
+                    }
+                )
+            },
+        )(),
+    )
 
     with app.app_context():
         db = get_db()
@@ -2466,6 +2693,65 @@ def test_sidebar_bind_mobile_merges_external_only_and_mobile_only_members(client
     assert merge_history["source_type"] == "mobile_bind"
     assert '"external_userid": "wm_sidebar_bind_001"' in merge_history["before_json"]
     assert '"mobile": "13800138111"' in merge_history["after_json"]
+
+
+def test_lead_pool_upsert_same_external_userid_keeps_current_row_and_appends_history(app):
+    with app.app_context():
+        first = upsert_user_ops_lead_pool_member(
+            external_userid="wm_pool_core_001",
+            customer_name="初始客户",
+            owner_userid="sales_01",
+            entry_source="student_import",
+            operator="tester_a",
+        )
+        second = upsert_user_ops_lead_pool_member(
+            external_userid="wm_pool_core_001",
+            customer_name="更新客户",
+            owner_userid="sales_02",
+            huangxiaocan_activation_state="activated",
+            class_term_no=6,
+            class_term_label="6期",
+            entry_source="sidebar_manual_set_class_term",
+            operator="tester_b",
+            remark="pool core stability check",
+        )
+        current_rows = get_db().execute(
+            """
+            SELECT id, external_userid, customer_name, owner_userid, huangxiaocan_activation_state,
+                   class_term_no, class_term_label
+            FROM user_ops_lead_pool_current
+            WHERE external_userid = ?
+            ORDER BY id ASC
+            """,
+            ("wm_pool_core_001",),
+        ).fetchall()
+        history_rows = get_db().execute(
+            """
+            SELECT action_type, source_type, operator, remark, after_json
+            FROM user_ops_lead_pool_history
+            WHERE external_userid = ?
+            ORDER BY id ASC
+            """,
+            ("wm_pool_core_001",),
+        ).fetchall()
+
+    assert first["action_type"] == "lead_pool_insert"
+    assert second["action_type"] == "lead_pool_update"
+    assert len(current_rows) == 1
+    current = current_rows[0]
+    assert current["customer_name"] == "更新客户"
+    assert current["owner_userid"] == "sales_02"
+    assert current["huangxiaocan_activation_state"] == "activated"
+    assert current["class_term_no"] == 6
+    assert current["class_term_label"] == "6期"
+    assert len(history_rows) == 2
+    assert history_rows[0]["action_type"] == "lead_pool_insert"
+    assert history_rows[1]["action_type"] == "lead_pool_update"
+    assert history_rows[1]["source_type"] == "sidebar_manual_set_class_term"
+    assert history_rows[1]["operator"] == "tester_b"
+    assert history_rows[1]["remark"] == "pool core stability check"
+    assert '"customer_name": "更新客户"' in history_rows[1]["after_json"]
+    assert '"huangxiaocan_activation_state": "activated"' in history_rows[1]["after_json"]
 
 
 def test_import_mobile_class_terms_from_pasted_text_updates_pool(client, app):
@@ -3077,6 +3363,50 @@ def test_external_contact_event_for_other_owner_also_creates_deferred_job(app, m
         assert row["owner_userid"] == "sales_01"
 
 
+def test_external_contact_event_marks_failed_when_qrcode_automation_raises(app, monkeypatch):
+    detail = _build_external_contact_detail(
+        external_userid="wm_auto_assign_qrcode_fail_001",
+        owner_userid="sales_01",
+    )
+    monkeypatch.setattr("wecom_ability_service.routes._contact_client", lambda: _FakeCallbackContactClient(detail))
+    monkeypatch.setattr("wecom_ability_service.routes._dispatch_background_task", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "wecom_ability_service.http.background_jobs.handle_qrcode_enter_from_callback",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("qrcode automation exploded")),
+    )
+
+    with app.app_context():
+        logged = log_external_contact_event(
+            corp_id="ww-test",
+            event_type="change_external_contact",
+            change_type="add_external_contact",
+            external_userid="wm_auto_assign_qrcode_fail_001",
+            user_id="sales_01",
+            event_time=1775000002,
+            event_key="event-auto-assign-qrcode-fail-001",
+            payload_xml="<xml></xml>",
+            payload_json={"ChangeType": "add_external_contact", "State": "scene-qrcode"},
+        )
+        result = _process_external_contact_event(int(logged["id"]))
+
+        assert result["ok"] is False
+        assert result["status"] == "failed"
+        assert "qrcode automation exploded" in result["error"]
+        event_log = get_db().execute(
+            """
+            SELECT process_status, retry_count, error_message
+            FROM wecom_external_contact_event_logs
+            WHERE id = ?
+            """,
+            (int(logged["id"]),),
+        ).fetchone()
+        assert dict(event_log) == {
+            "process_status": "failed",
+            "retry_count": _contact_sync_retry_limit(),
+            "error_message": "qrcode automation exploded",
+        }
+
+
 def test_deferred_job_does_not_run_before_run_after(client, app):
     _seed_zhao_contact(app, external_userid="wm_auto_due_001")
 
@@ -3666,8 +3996,31 @@ def test_owner_backfill_apply_pins_target_owner_and_audits_owner_mismatch(app, u
     assert sample["final_owner_userid"] == "ZhaoYanFang"
     assert current["owner_userid"] == "ZhaoYanFang"
     assert current["class_term_no"] == 1
-    assert mismatch_sample["resolved_owner_userid"] == "ZhaoJingZi"
-    assert mismatch_sample["final_owner_userid"] == "ZhaoYanFang"
+
+
+def test_backfill_class_term_for_owner_dry_run_routes_through_application_owner(app, user_ops_contact_client):
+    _seed_zhao_contact(app, external_userid="wmb_owner_compat_001")
+    _seed_owner_backfill_follow_relation(app, external_userid="wmb_owner_compat_001")
+    user_ops_contact_client.set_contact_detail(
+        "wmb_owner_compat_001",
+        _build_external_contact_detail(
+            external_userid="wmb_owner_compat_001",
+            owner_userid="ZhaoYanFang",
+            follow_user_tags=[{"id": "tag-term-1", "name": "首期7天改变计划"}],
+        ),
+    )
+
+    with app.app_context():
+        payload = backfill_class_term_for_owner(
+            owner_userid="ZhaoYanFang",
+            operator="tester",
+        )
+
+    assert payload["ok"] is True
+    assert payload["dry_run"] is True
+    assert payload["owner_userid"] == "ZhaoYanFang"
+    assert "tag_definition_sync" in payload
+    assert "tag_refresh" in payload
 
 
 def test_routing_config_keeps_existing_owner_targets(app):

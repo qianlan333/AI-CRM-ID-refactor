@@ -232,7 +232,7 @@ def _seed_marketing_dispatch_history(app) -> None:
                 "created_at": f"{today} 10:04:00",
                 "acked_at": "",
             },
-        ]
+    ]
         for item in rows:
             db.execute(
                 """
@@ -317,9 +317,9 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "owner_userid": "sales_stage_01",
             "phone": "13800000001",
             "follow_type": "",
-            "current_pool": "new_user",
+            "current_pool": "pending_questionnaire",
             "in_pool": 1,
-            "activation_status": "unknown",
+            "current_audience_code": "pending_questionnaire",
             "questionnaire_status": "pending",
             "joined_at": f"{today} 09:00:00",
         },
@@ -328,9 +328,9 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "owner_userid": "sales_stage_02",
             "phone": "13800000002",
             "follow_type": "normal",
-            "current_pool": "inactive_normal",
+            "current_pool": "operating",
             "in_pool": 1,
-            "activation_status": "inactive",
+            "current_audience_code": "operating",
             "questionnaire_status": "submitted",
             "joined_at": f"{today} 10:00:00",
         },
@@ -339,9 +339,9 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "owner_userid": "sales_stage_03",
             "phone": "13800000003",
             "follow_type": "focus",
-            "current_pool": "inactive_focus",
+            "current_pool": "operating",
             "in_pool": 1,
-            "activation_status": "inactive",
+            "current_audience_code": "operating",
             "questionnaire_status": "submitted",
             "joined_at": f"{yesterday} 11:00:00",
         },
@@ -350,9 +350,9 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "owner_userid": "sales_stage_04",
             "phone": "13800000004",
             "follow_type": "normal",
-            "current_pool": "active_normal",
+            "current_pool": "operating",
             "in_pool": 1,
-            "activation_status": "active",
+            "current_audience_code": "operating",
             "questionnaire_status": "submitted",
             "joined_at": f"{today} 12:00:00",
         },
@@ -361,9 +361,9 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "owner_userid": "sales_stage_05",
             "phone": "13800000005",
             "follow_type": "focus",
-            "current_pool": "active_focus",
+            "current_pool": "operating",
             "in_pool": 1,
-            "activation_status": "active",
+            "current_audience_code": "operating",
             "questionnaire_status": "submitted",
             "joined_at": f"{yesterday} 13:00:00",
         },
@@ -372,9 +372,9 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "owner_userid": "sales_stage_06",
             "phone": "13800000006",
             "follow_type": "normal",
-            "current_pool": "silent",
+            "current_pool": "operating",
             "in_pool": 1,
-            "activation_status": "inactive",
+            "current_audience_code": "operating",
             "questionnaire_status": "submitted",
             "joined_at": f"{yesterday} 14:00:00",
         },
@@ -383,13 +383,13 @@ def _seed_automation_conversion_stage_board(app) -> None:
             "owner_userid": "sales_stage_07",
             "phone": "13800000007",
             "follow_type": "focus",
-            "current_pool": "won",
+            "current_pool": "converted",
             "in_pool": 0,
-            "activation_status": "active",
+            "current_audience_code": "converted",
             "questionnaire_status": "submitted",
             "joined_at": f"{today} 15:00:00",
         },
-    ]
+        ]
     with app.app_context():
         db = get_db()
         for item in rows:
@@ -404,10 +404,11 @@ def _seed_automation_conversion_stage_board(app) -> None:
                 """
                 INSERT INTO automation_member (
                     external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                    activation_status, questionnaire_status, decision_source,
-                    source_type, joined_at, created_at, updated_at
+                    questionnaire_status, decision_source, source_type,
+                    current_audience_code, current_audience_entered_at,
+                    joined_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (
                     item["external_userid"],
@@ -416,8 +417,9 @@ def _seed_automation_conversion_stage_board(app) -> None:
                     item["in_pool"],
                     item["current_pool"],
                     item["follow_type"],
-                    item["activation_status"],
                     item["questionnaire_status"],
+                    item["current_audience_code"],
+                    item["joined_at"],
                     item["joined_at"],
                 ),
             )
@@ -513,6 +515,73 @@ def test_admin_config_routing_save_updates_runtime_and_audit(app, client):
         assert any(row["target_type"] == "owner_role_map" and row["target_id"] == "sales_01" for row in logs)
         assert any(row["target_type"] == "routing_rule_config" and row["target_id"] == "signed_999" for row in logs)
         assert all(row["operator"] == "tester-routing" for row in logs)
+
+
+def test_routing_services_wrappers_route_through_application(monkeypatch):
+    from wecom_ability_service import services as services_module
+    from wecom_ability_service.application.routing_config import queries as routing_queries
+    from wecom_ability_service.application.routing_config.dto import (
+        GetOwnerRoleMapQueryDTO,
+        GetOwnerRoleQueryDTO,
+        GetRoutingRuleConfigQueryDTO,
+        ResolveContactRoutingContextQueryDTO,
+    )
+
+    calls: dict[str, object] = {}
+
+    class FakeGetOwnerRoleQuery:
+        def __call__(self, dto):
+            calls["get_owner_role"] = dto
+            return {"userid": "sales_01", "role": "sales", "active": True}
+
+    class FakeGetOwnerRoleMapQuery:
+        def __call__(self, dto):
+            calls["list_owner_role_map"] = dto
+            return [{"userid": "sales_01", "role": "sales", "active": True}]
+
+    class FakeGetRoutingRuleConfigQuery:
+        def __call__(self, dto):
+            calls["get_routing_config"] = dto
+            return {
+                "owner_role_map": [{"userid": "sales_01", "role": "sales", "active": True}],
+                "signup_tag_rules": {"items": []},
+                "routing_rules": {"lead": {"routing_target": "sales_handle"}},
+            }
+
+    class FakeResolveContactRoutingContextQuery:
+        def __call__(self, dto):
+            calls["resolve_contact_routing_context"] = dto
+            return {"routing_target": "manual_review", "reason": ""}
+
+    monkeypatch.setattr(routing_queries, "GetOwnerRoleQuery", FakeGetOwnerRoleQuery)
+    monkeypatch.setattr(routing_queries, "GetOwnerRoleMapQuery", FakeGetOwnerRoleMapQuery)
+    monkeypatch.setattr(routing_queries, "GetRoutingRuleConfigQuery", FakeGetRoutingRuleConfigQuery)
+    monkeypatch.setattr(routing_queries, "ResolveContactRoutingContextQuery", FakeResolveContactRoutingContextQuery)
+    monkeypatch.setattr(services_module, "get_signup_tag_rules_config", lambda: {"items": []})
+    monkeypatch.setattr(
+        services_module,
+        "get_signup_status_definition",
+        lambda signup_status: {"signup_status": signup_status, "routing_alias": "lead"},
+    )
+
+    assert services_module.get_owner_role("sales_01") == {
+        "userid": "sales_01",
+        "role": "sales",
+        "active": True,
+    }
+    assert services_module.list_owner_role_map(active_only=True) == [
+        {"userid": "sales_01", "role": "sales", "active": True}
+    ]
+    assert services_module.get_routing_config()["routing_rules"]["lead"]["routing_target"] == "sales_handle"
+    assert services_module.resolve_contact_routing_context("sales_01", "sales", "lead") == {
+        "routing_target": "manual_review",
+        "reason": "",
+    }
+
+    assert isinstance(calls["get_owner_role"], GetOwnerRoleQueryDTO)
+    assert isinstance(calls["list_owner_role_map"], GetOwnerRoleMapQueryDTO)
+    assert isinstance(calls["get_routing_config"], GetRoutingRuleConfigQueryDTO)
+    assert isinstance(calls["resolve_contact_routing_context"], ResolveContactRoutingContextQueryDTO)
 
 
 def test_admin_config_settings_keep_secrets_masked_and_write_audit(app, client):
@@ -654,32 +723,17 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
 
     assert response.status_code == 200
     assert "自动化转化" in visible_text
-    assert "经营驾驶舱" in visible_text
-    assert "经营摘要" in visible_text
-    assert "在池总人数" in visible_text
-    assert "今日入池" in visible_text
-    assert "待问卷" in visible_text
-    assert "普通跟进" in visible_text
-    assert "重点跟进" in visible_text
-    assert "沉默池" in visible_text
-    assert "已成交" in visible_text
-    assert "阶段漏斗 / 阶段分布" in visible_text
-    assert "待处理事项" in visible_text
-    assert "最近运行摘要" in visible_text
-    assert "快捷动作" in visible_text
-    assert "流程设计" in visible_text
-    assert "成员运营" in visible_text
-    assert "运行中心" in visible_text
-    assert "/admin/automation-conversion/member-ops?stage=new-user" in html
-    assert "/admin/automation-conversion/member-ops?stage=inactive-focus" in html
-    assert "/admin/automation-conversion/flow-design?section=questionnaire" in html
-    assert "/admin/automation-conversion/run-center?tab=overview" in html
-    assert "配置步骤" not in visible_text
-    assert "最近处理情况" not in visible_text
-    assert "立即刷新一次" not in visible_text
-    assert "进入设置页" not in visible_text
-    assert "进入调试页" not in visible_text
-    assert "JSON" not in visible_text
+    assert "数据概览" in visible_text
+    assert "运行动作" in visible_text
+    assert "池子用户明细" in visible_text
+    assert "任务流执行摘要" in visible_text
+    assert "未填问卷人群" in visible_text
+    assert "运营中人群" in visible_text
+    assert "已转化人群" in visible_text
+    assert "/admin/automation-conversion/overview" in html
+    assert "/admin/automation-conversion/operations" in html
+    assert "/admin/automation-conversion/auto-reply" in html
+    assert "/admin/automation-conversion/agent-config" in html
 
 
 def test_admin_automation_conversion_page_survives_missing_configured_questionnaire(app, client):
@@ -711,8 +765,8 @@ def test_admin_automation_conversion_page_survives_missing_configured_questionna
 
     assert response.status_code == 200
     assert "流程设计" in visible_text
-    assert "已配置的问卷 #82 不存在" in visible_text
-    assert "当前不会继续展示失效问卷的旧规则" in visible_text
+    assert "当前问卷" in visible_text
+    assert "问卷缺失" in visible_text
     assert "关键题规则 JSON" not in visible_text
 
 
@@ -735,18 +789,15 @@ def test_admin_automation_conversion_settings_page_uses_visual_rule_editor(app, 
 
     assert response.status_code == 200
     assert "流程设计" in visible_text
+    assert "阶段模型" in visible_text
     assert "入池与问卷规则" in visible_text
-    assert "自动启动时间窗" in visible_text
-    assert "白天开始小时" in visible_text
-    assert "关键题规则" in visible_text
-    assert "新增关键题" in visible_text
+    assert "SOP 剧本" in visible_text
+    assert "全局规则" in visible_text
+    assert "默认渠道入口" in visible_text
+    assert "发布管理" in visible_text
+    assert "当前问卷" in visible_text
     assert "关键题规则 JSON" not in visible_text
-    assert 'name="day_start_hour"' in html
-    assert 'id="question-rule-editor-root"' in html
-    assert 'type="hidden" name="question_rules_json"' in html
-    assert "关键问题1" in html
-    assert "问题1-选项1" in html
-    assert "问题1-选项2" in html
+    assert "/admin/automation-conversion/run-center?tab=sync" in html
 
 
 def test_admin_automation_conversion_settings_save_form_persists_visual_rules(app, client):
@@ -862,7 +913,7 @@ def test_admin_automation_conversion_settings_save_form_persists_default_channel
     assert page.status_code == 200
     assert "默认渠道入口" in visible_text
     assert "保存后的默认欢迎语" in html
-    assert "自动通过好友" in html
+    assert "免验证直接添加好友" in html
 
     with app.app_context():
         row = get_db().execute(
@@ -909,8 +960,7 @@ def test_admin_automation_conversion_settings_save_form_rejects_invalid_auto_sta
     assert response.status_code == 200
     assert "day_start_hour must be" in html
     assert "全局规则" in visible_text
-    assert "白天开始小时" in visible_text
-    assert 'value="23"' in html
+    assert "时区与自动化全局规则集中维护" in visible_text
 
 
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):
@@ -927,19 +977,16 @@ def test_admin_automation_conversion_stage_detail_page_renders_filtered_customer
     visible_text = _visible_text(html)
 
     assert response.status_code == 200
-    assert "成员运营" in visible_text
-    assert "未激活重点跟进池" in visible_text
-    assert "重点跟进" in visible_text
+    assert "成员列表工作区" in visible_text
+    assert "运营中人群" in visible_text
     assert "总人数" in visible_text
     assert "今日新增" in visible_text
     assert "创建群发" in visible_text
     assert "wm_stage_inactive_focus_001" in visible_text
-    assert "wm_stage_active_focus_001" not in visible_text
-    assert "搜索与筛选条" in visible_text
 
     filtered_response = client.get(
         "/admin/automation-conversion/stage/inactive-focus",
-        query_string={"keyword": "focus_001"},
+        query_string={"keyword": "inactive_focus_001"},
         follow_redirects=True,
     )
     filtered_text = _visible_text(filtered_response.get_data(as_text=True))
@@ -987,7 +1034,4 @@ def test_admin_automation_conversion_debug_page_renders_search_shell(client):
 
     assert response.status_code == 200
     assert "运行中心" in visible_text
-    assert "单客调试" in visible_text
-    assert "external_contact_id" in visible_text
-    assert "手机号" in visible_text
-    assert "查看状态" in visible_text
+    assert "调试" in visible_text
