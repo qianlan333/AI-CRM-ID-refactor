@@ -1219,6 +1219,22 @@ def _sync_sop_progress_for_transition(before: dict[str, Any], after: dict[str, A
     )
 
 
+def _sync_sop_progress_for_transition_non_blocking(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    try:
+        _sync_sop_progress_for_transition(before, after)
+        get_db().commit()
+        return {"attempted": True, "ok": True, "error": ""}
+    except Exception as exc:
+        get_db().rollback()
+        current_app.logger.exception(
+            "automation conversion sop progress sync failed member_id=%s before_pool=%s after_pool=%s",
+            int(after.get("id") or 0),
+            _normalized_text(before.get("current_pool")),
+            _normalized_text(after.get("current_pool")),
+        )
+        return {"attempted": True, "ok": False, "error": str(exc)}
+
+
 def _persist_member(member: dict[str, Any] | None, payload: dict[str, Any]) -> dict[str, Any]:
     db = get_db()
     try:
@@ -1231,12 +1247,12 @@ def _persist_member(member: dict[str, Any] | None, payload: dict[str, Any]) -> d
 
         sync_conversion_member_audience(saved)
         saved = repo.get_member_by_id(int(saved["id"])) or saved
-        _sync_sop_progress_for_transition(before, _serialize_member(saved))
         db.commit()
-        return saved
     except Exception:
         db.rollback()
         raise
+    _sync_sop_progress_for_transition_non_blocking(before, _serialize_member(saved))
+    return repo.get_member_by_id(int(saved["id"])) or saved
 
 
 def _write_event(

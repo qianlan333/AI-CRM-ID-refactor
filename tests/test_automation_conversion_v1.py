@@ -10058,7 +10058,7 @@ def test_qrcode_callback_creates_member_and_event(app):
             "phone": "13800004001",
             "owner_staff_id": "HuangYouCan",
             "in_pool": 1,
-            "current_pool": "new_user",
+            "current_pool": "pending_questionnaire",
             "source_type": "qrcode",
         }
         event = db.execute(
@@ -10229,4 +10229,101 @@ def test_qrcode_callback_applies_entry_tag_and_persists_snapshot(app, monkeypatc
         assert [dict(row) for row in events] == [
             {"action": "qrcode_entry_tag_applied", "remark": "渠道报名"},
             {"action": "qrcode_enter", "remark": ""},
+        ]
+
+
+def test_qrcode_callback_continues_welcome_and_tag_when_sop_progress_sync_fails(app, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import service as automation_service
+
+    sent_payloads: dict[str, dict[str, object]] = {}
+
+    class _StubContactClient:
+        def send_welcome_msg(self, payload: dict[str, object]) -> dict[str, object]:
+            sent_payloads["welcome"] = payload
+            return {"errcode": 0, "errmsg": "ok"}
+
+    class _StubAppClient:
+        def mark_external_contact_tags(
+            self,
+            *,
+            external_userid: str,
+            follow_user_userid: str,
+            add_tags: list[str],
+            remove_tags: list[str],
+        ) -> dict[str, object]:
+            sent_payloads["tag"] = {
+                "external_userid": external_userid,
+                "follow_user_userid": follow_user_userid,
+                "add_tags": list(add_tags),
+                "remove_tags": list(remove_tags),
+            }
+            return {"errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setattr(automation_service, "get_contact_runtime_client", lambda: _StubContactClient())
+    monkeypatch.setattr(automation_service, "get_app_runtime_client", lambda: _StubAppClient())
+    monkeypatch.setattr(
+        automation_service,
+        "_sync_sop_progress_for_transition",
+        lambda before, after: (_ for _ in ()).throw(RuntimeError("sop progress write failed")),
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_channel (
+                channel_code, channel_name, scene_value, owner_staff_id, welcome_message,
+                entry_tag_id, entry_tag_name, entry_tag_group_name, status, created_at, updated_at
+            )
+            VALUES (
+                'default_qrcode', '默认渠道二维码', 'scene-non-blocking', 'HuangYouCan', '欢迎加入',
+                'tag-channel-002', '渠道报名', '渠道来源', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.commit()
+
+        result = automation_service.handle_qrcode_enter_from_callback(
+            external_contact_id="wm_qrcode_non_blocking_001",
+            phone="13800004005",
+            payload_json={"state": "scene-non-blocking", "WelcomeCode": "welcome-non-blocking-001"},
+            operator_id="callback-user",
+            send_welcome_message=True,
+        )
+
+        assert result["handled"] is True
+        assert result["welcome_message"]["sent"] is True
+        assert result["entry_tag"]["applied"] is True
+        assert sent_payloads["welcome"] == {
+            "welcome_code": "welcome-non-blocking-001",
+            "text": {"content": "欢迎加入"},
+        }
+        assert sent_payloads["tag"] == {
+            "external_userid": "wm_qrcode_non_blocking_001",
+            "follow_user_userid": "HuangYouCan",
+            "add_tags": ["tag-channel-002"],
+            "remove_tags": [],
+        }
+
+        member = db.execute(
+            """
+            SELECT external_contact_id, owner_staff_id, in_pool, source_type
+            FROM automation_member
+            WHERE external_contact_id = ?
+            """,
+            ("wm_qrcode_non_blocking_001",),
+        ).fetchone()
+        assert dict(member) == {
+            "external_contact_id": "wm_qrcode_non_blocking_001",
+            "owner_staff_id": "HuangYouCan",
+            "in_pool": 1,
+            "source_type": "qrcode",
+        }
+        events = db.execute(
+            "SELECT action FROM automation_event ORDER BY id DESC LIMIT 3"
+        ).fetchall()
+        assert [str(row["action"]) for row in events] == [
+            "qrcode_entry_tag_applied",
+            "qrcode_welcome_sent",
+            "qrcode_enter",
         ]

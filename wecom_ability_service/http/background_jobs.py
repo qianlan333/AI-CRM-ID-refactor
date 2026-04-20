@@ -223,18 +223,19 @@ def _process_external_contact_event(event_log_id: int) -> dict:
                 )
             except Exception:
                 callback_logger.exception("customer pulse enqueue failed external_userid=%s", external_userid)
-            try:
-                handle_qrcode_enter_from_callback(
-                    external_contact_id=external_userid,
-                    phone=str(normalized_contact.get("mobile") or "").strip(),
-                    payload_json=event_log.get("payload_json") or {},
-                    operator_id=user_id or "wecom_callback",
-                    send_welcome_message=change_type in {"add_external_contact", "add_half_external_contact"},
-                )
-            except Exception:
-                callback_logger.exception(
-                    "automation conversion qrcode enter handling failed external_userid=%s",
+            qrcode_result = handle_qrcode_enter_from_callback(
+                external_contact_id=external_userid,
+                phone=str(normalized_contact.get("mobile") or "").strip(),
+                payload_json=event_log.get("payload_json") or {},
+                operator_id=user_id or "wecom_callback",
+                send_welcome_message=change_type in {"add_external_contact", "add_half_external_contact"},
+            )
+            if bool(qrcode_result.get("handled")):
+                callback_logger.info(
+                    "external contact qrcode automation handled external_userid=%s welcome=%s entry_tag=%s",
                     external_userid,
+                    qrcode_result.get("welcome_message"),
+                    qrcode_result.get("entry_tag"),
                 )
             if change_type in {"add_external_contact", "add_half_external_contact"}:
                 scheduled_auto_assign_job = schedule_user_ops_auto_assign_class_term_job(
