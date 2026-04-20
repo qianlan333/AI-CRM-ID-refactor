@@ -1326,6 +1326,82 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
     assert summaries[2]["diagnostics"]["recipient_filter_behavior_tier_miss_count"] == 1
 
 
+def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_usage_source_as_zero(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_operating_missing_usage_zero", mobile="13800006931", owner_userid="sales_01", customer_name="missing-usage-zero")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_operating_missing_usage_zero",
+        phone="13800006931",
+        owner_staff_id="sales_01",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+        joined_at="2026-04-18 08:00:00",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_operating_missing_usage_zero",
+        audience_code="operating",
+        entered_at="2026-04-18 08:00:00",
+    )
+
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="运营中缺失使用源按0次轮巡",
+        audiences=["operating"],
+        recipient_filter_basis="behavior",
+        recipient_behavior_tier_keys=["lt_2"],
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "第3天激活提醒",
+                "target_audience_code": "operating",
+                "trigger_mode": "daily_recurring",
+                "day_offset": 3,
+                "send_time": "09:00",
+                "content_mode": "standard_direct",
+                "standard_content_text": "第3天激活提醒",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    dispatched: list[dict[str, object]] = []
+    _mock_workflow_runtime_now(monkeypatch, "2026-04-20 09:05:00")
+    _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={})
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1901, "wecom_result": {"msgid": "msg-1901"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        execution_row = get_db().execute(
+            """
+            SELECT success_count, skipped_count, summary_json
+            FROM automation_workflow_execution
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    summary = json.loads(execution_row["summary_json"])
+    assert result["total_success_count"] == 1
+    assert len(dispatched) == 1
+    assert dispatched[0]["text"]["content"] == "第3天激活提醒"
+    assert execution_row["success_count"] == 1
+    assert execution_row["skipped_count"] == 0
+    assert summary["zero_hit_reasons"] == []
+    assert summary["result"]["success_count"] == 1
+
+
 def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_renders_node_segment_content(app, monkeypatch):
     _seed_contact(app, external_userid="wm_legacy_layered_001", mobile="13800005554", owner_userid="sales_01", customer_name="legacy 脏配置客户")
     _seed_automation_member(
@@ -1738,7 +1814,7 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app, monk
     assert set(operating_item) == expected_dashboard_item_keys
 
 
-def test_conversion_dashboard_payload_does_not_bucket_members_without_message_activity_match(app, monkeypatch):
+def test_conversion_dashboard_payload_treats_operating_members_without_message_activity_match_as_zero_usage(app, monkeypatch):
     _seed_automation_member(
         app,
         external_contact_id="wm_dashboard_missing_usage_001",
@@ -1769,9 +1845,45 @@ def test_conversion_dashboard_payload_does_not_bucket_members_without_message_ac
         if item["external_contact_id"] == "wm_dashboard_missing_usage_001"
     )
 
-    assert operating_item["behavior_segment_key"] == ""
-    assert operating_item["behavior_segment_label"] == ""
+    assert operating_item["behavior_segment_key"] == "lt_2"
+    assert operating_item["behavior_segment_label"] == "消息少于 2"
     assert operating_item["conversation_count"] == 0
+
+
+def test_conversion_dashboard_payload_keeps_pending_members_without_message_activity_match_unbucketed(app, monkeypatch):
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_pending_missing_usage_001",
+        phone="13800008119",
+        owner_staff_id="sales_overview",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_pending_missing_usage_001",
+        audience_code="pending_questionnaire",
+        entered_at="2026-04-10 10:00:00",
+    )
+    _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800008108": 1})
+
+    with app.app_context():
+        payload = get_conversion_dashboard_payload()
+
+    pending_item = next(
+        item
+        for group in payload["audience_member_details"]["groups"]
+        if group["audience_code"] == "pending_questionnaire"
+        for item in group["items"]
+        if item["external_contact_id"] == "wm_dashboard_pending_missing_usage_001"
+    )
+
+    assert pending_item["behavior_segment_key"] == ""
+    assert pending_item["behavior_segment_label"] == ""
+    assert pending_item["conversation_count"] == 0
 
 
 def test_dashboard_questionnaire_status_prefers_latest_submission_truth_over_stale_member_mirror(app):

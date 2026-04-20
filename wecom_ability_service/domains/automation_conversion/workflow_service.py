@@ -1850,12 +1850,19 @@ def _message_activity_count_map_by_phone_match_key() -> dict[str, int]:
     }
 
 
-def _message_activity_for_phone(phone: Any, *, counts_by_match_key: dict[str, int]) -> dict[str, Any]:
+def _message_activity_for_phone(phone: Any, *, counts_by_match_key: dict[str, int], audience_code: str = "") -> dict[str, Any]:
     digits = "".join(char for char in _normalized_text(phone) if char.isdigit())
     if len(digits) < 7:
         return {"available": False, "message_count": 0, "phone_match_key": ""}
     phone_match_key = f"{digits[:3]}_{digits[-4:]}"
     if phone_match_key not in counts_by_match_key:
+        if _normalized_text(audience_code) in {AUDIENCE_OPERATING, AUDIENCE_CONVERTED}:
+            return {
+                "available": True,
+                "message_count": 0,
+                "phone_match_key": phone_match_key,
+                "source": "message_activity_db_missing_as_zero",
+            }
         return {"available": False, "message_count": 0, "phone_match_key": phone_match_key}
     return {
         "available": True,
@@ -2049,6 +2056,7 @@ def _build_dashboard_member_detail_item(
     message_activity = _message_activity_for_phone(
         member.get("phone"),
         counts_by_match_key=message_activity_counts_by_match_key,
+        audience_code=audience_code,
     )
     message_count = int(message_activity.get("message_count") or 0)
     behavior_tier = _behavior_tier_for_count(message_count) if bool(message_activity.get("available")) else {}

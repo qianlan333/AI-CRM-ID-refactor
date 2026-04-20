@@ -27,8 +27,13 @@ WHERE u.is_deleted = 0
   AND u.phone IS NOT NULL
   AND TRIM(u.phone) <> ''
   AND CHAR_LENGTH(TRIM(u.phone)) >= 7
-  AND u.nickname NOT LIKE '%neo%'
-  AND u.nickname NOT LIKE '%Neo%'
+  AND (
+    u.nickname IS NULL
+    OR (
+      u.nickname NOT LIKE '%neo%'
+      AND u.nickname NOT LIKE '%Neo%'
+    )
+  )
 GROUP BY
   LEFT(TRIM(u.phone), 3),
   RIGHT(TRIM(u.phone), 4),
