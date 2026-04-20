@@ -32,6 +32,7 @@ from .workflow_definitions import (
     GENERATION_MODE_MANUAL_LAYERED,
     GENERATION_MODE_PERSONALIZED_SINGLE,
     NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
+    NODE_TRIGGER_MODE_DAILY_RECURRING,
     NODE_TRIGGER_MODE_SCHEDULED,
     RECIPIENT_FILTER_BASIS_BEHAVIOR,
     RECIPIENT_FILTER_BASIS_NONE,
@@ -117,6 +118,8 @@ def _node_trigger_mode(node: dict[str, Any]) -> str:
     normalized = _normalized_text(node.get("trigger_mode"))
     if normalized == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
         return NODE_TRIGGER_MODE_AUDIENCE_ENTERED
+    if normalized == NODE_TRIGGER_MODE_DAILY_RECURRING:
+        return NODE_TRIGGER_MODE_DAILY_RECURRING
     return NODE_TRIGGER_MODE_SCHEDULED
 
 
@@ -1154,12 +1157,17 @@ def _process_execution_item(
     )
 
 
-def _scheduled_sequence_nodes(workflow_bundle: dict[str, Any], *, target_audience_code: str) -> list[dict[str, Any]]:
+def _timed_sequence_nodes(
+    workflow_bundle: dict[str, Any],
+    *,
+    target_audience_code: str,
+    trigger_mode: str,
+) -> list[dict[str, Any]]:
     nodes = [
         dict(item)
         for item in (workflow_bundle.get("nodes") or [])
         if bool(item.get("enabled"))
-        and _node_trigger_mode(dict(item)) == NODE_TRIGGER_MODE_SCHEDULED
+        and _node_trigger_mode(dict(item)) == _normalized_text(trigger_mode)
         and _normalized_text(item.get("target_audience_code")) == _normalized_text(target_audience_code)
     ]
     return sorted(
@@ -1173,10 +1181,16 @@ def _scheduled_sequence_nodes(workflow_bundle: dict[str, Any], *, target_audienc
     )
 
 
-def _scheduled_history_index(*, workflow_id: int, audience_rows: list[dict[str, Any]]) -> dict[str, dict[int, set[Any]]]:
-    history_rows = workflow_repo.list_workflow_sent_scheduled_execution_history_rows(
+def _timed_history_index(
+    *,
+    workflow_id: int,
+    audience_rows: list[dict[str, Any]],
+    trigger_modes: list[str],
+) -> dict[str, dict[int, set[Any]]]:
+    history_rows = workflow_repo.list_workflow_sent_timed_execution_history_rows(
         workflow_id=int(workflow_id),
         audience_entry_ids=[int(row.get("id") or 0) for row in audience_rows],
+        trigger_modes=trigger_modes,
     )
     sent_node_ids_by_entry: dict[int, set[int]] = {}
     sent_dates_by_entry: dict[int, set[str]] = {}
@@ -1215,6 +1229,25 @@ def _first_due_unsent_scheduled_node_id(
             continue
         return node_id
     return None
+
+
+def _current_daily_recurring_node_id(
+    *,
+    sequence_nodes: list[dict[str, Any]],
+    entered_at: str,
+    scheduled_for: str,
+) -> int | None:
+    current_node_id: int | None = None
+    for sequence_node in sequence_nodes:
+        node_day_index = _node_day_index(
+            entered_at=entered_at,
+            send_time=_normalized_text(sequence_node.get("send_time")),
+            scheduled_for=scheduled_for,
+        )
+        if node_day_index is None or node_day_index < int(sequence_node.get("day_offset") or 1):
+            continue
+        current_node_id = int(sequence_node.get("id") or 0) or None
+    return current_node_id
 
 
 def _base_execution_diagnostics(*, execution: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
@@ -1280,20 +1313,22 @@ def _upsert_node_execution_candidates(
     audience_map: dict[int, dict[str, Any]] = {}
     diagnostics = _base_execution_diagnostics(execution=execution, node=node)
     trigger_mode = _node_trigger_mode(node)
-    sequence_nodes = _scheduled_sequence_nodes(
+    sequence_nodes = _timed_sequence_nodes(
         workflow_bundle,
         target_audience_code=_normalized_text(node.get("target_audience_code")),
-    ) if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED else []
-    history_index = _scheduled_history_index(
+        trigger_mode=trigger_mode,
+    ) if trigger_mode in {NODE_TRIGGER_MODE_SCHEDULED, NODE_TRIGGER_MODE_DAILY_RECURRING} else []
+    history_index = _timed_history_index(
         workflow_id=int(execution.get("workflow_id") or 0),
         audience_rows=audience_rows,
-    ) if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED else {"sent_node_ids_by_entry": {}, "sent_dates_by_entry": {}}
+        trigger_modes=[trigger_mode],
+    ) if trigger_mode in {NODE_TRIGGER_MODE_SCHEDULED, NODE_TRIGGER_MODE_DAILY_RECURRING} else {"sent_node_ids_by_entry": {}, "sent_dates_by_entry": {}}
     scheduled_date = _date_text(scheduled_for)
     for row in audience_rows:
         entry_id = int(row.get("id") or 0)
         diagnostics["candidate_audience_total"] += 1
         audience_map[entry_id] = dict(row)
-        if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED:
+        if trigger_mode in {NODE_TRIGGER_MODE_SCHEDULED, NODE_TRIGGER_MODE_DAILY_RECURRING}:
             node_day_index = _node_day_index(
                 entered_at=_normalized_text(row.get("entered_at")),
                 send_time=_normalized_text(node.get("send_time")),
@@ -1302,23 +1337,33 @@ def _upsert_node_execution_candidates(
             if node_day_index is None or node_day_index < int(node.get("day_offset") or 1):
                 diagnostics["day_offset_miss_count"] += 1
                 continue
-            sent_node_ids = set((history_index.get("sent_node_ids_by_entry") or {}).get(entry_id) or set())
-            if int(node.get("id") or 0) in sent_node_ids:
-                diagnostics["already_sent_count"] += 1
-                continue
             sent_dates = set((history_index.get("sent_dates_by_entry") or {}).get(entry_id) or set())
             if scheduled_date and scheduled_date in sent_dates:
                 diagnostics["sent_today_count"] += 1
                 continue
-            first_due_unsent_node_id = _first_due_unsent_scheduled_node_id(
-                sequence_nodes=sequence_nodes,
-                sent_node_ids=sent_node_ids,
-                entered_at=_normalized_text(row.get("entered_at")),
-                scheduled_for=scheduled_for,
-            )
-            if first_due_unsent_node_id != int(node.get("id") or 0):
-                diagnostics["sequence_wait_count"] += 1
-                continue
+            if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED:
+                sent_node_ids = set((history_index.get("sent_node_ids_by_entry") or {}).get(entry_id) or set())
+                if int(node.get("id") or 0) in sent_node_ids:
+                    diagnostics["already_sent_count"] += 1
+                    continue
+                first_due_unsent_node_id = _first_due_unsent_scheduled_node_id(
+                    sequence_nodes=sequence_nodes,
+                    sent_node_ids=sent_node_ids,
+                    entered_at=_normalized_text(row.get("entered_at")),
+                    scheduled_for=scheduled_for,
+                )
+                if first_due_unsent_node_id != int(node.get("id") or 0):
+                    diagnostics["sequence_wait_count"] += 1
+                    continue
+            elif trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING:
+                current_recurring_node_id = _current_daily_recurring_node_id(
+                    sequence_nodes=sequence_nodes,
+                    entered_at=_normalized_text(row.get("entered_at")),
+                    scheduled_for=scheduled_for,
+                )
+                if current_recurring_node_id != int(node.get("id") or 0):
+                    diagnostics["sequence_wait_count"] += 1
+                    continue
         member = dict(row.get("member") or {})
         recipient_filter_result = _member_workflow_recipient_filter_result(member, workflow_bundle)
         if not bool(recipient_filter_result.get("matched")):
@@ -1403,6 +1448,7 @@ def _execution_summary_from_items(items: list[dict[str, Any]]) -> tuple[str, dic
 
 def _zero_hit_reasons(diagnostics: dict[str, Any], counters: dict[str, int]) -> list[str]:
     reasons: list[str] = []
+    trigger_mode = _normalized_text(diagnostics.get("trigger_mode"))
     if int(diagnostics.get("candidate_audience_total") or 0) <= 0:
         reasons.append("current_audience_empty")
     if int(counters.get("total_count") or 0) > 0:
@@ -1427,7 +1473,10 @@ def _zero_hit_reasons(diagnostics: dict[str, Any], counters: dict[str, int]) -> 
         ("recipient_filter_miss_count", "recipient_filter_not_matched"),
         ("already_sent_count", "node_already_sent_for_current_audience_entry"),
         ("sent_today_count", "workflow_already_sent_today"),
-        ("sequence_wait_count", "waiting_for_earlier_scheduled_node"),
+        (
+            "sequence_wait_count",
+            "waiting_for_current_recurring_stage" if trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING else "waiting_for_earlier_scheduled_node",
+        ),
     )
     for counter_key, reason_code in reason_map:
         if counter_key == "recipient_filter_miss_count" and has_specific_recipient_reason:
@@ -1471,7 +1520,8 @@ def _run_due_node(
     node: dict[str, Any],
     operator_id: str,
 ) -> dict[str, Any]:
-    if _node_trigger_mode(node) == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
+    trigger_mode = _node_trigger_mode(node)
+    if trigger_mode == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
         return _run_immediate_node(
             workflow_bundle=workflow_bundle,
             node=node,
@@ -1490,7 +1540,7 @@ def _run_due_node(
             "ok": True,
             "status": "not_due_yet",
             "node_id": int(node.get("id") or 0),
-            "trigger_mode": _node_trigger_mode(node),
+            "trigger_mode": trigger_mode,
             "scheduled_for": scheduled_for_dt.strftime("%Y-%m-%d %H:%M:%S"),
         }
         _log_runtime_event("node_not_due_yet", result)
@@ -1504,7 +1554,7 @@ def _run_due_node(
                 "execution_id": execution_key,
                 "workflow_id": int((workflow_bundle.get("workflow") or {}).get("id") or 0),
                 "node_id": int(node.get("id") or 0),
-                "trigger_type": "scheduled_poll",
+                "trigger_type": "daily_recurring_poll" if trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING else "scheduled_poll",
                 "audience_code": _normalized_text(node.get("target_audience_code")),
                 "scheduled_for": scheduled_for,
                 "status": "pending",

@@ -102,6 +102,7 @@
           <span>触发方式</span>
           <select name="trigger_mode">
             <option value="scheduled">进入人群后第 N 天指定时间运行</option>
+            <option value="daily_recurring">从第 N 天开始每天轮巡运行</option>
             <option value="audience_entered">进入目标人群后立即运行</option>
           </select>
         </label>
@@ -380,8 +381,8 @@
             <td><strong>${escapeHtml(node.node_name || node.node_code || '-')}</strong><div class="ac-ops-code">${escapeHtml(node.node_code || '')}</div></td>
             <td>${escapeHtml(audienceLabel(node.target_audience_code))}</td>
             <td>${escapeHtml(nodeTriggerModeLabel(node.trigger_mode || 'scheduled'))}</td>
-            <td>${node.trigger_mode === 'audience_entered' ? '-' : `第 ${escapeHtml(node.day_offset || 1)} 天`}</td>
-            <td>${escapeHtml(node.trigger_mode === 'audience_entered' ? '立即运行' : (node.send_time || '-'))}</td>
+            <td>${node.trigger_mode === 'audience_entered' ? '-' : (node.trigger_mode === 'daily_recurring' ? `第 ${escapeHtml(node.day_offset || 1)} 天起` : `第 ${escapeHtml(node.day_offset || 1)} 天`)}</td>
+            <td>${escapeHtml(node.trigger_mode === 'audience_entered' ? '立即运行' : (node.trigger_mode === 'daily_recurring' ? `每日 ${node.send_time || '-'}` : (node.send_time || '-')))}</td>
             <td>${escapeHtml(contentSummary)}</td>
             <td>${node.enabled ? '启用' : '停用'}</td>
             <td>
@@ -398,12 +399,16 @@
 
     function syncNodeTriggerModeFields() {
       const triggerMode = String(elements.nodeForm.elements.trigger_mode.value || 'scheduled');
-      const scheduled = triggerMode === 'scheduled';
-      elements.nodeDayOffsetField.hidden = !scheduled;
-      elements.nodeSendTimeField.hidden = !scheduled;
-      elements.nodeTriggerHelp.textContent = scheduled
-        ? '按时间点运行时，会在进入目标人群后的第 N 天指定时间执行。'
-        : '进入目标人群后立即运行时，不再要求配置第几天和时间。';
+      const usesScheduleFields = triggerMode !== 'audience_entered';
+      elements.nodeDayOffsetField.hidden = !usesScheduleFields;
+      elements.nodeSendTimeField.hidden = !usesScheduleFields;
+      if (triggerMode === 'scheduled') {
+        elements.nodeTriggerHelp.textContent = '按时间点运行时，会在进入目标人群后的第 N 天指定时间执行一次。';
+      } else if (triggerMode === 'daily_recurring') {
+        elements.nodeTriggerHelp.textContent = '每日轮巡时，会从进入目标人群后的第 N 天开始，每天在指定时间对当前仍在该人群内的成员执行一次。';
+      } else {
+        elements.nodeTriggerHelp.textContent = '进入目标人群后立即运行时，不再要求配置第几天和时间。';
+      }
     }
 
     function renderNodeVariantControls(node, segmentationBasis, forceShow) {
@@ -510,7 +515,7 @@
         }
       } else {
         if (!Number.isInteger(payload.day_offset) || payload.day_offset < 1) {
-          throw new Error('定时运行时必须填写有效的第几天');
+          throw new Error('当前触发方式必须填写有效的第几天');
         }
         if (!/^\d{2}:\d{2}$/.test(String(payload.send_time || ''))) {
           throw new Error('时间格式不正确');
@@ -547,7 +552,7 @@
         enabled: !!elements.nodeForm.elements.enabled.checked,
       };
 
-      if (triggerMode === 'scheduled') {
+      if (triggerMode !== 'audience_entered') {
         payload.day_offset = Number(elements.nodeForm.elements.day_offset.value || 1);
         payload.send_time = String(elements.nodeForm.elements.send_time.value || '09:00');
       }
