@@ -1738,6 +1738,42 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app, monk
     assert set(operating_item) == expected_dashboard_item_keys
 
 
+def test_conversion_dashboard_payload_does_not_bucket_members_without_message_activity_match(app, monkeypatch):
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_dashboard_missing_usage_001",
+        phone="13800008109",
+        owner_staff_id="sales_overview",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_dashboard_missing_usage_001",
+        audience_code="operating",
+        entered_at="2026-04-10 10:00:00",
+    )
+    _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800008108": 1})
+
+    with app.app_context():
+        payload = get_conversion_dashboard_payload()
+
+    operating_item = next(
+        item
+        for group in payload["audience_member_details"]["groups"]
+        if group["audience_code"] == "operating"
+        for item in group["items"]
+        if item["external_contact_id"] == "wm_dashboard_missing_usage_001"
+    )
+
+    assert operating_item["behavior_segment_key"] == ""
+    assert operating_item["behavior_segment_label"] == ""
+    assert operating_item["conversation_count"] == 0
+
+
 def test_dashboard_questionnaire_status_prefers_latest_submission_truth_over_stale_member_mirror(app):
     from wecom_ability_service.domains.automation_conversion.workflow_runtime import sync_conversion_member_audience
 

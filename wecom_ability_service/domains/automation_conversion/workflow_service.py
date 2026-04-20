@@ -1850,11 +1850,18 @@ def _message_activity_count_map_by_phone_match_key() -> dict[str, int]:
     }
 
 
-def _message_activity_count_for_phone(phone: Any, *, counts_by_match_key: dict[str, int]) -> int:
+def _message_activity_for_phone(phone: Any, *, counts_by_match_key: dict[str, int]) -> dict[str, Any]:
     digits = "".join(char for char in _normalized_text(phone) if char.isdigit())
     if len(digits) < 7:
-        return 0
-    return int(counts_by_match_key.get(f"{digits[:3]}_{digits[-4:]}") or 0)
+        return {"available": False, "message_count": 0, "phone_match_key": ""}
+    phone_match_key = f"{digits[:3]}_{digits[-4:]}"
+    if phone_match_key not in counts_by_match_key:
+        return {"available": False, "message_count": 0, "phone_match_key": phone_match_key}
+    return {
+        "available": True,
+        "message_count": int(counts_by_match_key.get(phone_match_key) or 0),
+        "phone_match_key": phone_match_key,
+    }
 
 
 def _latest_enabled_profile_segment_template_bundle() -> dict[str, Any]:
@@ -2039,11 +2046,12 @@ def _build_dashboard_member_detail_item(
         member=member,
     )
     questionnaire_status = _normalized_text(questionnaire.get("questionnaire_status"))
-    message_count = _message_activity_count_for_phone(
+    message_activity = _message_activity_for_phone(
         member.get("phone"),
         counts_by_match_key=message_activity_counts_by_match_key,
     )
-    behavior_tier = _behavior_tier_for_count(message_count)
+    message_count = int(message_activity.get("message_count") or 0)
+    behavior_tier = _behavior_tier_for_count(message_count) if bool(message_activity.get("available")) else {}
     profile_segment = _resolve_profile_segment_for_member(
         member=member,
         profile_segment_template_bundle=profile_segment_template_bundle,
