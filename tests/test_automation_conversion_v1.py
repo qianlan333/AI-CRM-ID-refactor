@@ -407,6 +407,17 @@ def _mock_workflow_runtime_usage_counts(
     usage_by_phone: dict[str, int] | None = None,
     configured: bool = True,
 ) -> None:
+    usage_rows = [
+        {
+            "phone_prefix3": digits[:3],
+            "phone_last4": digits[-4:],
+            "phone_match_key": f"{digits[:3]}_{digits[-4:]}",
+            "message_count": int(count),
+        }
+        for phone, count in (usage_by_phone or {}).items()
+        for digits in ["".join(char for char in str(phone) if char.isdigit())]
+        if len(digits) >= 7
+    ]
     status_payload = {
         "configured": configured,
         "missing_keys": [] if configured else ["MESSAGE_ACTIVITY_DB_HOST"],
@@ -417,17 +428,15 @@ def _mock_workflow_runtime_usage_counts(
     )
     monkeypatch.setattr(
         "wecom_ability_service.domains.automation_conversion.workflow_runtime.query_message_activity_counts",
-        lambda: [
-            {
-                "phone_prefix3": digits[:3],
-                "phone_last4": digits[-4:],
-                "phone_match_key": f"{digits[:3]}_{digits[-4:]}",
-                "message_count": int(count),
-            }
-            for phone, count in (usage_by_phone or {}).items()
-            for digits in ["".join(char for char in str(phone) if char.isdigit())]
-            if len(digits) >= 7
-        ],
+        lambda: list(usage_rows),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_service.get_message_activity_db_status",
+        lambda: dict(status_payload),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_service.query_message_activity_counts",
+        lambda: list(usage_rows),
     )
 
 
@@ -1180,6 +1189,143 @@ def test_run_due_conversion_workflows_backfills_existing_audience_members_after_
     assert summary["zero_hit_reasons"] == []
 
 
+def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_current_low_usage_members(app, monkeypatch):
+    members = (
+        ("wm_operating_recurring_day3", "13800006531", "2026-04-18 08:00:00", "第3天激活提醒"),
+        ("wm_operating_recurring_day4", "13800006541", "2026-04-17 08:00:00", "第4天使用场景激活"),
+        ("wm_operating_recurring_day5", "13800006551", "2026-04-16 08:00:00", "第5天结果预期激活"),
+    )
+    for external_userid, mobile, entered_at, _expected_text in members:
+        _seed_contact(app, external_userid=external_userid, mobile=mobile, owner_userid="sales_01", customer_name=external_userid)
+        _seed_automation_member(
+            app,
+            external_contact_id=external_userid,
+            phone=mobile,
+            owner_staff_id="sales_01",
+            current_pool="active_normal",
+            activation_status="active",
+            questionnaire_status="submitted",
+            questionnaire_follow_type="normal",
+            decision_source="questionnaire",
+            joined_at=entered_at,
+        )
+        _assign_member_to_current_audience(
+            app,
+            external_contact_id=external_userid,
+            audience_code="operating",
+            entered_at=entered_at,
+        )
+
+    _seed_contact(app, external_userid="wm_operating_recurring_too_early", mobile="13800006521", owner_userid="sales_01", customer_name="too-early")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_operating_recurring_too_early",
+        phone="13800006521",
+        owner_staff_id="sales_01",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+        joined_at="2026-04-19 08:00:00",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_operating_recurring_too_early",
+        audience_code="operating",
+        entered_at="2026-04-19 08:00:00",
+    )
+
+    _seed_contact(app, external_userid="wm_operating_recurring_high_usage", mobile="13800006561", owner_userid="sales_01", customer_name="high-usage")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_operating_recurring_high_usage",
+        phone="13800006561",
+        owner_staff_id="sales_01",
+        current_pool="active_normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+        decision_source="questionnaire",
+        joined_at="2026-04-16 08:00:00",
+    )
+    _assign_member_to_current_audience(
+        app,
+        external_contact_id="wm_operating_recurring_high_usage",
+        audience_code="operating",
+        entered_at="2026-04-16 08:00:00",
+    )
+
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="运营中每日轮巡促活",
+        audiences=["operating"],
+        recipient_filter_basis="behavior",
+        recipient_behavior_tier_keys=["lt_2"],
+        status="active",
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        for day_offset, node_name, content_text in (
+            (3, "第3天激活提醒", "第3天激活提醒"),
+            (4, "第4天使用场景激活", "第4天使用场景激活"),
+            (5, "第5天结果预期激活", "第5天结果预期激活"),
+        ):
+            create_conversion_workflow_node(
+                workflow_id,
+                {
+                    "node_name": node_name,
+                    "target_audience_code": "operating",
+                    "trigger_mode": "daily_recurring",
+                    "day_offset": day_offset,
+                    "send_time": "09:00",
+                    "content_mode": "standard_direct",
+                    "standard_content_text": content_text,
+                    "enabled": True,
+                },
+                operator_id="tester",
+            )
+
+    dispatched: list[dict[str, object]] = []
+    _mock_workflow_runtime_now(monkeypatch, "2026-04-20 09:05:00")
+    _mock_workflow_runtime_usage_counts(
+        monkeypatch,
+        usage_by_phone={
+            "13800006531": 1,
+            "13800006541": 1,
+            "13800006551": 1,
+            "13800006521": 1,
+            "13800006561": 12,
+        },
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1400 + len(dispatched), "wecom_result": {"msgid": f"msg-{1400 + len(dispatched)}"}},
+    )
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        execution_rows = get_db().execute(
+            """
+            SELECT execution_id, total_count, success_count, summary_json
+            FROM automation_workflow_execution
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    assert result["total_success_count"] == 3
+    assert [item["text"]["content"] for item in dispatched] == [
+        "第3天激活提醒",
+        "第4天使用场景激活",
+        "第5天结果预期激活",
+    ]
+    summaries = [json.loads(row["summary_json"]) for row in execution_rows]
+    assert [summary["result"]["success_count"] for summary in summaries] == [1, 1, 1]
+    assert summaries[0]["diagnostics"]["day_offset_miss_count"] == 1
+    assert summaries[2]["diagnostics"]["recipient_filter_behavior_tier_miss_count"] == 1
+
+
 def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_renders_node_segment_content(app, monkeypatch):
     _seed_contact(app, external_userid="wm_legacy_layered_001", mobile="13800005554", owner_userid="sales_01", customer_name="legacy 脏配置客户")
     _seed_automation_member(
@@ -1477,7 +1623,7 @@ def test_conversion_dashboard_payload_returns_empty_task_execution_summary_witho
     assert payload["task_execution_summary"] == {"items": [], "total": 0}
 
 
-def test_conversion_dashboard_payload_includes_audience_member_details(app):
+def test_conversion_dashboard_payload_includes_audience_member_details(app, monkeypatch):
     template_seed = _seed_profile_segment_template(app, questionnaire_id=731, template_name="概览画像模板")
     _save_signup_conversion_settings(
         app,
@@ -1542,6 +1688,14 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app):
         entered_at="2026-04-10 11:00:00",
     )
 
+    _mock_workflow_runtime_usage_counts(
+        monkeypatch,
+        usage_by_phone={
+            "13800008101": 1,
+            "13800008102": 0,
+        },
+    )
+
     with app.app_context():
         payload = get_conversion_dashboard_payload()
 
@@ -1561,8 +1715,6 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app):
         "phone",
         "audience_code",
         "audience_label",
-        "activation_status",
-        "activation_status_label",
         "questionnaire_status",
         "questionnaire_status_label",
         "profile_segment_key",
@@ -1574,16 +1726,15 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app):
     assert pending_item["external_contact_id"] == "wm_dashboard_pending_001"
     assert pending_item["questionnaire_status_label"] == "待提交"
     assert pending_item["profile_segment_label"] == ""
-    assert pending_item["behavior_segment_label"] == "小于 2"
+    assert pending_item["behavior_segment_label"] == "消息少于 2"
     assert pending_item["conversation_count"] == 0
     assert set(pending_item) == expected_dashboard_item_keys
 
     operating_item = groups["operating"]["items"][0]
     assert operating_item["external_contact_id"] == "wm_dashboard_operating_001"
-    assert operating_item["activation_status_label"] == "已激活"
     assert operating_item["profile_segment_label"] == "效率型"
-    assert operating_item["behavior_segment_label"] == "2 ~ 9"
-    assert operating_item["conversation_count"] == 3
+    assert operating_item["behavior_segment_label"] == "消息少于 2"
+    assert operating_item["conversation_count"] == 1
     assert set(operating_item) == expected_dashboard_item_keys
 
 
@@ -2295,6 +2446,31 @@ def test_create_workflow_node_supports_immediate_trigger_mode(app):
     assert node["trigger_mode"] == "audience_entered"
     assert node["day_offset"] == 1
     assert node["send_time"] == "00:00"
+
+
+def test_create_workflow_node_supports_daily_recurring_trigger_mode(app):
+    workflow_bundle = _create_test_workflow(app, workflow_name="每日轮巡节点工作流", audiences=["operating"])
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        result = create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "每日轮巡提醒",
+                "target_audience_code": "operating",
+                "trigger_mode": "daily_recurring",
+                "day_offset": 3,
+                "send_time": "14:00",
+                "standard_content_text": "从第 3 天起每日提醒",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    node = result["node"]
+    assert node["trigger_mode"] == "daily_recurring"
+    assert node["day_offset"] == 3
+    assert node["send_time"] == "14:00"
 
 
 def test_create_workflow_node_supports_immediate_personalized_single_with_one_agent_binding(app):

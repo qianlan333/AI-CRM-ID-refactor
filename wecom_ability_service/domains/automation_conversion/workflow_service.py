@@ -18,6 +18,7 @@ from ..tags import repo as tags_repo
 from ..tags import service as tags_service
 from ..user_ops import page_service as user_ops_page_service
 from . import repo as orchestration_repo, workflow_repo
+from .message_activity_client import get_message_activity_db_status, query_message_activity_counts
 from .workflow_definitions import (
     AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
     AGENT_BINDING_SCOPE_DEFAULT,
@@ -30,6 +31,7 @@ from .workflow_definitions import (
     GENERATION_MODE_MANUAL_LAYERED,
     GENERATION_MODE_PERSONALIZED_SINGLE,
     NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
+    NODE_TRIGGER_MODE_DAILY_RECURRING,
     NODE_CONTENT_VARIANT_SCOPE_BEHAVIOR_TIER,
     NODE_CONTENT_VARIANT_SCOPE_PROFILE_CATEGORY,
     NODE_TRIGGER_MODE_SCHEDULED,
@@ -78,6 +80,7 @@ _ALLOWED_WORKFLOW_STATUSES = {
 }
 _ALLOWED_NODE_TRIGGER_MODES = {
     NODE_TRIGGER_MODE_SCHEDULED,
+    NODE_TRIGGER_MODE_DAILY_RECURRING,
     NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
 }
 
@@ -249,7 +252,7 @@ def _validate_send_time(value: Any) -> str:
 def _validate_node_trigger_mode(value: Any) -> str:
     normalized = _normalized_text(value) or NODE_TRIGGER_MODE_SCHEDULED
     if normalized not in _ALLOWED_NODE_TRIGGER_MODES:
-        raise ValueError("trigger_mode must be one of scheduled, audience_entered")
+        raise ValueError("trigger_mode must be one of scheduled, daily_recurring, audience_entered")
     return normalized
 
 
@@ -1260,14 +1263,14 @@ def _normalize_node_payload(payload: dict[str, Any], workflow_bundle: dict[str, 
 
     raw_day_offset = source.get("day_offset") if "day_offset" in source else current.get("day_offset")
     raw_send_time = source.get("send_time") if "send_time" in source else current.get("send_time")
-    if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED:
+    if trigger_mode in {NODE_TRIGGER_MODE_SCHEDULED, NODE_TRIGGER_MODE_DAILY_RECURRING}:
         if raw_day_offset in {None, ""}:
-            raise ValueError("day_offset is required when trigger_mode is scheduled")
+            raise ValueError("day_offset is required when trigger_mode is scheduled or daily_recurring")
         if _normalized_text(raw_send_time) == "":
-            raise ValueError("send_time is required when trigger_mode is scheduled")
+            raise ValueError("send_time is required when trigger_mode is scheduled or daily_recurring")
         day_offset = _normalize_int(raw_day_offset, default=0, minimum=1)
         if day_offset <= 0:
-            raise ValueError("day_offset is required when trigger_mode is scheduled")
+            raise ValueError("day_offset is required when trigger_mode is scheduled or daily_recurring")
         send_time = _validate_send_time(raw_send_time)
     else:
         has_day_offset = "day_offset" in source and source.get("day_offset") not in {None, ""}
@@ -1832,6 +1835,28 @@ def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
     return dict(list_supported_behavior_tiers()[0])
 
 
+def _message_activity_count_map_by_phone_match_key() -> dict[str, int]:
+    status = get_message_activity_db_status()
+    if not bool(status.get("configured")):
+        return {}
+    try:
+        rows = query_message_activity_counts()
+    except Exception:
+        return {}
+    return {
+        _normalized_text(row.get("phone_match_key")): int(row.get("message_count") or 0)
+        for row in rows
+        if _normalized_text(row.get("phone_match_key"))
+    }
+
+
+def _message_activity_count_for_phone(phone: Any, *, counts_by_match_key: dict[str, int]) -> int:
+    digits = "".join(char for char in _normalized_text(phone) if char.isdigit())
+    if len(digits) < 7:
+        return 0
+    return int(counts_by_match_key.get(f"{digits[:3]}_{digits[-4:]}") or 0)
+
+
 def _latest_enabled_profile_segment_template_bundle() -> dict[str, Any]:
     invalid_enabled_templates: list[dict[str, Any]] = []
     for template in workflow_repo.list_profile_segment_template_rows(enabled_only=True):
@@ -1999,7 +2024,7 @@ def _resolve_profile_segment_for_member(
 def _build_dashboard_member_detail_item(
     row: dict[str, Any],
     *,
-    message_counts: dict[str, int],
+    message_activity_counts_by_match_key: dict[str, int],
     profile_segment_template_bundle: dict[str, Any],
     audience_meta_map: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
@@ -2014,7 +2039,10 @@ def _build_dashboard_member_detail_item(
         member=member,
     )
     questionnaire_status = _normalized_text(questionnaire.get("questionnaire_status"))
-    message_count = int(message_counts.get(external_contact_id) or 0)
+    message_count = _message_activity_count_for_phone(
+        member.get("phone"),
+        counts_by_match_key=message_activity_counts_by_match_key,
+    )
     behavior_tier = _behavior_tier_for_count(message_count)
     profile_segment = _resolve_profile_segment_for_member(
         member=member,
@@ -2040,17 +2068,11 @@ def _build_dashboard_audience_member_details() -> dict[str, Any]:
     audience_definitions = list_supported_conversion_audiences()
     audience_meta_map = _conversion_audience_meta_map()
     rows_by_audience: dict[str, list[dict[str, Any]]] = {}
-    external_contact_ids: list[str] = []
     for definition in audience_definitions:
         audience_code = _normalized_text(definition.get("audience_code"))
         rows = workflow_repo.list_current_member_audience_rows(audience_code)
         rows_by_audience[audience_code] = rows
-        external_contact_ids.extend(
-            _normalized_text((row.get("member") or {}).get("external_contact_id"))
-            for row in rows
-            if _normalized_text((row.get("member") or {}).get("external_contact_id"))
-        )
-    message_counts = workflow_repo.get_archived_customer_message_counts(external_contact_ids)
+    message_activity_counts_by_match_key = _message_activity_count_map_by_phone_match_key()
     profile_segment_template_bundle = _latest_enabled_profile_segment_template_bundle()
     groups: list[dict[str, Any]] = []
     total = 0
@@ -2060,7 +2082,7 @@ def _build_dashboard_audience_member_details() -> dict[str, Any]:
         items = [
             _build_dashboard_member_detail_item(
                 row,
-                message_counts=message_counts,
+                message_activity_counts_by_match_key=message_activity_counts_by_match_key,
                 profile_segment_template_bundle=profile_segment_template_bundle,
                 audience_meta_map=audience_meta_map,
             )

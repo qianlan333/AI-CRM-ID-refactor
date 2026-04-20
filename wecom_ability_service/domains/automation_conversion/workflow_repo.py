@@ -1454,15 +1454,20 @@ def list_workflow_execution_item_rows(execution_row_id: int) -> list[dict[str, A
     ]
 
 
-def list_workflow_sent_scheduled_execution_history_rows(
+def list_workflow_sent_timed_execution_history_rows(
     *,
     workflow_id: int,
     audience_entry_ids: list[int],
+    trigger_modes: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     normalized_entry_ids = [int(item) for item in audience_entry_ids if int(item or 0) > 0]
     if not normalized_entry_ids:
         return []
     placeholders = ",".join("?" for _ in normalized_entry_ids)
+    normalized_trigger_modes = [_normalized_text(item) for item in (trigger_modes or []) if _normalized_text(item)]
+    if not normalized_trigger_modes:
+        normalized_trigger_modes = ["scheduled"]
+    trigger_mode_placeholders = ",".join("?" for _ in normalized_trigger_modes)
     return _fetchall_dicts(
         f"""
         SELECT
@@ -1483,11 +1488,11 @@ def list_workflow_sent_scheduled_execution_history_rows(
           ON n.id = ei.node_id
         WHERE ei.workflow_id = ?
           AND ei.audience_entry_id IN ({placeholders})
-          AND COALESCE(n.trigger_mode, '') = 'scheduled'
+          AND COALESCE(n.trigger_mode, '') IN ({trigger_mode_placeholders})
           AND ei.status = 'sent'
         ORDER BY e.scheduled_for ASC, ei.id ASC
         """,
-        (int(workflow_id), *normalized_entry_ids),
+        (int(workflow_id), *normalized_entry_ids, *normalized_trigger_modes),
     )
 
 

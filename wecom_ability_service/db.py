@@ -1441,7 +1441,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             target_audience_code TEXT NOT NULL
                 CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
             trigger_mode TEXT NOT NULL DEFAULT 'scheduled'
-                CHECK (trigger_mode IN ('scheduled', 'audience_entered')),
+                CHECK (trigger_mode IN ('scheduled', 'daily_recurring', 'audience_entered')),
             day_offset INTEGER NOT NULL DEFAULT 1,
             send_time TEXT NOT NULL DEFAULT '09:00',
             timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
@@ -1491,7 +1491,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             workflow_id INTEGER REFERENCES automation_workflow(id) ON DELETE SET NULL,
             node_id INTEGER REFERENCES automation_workflow_node(id) ON DELETE SET NULL,
             trigger_type TEXT NOT NULL DEFAULT 'scheduled_poll'
-                CHECK (trigger_type IN ('scheduled_poll', 'manual_replay', 'debug')),
+                CHECK (trigger_type IN ('scheduled_poll', 'daily_recurring_poll', 'manual_replay', 'debug')),
             audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
                 CHECK (audience_code IN ('pending_questionnaire', 'operating', 'converted')),
             scheduled_for TEXT NOT NULL DEFAULT '',
@@ -3157,15 +3157,41 @@ def _init_postgres(db) -> None:
         """
         UPDATE automation_workflow_node
         SET trigger_mode = CASE
-            WHEN COALESCE(trigger_mode, '') IN ('scheduled', 'audience_entered') THEN trigger_mode
+            WHEN COALESCE(trigger_mode, '') IN ('scheduled', 'daily_recurring', 'audience_entered') THEN trigger_mode
             ELSE 'scheduled'
         END
         """
     )
     db.execute(
         """
+        ALTER TABLE IF EXISTS automation_workflow_node
+        DROP CONSTRAINT IF EXISTS automation_workflow_node_trigger_mode_check
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow_node
+        ADD CONSTRAINT automation_workflow_node_trigger_mode_check
+        CHECK (trigger_mode IN ('scheduled', 'daily_recurring', 'audience_entered'))
+        """
+    )
+    db.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_automation_workflow_node_trigger
         ON automation_workflow_node (target_audience_code, trigger_mode, enabled, id ASC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow_execution
+        DROP CONSTRAINT IF EXISTS automation_workflow_execution_trigger_type_check
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow_execution
+        ADD CONSTRAINT automation_workflow_execution_trigger_type_check
+        CHECK (trigger_type IN ('scheduled_poll', 'daily_recurring_poll', 'manual_replay', 'debug'))
         """
     )
     _migrate_postgres_conversion_agent_pools_to_bindings(db)
