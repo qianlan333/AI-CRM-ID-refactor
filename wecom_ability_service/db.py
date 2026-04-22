@@ -563,6 +563,14 @@ def _sqlite_normalized_sop_pool_sql(column_name: str) -> str:
     """
 
 
+def _sqlite_legacy_compatible_sop_pool_check_values_sql() -> str:
+    return (
+        "'pending_questionnaire', 'operating', 'converted', "
+        "'new_user', 'inactive_normal', 'inactive_focus', "
+        "'active_normal', 'active_focus', 'silent', 'won'"
+    )
+
+
 def _rebuild_sqlite_automation_sop_tables(db) -> None:
     db.execute("DROP TABLE IF EXISTS automation_sop_batch_item__new")
     db.execute("DROP TABLE IF EXISTS automation_sop_batch__new")
@@ -571,10 +579,10 @@ def _rebuild_sqlite_automation_sop_tables(db) -> None:
     db.execute("DROP TABLE IF EXISTS automation_sop_pool_config__new")
 
     db.execute(
-        """
+        f"""
         CREATE TABLE automation_sop_pool_config__new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             enabled INTEGER NOT NULL DEFAULT 1,
             max_day_count INTEGER NOT NULL DEFAULT 5,
             send_time TEXT NOT NULL DEFAULT '09:00',
@@ -604,10 +612,10 @@ def _rebuild_sqlite_automation_sop_tables(db) -> None:
         )
 
     db.execute(
-        """
+        f"""
         CREATE TABLE automation_sop_template__new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             day_index INTEGER NOT NULL DEFAULT 1,
             content TEXT NOT NULL DEFAULT '',
             images_json TEXT NOT NULL DEFAULT '[]',
@@ -635,11 +643,11 @@ def _rebuild_sqlite_automation_sop_tables(db) -> None:
         )
 
     db.execute(
-        """
+        f"""
         CREATE TABLE automation_sop_progress__new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             first_entered_at TEXT NOT NULL DEFAULT '',
             last_entered_at TEXT NOT NULL DEFAULT '',
             sop_anchor_date TEXT NOT NULL DEFAULT '',
@@ -679,10 +687,10 @@ def _rebuild_sqlite_automation_sop_tables(db) -> None:
         )
 
     db.execute(
-        """
+        f"""
         CREATE TABLE automation_sop_batch__new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             day_index INTEGER NOT NULL DEFAULT 0,
             template_id INTEGER REFERENCES automation_sop_template(id) ON DELETE SET NULL,
             scheduled_for TEXT NOT NULL DEFAULT '',
@@ -691,7 +699,7 @@ def _rebuild_sqlite_automation_sop_tables(db) -> None:
             success_count INTEGER NOT NULL DEFAULT 0,
             skipped_count INTEGER NOT NULL DEFAULT 0,
             failed_count INTEGER NOT NULL DEFAULT 0,
-            summary_json TEXT NOT NULL DEFAULT '{}',
+            summary_json TEXT NOT NULL DEFAULT '{{}}',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -723,12 +731,12 @@ def _rebuild_sqlite_automation_sop_tables(db) -> None:
         )
 
     db.execute(
-        """
+        f"""
         CREATE TABLE automation_sop_batch_item__new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             batch_id INTEGER NOT NULL REFERENCES automation_sop_batch(id) ON DELETE CASCADE,
             member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             day_index INTEGER NOT NULL DEFAULT 0,
             day_index_snapshot INTEGER NOT NULL DEFAULT 0,
             external_userid TEXT NOT NULL DEFAULT '',
@@ -962,7 +970,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     if "current_audience_entered_at" not in member_columns:
         db.execute("ALTER TABLE automation_member ADD COLUMN current_audience_entered_at TEXT NOT NULL DEFAULT ''")
     sop_pool_config_sql = _sqlite_table_sql(db, "automation_sop_pool_config")
-    if "'new_user'" in sop_pool_config_sql or "'inactive_normal'" in sop_pool_config_sql or "'active_normal'" in sop_pool_config_sql:
+    if "'new_user'" not in sop_pool_config_sql or "'inactive_normal'" not in sop_pool_config_sql or "'active_normal'" not in sop_pool_config_sql:
         _rebuild_sqlite_automation_sop_tables(db)
     db.execute(
         """
@@ -1122,10 +1130,10 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
     )
     db.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS automation_sop_pool_config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             enabled INTEGER NOT NULL DEFAULT 1,
             max_day_count INTEGER NOT NULL DEFAULT 5,
             send_time TEXT NOT NULL DEFAULT '09:00',
@@ -1137,10 +1145,10 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
     )
     db.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS automation_sop_template (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             day_index INTEGER NOT NULL DEFAULT 1,
             content TEXT NOT NULL DEFAULT '',
             images_json TEXT NOT NULL DEFAULT '[]',
@@ -1151,11 +1159,11 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
     )
     db.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS automation_sop_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             member_id INTEGER NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             first_entered_at TEXT NOT NULL DEFAULT '',
             last_entered_at TEXT NOT NULL DEFAULT '',
             sop_anchor_date TEXT NOT NULL DEFAULT '',
@@ -1170,10 +1178,10 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
     )
     db.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS automation_sop_batch (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             day_index INTEGER NOT NULL DEFAULT 0,
             template_id INTEGER REFERENCES automation_sop_template(id) ON DELETE SET NULL,
             scheduled_for TEXT NOT NULL DEFAULT '',
@@ -1182,19 +1190,19 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             success_count INTEGER NOT NULL DEFAULT 0,
             skipped_count INTEGER NOT NULL DEFAULT 0,
             failed_count INTEGER NOT NULL DEFAULT 0,
-            summary_json TEXT NOT NULL DEFAULT '{}',
+            summary_json TEXT NOT NULL DEFAULT '{{}}',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
     db.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS automation_sop_batch_item (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             batch_id INTEGER NOT NULL REFERENCES automation_sop_batch(id) ON DELETE CASCADE,
             member_id INTEGER REFERENCES automation_member(id) ON DELETE CASCADE,
-            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
+            pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ({_sqlite_legacy_compatible_sop_pool_check_values_sql()})),
             day_index INTEGER NOT NULL DEFAULT 0,
             day_index_snapshot INTEGER NOT NULL DEFAULT 0,
             external_userid TEXT NOT NULL DEFAULT '',

@@ -6,7 +6,9 @@ legacy implementations and must not introduce new business logic.
 """
 
 __all__ = [
+    "ai_assist",
     "automation_engine",
+    "questionnaire",
     "customer_read_model",
     "integration_gateway",
     "platform_foundation",

@@ -669,7 +669,11 @@ def _select_manual_layered_content(
         else (_normalized_text(segment_match.get("reason")) or "segment_not_matched")
     )
     standard_content_text = _normalized_text(node.get("standard_content_text"))
-    if bool(node.get("fallback_to_standard_content")) and standard_content_text:
+    if (
+        _normalized_text(node.get("segmentation_basis")) == SEGMENTATION_BASIS_PROFILE
+        and bool(node.get("fallback_to_standard_content"))
+        and standard_content_text
+    ):
         return {
             "content_text": standard_content_text,
             "content_source": "standard_content_fallback",

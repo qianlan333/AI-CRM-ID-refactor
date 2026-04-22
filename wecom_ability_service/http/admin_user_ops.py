@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import imghdr
 import json
 
 from flask import Response, jsonify, request
@@ -48,6 +47,18 @@ ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES = {
 }
 
 
+def _detect_one_time_batch_send_image_type(file_bytes: bytes) -> str:
+    if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if file_bytes.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if file_bytes.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
+        return "webp"
+    return ""
+
+
 def _page_filters_from_request_args() -> dict[str, str]:
     return {
         "wecom_status": request.args.get("wecom_status", "").strip(),
@@ -92,7 +103,8 @@ def _normalize_one_time_batch_send_images():
         file_bytes = file_storage.read()
         if len(file_bytes) > MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES:
             raise ValueError("image file is too large (max 5MB)")
-        detected_type = ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES.get(str(imghdr.what(None, h=file_bytes) or "").lower(), "")
+        detected_image_type = _detect_one_time_batch_send_image_type(file_bytes)
+        detected_type = ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES.get(detected_image_type, "")
         if not detected_type:
             raise ValueError("only image files are allowed")
         images.append(

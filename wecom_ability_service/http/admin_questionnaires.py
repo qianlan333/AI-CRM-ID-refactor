@@ -2,17 +2,27 @@ from __future__ import annotations
 
 from flask import Response, current_app, jsonify, request
 
-from ..domains.questionnaire import build_questionnaire_preflight_payload
-from ..services import (
-    count_external_contact_identity_maps,
-    create_questionnaire,
-    delete_questionnaire,
-    disable_questionnaire,
-    export_questionnaire_submissions,
-    get_latest_questionnaire_submit_debug,
-    get_questionnaire_detail,
-    list_questionnaires,
-    update_questionnaire,
+from ..application.questionnaire.commands import (
+    CreateOrUpdateQuestionnaireCommand,
+    DeleteQuestionnaireCommand,
+    DisableQuestionnaireCommand,
+)
+from ..application.questionnaire.dto import (
+    BuildQuestionnairePreflightQueryDTO,
+    CreateOrUpdateQuestionnaireCommandDTO,
+    DeleteQuestionnaireCommandDTO,
+    DisableQuestionnaireCommandDTO,
+    ExportQuestionnaireSubmissionsQueryDTO,
+    GetLatestQuestionnaireSubmitDebugQueryDTO,
+    GetQuestionnaireDetailQueryDTO,
+)
+from ..application.questionnaire.queries import (
+    BuildQuestionnairePreflightQuery,
+    ExportQuestionnaireSubmissionsQuery,
+    GetLatestQuestionnaireSubmitDebugQuery,
+    GetQuestionnaireDetailQuery,
+    ListAvailableWeComTagsQuery,
+    ListQuestionnairesQuery,
 )
 from ..wecom_client import WeComClientError
 from .common import _build_excel_xml, _deprecated_admin_redirect, _wecom_error_response
@@ -20,27 +30,24 @@ from .questionnaire_support import _attach_questionnaire_links
 
 
 def admin_list_questionnaires():
-    return jsonify({"ok": True, "questionnaires": [_attach_questionnaire_links(item) for item in list_questionnaires()]})
+    questionnaires = ListQuestionnairesQuery()()
+    return jsonify({"ok": True, "questionnaires": [_attach_questionnaire_links(item) for item in questionnaires]})
 
 
 def admin_list_wecom_tags():
-    from .. import routes as routes_compat
-
     try:
-        return jsonify({"items": routes_compat.list_available_wecom_tags()})
+        return jsonify({"items": ListAvailableWeComTagsQuery()()})
     except WeComClientError as exc:
         return _wecom_error_response(exc)
 
 
 
 def admin_questionnaires_preflight():
-    from .. import routes as routes_compat
-
     return jsonify(
-        build_questionnaire_preflight_payload(
-            config=current_app.config,
-            list_available_wecom_tags_fn=routes_compat.list_available_wecom_tags,
-            count_external_contact_identity_maps_fn=count_external_contact_identity_maps,
+        BuildQuestionnairePreflightQuery()(
+            BuildQuestionnairePreflightQueryDTO(
+                config_snapshot=current_app.config,
+            )
         )
     )
 
@@ -53,21 +60,29 @@ def admin_questionnaires_ui():
 def admin_create_questionnaire():
     payload = request.get_json(silent=True) or {}
     try:
-        questionnaire = create_questionnaire(payload)
+        questionnaire = CreateOrUpdateQuestionnaireCommand()(
+            CreateOrUpdateQuestionnaireCommandDTO(
+                payload=dict(payload or {}),
+            )
+        )
         return jsonify({"ok": True, "questionnaire": _attach_questionnaire_links(questionnaire)})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 def admin_get_questionnaire(questionnaire_id: int):
-    questionnaire = get_questionnaire_detail(questionnaire_id)
+    questionnaire = GetQuestionnaireDetailQuery()(
+        GetQuestionnaireDetailQueryDTO(questionnaire_id=int(questionnaire_id))
+    )
     if not questionnaire:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404
     return jsonify({"ok": True, "questionnaire": _attach_questionnaire_links(questionnaire)})
 
 
 def admin_questionnaire_latest_submit_debug(questionnaire_id: int):
-    result = get_latest_questionnaire_submit_debug(questionnaire_id)
+    result = GetLatestQuestionnaireSubmitDebugQuery()(
+        GetLatestQuestionnaireSubmitDebugQueryDTO(questionnaire_id=int(questionnaire_id))
+    )
     if not result:
         return jsonify({"ok": False, "error": "no_submission_found"})
     payload = {"ok": True}
@@ -78,7 +93,12 @@ def admin_questionnaire_latest_submit_debug(questionnaire_id: int):
 def admin_update_questionnaire(questionnaire_id: int):
     payload = request.get_json(silent=True) or {}
     try:
-        questionnaire = update_questionnaire(questionnaire_id, payload)
+        questionnaire = CreateOrUpdateQuestionnaireCommand()(
+            CreateOrUpdateQuestionnaireCommandDTO(
+                questionnaire_id=int(questionnaire_id),
+                payload=dict(payload or {}),
+            )
+        )
         if not questionnaire:
             return jsonify({"ok": False, "error": "questionnaire not found"}), 404
         return jsonify({"ok": True, "questionnaire": _attach_questionnaire_links(questionnaire)})
@@ -88,19 +108,28 @@ def admin_update_questionnaire(questionnaire_id: int):
 
 def admin_disable_questionnaire(questionnaire_id: int):
     payload = request.get_json(silent=True) or {}
-    questionnaire = disable_questionnaire(questionnaire_id, payload.get("is_disabled", True))
+    questionnaire = DisableQuestionnaireCommand()(
+        DisableQuestionnaireCommandDTO(
+            questionnaire_id=int(questionnaire_id),
+            is_disabled=bool(payload.get("is_disabled", True)),
+        )
+    )
     if not questionnaire:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404
     return jsonify({"ok": True, "questionnaire": _attach_questionnaire_links(questionnaire)})
 
 
 def admin_delete_questionnaire(questionnaire_id: int):
-    questionnaire = get_questionnaire_detail(questionnaire_id)
+    questionnaire = GetQuestionnaireDetailQuery()(
+        GetQuestionnaireDetailQueryDTO(questionnaire_id=int(questionnaire_id))
+    )
     if not questionnaire:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404
     if not questionnaire.get("is_disabled"):
         return jsonify({"ok": False, "error": "请先停用问卷后再删除"}), 400
-    deleted = delete_questionnaire(questionnaire_id)
+    deleted = DeleteQuestionnaireCommand()(
+        DeleteQuestionnaireCommandDTO(questionnaire_id=int(questionnaire_id))
+    )
     if not deleted:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404
     return jsonify({"ok": True, "deleted": True})
@@ -108,7 +137,9 @@ def admin_delete_questionnaire(questionnaire_id: int):
 
 def admin_export_questionnaire(questionnaire_id: int):
     try:
-        export_payload = export_questionnaire_submissions(questionnaire_id)
+        export_payload = ExportQuestionnaireSubmissionsQuery()(
+            ExportQuestionnaireSubmissionsQueryDTO(questionnaire_id=int(questionnaire_id))
+        )
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
     content = _build_excel_xml(export_payload["headers"], export_payload["rows"])

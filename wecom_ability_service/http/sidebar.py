@@ -14,6 +14,22 @@ from ..application.identity_contact.queries import (
     GetPrimaryFollowUserUseridQuery,
     ResolvePersonIdentityQuery,
 )
+from ..application.automation_engine.commands import (
+    MarkEnrolledCommand,
+    SetManualFollowupSegmentCommand,
+    UnmarkEnrolledCommand,
+)
+from ..application.automation_engine.dto import (
+    CustomerMarketingProfileQueryDTO,
+    ManualFollowupSegmentCommandDTO,
+    MarkEnrolledCommandDTO,
+    SignupConversionPreviewQueryDTO,
+    UnmarkEnrolledCommandDTO,
+)
+from ..application.automation_engine.queries import (
+    GetCustomerMarketingProfileQuery,
+    PreviewSignupConversionCustomerQuery,
+)
 from ..application.user_ops.commands import (
     UpsertSidebarLeadPoolClassTermCommand,
     UpsertSidebarLeadPoolClassTermCommandDTO,
@@ -23,17 +39,12 @@ from ..application.user_ops.queries import (
     GetSidebarLeadPoolStatusQueryDTO,
 )
 from ..domains.marketing_automation.presenter import business_marketing_display, business_segment_label
-from ..domains.marketing_automation.service import get_customer_marketing_profile
 from ..infra.wecom_runtime import build_jsapi_payload
 from ..services import (
     ContactBindingConflictError,
     ThirdPartyUserSyncError,
     get_contact_by_external_userid,
     get_class_user_status_current,
-    mark_enrolled,
-    preview_signup_conversion_customer,
-    set_manual_followup_segment,
-    unmark_enrolled,
 )
 from ..wecom_client import WeComClientError
 from .admin_support import (
@@ -120,6 +131,95 @@ def _upsert_sidebar_lead_pool_class_term_payload(
             owner_userid=str(owner_userid or "").strip(),
             class_term_no=int(class_term_no),
             operator=str(operator or "").strip(),
+        )
+    )
+
+
+def get_customer_marketing_profile(external_userid: str, *, scenario_key: str = "") -> dict[str, object]:
+    return GetCustomerMarketingProfileQuery()(
+        CustomerMarketingProfileQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            scenario_key=str(scenario_key or "").strip(),
+        )
+    )
+
+
+def preview_signup_conversion_customer(
+    *,
+    external_userid: str = "",
+    person_id: int | None = None,
+    automation_key: str = "",
+    persist: bool = True,
+) -> dict[str, object]:
+    return PreviewSignupConversionCustomerQuery()(
+        SignupConversionPreviewQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            person_id=person_id,
+            automation_key=str(automation_key or "").strip(),
+            persist=bool(persist),
+        )
+    )
+
+
+def mark_enrolled(
+    *,
+    external_userid: str,
+    owner_userid: str = "",
+    operator: str = "",
+    source: str = "manual",
+    signup_status: str = "",
+    automation_key: str = "",
+) -> dict[str, object]:
+    return MarkEnrolledCommand()(
+        MarkEnrolledCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+            operator=str(operator or "").strip(),
+            source=str(source or "").strip() or "manual",
+            signup_status=str(signup_status or "").strip(),
+            automation_key=str(automation_key or "").strip(),
+        )
+    )
+
+
+def unmark_enrolled(
+    *,
+    external_userid: str,
+    owner_userid: str = "",
+    operator: str = "",
+    source: str = "manual",
+    restore_signup_status: str = "",
+    automation_key: str = "",
+) -> dict[str, object]:
+    return UnmarkEnrolledCommand()(
+        UnmarkEnrolledCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+            operator=str(operator or "").strip(),
+            source=str(source or "").strip() or "manual",
+            restore_signup_status=str(restore_signup_status or "").strip(),
+            automation_key=str(automation_key or "").strip(),
+        )
+    )
+
+
+def set_manual_followup_segment(
+    *,
+    external_userid: str,
+    followup_segment: str,
+    owner_userid: str = "",
+    operator: str = "",
+    source: str = "manual",
+    automation_key: str = "",
+) -> dict[str, object]:
+    return SetManualFollowupSegmentCommand()(
+        ManualFollowupSegmentCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            followup_segment=str(followup_segment or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+            operator=str(operator or "").strip(),
+            source=str(source or "").strip() or "manual",
+            automation_key=str(automation_key or "").strip(),
         )
     )
 

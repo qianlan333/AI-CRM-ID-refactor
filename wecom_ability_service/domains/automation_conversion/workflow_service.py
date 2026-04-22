@@ -1025,12 +1025,13 @@ def _build_node_bundle(
         variants=variants,
         node_bindings=node_binding_items,
     )
-    legacy_standard_fallback_enabled = (
-        content_mode == "manual_layered"
+    manual_layered_profile_fallback_enabled = (
+        content_mode == NODE_CONTENT_MODE_MANUAL_LAYERED
+        and segmentation_basis == SEGMENTATION_BASIS_PROFILE
         and bool(content.get("fallback_to_standard_content"))
         and bool(_normalized_text(content.get("standard_content_text")))
     )
-    exposes_standard_content = _content_mode_uses_standard_content(content_mode) or legacy_standard_fallback_enabled
+    exposes_standard_content = _content_mode_uses_standard_content(content_mode) or manual_layered_profile_fallback_enabled
     standard_content_text = _normalized_text(content.get("standard_content_text")) if exposes_standard_content else ""
     return {
         "id": int(node["id"]),
@@ -1822,6 +1823,17 @@ def _questionnaire_status_label(value: Any) -> str:
     }.get(normalized, normalized or "待提交")
 
 
+def _activation_status_label(value: Any) -> str:
+    normalized = _normalized_text(value)
+    return {
+        "active": "已激活",
+        "inactive": "未激活",
+        "activated": "已激活",
+        "not_activated": "未激活",
+        "high_intent": "高意向",
+    }.get(normalized, "")
+
+
 def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
     normalized_count = max(0, int(message_count or 0))
     for item in list_supported_behavior_tiers():
@@ -2053,6 +2065,7 @@ def _build_dashboard_member_detail_item(
         member=member,
     )
     questionnaire_status = _normalized_text(questionnaire.get("questionnaire_status"))
+    activation_status = _normalized_text(member.get("activation_status"))
     message_activity = _message_activity_for_phone(
         member.get("phone"),
         counts_by_match_key=message_activity_counts_by_match_key,
@@ -2064,7 +2077,7 @@ def _build_dashboard_member_detail_item(
         member=member,
         profile_segment_template_bundle=profile_segment_template_bundle,
     )
-    return {
+    payload = {
         "member_id": int(member.get("id") or 0) or None,
         "external_contact_id": external_contact_id,
         "phone": _normalized_text(member.get("phone")),
@@ -2078,6 +2091,10 @@ def _build_dashboard_member_detail_item(
         "behavior_segment_label": _normalized_text(behavior_tier.get("label")),
         "conversation_count": message_count,
     }
+    if audience_code == AUDIENCE_OPERATING and _normalized_text(member.get("current_pool")) != AUDIENCE_OPERATING:
+        payload["activation_status"] = activation_status
+        payload["activation_status_label"] = _activation_status_label(activation_status)
+    return payload
 
 
 def _build_dashboard_audience_member_details() -> dict[str, Any]:

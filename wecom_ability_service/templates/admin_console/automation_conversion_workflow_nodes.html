@@ -449,7 +449,7 @@
       if (contentMode === 'standard_direct') {
         elements.nodeContentHelp.textContent = '当前任务流是统一内容录入，节点层只填写一份统一标准内容。';
       } else if (contentMode === 'manual_layered') {
-        elements.nodeContentHelp.textContent = '当前任务流是手动分层录入，节点层只填写当前有效分层的内容明细。';
+        elements.nodeContentHelp.textContent = '当前任务流是手动分层录入，节点层只填写当前有效分层的内容明细。填写当前有效行为层级对应的节点内容，输入区会随行为层级配置动态变化。';
       } else if (contentMode === 'standard_layered_rewrite') {
         elements.nodeContentHelp.textContent = '当前任务流是自动生成配置，节点层填写统一标准内容，执行时按当前分层和 Agent 配置改写。';
       } else {

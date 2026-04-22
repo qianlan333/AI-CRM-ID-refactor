@@ -7,6 +7,12 @@ from typing import Any
 from flask import current_app, url_for
 
 from ...application.customer_read_model import CustomerDetailQueryDTO, GetCustomerDetailQuery
+from ...application.questionnaire.commands import RetryQuestionnaireExternalPushCommand
+from ...application.questionnaire.dto import RetryQuestionnaireExternalPushCommandDTO
+from ...application.questionnaire.queries import (
+    GetGlobalQuestionnaireExternalPushLogsQuery,
+    GetQuestionnaireExternalPushLogsQuery,
+)
 from ...application.user_ops import (
     BackfillOwnerClassTermsCommand,
     BackfillOwnerClassTermsCommandDTO,
@@ -46,11 +52,6 @@ from ...infra.settings import get_setting
 from ..admin_config.service import list_mcp_tool_settings, mcp_tool_enabled
 from ..admin_config import repo as admin_config_repo
 from ..questionnaire import build_questionnaire_preflight_payload
-from ..questionnaire.service import (
-    is_questionnaire_external_push_global_enabled,
-    retry_questionnaire_external_push_log,
-    retry_questionnaire_external_push_logs,
-)
 from ..tags.service import mark_customer_tags, unmark_customer_tags
 from ..tasks.service import dispatch_wecom_task
 from . import repo
@@ -714,68 +715,11 @@ def build_questionnaire_external_push_logs_payload(
     status: str = "",
     limit: int = 50,
 ) -> dict[str, Any] | None:
-    questionnaire = get_questionnaire_detail(int(questionnaire_id))
-    if not questionnaire:
-        return None
-    normalized_status = _normalized_text(status)
-    effective_status_filter = ""
-    if normalized_status in {"failed", "failed_current"}:
-        normalized_status = "failed_current"
-        effective_status_filter = "failed"
-    elif normalized_status in {"success", "success_current"}:
-        normalized_status = "success_current"
-        effective_status_filter = "success"
-    normalized_limit = _normalized_int(limit, default=50, minimum=1, maximum=200)
-    summary = repo.summarize_questionnaire_external_push_logs(int(questionnaire_id))
-    rows = repo.list_questionnaire_external_push_log_threads(
-        int(questionnaire_id),
-        status=effective_status_filter,
-        limit=normalized_limit,
+    return GetQuestionnaireExternalPushLogsQuery()(
+        questionnaire_id=int(questionnaire_id),
+        status=status,
+        limit=limit,
     )
-    normalized_rows = []
-    for row in rows:
-        latest_log = dict(row.get("latest_log") or {})
-        normalized_rows.append(
-            {
-                **row,
-                "first_status_label": _questionnaire_external_push_status_label(str(row.get("status") or "").strip()),
-                "first_status_tone": _questionnaire_external_push_status_tone(str(row.get("status") or "").strip()),
-                "effective_status_label": _questionnaire_external_push_effective_state_label(row),
-                "effective_status_tone": _questionnaire_external_push_status_tone(str(row.get("latest_status") or "").strip()),
-                "retries": [
-                    {
-                        **retry,
-                        "status_label": _questionnaire_external_push_status_label(str(retry.get("status") or "").strip()),
-                        "status_tone": _questionnaire_external_push_status_tone(str(retry.get("status") or "").strip()),
-                    }
-                    for retry in row.get("retries") or []
-                ],
-                "latest_log": {
-                    **latest_log,
-                    "status_label": _questionnaire_external_push_status_label(str(latest_log.get("status") or "").strip()),
-                    "status_tone": _questionnaire_external_push_status_tone(str(latest_log.get("status") or "").strip()),
-                },
-            }
-        )
-    return {
-        "is_global": False,
-        "questionnaire": {
-            **questionnaire,
-            **_questionnaire_paths(_normalized_text(questionnaire.get("slug"))),
-        },
-        "filters": {
-            "status": normalized_status,
-            "limit": normalized_limit,
-        },
-        "status_options": [
-            {"value": "", "label": "全部"},
-            {"value": "failed_current", "label": "仅待补发"},
-            {"value": "success_current", "label": "仅当前成功"},
-        ],
-        "summary": summary,
-        "logs": normalized_rows,
-        "retryable_count": sum(1 for row in normalized_rows if row.get("can_retry")),
-    }
 
 
 def build_global_questionnaire_external_push_logs_payload(
@@ -787,112 +731,28 @@ def build_global_questionnaire_external_push_logs_payload(
     target_url: str = "",
     limit: int = 50,
 ) -> dict[str, Any]:
-    normalized_questionnaire_id = _normalized_int(questionnaire_id, default=0, minimum=0, maximum=10**9)
-    questionnaire_id_filter = normalized_questionnaire_id or None
-    normalized_questionnaire_title = _normalized_text(questionnaire_title)
-    normalized_status = _normalized_text(status)
-    normalized_user_id = _normalized_text(user_id)
-    normalized_target_url = _normalized_text(target_url)
-    effective_status_filter = ""
-    if normalized_status in {"failed", "failed_current"}:
-        normalized_status = "failed_current"
-        effective_status_filter = "failed"
-    elif normalized_status in {"success", "success_current"}:
-        normalized_status = "success_current"
-        effective_status_filter = "success"
-    normalized_limit = _normalized_int(limit, default=50, minimum=1, maximum=200)
-    filtered_rows = repo.list_questionnaire_external_push_log_threads(
-        questionnaire_id_filter,
-        questionnaire_title=normalized_questionnaire_title,
-        user_id=normalized_user_id,
-        target_url=normalized_target_url,
-        status=effective_status_filter,
-        limit=None,
+    return GetGlobalQuestionnaireExternalPushLogsQuery()(
+        questionnaire_id=questionnaire_id,
+        questionnaire_title=questionnaire_title,
+        status=status,
+        user_id=user_id,
+        target_url=target_url,
+        limit=limit,
     )
-    all_rows = repo.list_questionnaire_external_push_log_threads(None, limit=None)
-    recent_since = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-
-    normalized_rows = []
-    for row in filtered_rows[:normalized_limit]:
-        latest_log = dict(row.get("latest_log") or {})
-        normalized_rows.append(
-            {
-                **row,
-                "questionnaire_path": url_for("api.admin_console_questionnaire_detail", questionnaire_id=int(row.get("questionnaire_id") or 0)),
-                "questionnaire_logs_path": url_for("api.admin_console_questionnaire_external_push_logs", questionnaire_id=int(row.get("questionnaire_id") or 0)),
-                "first_status_label": _questionnaire_external_push_status_label(str(row.get("status") or "").strip()),
-                "first_status_tone": _questionnaire_external_push_status_tone(str(row.get("status") or "").strip()),
-                "effective_status_label": _questionnaire_external_push_effective_state_label(row),
-                "effective_status_tone": _questionnaire_external_push_status_tone(str(row.get("latest_status") or "").strip()),
-                "retries": [
-                    {
-                        **retry,
-                        "status_label": _questionnaire_external_push_status_label(str(retry.get("status") or "").strip()),
-                        "status_tone": _questionnaire_external_push_status_tone(str(retry.get("status") or "").strip()),
-                    }
-                    for retry in row.get("retries") or []
-                ],
-                "latest_log": {
-                    **latest_log,
-                    "status_label": _questionnaire_external_push_status_label(str(latest_log.get("status") or "").strip()),
-                    "status_tone": _questionnaire_external_push_status_tone(str(latest_log.get("status") or "").strip()),
-                },
-            }
-        )
-    all_questionnaires = list_questionnaires()
-    total_questionnaires = len(all_questionnaires)
-    enabled_questionnaire_count = sum(1 for item in all_questionnaires if item.get("external_push_enabled"))
-    current_failed_count = sum(1 for row in all_rows if row.get("can_retry"))
-    current_success_count = sum(1 for row in all_rows if row.get("latest_status") == "success")
-    current_skipped_count = sum(1 for row in all_rows if row.get("latest_status") == "skipped")
-    global_switch_enabled = is_questionnaire_external_push_global_enabled()
-    return {
-        "is_global": True,
-        "questionnaire": None,
-        "filters": {
-            "questionnaire_id": normalized_questionnaire_id,
-            "questionnaire_title": normalized_questionnaire_title,
-            "status": normalized_status,
-            "user_id": normalized_user_id,
-            "target_url": normalized_target_url,
-            "limit": normalized_limit,
-        },
-        "status_options": [
-            {"value": "", "label": "全部"},
-            {"value": "failed_current", "label": "仅待补发"},
-            {"value": "success_current", "label": "仅当前成功"},
-        ],
-        "summary": {
-            "questionnaire_total_count": total_questionnaires,
-            "enabled_questionnaire_count": enabled_questionnaire_count,
-            "matched_questionnaire_count": len({int(row.get("questionnaire_id") or 0) for row in filtered_rows}),
-            "total_log_count": repo.count_questionnaire_external_push_logs(),
-            "current_failed_count": current_failed_count,
-            "current_success_count": current_success_count,
-            "current_skipped_count": current_skipped_count,
-            "recent_success_count": repo.count_questionnaire_external_push_logs(
-                status="success",
-                created_at_gte=recent_since,
-            ),
-            "recent_failed_count": repo.count_questionnaire_external_push_logs(
-                status="failed",
-                created_at_gte=recent_since,
-            ),
-            "global_switch_enabled": global_switch_enabled,
-            "global_switch_label": "已开启" if global_switch_enabled else "已关闭（止损中）",
-            "global_switch_tone": "ok" if global_switch_enabled else "danger",
-        },
-        "logs": normalized_rows,
-        "retryable_count": sum(1 for row in normalized_rows if row.get("can_retry")),
-    }
 
 
 def retry_questionnaire_external_push_log_for_console(push_log_id: int) -> dict[str, Any]:
-    return retry_questionnaire_external_push_log(int(push_log_id))
+    return RetryQuestionnaireExternalPushCommand()(
+        RetryQuestionnaireExternalPushCommandDTO(push_log_id=int(push_log_id))
+    )
 
 
 def retry_questionnaire_external_push_logs_for_console(push_log_ids: list[int]) -> dict[str, Any]:
-    return retry_questionnaire_external_push_logs(push_log_ids)
+    return RetryQuestionnaireExternalPushCommand()(
+        RetryQuestionnaireExternalPushCommandDTO(
+            push_log_ids=[int(item) for item in push_log_ids],
+        )
+    )
 
 
 def _questionnaire_external_push_status_tone(value: str) -> str:

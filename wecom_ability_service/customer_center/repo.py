@@ -4,6 +4,8 @@ from typing import Any
 
 from ..db import get_db, get_db_backend
 
+_OWNER_ROLE_MAP_QUERY_BATCH_SIZE = 5000
+
 
 def _fetchall_dict(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     return [dict(row) for row in get_db().execute(sql, params).fetchall()]
@@ -269,18 +271,30 @@ def list_customer_agent_output_rows(external_userid: str, *, limit: int = 10) ->
 
 
 def fetch_owner_role_map(userids: list[str]) -> dict[str, dict[str, Any]]:
-    normalized = [str(userid or "").strip() for userid in userids if str(userid or "").strip()]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for userid in userids:
+        normalized_userid = str(userid or "").strip()
+        if not normalized_userid or normalized_userid in seen:
+            continue
+        seen.add(normalized_userid)
+        normalized.append(normalized_userid)
     if not normalized:
         return {}
-    placeholders = ",".join(["?"] * len(normalized))
-    rows = _fetchall_dict(
-        f"""
-        SELECT userid, display_name, role, active, updated_at
-        FROM owner_role_map
-        WHERE userid IN ({placeholders})
-        """,
-        tuple(normalized),
-    )
+    rows: list[dict[str, Any]] = []
+    for start in range(0, len(normalized), _OWNER_ROLE_MAP_QUERY_BATCH_SIZE):
+        batch = normalized[start : start + _OWNER_ROLE_MAP_QUERY_BATCH_SIZE]
+        placeholders = ",".join(["?"] * len(batch))
+        rows.extend(
+            _fetchall_dict(
+                f"""
+                SELECT userid, display_name, role, active, updated_at
+                FROM owner_role_map
+                WHERE userid IN ({placeholders})
+                """,
+                tuple(batch),
+            )
+        )
     return {str(row.get("userid") or "").strip(): row for row in rows}
 
 

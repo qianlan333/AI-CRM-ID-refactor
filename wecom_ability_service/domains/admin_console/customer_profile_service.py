@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...application.ai_assist import CustomerPulseDetailQueryDTO, GetCustomerPulseDetailQuery
+from ...application.ai_assist import (
+    CustomerPulseDetailQueryDTO,
+    CustomerPulseFeatureGateQueryDTO,
+    GetCustomerPulseDetailQuery,
+    GetCustomerPulseFeatureGateQuery,
+)
 from ...application.customer_read_model import (
     CustomerDetailQueryDTO,
     CustomerListQueryDTO,
@@ -10,7 +15,6 @@ from ...application.customer_read_model import (
     ListCustomersQuery,
 )
 from ...domains.archive.service import extract_roomid_from_raw_payload, format_message_row
-from ...domains.customer_pulse import is_customer_pulse_inbox_enabled
 from ...domains.marketing_automation.presenter import business_marketing_display
 from ...domains.customer_pulse.access import (
     current_customer_pulse_request_access_context,
@@ -278,11 +282,14 @@ def build_customer_detail_payload(external_userid: str, *, legacy_tab: str = "")
         "eligibility_label": marketing_page_summary["eligibility_label"],
         "ineligible_reason_label": marketing_page_summary["ineligible_reason_label"],
     }
+    pulse_feature_gate = GetCustomerPulseFeatureGateQuery()(
+        CustomerPulseFeatureGateQueryDTO(access_context=dict(access_context))
+    )
     return {
         "customer": payload["profile"],
         "lookup": payload.get("lookup") or {},
         "initial_section": _legacy_tab_to_section(legacy_tab),
-        "customer_pulse_feature_enabled": is_customer_pulse_inbox_enabled(access_context=access_context),
+        "customer_pulse_feature_enabled": bool(pulse_feature_gate.get("enabled")),
     }
 
 

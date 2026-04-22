@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from importlib import import_module
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -37,6 +38,20 @@ from .ai_recommendation import (
     generate_customer_pulse_ai_recommendation,
 )
 from . import repo
+
+__all__ = [
+    "assert_customer_pulse_action_permission",
+    "assert_customer_pulse_evidence_view",
+    "assert_customer_pulse_feedback_permission",
+    "customer_pulse_action_permission",
+    "generate_customer_pulse_ai_recommendation",
+    "get_outbound_task",
+    "mark_customer_tags",
+    "save_local_private_message_draft",
+    "set_manual_followup_segment",
+    "unmark_customer_tags",
+    "update_outbound_task_status",
+]
 
 CUSTOMER_PULSE_FLAG_KEY = "ai_customer_pulse"
 CUSTOMER_PULSE_RULES_VERSION = "customer_pulse_rules_v1"
@@ -183,6 +198,11 @@ _SUPPORTED_ACTION_TYPES = {
     "set_followup_reminder",
 }
 _ACTION_FEEDBACK_TYPES = {"adopted", "edited_then_sent", "ignored", "misjudged", "unhelpful"}
+
+
+def _load_customer_pulse_internal_delegate(module_name: str, attr_name: str) -> Any:
+    module = import_module(f".{module_name}", __package__)
+    return getattr(module, attr_name)
 
 
 def _normalized_text(value: Any) -> str:
@@ -464,41 +484,11 @@ def customer_pulse_feature_gate_summary(access_context: Mapping[str, Any] | None
 
 
 def customer_pulse_rollout_whitelist_summary() -> dict[str, Any]:
-    feature_policy = _feature_policy_map()
-    tenant_map = feature_policy.get("tenants") if isinstance(feature_policy.get("tenants"), dict) else {}
-    default_enabled = bool(feature_policy.get("default_enabled"))
-    enabled_tenants: list[str] = []
-    disabled_tenants: list[str] = []
-    tenant_entries: list[dict[str, Any]] = []
-    for tenant_key in sorted(_normalized_text(key) for key in tenant_map.keys() if _normalized_text(key)):
-        section = tenant_map.get(tenant_key) if isinstance(tenant_map.get(tenant_key), dict) else {}
-        tenant_enabled = _normalized_bool(section.get("enabled")) if "enabled" in section else default_enabled
-        role_overrides = _feature_override_map(section, "roles")
-        user_overrides = _feature_override_map(section, "userids", "users")
-        if tenant_enabled:
-            enabled_tenants.append(tenant_key)
-        else:
-            disabled_tenants.append(tenant_key)
-        tenant_entries.append(
-            {
-                "tenant_key": tenant_key,
-                "enabled": bool(tenant_enabled),
-                "role_override_count": len(role_overrides),
-                "user_override_count": len(user_overrides),
-            }
-        )
-    return {
-        "feature_flag": CUSTOMER_PULSE_FLAG_KEY,
-        "policy_key": CUSTOMER_PULSE_FLAG_POLICY_KEY,
-        "global_enabled": _setting_enabled(),
-        "default_enabled": default_enabled,
-        "tenant_mode": customer_pulse_tenant_mode(),
-        "external_request_scoped_enforced": customer_pulse_external_request_scoped_enforced(),
-        "enabled_tenants": enabled_tenants,
-        "disabled_tenants": disabled_tenants,
-        "tenants": tenant_entries,
-        "whitelist_ready": bool(_setting_enabled()) and not default_enabled and bool(enabled_tenants),
-    }
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_feedback_metrics_service",
+        "customer_pulse_rollout_whitelist_summary",
+    )
+    return delegate()
 
 
 def build_customer_pulse_tenant_rollout_report(
@@ -506,47 +496,11 @@ def build_customer_pulse_tenant_rollout_report(
     days: int = CUSTOMER_PULSE_DEFAULT_STATS_WINDOW_DAYS,
     tenant_keys: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    whitelist = customer_pulse_rollout_whitelist_summary()
-    requested_tenant_keys = [_normalized_text(item) for item in (tenant_keys or []) if _normalized_text(item)]
-    report_tenant_keys = requested_tenant_keys or list(whitelist.get("enabled_tenants") or [])
-    tenant_reports: list[dict[str, Any]] = []
-    for tenant_key in report_tenant_keys:
-        stats = build_customer_pulse_ops_dashboard_payload(tenant_key=tenant_key, days=days)
-        tenant_reports.append(
-            {
-                "tenant_key": tenant_key,
-                "feature_gate": dict(stats.get("feature_gate") or {}),
-                "counts": {
-                    key: int((stats.get("counts") or {}).get(key, 0) or 0)
-                    for key in (
-                        "ai_success",
-                        "ai_error",
-                        "fallback_count",
-                        "draft_preview_started",
-                        "draft_confirmed",
-                        "writeback_success",
-                        "unauthorized_denied",
-                        "cross_tenant_denied",
-                    )
-                },
-                "rates": {
-                    key: float((stats.get("rates") or {}).get(key, 0.0) or 0.0)
-                    for key in (
-                        "draft_confirm_rate",
-                        "fallback_rate",
-                        "writeback_success_rate",
-                        "ai_error_rate",
-                    )
-                },
-                "window": dict(stats.get("window") or {}),
-            }
-        )
-    return {
-        "generated_at": _iso_now(),
-        "window_days": max(1, int(days or CUSTOMER_PULSE_DEFAULT_STATS_WINDOW_DAYS)),
-        "whitelist": whitelist,
-        "tenants": tenant_reports,
-    }
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_feedback_metrics_service",
+        "build_customer_pulse_tenant_rollout_report",
+    )
+    return delegate(days=days, tenant_keys=tenant_keys)
 
 
 def _customer_pulse_review_data_source_summary() -> dict[str, Any]:
@@ -620,125 +574,11 @@ def build_customer_pulse_first_wave_review_report(
     days: int = 7,
     tenant_keys: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    resolved_days = max(1, int(days or 7))
-    rollout = build_customer_pulse_tenant_rollout_report(days=resolved_days, tenant_keys=tenant_keys)
-    data_source = _customer_pulse_review_data_source_summary()
-    since = _stats_since(resolved_days)
-    tenant_reviews: list[dict[str, Any]] = []
-    decision_rank = {"expand": 0, "hold": 1, "rollback": 2}
-    overall_decision = "expand"
-    for tenant_report in rollout.get("tenants") or []:
-        item = dict(tenant_report or {})
-        tenant_key = _normalized_text(item.get("tenant_key"))
-        daily_rows = repo.count_customer_pulse_metric_events_by_day(
-            tenant_key=tenant_key,
-            since=since,
-            event_types=(
-                "ai_success",
-                "ai_error",
-                "fallback_count",
-                "draft_preview_started",
-                "draft_confirmed",
-                "writeback_success",
-                "writeback_failed",
-                "unauthorized_denied",
-                "cross_tenant_denied",
-            ),
-        )
-        daily_map: dict[str, dict[str, int]] = {}
-        for row in daily_rows:
-            metric_date = _normalized_text(row.get("metric_date"))
-            if not metric_date:
-                continue
-            bucket = daily_map.setdefault(metric_date, {})
-            bucket[_normalized_text(row.get("event_type"))] = int(row.get("total_count") or 0)
-        ordered_dates = sorted(daily_map.keys())
-        counts = dict(item.get("counts") or {})
-        ai_success = int(counts.get("ai_success", 0) or 0)
-        ai_error = int(counts.get("ai_error", 0) or 0)
-        fallback_count = int(counts.get("fallback_count", 0) or 0)
-        draft_preview_started = int(counts.get("draft_preview_started", 0) or 0)
-        draft_confirmed = int(counts.get("draft_confirmed", 0) or 0)
-        writeback_success = int(counts.get("writeback_success", 0) or 0)
-        unauthorized_denied = int(counts.get("unauthorized_denied", 0) or 0)
-        cross_tenant_denied = int(counts.get("cross_tenant_denied", 0) or 0)
-        writeback_failed = sum(int(daily_map.get(day, {}).get("writeback_failed", 0) or 0) for day in ordered_dates)
-        ai_error_rate = _safe_rate(ai_error, ai_success + ai_error)
-        fallback_rate = _safe_rate(fallback_count, ai_success + fallback_count)
-        draft_confirm_rate = _safe_rate(draft_confirmed, draft_preview_started)
-        writeback_success_rate = _safe_rate(writeback_success, writeback_success + writeback_failed)
-        review_status = _tenant_review_status(
-            ai_error_rate=ai_error_rate,
-            fallback_rate=fallback_rate,
-            draft_confirm_rate=draft_confirm_rate,
-            writeback_success_rate=writeback_success_rate,
-            unauthorized_denied=unauthorized_denied,
-            cross_tenant_denied=cross_tenant_denied,
-            production_evidence_verified=bool(data_source.get("production_evidence_verified")),
-            observed_days=len(ordered_dates),
-        )
-        overall_decision = (
-            review_status["decision"]
-            if decision_rank[review_status["decision"]] > decision_rank[overall_decision]
-            else overall_decision
-        )
-        tenant_reviews.append(
-            {
-                "tenant_key": tenant_key,
-                "seven_day_totals": {
-                    "ai_success": ai_success,
-                    "ai_error": ai_error,
-                    "fallback_count": fallback_count,
-                    "draft_preview_started": draft_preview_started,
-                    "draft_confirmed": draft_confirmed,
-                    "writeback_success": writeback_success,
-                    "writeback_failed": writeback_failed,
-                    "unauthorized_denied": unauthorized_denied,
-                    "cross_tenant_denied": cross_tenant_denied,
-                },
-                "daily_average": {
-                    "ai_success": round(ai_success / resolved_days, 4),
-                    "ai_error": round(ai_error / resolved_days, 4),
-                    "fallback_count": round(fallback_count / resolved_days, 4),
-                    "draft_preview_started": round(draft_preview_started / resolved_days, 4),
-                    "draft_confirmed": round(draft_confirmed / resolved_days, 4),
-                    "writeback_success": round(writeback_success / resolved_days, 4),
-                },
-                "rates": {
-                    "ai_error_rate": ai_error_rate,
-                    "fallback_rate": fallback_rate,
-                    "draft_confirm_rate": draft_confirm_rate,
-                    "writeback_success_rate": writeback_success_rate,
-                },
-                "trend": {
-                    "observed_days": len(ordered_dates),
-                    "active_dates": ordered_dates,
-                    "draft_preview_started": _trend_direction(
-                        [int(daily_map.get(day, {}).get("draft_preview_started", 0) or 0) for day in ordered_dates]
-                    ),
-                    "draft_confirmed": _trend_direction(
-                        [int(daily_map.get(day, {}).get("draft_confirmed", 0) or 0) for day in ordered_dates]
-                    ),
-                    "fallback_count": _trend_direction(
-                        [int(daily_map.get(day, {}).get("fallback_count", 0) or 0) for day in ordered_dates]
-                    ),
-                },
-                "meets_expansion_gate": review_status["decision"] == "expand",
-                "status": review_status["label"],
-                "decision": review_status["decision"],
-            }
-        )
-    final_decision = overall_decision
-    if not bool(data_source.get("production_evidence_verified")):
-        final_decision = "hold"
-    return {
-        "generated_at": _iso_now(),
-        "window_days": resolved_days,
-        "data_source": data_source,
-        "rollout": rollout,
-        "tenants": tenant_reviews,
-        "final_decision": final_decision,
-    }
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_feedback_metrics_service",
+        "build_customer_pulse_first_wave_review_report",
+    )
+    return delegate(days=days, tenant_keys=tenant_keys)
 
 
 def _priority_label(priority: str) -> str:
@@ -1409,159 +1249,16 @@ def build_customer_pulse_ops_dashboard_payload(
     owner_userids: list[str] | tuple[str, ...] | None = None,
     days: int = CUSTOMER_PULSE_DEFAULT_STATS_WINDOW_DAYS,
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    resolved_days = max(1, min(int(days or CUSTOMER_PULSE_DEFAULT_STATS_WINDOW_DAYS), 90))
-    since = _stats_since(resolved_days)
-    counts = repo.count_customer_pulse_metric_events(
-        tenant_key=resolved_tenant_key,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_feedback_metrics_service",
+        "build_customer_pulse_ops_dashboard_payload",
+    )
+    return delegate(
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
         owner_userids=owner_userids,
-        since=since,
-        event_types=(
-            "action_executed",
-            "ai_error",
-            "ai_success",
-            "ai_recommendation_completed",
-            "card_clicked",
-            "card_exposed",
-            "draft_preview_started",
-            "draft_confirmed",
-            "fallback_count",
-            "followup_segment_updated",
-            "followup_task_created",
-            "writeback_failed",
-            "writeback_success",
-        ),
+        days=days,
     )
-    security_counts = repo.count_customer_pulse_metric_events(
-        tenant_key=resolved_tenant_key,
-        since=since,
-        event_types=("access_denied", "cross_tenant_denied", "unauthorized_denied"),
-    )
-    exposures = int(counts.get("card_exposed", 0) or 0)
-    executions = int(counts.get("action_executed", 0) or 0)
-    ai_success = int(counts.get("ai_success", 0) or 0)
-    card_clicks = int(counts.get("card_clicked", 0) or 0)
-    draft_preview_started = int(counts.get("draft_preview_started", 0) or 0)
-    draft_confirms = int(counts.get("draft_confirmed", 0) or 0)
-    fallback_count = int(counts.get("fallback_count", 0) or 0)
-    writeback_success = int(counts.get("writeback_success", 0) or 0)
-    writeback_failed = int(counts.get("writeback_failed", 0) or 0)
-    ai_errors = int(counts.get("ai_error", 0) or 0)
-    ai_completed = int(counts.get("ai_recommendation_completed", 0) or 0)
-    unauthorized_denied = int(security_counts.get("unauthorized_denied", 0) or 0)
-    cross_tenant_denied = int(security_counts.get("cross_tenant_denied", 0) or 0)
-    execution_rate = _safe_rate(executions, exposures)
-    draft_confirm_rate = _safe_rate(draft_confirms, draft_preview_started or card_clicks)
-    fallback_rate = _safe_rate(fallback_count, ai_completed)
-    writeback_success_rate = _safe_rate(writeback_success, writeback_success + writeback_failed)
-    ai_error_rate = _safe_rate(ai_errors, ai_completed)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    dependencies = _customer_pulse_dependency_status(resolved_context)
-    return {
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "feature_gate": feature_gate,
-        "dependencies": dependencies,
-        "window": {
-            "days": resolved_days,
-            "since": since,
-        },
-        "counts": {
-            "card_exposed": exposures,
-            "action_executed": executions,
-            "ai_success": ai_success,
-            "draft_confirmed": draft_confirms,
-            "draft_preview_started": draft_preview_started,
-            "fallback_count": fallback_count,
-            "writeback_success": writeback_success,
-            "writeback_failed": writeback_failed,
-            "ai_error": ai_errors,
-            "ai_recommendation_completed": ai_completed,
-            "unauthorized_denied": int(security_counts.get("unauthorized_denied", 0) or 0),
-            "cross_tenant_denied": int(security_counts.get("cross_tenant_denied", 0) or 0),
-            "followup_task_created": int(counts.get("followup_task_created", 0) or 0),
-            "followup_segment_updated": int(counts.get("followup_segment_updated", 0) or 0),
-            "card_clicked": card_clicks,
-            "access_denied": int(security_counts.get("access_denied", 0) or 0),
-        },
-        "rates": {
-            "execution_rate": execution_rate,
-            "draft_confirm_rate": draft_confirm_rate,
-            "fallback_rate": fallback_rate,
-            "writeback_success_rate": writeback_success_rate,
-            "ai_error_rate": ai_error_rate,
-        },
-        "summary_cards": [
-            {
-                "key": "card_exposed",
-                "label": f"最近 {resolved_days} 天曝光",
-                "value": exposures,
-                "description": "行动卡被展示的总次数。",
-            },
-            {
-                "key": "execution_rate",
-                "label": "执行率",
-                "value": f"{round(execution_rate * 100, 1)}%",
-                "description": f"{executions} 次执行 / {exposures} 次曝光",
-            },
-            {
-                "key": "draft_confirm_rate",
-                "label": "草稿确认率",
-                "value": f"{round(draft_confirm_rate * 100, 1)}%",
-                "description": f"{draft_confirms} 次确认 / {card_clicks} 次点击",
-            },
-            {
-                "key": "writeback_success_rate",
-                "label": "写回成功率",
-                "value": f"{round(writeback_success_rate * 100, 1)}%",
-                "description": f"{writeback_success} 成功 / {writeback_success + writeback_failed} 次写回",
-            },
-            {
-                "key": "ai_error_rate",
-                "label": "AI 错误率",
-                "value": f"{round(ai_error_rate * 100, 1)}%",
-                "description": f"{ai_errors} 次错误 / {ai_completed} 次 AI 推荐",
-            },
-                {
-                    "key": "unauthorized_denied",
-                    "label": "越权拒绝",
-                    "value": unauthorized_denied,
-                "description": "权限不足导致的拒绝次数。",
-            },
-                {
-                    "key": "cross_tenant_denied",
-                    "label": "跨租户拒绝",
-                    "value": cross_tenant_denied,
-                "description": "跨租户读取或探测被拦截的次数。",
-            },
-        ],
-        "rollout_cards": [
-            {
-                "key": "feature_gate",
-                "label": "灰度状态",
-                "value": "已开启" if feature_gate["enabled"] else "未开启",
-                "description": f"reason={feature_gate['reason']} · tenant={feature_gate['tenant_key']}",
-            },
-            {
-                "key": "tenant_mode",
-                "label": "Tenant Mode",
-                "value": dependencies["tenant_mode"]["value"],
-                "description": "legacy internal 与 request-scoped 显式区分。",
-            },
-            {
-                "key": "rbac",
-                "label": "RBAC",
-                "value": "已就绪" if dependencies["rbac"]["ready"] else "未就绪",
-                "description": str(dependencies["rbac"]["value"]),
-            },
-            {
-                "key": "audit_metrics",
-                "label": "审计 / 指标",
-                "value": "已就绪",
-                "description": "execution log、audit log、metric events 已贯通。",
-            },
-        ],
-    }
 
 
 def _normalize_action_execution_payload(
@@ -1794,590 +1491,23 @@ def _load_context(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    summary = repo.get_customer_pulse_customer_summary(external_userid)
-    marketing_state = repo.get_customer_marketing_state_current(external_userid) or {}
-    value_segment = repo.get_customer_value_segment_current(external_userid) or {}
-    class_status = repo.get_class_user_status_current(external_userid) or {}
-    owner_binding = repo.get_customer_owner_binding(external_userid) or {}
-    reply_row = repo.get_latest_reply_monitor_row(external_userid) or {}
-    ai_row = repo.get_latest_ai_output_row(external_userid) or {}
-    tag_rows = repo.list_contact_tag_rows(external_userid, limit=20)
-    messages = repo.list_recent_archived_message_rows(external_userid, limit=20)
-    questionnaire_rows = repo.list_recent_questionnaire_rows(external_userid, limit=5)
-    dispatch_rows = repo.list_recent_conversion_dispatch_rows(external_userid, limit=5)
-    latest_snapshot = repo.get_latest_customer_pulse_snapshot_for_external_userid(external_userid, tenant_key=resolved_tenant_key) or {}
-    existing_card = repo.get_latest_customer_pulse_card_for_external_userid(external_userid, tenant_key=resolved_tenant_key) or {}
-    ai_assist = _ai_assist_payload(ai_row)
-    return {
-        "summary": summary,
-        "marketing_state": marketing_state,
-        "value_segment": value_segment,
-        "class_status": class_status,
-        "owner_binding": owner_binding,
-        "reply_row": reply_row,
-        "ai_row": ai_row,
-        "ai_assist": ai_assist,
-        "tag_rows": tag_rows,
-        "messages": messages,
-        "questionnaire_rows": questionnaire_rows,
-        "dispatch_rows": dispatch_rows,
-        "latest_snapshot": latest_snapshot,
-        "existing_card": existing_card,
-        "tenant_key": resolved_tenant_key,
-        "tenant_context": resolved_context,
-    }
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_signal_service",
+        "_load_context",
+    )
+    return delegate(
+        external_userid,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+    )
 
 
 def _build_rule_signals(context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    summary = context["summary"]
-    marketing_state = context["marketing_state"]
-    value_segment = context["value_segment"]
-    class_status = context["class_status"]
-    owner_binding = context["owner_binding"]
-    reply_row = context["reply_row"]
-    tag_rows = context["tag_rows"]
-    messages = context["messages"]
-    questionnaire_rows = context["questionnaire_rows"]
-    dispatch_rows = context["dispatch_rows"]
-    existing_card = context["existing_card"]
-
-    tenant_key = _resolved_tenant_key(
-        tenant_context=context.get("tenant_context"),
-        tenant_key=_normalized_text(context.get("tenant_key")),
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_signal_service",
+        "_build_rule_signals",
     )
-    external_userid = _normalized_text(summary.get("external_userid"))
-    owner_userid = _normalized_text(summary.get("owner_userid"))
-    stage_key = "/".join(
-        part
-        for part in [
-            _normalized_text(marketing_state.get("main_stage")),
-            _normalized_text(marketing_state.get("sub_stage")),
-        ]
-        if part
-    )
-    value_segment_name = _normalized_text(value_segment.get("segment")).lower()
-    current_followup_segment = _followup_segment_from_marketing_state(marketing_state)
-
-    inbound_messages = [row for row in messages if _message_direction(row, external_userid=external_userid) == "inbound"]
-    outbound_messages = [row for row in messages if _message_direction(row, external_userid=external_userid) == "outbound"]
-    latest_inbound = inbound_messages[0] if inbound_messages else {}
-    latest_outbound = outbound_messages[0] if outbound_messages else {}
-    last_interaction_at = _normalized_text((messages[0] if messages else {}).get("send_time"))
-    last_inbound_at = _normalized_text(latest_inbound.get("send_time"))
-    last_outbound_at = _normalized_text(latest_outbound.get("send_time"))
-    known_followup_due_at = _known_followup_due_at(marketing_state, existing_card)
-
-    signals: list[dict[str, Any]] = []
-
-    reply_status = _normalized_text(reply_row.get("status")).lower()
-    reply_snapshot = _json_loads(reply_row.get("payload_snapshot_json"), default={})
-    if not isinstance(reply_snapshot, dict):
-        reply_snapshot = {}
-    waiting_hours = _hours_since(reply_row.get("last_inbound_at") or reply_row.get("updated_at") or reply_row.get("created_at"))
-    if reply_row and reply_status not in {"done", "resolved", "completed", "cancelled"}:
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="unanswered_question",
-                signal_source="automation_reply_monitor_queue",
-                score=36 if (waiting_hours or 0) < 24 else 42,
-                summary="客户存在未处理问题，当前应优先给出可确认的回复草稿。",
-                source_ref_type="automation_reply_monitor_queue",
-                source_ref_id=_normalized_text(reply_row.get("id")),
-                source_updated_at=_normalized_text(reply_row.get("updated_at") or reply_row.get("created_at")),
-                payload={
-                    "reply_queue_status": reply_status or "pending",
-                    "waiting_hours": round(float(waiting_hours or 0), 1),
-                    "message_count": int(reply_row.get("message_count") or 0),
-                    "not_before": _normalized_text(reply_row.get("not_before")),
-                },
-                evidence=[
-                    {
-                        "title": "待回复窗口",
-                        "detail": _safe_preview(
-                            reply_snapshot.get("latest_inbound_summary")
-                            or reply_snapshot.get("last_message_summary")
-                            or latest_inbound.get("content")
-                            or "客户有待回复消息"
-                        ),
-                        "event_time": _normalized_text(reply_row.get("last_inbound_at") or reply_row.get("updated_at")),
-                        "source": "automation_reply_monitor_queue",
-                    }
-                ],
-                flag_bucket="risk",
-                flag_key="unanswered_question",
-                flag_label="存在未回复问题",
-            )
-        )
-    elif latest_inbound:
-        latest_inbound_time = _parse_datetime(latest_inbound.get("send_time"))
-        latest_outbound_time = _parse_datetime(latest_outbound.get("send_time"))
-        latest_inbound_content = _normalized_text(latest_inbound.get("content"))
-        if (
-            latest_inbound_time
-            and latest_inbound_time >= datetime.now() - timedelta(hours=72)
-            and (not latest_outbound_time or latest_inbound_time > latest_outbound_time)
-            and _contains_any_keyword(latest_inbound_content, _QUESTION_HINT_KEYWORDS)
-        ):
-            signals.append(
-                _make_signal(
-                    tenant_key=tenant_key,
-                    external_userid=external_userid,
-                    owner_userid=owner_userid,
-                    signal_type="unanswered_question",
-                    signal_source="archived_messages",
-                    score=30,
-                    summary="最近一轮客户提问后尚未形成有效回复，建议先处理这条对话。",
-                    source_ref_type="archived_messages",
-                    source_ref_id=_normalized_text(latest_inbound.get("id") or latest_inbound.get("msgid")),
-                    source_updated_at=_normalized_text(latest_inbound.get("send_time")),
-                    payload={
-                        "waiting_hours": round(float(_hours_since(latest_inbound.get("send_time")) or 0), 1),
-                    },
-                    evidence=[
-                        {
-                            "title": "最近一条客户消息",
-                            "detail": _safe_preview(latest_inbound_content),
-                            "event_time": _normalized_text(latest_inbound.get("send_time")),
-                            "source": "archived_messages",
-                        }
-                    ],
-                    flag_bucket="risk",
-                    flag_key="unanswered_question",
-                    flag_label="存在未回复问题",
-                )
-            )
-
-    negative_message = next(
-        (
-            row
-            for row in inbound_messages
-            if _contains_any_keyword(row.get("content"), _NEGATIVE_MESSAGE_KEYWORDS)
-            and (_parse_datetime(row.get("send_time")) or datetime.min) >= datetime.now() - timedelta(days=7)
-        ),
-        {},
-    )
-    if negative_message:
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="negative_sentiment",
-                signal_source="archived_messages",
-                score=28,
-                summary="客户近期表达了负向情绪或投诉倾向，建议先人工介入。",
-                source_ref_type="archived_messages",
-                source_ref_id=_normalized_text(negative_message.get("id") or negative_message.get("msgid")),
-                source_updated_at=_normalized_text(negative_message.get("send_time")),
-                payload={"matched_keywords": [item for item in _NEGATIVE_MESSAGE_KEYWORDS if item in _normalized_text(negative_message.get("content"))]},
-                evidence=[
-                    {
-                        "title": "近期负向表达",
-                        "detail": _safe_preview(negative_message.get("content")),
-                        "event_time": _normalized_text(negative_message.get("send_time")),
-                        "source": "archived_messages",
-                    }
-                ],
-                flag_bucket="risk",
-                flag_key="negative_sentiment",
-                flag_label="近期负向情绪/投诉",
-            )
-        )
-
-    latest_questionnaire = questionnaire_rows[0] if questionnaire_rows else {}
-    questionnaire_status = _normalized_text(latest_questionnaire.get("scrm_apply_status")).lower()
-    questionnaire_error = _normalized_text(latest_questionnaire.get("scrm_apply_error"))
-    latest_dispatch = dispatch_rows[0] if dispatch_rows else {}
-    dispatch_status = _normalized_text(latest_dispatch.get("dispatch_status")).lower()
-    dispatch_age_hours = _hours_since(
-        latest_dispatch.get("dispatched_at") or latest_dispatch.get("updated_at") or latest_dispatch.get("created_at")
-    )
-    class_sync_status = _normalized_text(class_status.get("wecom_tag_sync_status")).lower()
-    service_exception_evidence: list[dict[str, Any]] = []
-    service_exception_payload: dict[str, Any] = {}
-    if questionnaire_status in {"failed", "error"} or questionnaire_error:
-        service_exception_payload["questionnaire_apply_status"] = questionnaire_status or "failed"
-        service_exception_payload["questionnaire_apply_error"] = questionnaire_error
-        service_exception_evidence.append(
-            {
-                "title": "问卷结果回写异常",
-                "detail": questionnaire_error or f"状态 {questionnaire_status}",
-                "event_time": _normalized_text(latest_questionnaire.get("scrm_apply_at") or latest_questionnaire.get("submitted_at")),
-                "source": "questionnaire_scrm_apply_logs",
-            }
-        )
-    if dispatch_status not in _SAFE_DISPATCH_STATUSES and dispatch_status:
-        service_exception_payload["dispatch_status"] = dispatch_status
-        service_exception_evidence.append(
-            {
-                "title": "转化派发异常",
-                "detail": _normalized_text(latest_dispatch.get("dispatch_note")) or f"状态 {dispatch_status}",
-                "event_time": _normalized_text(latest_dispatch.get("updated_at") or latest_dispatch.get("created_at")),
-                "source": "conversion_dispatch_log",
-            }
-        )
-    elif dispatch_status in {"pending", "blocked_quiet_hours"} and (dispatch_age_hours or 0) >= 24:
-        service_exception_payload["dispatch_status"] = dispatch_status
-        service_exception_payload["dispatch_wait_hours"] = round(float(dispatch_age_hours or 0), 1)
-        service_exception_evidence.append(
-            {
-                "title": "转化派发停留过久",
-                "detail": f"状态 {dispatch_status} · 已等待 {round(float(dispatch_age_hours or 0), 1)} 小时",
-                "event_time": _normalized_text(latest_dispatch.get("updated_at") or latest_dispatch.get("created_at")),
-                "source": "conversion_dispatch_log",
-            }
-        )
-    if class_sync_status == "failed":
-        service_exception_payload["tag_sync_status"] = class_sync_status
-        service_exception_payload["tag_sync_error"] = _normalized_text(class_status.get("wecom_tag_sync_error"))
-        service_exception_evidence.append(
-            {
-                "title": "标签同步异常",
-                "detail": _normalized_text(class_status.get("wecom_tag_sync_error")) or "报名/班级状态标签同步失败",
-                "event_time": _normalized_text(class_status.get("updated_at") or class_status.get("set_at")),
-                "source": "class_user_status_current",
-            }
-        )
-    if service_exception_evidence:
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="service_exception",
-                signal_source=service_exception_evidence[0]["source"],
-                score=24,
-                summary="客户最近存在服务或派发异常，建议先人工确认并补动作。",
-                source_ref_type=service_exception_evidence[0]["source"],
-                source_ref_id=_normalized_text(latest_questionnaire.get("id") or latest_dispatch.get("id") or class_status.get("external_userid")),
-                source_updated_at=_normalized_text(
-                    latest_questionnaire.get("scrm_apply_at")
-                    or latest_dispatch.get("updated_at")
-                    or class_status.get("updated_at")
-                    or latest_questionnaire.get("submitted_at")
-                ),
-                payload=service_exception_payload,
-                evidence=service_exception_evidence,
-                flag_bucket="risk",
-                flag_key="service_exception",
-                flag_label="订单/服务异常",
-            )
-        )
-
-    detail_parts = []
-    if stage_key:
-        detail_parts.append(_stage_label(marketing_state.get("main_stage"), marketing_state.get("sub_stage")))
-    if value_segment_name:
-        detail_parts.append(f"价值分层 {_segment_label(value_segment_name)}")
-    if value_segment_name in _HIGH_INTENT_SEGMENTS or stage_key in _HIGH_INTENT_STAGE_KEYS:
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="high_intent_stage",
-                signal_source="customer_marketing_state_current",
-                score=18,
-                summary="客户处于高优先级推进段，今天的推进收益更高。",
-                source_ref_type="customer_marketing_state_current",
-                source_ref_id=_normalized_text(marketing_state.get("id") or value_segment.get("id")),
-                source_updated_at=_normalized_text(marketing_state.get("updated_at") or value_segment.get("updated_at")),
-                payload={
-                    "main_stage": _normalized_text(marketing_state.get("main_stage")),
-                    "sub_stage": _normalized_text(marketing_state.get("sub_stage")),
-                    "segment": value_segment_name,
-                    "current_followup_segment": current_followup_segment,
-                },
-                evidence=[
-                    {
-                        "title": "当前推进阶段",
-                        "detail": " · ".join(detail_parts) or "命中高意向阶段规则",
-                        "event_time": _normalized_text(marketing_state.get("updated_at") or value_segment.get("updated_at")),
-                        "source": "customer_marketing_state_current",
-                    }
-                ],
-                flag_bucket="opportunity",
-                flag_key="high_intent_stage",
-                flag_label="高意向阶段",
-            )
-        )
-
-    high_intent_tags = [
-        _normalized_text(item.get("tag_name") or item.get("tag_id"))
-        for item in tag_rows
-        if any(keyword in _normalized_text(item.get("tag_name") or item.get("tag_id")) for keyword in _HIGH_INTENT_TAG_KEYWORDS)
-    ]
-    if high_intent_tags:
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="high_intent_tag",
-                signal_source="contact_tags",
-                score=10,
-                summary="客户标签显示当前仍需推进，可直接复用到行动卡解释。",
-                source_ref_type="contact_tags",
-                source_ref_id="",
-                source_updated_at=_normalized_text((tag_rows[0] if tag_rows else {}).get("created_at")),
-                payload={"tag_names": high_intent_tags},
-                evidence=[
-                    {
-                        "title": "命中客户标签",
-                        "detail": "、".join(high_intent_tags[:3]),
-                        "event_time": _normalized_text((tag_rows[0] if tag_rows else {}).get("created_at")),
-                        "source": "contact_tags",
-                    }
-                ],
-                flag_bucket="opportunity",
-                flag_key="high_intent_tag",
-                flag_label="高意向标签",
-            )
-        )
-
-    high_intent_message = next(
-        (
-            row
-            for row in inbound_messages
-            if _contains_any_keyword(row.get("content"), _HIGH_INTENT_MESSAGE_KEYWORDS)
-            and (_parse_datetime(row.get("send_time")) or datetime.min) >= datetime.now() - timedelta(days=7)
-        ),
-        {},
-    )
-    latest_questionnaire_time = _parse_datetime(latest_questionnaire.get("submitted_at"))
-    if high_intent_message or (latest_questionnaire and latest_questionnaire_time and latest_questionnaire_time >= datetime.now() - timedelta(days=7)):
-        evidence: list[dict[str, Any]] = []
-        if high_intent_message:
-            evidence.append(
-                {
-                    "title": "近期高意向表达",
-                    "detail": _safe_preview(high_intent_message.get("content")),
-                    "event_time": _normalized_text(high_intent_message.get("send_time")),
-                    "source": "archived_messages",
-                }
-            )
-        if latest_questionnaire:
-            evidence.append(
-                {
-                    "title": "近期问卷提交",
-                    "detail": f"{_normalized_text(latest_questionnaire.get('questionnaire_title') or latest_questionnaire.get('questionnaire_name')) or '问卷'} · score={latest_questionnaire.get('total_score') or 0}",
-                    "event_time": _normalized_text(latest_questionnaire.get("submitted_at")),
-                    "source": "questionnaire_submissions",
-                }
-            )
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="high_intent_behavior",
-                signal_source="archived_messages" if high_intent_message else "questionnaire_submissions",
-                score=16,
-                summary="客户最近出现高意向行为，今天处理更容易推动下一步。",
-                source_ref_type="archived_messages" if high_intent_message else "questionnaire_submissions",
-                source_ref_id=_normalized_text(high_intent_message.get("id") or latest_questionnaire.get("id")),
-                source_updated_at=_normalized_text(high_intent_message.get("send_time") or latest_questionnaire.get("submitted_at")),
-                payload={
-                    "questionnaire_score": latest_questionnaire.get("total_score"),
-                    "has_high_intent_message": bool(high_intent_message),
-                },
-                evidence=evidence,
-                flag_bucket="opportunity",
-                flag_key="high_intent_behavior",
-                flag_label="近期高意向行为",
-            )
-        )
-
-    stage_anchor = (
-        _normalized_text(marketing_state.get("entered_at"))
-        or _normalized_text(marketing_state.get("updated_at"))
-        or _normalized_text(marketing_state.get("last_message_at"))
-    )
-    stage_stalled_days = _days_since(stage_anchor)
-    if stage_stalled_days is not None and stage_stalled_days >= 3 and stage_key != "converted/enrolled":
-        points = 12 if stage_stalled_days < 7 else 20 if stage_stalled_days < 14 else 28
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="stage_stalled",
-                signal_source="customer_marketing_state_current",
-                score=points,
-                summary=f"客户在当前阶段已停留 {stage_stalled_days} 天，推进节奏明显变慢。",
-                source_ref_type="customer_marketing_state_current",
-                source_ref_id=_normalized_text(marketing_state.get("id")),
-                source_updated_at=_normalized_text(marketing_state.get("updated_at") or stage_anchor),
-                payload={
-                    "stage_stalled_days": stage_stalled_days,
-                    "stage_key": stage_key,
-                },
-                evidence=[
-                    {
-                        "title": "阶段停滞",
-                        "detail": f"{_stage_label(marketing_state.get('main_stage'), marketing_state.get('sub_stage'))} 已停留 {stage_stalled_days} 天",
-                        "event_time": stage_anchor,
-                        "source": "customer_marketing_state_current",
-                    }
-                ],
-                flag_bucket="risk",
-                flag_key="stage_stalled",
-                flag_label="阶段停滞",
-            )
-        )
-
-    if not known_followup_due_at and (
-        any(item["signal_type"] == "high_intent_stage" for item in signals)
-        or any(item["signal_type"] == "stage_stalled" for item in signals)
-        or any(item["signal_type"] == "unanswered_question" for item in signals)
-    ):
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="missing_followup_time",
-                signal_source="customer_marketing_state_current",
-                score=14,
-                summary="当前客户没有明确的下一次跟进时间，容易继续停滞。",
-                source_ref_type="customer_marketing_state_current",
-                source_ref_id=_normalized_text(marketing_state.get("id") or existing_card.get("id")),
-                source_updated_at=_normalized_text(marketing_state.get("updated_at") or existing_card.get("updated_at")),
-                payload={"known_followup_due_at": known_followup_due_at},
-                evidence=[
-                    {
-                        "title": "缺少下次跟进时间",
-                        "detail": "营销状态与现有行动卡中都没有明确的下一次跟进时间",
-                        "event_time": _normalized_text(marketing_state.get("updated_at") or existing_card.get("updated_at")),
-                        "source": "customer_marketing_state_current",
-                    }
-                ],
-                flag_bucket="risk",
-                flag_key="missing_followup_time",
-                flag_label="缺少下次跟进时间",
-            )
-        )
-
-    interaction_gap_days = _days_since(last_interaction_at)
-    if (
-        interaction_gap_days is not None
-        and interaction_gap_days >= 7
-        and (
-            value_segment_name in _HIGH_INTENT_SEGMENTS
-            or stage_key in _HIGH_INTENT_STAGE_KEYS
-            or bool(marketing_state.get("eligible_for_conversion"))
-        )
-    ):
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="interaction_stale",
-                signal_source="archived_messages",
-                score=12,
-                summary=f"最近 {interaction_gap_days} 天没有新的有效互动，客户可能正在流失。",
-                source_ref_type="archived_messages",
-                source_ref_id=_normalized_text((messages[0] if messages else {}).get("id")),
-                source_updated_at=last_interaction_at,
-                payload={"interaction_gap_days": interaction_gap_days},
-                evidence=[
-                    {
-                        "title": "最近互动时间",
-                        "detail": last_interaction_at or "暂无消息记录",
-                        "event_time": last_interaction_at,
-                        "source": "archived_messages",
-                    }
-                ],
-                flag_bucket="risk",
-                flag_key="interaction_stale",
-                flag_label="最近互动间隔过长",
-            )
-        )
-
-    if interaction_gap_days is not None and interaction_gap_days <= 1 and (
-        value_segment_name in _HIGH_INTENT_SEGMENTS or any(item["signal_type"] == "unanswered_question" for item in signals)
-    ):
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="recent_engagement",
-                signal_source="archived_messages",
-                score=8,
-                summary="客户最近 24 小时内仍在互动，及时处理更容易转成下一步动作。",
-                source_ref_type="archived_messages",
-                source_ref_id=_normalized_text((messages[0] if messages else {}).get("id")),
-                source_updated_at=last_interaction_at,
-                payload={"last_interaction_at": last_interaction_at},
-                evidence=[
-                    {
-                        "title": "最近互动",
-                        "detail": _safe_preview((messages[0] if messages else {}).get("content")),
-                        "event_time": last_interaction_at,
-                        "source": "archived_messages",
-                    }
-                ],
-                flag_bucket="opportunity",
-                flag_key="recent_engagement",
-                flag_label="最近仍有互动",
-            )
-        )
-
-    owner_change_days = _days_since(owner_binding.get("updated_at") or summary.get("binding_updated_at"))
-    first_owner = _normalized_text(owner_binding.get("first_owner_userid") or summary.get("first_owner_userid"))
-    last_owner = _normalized_text(owner_binding.get("last_owner_userid") or summary.get("last_owner_userid"))
-    if first_owner and last_owner and first_owner != last_owner and owner_change_days is not None and owner_change_days <= 14:
-        signals.append(
-            _make_signal(
-                tenant_key=tenant_key,
-                external_userid=external_userid,
-                owner_userid=owner_userid,
-                signal_type="owner_changed_recently",
-                signal_source="external_contact_bindings",
-                score=8,
-                summary="客户负责人近期发生变更，交接阶段容易漏掉跟进动作。",
-                source_ref_type="external_contact_bindings",
-                source_ref_id=external_userid,
-                source_updated_at=_normalized_text(owner_binding.get("updated_at") or summary.get("binding_updated_at")),
-                payload={
-                    "first_owner_userid": first_owner,
-                    "last_owner_userid": last_owner,
-                    "owner_change_days": owner_change_days,
-                },
-                evidence=[
-                    {
-                        "title": "负责人变更",
-                        "detail": f"{first_owner} -> {last_owner}",
-                        "event_time": _normalized_text(owner_binding.get("updated_at") or summary.get("binding_updated_at")),
-                        "source": "external_contact_bindings",
-                    }
-                ],
-                flag_bucket="risk",
-                flag_key="owner_changed_recently",
-                flag_label="负责人近期变更",
-            )
-        )
-
-    metrics = {
-        "rules_version": CUSTOMER_PULSE_RULES_VERSION,
-        "last_interaction_at": last_interaction_at,
-        "last_inbound_at": last_inbound_at,
-        "last_outbound_at": last_outbound_at,
-        "interaction_gap_days": interaction_gap_days,
-        "stage_stalled_days": stage_stalled_days,
-        "known_followup_due_at": known_followup_due_at,
-        "current_followup_segment": current_followup_segment,
-        "stage_key": stage_key,
-        "value_segment": value_segment_name,
-    }
-    return signals, metrics
+    return delegate(context)
 
 
 def _persist_signals(
@@ -2387,244 +1517,32 @@ def _persist_signals(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> list[dict[str, Any]]:
-    persisted: list[dict[str, Any]] = []
-    active_signal_keys: list[str] = []
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=tenant_context, tenant_key=tenant_key)
-    for signal in signals:
-        active_signal_keys.append(signal["signal_key"])
-        persisted.append(
-            repo.upsert_customer_pulse_signal_event(
-                signal_key=signal["signal_key"],
-                tenant_key=resolved_tenant_key,
-                external_userid=signal["external_userid"],
-                owner_userid=signal["owner_userid"],
-                signal_type=signal["signal_type"],
-                signal_source=signal["signal_source"],
-                signal_status="open",
-                priority=signal["priority"],
-                evidence=signal["evidence"],
-                source_ref_type=signal["source_ref_type"],
-                source_ref_id=signal["source_ref_id"],
-                source_updated_at=signal["source_updated_at"],
-                score=float(signal.get("score") or 0),
-                summary=signal["summary"],
-                payload=signal["payload"],
-            )
-        )
-    repo.resolve_customer_pulse_stale_signals_by_tenant(
-        external_userid,
-        active_signal_keys=active_signal_keys,
-        tenant_key=resolved_tenant_key,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_persist_signals",
     )
-    return persisted
+    return delegate(
+        external_userid,
+        signals=signals,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+    )
 
 
 def _build_scoring(signals: list[dict[str, Any]], *, metrics: dict[str, Any]) -> dict[str, Any]:
-    if not signals:
-        return {
-            "priority_score": 0.0,
-            "priority": "low",
-            "risk_flags": [],
-            "opportunity_flags": [],
-            "score_breakdown": [],
-            "confidence": None,
-            "source_updated_at": "",
-        }
-    ordered_signals = sorted(signals, key=lambda item: (float(item.get("score") or 0), _normalized_text(item.get("source_updated_at"))), reverse=True)
-    raw_score = sum(float(item.get("score") or 0) for item in ordered_signals)
-    priority_score = round(min(raw_score, 100.0), 2)
-    risk_flags: list[dict[str, Any]] = []
-    opportunity_flags: list[dict[str, Any]] = []
-    score_breakdown: list[dict[str, Any]] = []
-    seen_flag_keys: set[str] = set()
-    risk_keys: set[str] = set()
-    for signal in ordered_signals:
-        payload = _json_loads(signal.get("payload_json") or signal.get("payload"), default={})
-        if not isinstance(payload, dict):
-            payload = {}
-        flag_bucket = _normalized_text(payload.get("flag_bucket"))
-        flag_key = _normalized_text(payload.get("flag_key"))
-        flag_label = _normalized_text(payload.get("flag_label")) or flag_key or _normalized_text(signal.get("signal_type"))
-        evidence = _dedupe_evidence(_json_loads(signal.get("evidence_json") or signal.get("evidence"), default=[]), limit=2)
-        score_entry = {
-            "signal_type": _normalized_text(signal.get("signal_type")),
-            "label": flag_label,
-            "category": flag_bucket or "neutral",
-            "score": round(float(signal.get("score") or 0), 2),
-            "summary": _normalized_text(signal.get("summary")),
-            "evidence": evidence,
-        }
-        score_breakdown.append(score_entry)
-        if not flag_key or flag_key in seen_flag_keys:
-            continue
-        seen_flag_keys.add(flag_key)
-        flag_entry = {
-            "key": flag_key,
-            "label": flag_label,
-            "score": round(float(signal.get("score") or 0), 2),
-            "summary": _normalized_text(signal.get("summary")),
-            "evidence": evidence,
-        }
-        if flag_bucket == "risk":
-            risk_keys.add(flag_key)
-            risk_flags.append(flag_entry)
-        elif flag_bucket == "opportunity":
-            opportunity_flags.append(flag_entry)
-
-    priority = _priority_from_score(priority_score, risk_keys=risk_keys)
-    confidence = round(min(0.98, max(priority_score / 100, 0.35)), 4)
-    source_updated_at = max(
-        [_normalized_text(item.get("source_updated_at")) for item in ordered_signals if _normalized_text(item.get("source_updated_at"))],
-        default=_normalized_text(metrics.get("last_interaction_at")),
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_build_scoring",
     )
-    return {
-        "priority_score": priority_score,
-        "priority": priority,
-        "risk_flags": risk_flags,
-        "opportunity_flags": opportunity_flags,
-        "score_breakdown": score_breakdown,
-        "confidence": confidence,
-        "source_updated_at": source_updated_at,
-    }
+    return delegate(signals, metrics=metrics)
 
 
 def _build_action_candidates(context: dict[str, Any], *, scoring: dict[str, Any], metrics: dict[str, Any]) -> list[dict[str, Any]]:
-    summary = context["summary"]
-    marketing_state = context["marketing_state"]
-    value_segment = context["value_segment"]
-    ai_assist = context["ai_assist"]
-    risk_keys = {item["key"] for item in scoring["risk_flags"]}
-    opportunity_keys = {item["key"] for item in scoring["opportunity_flags"]}
-    evidence = _dedupe_evidence(
-        [
-            evidence_item
-            for flag in [*scoring["risk_flags"], *scoring["opportunity_flags"]]
-            for evidence_item in flag.get("evidence", [])
-            if isinstance(evidence_item, dict)
-        ],
-        limit=4,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_build_action_candidates",
     )
-
-    candidates: list[dict[str, Any]] = []
-    seen_action_types: set[str] = set()
-
-    def add_candidate(
-        *,
-        action_type: str,
-        title: str,
-        reason: str,
-        payload: dict[str, Any],
-        candidate_score: float,
-        evidence_items: list[dict[str, Any]] | None = None,
-    ) -> None:
-        if action_type in seen_action_types:
-            return
-        seen_action_types.add(action_type)
-        candidates.append(
-            {
-                "rank": len(candidates) + 1,
-                "action_type": action_type,
-                "action_label": _action_label(action_type),
-                "title": _normalized_text(title) or _action_label(action_type),
-                "reason": _normalized_text(reason),
-                "candidate_score": round(float(candidate_score or 0), 2),
-                "need_human_confirmation": True,
-                "payload": dict(payload or {}),
-                "evidence": _dedupe_evidence(list(evidence_items or evidence), limit=3),
-            }
-        )
-
-    customer_name = _normalized_text(summary.get("customer_name")) or _normalized_text(summary.get("external_userid"))
-    primary_reason = "；".join(
-        [
-            "、".join(item["label"] for item in scoring["risk_flags"][:2]) if scoring["risk_flags"] else "",
-            "、".join(item["label"] for item in scoring["opportunity_flags"][:2]) if scoring["opportunity_flags"] else "",
-        ]
-    ).strip("；")
-
-    if risk_keys.intersection({"negative_sentiment", "service_exception"}):
-        add_candidate(
-            action_type="create_followup_task",
-            title="优先安排人工介入",
-            reason=primary_reason or "客户当前存在投诉、异常或服务风险，需要人工先接住。",
-            payload={
-                "task_title": "人工跟进客户异常/投诉",
-                "due_at": _soon_followup_time(hours=2),
-            },
-            candidate_score=scoring["priority_score"] + 5,
-        )
-
-    if "unanswered_question" in risk_keys:
-        draft_message = _normalized_text(ai_assist.get("draft_message"))
-        if not draft_message:
-            draft_message = _build_rule_based_draft_message(
-                customer_name=customer_name,
-                summary=primary_reason or "客户近期有待处理问题",
-                evidence=evidence,
-            )
-        add_candidate(
-            action_type="generate_reply_draft",
-            title="先生成一版回复草稿",
-            reason=primary_reason or "客户最近的问题还没有被接住，先准备一版草稿供人工确认。",
-            payload={
-                "channel_type": "existing_customer_channel",
-                "draft_message": draft_message,
-                "draft_notice": "所有外发消息默认只生成草稿，需人工确认后再发送。",
-                "due_at": _normalized_text(context["reply_row"].get("not_before"))
-                or _normalized_text(metrics.get("last_inbound_at"))
-                or _normalized_text(scoring.get("source_updated_at")),
-            },
-            candidate_score=scoring["priority_score"] + (5 if ai_assist.get("available") else 0),
-        )
-
-    current_followup_segment = _followup_segment_from_marketing_state(marketing_state)
-    value_segment_name = _normalized_text(value_segment.get("segment")).lower()
-    if opportunity_keys.intersection({"high_intent_stage", "high_intent_behavior"}) and current_followup_segment != "focus" and value_segment_name in {
-        "top",
-        "core",
-        "focus",
-    }:
-        add_candidate(
-            action_type="update_followup_segment",
-            title="升级为重点跟进",
-            reason=primary_reason or "客户已进入高意向推进段，当前应切到重点跟进。",
-            payload={"followup_segment": "focus"},
-            candidate_score=scoring["priority_score"],
-        )
-
-    if risk_keys.intersection({"stage_stalled", "missing_followup_time", "interaction_stale"}):
-        add_candidate(
-            action_type="set_followup_reminder",
-            title="补上下次跟进提醒",
-            reason=primary_reason or "当前推进节奏已经变慢，需要明确下一次跟进时间。",
-            payload={"due_at": _normalized_text(metrics.get("known_followup_due_at")) or _next_followup_time()},
-            candidate_score=max(scoring["priority_score"] - 3, 0),
-        )
-
-    if (
-        opportunity_keys.intersection({"high_intent_stage", "high_intent_behavior", "high_intent_tag"})
-        and risk_keys.intersection({"stage_stalled", "interaction_stale", "missing_followup_time"})
-    ):
-        add_candidate(
-            action_type="create_followup_task",
-            title="补一个高优先级跟进任务",
-            reason=primary_reason or "客户有推进价值，但最近缺少明确动作，建议先补任务。",
-            payload={
-                "task_title": "跟进高意向客户",
-                "due_at": _next_followup_time(),
-            },
-            candidate_score=max(scoring["priority_score"] - 1, 0),
-        )
-
-    if not candidates and scoring["priority_score"] >= 25:
-        add_candidate(
-            action_type="set_followup_reminder",
-            title="安排下一次跟进提醒",
-            reason=primary_reason or "当前没有更强动作，先补一个明确提醒并等待人工确认。",
-            payload={"due_at": _next_followup_time()},
-            candidate_score=scoring["priority_score"],
-        )
-    return candidates
+    return delegate(context, scoring=scoring, metrics=metrics)
 
 
 def _merge_ai_recommendation_into_candidates(
@@ -2633,77 +1551,15 @@ def _merge_ai_recommendation_into_candidates(
     recommendation_result: dict[str, Any],
     default_evidence: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    if _normalized_text(recommendation_result.get("status")) != "accepted":
-        return candidates, default_evidence
-    recommendation = recommendation_result.get("recommendation") or {}
-    if not isinstance(recommendation, dict):
-        return candidates, default_evidence
-    action_type = _normalized_text(recommendation.get("actionType"))
-    if not action_type:
-        return candidates, default_evidence
-    match_index = next(
-        (index for index, item in enumerate(candidates) if _normalized_text(item.get("action_type")) == action_type),
-        -1,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_merge_ai_recommendation_into_candidates",
     )
-    if match_index < 0:
-        return candidates, default_evidence
-
-    merged_candidates = [dict(item) for item in candidates]
-    matched_candidate = dict(merged_candidates.pop(match_index))
-    matched_candidate["source"] = "ai"
-    matched_candidate["title"] = _normalized_text(recommendation.get("actionTitle")) or _normalized_text(matched_candidate.get("title"))
-    matched_candidate["reason"] = _normalized_text(recommendation.get("whyNow")) or _normalized_text(recommendation.get("summary")) or _normalized_text(
-        matched_candidate.get("reason")
+    return delegate(
+        candidates=candidates,
+        recommendation_result=recommendation_result,
+        default_evidence=default_evidence,
     )
-    matched_candidate["why_now"] = _normalized_text(recommendation.get("whyNow"))
-    matched_candidate["ai_summary"] = _normalized_text(recommendation.get("summary"))
-    matched_candidate["candidate_score"] = round(
-        max(float(matched_candidate.get("candidate_score") or 0), float(recommendation.get("confidence") or 0) * 100),
-        2,
-    )
-    matched_candidate["evidence"] = _dedupe_evidence(
-        [
-            *list(recommendation_result.get("resolved_evidence") or []),
-            *list(matched_candidate.get("evidence") or []),
-            *list(default_evidence or []),
-        ],
-        limit=4,
-    )
-    payload = dict(matched_candidate.get("payload") or {})
-    safe_field_updates = recommendation.get("safeFieldUpdates") if isinstance(recommendation.get("safeFieldUpdates"), dict) else {}
-    if action_type == "generate_reply_draft":
-        draft_message = _normalized_text(recommendation.get("draftText"))
-        if draft_message:
-            payload["draft_message"] = draft_message
-    if action_type == "update_followup_segment" and _normalized_text(safe_field_updates.get("followupSegment")):
-        payload["followup_segment"] = _normalized_text(safe_field_updates.get("followupSegment"))
-    if action_type in {"set_followup_reminder", "create_followup_task"} and _normalized_text(safe_field_updates.get("nextFollowupAt")):
-        payload["due_at"] = _normalized_text(safe_field_updates.get("nextFollowupAt"))
-    if action_type == "update_tags":
-        payload["add_tag_ids"] = [
-            _normalized_text(item) for item in (safe_field_updates.get("addTagIds") or []) if _normalized_text(item)
-        ]
-        payload["remove_tag_ids"] = [
-            _normalized_text(item) for item in (safe_field_updates.get("removeTagIds") or []) if _normalized_text(item)
-        ]
-    payload["ai_recommendation"] = {
-        "summary": _normalized_text(recommendation.get("summary")),
-        "why_now": _normalized_text(recommendation.get("whyNow")),
-        "confidence": round(float(recommendation.get("confidence") or 0), 4),
-        "evidence_refs": recommendation.get("evidenceRefs") or [],
-        "safe_field_updates": safe_field_updates,
-        "provider": _normalized_text(recommendation_result.get("provider")),
-    }
-    matched_candidate["payload"] = payload
-    merged_candidates.insert(0, matched_candidate)
-    primary_evidence = _dedupe_evidence(
-        [
-            *list(recommendation_result.get("resolved_evidence") or []),
-            *list(default_evidence or []),
-        ],
-        limit=6,
-    )
-    return merged_candidates, primary_evidence or default_evidence
 
 
 def _suppress_reply_draft_when_ai_is_untrusted(
@@ -2711,129 +1567,46 @@ def _suppress_reply_draft_when_ai_is_untrusted(
     candidates: list[dict[str, Any]],
     recommendation_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    if not candidates:
-        return candidates
-    if _normalized_text(recommendation_result.get("status")) != "fallback":
-        return candidates
-    fallback_reason = _normalized_text(recommendation_result.get("fallback_reason"))
-    if fallback_reason not in {"low_confidence", "invalid_or_blocked_ai_output"}:
-        return candidates
-    first_candidate = dict(candidates[0])
-    if _normalized_text(first_candidate.get("action_type")) != "generate_reply_draft":
-        return candidates
-    payload = dict(first_candidate.get("payload") or {})
-    payload["draft_message"] = ""
-    payload["draft_blocked_by_ai"] = True
-    payload["draft_block_reason"] = fallback_reason
-    payload["draft_notice"] = "AI 置信度不足或命中风控，当前不默认生成外发草稿，请人工编辑后再保存草稿。"
-    first_candidate["payload"] = payload
-    first_candidate["draft_blocked_by_ai"] = True
-    return [first_candidate, *[dict(item) for item in candidates[1:]]]
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_suppress_reply_draft_when_ai_is_untrusted",
+    )
+    return delegate(
+        candidates=candidates,
+        recommendation_result=recommendation_result,
+    )
 
 
 def _card_title(primary_candidate: dict[str, Any]) -> str:
-    if _normalized_text(primary_candidate.get("source")) == "ai" and _normalized_text(primary_candidate.get("title")):
-        return _normalized_text(primary_candidate.get("title"))
-    mapping = {
-        "generate_reply_draft": "今天先处理客户回复",
-        "create_followup_task": "优先安排客户跟进动作",
-        "update_followup_segment": "建议升级为重点跟进",
-        "set_followup_reminder": "安排下一次跟进提醒",
-        "update_tags": "补齐客户标签",
-    }
-    action_type = _normalized_text(primary_candidate.get("action_type"))
-    return mapping.get(action_type, _normalized_text(primary_candidate.get("title")) or "客户推进行动卡")
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_card_title",
+    )
+    return delegate(primary_candidate)
 
 
 def _card_summary(scoring: dict[str, Any], *, primary_candidate: dict[str, Any]) -> str:
-    parts: list[str] = []
-    if scoring["risk_flags"]:
-        parts.append("风险：" + "、".join(item["label"] for item in scoring["risk_flags"][:2]))
-    if scoring["opportunity_flags"]:
-        parts.append("机会：" + "、".join(item["label"] for item in scoring["opportunity_flags"][:2]))
-    primary_reason = _normalized_text(primary_candidate.get("why_now") or primary_candidate.get("reason"))
-    if primary_reason:
-        parts.append("建议：" + primary_reason)
-    return "；".join(part for part in parts if part)
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_card_summary",
+    )
+    return delegate(scoring, primary_candidate=primary_candidate)
 
 
 def _stable_ai_payload(value: Any) -> dict[str, Any]:
-    payload = _json_loads(value, default={})
-    if not isinstance(payload, dict):
-        return {}
-    stable_payload = dict(payload)
-    for key in {"run_id", "request_id", "output_id", "generated_at", "trace"}:
-        stable_payload.pop(key, None)
-    recommendation = stable_payload.get("recommendation")
-    if isinstance(recommendation, dict):
-        stable_payload["recommendation"] = {
-            "summary": _normalized_text(recommendation.get("summary")),
-            "actionType": _normalized_text(recommendation.get("actionType")),
-            "actionTitle": _normalized_text(recommendation.get("actionTitle")),
-            "whyNow": _normalized_text(recommendation.get("whyNow")),
-            "evidenceRefs": recommendation.get("evidenceRefs") or [],
-            "draftText": _normalized_text(recommendation.get("draftText")),
-            "confidence": round(float(recommendation.get("confidence") or 0), 4),
-            "safeFieldUpdates": recommendation.get("safeFieldUpdates") or {},
-        }
-    return stable_payload
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_stable_ai_payload",
+    )
+    return delegate(value)
 
 
 def _snapshot_matches(latest_snapshot: dict[str, Any], *, incoming: dict[str, Any]) -> bool:
-    if not latest_snapshot:
-        return False
-    comparable_pairs = (
-        (_normalized_text(latest_snapshot.get("snapshot_status")), _normalized_text(incoming.get("snapshot_status"))),
-        (_normalized_text(latest_snapshot.get("summary")), _normalized_text(incoming.get("summary"))),
-        (
-            _normalized_text(latest_snapshot.get("recommended_action_type")),
-            _normalized_text(incoming.get("recommended_action_type")),
-        ),
-        (_normalized_text(latest_snapshot.get("source_updated_at")), _normalized_text(incoming.get("source_updated_at"))),
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_snapshot_matches",
     )
-    if any(current != expected for current, expected in comparable_pairs):
-        return False
-    if round(float(latest_snapshot.get("priority_score") or 0), 2) != round(float(incoming.get("priority_score") or 0), 2):
-        return False
-    def _stable_signal_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        stable_items: list[dict[str, Any]] = []
-        for item in items:
-            stable_items.append(
-                {
-                    "signal_key": _normalized_text(item.get("signal_key")),
-                    "signal_type": _normalized_text(item.get("signal_type")),
-                    "signal_source": _normalized_text(item.get("signal_source")),
-                    "signal_status": _normalized_text(item.get("signal_status")),
-                    "priority": _normalized_text(item.get("priority")),
-                    "score": round(float(item.get("score") or 0), 2),
-                    "summary": _normalized_text(item.get("summary")),
-                    "payload": _json_loads(item.get("payload_json") or item.get("payload"), default={}),
-                    "evidence": _json_loads(item.get("evidence_json") or item.get("evidence"), default=[]),
-                    "source_ref_type": _normalized_text(item.get("source_ref_type")),
-                    "source_ref_id": _normalized_text(item.get("source_ref_id")),
-                    "source_updated_at": _normalized_text(item.get("source_updated_at")),
-                }
-            )
-        return stable_items
-
-    for column_name, value in (
-        ("evidence_json", incoming.get("evidence")),
-        ("risk_flags_json", incoming.get("risk_flags")),
-        ("opportunity_flags_json", incoming.get("opportunity_flags")),
-        ("suggested_action_candidates_json", incoming.get("suggested_action_candidates")),
-        ("score_breakdown_json", incoming.get("score_breakdown")),
-    ):
-        current = _json_loads(latest_snapshot.get(column_name), default=[])
-        if _json_dump(current) != _json_dump(value):
-            return False
-    current_signals = _json_loads(latest_snapshot.get("signals_json"), default=[])
-    if _json_dump(_stable_signal_items(current_signals if isinstance(current_signals, list) else [])) != _json_dump(
-        _stable_signal_items(incoming.get("signals") or [])
-    ):
-        return False
-    return _json_dump(_stable_ai_payload(latest_snapshot.get("ai_payload_json"))) == _json_dump(
-        _stable_ai_payload(incoming.get("ai_payload"))
-    )
+    return delegate(latest_snapshot, incoming=incoming)
 
 
 def _upsert_primary_card(
@@ -2844,111 +1617,17 @@ def _upsert_primary_card(
     candidates: list[dict[str, Any]],
     snapshot: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str]:
-    if not candidates:
-        return None, "skipped"
-    summary = context["summary"]
-    marketing_state = context["marketing_state"]
-    value_segment = context["value_segment"]
-    ai_assist = context["ai_assist"]
-    tenant_key = _resolved_tenant_key(
-        tenant_context=context.get("tenant_context"),
-        tenant_key=_normalized_text(context.get("tenant_key")),
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_upsert_primary_card",
     )
-    scoped_card_key = customer_pulse_scoped_key(
-        tenant_key=tenant_key,
-        base_key=f"{_normalized_text(summary.get('external_userid'))}:primary",
+    return delegate(
+        context=context,
+        scoring=scoring,
+        evidence=evidence,
+        candidates=candidates,
+        snapshot=snapshot,
     )
-    existing = repo.get_customer_pulse_card_by_key(scoped_card_key, tenant_key=tenant_key) or {}
-    primary_candidate = candidates[0]
-    incoming_source_updated_at = _normalized_text(scoring.get("source_updated_at")) or _iso_now()
-    existing_source_updated_at = _normalized_text(existing.get("source_updated_at"))
-
-    next_status = "open"
-    next_draft_message = ""
-    if _normalized_text(primary_candidate.get("action_type")) == "generate_reply_draft":
-        next_draft_message = _normalized_text(primary_candidate.get("payload", {}).get("draft_message")) or _normalized_text(
-            ai_assist.get("draft_message")
-        )
-    next_snooze_until = ""
-    next_resolved_at = ""
-    next_resolution_note = ""
-    if existing:
-        existing_status = _normalized_text(existing.get("card_status"))
-        if existing_status in _TERMINAL_CARD_STATUSES and incoming_source_updated_at and existing_source_updated_at >= incoming_source_updated_at:
-            return repo.get_customer_pulse_card(int(existing.get("id") or 0), tenant_key=tenant_key) or existing, "skipped"
-        if existing_status == "draft_ready" and existing_source_updated_at >= incoming_source_updated_at:
-            next_status = "draft_ready"
-            next_draft_message = _normalized_text(existing.get("draft_message")) or next_draft_message
-        elif existing_status == "snoozed" and existing_source_updated_at >= incoming_source_updated_at:
-            next_status = "snoozed"
-            next_snooze_until = _normalized_text(existing.get("snooze_until"))
-        elif existing_status in _TERMINAL_CARD_STATUSES and incoming_source_updated_at and existing_source_updated_at < incoming_source_updated_at:
-            next_status = "open"
-
-    card_payload = {
-        "card_key": scoped_card_key,
-        "tenant_key": tenant_key,
-        "external_userid": _normalized_text(summary.get("external_userid")),
-        "owner_userid": _normalized_text(summary.get("owner_userid")),
-        "customer_name": _normalized_text(summary.get("customer_name")) or _normalized_text(summary.get("external_userid")),
-        "mobile": _normalized_text(summary.get("mobile")),
-        "owner_display_name": _normalized_text(summary.get("owner_display_name")) or _normalized_text(summary.get("owner_userid")),
-        "marketing_main_stage": _normalized_text(marketing_state.get("main_stage")),
-        "marketing_sub_stage": _normalized_text(marketing_state.get("sub_stage")),
-        "value_segment": _normalized_text(value_segment.get("segment")).lower(),
-        "snapshot_id": int(snapshot.get("id") or 0) or None,
-        "card_status": next_status,
-        "priority": _normalized_text(scoring.get("priority")),
-        "priority_score": float(scoring.get("priority_score") or 0),
-        "card_type": _normalized_text(primary_candidate.get("action_type")).replace("generate_", "").replace("set_", ""),
-        "title": _card_title(primary_candidate),
-        "summary": _card_summary(scoring, primary_candidate=primary_candidate),
-        "suggested_action_type": _normalized_text(primary_candidate.get("action_type")),
-        "suggested_action_payload": dict(primary_candidate.get("payload") or {}),
-        "evidence": evidence,
-        "risk_flags": scoring["risk_flags"],
-        "opportunity_flags": scoring["opportunity_flags"],
-        "suggested_action_candidates": candidates,
-        "score_breakdown": scoring["score_breakdown"],
-        "draft_message": next_draft_message,
-        "need_human_confirmation": True,
-        "due_at": _normalized_text(primary_candidate.get("payload", {}).get("due_at")) or incoming_source_updated_at,
-        "snooze_until": next_snooze_until,
-        "resolved_at": next_resolved_at,
-        "resolution_note": next_resolution_note,
-        "source_updated_at": incoming_source_updated_at,
-    }
-
-    unchanged = existing and all(
-        [
-            _normalized_text(existing.get("card_status")) == _normalized_text(card_payload["card_status"]),
-            _normalized_text(existing.get("priority")) == _normalized_text(card_payload["priority"]),
-            round(float(existing.get("priority_score") or 0), 2) == round(float(card_payload["priority_score"] or 0), 2),
-            _normalized_text(existing.get("title")) == _normalized_text(card_payload["title"]),
-            _normalized_text(existing.get("summary")) == _normalized_text(card_payload["summary"]),
-            _normalized_text(existing.get("customer_name")) == _normalized_text(card_payload["customer_name"]),
-            _normalized_text(existing.get("mobile")) == _normalized_text(card_payload["mobile"]),
-            _normalized_text(existing.get("owner_display_name")) == _normalized_text(card_payload["owner_display_name"]),
-            _normalized_text(existing.get("marketing_main_stage")) == _normalized_text(card_payload["marketing_main_stage"]),
-            _normalized_text(existing.get("marketing_sub_stage")) == _normalized_text(card_payload["marketing_sub_stage"]),
-            _normalized_text(existing.get("value_segment")) == _normalized_text(card_payload["value_segment"]),
-            _normalized_text(existing.get("suggested_action_type")) == _normalized_text(card_payload["suggested_action_type"]),
-            _normalized_text(existing.get("source_updated_at")) == _normalized_text(card_payload["source_updated_at"]),
-            _json_dump(_json_loads(existing.get("risk_flags_json"), default=[])) == _json_dump(card_payload["risk_flags"]),
-            _json_dump(_json_loads(existing.get("opportunity_flags_json"), default=[])) == _json_dump(card_payload["opportunity_flags"]),
-            _json_dump(_json_loads(existing.get("suggested_action_candidates_json"), default=[]))
-            == _json_dump(card_payload["suggested_action_candidates"]),
-            _json_dump(_json_loads(existing.get("score_breakdown_json"), default=[])) == _json_dump(card_payload["score_breakdown"]),
-            _json_dump(_json_loads(existing.get("evidence_json"), default=[])) == _json_dump(card_payload["evidence"]),
-            _normalized_text(existing.get("draft_message")) == _normalized_text(card_payload["draft_message"]),
-            _normalized_text(existing.get("due_at")) == _normalized_text(card_payload["due_at"]),
-            _normalized_text(existing.get("snooze_until")) == _normalized_text(card_payload["snooze_until"]),
-        ]
-    )
-    if unchanged:
-        return repo.get_customer_pulse_card(int(existing.get("id") or 0), tenant_key=tenant_key) or existing, "skipped"
-    card = repo.upsert_customer_pulse_card(**card_payload)
-    return card, "updated" if existing else "created"
 
 
 def _materialize_customer_pulse(
@@ -2958,212 +1637,16 @@ def _materialize_customer_pulse(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    context = _load_context(external_userid, tenant_context=resolved_context)
-    summary = context["summary"]
-    normalized_external_userid = _normalized_text(summary.get("external_userid") or external_userid)
-    signals, metrics = _build_rule_signals(context)
-    persisted_signals = _persist_signals(normalized_external_userid, signals=signals, tenant_key=resolved_tenant_key)
-    scoring = _build_scoring(persisted_signals, metrics=metrics)
-    candidates = _build_action_candidates(context, scoring=scoring, metrics=metrics)
-    evidence = _dedupe_evidence(
-        [
-            evidence_item
-            for signal in persisted_signals
-            for evidence_item in _json_loads(signal.get("evidence_json"), default=[])
-            if isinstance(evidence_item, dict)
-        ],
-        limit=6,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_snapshot_service",
+        "_materialize_customer_pulse",
     )
-    ai_recommendation = generate_customer_pulse_ai_recommendation(
-        context=context,
-        scoring=scoring,
-        candidates=candidates,
-        signals=persisted_signals,
+    return delegate(
+        external_userid,
+        operator=operator,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
     )
-    candidates, card_evidence = _merge_ai_recommendation_into_candidates(
-        candidates=candidates,
-        recommendation_result=ai_recommendation,
-        default_evidence=evidence,
-    )
-    candidates = _suppress_reply_draft_when_ai_is_untrusted(
-        candidates=candidates,
-        recommendation_result=ai_recommendation,
-    )
-    candidates = _apply_action_allowlist(candidates)
-    primary_ai_recommendation = ai_recommendation.get("recommendation") if isinstance(ai_recommendation.get("recommendation"), dict) else {}
-    ai_audit_labels = [_EXECUTION_AUDIT_AI_SUGGESTED] if _normalized_text(ai_recommendation.get("status")) == "accepted" else []
-    ai_payload = {
-        "rules_version": CUSTOMER_PULSE_RULES_VERSION,
-        "assistant_draft_available": bool(context["ai_assist"].get("available")),
-        "assistant_confidence": round(float(context["ai_assist"].get("confidence") or 0), 4),
-        "assistant_reason": _normalized_text(context["ai_assist"].get("reason")),
-        "assistant_output_type": _normalized_text(context["ai_assist"].get("output_type")),
-        "assistant_output_id": _normalized_text(context["ai_assist"].get("output_id")),
-        "recommendation_status": _normalized_text(ai_recommendation.get("status")) or "skipped",
-        "provider": _normalized_text(ai_recommendation.get("provider")),
-        "model_name": _normalized_text(ai_recommendation.get("model_name")),
-        "run_id": _normalized_text(ai_recommendation.get("run_id")),
-        "request_id": _normalized_text(ai_recommendation.get("request_id")),
-        "output_id": _normalized_text(ai_recommendation.get("output_id")),
-        "fallback_reason": _normalized_text(ai_recommendation.get("fallback_reason")),
-        "error_message": _normalized_text(ai_recommendation.get("error_message")),
-        "context_window": ai_recommendation.get("context_window") or {},
-        "guardrails": ai_recommendation.get("guardrails") or {},
-        "guardrail_summary": {
-            "blocked": bool((ai_recommendation.get("guardrails") or {}).get("blocked")),
-            "input_violations": list(((ai_recommendation.get("guardrails") or {}).get("input_violations") or [])),
-            "output_violations": list(((ai_recommendation.get("guardrails") or {}).get("output_violations") or [])),
-        },
-        "trace": {
-            "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-            "resource": _resource_summary(resource_type="customer", resource_id=normalized_external_userid),
-            "actor": _actor_summary(tenant_context=resolved_context, operator=_normalized_text(operator)),
-            "generated_at": _iso_now(),
-        },
-        "audit_labels": ai_audit_labels,
-        "recommendation": primary_ai_recommendation,
-        "last_interaction_at": _normalized_text(metrics.get("last_interaction_at")),
-        "last_inbound_at": _normalized_text(metrics.get("last_inbound_at")),
-        "last_outbound_at": _normalized_text(metrics.get("last_outbound_at")),
-        "stage_stalled_days": metrics.get("stage_stalled_days"),
-        "interaction_gap_days": metrics.get("interaction_gap_days"),
-        "current_followup_segment": _normalized_text(metrics.get("current_followup_segment")),
-    }
-    repo.insert_customer_pulse_metric_event(
-        event_type="ai_recommendation_completed",
-        event_source="customer_pulse_snapshot_job",
-        external_userid=normalized_external_userid,
-        owner_userid=_normalized_text(summary.get("owner_userid")),
-        action_type=_normalized_text(primary_ai_recommendation.get("actionType")),
-        tenant_key=resolved_tenant_key,
-        operator=_normalized_text(operator),
-        payload={
-            "status": ai_payload["recommendation_status"],
-            "fallback_reason": ai_payload["fallback_reason"],
-            "provider": ai_payload["provider"],
-            "model_name": ai_payload["model_name"],
-            "request_id": ai_payload["request_id"],
-            "output_id": ai_payload["output_id"],
-            "guardrails": ai_payload["guardrail_summary"],
-        },
-    )
-    if ai_payload["recommendation_status"] == "accepted":
-        repo.insert_customer_pulse_metric_event(
-            event_type="ai_success",
-            event_source="customer_pulse_snapshot_job",
-            external_userid=normalized_external_userid,
-            owner_userid=_normalized_text(summary.get("owner_userid")),
-            action_type=_normalized_text(primary_ai_recommendation.get("actionType")),
-            tenant_key=resolved_tenant_key,
-            operator=_normalized_text(operator),
-            payload={
-                "provider": ai_payload["provider"],
-                "model_name": ai_payload["model_name"],
-                "request_id": ai_payload["request_id"],
-                "output_id": ai_payload["output_id"],
-            },
-        )
-    if ai_payload["recommendation_status"] == "fallback":
-        repo.insert_customer_pulse_metric_event(
-            event_type="fallback_count",
-            event_source="customer_pulse_snapshot_job",
-            external_userid=normalized_external_userid,
-            owner_userid=_normalized_text(summary.get("owner_userid")),
-            action_type=_normalized_text(primary_ai_recommendation.get("actionType")),
-            tenant_key=resolved_tenant_key,
-            operator=_normalized_text(operator),
-            payload={
-                "fallback_reason": ai_payload["fallback_reason"],
-                "provider": ai_payload["provider"],
-                "model_name": ai_payload["model_name"],
-            },
-        )
-    if ai_payload["recommendation_status"] == "fallback" and (
-        _normalized_text(ai_payload["fallback_reason"]) or _normalized_text(ai_payload["error_message"])
-    ):
-        repo.insert_customer_pulse_metric_event(
-            event_type="ai_error",
-            event_source="customer_pulse_snapshot_job",
-            external_userid=normalized_external_userid,
-            owner_userid=_normalized_text(summary.get("owner_userid")),
-            action_type=_normalized_text(primary_ai_recommendation.get("actionType")),
-            tenant_key=resolved_tenant_key,
-            operator=_normalized_text(operator),
-            payload={
-                "fallback_reason": ai_payload["fallback_reason"],
-                "error_message": ai_payload["error_message"],
-                "provider": ai_payload["provider"],
-            },
-        )
-
-    if not persisted_signals or not candidates or float(scoring.get("priority_score") or 0) < 20:
-        return {
-            "ok": True,
-            "external_userid": normalized_external_userid,
-            "customer_name": _normalized_text(summary.get("customer_name")) or normalized_external_userid,
-            "processed": False,
-            "reason": "no_actionable_candidate",
-            "priority_score": float(scoring.get("priority_score") or 0),
-            "risk_flags": scoring["risk_flags"],
-            "opportunity_flags": scoring["opportunity_flags"],
-            "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-            "generated_at": _iso_now(),
-        }
-
-    primary_candidate = candidates[0]
-    snapshot_payload = {
-        "tenant_key": resolved_tenant_key,
-        "external_userid": normalized_external_userid,
-        "owner_userid": _normalized_text(summary.get("owner_userid")),
-        "snapshot_status": "visible",
-        "confidence": scoring["confidence"],
-        "priority_score": float(scoring.get("priority_score") or 0),
-        "summary": _card_summary(scoring, primary_candidate=primary_candidate),
-        "recommended_action_type": _normalized_text(primary_candidate.get("action_type")),
-        "recommended_action_label": _action_label(primary_candidate.get("action_type")),
-        "evidence": card_evidence,
-        "ai_payload": ai_payload,
-        "signals": persisted_signals,
-        "risk_flags": scoring["risk_flags"],
-        "opportunity_flags": scoring["opportunity_flags"],
-        "suggested_action_candidates": candidates,
-        "score_breakdown": scoring["score_breakdown"],
-        "source_updated_at": _normalized_text(scoring.get("source_updated_at")),
-        "created_by": _normalized_text(operator) or "system",
-    }
-    latest_snapshot = context["latest_snapshot"]
-    if _snapshot_matches(latest_snapshot, incoming=snapshot_payload):
-        snapshot = latest_snapshot
-    else:
-        snapshot = repo.create_customer_pulse_snapshot(**snapshot_payload)
-
-    card, card_action = _upsert_primary_card(
-        context=context,
-        scoring=scoring,
-        evidence=card_evidence,
-        candidates=candidates,
-        snapshot=snapshot,
-    )
-    return {
-        "ok": True,
-        "external_userid": normalized_external_userid,
-        "customer_name": _normalized_text(summary.get("customer_name")) or normalized_external_userid,
-        "processed": bool(card),
-        "snapshot": snapshot,
-        "card": _present_card(card, snapshot_row=snapshot, access_context=context.get("tenant_context")) if card else None,
-        "priority_score": float(scoring.get("priority_score") or 0),
-        "priority": _normalized_text(scoring.get("priority")),
-        "risk_flags": scoring["risk_flags"],
-        "opportunity_flags": scoring["opportunity_flags"],
-        "suggested_action_candidates": candidates,
-        "score_breakdown": scoring["score_breakdown"],
-        "metrics": metrics,
-        "action": card_action,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "generated_at": _iso_now(),
-    }
 
 
 def refresh_customer_pulse_cards(
@@ -3175,74 +1658,18 @@ def refresh_customer_pulse_cards(
     tenant_key: str = "",
     allowed_owner_userids: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    if not feature_gate["enabled"]:
-        return {
-            "enabled": False,
-            "feature_gate": feature_gate,
-            "processed_count": 0,
-            "created_count": 0,
-            "updated_count": 0,
-            "skipped_count": 0,
-            "cards": [],
-        }
-    candidate_external_userids = [
-        _normalized_text(item)
-        for item in (external_userids or repo.list_customer_pulse_candidate_external_userids(limit=limit))
-        if _normalized_text(item)
-    ]
-    normalized_allowed_owner_userids = {
-        _normalized_text(item)
-        for item in (allowed_owner_userids or [])
-        if _normalized_text(item)
-    }
-    if normalized_allowed_owner_userids:
-        target_external_userids = [
-            external_userid
-            for external_userid in candidate_external_userids
-            if _normalized_text(repo.get_customer_pulse_customer_summary(external_userid).get("owner_userid"))
-            in normalized_allowed_owner_userids
-        ]
-    else:
-        target_external_userids = candidate_external_userids
-    processed_count = 0
-    created_count = 0
-    updated_count = 0
-    skipped_count = 0
-    refreshed_cards: list[dict[str, Any]] = []
-    items: list[dict[str, Any]] = []
-    for external_userid in target_external_userids:
-        result = _materialize_customer_pulse(
-            external_userid,
-            operator=operator,
-            tenant_context=resolved_context,
-        )
-        items.append(result)
-        if not result.get("processed"):
-            skipped_count += 1
-            continue
-        processed_count += 1
-        if result.get("action") == "created":
-            created_count += 1
-        elif result.get("action") == "updated":
-            updated_count += 1
-        else:
-            skipped_count += 1
-        if result.get("card"):
-            refreshed_cards.append(result["card"])
-    return {
-        "enabled": True,
-        "feature_gate": feature_gate,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "processed_count": processed_count,
-        "created_count": created_count,
-        "updated_count": updated_count,
-        "skipped_count": skipped_count,
-        "cards": refreshed_cards,
-        "items": items,
-        "generated_at": _iso_now(),
-    }
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_action_service",
+        "refresh_customer_pulse_cards",
+    )
+    return delegate(
+        limit=limit,
+        operator=operator,
+        external_userids=external_userids,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+        allowed_owner_userids=allowed_owner_userids,
+    )
 
 
 def enqueue_customer_pulse_recompute(
@@ -3257,45 +1684,21 @@ def enqueue_customer_pulse_recompute(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    normalized_external_userid = _normalized_text(external_userid)
-    if not normalized_external_userid:
-        return {"ok": True, "scheduled": False, "reason": "missing_external_userid"}
-    if not feature_gate["enabled"]:
-        return {"ok": True, "scheduled": False, "reason": "feature_disabled", "enabled": False, "feature_gate": feature_gate}
-    now_dt = datetime.now()
-    run_after = (now_dt + timedelta(seconds=max(int(delay_seconds or 0), 0))).strftime("%Y-%m-%d %H:%M:%S")
-    resolved_owner = _normalized_text(owner_userid) or _normalized_text(
-        repo.get_customer_pulse_customer_summary(normalized_external_userid).get("owner_userid")
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_action_service",
+        "enqueue_customer_pulse_recompute",
     )
-    payload = {
-        "external_userid": normalized_external_userid,
-        "owner_userid": resolved_owner,
-        "trigger_source": _normalized_text(trigger_source),
-        "trigger_ref_type": _normalized_text(trigger_ref_type),
-        "trigger_ref_id": _normalized_text(trigger_ref_id),
-        "scheduled_by": _normalized_text(operator) or "system",
-        "scheduled_at": _iso_now(),
-        "rules_version": CUSTOMER_PULSE_RULES_VERSION,
-    }
-    job = repo.upsert_customer_pulse_recompute_job(
-        job_type=CUSTOMER_PULSE_RECOMPUTE_JOB_TYPE,
-        tenant_key=resolved_tenant_key,
-        external_userid=normalized_external_userid,
-        owner_userid=resolved_owner,
-        run_after=run_after,
-        payload=payload,
+    return delegate(
+        external_userid=external_userid,
+        owner_userid=owner_userid,
+        delay_seconds=delay_seconds,
+        operator=operator,
+        trigger_source=trigger_source,
+        trigger_ref_type=trigger_ref_type,
+        trigger_ref_id=trigger_ref_id,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
     )
-    return {
-        "ok": True,
-        "enabled": True,
-        "feature_gate": feature_gate,
-        "scheduled": bool(job),
-        "job": job,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-    }
 
 
 def run_due_customer_pulse_recompute_jobs(
@@ -3306,59 +1709,17 @@ def run_due_customer_pulse_recompute_jobs(
     tenant_key: str = "",
     allowed_owner_userids: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    normalized_limit = max(1, min(int(limit or 20), 200))
-    now = _iso_now()
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    due_jobs = repo.list_due_customer_pulse_recompute_jobs(
-        job_type=CUSTOMER_PULSE_RECOMPUTE_JOB_TYPE,
-        due_at=now,
-        tenant_key=resolved_tenant_key,
-        owner_userids=allowed_owner_userids,
-        limit=normalized_limit,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_action_service",
+        "run_due_customer_pulse_recompute_jobs",
     )
-    summary = {
-        "ok": True,
-        "limit": normalized_limit,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "scanned_count": len(due_jobs),
-        "success_count": 0,
-        "skipped_count": 0,
-        "failed_count": 0,
-        "items": [],
-    }
-    for job in due_jobs:
-        running_job = repo.mark_customer_pulse_recompute_job_running(int(job["id"]), tenant_key=resolved_tenant_key)
-        if not running_job:
-            continue
-        try:
-            result = _materialize_customer_pulse(
-                _normalized_text(running_job.get("external_userid")),
-                operator=operator,
-                tenant_context=resolved_context,
-            )
-            status = "success" if result.get("processed") else "skipped"
-        except Exception as exc:
-            status = "failed"
-            result = {
-                "ok": False,
-                "external_userid": _normalized_text(job.get("external_userid")),
-                "error": str(exc),
-            }
-        repo.finish_customer_pulse_recompute_job(
-            int(job["id"]),
-            status=status,
-            result_payload=result,
-            tenant_key=resolved_tenant_key,
-        )
-        if status == "success":
-            summary["success_count"] += 1
-        elif status == "skipped":
-            summary["skipped_count"] += 1
-        else:
-            summary["failed_count"] += 1
-        summary["items"].append({"job_id": int(job["id"]), "status": status, **result})
-    return summary
+    return delegate(
+        limit=limit,
+        operator=operator,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+        allowed_owner_userids=allowed_owner_userids,
+    )
 
 
 def run_due_customer_pulse_snapshot_job(
@@ -3370,26 +1731,18 @@ def run_due_customer_pulse_snapshot_job(
     tenant_key: str = "",
     allowed_owner_userids: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    queue_result = run_due_customer_pulse_recompute_jobs(
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_action_service",
+        "run_due_customer_pulse_snapshot_job",
+    )
+    return delegate(
         limit=limit,
+        rescan_limit=rescan_limit,
         operator=operator,
-        tenant_context=resolved_context,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
         allowed_owner_userids=allowed_owner_userids,
     )
-    refresh_result = refresh_customer_pulse_cards(
-        limit=max(1, min(int(rescan_limit or 0), 200)),
-        operator=operator,
-        tenant_context=resolved_context,
-        allowed_owner_userids=allowed_owner_userids,
-    )
-    return {
-        "ok": True,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "queue": queue_result,
-        "refresh": refresh_result,
-        "generated_at": _iso_now(),
-    }
 
 
 def _customer_pulse_access_permissions(access_context: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -3842,201 +2195,29 @@ def build_customer_pulse_inbox_payload(
     tenant_key: str = "",
     allowed_owner_userids: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    if not feature_gate["enabled"]:
-        return {
-            "enabled": False,
-            "feature_flag": CUSTOMER_PULSE_FLAG_KEY,
-            "feature_gate": feature_gate,
-            "rules_version": CUSTOMER_PULSE_RULES_VERSION,
-            "runtime_config": {
-                "high_priority_threshold": _high_priority_threshold(),
-                "show_low_confidence_suggestions": _show_low_confidence_suggestions(),
-                "allowed_action_types": sorted(_allowed_action_types()),
-            },
-            "permissions": _customer_pulse_access_permissions(resolved_context),
-            "cards": [],
-            "filter_options": {"stages": [], "risks": []},
-            "filters": {
-                "scope": _normalized_text(scope) or "all",
-                "stage": _normalized_text(stage),
-                "risk": _normalized_text(risk),
-                "overdue_only": bool(overdue_only),
-                "draft_only": bool(draft_only),
-                "high_priority_only": bool(high_priority_only),
-                "search": _normalized_text(search),
-                "requested_owner_userid": _normalized_text(owner_userid),
-                "resolved_owner_userid": _normalized_text(owner_userid) or _normalized_text(operator),
-                "external_userid": _normalized_text(external_userid),
-                "operator": _normalized_text(operator),
-                "scope_fallback_notice": "",
-            },
-            "visible_count": 0,
-            "matched_count": 0,
-            "total_active_count": 0,
-            "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-            "metrics_summary": _customer_pulse_metrics_summary(
-                tenant_context=resolved_context,
-                tenant_key=resolved_tenant_key,
-                owner_userids=allowed_owner_userids,
-            ),
-            "ops_dashboard": (
-                build_customer_pulse_ops_dashboard_payload(
-                    tenant_context=resolved_context,
-                    tenant_key=resolved_tenant_key,
-                    owner_userids=allowed_owner_userids,
-                )
-                if include_ops_dashboard
-                else None
-            ),
-            "counts": {"open": 0, "draft_ready": 0, "snoozed": 0, "completed": 0, "dismissed": 0},
-            "summary_cards": [],
-            "channel_notice": "当前租户或角色未进入 Customer Pulse 灰度范围，不展示收件箱数据。",
-            "draft_notice": "所有外发消息默认只生成草稿，需人工确认后再发送。",
-            "generated_at": _iso_now(),
-        }
-    counts = repo.count_customer_pulse_cards_by_status(
-        tenant_key=resolved_tenant_key,
-        allowed_owner_userids=allowed_owner_userids,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_read_service",
+        "build_customer_pulse_inbox_payload",
     )
-    effective_scope = _normalized_text(scope) or "all"
-    requested_owner_userid = _normalized_text(owner_userid)
-    resolved_owner_userid = requested_owner_userid or _normalized_text(operator)
-    scope_fallback_notice = ""
-    if effective_scope == "mine" and not resolved_owner_userid:
-        effective_scope = "all"
-        scope_fallback_notice = "当前后台未注入登录人，`我的客户` 已回退为 `全部客户`。如需锁定负责人，可通过 operator 或 owner_userid 传入。"
-    card_rows = repo.list_customer_pulse_cards(
-        limit=max(1, min(int(limit or 0), 200)),
-        tenant_key=resolved_tenant_key,
-        owner_userid=requested_owner_userid,
+    return delegate(
+        limit=limit,
+        owner_userid=owner_userid,
         external_userid=external_userid,
+        operator=operator,
+        scope=scope,
+        stage=stage,
+        risk=risk,
+        overdue_only=overdue_only,
+        draft_only=draft_only,
+        high_priority_only=high_priority_only,
+        search=search,
+        track_metrics=track_metrics,
+        metric_source=metric_source,
+        include_ops_dashboard=include_ops_dashboard,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
         allowed_owner_userids=allowed_owner_userids,
     )
-    snapshot_rows_by_id = repo.list_customer_pulse_snapshots_by_ids(
-        [int(row.get("snapshot_id") or 0) for row in card_rows],
-        tenant_key=resolved_tenant_key,
-    )
-    base_cards = [
-        _present_card(
-            row,
-            snapshot_row=snapshot_rows_by_id.get(int(row.get("snapshot_id") or 0)),
-            access_context=resolved_context,
-        )
-        for row in card_rows
-    ]
-    base_cards = [card for card in base_cards if not _card_hidden_by_low_confidence(card)]
-    filters = {
-        "scope": effective_scope,
-        "stage": _normalized_text(stage),
-        "risk": _normalized_text(risk),
-        "overdue_only": bool(overdue_only),
-        "draft_only": bool(draft_only),
-        "high_priority_only": bool(high_priority_only),
-        "search": _normalized_text(search),
-        "requested_owner_userid": requested_owner_userid,
-        "resolved_owner_userid": resolved_owner_userid,
-        "external_userid": _normalized_text(external_userid),
-        "operator": _normalized_text(operator),
-        "scope_fallback_notice": scope_fallback_notice,
-    }
-    filtered_cards = [card for card in base_cards if _filter_match(card, filters=filters)]
-    cards = filtered_cards[: max(1, min(int(limit or 0), 200))]
-    if track_metrics:
-        repo.insert_customer_pulse_metric_events_batch(
-            tenant_key=resolved_tenant_key,
-            events=[
-                {
-                    "card_id": int(card.get("id") or 0),
-                    "external_userid": _normalized_text(card.get("external_userid")),
-                    "owner_userid": _normalized_text(card.get("owner_userid")),
-                    "action_type": _normalized_text(card.get("suggested_action_type")),
-                    "event_type": "card_exposed",
-                    "event_source": _normalized_text(metric_source) or "customer_pulse_inbox",
-                    "operator": _normalized_text(operator),
-                    "payload": {"surface": "inbox"},
-                }
-                for card in cards
-                if int(card.get("id") or 0) > 0
-            ],
-        )
-    filter_options = _build_inbox_filter_options(base_cards)
-    high_priority_count = len([card for card in filtered_cards if _normalized_text(card.get("priority")) == "high"])
-    draft_ready_count = len(
-        [card for card in filtered_cards if bool(_normalized_text(card.get("draft_message"))) or _normalized_text(card.get("card_status")) == "draft_ready"]
-    )
-    overdue_count = len([card for card in filtered_cards if bool(card.get("is_overdue"))])
-    return {
-        "enabled": True,
-        "feature_flag": CUSTOMER_PULSE_FLAG_KEY,
-        "feature_gate": feature_gate,
-        "rules_version": CUSTOMER_PULSE_RULES_VERSION,
-        "runtime_config": {
-            "high_priority_threshold": _high_priority_threshold(),
-            "show_low_confidence_suggestions": _show_low_confidence_suggestions(),
-            "allowed_action_types": sorted(_allowed_action_types()),
-        },
-        "permissions": _customer_pulse_access_permissions(resolved_context),
-        "cards": cards,
-        "filter_options": filter_options,
-        "filters": filters,
-        "visible_count": len(cards),
-        "matched_count": len(filtered_cards),
-        "total_active_count": len(base_cards),
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "metrics_summary": _customer_pulse_metrics_summary(
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            owner_userids=allowed_owner_userids,
-        ),
-        "ops_dashboard": (
-            build_customer_pulse_ops_dashboard_payload(
-                tenant_context=resolved_context,
-                tenant_key=resolved_tenant_key,
-                owner_userids=allowed_owner_userids,
-            )
-            if include_ops_dashboard
-            else None
-        ),
-        "counts": {
-            "open": int(counts.get("open", 0) or 0),
-            "draft_ready": int(counts.get("draft_ready", 0) or 0),
-            "snoozed": int(counts.get("snoozed", 0) or 0),
-            "completed": int(counts.get("completed", 0) or 0),
-            "dismissed": int(counts.get("dismissed", 0) or 0),
-        },
-        "summary_cards": [
-            {
-                "key": "visible",
-                "label": "当前可见卡片",
-                "value": len(cards),
-                "description": f"当前筛选命中的行动卡，共 {len(filtered_cards)} 条",
-            },
-            {
-                "key": "high_priority",
-                "label": "高优先级",
-                "value": high_priority_count,
-                "description": "priority_score 或风险命中高优先级阈值",
-            },
-            {
-                "key": "draft_ready",
-                "label": "已有草稿",
-                "value": draft_ready_count,
-                "description": "已生成或已保存草稿，等待人工确认",
-            },
-            {
-                "key": "overdue",
-                "label": "超期未跟进",
-                "value": overdue_count,
-                "description": "下次处理时间已过，仍处于待处理状态",
-            },
-        ],
-        "channel_notice": "若仓库中没有企微新链路，当前只复用已有客户沟通通道；不会临时接入新平台。",
-        "draft_notice": "所有外发消息默认只生成草稿，需人工确认后再发送。",
-        "generated_at": _iso_now(),
-    }
 
 
 def get_customer_pulse_card_payload(
@@ -4045,71 +2226,15 @@ def get_customer_pulse_card_payload(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    if not feature_gate["enabled"]:
-        raise ValueError("当前租户或角色未启用 AI推进")
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    card = repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key)
-    if not card:
-        raise LookupError("card not found")
-    snapshot = (
-        repo.get_customer_pulse_snapshot(int(card.get("snapshot_id") or 0), tenant_key=resolved_tenant_key)
-        if card.get("snapshot_id")
-        else {}
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_read_service",
+        "get_customer_pulse_card_payload",
     )
-    return {
-        "enabled": True,
-        "feature_gate": feature_gate,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "permissions": _customer_pulse_access_permissions(resolved_context),
-        "card": _present_card(card, snapshot_row=snapshot, access_context=resolved_context),
-        "snapshot": _present_snapshot(snapshot, access_context=resolved_context) if snapshot else None,
-        "latest_execution": _present_execution_log(
-            repo.get_latest_customer_pulse_execution_log(int(card.get("id") or 0), tenant_key=resolved_tenant_key)
-        ),
-        "recent_action_feedback": [
-            {
-                "id": int(row.get("id") or 0),
-                "execution_log_id": int(row.get("execution_log_id") or 0) if row.get("execution_log_id") not in (None, "") else 0,
-                "action_type": _normalized_text(row.get("action_type")),
-                "feedback_type": _normalized_text(row.get("feedback_type")),
-                "feedback_source": _normalized_text(row.get("feedback_source")),
-                "operator": _normalized_text(row.get("operator")),
-                "note": _normalized_text(row.get("note")),
-                "payload": _json_loads(row.get("payload_json"), default={}),
-                "created_at": _normalized_text(row.get("created_at")),
-            }
-            for row in repo.list_customer_pulse_action_feedback(
-                card_id=int(card.get("id") or 0),
-                tenant_key=resolved_tenant_key,
-                limit=10,
-            )
-        ],
-        "metrics_summary": _customer_pulse_metrics_summary(
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-        ),
-        "recent_activities": [
-            {
-                "id": int(row.get("id") or 0),
-                "activity_type": _normalized_text(row.get("activity_type")),
-                "activity_status": _normalized_text(row.get("activity_status")),
-                "title": _normalized_text(row.get("title")),
-                "summary": _normalized_text(row.get("summary")),
-                "due_at": _normalized_text(row.get("due_at")),
-                "operator": _normalized_text(row.get("operator")),
-                "created_at": _normalized_text(row.get("created_at")),
-                "undone_at": _normalized_text(row.get("undone_at")),
-                "payload": _json_loads(row.get("payload_json"), default={}),
-            }
-            for row in repo.list_customer_pulse_activity_logs(
-                _normalized_text(card.get("external_userid")),
-                tenant_key=resolved_tenant_key,
-                limit=10,
-            )
-        ],
-    }
+    return delegate(
+        card_id,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+    )
 
 
 def _customer_pulse_evidence_source_allowed(
@@ -4153,97 +2278,16 @@ def get_customer_pulse_card_evidence_payload(
     tenant_key: str = "",
     limit: int = 20,
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    if not feature_gate["enabled"]:
-        raise ValueError("当前租户或角色未启用 AI推进")
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    assert_customer_pulse_evidence_view(resolved_context)
-    card = repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key)
-    if not card:
-        raise LookupError("card not found")
-    snapshot = (
-        repo.get_customer_pulse_snapshot(int(card.get("snapshot_id") or 0), tenant_key=resolved_tenant_key)
-        if card.get("snapshot_id")
-        else {}
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_read_service",
+        "get_customer_pulse_card_evidence_payload",
     )
-    presented_card = _present_card(card, snapshot_row=snapshot, access_context=resolved_context)
-    evidence_refs = list(presented_card.get("evidence_refs") or [])
-    ref_keys = {
-        (_normalized_text(item.get("sourceType")), _normalized_text(item.get("sourceId")))
-        for item in evidence_refs
-        if _normalized_text(item.get("sourceType")) and _normalized_text(item.get("sourceId"))
-    }
-    evidence_items: list[dict[str, Any]] = []
-    inaccessible_refs: list[dict[str, Any]] = []
-    seen_item_keys: set[tuple[str, str, str, str]] = set()
-    signals = repo.list_customer_pulse_signal_events(
-        _normalized_text(card.get("external_userid")),
-        tenant_key=resolved_tenant_key,
-        statuses=("open", "resolved"),
-        limit=50,
+    return delegate(
+        card_id,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+        limit=limit,
     )
-    for signal_row in signals:
-        presented_signal = _present_signal(signal_row, access_context=resolved_context)
-        source_type = _normalized_text(presented_signal.get("source_ref_type") or presented_signal.get("signal_source"))
-        source_id = _normalized_text(presented_signal.get("source_ref_id"))
-        ref_key = (source_type, source_id)
-        if ref_key not in ref_keys:
-            continue
-        if not _customer_pulse_evidence_source_allowed(
-            source_type=source_type,
-            source_id=source_id,
-            external_userid=_normalized_text(card.get("external_userid")),
-            owner_userid=_normalized_text(card.get("owner_userid")),
-        ):
-            inaccessible_refs.append({"sourceType": source_type, "sourceId": source_id})
-            continue
-        signal_evidence = presented_signal.get("evidence") if isinstance(presented_signal.get("evidence"), list) else []
-        candidate_items = signal_evidence or [
-            {
-                "title": _normalized_text(presented_signal.get("summary")) or "证据",
-                "detail": _normalized_text(presented_signal.get("summary")) or "暂无详情",
-                "event_time": _normalized_text(presented_signal.get("source_updated_at")),
-                "source": source_type,
-            }
-        ]
-        for item in candidate_items:
-            if not isinstance(item, dict):
-                continue
-            dedupe_key = (
-                source_type,
-                source_id,
-                _normalized_text(item.get("title")),
-                _normalized_text(item.get("event_time") or item.get("detail")),
-            )
-            if dedupe_key in seen_item_keys:
-                continue
-            seen_item_keys.add(dedupe_key)
-            evidence_items.append(
-                {
-                    "sourceType": source_type,
-                    "sourceId": source_id,
-                    "title": _sanitize_evidence_text(item.get("title"), max_length=48) or "证据",
-                    "detail": _sanitize_evidence_text(
-                        item.get("detail") or presented_signal.get("summary"),
-                        max_length=160,
-                    )
-                    or "暂无详情",
-                    "event_time": _normalized_text(item.get("event_time")) or _normalized_text(presented_signal.get("source_updated_at")),
-                    "source": _normalized_text(item.get("source")) or source_type,
-                }
-            )
-    return {
-        "enabled": True,
-        "feature_gate": feature_gate,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "permissions": _customer_pulse_access_permissions(resolved_context),
-        "card_id": int(card_id),
-        "external_userid": _normalized_text(card.get("external_userid")),
-        "evidence_refs": evidence_refs,
-        "evidence": evidence_items[: max(1, min(int(limit or 0), 100))],
-        "inaccessible_refs": inaccessible_refs,
-    }
 
 
 def build_customer_pulse_customer_detail_payload(
@@ -4255,169 +2299,18 @@ def build_customer_pulse_customer_detail_payload(
     tenant_key: str = "",
     allowed_owner_userids: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    normalized_external_userid = _normalized_text(external_userid)
-    if not normalized_external_userid:
-        raise ValueError("external_userid is required")
-    if not feature_gate["enabled"]:
-        return {
-            "enabled": False,
-            "feature_flag": CUSTOMER_PULSE_FLAG_KEY,
-            "feature_gate": feature_gate,
-            "rules_version": CUSTOMER_PULSE_RULES_VERSION,
-            "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-            "runtime_config": {
-                "high_priority_threshold": _high_priority_threshold(),
-                "show_low_confidence_suggestions": _show_low_confidence_suggestions(),
-                "allowed_action_types": sorted(_allowed_action_types()),
-            },
-            "permissions": _customer_pulse_access_permissions(resolved_context),
-            "customer": {
-                "external_userid": normalized_external_userid,
-                "customer_name": normalized_external_userid,
-                "owner_userid": "",
-                "mobile": "",
-            },
-            "card": None,
-            "has_card": False,
-            "latest_snapshot": None,
-            "signals": [],
-            "recent_messages": [],
-            "metrics_summary": _customer_pulse_metrics_summary(
-                tenant_context=resolved_context,
-                tenant_key=resolved_tenant_key,
-                owner_userids=allowed_owner_userids,
-            ),
-        }
-    latest_snapshot = repo.get_latest_customer_pulse_snapshot_for_external_userid(
-        normalized_external_userid,
-        tenant_key=resolved_tenant_key,
-    ) or {}
-    card = repo.get_latest_customer_pulse_card_for_external_userid(
-        normalized_external_userid,
-        tenant_key=resolved_tenant_key,
-    ) or {}
-    owner_anchor_userid = _normalized_text(card.get("owner_userid") or latest_snapshot.get("owner_userid"))
-    if allowed_owner_userids:
-        normalized_allowed_owner_userids = {
-            _normalized_text(item) for item in allowed_owner_userids if _normalized_text(item)
-        }
-        if owner_anchor_userid and owner_anchor_userid not in normalized_allowed_owner_userids:
-            raise LookupError("customer not found")
-    signals = repo.list_customer_pulse_signal_events(
-        normalized_external_userid,
-        tenant_key=resolved_tenant_key,
-        statuses=("open", "resolved"),
-        limit=20,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_read_service",
+        "build_customer_pulse_customer_detail_payload",
     )
-    presented_card = (
-        _present_card(
-            repo.get_customer_pulse_card(int(card.get("id") or 0), tenant_key=resolved_tenant_key) or card,
-            snapshot_row=latest_snapshot,
-            access_context=resolved_context,
-        )
-        if card
-        else None
+    return delegate(
+        external_userid,
+        track_metrics=track_metrics,
+        metric_source=metric_source,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+        allowed_owner_userids=allowed_owner_userids,
     )
-    if presented_card and _card_hidden_by_low_confidence(presented_card):
-        presented_card = None
-    if presented_card and track_metrics:
-        _record_metric_event(
-            event_type="card_exposed",
-            event_source=_normalized_text(metric_source) or "customer_pulse_customer_detail",
-            card=presented_card,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload={"surface": "customer_detail"},
-        )
-    summary = (
-        repo.get_customer_pulse_customer_summary(normalized_external_userid)
-        if bool(resolved_context.get("legacy_mode")) and not presented_card
-        else {}
-    )
-    recent_messages = (
-        repo.list_recent_archived_message_rows(normalized_external_userid, limit=5)
-        if bool(resolved_context.get("legacy_mode"))
-        else []
-    )
-    return {
-        "enabled": True,
-        "feature_flag": CUSTOMER_PULSE_FLAG_KEY,
-        "feature_gate": feature_gate,
-        "rules_version": CUSTOMER_PULSE_RULES_VERSION,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "runtime_config": {
-            "high_priority_threshold": _high_priority_threshold(),
-            "show_low_confidence_suggestions": _show_low_confidence_suggestions(),
-            "allowed_action_types": sorted(_allowed_action_types()),
-        },
-        "permissions": _customer_pulse_access_permissions(resolved_context),
-        "customer": {
-            "external_userid": normalized_external_userid,
-            "customer_name": _normalized_text((presented_card or {}).get("customer_name")) or _normalized_text(summary.get("customer_name")) or normalized_external_userid,
-            "owner_userid": _normalized_text((presented_card or {}).get("owner_userid")) or owner_anchor_userid,
-            "mobile": _normalized_text((presented_card or {}).get("mobile")) or _normalized_text(summary.get("mobile")),
-        },
-        "card": presented_card,
-        "has_card": bool(presented_card),
-        "latest_snapshot": _present_snapshot(latest_snapshot, access_context=resolved_context) if latest_snapshot else None,
-        "signals": [_present_signal(row, access_context=resolved_context) for row in signals],
-        "recent_messages": [
-            {
-                "id": int(row.get("id") or 0),
-                "sender": _normalized_text(row.get("sender")),
-                "content": _normalized_text(row.get("content")),
-                "send_time": _normalized_text(row.get("send_time")),
-                "direction": _message_direction(row, external_userid=normalized_external_userid),
-            }
-            for row in recent_messages
-        ],
-        "recent_activities": [
-            {
-                "id": int(row.get("id") or 0),
-                "activity_type": _normalized_text(row.get("activity_type")),
-                "activity_status": _normalized_text(row.get("activity_status")),
-                "title": _normalized_text(row.get("title")),
-                "summary": _normalized_text(row.get("summary")),
-                "due_at": _normalized_text(row.get("due_at")),
-                "operator": _normalized_text(row.get("operator")),
-                "created_at": _normalized_text(row.get("created_at")),
-                "undone_at": _normalized_text(row.get("undone_at")),
-                "payload": _json_loads(row.get("payload_json"), default={}),
-            }
-            for row in repo.list_customer_pulse_activity_logs(
-                normalized_external_userid,
-                tenant_key=resolved_tenant_key,
-                limit=10,
-            )
-        ],
-        "latest_execution": _present_execution_log(
-            repo.get_latest_customer_pulse_execution_log(int(card.get("id") or 0), tenant_key=resolved_tenant_key)
-        )
-        if card
-        else None,
-        "recent_action_feedback": [
-            {
-                "id": int(row.get("id") or 0),
-                "execution_log_id": int(row.get("execution_log_id") or 0) if row.get("execution_log_id") not in (None, "") else 0,
-                "action_type": _normalized_text(row.get("action_type")),
-                "feedback_type": _normalized_text(row.get("feedback_type")),
-                "feedback_source": _normalized_text(row.get("feedback_source")),
-                "operator": _normalized_text(row.get("operator")),
-                "note": _normalized_text(row.get("note")),
-                "payload": _json_loads(row.get("payload_json"), default={}),
-                "created_at": _normalized_text(row.get("created_at")),
-            }
-            for row in repo.list_customer_pulse_action_feedback(
-                external_userid=normalized_external_userid,
-                tenant_key=resolved_tenant_key,
-                limit=10,
-            )
-        ],
-        "generated_at": _iso_now(),
-    }
 
 
 def _reply_draft_task_payload(card: dict[str, Any], draft_message: str, execution_key: str) -> dict[str, Any]:
@@ -4488,105 +2381,19 @@ def preview_customer_pulse_card_action(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    requested_action_type = _normalized_text(action_type)
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    card = repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key)
-    if not card:
-        raise LookupError("card not found")
-    presented = _present_card(card, access_context=resolved_context)
-    if requested_action_type and not _action_allowed(requested_action_type):
-        raise ValueError("当前动作已被系统配置禁用")
-    if requested_action_type and customer_pulse_action_permission(requested_action_type):
-        assert_customer_pulse_action_permission(requested_action_type, access_context=resolved_context)
-    resolved_action_type, action_payload, candidate = _resolve_card_action_candidate(presented, action_type=requested_action_type)
-    assert_customer_pulse_action_permission(resolved_action_type, access_context=resolved_context)
-    if track_click:
-        _record_metric_event(
-            event_type="card_clicked",
-            event_source=_normalized_text(metric_source) or "customer_pulse_preview",
-            card=presented,
-            action_type=resolved_action_type,
-            operator=_normalized_text(operator),
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload={"surface": "action_preview"},
-        )
-    if resolved_action_type == "generate_reply_draft":
-        _record_metric_event(
-            event_type="draft_preview_started",
-            event_source=_normalized_text(metric_source) or "customer_pulse_preview",
-            card=presented,
-            action_type=resolved_action_type,
-            operator=_normalized_text(operator),
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload={"surface": "action_preview"},
-        )
-    preview_result = {
-        "card_id": presented["id"],
-        "external_userid": presented["external_userid"],
-        "customer_name": presented["customer_name"],
-        "action_type": resolved_action_type,
-        "action_label": _action_label(resolved_action_type),
-        "action_title": _normalized_text(candidate.get("title")) or _action_label(resolved_action_type),
-        "why_now": _normalized_text(candidate.get("why_now") or candidate.get("reason")) or _normalized_text(presented.get("why_now")),
-        "need_human_confirmation": True,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "undo_supported": _action_requires_undo_window(resolved_action_type),
-        "undo_window_minutes": CUSTOMER_PULSE_UNDO_WINDOW_MINUTES if _action_requires_undo_window(resolved_action_type) else 0,
-        "undo_notice": f"执行后 {CUSTOMER_PULSE_UNDO_WINDOW_MINUTES} 分钟内可撤销。"
-        if _action_requires_undo_window(resolved_action_type)
-        else "",
-        "evidence": presented["evidence"],
-        "effect_scope": "local_only",
-        "preview": {},
-    }
-    if resolved_action_type == "generate_reply_draft":
-        draft_blocked_by_ai = bool(action_payload.get("draft_blocked_by_ai"))
-        preview_result["effect_scope"] = "draft_only"
-        preview_result["preview"] = {
-            "draft_message": ""
-            if draft_blocked_by_ai
-            else (
-                presented["draft_message"]
-                or _build_rule_based_draft_message(
-                    customer_name=presented["customer_name"],
-                    summary=presented["summary"],
-                    evidence=presented["evidence"],
-                )
-            ),
-            "channel_type": "existing_customer_channel",
-            "auto_send": False,
-            "draft_blocked_by_ai": draft_blocked_by_ai,
-            "draft_notice": _normalized_text(action_payload.get("draft_notice"))
-            or "所有外发消息默认只生成草稿，需人工确认后再发送。",
-        }
-    elif resolved_action_type == "update_followup_segment":
-        followup_segment = _normalized_text(action_payload.get("followup_segment")) or "focus"
-        preview_result["effect_scope"] = "marketing_state"
-        preview_result["preview"] = {
-            "followup_segment": followup_segment,
-            "followup_segment_label": _segment_label(followup_segment),
-        }
-    elif resolved_action_type == "create_followup_task":
-        preview_result["preview"] = {
-            "task_title": _normalized_text(action_payload.get("task_title")) or _normalized_text(candidate.get("title")) or presented["title"],
-            "due_at": _normalized_text(action_payload.get("due_at")) or _next_followup_time(),
-        }
-    elif resolved_action_type == "set_followup_reminder":
-        preview_result["preview"] = {
-            "due_at": _normalized_text(action_payload.get("due_at")) or _next_followup_time(),
-        }
-    elif resolved_action_type == "update_tags":
-        preview_result["effect_scope"] = "contact_tags"
-        preview_result["preview"] = {
-            "add_tag_ids": action_payload.get("add_tag_ids") or [],
-            "remove_tag_ids": action_payload.get("remove_tag_ids") or [],
-        }
-    else:
-        raise ValueError("unsupported action_type")
-    return preview_result
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_action_service",
+        "preview_customer_pulse_card_action",
+    )
+    return delegate(
+        card_id,
+        action_type=action_type,
+        track_click=track_click,
+        metric_source=metric_source,
+        operator=operator,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+    )
 
 
 def execute_customer_pulse_card_action(
@@ -4598,564 +2405,18 @@ def execute_customer_pulse_card_action(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    if not is_customer_pulse_inbox_enabled(access_context=resolved_context):
-        raise ValueError("AI推进功能未启用")
-    requested_action_type = _normalized_text(action_type)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    card = repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key)
-    if not card:
-        raise LookupError("card not found")
-    presented = _present_card(card, access_context=resolved_context)
-    if requested_action_type and not _action_allowed(requested_action_type):
-        raise ValueError("当前动作已被系统配置禁用")
-    if requested_action_type and customer_pulse_action_permission(requested_action_type):
-        assert_customer_pulse_action_permission(requested_action_type, access_context=resolved_context)
-    resolved_action_type, candidate_payload, candidate = _resolve_card_action_candidate(presented, action_type=requested_action_type)
-    assert_customer_pulse_action_permission(resolved_action_type, access_context=resolved_context)
-    if not _action_allowed(resolved_action_type):
-        raise ValueError("当前动作已被系统配置禁用")
-    extra_payload = dict(extra_payload or {})
-    action_payload = {**candidate_payload, **extra_payload}
-    normalized_operator = _normalized_text(operator) or "crm_console"
-    reference_preview = preview_customer_pulse_card_action(
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_action_service",
+        "execute_customer_pulse_card_action",
+    )
+    return delegate(
         card_id,
-        action_type=resolved_action_type,
-        track_click=False,
-        tenant_context=resolved_context,
-        tenant_key=resolved_tenant_key,
+        action_type=action_type,
+        operator=operator,
+        extra_payload=extra_payload,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
     )
-    _assert_action_scope(presented, action_payload)
-    normalized_execution_payload = _normalize_action_execution_payload(
-        card=presented,
-        action_type=resolved_action_type,
-        candidate=candidate,
-        action_payload=action_payload,
-    )
-    reference_execution_payload = _normalize_action_execution_payload(
-        card=presented,
-        action_type=resolved_action_type,
-        candidate=candidate,
-        action_payload=dict(reference_preview.get("preview") or {}),
-    )
-    edited_fields = _edited_fields(reference_execution_payload, normalized_execution_payload)
-    learning_feedback_type = "edited_then_sent" if edited_fields else "adopted"
-    base_execution_labels = _ai_audit_labels_from_candidate(candidate, candidate_payload)
-    execution_audit_labels = _execution_audit_labels(base_labels=base_execution_labels, edited_fields=edited_fields)
-    unsafe_input_fields = _unsafe_execution_input_fields(resolved_action_type, extra_payload)
-    text_guardrail_hits = _draft_execution_guardrail_hits(resolved_action_type, normalized_execution_payload)
-    request_payload_with_audit = {
-        **normalized_execution_payload,
-        "audit": _request_payload_audit_summary(
-            action_type=resolved_action_type,
-            request_payload=normalized_execution_payload,
-            tenant_context=resolved_context,
-            operator=normalized_operator,
-            card=presented,
-            execution_labels=base_execution_labels,
-            unsafe_input_fields=unsafe_input_fields,
-            text_guardrail_hits=text_guardrail_hits,
-        ),
-    }
-    idempotency_key = _build_action_idempotency_key(card_id, resolved_action_type, normalized_execution_payload)
-    existing_log = repo.get_latest_customer_pulse_execution_log_by_idempotency(
-        card_id=card_id,
-        action_type=resolved_action_type,
-        idempotency_key=idempotency_key,
-        tenant_key=resolved_tenant_key,
-    )
-    if existing_log and _normalized_text(existing_log.get("execution_status")) == "confirmed" and not _normalized_text(existing_log.get("undone_at")):
-        return _existing_execution_response(
-            existing_log,
-            card_id=card_id,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-        )
-
-    execution_key = _execution_key()
-    pre_card_snapshot = _card_state_snapshot(presented)
-    rollback_payload = _execution_rollback_payload(
-        action_type=resolved_action_type,
-        pre_card_snapshot=pre_card_snapshot,
-        status="pending",
-    )
-    rollback_payload["resource_id"] = str(card_id)
-    execution_log = repo.insert_customer_pulse_execution_log(
-        card_id=card_id,
-        external_userid=presented["external_userid"],
-        action_type=resolved_action_type,
-        execution_status="processing",
-        channel_type="",
-        operator=normalized_operator,
-        actor_userid=_normalized_text(resolved_context.get("actor_userid") or resolved_context.get("user_id")),
-        actor_role=_normalized_text(resolved_context.get("actor_role") or resolved_context.get("role")),
-        resource_type=CUSTOMER_PULSE_RESOURCE_CARD,
-        resource_id=str(card_id),
-        tenant_key=resolved_tenant_key,
-        execution_key=execution_key,
-        idempotency_key=idempotency_key,
-        request_payload=request_payload_with_audit,
-        result_payload={},
-        error_message="",
-        tenant_context=customer_pulse_tenant_context_summary(resolved_context),
-        audit_labels=base_execution_labels,
-        rollback_payload=rollback_payload,
-    )
-
-    channel_type = ""
-    try:
-        if unsafe_input_fields:
-            raise ValueError(f"检测到未授权字段更新：{', '.join(unsafe_input_fields)}")
-        if text_guardrail_hits:
-            raise ValueError(f"草稿命中安全风控：{', '.join(text_guardrail_hits)}")
-        activity_log_id = 0
-        outbound_task_id = 0
-        undo_until = _undo_until() if _action_requires_undo_window(resolved_action_type) else ""
-        updated_row: dict[str, Any]
-        result_payload: dict[str, Any]
-
-        if resolved_action_type == "generate_reply_draft":
-            draft_blocked_by_ai = bool(action_payload.get("draft_blocked_by_ai"))
-            explicit_draft_message = _normalized_text(normalized_execution_payload.get("draft_message"))
-            if draft_blocked_by_ai and not explicit_draft_message:
-                raise ValueError("当前 AI 置信度不足或命中风控，请人工编辑草稿后再保存。")
-            draft_message = explicit_draft_message or presented["draft_message"] or _build_rule_based_draft_message(
-                customer_name=presented["customer_name"],
-                summary=presented["summary"],
-                evidence=presented["evidence"],
-            )
-            draft_task = save_local_private_message_draft(
-                _reply_draft_task_payload(presented, draft_message, execution_key),
-                source=CUSTOMER_PULSE_FLAG_KEY,
-            )
-            outbound_task_id = int(draft_task.get("task_id") or 0)
-            updated_row = repo.update_customer_pulse_card(
-                card_id,
-                tenant_key=resolved_tenant_key,
-                card_status="draft_ready",
-                draft_message=draft_message,
-                need_human_confirmation=True,
-                snooze_until="",
-                resolved_at="",
-                resolution_note="",
-            )
-            updated_card = _present_card(updated_row, access_context=resolved_context)
-            activity = repo.insert_customer_pulse_activity_log(
-                card_id=card_id,
-                external_userid=presented["external_userid"],
-                owner_userid=presented["owner_userid"],
-                activity_type="reply_draft",
-                activity_status="draft_ready",
-                title="已保存 AI 回复草稿",
-                summary=f"已为 {presented['customer_name']} 生成并保存可编辑草稿",
-                operator=normalized_operator,
-                activity_source=CUSTOMER_PULSE_FLAG_KEY,
-                tenant_key=resolved_tenant_key,
-                execution_key=execution_key,
-                idempotency_key=idempotency_key,
-                payload={
-                    "draft_message": draft_message,
-                    "outbound_task_id": outbound_task_id,
-                    "card_before": pre_card_snapshot,
-                    "card_after": _card_state_snapshot(updated_card),
-                },
-            )
-            activity_log_id = int(activity.get("id") or 0)
-            channel_type = "existing_customer_channel"
-            result_payload = {
-                "card": updated_card,
-                "card_before": pre_card_snapshot,
-                "draft_message": draft_message,
-                "auto_send": False,
-                "need_human_confirmation": True,
-                "stored_locally": True,
-                "copy_text": draft_message,
-                "outbound_task_id": outbound_task_id,
-                "activity_log_id": activity_log_id,
-            }
-        elif resolved_action_type == "create_followup_task":
-            due_at = _normalized_text(normalized_execution_payload.get("due_at")) or _next_followup_time()
-            task_title = _normalized_text(normalized_execution_payload.get("task_title")) or _normalized_text(candidate.get("title")) or presented["title"]
-            updated_row = repo.update_customer_pulse_card(
-                card_id,
-                tenant_key=resolved_tenant_key,
-                card_status="completed",
-                due_at=due_at,
-                resolved_at=_iso_now(),
-                resolution_note="local_followup_task_created",
-            )
-            updated_card = _present_card(updated_row, access_context=resolved_context)
-            activity = repo.insert_customer_pulse_activity_log(
-                card_id=card_id,
-                external_userid=presented["external_userid"],
-                owner_userid=presented["owner_userid"],
-                activity_type="followup_task",
-                activity_status="open",
-                title=task_title,
-                summary=f"AI 建议已落地为跟进任务：{task_title}",
-                operator=normalized_operator,
-                due_at=due_at,
-                activity_source=CUSTOMER_PULSE_FLAG_KEY,
-                tenant_key=resolved_tenant_key,
-                execution_key=execution_key,
-                idempotency_key=idempotency_key,
-                payload={
-                    "task_title": task_title,
-                    "due_at": due_at,
-                    "card_before": pre_card_snapshot,
-                    "card_after": _card_state_snapshot(updated_card),
-                },
-            )
-            activity_log_id = int(activity.get("id") or 0)
-            channel_type = "local_task"
-            result_payload = {
-                "card": updated_card,
-                "card_before": pre_card_snapshot,
-                "task_title": task_title,
-                "due_at": due_at,
-                "stored_locally": True,
-                "activity_log_id": activity_log_id,
-            }
-        elif resolved_action_type == "update_followup_segment":
-            followup_segment = _normalized_text(normalized_execution_payload.get("followup_segment")) or "focus"
-            current_marketing_state = repo.get_customer_marketing_state_current(presented["external_userid"]) or {}
-            before_followup_segment = _followup_segment_from_marketing_state(current_marketing_state) or "normal"
-            marketing_result = set_manual_followup_segment(
-                external_userid=presented["external_userid"],
-                followup_segment=followup_segment,
-                owner_userid=presented["owner_userid"],
-                operator=normalized_operator,
-                source="customer_pulse_inbox",
-            )
-            updated_row = repo.update_customer_pulse_card(
-                card_id,
-                tenant_key=resolved_tenant_key,
-                card_status="completed",
-                resolved_at=_iso_now(),
-                resolution_note=f"followup_segment:{followup_segment}",
-            )
-            updated_card = _present_card(updated_row, access_context=resolved_context)
-            activity = repo.insert_customer_pulse_activity_log(
-                card_id=card_id,
-                external_userid=presented["external_userid"],
-                owner_userid=presented["owner_userid"],
-                activity_type="followup_segment_update",
-                activity_status="applied",
-                title="已更新跟进阶段",
-                summary=f"{_segment_label(before_followup_segment)} -> {_segment_label(followup_segment)}",
-                operator=normalized_operator,
-                activity_source=CUSTOMER_PULSE_FLAG_KEY,
-                tenant_key=resolved_tenant_key,
-                execution_key=execution_key,
-                idempotency_key=idempotency_key,
-                payload={
-                    "before_followup_segment": before_followup_segment,
-                    "after_followup_segment": followup_segment,
-                    "marketing_result": marketing_result,
-                    "card_before": pre_card_snapshot,
-                    "card_after": _card_state_snapshot(updated_card),
-                },
-            )
-            activity_log_id = int(activity.get("id") or 0)
-            channel_type = "crm_console_mutation"
-            result_payload = {
-                "card": updated_card,
-                "card_before": pre_card_snapshot,
-                "marketing_result": marketing_result,
-                "before_followup_segment": before_followup_segment,
-                "after_followup_segment": followup_segment,
-                "activity_log_id": activity_log_id,
-            }
-        elif resolved_action_type == "update_tags":
-            current_tag_rows = repo.list_contact_tag_rows(presented["external_userid"], limit=100)
-            current_tag_ids = {
-                _normalized_text(item.get("tag_id"))
-                for item in current_tag_rows
-                if _normalized_text(item.get("userid")) == presented["owner_userid"] and _normalized_text(item.get("tag_id"))
-            }
-            add_tag_ids = sorted(
-                {
-                    _normalized_text(item)
-                    for item in (normalized_execution_payload.get("add_tag_ids") or [])
-                    if _normalized_text(item)
-                }
-            )
-            remove_tag_ids = sorted(
-                {
-                    _normalized_text(item)
-                    for item in (normalized_execution_payload.get("remove_tag_ids") or [])
-                    if _normalized_text(item)
-                }
-            )
-            applied_add_tag_ids = [item for item in add_tag_ids if item not in current_tag_ids]
-            applied_remove_tag_ids = [item for item in remove_tag_ids if item in current_tag_ids]
-            if not applied_add_tag_ids and not applied_remove_tag_ids:
-                raise ValueError("当前标签变更已存在，无需重复执行")
-            if applied_add_tag_ids:
-                mark_customer_tags(
-                    {
-                        "userid": presented["owner_userid"],
-                        "external_userid": presented["external_userid"],
-                        "add_tag": applied_add_tag_ids,
-                    }
-                )
-            if applied_remove_tag_ids:
-                unmark_customer_tags(
-                    {
-                        "userid": presented["owner_userid"],
-                        "external_userid": presented["external_userid"],
-                        "remove_tag": applied_remove_tag_ids,
-                    }
-                )
-            after_tag_ids = sorted((current_tag_ids | set(applied_add_tag_ids)) - set(applied_remove_tag_ids))
-            updated_row = repo.update_customer_pulse_card(
-                card_id,
-                tenant_key=resolved_tenant_key,
-                card_status="completed",
-                resolved_at=_iso_now(),
-                resolution_note="customer_tags_updated",
-            )
-            updated_card = _present_card(updated_row, access_context=resolved_context)
-            activity = repo.insert_customer_pulse_activity_log(
-                card_id=card_id,
-                external_userid=presented["external_userid"],
-                owner_userid=presented["owner_userid"],
-                activity_type="tag_update",
-                activity_status="applied",
-                title="已更新客户标签",
-                summary=f"新增 {len(applied_add_tag_ids)} 个标签，移除 {len(applied_remove_tag_ids)} 个标签",
-                operator=normalized_operator,
-                activity_source=CUSTOMER_PULSE_FLAG_KEY,
-                tenant_key=resolved_tenant_key,
-                execution_key=execution_key,
-                idempotency_key=idempotency_key,
-                payload={
-                    "before_tag_ids": sorted(current_tag_ids),
-                    "applied_add_tag_ids": applied_add_tag_ids,
-                    "applied_remove_tag_ids": applied_remove_tag_ids,
-                    "after_tag_ids": after_tag_ids,
-                    "card_before": pre_card_snapshot,
-                    "card_after": _card_state_snapshot(updated_card),
-                },
-            )
-            activity_log_id = int(activity.get("id") or 0)
-            channel_type = "contact_tags"
-            result_payload = {
-                "card": updated_card,
-                "card_before": pre_card_snapshot,
-                "applied_add_tag_ids": applied_add_tag_ids,
-                "applied_remove_tag_ids": applied_remove_tag_ids,
-                "after_tag_ids": after_tag_ids,
-                "activity_log_id": activity_log_id,
-            }
-        elif resolved_action_type == "set_followup_reminder":
-            due_at = _normalized_text(normalized_execution_payload.get("due_at")) or _next_followup_time()
-            updated_row = repo.update_customer_pulse_card(
-                card_id,
-                tenant_key=resolved_tenant_key,
-                card_status="snoozed",
-                due_at=due_at,
-                snooze_until=due_at,
-                resolution_note="next_followup_reminder_set",
-            )
-            updated_card = _present_card(updated_row, access_context=resolved_context)
-            activity = repo.insert_customer_pulse_activity_log(
-                card_id=card_id,
-                external_userid=presented["external_userid"],
-                owner_userid=presented["owner_userid"],
-                activity_type="followup_reminder",
-                activity_status="scheduled",
-                title="已设置下次跟进提醒",
-                summary=f"提醒时间：{due_at}",
-                operator=normalized_operator,
-                due_at=due_at,
-                activity_source=CUSTOMER_PULSE_FLAG_KEY,
-                tenant_key=resolved_tenant_key,
-                execution_key=execution_key,
-                idempotency_key=idempotency_key,
-                payload={
-                    "due_at": due_at,
-                    "card_before": pre_card_snapshot,
-                    "card_after": _card_state_snapshot(updated_card),
-                },
-            )
-            activity_log_id = int(activity.get("id") or 0)
-            channel_type = "local_reminder"
-            result_payload = {
-                "card": updated_card,
-                "card_before": pre_card_snapshot,
-                "due_at": due_at,
-                "stored_locally": True,
-                "activity_log_id": activity_log_id,
-            }
-        else:
-            raise ValueError("unsupported action_type")
-
-        rollback_payload = _execution_rollback_payload(
-            action_type=resolved_action_type,
-            pre_card_snapshot=pre_card_snapshot,
-            undo_until=undo_until,
-            status="available" if undo_until else "completed",
-            activity_log_id=activity_log_id,
-        )
-        rollback_payload["resource_id"] = str(card_id)
-        result_payload["audit"] = _result_payload_audit_summary(
-            action_type=resolved_action_type,
-            card_before=pre_card_snapshot,
-            card_after=_card_state_snapshot(updated_card),
-            execution_labels=execution_audit_labels,
-            edited_fields=edited_fields,
-            status="confirmed",
-            rollback_payload=rollback_payload,
-        )
-        result_payload["audit_labels"] = execution_audit_labels
-        if resolved_action_type == "generate_reply_draft":
-            result_payload["draft_review_status"] = (
-                _EXECUTION_AUDIT_HUMAN_EDITED if edited_fields else _EXECUTION_AUDIT_HUMAN_CONFIRMED
-            )
-        if resolved_action_type in {"update_followup_segment", "update_tags", "set_followup_reminder"}:
-            result_payload["safe_field_update_review_status"] = (
-                _EXECUTION_AUDIT_HUMAN_EDITED if edited_fields else _EXECUTION_AUDIT_HUMAN_CONFIRMED
-            )
-        execution_log = repo.update_customer_pulse_execution_log(
-            int(execution_log.get("id") or 0),
-            tenant_key=resolved_tenant_key,
-            execution_status="confirmed",
-            channel_type=channel_type,
-            activity_log_id=activity_log_id,
-            outbound_task_id=outbound_task_id,
-            undo_status="available" if undo_until else "",
-            undo_until=undo_until,
-            result_payload_json=result_payload,
-            error_message="",
-            audit_labels_json=execution_audit_labels,
-            rollback_payload_json=rollback_payload,
-        )
-        _record_action_feedback(
-            card=_present_card(repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key) or {}, access_context=resolved_context),
-            feedback_type=learning_feedback_type,
-            feedback_source="action_execution",
-            operator=normalized_operator,
-            action_type=resolved_action_type,
-            execution_log_id=int(execution_log.get("id") or 0),
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload={
-                "audit_labels": execution_audit_labels,
-                "edited_fields": edited_fields,
-                "reference_payload": reference_execution_payload,
-                "executed_payload": normalized_execution_payload,
-            },
-        )
-        _record_metric_event(
-            event_type="action_executed",
-            event_source="customer_pulse_execute",
-            card=_present_card(repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key) or {}, access_context=resolved_context),
-            execution_log_id=int(execution_log.get("id") or 0),
-            action_type=resolved_action_type,
-            operator=normalized_operator,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload={"edited_fields": edited_fields, "audit_labels": execution_audit_labels},
-        )
-        metric_type_map = {
-            "generate_reply_draft": "draft_confirmed",
-            "create_followup_task": "followup_task_created",
-            "update_followup_segment": "followup_segment_updated",
-        }
-        metric_event_type = metric_type_map.get(resolved_action_type)
-        if metric_event_type:
-            _record_metric_event(
-                event_type=metric_event_type,
-                event_source="customer_pulse_execute",
-                card=_present_card(repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key) or {}, access_context=resolved_context),
-                execution_log_id=int(execution_log.get("id") or 0),
-                action_type=resolved_action_type,
-                operator=normalized_operator,
-                tenant_context=resolved_context,
-                tenant_key=resolved_tenant_key,
-                payload={"edited_fields": edited_fields, "audit_labels": execution_audit_labels},
-            )
-        _record_metric_event(
-            event_type="writeback_success",
-            event_source="customer_pulse_execute",
-            card=_present_card(repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key) or {}, access_context=resolved_context),
-            execution_log_id=int(execution_log.get("id") or 0),
-            action_type=resolved_action_type,
-            operator=normalized_operator,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-        )
-        return _build_execution_response(
-            card_id=card_id,
-            action_type=resolved_action_type,
-            result_payload=result_payload,
-            execution_log=execution_log,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-        )
-    except Exception as exc:
-        failure_result_payload = {
-            "retryable": True,
-            "error_message": str(exc),
-            "audit": _result_payload_audit_summary(
-                action_type=resolved_action_type,
-                card_before=pre_card_snapshot,
-                card_after={},
-                execution_labels=execution_audit_labels,
-                edited_fields=edited_fields,
-                status="failed",
-                error_message=str(exc),
-                rollback_payload=rollback_payload,
-            ),
-            "audit_labels": execution_audit_labels,
-            "guardrails": _guardrail_summary(
-                execution_labels=execution_audit_labels,
-                unsafe_input_fields=unsafe_input_fields,
-                text_guardrail_hits=text_guardrail_hits,
-                ai_guardrails=((presented.get("snapshot") or {}).get("ai_payload") or {}).get("guardrails")
-                if isinstance(((presented.get("snapshot") or {}).get("ai_payload") or {}), dict)
-                else {},
-            ),
-        }
-        repo.update_customer_pulse_execution_log(
-            int(execution_log.get("id") or 0),
-            tenant_key=resolved_tenant_key,
-            execution_status="failed",
-            channel_type=channel_type,
-            result_payload_json=failure_result_payload,
-            error_message=str(exc),
-            audit_labels_json=execution_audit_labels,
-            rollback_payload_json=rollback_payload,
-        )
-        if unsafe_input_fields or text_guardrail_hits:
-            _record_metric_event(
-                event_type="guardrail_blocked",
-                event_source="customer_pulse_execute",
-                card=presented,
-                execution_log_id=int(execution_log.get("id") or 0),
-                action_type=resolved_action_type,
-                operator=normalized_operator,
-                tenant_context=resolved_context,
-                tenant_key=resolved_tenant_key,
-                payload={
-                    "unsafe_input_fields": unsafe_input_fields,
-                    "text_guardrail_hits": text_guardrail_hits,
-                    "error_message": str(exc),
-                },
-            )
-        _record_metric_event(
-            event_type="writeback_failed",
-            event_source="customer_pulse_execute",
-            card=presented,
-            execution_log_id=int(execution_log.get("id") or 0),
-            action_type=resolved_action_type,
-            operator=normalized_operator,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload={"error_message": str(exc)},
-        )
-        raise
 
 
 def undo_customer_pulse_card_action_execution(
@@ -5165,193 +2426,16 @@ def undo_customer_pulse_card_action_execution(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    feature_gate = customer_pulse_feature_gate_summary(resolved_context)
-    if not feature_gate["enabled"]:
-        return {
-            "key": "customer_pulse",
-            "title": "AI推进收件箱",
-            "count": 0,
-            "description": "当前租户或角色未进入 Customer Pulse 灰度范围。",
-            "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-            "tone": "ok",
-            "items": [],
-            "empty_title": "当前未开放 AI 推进灰度",
-            "href": "/admin/customer-pulse",
-        }
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    execution_log = repo.get_customer_pulse_execution_log(int(execution_id), tenant_key=resolved_tenant_key)
-    if not execution_log:
-        raise LookupError("execution not found")
-    presented_execution = _present_execution_log(execution_log) or {}
-    if presented_execution.get("execution_status") != "confirmed":
-        raise ValueError("当前执行记录尚未成功，不能撤销")
-    if not bool(presented_execution.get("undo_supported")):
-        raise ValueError("当前动作不支持撤销")
-    if _normalized_text(presented_execution.get("undone_at")):
-        raise ValueError("该执行记录已撤销")
-    if not bool(presented_execution.get("undo_available")):
-        raise ValueError("撤销窗口已过期")
-    latest_execution = repo.get_latest_customer_pulse_execution_log(
-        int(presented_execution.get("card_id") or 0),
-        tenant_key=resolved_tenant_key,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_action_service",
+        "undo_customer_pulse_card_action_execution",
     )
-    if latest_execution and int(latest_execution.get("id") or 0) != int(execution_id) and not _normalized_text(latest_execution.get("undone_at")):
-        raise ValueError("当前卡片已有更新后的执行记录，不能撤销旧动作")
-
-    normalized_operator = _normalized_text(operator) or "crm_console"
-    result_payload = dict(presented_execution.get("result_payload") or {})
-    pre_card_snapshot = dict(result_payload.get("card_before") or {})
-    if not pre_card_snapshot:
-        raise ValueError("缺少撤销所需的原始卡片状态")
-
-    action_type = _normalized_text(presented_execution.get("action_type"))
-    assert_customer_pulse_action_permission(action_type, access_context=resolved_context)
-    external_userid = _normalized_text(presented_execution.get("external_userid"))
-    card_id = int(presented_execution.get("card_id") or 0)
-    current_card = repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key)
-    if not current_card:
-        raise LookupError("card not found")
-    presented_card = _present_card(current_card, access_context=resolved_context)
-    now = _iso_now()
-
-    if action_type == "generate_reply_draft":
-        outbound_task_id = int(presented_execution.get("outbound_task_id") or result_payload.get("outbound_task_id") or 0)
-        if outbound_task_id:
-            existing_task = get_outbound_task(outbound_task_id) or {}
-            response_payload = _json_loads(existing_task.get("response_payload"), default={})
-            if not isinstance(response_payload, dict):
-                response_payload = {}
-            response_payload.update(
-                {
-                    "draft_only": True,
-                    "cancelled_at": now,
-                    "cancelled_by": normalized_operator,
-                    "cancel_source": "customer_pulse_undo",
-                }
-            )
-            update_outbound_task_status(outbound_task_id, status="cancelled", response_payload=response_payload)
-    elif action_type == "create_followup_task":
-        pass
-    elif action_type == "update_followup_segment":
-        before_followup_segment = _normalized_text(result_payload.get("before_followup_segment"))
-        if before_followup_segment not in {"normal", "focus"}:
-            raise ValueError("原始跟进阶段不支持撤销")
-        set_manual_followup_segment(
-            external_userid=external_userid,
-            followup_segment=before_followup_segment,
-            owner_userid=presented_card["owner_userid"],
-            operator=normalized_operator,
-            source="customer_pulse_undo",
-        )
-    elif action_type == "update_tags":
-        applied_add_tag_ids = [
-            _normalized_text(item)
-            for item in (result_payload.get("applied_add_tag_ids") or [])
-            if _normalized_text(item)
-        ]
-        applied_remove_tag_ids = [
-            _normalized_text(item)
-            for item in (result_payload.get("applied_remove_tag_ids") or [])
-            if _normalized_text(item)
-        ]
-        if applied_add_tag_ids:
-            unmark_customer_tags(
-                {
-                    "userid": presented_card["owner_userid"],
-                    "external_userid": external_userid,
-                    "remove_tag": applied_add_tag_ids,
-                }
-            )
-        if applied_remove_tag_ids:
-            mark_customer_tags(
-                {
-                    "userid": presented_card["owner_userid"],
-                    "external_userid": external_userid,
-                    "add_tag": applied_remove_tag_ids,
-                }
-            )
-    elif action_type == "set_followup_reminder":
-        pass
-    else:
-        raise ValueError("unsupported action_type")
-
-    restored_row = _restore_card_state(
-        card_id,
-        pre_card_snapshot,
-        tenant_context=resolved_context,
-        tenant_key=resolved_tenant_key,
+    return delegate(
+        execution_id,
+        operator=operator,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
     )
-    activity_log_id = int(presented_execution.get("activity_log_id") or result_payload.get("activity_log_id") or 0)
-    if activity_log_id:
-        repo.update_customer_pulse_activity_log(
-            activity_log_id,
-            tenant_key=resolved_tenant_key,
-            activity_status="undone",
-            undone_at=now,
-        )
-    undo_activity = repo.insert_customer_pulse_activity_log(
-        card_id=card_id,
-        external_userid=external_userid,
-        owner_userid=presented_card["owner_userid"],
-        activity_type="action_undo",
-        activity_status="completed",
-        title=f"已撤销{_action_label(action_type)}",
-        summary=f"已撤销 AI 建议执行：{_action_label(action_type)}",
-        operator=normalized_operator,
-        activity_source=CUSTOMER_PULSE_FLAG_KEY,
-        tenant_key=resolved_tenant_key,
-        execution_key=_execution_key(),
-        idempotency_key=f"undo-{presented_execution.get('execution_key')}",
-        payload={
-            "reverted_execution_id": int(execution_id),
-            "reverted_action_type": action_type,
-            "reverted_activity_log_id": activity_log_id,
-        },
-    )
-    result_payload["undo_activity_log_id"] = int(undo_activity.get("id") or 0)
-    result_payload["undone_at"] = now
-    result_payload["undone_by"] = normalized_operator
-    rollback_payload = dict(presented_execution.get("rollback_payload") or {})
-    rollback_payload.update(
-        {
-            "resource_id": str(card_id),
-            "status": "undone",
-            "undone_at": now,
-            "undo_activity_log_id": int(undo_activity.get("id") or 0),
-        }
-    )
-    result_payload["audit"] = _result_payload_audit_summary(
-        action_type=action_type,
-        card_before=pre_card_snapshot,
-        card_after=_card_state_snapshot(_present_card(restored_row, access_context=resolved_context)),
-        execution_labels=[_normalized_text(item) for item in presented_execution.get("audit_labels") or [] if _normalized_text(item)],
-        edited_fields=[],
-        status="undone",
-        rollback_payload=rollback_payload,
-    )
-    execution_log = repo.update_customer_pulse_execution_log(
-        int(execution_id),
-        tenant_key=resolved_tenant_key,
-        undo_status="undone",
-        undone_at=now,
-        result_payload_json=result_payload,
-        rollback_payload_json=rollback_payload,
-    )
-    return {
-        "ok": True,
-        "action_type": action_type,
-        "action_label": _action_label(action_type),
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "card": _present_card(restored_row, access_context=resolved_context),
-        "execution": _present_execution_log(execution_log),
-        "undo_activity": {
-            "id": int(undo_activity.get("id") or 0),
-            "title": _normalized_text(undo_activity.get("title")),
-            "summary": _normalized_text(undo_activity.get("summary")),
-            "created_at": _normalized_text(undo_activity.get("created_at")),
-        },
-    }
 
 
 def submit_customer_pulse_feedback(
@@ -5364,120 +2448,19 @@ def submit_customer_pulse_feedback(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    card = repo.get_customer_pulse_card(card_id, tenant_key=resolved_tenant_key)
-    if not card:
-        raise LookupError("card not found")
-    assert_customer_pulse_feedback_permission(resolved_context)
-    presented = _present_card(card, access_context=resolved_context)
-    normalized_feedback_type = _normalized_text(feedback_type).lower()
-    normalized_operator = _normalized_text(operator) or "crm_console"
-    payload = dict(payload or {})
-    if normalized_feedback_type in {"adopted", "edited_then_sent", "misjudged", "unhelpful", "ignored"}:
-        feedback_row = _record_action_feedback(
-            card=presented,
-            feedback_type=normalized_feedback_type,
-            feedback_source=_normalized_text(payload.get("feedback_source")) or "manual_feedback",
-            operator=normalized_operator,
-            action_type=_normalized_text(payload.get("action_type")) or _normalized_text(presented.get("suggested_action_type")),
-            execution_log_id=int(payload.get("execution_id") or 0) or None,
-            note=note,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload=payload,
-        )
-        if normalized_feedback_type == "ignored":
-            _record_metric_event(
-                event_type="card_ignored",
-                event_source=_normalized_text(payload.get("feedback_source")) or "manual_feedback",
-                card=presented,
-                operator=normalized_operator,
-                tenant_context=resolved_context,
-                tenant_key=resolved_tenant_key,
-            )
-        return {
-            "ok": True,
-            "card": presented,
-            "feedback": feedback_row,
-            "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        }
-    update_fields: dict[str, Any]
-    feedback_value = ""
-    action_feedback_type = ""
-    if normalized_feedback_type == "complete":
-        update_fields = {
-            "card_status": "completed",
-            "resolved_at": _iso_now(),
-            "resolution_note": _normalized_text(note) or "marked_complete",
-            "snooze_until": "",
-        }
-    elif normalized_feedback_type == "dismiss":
-        update_fields = {
-            "card_status": "dismissed",
-            "resolved_at": _iso_now(),
-            "resolution_note": _normalized_text(note) or "dismissed",
-            "snooze_until": "",
-        }
-        action_feedback_type = "ignored"
-    elif normalized_feedback_type == "reopen":
-        update_fields = {
-            "card_status": "open",
-            "resolved_at": "",
-            "resolution_note": _normalized_text(note),
-            "snooze_until": "",
-        }
-    elif normalized_feedback_type == "snooze":
-        snooze_until = _normalized_text(payload.get("snooze_until")) or _next_followup_time()
-        feedback_value = snooze_until
-        update_fields = {
-            "card_status": "snoozed",
-            "due_at": snooze_until,
-            "snooze_until": snooze_until,
-            "resolution_note": _normalized_text(note) or "snoozed",
-        }
-    else:
-        raise ValueError("unsupported feedback_type")
-    updated_row = repo.update_customer_pulse_card(card_id, tenant_key=resolved_tenant_key, **update_fields)
-    feedback_row = repo.insert_customer_pulse_feedback(
-        card_id=card_id,
-        tenant_key=resolved_tenant_key,
-        external_userid=presented["external_userid"],
-        feedback_type=normalized_feedback_type,
-        feedback_value=feedback_value,
-        note=note,
-        operator=normalized_operator,
-        payload=payload,
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_feedback_metrics_service",
+        "submit_customer_pulse_feedback",
     )
-    action_feedback_row = {}
-    if action_feedback_type:
-        action_feedback_row = _record_action_feedback(
-            card=_present_card(updated_row, access_context=resolved_context),
-            feedback_type=action_feedback_type,
-            feedback_source=_normalized_text(payload.get("feedback_source")) or "card_feedback",
-            operator=normalized_operator,
-            action_type=_normalized_text(payload.get("action_type")) or _normalized_text(presented.get("suggested_action_type")),
-            execution_log_id=int(payload.get("execution_id") or 0) or None,
-            note=note,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-            payload=payload,
-        )
-        _record_metric_event(
-            event_type="card_ignored",
-            event_source=_normalized_text(payload.get("feedback_source")) or "card_feedback",
-            card=_present_card(updated_row, access_context=resolved_context),
-            operator=normalized_operator,
-            tenant_context=resolved_context,
-            tenant_key=resolved_tenant_key,
-        )
-    return {
-        "ok": True,
-        "card": _present_card(updated_row, access_context=resolved_context),
-        "feedback": feedback_row,
-        "action_feedback": action_feedback_row,
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-    }
+    return delegate(
+        card_id,
+        feedback_type=feedback_type,
+        note=note,
+        operator=operator,
+        payload=payload,
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+    )
 
 
 def build_customer_pulse_dashboard_group(
@@ -5485,27 +2468,11 @@ def build_customer_pulse_dashboard_group(
     tenant_context: dict[str, Any] | None = None,
     tenant_key: str = "",
 ) -> dict[str, Any]:
-    resolved_context = _resolved_tenant_context(tenant_context=tenant_context, tenant_key=tenant_key)
-    resolved_tenant_key = _resolved_tenant_key(tenant_context=resolved_context)
-    rows = repo.list_recent_customer_pulse_cards_for_dashboard(limit=5, tenant_key=resolved_tenant_key)
-    items = [
-        {
-            "title": _normalized_text(row.get("customer_name")) or _normalized_text(row.get("external_userid")),
-            "meta": _action_label(row.get("suggested_action_type")),
-            "detail": _normalized_text(row.get("summary")) or _normalized_text(row.get("title")) or "待处理客户推进卡",
-        }
-        for row in rows
-    ]
-    counts = repo.count_customer_pulse_cards_by_status(tenant_key=resolved_tenant_key)
-    count = int(counts.get("open", 0) or 0) + int(counts.get("draft_ready", 0) or 0)
-    return {
-        "key": "customer_pulse",
-        "title": "AI推进收件箱",
-        "count": count,
-        "description": "今天该处理的客户推进动作卡。",
-        "tenant_context": customer_pulse_tenant_context_summary(resolved_context),
-        "tone": "warn" if count else "ok",
-        "items": items,
-        "empty_title": "当前没有待处理推进卡",
-        "href": "/admin/customer-pulse",
-    }
+    delegate = _load_customer_pulse_internal_delegate(
+        "customer_pulse_read_service",
+        "build_customer_pulse_dashboard_group",
+    )
+    return delegate(
+        tenant_context=tenant_context,
+        tenant_key=tenant_key,
+    )

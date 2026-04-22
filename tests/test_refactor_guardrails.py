@@ -25,15 +25,10 @@ HTTP_REQUESTS_ALLOWLIST = {
 # legacy service wrappers fails immediately.
 LEGACY_IMPORT_ALLOWLIST = {
     ("wecom_ability_service/http/admin_class_user.py", "services"),
-    ("wecom_ability_service/http/admin_config.py", "services"),
-    ("wecom_ability_service/http/admin_questionnaires.py", "services"),
     ("wecom_ability_service/http/admin_user_ops.py", "services"),
     ("wecom_ability_service/http/archive.py", "services"),
     ("wecom_ability_service/http/callback_runtime.py", "services"),
     ("wecom_ability_service/http/contacts.py", "services"),
-    ("wecom_ability_service/http/customer_automation.py", "customer_center.service"),
-    ("wecom_ability_service/http/customer_automation.py", "customer_timeline.service"),
-    ("wecom_ability_service/http/customer_automation.py", "services"),
     ("wecom_ability_service/http/customer_center.py", "customer_center.service"),
     ("wecom_ability_service/http/customer_timeline.py", "customer_timeline"),
     ("wecom_ability_service/http/identity.py", "services"),
@@ -312,3 +307,331 @@ def test_user_ops_pool_primitives_do_not_escape_outer_callers():
         "Outer callers must not import user_ops pool-core primitives directly; "
         f"violations: {violations}"
     )
+
+
+def test_questionnaire_http_callers_do_not_bypass_application_owner():
+    target_files = {
+        "wecom_ability_service/http/admin_questionnaires.py": {
+            "required_fragments": ["application.questionnaire"],
+            "forbidden_service_symbols": {
+                "list_questionnaires",
+                "list_available_wecom_tags",
+                "get_latest_questionnaire_submit_debug",
+                "create_questionnaire",
+                "get_questionnaire_detail",
+                "update_questionnaire",
+                "disable_questionnaire",
+                "delete_questionnaire",
+                "export_questionnaire_submissions",
+            },
+            "forbidden_questionnaire_modules": {"domains.questionnaire.service"},
+            "forbidden_admin_console_symbols": set(),
+        },
+        "wecom_ability_service/http/public_questionnaires.py": {
+            "required_fragments": ["application.questionnaire"],
+            "forbidden_service_symbols": {
+                "get_public_questionnaire_by_slug",
+                "has_questionnaire_submission",
+                "resolve_questionnaire_submit_identity",
+                "save_questionnaire_submission",
+                "apply_questionnaire_mobile_binding",
+                "apply_questionnaire_result_to_scrm",
+                "submit_questionnaire",
+                "retry_questionnaire_external_push_log",
+                "retry_questionnaire_external_push_logs",
+            },
+            "forbidden_questionnaire_modules": {"domains.questionnaire.service"},
+            "forbidden_admin_console_symbols": set(),
+        },
+        "wecom_ability_service/http/admin_questionnaire_console.py": {
+            "required_fragments": ["application.questionnaire"],
+            "forbidden_service_symbols": set(),
+            "forbidden_questionnaire_modules": {"domains.questionnaire.service"},
+            "forbidden_admin_console_symbols": {
+                "build_questionnaire_external_push_logs_payload",
+                "build_global_questionnaire_external_push_logs_payload",
+                "retry_questionnaire_external_push_log_for_console",
+                "retry_questionnaire_external_push_logs_for_console",
+            },
+        },
+    }
+
+    for relative_path, config in target_files.items():
+        path = ROOT / relative_path
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imported_from_services: set[str] = set()
+        imported_from_admin_console: set[str] = set()
+        imported_from_questionnaire_domain = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = ("." * node.level + (node.module or "")).lstrip(".")
+                if module == "services":
+                    imported_from_services.update(alias.name for alias in node.names)
+                if module == "domains.admin_console.service":
+                    imported_from_admin_console.update(alias.name for alias in node.names)
+                if module in config["forbidden_questionnaire_modules"]:
+                    imported_from_questionnaire_domain = True
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in {
+                        "wecom_ability_service.domains.questionnaire.service",
+                    }:
+                        imported_from_questionnaire_domain = True
+
+        forbidden_service_symbols = sorted(config["forbidden_service_symbols"] & imported_from_services)
+        assert not forbidden_service_symbols, (
+            f"{relative_path} must use application.questionnaire owner instead of services.py for "
+            f"{forbidden_service_symbols}"
+        )
+        forbidden_admin_console_symbols = sorted(
+            config["forbidden_admin_console_symbols"] & imported_from_admin_console
+        )
+        assert not forbidden_admin_console_symbols, (
+            f"{relative_path} must not import legacy questionnaire console wrappers from "
+            f"domains.admin_console.service: {forbidden_admin_console_symbols}"
+        )
+        assert not imported_from_questionnaire_domain, (
+            f"{relative_path} must not import domains.questionnaire.service directly"
+        )
+        for fragment in config["required_fragments"]:
+            assert fragment in source, f"{relative_path} must import the formal questionnaire application owner"
+
+
+def test_automation_http_callers_do_not_bypass_application_owner():
+    target_files = {
+        "wecom_ability_service/http/customer_automation.py": {
+            "required_fragments": ["application.automation_engine"],
+            "forbidden_service_symbols": {
+                "list_outbound_webhook_deliveries",
+                "retry_outbound_webhook_delivery",
+                "run_due_outbound_webhook_retries",
+                "apply_activation_webhook",
+                "list_signup_conversion_batches",
+                "get_signup_conversion_batch",
+                "record_conversion_feedback",
+                "ack_conversion_batch",
+                "sync_member_activation",
+            },
+            "forbidden_modules": {
+                "domains.automation_conversion.service",
+                "domains.marketing_automation.service",
+                "domains.outbound_webhook.service",
+            },
+        },
+        "wecom_ability_service/http/admin_config.py": {
+            "required_fragments": ["application.automation_engine"],
+            "forbidden_service_symbols": {
+                "get_signup_conversion_config",
+                "save_signup_conversion_config",
+                "preview_signup_conversion_customer",
+                "recompute_signup_conversion_customers",
+                "list_outbound_webhook_deliveries",
+                "retry_outbound_webhook_delivery",
+                "run_due_outbound_webhook_retries",
+                "apply_activation_webhook",
+                "list_signup_conversion_batches",
+                "get_signup_conversion_batch",
+                "record_conversion_feedback",
+                "ack_conversion_batch",
+            },
+            "forbidden_modules": {
+                "domains.automation_conversion.service",
+                "domains.marketing_automation.service",
+                "domains.outbound_webhook.service",
+            },
+        },
+    }
+
+    for relative_path, config in target_files.items():
+        path = ROOT / relative_path
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imported_from_services: set[str] = set()
+        imported_from_legacy_automation_domain = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = ("." * node.level + (node.module or "")).lstrip(".")
+                if module == "services":
+                    imported_from_services.update(alias.name for alias in node.names)
+                if module in config["forbidden_modules"]:
+                    imported_from_legacy_automation_domain = True
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in {
+                        "wecom_ability_service.domains.automation_conversion.service",
+                        "wecom_ability_service.domains.marketing_automation.service",
+                        "wecom_ability_service.domains.outbound_webhook.service",
+                    }:
+                        imported_from_legacy_automation_domain = True
+
+        forbidden = sorted(config["forbidden_service_symbols"] & imported_from_services)
+        assert not forbidden, (
+            f"{relative_path} must use application.automation_engine owner instead of services.py for {forbidden}"
+        )
+        assert not imported_from_legacy_automation_domain, (
+            f"{relative_path} must not import legacy automation domain services directly"
+        )
+        for fragment in config["required_fragments"]:
+            assert fragment in source, f"{relative_path} must import the formal automation application owner"
+
+
+def test_automation_background_sidebar_and_admin_jobs_callers_do_not_bypass_application_owner():
+    target_files = {
+        "wecom_ability_service/http/background_jobs.py": {
+            "required_fragments": ["application.automation_engine"],
+            "forbidden_service_symbols": set(),
+            "forbidden_modules": {
+                "domains.automation_conversion.service",
+                "domains.marketing_automation.service",
+                "domains.outbound_webhook.service",
+                "domains.tasks.service",
+            },
+        },
+        "wecom_ability_service/http/sidebar.py": {
+            "required_fragments": ["application.automation_engine"],
+            "forbidden_service_symbols": {
+                "get_customer_marketing_profile",
+                "preview_signup_conversion_customer",
+                "mark_enrolled",
+                "unmark_enrolled",
+                "set_manual_followup_segment",
+            },
+            "forbidden_modules": {
+                "domains.automation_conversion.service",
+                "domains.marketing_automation.service",
+                "domains.outbound_webhook.service",
+                "domains.tasks.service",
+            },
+        },
+        "wecom_ability_service/domains/admin_jobs/service.py": {
+            "required_fragments": ["application.automation_engine"],
+            "forbidden_service_symbols": {
+                "get_outbound_webhook_delivery_counts",
+                "list_outbound_webhook_deliveries",
+                "retry_outbound_webhook_delivery",
+                "run_due_outbound_webhook_retries",
+            },
+            "forbidden_modules": {
+                "domains.automation_conversion.service",
+                "domains.marketing_automation.service",
+                "domains.outbound_webhook.service",
+                "domains.tasks.service",
+            },
+        },
+    }
+
+    for relative_path, config in target_files.items():
+        path = ROOT / relative_path
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imported_from_services: set[str] = set()
+        imported_from_legacy_automation_domain = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = ("." * node.level + (node.module or "")).lstrip(".")
+                if module == "services":
+                    imported_from_services.update(alias.name for alias in node.names)
+                if module in config["forbidden_modules"]:
+                    imported_from_legacy_automation_domain = True
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in {
+                        "wecom_ability_service.domains.automation_conversion.service",
+                        "wecom_ability_service.domains.marketing_automation.service",
+                        "wecom_ability_service.domains.outbound_webhook.service",
+                        "wecom_ability_service.domains.tasks.service",
+                    }:
+                        imported_from_legacy_automation_domain = True
+
+        forbidden = sorted(config["forbidden_service_symbols"] & imported_from_services)
+        assert not forbidden, (
+            f"{relative_path} must use application.automation_engine owner instead of services.py for {forbidden}"
+        )
+        assert not imported_from_legacy_automation_domain, (
+            f"{relative_path} must not import legacy automation domain services directly"
+        )
+        for fragment in config["required_fragments"]:
+            assert fragment in source, f"{relative_path} must import the formal automation application owner"
+
+
+def test_ai_assist_customer_pulse_callers_do_not_bypass_application_owner():
+    target_files = {
+        "wecom_ability_service/http/admin_customer_pulse.py": {
+            "required_fragments": ["application.ai_assist", "GetCustomerPulseInboxQuery", "PreviewCustomerActionCommand"],
+        },
+        "wecom_ability_service/domains/admin_console/customer_profile_service.py": {
+            "required_fragments": ["application.ai_assist", "GetCustomerPulseDetailQuery"],
+        },
+    }
+
+    forbidden_modules = {
+        "domains.customer_pulse.service",
+        "services",
+    }
+
+    for relative_path, config in target_files.items():
+        path = ROOT / relative_path
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imported_from_forbidden_module = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = ("." * node.level + (node.module or "")).lstrip(".")
+                if module in forbidden_modules:
+                    imported_from_forbidden_module = True
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in {
+                        "wecom_ability_service.domains.customer_pulse.service",
+                        "wecom_ability_service.services",
+                    }:
+                        imported_from_forbidden_module = True
+
+        assert not imported_from_forbidden_module, (
+            f"{relative_path} must use application.ai_assist owner instead of services.py or domains.customer_pulse.service"
+        )
+        for fragment in config["required_fragments"]:
+            assert fragment in source, f"{relative_path} must import the formal ai_assist application owner"
+
+
+def test_ai_assist_followup_callers_do_not_bypass_application_owner():
+    target_files = {
+        "wecom_ability_service/http/admin_followup_orchestrator.py": {
+            "required_fragments": ["application.ai_assist", "ListFollowupCandidatesQuery", "GetFollowupMissionBoardQuery"],
+        },
+    }
+
+    forbidden_modules = {
+        "domains.followup_orchestrator.service",
+        "services",
+    }
+
+    for relative_path, config in target_files.items():
+        path = ROOT / relative_path
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        imported_from_forbidden_module = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = ("." * node.level + (node.module or "")).lstrip(".")
+                if module in forbidden_modules:
+                    imported_from_forbidden_module = True
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in {
+                        "wecom_ability_service.domains.followup_orchestrator.service",
+                        "wecom_ability_service.services",
+                    }:
+                        imported_from_forbidden_module = True
+
+        assert not imported_from_forbidden_module, (
+            f"{relative_path} must use application.ai_assist owner instead of services.py or domains.followup_orchestrator.service"
+        )
+        for fragment in config["required_fragments"]:
+            assert fragment in source, f"{relative_path} must import the formal ai_assist application owner"
