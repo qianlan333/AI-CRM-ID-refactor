@@ -300,7 +300,8 @@ def _feature_gate_result(access_context: Mapping[str, object] | None = None) -> 
 
 
 def _feature_gate(access_context: Mapping[str, object] | None = None) -> dict[str, object]:
-    return dict((_feature_gate_result(access_context) or {}).get("feature_gate") or {})
+    feature_gate = (_feature_gate_result(access_context) or {}).get("feature_gate")
+    return dict(feature_gate) if isinstance(feature_gate, Mapping) else {}
 
 
 def _pulse_feature_enabled(access_context: Mapping[str, object] | None = None) -> bool:

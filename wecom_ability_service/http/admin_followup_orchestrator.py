@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Any, Mapping
 
 from flask import jsonify, request, url_for
 
@@ -47,7 +47,7 @@ def _normalized_text(value: object) -> str:
     return str(value or "").strip()
 
 
-def _request_payload() -> dict:
+def _request_payload() -> dict[str, Any]:
     json_payload = request.get_json(silent=True) or {}
     if request.method == "POST" and request.form:
         return {**json_payload, **request.form.to_dict(flat=True)}
@@ -65,7 +65,8 @@ def _feature_gate_result(access_context: Mapping[str, object] | None = None) -> 
 
 
 def _feature_gate(access_context: Mapping[str, object] | None = None) -> dict[str, object]:
-    return dict((_feature_gate_result(access_context) or {}).get("feature_gate") or {})
+    feature_gate = (_feature_gate_result(access_context) or {}).get("feature_gate")
+    return dict(feature_gate) if isinstance(feature_gate, Mapping) else {}
 
 
 def _followup_enabled(access_context: Mapping[str, object] | None = None) -> bool:
@@ -81,6 +82,11 @@ def _operator(source: dict | None = None) -> str:
         or _normalized_text(request.headers.get("X-Admin-Operator"))
         or "crm_console"
     )
+
+
+def _normalized_action_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    extra_payload = payload.get("extra_payload")
+    return dict(extra_payload) if isinstance(extra_payload, dict) else dict(payload)
 
 
 def _audit_followup_orchestrator_operation(
@@ -449,7 +455,7 @@ def api_admin_followup_orchestrator_mission_item_execute(mission_key: str, missi
                 actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
                 operator=operator,
                 note=_normalized_text(payload.get("note")),
-                action_payload=payload.get("extra_payload") if isinstance(payload.get("extra_payload"), dict) else payload,
+                action_payload=_normalized_action_payload(payload),
                 access_context=dict(access_context),
             )
         )
@@ -688,7 +694,7 @@ def internal_followup_orchestrator_mission_item_execute_api(mission_key: str, mi
                 actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
                 operator=operator,
                 note=_normalized_text(payload.get("note")),
-                action_payload=payload.get("extra_payload") if isinstance(payload.get("extra_payload"), dict) else payload,
+                action_payload=_normalized_action_payload(payload),
                 access_context=dict(access_context),
             )
         )

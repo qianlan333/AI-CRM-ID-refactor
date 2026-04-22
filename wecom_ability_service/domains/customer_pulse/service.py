@@ -39,6 +39,20 @@ from .ai_recommendation import (
 )
 from . import repo
 
+__all__ = [
+    "assert_customer_pulse_action_permission",
+    "assert_customer_pulse_evidence_view",
+    "assert_customer_pulse_feedback_permission",
+    "customer_pulse_action_permission",
+    "generate_customer_pulse_ai_recommendation",
+    "get_outbound_task",
+    "mark_customer_tags",
+    "save_local_private_message_draft",
+    "set_manual_followup_segment",
+    "unmark_customer_tags",
+    "update_outbound_task_status",
+]
+
 CUSTOMER_PULSE_FLAG_KEY = "ai_customer_pulse"
 CUSTOMER_PULSE_RULES_VERSION = "customer_pulse_rules_v1"
 CUSTOMER_PULSE_RECOMPUTE_JOB_TYPE = "customer_pulse_recompute"
