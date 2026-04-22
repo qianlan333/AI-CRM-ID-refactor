@@ -5,18 +5,25 @@ from typing import Any
 
 from flask import current_app
 
+from ...application.automation_engine.commands import (
+    RetryOutboundWebhookDeliveryCommand,
+    RunDueOutboundWebhookRetriesCommand,
+)
+from ...application.automation_engine.dto import (
+    OutboundWebhookListQueryDTO,
+    OutboundWebhookRetryBatchCommandDTO,
+    OutboundWebhookRetryCommandDTO,
+)
+from ...application.automation_engine.queries import (
+    GetOutboundWebhookDeliveryCountsQuery,
+    ListOutboundWebhookDeliveriesQuery,
+)
 from ...application.user_ops.commands import RunDueUserOpsDeferredJobsCommand
 from ...application.user_ops.dto import RunDueUserOpsDeferredJobsCommandDTO
 from ...application.user_ops.queries import GetUserOpsDeferredJobCountsQuery
 from ...http.sync_jobs import run_archive_health_check, run_manual_archive_sync
 from ...infra.settings import get_setting
-from ...services import (
-    get_message_batch,
-    get_outbound_webhook_delivery_counts,
-    list_outbound_webhook_deliveries,
-    retry_outbound_webhook_delivery,
-    run_due_outbound_webhook_retries,
-)
+from ...services import get_message_batch
 from ...wecom_callback import get_callback_config
 from ..admin_config import repo as admin_config_repo
 from ..archive.service import ack_message_batch, get_last_sync_run
@@ -114,6 +121,32 @@ def _get_user_ops_deferred_job_counts_payload() -> dict[str, Any]:
 
 def _run_user_ops_deferred_jobs_payload(limit: int) -> dict[str, Any]:
     return RunDueUserOpsDeferredJobsCommand()(RunDueUserOpsDeferredJobsCommandDTO(limit=int(limit)))
+
+
+def get_outbound_webhook_delivery_counts() -> dict[str, Any]:
+    return GetOutboundWebhookDeliveryCountsQuery()()
+
+
+def list_outbound_webhook_deliveries(*, event_type: str = "", status: str = "", limit: int = 50) -> dict[str, Any]:
+    return ListOutboundWebhookDeliveriesQuery()(
+        OutboundWebhookListQueryDTO(
+            event_type=_normalized_text(event_type),
+            status=_normalized_text(status),
+            limit=int(limit),
+        )
+    )
+
+
+def retry_outbound_webhook_delivery(delivery_id: int) -> dict[str, Any]:
+    return RetryOutboundWebhookDeliveryCommand()(
+        OutboundWebhookRetryCommandDTO(delivery_id=int(delivery_id))
+    )
+
+
+def run_due_outbound_webhook_retries(*, limit: int = 20) -> dict[str, Any]:
+    return RunDueOutboundWebhookRetriesCommand()(
+        OutboundWebhookRetryBatchCommandDTO(limit=int(limit))
+    )
 
 
 def jobs_tabs(active_key: str) -> list[dict[str, Any]]:

@@ -22,11 +22,25 @@ from ..application.routing_config.queries import (
     GetRoutingRuleConfigQuery,
     GetRoutingRuleQuery,
 )
+from ..application.automation_engine.commands import (
+    RecomputeSignupConversionCustomersCommand,
+    SaveSignupConversionConfigCommand,
+)
+from ..application.automation_engine.dto import (
+    SignupConversionConfigCommandDTO,
+    SignupConversionConfigQueryDTO,
+    SignupConversionPreviewQueryDTO,
+    SignupConversionRecomputeCommandDTO,
+)
+from ..application.automation_engine.queries import (
+    GetSignupConversionConfigQuery,
+    ListAutomationConversionDispatchHistoryQuery,
+    PreviewSignupConversionCustomerQuery,
+)
 from ..domains.admin_config import (
     build_config_home_payload,
     config_tabs,
     list_admin_app_settings,
-    list_automation_conversion_dispatch_history,
     list_class_term_tag_mappings,
     list_mcp_tool_settings,
     list_signup_tag_settings,
@@ -36,12 +50,6 @@ from ..domains.admin_config import (
     save_signup_tag_setting,
 )
 from ..domains.admin_config import repo as admin_config_repo
-from ..services import (
-    get_signup_conversion_config,
-    preview_signup_conversion_customer,
-    recompute_signup_conversion_customers,
-    save_signup_conversion_config,
-)
 from .admin_console import _breadcrumb_items, _render_admin_template
 
 
@@ -686,7 +694,12 @@ def api_admin_config_save_mcp_tool():
 
 def api_admin_marketing_automation_config():
     try:
-        return jsonify({"ok": True, "config": get_signup_conversion_config()})
+        return jsonify(
+            {
+                "ok": True,
+                "config": GetSignupConversionConfigQuery()(SignupConversionConfigQueryDTO()),
+            }
+        )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -694,7 +707,9 @@ def api_admin_marketing_automation_config():
 def api_admin_marketing_automation_save_config():
     payload = request.get_json(silent=True) or {}
     try:
-        saved = save_signup_conversion_config(payload)
+        saved = SaveSignupConversionConfigCommand()(
+            SignupConversionConfigCommandDTO(payload=dict(payload or {}))
+        )
         return jsonify({"ok": True, "config": saved})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -703,9 +718,11 @@ def api_admin_marketing_automation_save_config():
 def api_admin_marketing_automation_preview():
     payload = request.get_json(silent=True) or {}
     try:
-        preview = preview_signup_conversion_customer(
-            external_userid=payload.get("external_userid", ""),
-            person_id=payload.get("person_id"),
+        preview = PreviewSignupConversionCustomerQuery()(
+            SignupConversionPreviewQueryDTO(
+                external_userid=str(payload.get("external_userid", "") or ""),
+                person_id=payload.get("person_id"),
+            )
         )
         return jsonify({"ok": True, "preview": preview})
     except ValueError as exc:
@@ -717,11 +734,13 @@ def api_admin_marketing_automation_preview():
 def api_admin_marketing_automation_recompute():
     payload = request.get_json(silent=True) or {}
     try:
-        result = recompute_signup_conversion_customers(
-            external_userid=payload.get("external_userid", ""),
-            person_id=payload.get("person_id"),
-            external_userids=payload.get("external_userids"),
-            person_ids=payload.get("person_ids"),
+        result = RecomputeSignupConversionCustomersCommand()(
+            SignupConversionRecomputeCommandDTO(
+                external_userid=str(payload.get("external_userid", "") or ""),
+                person_id=payload.get("person_id"),
+                external_userids=payload.get("external_userids") or [],
+                person_ids=payload.get("person_ids") or [],
+            )
         )
         return jsonify({"ok": True, "recompute": result})
     except ValueError as exc:
@@ -734,7 +753,7 @@ def api_admin_marketing_automation_dispatch_history():
     return jsonify(
         {
             "ok": True,
-            "dispatch_history": list_automation_conversion_dispatch_history(
+            "dispatch_history": ListAutomationConversionDispatchHistoryQuery()(
                 status=_query_text("status"),
                 limit=_query_int("limit", default=50, minimum=1, maximum=200),
             ),

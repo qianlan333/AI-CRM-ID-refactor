@@ -1543,7 +1543,10 @@ def test_questionnaire_preflight_returns_200_with_missing_config(client, app, mo
         WECOM_CONTACT_SECRET="",
         ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API=False,
     )
-    monkeypatch.setattr("wecom_ability_service.routes.list_available_wecom_tags", lambda: [])
+    monkeypatch.setattr(
+        "wecom_ability_service.application.questionnaire.queries.ListAvailableWeComTagsQuery.__call__",
+        lambda self, dto=None: [],
+    )
 
     response = client.get("/api/admin/questionnaires/preflight")
     data = response.get_json()
@@ -1736,7 +1739,10 @@ def test_questionnaire_preflight_requires_non_default_secret_key(client, app, mo
         WECHAT_MP_APP_SECRET="wx-live-secret",
         SECRET_KEY="dev-secret-key-change-me",
     )
-    monkeypatch.setattr("wecom_ability_service.routes.list_available_wecom_tags", lambda: [])
+    monkeypatch.setattr(
+        "wecom_ability_service.application.questionnaire.queries.ListAvailableWeComTagsQuery.__call__",
+        lambda self, dto=None: [],
+    )
 
     response = client.get("/api/admin/questionnaires/preflight")
     data = response.get_json()
@@ -1745,7 +1751,13 @@ def test_questionnaire_preflight_requires_non_default_secret_key(client, app, mo
 
 
 def test_questionnaire_preflight_handles_wecom_tags_error(client, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.routes.list_available_wecom_tags", lambda: (_ for _ in ()).throw(RuntimeError("tags boom")))
+    def _raise_tags_error(self, dto=None):
+        raise RuntimeError("tags boom")
+
+    monkeypatch.setattr(
+        "wecom_ability_service.application.questionnaire.queries.ListAvailableWeComTagsQuery.__call__",
+        _raise_tags_error,
+    )
 
     response = client.get("/api/admin/questionnaires/preflight")
     data = response.get_json()

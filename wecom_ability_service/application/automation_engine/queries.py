@@ -1,148 +1,165 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
-from ..customer_read_model.dto import (
+from . import _legacy_delegate
+from .dto import (
+    CustomerMarketingProfileQueryDTO,
+    CustomerMarketingProfileResultDTO,
+    OutboundWebhookCountQueryDTO,
+    OutboundWebhookCountResultDTO,
+    OutboundWebhookListQueryDTO,
+    OutboundWebhookListResultDTO,
     SignupConversionBatchDetailQueryDTO,
     SignupConversionBatchDetailResultDTO,
     SignupConversionBatchListQueryDTO,
     SignupConversionBatchListResultDTO,
+    SignupConversionConfigQueryDTO,
+    SignupConversionConfigResultDTO,
+    SignupConversionPreviewQueryDTO,
+    SignupConversionPreviewResultDTO,
 )
 
 
 class ListSignupConversionBatchesQuery:
-    """Wave 1 skeleton that delegates to ``domains.marketing_automation.list_signup_conversion_batches``."""
+    """Wave 4 automation skeleton that delegates to ``domains.marketing_automation.service.list_signup_conversion_batches`` via ``_legacy_delegate`` for customer-automation readers and future admin callers."""
 
     def __call__(self, dto: SignupConversionBatchListQueryDTO | None = None) -> SignupConversionBatchListResultDTO:
-        from ...domains.marketing_automation import list_signup_conversion_batches
-
-        query = dto or SignupConversionBatchListQueryDTO()
-        scenario_key = str(query.scenario_key or "").strip()
-        kwargs: dict[str, Any] = {
-            "limit": int(query.limit),
-            "cursor": str(query.cursor or ""),
-        }
-        if scenario_key:
-            kwargs["scenario_key"] = scenario_key
-        return cast(
-            SignupConversionBatchListResultDTO,
-            list_signup_conversion_batches(**kwargs),
-        )
+        effective_dto = dto or SignupConversionBatchListQueryDTO()
+        return _legacy_delegate.list_signup_conversion_batches_legacy(effective_dto)
 
     execute = __call__
 
 
 class GetSignupConversionBatchQuery:
-    """Wave 1 skeleton that delegates to ``domains.marketing_automation.get_signup_conversion_batch``."""
+    """Wave 4 automation skeleton that delegates to ``domains.marketing_automation.service.get_signup_conversion_batch`` via ``_legacy_delegate`` for customer-automation readers and future retry/admin callers."""
 
     def __call__(self, dto: SignupConversionBatchDetailQueryDTO) -> SignupConversionBatchDetailResultDTO:
-        from ...domains.marketing_automation import get_signup_conversion_batch
-
-        scenario_key = str(dto.scenario_key or "").strip()
-        kwargs: dict[str, Any] = {}
-        if scenario_key:
-            kwargs["scenario_key"] = scenario_key
-        return cast(
-            SignupConversionBatchDetailResultDTO,
-            get_signup_conversion_batch(int(dto.batch_id), **kwargs),
-        )
+        return _legacy_delegate.get_signup_conversion_batch_legacy(dto)
 
     execute = __call__
 
 
-class RetryOutboundWebhookDeliveryCommand:
-    """Wave 1 skeleton that delegates to ``domains.outbound_webhook.retry_outbound_webhook_delivery``."""
+class GetSignupConversionConfigQuery:
+    """Wave 4 automation skeleton that delegates to ``domains.marketing_automation.service.get_signup_conversion_config`` via ``_legacy_delegate`` for admin config readers that will cut over in later PRs."""
 
-    def __call__(self, delivery_id: int) -> dict[str, Any]:
-        from ...domains.outbound_webhook import retry_outbound_webhook_delivery
-
-        return retry_outbound_webhook_delivery(int(delivery_id))
+    def __call__(
+        self,
+        dto: SignupConversionConfigQueryDTO | None = None,
+    ) -> SignupConversionConfigResultDTO:
+        return _legacy_delegate.get_signup_conversion_config_legacy(dto or SignupConversionConfigQueryDTO())
 
     execute = __call__
 
 
-class ListOutboundWebhookDeliveriesQuery:
-    """Wave 1 skeleton that delegates to ``domains.outbound_webhook.list_outbound_webhook_deliveries``."""
+class PreviewSignupConversionCustomerQuery:
+    """Wave 4 automation skeleton that delegates to ``domains.marketing_automation.service.preview_signup_conversion_customer`` via ``_legacy_delegate`` for admin config and sidebar readers that will cut over later."""
 
-    def __call__(self, *, event_type: str = "", status: str = "", limit: int = 50) -> dict[str, Any]:
-        from ...domains.outbound_webhook import list_outbound_webhook_deliveries
+    def __call__(
+        self,
+        dto: SignupConversionPreviewQueryDTO,
+    ) -> SignupConversionPreviewResultDTO:
+        return _legacy_delegate.preview_signup_conversion_customer_legacy(dto)
 
-        return list_outbound_webhook_deliveries(
-            event_type=str(event_type or ""),
-            status=str(status or ""),
+    execute = __call__
+
+
+class ListAutomationConversionDispatchHistoryQuery:
+    """Wave 4 automation skeleton that delegates to ``domains.admin_config.service.list_automation_conversion_dispatch_history`` via ``_legacy_delegate`` for admin-config automation history readers in PR 2."""
+
+    def __call__(
+        self,
+        *,
+        status: str = "",
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return _legacy_delegate.list_automation_conversion_dispatch_history_legacy(
+            status=str(status or "").strip(),
             limit=int(limit),
         )
 
     execute = __call__
 
 
-class RunDueOutboundWebhookRetriesCommand:
-    """Wave 1 skeleton that delegates to ``domains.outbound_webhook.run_due_outbound_webhook_retries``."""
-
-    def __call__(self, *, limit: int = 20) -> dict[str, Any]:
-        from ...domains.outbound_webhook import run_due_outbound_webhook_retries
-
-        return run_due_outbound_webhook_retries(limit=int(limit))
-
-    execute = __call__
-
-
-class SyncAutomationMemberActivationCommand:
-    """Wave 1 skeleton that delegates to ``domains.automation_conversion.sync_member_activation``."""
+class ListOutboundWebhookDeliveriesQuery:
+    """Wave 4 automation skeleton that delegates to ``domains.outbound_webhook.service.list_outbound_webhook_deliveries`` via ``_legacy_delegate`` while Wave 1 callers still use the historical keyword-argument signature."""
 
     def __call__(
         self,
+        dto: OutboundWebhookListQueryDTO | None = None,
         *,
-        external_contact_id: str = "",
-        phone: str = "",
-        operator_id: str = "system",
-    ) -> dict[str, Any]:
-        from ...domains.automation_conversion import sync_member_activation
-
-        return sync_member_activation(
-            external_contact_id=str(external_contact_id or ""),
-            phone=str(phone or ""),
-            operator_id=str(operator_id or "system"),
+        event_type: str = "",
+        status: str = "",
+        limit: int = 50,
+    ) -> OutboundWebhookListResultDTO:
+        effective_dto = dto or OutboundWebhookListQueryDTO(
+            event_type=str(event_type or "").strip(),
+            status=str(status or "").strip(),
+            limit=int(limit),
         )
+        return _legacy_delegate.list_outbound_webhook_deliveries_legacy(effective_dto)
 
     execute = __call__
 
 
-class ApplyActivationWebhookCommand:
-    """Wave 1 skeleton that delegates to ``domains.marketing_automation.apply_activation_webhook`` and syncs activation projection."""
+class GetOutboundWebhookDeliveryCountsQuery:
+    """Wave 4 automation skeleton that delegates to ``domains.outbound_webhook.service.get_outbound_webhook_delivery_counts`` via ``_legacy_delegate`` for admin jobs readers that will cut over in later PRs."""
 
     def __call__(
         self,
-        *,
-        mobile: str,
-        activated_at: str = "",
-        operator: str = "",
-        source: str = "",
-    ) -> dict[str, Any]:
-        from ...domains.marketing_automation import apply_activation_webhook
-
-        result = apply_activation_webhook(
-            mobile=str(mobile or "").strip(),
-            activated_at=str(activated_at or "").strip(),
-            operator=str(operator or "").strip(),
-            source=str(source or "").strip(),
-        )
-        SyncAutomationMemberActivationCommand()(
-            external_contact_id=str((result.get("customer") or {}).get("external_userid") or "").strip(),
-            phone=str(mobile or "").strip(),
-            operator_id=str(operator or "").strip() or "activation_webhook",
-        )
-        return result
+        dto: OutboundWebhookCountQueryDTO | None = None,
+    ) -> OutboundWebhookCountResultDTO:
+        del dto
+        return _legacy_delegate.get_outbound_webhook_delivery_counts_legacy()
 
     execute = __call__
+
+
+class GetCustomerMarketingProfileQuery:
+    """Wave 4 automation skeleton that delegates to ``domains.marketing_automation.service.get_customer_marketing_profile`` via ``_legacy_delegate`` for sidebar and MCP readers that will cut over in later PRs."""
+
+    def __call__(
+        self,
+        dto: CustomerMarketingProfileQueryDTO,
+    ) -> CustomerMarketingProfileResultDTO:
+        return _legacy_delegate.get_customer_marketing_profile_legacy(dto)
+
+    execute = __call__
+
+
+from .commands import (  # noqa: E402
+    AcknowledgeConversionBatchCommand,
+    ApplyActivationWebhookCommand,
+    MarkEnrolledCommand,
+    RecordConversionFeedbackCommand,
+    RecomputeSignupConversionCustomersCommand,
+    RetryOutboundWebhookDeliveryCommand,
+    RunDueOutboundWebhookRetriesCommand,
+    SaveSignupConversionConfigCommand,
+    SetManualFollowupSegmentCommand,
+    SyncAutomationMemberActivationCommand,
+    UnmarkEnrolledCommand,
+)
 
 
 __all__ = [
+    "AcknowledgeConversionBatchCommand",
     "ApplyActivationWebhookCommand",
+    "GetCustomerMarketingProfileQuery",
+    "GetOutboundWebhookDeliveryCountsQuery",
     "GetSignupConversionBatchQuery",
+    "GetSignupConversionConfigQuery",
+    "ListAutomationConversionDispatchHistoryQuery",
     "ListSignupConversionBatchesQuery",
     "ListOutboundWebhookDeliveriesQuery",
+    "MarkEnrolledCommand",
+    "PreviewSignupConversionCustomerQuery",
+    "RecordConversionFeedbackCommand",
+    "RecomputeSignupConversionCustomersCommand",
     "RunDueOutboundWebhookRetriesCommand",
     "RetryOutboundWebhookDeliveryCommand",
+    "SaveSignupConversionConfigCommand",
+    "SetManualFollowupSegmentCommand",
     "SyncAutomationMemberActivationCommand",
+    "UnmarkEnrolledCommand",
 ]

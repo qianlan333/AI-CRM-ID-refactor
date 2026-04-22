@@ -20,6 +20,7 @@ from ..application.identity_contact.dto import (
     ReplaceFollowUsersCommandDTO,
     UpsertExternalContactIdentityCommandDTO,
 )
+from ..application.automation_engine.commands import HandleQrcodeEnterFromCallbackCommand
 from ..application.user_ops.commands import (
     RunDueUserOpsDeferredJobsCommand,
     ScheduleUserOpsAutoAssignClassTermJobCommand,
@@ -46,7 +47,6 @@ from ..observability import (
     get_task_name,
     unbind_background_context,
 )
-from ..domains.automation_conversion.service import handle_qrcode_enter_from_callback
 from .common import (
     _contact_sync_retry_limit,
     _default_owner_userid,
@@ -134,6 +134,23 @@ def _mark_external_contact_follow_user_status(
             status=str(status or "").strip(),
             user_id=str(user_id or "").strip(),
         )
+    )
+
+
+def handle_qrcode_enter_from_callback(
+    *,
+    external_contact_id: str,
+    phone: str = "",
+    payload_json: dict[str, object] | None = None,
+    operator_id: str = "",
+    send_welcome_message: bool = False,
+) -> dict[str, object]:
+    return HandleQrcodeEnterFromCallbackCommand()(
+        external_contact_id=str(external_contact_id or "").strip(),
+        phone=str(phone or "").strip(),
+        payload_json=dict(payload_json or {}),
+        operator_id=str(operator_id or "").strip(),
+        send_welcome_message=bool(send_welcome_message),
     )
 
 

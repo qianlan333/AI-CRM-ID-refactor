@@ -77,12 +77,11 @@ def _questionnaire_session_identity() -> dict[str, str]:
     }
 
 
-def _questionnaire_request_identity() -> dict[str, str]:
-    session_identity = _questionnaire_session_identity()
+def _questionnaire_request_identity_hints() -> dict[str, str]:
     return {
-        "respondent_key": session_identity.get("respondent_key") or request.args.get("respondent_key", "").strip(),
-        "openid": session_identity.get("openid") or request.args.get("openid", "").strip(),
-        "unionid": session_identity.get("unionid") or request.args.get("unionid", "").strip(),
+        "respondent_key": request.args.get("respondent_key", "").strip(),
+        "openid": request.args.get("openid", "").strip(),
+        "unionid": request.args.get("unionid", "").strip(),
         "external_userid": request.args.get("external_userid", "").strip(),
     }
 

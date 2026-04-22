@@ -1,26 +1,34 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode
 
 from flask import abort, current_app, jsonify, redirect, render_template, request, session, url_for
 
-from ..infra.wechat_oauth import WeChatOAuthRequestError, exchange_wechat_oauth_code
-from ..services import (
-    QuestionnaireAlreadySubmittedError,
-    get_public_questionnaire_by_slug,
-    has_questionnaire_submission,
-    submit_questionnaire,
+from ..application.questionnaire.commands import (
+    CompleteQuestionnaireOauthCallbackCommand,
+    QuestionnaireOauthExchangePayloadError,
+    SubmitQuestionnaireCommand,
 )
+from ..application.questionnaire.dto import (
+    GetPublicQuestionnaireBySlugQueryDTO,
+    HasQuestionnaireSubmissionQueryDTO,
+    SubmitQuestionnaireCommandDTO,
+)
+from ..application.questionnaire.queries import (
+    GetPublicQuestionnaireBySlugQuery,
+    HasQuestionnaireSubmissionQuery,
+    ResolveQuestionnaireRespondentIdentityQuery,
+)
+from ..infra.wechat_oauth import WeChatOAuthRequestError
+from ..services import QuestionnaireAlreadySubmittedError
 from .questionnaire_support import (
-    _fetch_wechat_userinfo,
     _is_wechat_browser,
     _mask_identity_value,
     _questionnaire_logger,
     _questionnaire_public_path,
-    _questionnaire_request_identity,
+    _questionnaire_request_identity_hints,
     _questionnaire_session_identity,
     _questionnaire_source_params,
     _questionnaire_submitted_path,
@@ -43,6 +51,60 @@ _QUESTIONNAIRE_META_FIELDS = (
     "campaign_id",
     "staff_id",
 )
+
+
+def _load_public_questionnaire(slug: str) -> dict[str, Any] | None:
+    return GetPublicQuestionnaireBySlugQuery()(
+        GetPublicQuestionnaireBySlugQueryDTO(slug=str(slug or "").strip())
+    )
+
+
+def _has_public_submission(questionnaire_id: int, identity: dict[str, Any] | None) -> bool:
+    return HasQuestionnaireSubmissionQuery()(
+        HasQuestionnaireSubmissionQueryDTO(
+            questionnaire_id=int(questionnaire_id),
+            identity=dict(identity or {}) if identity else None,
+        )
+    )
+
+
+def _submit_public_questionnaire(
+    *,
+    slug: str,
+    payload: dict[str, Any],
+    hidden_identity: dict[str, Any] | None = None,
+    source_params: dict[str, Any] | None = None,
+    request_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return SubmitQuestionnaireCommand()(
+        SubmitQuestionnaireCommandDTO(
+            slug=str(slug or "").strip(),
+            payload=dict(payload or {}),
+            hidden_identity=dict(hidden_identity or {}) if hidden_identity else None,
+            source_params=dict(source_params or {}) if source_params else None,
+            request_meta=dict(request_meta or {}) if request_meta else None,
+        )
+    )
+
+
+def _resolve_public_questionnaire_identity(
+    *,
+    session_identity: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    return ResolveQuestionnaireRespondentIdentityQuery()(
+        session_identity=dict(session_identity or {}) if session_identity else None,
+        request_identity=_questionnaire_request_identity_hints(),
+    )
+
+
+def _complete_public_oauth_callback(*, code: str, state_payload: dict[str, str]) -> dict[str, Any]:
+    return CompleteQuestionnaireOauthCallbackCommand()(
+        code=code,
+        state_payload=state_payload,
+        app_id=current_app.config["WECHAT_MP_APP_ID"],
+        app_secret=current_app.config["WECHAT_MP_APP_SECRET"],
+        oauth_scope=_wechat_oauth_scope(),
+    )
 
 
 def _questionnaire_request_hints() -> dict[str, str]:
@@ -177,14 +239,14 @@ def _parse_form_submit_payload(questionnaire: dict[str, Any]) -> dict[str, Any]:
 
 
 def questionnaire_h5_page(slug: str):
-    questionnaire = get_public_questionnaire_by_slug(slug)
+    questionnaire = _load_public_questionnaire(slug)
     if not questionnaire:
         abort(404)
     wechat_gate = _require_wechat_browser_page()
     source_params = _questionnaire_source_params()
     session_identity = _questionnaire_session_identity()
-    request_identity = _questionnaire_request_identity()
-    if has_questionnaire_submission(int(questionnaire["id"]), request_identity):
+    request_identity = _resolve_public_questionnaire_identity(session_identity=session_identity)
+    if _has_public_submission(int(questionnaire["id"]), request_identity):
         redirect_url = str(questionnaire.get("redirect_url") or "").strip()
         if redirect_url:
             return redirect(redirect_url, code=302)
@@ -216,7 +278,7 @@ def questionnaire_h5_page(slug: str):
 
 
 def questionnaire_h5_submitted(slug: str):
-    questionnaire = get_public_questionnaire_by_slug(slug)
+    questionnaire = _load_public_questionnaire(slug)
     if not questionnaire:
         abort(404)
     return render_template("questionnaire_h5_submitted.html")
@@ -226,10 +288,13 @@ def public_get_questionnaire(slug: str):
     wechat_gate = _require_wechat_browser_api()
     if wechat_gate is not None:
         return wechat_gate
-    questionnaire = get_public_questionnaire_by_slug(slug)
+    questionnaire = _load_public_questionnaire(slug)
     if not questionnaire:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404
-    if has_questionnaire_submission(int(questionnaire["id"]), _questionnaire_request_identity()):
+    if _has_public_submission(
+        int(questionnaire["id"]),
+        _resolve_public_questionnaire_identity(session_identity=_questionnaire_session_identity()),
+    ):
         return jsonify(
             {
                 "ok": False,
@@ -246,7 +311,7 @@ def public_submit_questionnaire(slug: str):
     wechat_gate = _require_wechat_browser_api()
     if wechat_gate is not None:
         return wechat_gate
-    questionnaire = get_public_questionnaire_by_slug(slug)
+    questionnaire = _load_public_questionnaire(slug)
     if not questionnaire:
         if is_form_submit:
             abort(404)
@@ -260,10 +325,18 @@ def public_submit_questionnaire(slug: str):
     }
     is_wechat_browser = _is_wechat_browser()
     session_identity = _questionnaire_session_identity()
-    oauth_query = {"slug": slug, **_questionnaire_source_params()}
+    resolved_identity = _resolve_public_questionnaire_identity(session_identity=session_identity)
+    source_params = _questionnaire_source_params()
+    oauth_query = {"slug": slug, **source_params}
     oauth_start_url = f"{url_for('api.h5_wechat_oauth_start')}?{urlencode(oauth_query)}"
     try:
-        result = submit_questionnaire(slug, payload, request_meta=request_meta)
+        result = _submit_public_questionnaire(
+            slug=slug,
+            payload=payload,
+            hidden_identity=resolved_identity,
+            source_params=source_params,
+            request_meta=request_meta,
+        )
         if is_form_submit:
             target = str(result.get("redirect_url") or "").strip() or _questionnaire_submitted_path(slug)
             return redirect(target, code=302)
@@ -304,14 +377,14 @@ def public_submit_questionnaire(slug: str):
 
 
 def public_questionnaire_client_diagnostics(slug: str):
-    questionnaire = get_public_questionnaire_by_slug(slug)
+    questionnaire = _load_public_questionnaire(slug)
     if not questionnaire:
         return jsonify({"ok": False, "error": "questionnaire not found"}), 404
 
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         payload = {}
-    identity = _questionnaire_request_identity()
+    identity = _resolve_public_questionnaire_identity(session_identity=_questionnaire_session_identity())
     stage = str(payload.get("stage") or "").strip()[:64]
     message = str(payload.get("message") or "").strip()[:500]
     extra = payload.get("extra")
@@ -380,84 +453,43 @@ def h5_wechat_oauth_callback():
         return jsonify({"ok": False, "error": "wechat_oauth_not_configured"}), 501
     code = request.args.get("code", "").strip()
     state_payload = _decode_oauth_state(request.args.get("state", "").strip())
-    slug = state_payload.get("slug", "").strip()
-    if not code:
-        _questionnaire_logger().warning("oauth callback failed reason=missing_code")
-        return jsonify({"ok": False, "error": "code is required"}), 400
-    if not slug:
-        _questionnaire_logger().warning("oauth callback failed reason=invalid_state")
-        return jsonify({"ok": False, "error": "invalid_state"}), 400
-
     try:
-        oauth_payload = exchange_wechat_oauth_code(
-            app_id=current_app.config["WECHAT_MP_APP_ID"],
-            app_secret=current_app.config["WECHAT_MP_APP_SECRET"],
-            code=code,
-        )
+        oauth_result = _complete_public_oauth_callback(code=code, state_payload=state_payload)
+    except ValueError as exc:
+        reason = "missing_code" if str(exc) == "code is required" else "invalid_state"
+        _questionnaire_logger().warning("oauth callback failed reason=%s", reason)
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except WeChatOAuthRequestError as exc:
+        slug = str(state_payload.get("slug") or "").strip()
         _questionnaire_logger().exception("oauth callback failed slug=%s code=%s", slug, code)
         return jsonify({"ok": False, "error": f"wechat_oauth_exchange_failed: {exc}"}), 502
-
-    if oauth_payload.get("errcode") not in (None, 0):
+    except QuestionnaireOauthExchangePayloadError as exc:
+        slug = str(state_payload.get("slug") or "").strip()
         _questionnaire_logger().warning(
             "oauth callback failed slug=%s code=%s wechat_payload=%s",
             slug,
             code,
-            oauth_payload,
+            exc.payload,
         )
-        return jsonify({"ok": False, "error": "wechat_oauth_exchange_failed", "wechat_payload": oauth_payload}), 502
+        return jsonify({"ok": False, "error": "wechat_oauth_exchange_failed", "wechat_payload": exc.payload}), 502
 
-    openid = str(oauth_payload.get("openid") or "").strip()
-    unionid = str(oauth_payload.get("unionid") or "").strip()
-    access_token = str(oauth_payload.get("access_token") or "").strip()
-    oauth_scope = _wechat_oauth_scope()
-    if not unionid and oauth_scope == "snsapi_userinfo" and access_token and openid:
-        try:
-            userinfo_payload = _fetch_wechat_userinfo(access_token, openid)
-        except WeChatOAuthRequestError:
-            _questionnaire_logger().exception(
-                "oauth callback userinfo fetch failed slug=%s openid=%s",
-                slug,
-                _mask_identity_value(openid),
-            )
-        else:
-            if userinfo_payload.get("errcode") not in (None, 0):
-                _questionnaire_logger().warning(
-                    "oauth callback userinfo fetch failed slug=%s openid=%s wechat_payload=%s",
-                    slug,
-                    _mask_identity_value(openid),
-                    userinfo_payload,
-                )
-            else:
-                unionid = str(userinfo_payload.get("unionid") or "").strip()
-    respondent_key = unionid or openid
-    session["questionnaire_h5_identity"] = {
-        "openid": openid,
-        "unionid": unionid,
-        "respondent_key": respondent_key,
-        "oauth_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-        "slug": slug,
-    }
+    slug = str(oauth_result.get("slug") or "").strip()
+    session["questionnaire_h5_identity"] = dict(oauth_result.get("session_identity") or {})
     session.modified = True
     _questionnaire_logger().info(
         "oauth session written slug=%s respondent_key=%s openid=%s unionid=%s",
         slug,
-        _mask_identity_value(respondent_key),
-        _mask_identity_value(openid),
-        _mask_identity_value(unionid),
+        _mask_identity_value(str(session["questionnaire_h5_identity"].get("respondent_key") or "")),
+        _mask_identity_value(str(session["questionnaire_h5_identity"].get("openid") or "")),
+        _mask_identity_value(str(session["questionnaire_h5_identity"].get("unionid") or "")),
     )
     _questionnaire_logger().info(
         "oauth callback success slug=%s openid=%s unionid=%s",
         slug,
-        _mask_identity_value(openid),
-        _mask_identity_value(unionid),
+        _mask_identity_value(str(oauth_result.get("openid") or "")),
+        _mask_identity_value(str(oauth_result.get("unionid") or "")),
     )
-
-    redirect_query = urlencode({key: value for key, value in state_payload.items() if key != "slug"})
-    target = _questionnaire_public_path(slug)
-    if redirect_query:
-        target = f"{target}?{redirect_query}"
-    return redirect(target, code=302)
+    return redirect(str(oauth_result.get("redirect_target") or _questionnaire_public_path(slug)), code=302)
 
 
 

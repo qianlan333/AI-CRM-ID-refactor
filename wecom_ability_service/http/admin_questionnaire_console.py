@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from flask import redirect, render_template, request, url_for
 
+from ..application.questionnaire.commands import RetryQuestionnaireExternalPushCommand
+from ..application.questionnaire.dto import RetryQuestionnaireExternalPushCommandDTO
+from ..application.questionnaire.queries import (
+    GetGlobalQuestionnaireExternalPushLogsQuery,
+    GetQuestionnaireExternalPushLogsQuery,
+)
 from ..domains.admin_console.service import (
-    build_global_questionnaire_external_push_logs_payload,
     build_questionnaire_detail_payload,
-    build_questionnaire_external_push_logs_payload,
     build_questionnaire_index_payload,
-    retry_questionnaire_external_push_log_for_console,
-    retry_questionnaire_external_push_logs_for_console,
     save_questionnaire_editor,
     toggle_questionnaire_disabled,
 )
@@ -85,7 +87,11 @@ def admin_console_questionnaire_external_push_logs(questionnaire_id: int):
     limit = request.args.get("limit", 50)
     page_notice = str(request.args.get("notice") or "").strip()
     page_error = str(request.args.get("error") or "").strip()
-    payload = build_questionnaire_external_push_logs_payload(questionnaire_id, status=status, limit=limit)
+    payload = GetQuestionnaireExternalPushLogsQuery()(
+        questionnaire_id=int(questionnaire_id),
+        status=status,
+        limit=limit,
+    )
     if not payload:
         return _questionnaire_not_found_response(questionnaire_id)
     questionnaire = payload["questionnaire"]
@@ -107,7 +113,7 @@ def admin_console_questionnaire_external_push_logs(questionnaire_id: int):
 
 
 def admin_console_global_questionnaire_external_push_logs():
-    payload = build_global_questionnaire_external_push_logs_payload(
+    payload = GetGlobalQuestionnaireExternalPushLogsQuery()(
         questionnaire_id=request.args.get("questionnaire_id", ""),
         questionnaire_title=request.args.get("questionnaire_title", ""),
         status=request.args.get("status", ""),
@@ -135,7 +141,9 @@ def admin_console_questionnaire_external_push_logs_retry(questionnaire_id: int, 
     status = str(request.form.get("status") or "").strip()
     limit = request.form.get("limit", 50)
     try:
-        result = retry_questionnaire_external_push_log_for_console(int(push_log_id))
+        result = RetryQuestionnaireExternalPushCommand()(
+            RetryQuestionnaireExternalPushCommandDTO(push_log_id=int(push_log_id))
+        )
         notice = "补发已执行，请查看最近结果。"
         error = ""
         if result.get("ok"):
@@ -165,7 +173,9 @@ def admin_console_global_questionnaire_external_push_logs_retry(push_log_id: int
         "limit": request.form.get("limit", 50),
     }
     try:
-        result = retry_questionnaire_external_push_log_for_console(int(push_log_id))
+        result = RetryQuestionnaireExternalPushCommand()(
+            RetryQuestionnaireExternalPushCommandDTO(push_log_id=int(push_log_id))
+        )
         params["notice"] = "补发已执行，请查看最近结果。"
         params["error"] = ""
         if result.get("ok"):
@@ -190,7 +200,11 @@ def admin_console_questionnaire_external_push_logs_retry_batch(questionnaire_id:
                 error="请先勾选至少一条待补发记录。",
             )
         )
-    result = retry_questionnaire_external_push_logs_for_console(push_log_ids)
+    result = RetryQuestionnaireExternalPushCommand()(
+        RetryQuestionnaireExternalPushCommandDTO(
+            push_log_ids=[int(item) for item in push_log_ids],
+        )
+    )
     notice = (
         "批量补发已执行："
         f"选中 {int(result.get('selected_count') or 0)} 条，"
@@ -226,7 +240,11 @@ def admin_console_global_questionnaire_external_push_logs_retry_batch():
     if not push_log_ids:
         params["error"] = "请先勾选至少一条待补发记录。"
         return redirect(url_for("api.admin_console_global_questionnaire_external_push_logs", **params))
-    result = retry_questionnaire_external_push_logs_for_console(push_log_ids)
+    result = RetryQuestionnaireExternalPushCommand()(
+        RetryQuestionnaireExternalPushCommandDTO(
+            push_log_ids=[int(item) for item in push_log_ids],
+        )
+    )
     notice = (
         "批量补发已执行："
         f"选中 {int(result.get('selected_count') or 0)} 条，"

@@ -4,23 +4,35 @@ from typing import Mapping
 
 from flask import jsonify, request, url_for
 
-from ..domains.admin_config import repo as admin_config_repo
-from ..domains.customer_pulse import (
-    build_customer_pulse_customer_detail_payload,
-    build_customer_pulse_inbox_payload,
-    build_customer_pulse_ops_dashboard_payload,
-    customer_pulse_feature_gate_summary,
-    enqueue_customer_pulse_recompute,
-    execute_customer_pulse_card_action,
-    get_customer_pulse_card_evidence_payload,
-    get_customer_pulse_card_payload,
-    is_customer_pulse_inbox_enabled,
-    preview_customer_pulse_card_action,
-    refresh_customer_pulse_cards,
-    run_due_customer_pulse_snapshot_job,
-    submit_customer_pulse_feedback,
-    undo_customer_pulse_card_action_execution,
+from ..application.ai_assist import (
+    CustomerPulseCardEvidenceQueryDTO,
+    CustomerPulseCardQueryDTO,
+    CustomerPulseCustomerDetailQueryDTO,
+    CustomerPulseFeatureGateQueryDTO,
+    CustomerPulseInboxQueryDTO,
+    CustomerPulseMetricsQueryDTO,
+    EnqueueCustomerPulseRecomputeCommand,
+    EnqueueCustomerPulseRecomputeCommandDTO,
+    ExecuteCustomerActionCommand,
+    ExecuteCustomerActionCommandDTO,
+    GetCustomerPulseCardEvidenceQuery,
+    GetCustomerPulseCardQuery,
+    GetCustomerPulseCustomerDetailQuery,
+    GetCustomerPulseFeatureGateQuery,
+    GetCustomerPulseInboxQuery,
+    GetCustomerPulseMetricsQuery,
+    PreviewCustomerActionCommand,
+    PreviewCustomerActionCommandDTO,
+    RefreshCustomerPulseCardsCommand,
+    RefreshCustomerPulseCardsCommandDTO,
+    RunDueCustomerPulseSnapshotJobCommand,
+    RunDueCustomerPulseSnapshotJobCommandDTO,
+    SubmitCustomerPulseFeedbackCommand,
+    SubmitCustomerPulseFeedbackCommandDTO,
+    UndoCustomerPulseCardActionCommand,
+    UndoCustomerPulseCardActionCommandDTO,
 )
+from ..domains.admin_config import repo as admin_config_repo
 from ..domains.customer_pulse import repo as customer_pulse_repo
 from ..domains.customer_pulse.access import (
     CUSTOMER_PULSE_PERMISSION_VIEW_INBOX,
@@ -279,8 +291,20 @@ def _access_error_json(exc: CustomerPulseAccessDenied):
     return jsonify({"ok": False, "error": str(exc), "code": _normalized_text(exc.code)}), int(exc.http_status)
 
 
+def _feature_gate_result(access_context: Mapping[str, object] | None = None) -> dict[str, object]:
+    return GetCustomerPulseFeatureGateQuery()(
+        CustomerPulseFeatureGateQueryDTO(
+            access_context=dict(access_context or _customer_pulse_access_context()),
+        )
+    )
+
+
 def _feature_gate(access_context: Mapping[str, object] | None = None) -> dict[str, object]:
-    return customer_pulse_feature_gate_summary(access_context or _customer_pulse_access_context())
+    return dict((_feature_gate_result(access_context) or {}).get("feature_gate") or {})
+
+
+def _pulse_feature_enabled(access_context: Mapping[str, object] | None = None) -> bool:
+    return bool((_feature_gate_result(access_context) or {}).get("enabled"))
 
 
 def _feature_disabled_json():
@@ -454,7 +478,7 @@ def _render_customer_pulse_page(
         assert_customer_pulse_request_context(access_context)
     except CustomerPulseAccessDenied as exc:
         return _render_customer_pulse_access_denied_page(exc)
-    if not is_customer_pulse_inbox_enabled(access_context=access_context):
+    if not _pulse_feature_enabled(access_context):
         return _feature_disabled_page(page_notice=page_notice, page_error=page_error)
     resolved_filters = dict(filters or _inbox_filters(request.args))
     try:
@@ -484,13 +508,18 @@ def _render_customer_pulse_page(
         page_title="AI推进",
         page_summary="把今天该做什么收敛成行动卡流，优先复用现有客户、会话、营销阶段、标签与 AI 能力。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("AI推进", None)),
-        inbox_payload=build_customer_pulse_inbox_payload(
-            **{**resolved_filters, "owner_userid": _normalized_text(read_scope.get("owner_userid_filter"))},
-            track_metrics=True,
-            metric_source="admin_customer_pulse_page",
-            tenant_context=read_scope.get("tenant_context"),
-            tenant_key=_normalized_text(read_scope.get("tenant_key")),
-            allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+        inbox_payload=GetCustomerPulseInboxQuery()(
+            CustomerPulseInboxQueryDTO(
+                filters={
+                    **resolved_filters,
+                    "owner_userid": _normalized_text(read_scope.get("owner_userid_filter")),
+                    "track_metrics": True,
+                    "tenant_key": _normalized_text(read_scope.get("tenant_key")),
+                    "allowed_owner_userids": read_scope.get("allowed_owner_userids") or [],
+                },
+                access_context=dict(read_scope.get("tenant_context") or {}),
+                metric_source="admin_customer_pulse_page",
+            )
         ),
         admin_action_token=ensure_admin_console_action_token(),
         customer_pulse_access=customer_pulse_template_access_payload(access_context),
@@ -518,11 +547,11 @@ def admin_customer_pulse_refresh_action():
     payload = _request_payload()
     try:
         scope = _resolve_operator_scope(_inbox_filters(payload))
-        result = refresh_customer_pulse_cards(
-            operator=_normalized_text(scope.get("operator")) or _operator(payload),
-            tenant_context=scope.get("tenant_context"),
-            tenant_key=_normalized_text(scope.get("tenant_key")),
-            allowed_owner_userids=scope.get("allowed_owner_userids") or [],
+        result = RefreshCustomerPulseCardsCommand()(
+            RefreshCustomerPulseCardsCommandDTO(
+                operator=_normalized_text(scope.get("operator")) or _operator(payload),
+                access_context=dict(scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(scope.get("operator")) or _operator(payload),
@@ -553,13 +582,14 @@ def admin_customer_pulse_card_execute_action(card_id: int):
     payload = _request_payload()
     try:
         card, access_scope = _card_access_scope(card_id, require_operator=False)
-        result = execute_customer_pulse_card_action(
-            card_id,
-            action_type=_normalized_text(payload.get("action_type")),
-            operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
-            extra_payload=payload,
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        result = ExecuteCustomerActionCommand()(
+            ExecuteCustomerActionCommandDTO(
+                card_id=card_id,
+                action_type=_normalized_text(payload.get("action_type")),
+                action_payload=payload,
+                operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
+                access_context=dict(access_scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
@@ -599,14 +629,14 @@ def admin_customer_pulse_card_feedback_action(card_id: int):
         access_context = _customer_pulse_access_context()
         assert_customer_pulse_feedback_permission(access_context)
         card, access_scope = _card_access_scope(card_id, require_operator=False)
-        result = submit_customer_pulse_feedback(
-            card_id,
-            feedback_type=_normalized_text(payload.get("feedback_type")),
-            note=_normalized_text(payload.get("note")),
-            operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
-            payload=payload,
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        result = SubmitCustomerPulseFeedbackCommand()(
+            SubmitCustomerPulseFeedbackCommandDTO(
+                card_id=card_id,
+                feedback_type=_normalized_text(payload.get("feedback_type")),
+                feedback_payload=payload,
+                operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
+                access_context=dict(access_scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
@@ -638,20 +668,25 @@ def admin_customer_pulse_api():
     access_context = _customer_pulse_access_context()
     try:
         assert_customer_pulse_inbox_view(access_context)
-        if not is_customer_pulse_inbox_enabled(access_context=access_context):
+        if not _pulse_feature_enabled(access_context):
             return _feature_disabled_json()
         read_scope = _resolve_read_scope(filters)
         filters["operator"] = _normalized_text(read_scope.get("operator"))
         return jsonify(
             {
                 "ok": True,
-                "inbox": build_customer_pulse_inbox_payload(
-                    **{**filters, "owner_userid": _normalized_text(read_scope.get("owner_userid_filter"))},
-                    track_metrics=True,
-                    metric_source="admin_customer_pulse_api",
-                    tenant_context=read_scope.get("tenant_context"),
-                    tenant_key=_normalized_text(read_scope.get("tenant_key")),
-                    allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+                "inbox": GetCustomerPulseInboxQuery()(
+                    CustomerPulseInboxQueryDTO(
+                        filters={
+                            **filters,
+                            "owner_userid": _normalized_text(read_scope.get("owner_userid_filter")),
+                            "track_metrics": True,
+                            "tenant_key": _normalized_text(read_scope.get("tenant_key")),
+                            "allowed_owner_userids": read_scope.get("allowed_owner_userids") or [],
+                        },
+                        access_context=dict(read_scope.get("tenant_context") or {}),
+                        metric_source="admin_customer_pulse_api",
+                    )
                 ),
             }
         )
@@ -673,17 +708,18 @@ def admin_customer_pulse_stats_api():
     access_context = _customer_pulse_access_context()
     try:
         assert_customer_pulse_inbox_view(access_context)
-        if not is_customer_pulse_inbox_enabled(access_context=access_context):
+        if not _pulse_feature_enabled(access_context):
             return _feature_disabled_json()
         read_scope = _resolve_read_scope(filters)
         return jsonify(
             {
                 "ok": True,
-                "stats": build_customer_pulse_ops_dashboard_payload(
-                    tenant_context=read_scope.get("tenant_context"),
-                    tenant_key=_normalized_text(read_scope.get("tenant_key")),
-                    owner_userids=read_scope.get("allowed_owner_userids") or [],
-                    days=_stats_days(request.args),
+                "stats": GetCustomerPulseMetricsQuery()(
+                    CustomerPulseMetricsQueryDTO(
+                        days=_stats_days(request.args),
+                        owner_userids=list(read_scope.get("allowed_owner_userids") or []),
+                        access_context=dict(read_scope.get("tenant_context") or {}),
+                    )
                 ),
             }
         )
@@ -699,13 +735,14 @@ def admin_customer_pulse_card_api(card_id: int):
             message="当前角色没有查看 Customer Pulse 卡片详情的权限。",
             code="card_view_forbidden",
         )
-        if not is_customer_pulse_inbox_enabled(access_context=_customer_pulse_access_context()):
+        if not _pulse_feature_enabled(_customer_pulse_access_context()):
             return _feature_disabled_json()
         _card, access_scope = _card_access_scope(card_id, require_operator=False)
-        payload = get_customer_pulse_card_payload(
-            card_id,
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        payload = GetCustomerPulseCardQuery()(
+            CustomerPulseCardQueryDTO(
+                card_id=card_id,
+                access_context=dict(access_scope.get("tenant_context") or {}),
+            )
         )
         return jsonify({"ok": True, **payload})
     except CustomerPulseAccessDenied as exc:
@@ -725,14 +762,16 @@ def admin_customer_pulse_card_evidence_api(card_id: int):
             message="当前角色没有查看 Customer Pulse 卡片详情的权限。",
             code="card_view_forbidden",
         )
-        if not is_customer_pulse_inbox_enabled(access_context=access_context):
+        if not _pulse_feature_enabled(access_context):
             return _feature_disabled_json()
         _card, access_scope = _card_access_scope(card_id, require_operator=False)
         assert_customer_pulse_evidence_view(access_scope.get("tenant_context"))
-        payload = get_customer_pulse_card_evidence_payload(
-            card_id,
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        payload = GetCustomerPulseCardEvidenceQuery()(
+            CustomerPulseCardEvidenceQueryDTO(
+                card_id=card_id,
+                access_context=dict(access_scope.get("tenant_context") or {}),
+                event_source="admin_customer_pulse_evidence",
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(access_scope.get("operator")) or _operator({}),
@@ -778,13 +817,14 @@ def admin_customer_pulse_refresh_api():
     payload = _request_payload()
     try:
         scope = _resolve_operator_scope(_inbox_filters(payload))
-        if not is_customer_pulse_inbox_enabled(access_context=scope.get("tenant_context")):
+        if not _pulse_feature_enabled(scope.get("tenant_context")):
             return _feature_disabled_json()
-        result = refresh_customer_pulse_cards(
-            operator=_normalized_text(scope.get("operator")) or _operator(payload),
-            tenant_context=scope.get("tenant_context"),
-            tenant_key=_normalized_text(scope.get("tenant_key")),
-            allowed_owner_userids=scope.get("allowed_owner_userids") or [],
+        result = RefreshCustomerPulseCardsCommand()(
+            RefreshCustomerPulseCardsCommandDTO(
+                operator=_normalized_text(scope.get("operator")) or _operator(payload),
+                allowed_owner_userids=list(scope.get("allowed_owner_userids") or []),
+                access_context=dict(scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(scope.get("operator")) or _operator(payload),
@@ -808,16 +848,18 @@ def admin_customer_pulse_card_preview_api(card_id: int):
     payload = _request_payload()
     try:
         _card, access_scope = _card_access_scope(card_id, require_operator=False)
-        if not is_customer_pulse_inbox_enabled(access_context=access_scope.get("tenant_context")):
+        if not _pulse_feature_enabled(access_scope.get("tenant_context")):
             return _feature_disabled_json()
-        preview = preview_customer_pulse_card_action(
-            card_id,
-            action_type=_normalized_text(payload.get("action_type")),
-            track_click=_truthy(payload.get("track_click")),
-            metric_source=_normalized_text(payload.get("metric_source")),
-            operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        preview = PreviewCustomerActionCommand()(
+            PreviewCustomerActionCommandDTO(
+                card_id=card_id,
+                action_type=_normalized_text(payload.get("action_type")),
+                action_payload=payload,
+                track_click=_truthy(payload.get("track_click")),
+                metric_source=_normalized_text(payload.get("metric_source")),
+                operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
+                access_context=dict(access_scope.get("tenant_context") or {}),
+            )
         )
         return jsonify({"ok": True, "preview": preview})
     except CustomerPulseAccessDenied as exc:
@@ -835,15 +877,16 @@ def admin_customer_pulse_card_execute_api(card_id: int):
     payload = _request_payload()
     try:
         card, access_scope = _card_access_scope(card_id, require_operator=False)
-        if not is_customer_pulse_inbox_enabled(access_context=access_scope.get("tenant_context")):
+        if not _pulse_feature_enabled(access_scope.get("tenant_context")):
             return _feature_disabled_json()
-        result = execute_customer_pulse_card_action(
-            card_id,
-            action_type=_normalized_text(payload.get("action_type")),
-            operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
-            extra_payload=payload,
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        result = ExecuteCustomerActionCommand()(
+            ExecuteCustomerActionCommandDTO(
+                card_id=card_id,
+                action_type=_normalized_text(payload.get("action_type")),
+                action_payload=payload,
+                operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
+                access_context=dict(access_scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
@@ -881,16 +924,16 @@ def admin_customer_pulse_card_feedback_api(card_id: int):
         access_context = _customer_pulse_access_context()
         assert_customer_pulse_feedback_permission(access_context)
         card, access_scope = _card_access_scope(card_id, require_operator=False)
-        if not is_customer_pulse_inbox_enabled(access_context=access_scope.get("tenant_context")):
+        if not _pulse_feature_enabled(access_scope.get("tenant_context")):
             return _feature_disabled_json()
-        result = submit_customer_pulse_feedback(
-            card_id,
-            feedback_type=_normalized_text(payload.get("feedback_type")),
-            note=_normalized_text(payload.get("note")),
-            operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
-            payload=payload,
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        result = SubmitCustomerPulseFeedbackCommand()(
+            SubmitCustomerPulseFeedbackCommandDTO(
+                card_id=card_id,
+                feedback_type=_normalized_text(payload.get("feedback_type")),
+                feedback_payload=payload,
+                operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
+                access_context=dict(access_scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
@@ -922,13 +965,14 @@ def admin_customer_pulse_execution_undo_api(execution_id: int):
     payload = _request_payload()
     try:
         _execution, card, access_scope = _execution_access_scope(execution_id, require_operator=False)
-        if not is_customer_pulse_inbox_enabled(access_context=access_scope.get("tenant_context")):
+        if not _pulse_feature_enabled(access_scope.get("tenant_context")):
             return _feature_disabled_json()
-        result = undo_customer_pulse_card_action_execution(
-            execution_id,
-            operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
-            tenant_context=access_scope.get("tenant_context"),
-            tenant_key=_normalized_text(access_scope.get("tenant_key")),
+        result = UndoCustomerPulseCardActionCommand()(
+            UndoCustomerPulseCardActionCommandDTO(
+                execution_id=execution_id,
+                operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
+                access_context=dict(access_scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(access_scope.get("operator")) or _operator(payload),
@@ -965,28 +1009,32 @@ def internal_customer_pulse_inbox_api():
         return jsonify({"ok": False, "error": "limit must be integer"}), 400
     try:
         assert_customer_pulse_inbox_view(_customer_pulse_access_context())
-        if not is_customer_pulse_inbox_enabled(access_context=_customer_pulse_access_context()):
+        if not _pulse_feature_enabled(_customer_pulse_access_context()):
             return _feature_disabled_json()
         read_scope = _resolve_read_scope(filters)
         return jsonify(
             {
                 "ok": True,
-                "inbox": build_customer_pulse_inbox_payload(
-                    limit=resolved_limit,
-                    owner_userid=_normalized_text(read_scope.get("owner_userid_filter")),
-                    external_userid=_normalized_text(filters.get("external_userid")),
-                    operator=_normalized_text(read_scope.get("operator")),
-                    scope=_normalized_text(filters.get("scope")) or "all",
-                    stage=_normalized_text(filters.get("stage")),
-                    risk=_normalized_text(filters.get("risk")),
-                    overdue_only=bool(filters.get("overdue_only")),
-                    draft_only=bool(filters.get("draft_only")),
-                    high_priority_only=bool(filters.get("high_priority_only")),
-                    search=_normalized_text(filters.get("search")),
-                    track_metrics=False,
-                    tenant_context=read_scope.get("tenant_context"),
-                    tenant_key=_normalized_text(read_scope.get("tenant_key")),
-                    allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+                "inbox": GetCustomerPulseInboxQuery()(
+                    CustomerPulseInboxQueryDTO(
+                        filters={
+                            "limit": resolved_limit,
+                            "owner_userid": _normalized_text(read_scope.get("owner_userid_filter")),
+                            "external_userid": _normalized_text(filters.get("external_userid")),
+                            "operator": _normalized_text(read_scope.get("operator")),
+                            "scope": _normalized_text(filters.get("scope")) or "all",
+                            "stage": _normalized_text(filters.get("stage")),
+                            "risk": _normalized_text(filters.get("risk")),
+                            "overdue_only": bool(filters.get("overdue_only")),
+                            "draft_only": bool(filters.get("draft_only")),
+                            "high_priority_only": bool(filters.get("high_priority_only")),
+                            "search": _normalized_text(filters.get("search")),
+                            "track_metrics": False,
+                            "tenant_key": _normalized_text(read_scope.get("tenant_key")),
+                            "allowed_owner_userids": read_scope.get("allowed_owner_userids") or [],
+                        },
+                        access_context=dict(read_scope.get("tenant_context") or {}),
+                    )
                 ),
             }
         )
@@ -1001,17 +1049,18 @@ def internal_customer_pulse_stats_api():
     filters = _inbox_filters(request.args)
     try:
         assert_customer_pulse_inbox_view(_customer_pulse_access_context())
-        if not is_customer_pulse_inbox_enabled(access_context=_customer_pulse_access_context()):
+        if not _pulse_feature_enabled(_customer_pulse_access_context()):
             return _feature_disabled_json()
         read_scope = _resolve_read_scope(filters)
         return jsonify(
             {
                 "ok": True,
-                "stats": build_customer_pulse_ops_dashboard_payload(
-                    tenant_context=read_scope.get("tenant_context"),
-                    tenant_key=_normalized_text(read_scope.get("tenant_key")),
-                    owner_userids=read_scope.get("allowed_owner_userids") or [],
-                    days=_stats_days(request.args),
+                "stats": GetCustomerPulseMetricsQuery()(
+                    CustomerPulseMetricsQueryDTO(
+                        days=_stats_days(request.args),
+                        owner_userids=list(read_scope.get("allowed_owner_userids") or []),
+                        access_context=dict(read_scope.get("tenant_context") or {}),
+                    )
                 ),
             }
         )
@@ -1030,15 +1079,17 @@ def internal_customer_pulse_customer_api(external_userid: str):
             message="当前角色没有查看 Customer Pulse 客户详情的权限。",
             code="customer_pulse_detail_forbidden",
         )
-        if not is_customer_pulse_inbox_enabled(access_context=_customer_pulse_access_context()):
+        if not _pulse_feature_enabled(_customer_pulse_access_context()):
             return _feature_disabled_json()
         read_scope = _resolve_read_scope({"owner_userid": ""})
-        payload = build_customer_pulse_customer_detail_payload(
-            external_userid,
-            track_metrics=False,
-            tenant_context=read_scope.get("tenant_context"),
-            tenant_key=_normalized_text(read_scope.get("tenant_key")),
-            allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+        payload = GetCustomerPulseCustomerDetailQuery()(
+            CustomerPulseCustomerDetailQueryDTO(
+                external_userid=external_userid,
+                tenant_key=_normalized_text(read_scope.get("tenant_key")),
+                allowed_owner_userids=list(read_scope.get("allowed_owner_userids") or []),
+                track_metrics=False,
+                access_context=dict(read_scope.get("tenant_context") or {}),
+            )
         )
     except CustomerPulseAccessDenied as exc:
         return _access_error_json(exc)
@@ -1066,17 +1117,18 @@ def internal_customer_pulse_recompute_api():
     force_sync = str(payload.get("force_sync") or "").strip().lower() in {"1", "true", "yes", "on"}
     try:
         job_scope = assert_customer_pulse_internal_job_access(_customer_pulse_access_context())
-        if not is_customer_pulse_inbox_enabled(access_context=job_scope.get("tenant_context")):
+        if not _pulse_feature_enabled(job_scope.get("tenant_context")):
             return _feature_disabled_json()
     except CustomerPulseAccessDenied as exc:
         return _access_error_json(exc)
     if force_sync:
-        result = refresh_customer_pulse_cards(
-            external_userids=external_userids,
-            operator=_normalized_text(job_scope.get("operator")) or _operator(payload) or "internal_api",
-            tenant_context=job_scope.get("tenant_context"),
-            tenant_key=_normalized_text(job_scope.get("tenant_key")),
-            allowed_owner_userids=job_scope.get("allowed_owner_userids") or [],
+        result = RefreshCustomerPulseCardsCommand()(
+            RefreshCustomerPulseCardsCommandDTO(
+                external_userids=external_userids,
+                operator=_normalized_text(job_scope.get("operator")) or _operator(payload) or "internal_api",
+                allowed_owner_userids=list(job_scope.get("allowed_owner_userids") or []),
+                access_context=dict(job_scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(job_scope.get("operator")) or "internal_api",
@@ -1089,16 +1141,17 @@ def internal_customer_pulse_recompute_api():
         )
         return jsonify({"ok": True, "result": result})
     jobs = [
-        enqueue_customer_pulse_recompute(
-            external_userid=external_userid,
-            owner_userid=_normalized_text(payload.get("owner_userid")),
-            delay_seconds=int(payload.get("delay_seconds") or 0),
-            operator=_normalized_text(job_scope.get("operator")) or _operator(payload) or "internal_api",
-            trigger_source=_normalized_text(payload.get("trigger_source")),
-            trigger_ref_type=_normalized_text(payload.get("trigger_ref_type")),
-            trigger_ref_id=_normalized_text(payload.get("trigger_ref_id")),
-            tenant_context=job_scope.get("tenant_context"),
-            tenant_key=_normalized_text(job_scope.get("tenant_key")),
+        EnqueueCustomerPulseRecomputeCommand()(
+            EnqueueCustomerPulseRecomputeCommandDTO(
+                external_userid=external_userid,
+                owner_userid=_normalized_text(payload.get("owner_userid")),
+                delay_seconds=int(payload.get("delay_seconds") or 0),
+                operator=_normalized_text(job_scope.get("operator")) or _operator(payload) or "internal_api",
+                trigger_source=_normalized_text(payload.get("trigger_source")),
+                trigger_ref_type=_normalized_text(payload.get("trigger_ref_type")),
+                trigger_ref_id=_normalized_text(payload.get("trigger_ref_id")),
+                access_context=dict(job_scope.get("tenant_context") or {}),
+            )
         )
         for external_userid in external_userids
     ]
@@ -1126,15 +1179,16 @@ def internal_customer_pulse_run_due_api():
         return jsonify({"ok": False, "error": "limit and rescan_limit must be integers"}), 400
     try:
         job_scope = assert_customer_pulse_internal_job_access(_customer_pulse_access_context())
-        if not is_customer_pulse_inbox_enabled(access_context=job_scope.get("tenant_context")):
+        if not _pulse_feature_enabled(job_scope.get("tenant_context")):
             return _feature_disabled_json()
-        result = run_due_customer_pulse_snapshot_job(
-            limit=limit,
-            rescan_limit=rescan_limit,
-            operator=_normalized_text(job_scope.get("operator")) or _operator(payload) or "internal_api",
-            tenant_context=job_scope.get("tenant_context"),
-            tenant_key=_normalized_text(job_scope.get("tenant_key")),
-            allowed_owner_userids=job_scope.get("allowed_owner_userids") or [],
+        result = RunDueCustomerPulseSnapshotJobCommand()(
+            RunDueCustomerPulseSnapshotJobCommandDTO(
+                limit=limit,
+                rescan_limit=rescan_limit,
+                operator=_normalized_text(job_scope.get("operator")) or _operator(payload) or "internal_api",
+                allowed_owner_userids=list(job_scope.get("allowed_owner_userids") or []),
+                access_context=dict(job_scope.get("tenant_context") or {}),
+            )
         )
         _audit_customer_pulse_operation(
             operator=_normalized_text(job_scope.get("operator")) or "internal_api",

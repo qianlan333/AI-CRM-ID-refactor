@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from flask import render_template, url_for
 
+from ..application.ai_assist import (
+    CustomerPulseFeatureGateQueryDTO,
+    FollowupFeatureGateQueryDTO,
+    GetCustomerPulseFeatureGateQuery,
+    GetFollowupOrchestratorFeatureGateQuery,
+)
 from ..domains.admin_audit import build_risk_control_rows, build_runbook_rows
 from ..domains.admin_dashboard import (
     build_admin_shell_status,
@@ -10,8 +16,6 @@ from ..domains.admin_dashboard import (
     build_system_status_payload,
     list_admin_navigation,
 )
-from ..domains.followup_orchestrator import is_followup_orchestrator_enabled
-from ..domains.customer_pulse import is_customer_pulse_inbox_enabled
 from ..domains.customer_pulse.access import (
     CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
     current_customer_pulse_request_access_context,
@@ -60,11 +64,16 @@ def render_admin_user_ops_shell():
 
 def admin_console_home():
     access_context = current_customer_pulse_request_access_context()
-    customer_pulse_page_visible = is_customer_pulse_inbox_enabled(access_context=access_context) and customer_pulse_has_permission(
-        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
-        access_context=access_context,
+    pulse_feature_gate = GetCustomerPulseFeatureGateQuery()(
+        CustomerPulseFeatureGateQueryDTO(access_context=dict(access_context))
     )
-    followup_orchestrator_page_visible = is_followup_orchestrator_enabled(access_context=access_context) and customer_pulse_has_permission(
+    customer_pulse_page_visible = bool(pulse_feature_gate.get("enabled")) and bool(
+        (pulse_feature_gate.get("permissions") or {}).get("page_visible")
+    )
+    followup_feature_gate = GetFollowupOrchestratorFeatureGateQuery()(
+        FollowupFeatureGateQueryDTO(access_context=dict(access_context))
+    )
+    followup_orchestrator_page_visible = bool(followup_feature_gate.get("enabled")) and customer_pulse_has_permission(
         CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
         access_context=access_context,
     )

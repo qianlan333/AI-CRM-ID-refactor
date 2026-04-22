@@ -2,17 +2,26 @@ from __future__ import annotations
 
 from flask import jsonify, request
 
-from ..domains.automation_conversion.service import sync_member_activation
-from ..application.automation_engine.queries import (
+from ..application.automation_engine.commands import (
     ApplyActivationWebhookCommand,
-    GetSignupConversionBatchQuery,
-    ListOutboundWebhookDeliveriesQuery,
-    ListSignupConversionBatchesQuery,
     RetryOutboundWebhookDeliveryCommand,
     RunDueOutboundWebhookRetriesCommand,
 )
+from ..application.automation_engine.dto import (
+    ActivationWebhookCommandDTO,
+    OutboundWebhookListQueryDTO,
+    OutboundWebhookRetryBatchCommandDTO,
+    OutboundWebhookRetryCommandDTO,
+    SignupConversionBatchDetailQueryDTO,
+    SignupConversionBatchListQueryDTO,
+)
+from ..application.automation_engine.queries import (
+    GetSignupConversionBatchQuery,
+    ListOutboundWebhookDeliveriesQuery,
+    ListSignupConversionBatchesQuery,
+)
 from ..application.customer_read_model import CustomerChatContextQueryDTO, GetCustomerChatContextQuery
-from ..application.customer_read_model.dto import InternalAuthQueryDTO, SignupConversionBatchDetailQueryDTO, SignupConversionBatchListQueryDTO
+from ..application.customer_read_model.dto import InternalAuthQueryDTO
 from ..application.platform_foundation import AuthorizeInternalRequestQuery
 
 
@@ -88,10 +97,12 @@ def activation_webhook():
     source = str(payload.get("source") or "").strip() or "activation_webhook"
     try:
         result = ApplyActivationWebhookCommand()(
-            mobile=mobile,
-            activated_at=activated_at,
-            operator=operator,
-            source=source,
+            ActivationWebhookCommandDTO(
+                mobile=mobile,
+                activated_at=activated_at,
+                operator=operator,
+                source=source,
+            )
         )
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
@@ -106,9 +117,11 @@ def webhook_delivery_list():
     limit = request.args.get("limit", 50)
     try:
         payload = ListOutboundWebhookDeliveriesQuery()(
-            event_type=event_type,
-            status=status,
-            limit=int(limit),
+            OutboundWebhookListQueryDTO(
+                event_type=event_type,
+                status=status,
+                limit=int(limit),
+            )
         )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -120,7 +133,9 @@ def webhook_delivery_retry(delivery_id: int):
     if auth_failure is not None:
         return auth_failure
     try:
-        payload = RetryOutboundWebhookDeliveryCommand()(int(delivery_id))
+        payload = RetryOutboundWebhookDeliveryCommand()(
+            OutboundWebhookRetryCommandDTO(delivery_id=int(delivery_id))
+        )
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
     except ValueError as exc:
@@ -135,7 +150,9 @@ def webhook_delivery_retry_due():
     payload = request.get_json(silent=True) or {}
     limit = payload.get("limit", request.args.get("limit", 20))
     try:
-        result = RunDueOutboundWebhookRetriesCommand()(limit=int(limit))
+        result = RunDueOutboundWebhookRetriesCommand()(
+            OutboundWebhookRetryBatchCommandDTO(limit=int(limit))
+        )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify(result)

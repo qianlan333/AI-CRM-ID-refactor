@@ -50,6 +50,25 @@ def _fetchall_dicts(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, An
     return [dict(row) for row in rows]
 
 
+def _sop_pool_lookup_keys(pool_key: str) -> tuple[str, ...]:
+    normalized_pool_key = _normalized_text(pool_key)
+    if not normalized_pool_key:
+        return ()
+    alias_groups = {
+        "pending_questionnaire": ("pending_questionnaire", "new_user"),
+        "operating": (
+            "operating",
+            "inactive_normal",
+            "inactive_focus",
+            "active_normal",
+            "active_focus",
+            "silent",
+        ),
+        "converted": ("converted", "won"),
+    }
+    return alias_groups.get(normalized_pool_key, (normalized_pool_key,))
+
+
 def lookup_person_id_by_external_contact_id(external_contact_id: str) -> int | None:
     row = _fetchone_dict(
         """
@@ -2637,8 +2656,9 @@ def list_sop_batches(*, pool_key: str = "", limit: int = 50) -> list[dict[str, A
     WHERE 1 = 1
     """
     if normalized_pool_key:
-        sql += " AND pool_key = ?"
-        params.append(normalized_pool_key)
+        lookup_keys = _sop_pool_lookup_keys(normalized_pool_key)
+        sql += f" AND pool_key IN ({', '.join('?' for _ in lookup_keys)})"
+        params.extend(lookup_keys)
     sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
     params.append(max(1, int(limit)))
     return _fetchall_dicts(sql, tuple(params))
