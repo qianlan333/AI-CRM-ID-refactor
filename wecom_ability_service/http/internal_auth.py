@@ -36,6 +36,7 @@ from ..domains.admin_auth import (
     touch_admin_user_login,
 )
 from ..domains.admin_config import repo as admin_config_repo
+from ..infra.internal_auth_runtime import require_internal_api_token_compat
 from ..infra.settings import get_setting
 from ..wecom_client import WeComClientError
 
