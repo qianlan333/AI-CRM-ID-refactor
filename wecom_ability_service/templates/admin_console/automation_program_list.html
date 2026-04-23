@@ -1,0 +1,109 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .program-shell { display: grid; gap: 18px; }
+  .program-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .program-card { display: grid; gap: 14px; padding: 18px; border: 1px solid rgba(15,23,42,.08); border-radius: 20px; background: #fff; }
+  .program-card__head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .program-muted { color: #64748b; line-height: 1.6; }
+  .program-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #64748b; font-size: 12px; }
+  .program-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .program-form-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set payload = program_list_payload or {} %}
+{% set items = payload["items"] or [] %}
+{% set default_program = payload["default_program"] or {} %}
+
+<div class="program-shell">
+  <section class="admin-card">
+    <div class="admin-section-header">
+      <div>
+        <div class="admin-eyebrow">Phase 1</div>
+        <h2>自动化运营方案列表</h2>
+        <p class="program-muted">点进自动化运营后先选择方案；共享资源和运行时仍保留为模块级入口。</p>
+      </div>
+      <div class="program-actions">
+        <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_shared_agents') }}">共享资源</a>
+        <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_conversion_runtime') }}">运行时中心</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-card">
+    <h3>新建方案</h3>
+    <form method="post" action="{{ action_urls.create }}" class="admin-form-stack">
+      <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+      <div class="program-form-grid">
+        <label class="admin-field"><span>方案名称</span><input type="text" name="program_name" placeholder="例如：春招转化方案" required></label>
+        <label class="admin-field"><span>内部 Code</span><input type="text" name="program_code" placeholder="spring_conversion_v1"></label>
+        <label class="admin-field">
+          <span>创建方式</span>
+          <select name="copy_source_program_id">
+            <option value="0">空白方案</option>
+            {% if default_program.id %}<option value="{{ default_program.id }}">从默认方案复制配置快照</option>{% endif %}
+          </select>
+        </label>
+        <label class="admin-field">
+          <span>初始状态</span>
+          <select name="status">
+            <option value="draft">草稿</option>
+            <option value="active">启用</option>
+            <option value="paused">停用</option>
+          </select>
+        </label>
+      </div>
+      <label class="admin-field"><span>说明</span><textarea name="description" rows="2" placeholder="方案目标、适用业务线或班期说明"></textarea></label>
+      <button class="admin-button" type="submit">新建方案</button>
+    </form>
+  </section>
+
+  <section class="program-grid">
+    {% for item in items %}
+      {% set program = item.program or {} %}
+      {% set summary = item.summary or {} %}
+      <article class="program-card">
+        <div class="program-card__head">
+          <div>
+            <h3 style="margin:0 0 6px;">{{ program.program_name }}</h3>
+            <div class="program-code">{{ program.program_code }}</div>
+          </div>
+          <span class="admin-chip admin-chip--neutral">{{ program.status }}</span>
+        </div>
+        <p class="program-muted">{{ program.description or "暂无说明" }}</p>
+        <div class="program-form-grid">
+          <div><strong>{{ summary.workflow_count or 0 }}</strong><div class="program-muted">workflow 数</div></div>
+          <div><strong>{{ summary.latest_execution_at or "-" }}</strong><div class="program-muted">最近运行时间</div></div>
+        </div>
+        <div class="program-actions">
+          <a class="admin-button" href="{{ url_for('api.admin_automation_program_overview', program_id=program.id) }}">进入方案</a>
+          {% if program.status == "active" %}
+            <form method="post" action="{{ url_for('api.admin_automation_program_pause', program_id=program.id) }}">
+              <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+              <button class="admin-button admin-button--secondary" type="submit">停用</button>
+            </form>
+          {% elif program.status != "archived" %}
+            <form method="post" action="{{ url_for('api.admin_automation_program_activate', program_id=program.id) }}">
+              <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+              <button class="admin-button admin-button--secondary" type="submit">启用</button>
+            </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('api.admin_automation_program_copy', program_id=program.id) }}">
+            <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+            <button class="admin-button admin-button--secondary" type="submit">复制</button>
+          </form>
+          {% if program.status != "archived" %}
+            <form method="post" action="{{ url_for('api.admin_automation_program_archive', program_id=program.id) }}">
+              <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+              <button class="admin-button admin-button--ghost" type="submit">归档</button>
+            </form>
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

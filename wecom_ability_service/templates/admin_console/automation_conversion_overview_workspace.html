@@ -215,6 +215,7 @@
 {% set reply_monitor = snapshot.reply_monitor or {} %}
 {% set sync_last_run = message_sync.last_run or {} %}
 
+{% include "admin_console/_automation_program_context.html" %}
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
 <div id="automation-overview-root" class="ac-overview-shell" data-api-urls='{{ (workspace.api_urls or {})|tojson }}'>

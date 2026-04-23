@@ -1565,6 +1565,7 @@ def _run_due_node(
         execution = workflow_repo.insert_workflow_execution_row(
             {
                 "execution_id": execution_key,
+                "program_id": int((workflow_bundle.get("workflow") or {}).get("program_id") or 0) or None,
                 "workflow_id": int((workflow_bundle.get("workflow") or {}).get("id") or 0),
                 "node_id": int(node.get("id") or 0),
                 "trigger_type": "daily_recurring_poll" if trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING else "scheduled_poll",
@@ -1705,6 +1706,7 @@ def _run_immediate_node(
             execution = workflow_repo.insert_workflow_execution_row(
                 {
                     "execution_id": execution_key,
+                    "program_id": int((workflow_bundle.get("workflow") or {}).get("program_id") or 0) or None,
                     "workflow_id": int((workflow_bundle.get("workflow") or {}).get("id") or 0),
                     "node_id": int(node.get("id") or 0),
                     "trigger_type": "scheduled_poll",

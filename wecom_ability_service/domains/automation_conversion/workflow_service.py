@@ -17,7 +17,7 @@ from ...wecom_client import WeComClientError
 from ..tags import repo as tags_repo
 from ..tags import service as tags_service
 from ..user_ops import page_service as user_ops_page_service
-from . import repo as orchestration_repo, workflow_repo
+from . import program_service, repo as orchestration_repo, workflow_repo
 from .message_activity_client import get_message_activity_db_status, query_message_activity_counts
 from .workflow_definitions import (
     AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
@@ -1611,8 +1611,20 @@ def update_conversion_profile_segment_template(template_id: int, payload: dict[s
     return {"template_bundle": get_conversion_profile_segment_template_bundle(int(existing["id"]))}
 
 
-def list_conversion_workflows(*, include_archived: bool = False, status: str = "") -> dict[str, Any]:
-    items = [_build_workflow_bundle(item) for item in workflow_repo.list_workflow_rows(include_archived=include_archived, status=status)]
+def _effective_program_id(program_id: int | None = None) -> int:
+    return int(program_id or 0) or program_service.get_default_automation_program_id()
+
+
+def list_conversion_workflows(*, include_archived: bool = False, status: str = "", program_id: int | None = None) -> dict[str, Any]:
+    effective_program_id = _effective_program_id(program_id)
+    items = [
+        _build_workflow_bundle(item)
+        for item in workflow_repo.list_workflow_rows(
+            include_archived=include_archived,
+            status=status,
+            program_id=effective_program_id,
+        )
+    ]
     return {"items": items, "total": len(items)}
 
 
@@ -1625,12 +1637,15 @@ def get_conversion_workflow_model_bundle(workflow_id: int) -> dict[str, Any]:
     return bundle
 
 
-def create_conversion_workflow(payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+def create_conversion_workflow(payload: dict[str, Any], *, operator_id: str, program_id: int | None = None) -> dict[str, Any]:
+    effective_program_id = _effective_program_id(program_id or payload.get("program_id"))
     normalized = _normalize_workflow_payload(payload)
     duplicate = workflow_repo.get_workflow_row_by_code(normalized["workflow_code"])
     if duplicate:
         raise ValueError("workflow_code already exists")
-    saved_workflow = workflow_repo.insert_workflow_row({**normalized, "created_by": operator_id, "updated_by": operator_id})
+    saved_workflow = workflow_repo.insert_workflow_row(
+        {**normalized, "program_id": effective_program_id, "created_by": operator_id, "updated_by": operator_id}
+    )
     _sync_workflow_children(int(saved_workflow["id"]), normalized)
     get_db().commit()
     return {"workflow_bundle": get_conversion_workflow_model_bundle(int(saved_workflow["id"]))}
@@ -1650,7 +1665,14 @@ def update_conversion_workflow(workflow_id: int, payload: dict[str, Any], *, ope
     duplicate = workflow_repo.get_workflow_row_by_code(normalized["workflow_code"])
     if duplicate and int(duplicate["id"]) != int(workflow_id):
         raise ValueError("workflow_code already exists")
-    workflow_repo.update_workflow_row(int(workflow_id), {**normalized, "updated_by": operator_id})
+    workflow_repo.update_workflow_row(
+        int(workflow_id),
+        {
+            **normalized,
+            "program_id": int((existing.get("workflow") or {}).get("program_id") or 0) or _effective_program_id(),
+            "updated_by": operator_id,
+        },
+    )
     _sync_workflow_children(int(workflow_id), normalized)
     get_db().commit()
     return {"workflow_bundle": get_conversion_workflow_model_bundle(int(workflow_id))}
@@ -1717,8 +1739,19 @@ def delete_conversion_workflow_node(node_id: int) -> dict[str, Any]:
     return {"deleted_node_id": int(node_id), "workflow_id": int(existing["workflow_id"])}
 
 
-def list_conversion_workflow_executions(*, workflow_id: int | None = None, node_id: int | None = None, limit: int = 20) -> dict[str, Any]:
-    items = workflow_repo.list_workflow_execution_rows(workflow_id=workflow_id, node_id=node_id, limit=limit)
+def list_conversion_workflow_executions(
+    *,
+    workflow_id: int | None = None,
+    node_id: int | None = None,
+    program_id: int | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    items = workflow_repo.list_workflow_execution_rows(
+        workflow_id=workflow_id,
+        node_id=node_id,
+        program_id=_effective_program_id(program_id),
+        limit=limit,
+    )
     return {"items": items, "total": len(items)}
 
 
@@ -2268,11 +2301,12 @@ def apply_dashboard_signup_tag(*, operator_id: str = "") -> dict[str, Any]:
     }
 
 
-def get_conversion_dashboard_payload() -> dict[str, Any]:
+def get_conversion_dashboard_payload(*, program_id: int | None = None) -> dict[str, Any]:
+    effective_program_id = _effective_program_id(program_id)
     audience_counts = workflow_repo.get_current_audience_member_counts()
     workflow_execution_summary = [
         _build_workflow_execution_summary_item(item)
-        for item in workflow_repo.list_workflow_execution_summary_rows()
+        for item in workflow_repo.list_workflow_execution_summary_rows(program_id=effective_program_id)
     ]
     return {
         "audience_overview": {
@@ -2281,7 +2315,7 @@ def get_conversion_dashboard_payload() -> dict[str, Any]:
             "converted_count": int(audience_counts.get(AUDIENCE_CONVERTED) or 0),
             "total_count": sum(int(value or 0) for value in audience_counts.values()),
         },
-        "active_workflow_count": workflow_repo.count_workflow_rows(status=WORKFLOW_STATUS_ACTIVE),
+        "active_workflow_count": workflow_repo.count_workflow_rows(status=WORKFLOW_STATUS_ACTIVE, program_id=effective_program_id),
         "audience_member_details": _build_dashboard_audience_member_details(),
         "task_execution_summary": {
             "items": workflow_execution_summary,
@@ -2341,10 +2375,21 @@ def list_conversion_profile_segment_template_options(*, enabled_only: bool = Tru
     return {"items": items, "total": len(items)}
 
 
-def list_conversion_workflow_execution_records(*, workflow_id: int | None = None, node_id: int | None = None, limit: int = 20) -> dict[str, Any]:
+def list_conversion_workflow_execution_records(
+    *,
+    workflow_id: int | None = None,
+    node_id: int | None = None,
+    program_id: int | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
     items = [
         _build_execution_payload(item)
-        for item in workflow_repo.list_workflow_execution_rows(workflow_id=workflow_id, node_id=node_id, limit=limit)
+        for item in workflow_repo.list_workflow_execution_rows(
+            workflow_id=workflow_id,
+            node_id=node_id,
+            program_id=_effective_program_id(program_id),
+            limit=limit,
+        )
     ]
     return {"items": items, "total": len(items)}
 

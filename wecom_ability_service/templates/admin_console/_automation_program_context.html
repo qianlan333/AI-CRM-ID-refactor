@@ -1,0 +1,16 @@
+{% set context = program_context or {} %}
+{% if context %}
+<section class="admin-card" style="margin-bottom: 18px;">
+  <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div class="admin-eyebrow">自动化运营方案</div>
+      <h2 style="margin:4px 0 6px;">{{ context.program_name }}</h2>
+      <p class="admin-muted" style="margin:0;">{{ context.program_code }} · 状态：{{ context.status }}</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <a class="admin-button admin-button--secondary" href="{{ context.list_href }}">返回方案列表</a>
+      <a class="admin-button" href="{{ context.overview_href }}">方案概览</a>
+    </div>
+  </div>
+</section>
+{% endif %}
