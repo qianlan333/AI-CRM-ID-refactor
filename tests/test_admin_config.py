@@ -9,6 +9,7 @@ import pytest
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.domains.admin_auth import save_admin_user
 from wecom_ability_service.services import (
     get_routing_config,
     get_signup_conversion_config,
@@ -44,6 +45,8 @@ def app(tmp_path):
             "WECOM_CALLBACK_TOKEN": "callback-token",
             "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
             "MCP_BEARER_TOKEN": "mcp-token",
+            "SECRET_KEY": "test-secret-key",
+            "ADMIN_AUTH_MODE": "wecom_sso",
         }
     )
     with app.app_context():
@@ -53,7 +56,25 @@ def app(tmp_path):
 
 @pytest.fixture()
 def client(app):
-    return app.test_client()
+    with app.app_context():
+        save_admin_user(
+            {
+                "wecom_userid": "root.admin",
+                "wecom_corpid": app.config["WECOM_CORP_ID"],
+                "display_name": "Root Admin",
+                "role_codes": ["super_admin"],
+                "is_active": "1",
+            },
+            operator="test-suite",
+        )
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["admin_session_user_id"] = 1
+        session["admin_session_wecom_userid"] = "root.admin"
+        session["admin_session_role_list"] = ["super_admin"]
+        session["admin_session_login_type"] = "wecom_qr"
+        session["admin_session_display_name"] = "Root Admin"
+    return client
 
 
 def _admin_action_token(client, path: str = "/admin/automation-conversion/flow-design") -> str:
@@ -454,12 +475,12 @@ def _contains_standalone_token(text: str, token: str) -> bool:
 def test_admin_config_pages_render(client):
     expected = {
         "/admin/config": "配置中心",
-        "/admin/config/routing": "负责人 / 分配规则",
+        "/admin/config/routing": "渠道 / 分配规则",
         "/admin/config/signup-tags": "报名标签规则",
         "/admin/config/class-term-tags": "班期标签规则",
         "/admin/automation-conversion": "自动化转化",
         "/admin/config/app-settings": "系统设置",
-        "/admin/config/mcp-tools": "AI 工具设置",
+        "/admin/config/login-access": "登录与权限",
     }
     for path, marker in expected.items():
         response = client.get(path)
@@ -515,6 +536,7 @@ def test_admin_config_routing_save_updates_runtime_and_audit(app, client):
             """
             SELECT target_type, target_id, operator
             FROM admin_operation_logs
+            WHERE target_type IN ('owner_role_map', 'routing_rule_config')
             ORDER BY id ASC
             """
         ).fetchall()
@@ -662,34 +684,15 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
 
     assert response.status_code == 200
     assert "自动化转化" in visible_text
-    assert "经营驾驶舱" in visible_text
     assert "经营摘要" in visible_text
-    assert "在池总人数" in visible_text
-    assert "今日入池" in visible_text
-    assert "待问卷" in visible_text
-    assert "普通跟进" in visible_text
-    assert "重点跟进" in visible_text
-    assert "沉默池" in visible_text
-    assert "已成交" in visible_text
-    assert "阶段漏斗 / 阶段分布" in visible_text
-    assert "待处理事项" in visible_text
-    assert "最近运行摘要" in visible_text
-    assert "快捷动作" in visible_text
-    assert "流程设计" in visible_text
-    assert "成员运营" in visible_text
-    assert "运行中心" in visible_text
-    assert "/admin/automation-conversion/member-ops?stage=new-user" in html
-    assert "/admin/automation-conversion/member-ops?stage=inactive-focus" in html
-    assert "/admin/automation-conversion/flow-design?section=questionnaire" in html
-    assert "/admin/automation-conversion/run-center?tab=overview" in html
+    assert "任务流执行摘要" in visible_text
+    assert "/admin/automation-conversion/operations" in html
     assert "配置步骤" not in visible_text
-    assert "最近处理情况" not in visible_text
-    assert "立即刷新一次" not in visible_text
     assert "进入设置页" not in visible_text
     assert "进入调试页" not in visible_text
-    assert "JSON" not in visible_text
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/settings UI route")
 def test_admin_automation_conversion_page_survives_missing_configured_questionnaire(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=82)
     save_response = client.put(
@@ -724,6 +727,7 @@ def test_admin_automation_conversion_page_survives_missing_configured_questionna
     assert "关键题规则 JSON" not in visible_text
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/settings UI route")
 def test_admin_automation_conversion_settings_page_uses_visual_rule_editor(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=83, question_count=2)
     save_response = client.put(
@@ -757,6 +761,7 @@ def test_admin_automation_conversion_settings_page_uses_visual_rule_editor(app, 
     assert "问题1-选项2" in html
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/settings/save form route")
 def test_admin_automation_conversion_settings_save_form_persists_visual_rules(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=84, question_count=2)
     question_id = seed["question_ids"][1]
@@ -820,6 +825,7 @@ def test_admin_automation_conversion_settings_save_form_persists_visual_rules(ap
         assert rule["sort_order"] == 1
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/settings/save form route")
 def test_admin_automation_conversion_settings_save_form_persists_default_channel_fields(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=185, question_count=2)
     question_id = seed["question_ids"][0]
@@ -886,6 +892,7 @@ def test_admin_automation_conversion_settings_save_form_persists_default_channel
         assert row["status"] == "configured"
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/settings/save form route")
 def test_admin_automation_conversion_settings_save_form_rejects_invalid_auto_start_window(app, client):
     seed = _seed_signup_conversion_questionnaire(app, questionnaire_id=184, question_count=2)
     action_token = _admin_action_token(client, "/admin/automation-conversion/flow-design?section=global-rules")
@@ -921,6 +928,7 @@ def test_admin_automation_conversion_settings_save_form_rejects_invalid_auto_sta
     assert 'value="23"' in html
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/stage route")
 def test_admin_automation_conversion_stage_detail_page_renders_filtered_customers(app, client):
     _seed_automation_conversion_stage_board(app)
 
@@ -956,6 +964,7 @@ def test_admin_automation_conversion_stage_detail_page_renders_filtered_customer
     assert "wm_stage_inactive_normal_001" not in filtered_text
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/preview route")
 def test_admin_automation_conversion_preview_page_renders_runtime_search_shell(client):
     response = client.get("/admin/automation-conversion/preview")
 
@@ -988,6 +997,7 @@ def test_admin_marketing_automation_dispatch_history_api_supports_status_filter(
     assert blocked_payload["dispatch_history"]["items"][0]["stage"] == "pool/active_focus"
 
 
+@pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/debug route")
 def test_admin_automation_conversion_debug_page_renders_search_shell(client):
     response = client.get("/admin/automation-conversion/debug", follow_redirects=True)
     html = response.get_data(as_text=True)

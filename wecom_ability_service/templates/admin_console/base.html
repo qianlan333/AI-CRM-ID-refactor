@@ -58,6 +58,11 @@
 
         {% if show_shell_meta %}
         <div class="admin-topbar-meta">
+          {% if current_admin_user %}
+          <a class="admin-chip admin-chip--neutral" href="{{ url_for('api.admin_logout') }}">
+            {{ current_admin_user.display_name or current_admin_user.wecom_userid or "管理员" }} · 退出登录
+          </a>
+          {% endif %}
           <div class="admin-chip admin-chip--{{ shell_status.environment.tone }}" data-shell-env>
             {{ shell_status.environment.label }}
           </div>

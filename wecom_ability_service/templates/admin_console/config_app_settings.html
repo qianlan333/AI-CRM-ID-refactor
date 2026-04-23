@@ -40,6 +40,7 @@
     </div>
   </div>
   <form class="admin-form-grid admin-form-grid--stacked" method="post" action="/admin/config/app-settings/save">
+    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
     {% for row in editable_rows %}
     <label>
       <span>{{ row.label }} <code>{{ row.key }}</code></span>
