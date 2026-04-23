@@ -3307,6 +3307,10 @@ def _init_postgres(db) -> None:
         + _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN
     )
 
+    # Upgrade existing PostgreSQL installs before replaying schema indexes
+    # that now reference automation_workflow.program_id.
+    _ensure_postgres_automation_program_tables(db)
+
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
     db.execute(
