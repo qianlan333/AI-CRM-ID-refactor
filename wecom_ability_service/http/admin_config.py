@@ -37,6 +37,7 @@ from ..application.automation_engine.queries import (
     ListAutomationConversionDispatchHistoryQuery,
     PreviewSignupConversionCustomerQuery,
 )
+from ..domains.admin_auth import build_admin_account_page_payload, save_admin_user
 from ..domains.admin_config import (
     build_config_home_payload,
     config_tabs,
@@ -50,6 +51,12 @@ from ..domains.admin_config import (
     save_signup_tag_setting,
 )
 from ..domains.admin_config import repo as admin_config_repo
+from .internal_auth import (
+    current_admin_operator,
+    require_admin_module_access,
+    require_admin_roles,
+    validate_admin_console_action_token,
+)
 from .admin_console import _breadcrumb_items, _render_admin_template
 
 
@@ -63,7 +70,7 @@ def _operator_from_request() -> str:
         str(request.headers.get("X-Admin-Operator") or "").strip()
         or str(request.values.get("operator") or "").strip()
         or str(json_payload.get("operator") or "").strip()
-        or "crm_console"
+        or current_admin_operator()
     )
 
 
@@ -308,7 +315,7 @@ def admin_config_home():
         "config_overview.html",
         active_tab="overview",
         page_title="配置中心",
-        page_summary="在这里维护分配规则、标签规则、班期规则、系统设置和 AI 工具设置。",
+        page_summary="在这里维护渠道与分配规则、标签班期规则、系统设置，以及登录与权限。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("配置中心", None)),
         overview_cards=payload["cards"],
     )
@@ -354,6 +361,9 @@ def admin_config_routing():
 
 
 def admin_config_save_owner_role():
+    token_error = validate_admin_console_action_token()
+    if token_error:
+        return _routing_page(page_error=token_error)
     payload = dict(request.form)
     try:
         saved = _save_owner_role_setting(payload, operator=_operator_from_request())
@@ -363,6 +373,9 @@ def admin_config_save_owner_role():
 
 
 def admin_config_save_routing_rule():
+    token_error = validate_admin_console_action_token()
+    if token_error:
+        return _routing_page(page_error=token_error)
     payload = dict(request.form)
     try:
         saved = _save_routing_rule_setting(payload, operator=_operator_from_request())
@@ -406,6 +419,9 @@ def admin_config_signup_tags():
 
 
 def admin_config_save_signup_tag():
+    token_error = validate_admin_console_action_token()
+    if token_error:
+        return _signup_tags_page(page_error=token_error)
     payload = dict(request.form)
     try:
         saved = save_signup_tag_setting(payload, operator=_operator_from_request())
@@ -449,6 +465,9 @@ def admin_config_class_term_tags():
 
 
 def admin_config_save_class_term_tag():
+    token_error = validate_admin_console_action_token()
+    if token_error:
+        return _class_term_tags_page(page_error=token_error)
     payload = dict(request.form)
     try:
         saved = save_class_term_tag_mapping(payload, operator=_operator_from_request())
@@ -498,6 +517,9 @@ def _extract_setting_form_payload() -> dict[str, str]:
 
 
 def admin_config_save_app_settings():
+    token_error = validate_admin_console_action_token()
+    if token_error:
+        return _app_settings_page(page_error=token_error)
     if not _request_confirmed():
         return _app_settings_page(page_error="保存前请先确认本次修改。")
     try:
@@ -507,48 +529,70 @@ def admin_config_save_app_settings():
     return redirect(url_for("api.admin_config_app_settings", saved=1), code=302)
 
 
-def _mcp_tools_page(*, page_error: str = ""):
-    query = _query_text("q")
-    enabled_only = _query_bool("enabled_only")
-    payload = list_mcp_tool_settings(query=query, enabled_only=enabled_only)
-    edit_tool = _query_text("edit_tool")
+def _login_access_page(*, page_error: str = ""):
+    payload = build_admin_account_page_payload()
+    edit_id = _query_text("edit_id")
     form_row = next(
-        (row for row in payload["rows"] if row["tool_name"] == edit_tool),
-        {"enabled": True, "visible_in_console": True, "sort_order": 0},
+        (row for row in payload["rows"] if str(row["id"]) == edit_id),
+        {"is_active": True, "roles": ["viewer"], "wecom_corpid": payload.get("corp_id", "")},
     )
     return _render_config_template(
-        "config_mcp_tools.html",
-        active_tab="mcp_tools",
-        page_title="AI 工具设置",
-        page_summary="在这里维护 AI 工具的展示方式、启用状态和说明文字。",
+        "config_login_access.html",
+        active_tab="login_access",
+        page_title="登录与权限",
+        page_summary="在这里维护后台企微成员授权、角色分配、启停状态与最近登录审计。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("配置中心", url_for("api.admin_config_home")),
-            ("AI 工具设置", None),
+            ("登录与权限", None),
         ),
         page_notice="保存成功" if _query_bool("saved") else "",
         page_error=page_error,
-        filters={"q": query, "enabled_only": enabled_only},
         rows=payload["rows"],
-        auth_configured=payload["auth_configured"],
-        auth_source=payload["auth_source"],
-        summary_cards=payload["summary_cards"],
-        audit_entries=payload["audit_entries"],
+        role_options=payload["role_options"],
+        role_labels=payload["role_labels"],
+        login_audit_rows=payload["login_audit_rows"],
+        break_glass_enabled=payload["break_glass_enabled"],
+        auth_mode=payload["auth_mode"],
+        corp_id=payload["corp_id"],
         form_row=form_row,
+        can_manage_accounts=require_admin_module_access("config", write=True) == "",
     )
 
 
+def admin_config_login_access():
+    return _login_access_page()
+
+
+@require_admin_roles("config_admin")
+def admin_config_save_login_access():
+    token_error = validate_admin_console_action_token()
+    if token_error:
+        return _login_access_page(page_error=token_error)
+    payload = request.form.to_dict(flat=False)
+    payload = {
+        **payload,
+        "id": request.form.get("id"),
+        "wecom_userid": request.form.get("wecom_userid"),
+        "wecom_corpid": request.form.get("wecom_corpid"),
+        "display_name": request.form.get("display_name"),
+        "auth_source": request.form.get("auth_source"),
+        "is_active": request.form.get("is_active"),
+        "role_codes": request.form.getlist("role_codes"),
+    }
+    try:
+        saved = save_admin_user(payload, operator=_operator_from_request())
+    except ValueError as exc:
+        return _login_access_page(page_error=str(exc))
+    return redirect(url_for("api.admin_config_login_access", saved=1, edit_id=saved.get("id", "")), code=302)
+
+
 def admin_config_mcp_tools():
-    return _mcp_tools_page()
+    return redirect(url_for("api.admin_console_api_docs"), code=302)
 
 
 def admin_config_save_mcp_tool():
-    payload = dict(request.form)
-    try:
-        saved = save_mcp_tool_setting(payload, operator=_operator_from_request())
-    except ValueError as exc:
-        return _mcp_tools_page(page_error=str(exc))
-    return redirect(url_for("api.admin_config_mcp_tools", saved=1, edit_tool=saved.get("tool_name", "")), code=302)
+    return redirect(url_for("api.admin_console_api_docs"), code=302)
 
 
 def _automation_conversion_status_cards(config: dict[str, object], selected_questionnaire: dict[str, object] | None) -> list[dict[str, str]]:
@@ -781,6 +825,8 @@ def register_routes(bp):
     bp.route("/admin/marketing-automation/ui", methods=["GET"])(admin_marketing_automation_ui)
     bp.route("/admin/config/app-settings", methods=["GET"])(admin_config_app_settings)
     bp.route("/admin/config/app-settings/save", methods=["POST"])(admin_config_save_app_settings)
+    bp.route("/admin/config/login-access", methods=["GET"])(admin_config_login_access)
+    bp.route("/admin/config/login-access/save", methods=["POST"])(admin_config_save_login_access)
     bp.route("/admin/config/mcp-tools", methods=["GET"])(admin_config_mcp_tools)
     bp.route("/admin/config/mcp-tools/save", methods=["POST"])(admin_config_save_mcp_tool)
 

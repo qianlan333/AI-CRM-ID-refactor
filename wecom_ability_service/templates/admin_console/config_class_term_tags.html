@@ -82,6 +82,7 @@
     </div>
   </div>
   <form class="admin-form-grid" method="post" action="/admin/config/class-term-tags/save">
+    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
     <input type="hidden" name="mapping_id" value="{{ form_row.id or '' }}">
     <label>
       <span>班期编号</span>

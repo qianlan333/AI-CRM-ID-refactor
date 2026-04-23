@@ -27,6 +27,7 @@ from ...application.routing_config.queries import (
 )
 from ...infra.constants import USER_OPS_CLASS_TERM_TAG_GROUP_NAME
 from ...infra.settings import get_setting, mask_value
+from ..admin_auth import count_admin_users
 from ..tags import service as tags_service
 from ..user_ops import ensure_class_term_tag_mapping_seed
 from . import repo
@@ -142,6 +143,27 @@ APP_SETTING_DEFINITIONS = (
         "description": "企业微信应用的编号。",
     },
     {
+        "key": "ADMIN_AUTH_MODE",
+        "label": "后台认证模式",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "第一阶段默认 wecom_sso，表示后台主认证使用企业微信 SSO。",
+    },
+    {
+        "key": "ADMIN_LOGIN_REDIRECT_URI",
+        "label": "后台登录回调地址",
+        "mode": "editable",
+        "input_type": "url",
+        "description": "企业微信登录完成后回跳的后台地址；为空时按当前域名或可信域名推导。",
+    },
+    {
+        "key": "ADMIN_WECHAT_TRUSTED_DOMAIN",
+        "label": "后台可信域名",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "用于拼装企业微信登录回调地址的可信域名，例如 crm.example.com。",
+    },
+    {
         "key": "WECOM_API_BASE",
         "label": "企业微信接口地址",
         "mode": "editable",
@@ -241,10 +263,31 @@ APP_SETTING_DEFINITIONS = (
     },
     {
         "key": "MCP_BEARER_TOKEN",
-        "label": "AI 工具访问令牌",
+        "label": "MCP 协议访问令牌",
         "mode": "masked",
         "input_type": "password",
-        "description": "AI 工具访问令牌。已兼容统一内部接口令牌；页面不会显示完整内容；留空表示保持原值。",
+        "description": "MCP 协议访问令牌。当前仅保留 /mcp endpoint 兼容能力；页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
+        "key": "ADMIN_BREAK_GLASS_LOGIN_ENABLED",
+        "label": "启用 break-glass 应急入口",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。开启后，/login 才会展示本地兜底登录表单。",
+    },
+    {
+        "key": "ADMIN_BREAK_GLASS_USERNAME",
+        "label": "break-glass 用户名",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "本地兜底入口用户名，仅在 ADMIN_BREAK_GLASS_LOGIN_ENABLED=true 时生效。",
+    },
+    {
+        "key": "ADMIN_BREAK_GLASS_PASSWORD_HASH",
+        "label": "break-glass 密码哈希",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "使用 werkzeug 安全哈希后的兜底密码；页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "OPENCLAW_WEBHOOK_URL",
@@ -557,12 +600,11 @@ def _recent_audit_entries(target_type: str, limit: int = 8) -> list[dict[str, An
 def config_tabs(active_key: str) -> list[dict[str, Any]]:
     items = [
         {"key": "overview", "label": "概览", "href": "/admin/config"},
-        {"key": "routing", "label": "负责人 / 分配规则", "href": "/admin/config/routing"},
+        {"key": "routing", "label": "渠道 / 分配规则", "href": "/admin/config/routing"},
         {"key": "signup_tags", "label": "报名标签规则", "href": "/admin/config/signup-tags"},
         {"key": "class_term_tags", "label": "班期标签规则", "href": "/admin/config/class-term-tags"},
-        {"key": "marketing_automation", "label": "自动化转化", "href": "/admin/automation-conversion"},
         {"key": "app_settings", "label": "系统设置", "href": "/admin/config/app-settings"},
-        {"key": "mcp_tools", "label": "AI 工具设置", "href": "/admin/config/mcp-tools"},
+        {"key": "login_access", "label": "登录与权限", "href": "/admin/config/login-access"},
     ]
     return [{**item, "active": item["key"] == active_key} for item in items]
 
@@ -574,13 +616,12 @@ def build_config_home_payload() -> dict[str, Any]:
     signup_rules = tags_service.get_signup_tag_rules_config()
     class_term_rows = repo.list_class_term_tag_mappings(active_only=False)
     app_rows = list_admin_app_settings(query="", scope="")
-    mcp_rows = list_mcp_tool_settings(query="", enabled_only=False)
     return {
         "cards": [
             {
-                "label": "负责人 / 分配规则",
+                "label": "渠道 / 分配规则",
                 "value": len(routing_rows),
-                "description": "负责人角色与客户分配规则",
+                "description": "维护负责人、渠道分流与业务分配规则",
                 "href": "/admin/config/routing",
             },
             {
@@ -595,23 +636,17 @@ def build_config_home_payload() -> dict[str, Any]:
                 "description": USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
                 "href": "/admin/config/class-term-tags",
             },
-        {
-            "label": "自动化转化",
-            "value": "3 类人群 + 4 入口",
-            "description": "维护自动化转化的数据概览、自动化运营、自动化应答和模型 / Agent 配置",
-            "href": "/admin/automation-conversion",
-        },
             {
                 "label": "系统设置",
                 "value": len(app_rows["rows"]),
-                "description": "区分可直接修改项和敏感项",
+                "description": "维护渠道、Webhook 与其他系统级参数",
                 "href": "/admin/config/app-settings",
             },
             {
-                "label": "AI 工具设置",
-                "value": len(mcp_rows["rows"]),
-                "description": "管理工具启用状态和展示信息",
-                "href": "/admin/config/mcp-tools",
+                "label": "登录与权限",
+                "value": count_admin_users(),
+                "description": "维护企微成员授权、角色分配、启停状态与登录审计",
+                "href": "/admin/config/login-access",
             },
         ]
     }

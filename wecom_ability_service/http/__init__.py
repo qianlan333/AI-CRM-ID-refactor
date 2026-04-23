@@ -7,6 +7,8 @@ from .admin_customers import register_routes as register_admin_customer_console_
 from .admin_customer_pulse import register_routes as register_admin_customer_pulse_routes
 from .admin_followup_orchestrator import register_routes as register_admin_followup_orchestrator_routes
 from .admin_audit import register_routes as register_admin_audit_console_routes
+from .admin_api_docs import register_routes as register_admin_api_docs_routes
+from .internal_auth import register_routes as register_internal_auth_routes
 from .admin_mcp import register_routes as register_admin_mcp_console_routes
 from .admin_operations import register_routes as register_admin_operations_console_routes
 try:
@@ -47,6 +49,7 @@ HTTP_ROUTE_MODULES = {
     "identity": "wecom_ability_service.http.identity",
     "ops": "wecom_ability_service.http.ops",
     "settings": "wecom_ability_service.http.settings_ops",
+    "internal_auth": "wecom_ability_service.http.internal_auth",
     "customer_center": "wecom_ability_service.http.customer_center",
     "customer_automation": "wecom_ability_service.http.customer_automation",
     "automation_conversion": "wecom_ability_service.http.automation_conversion",
@@ -60,6 +63,7 @@ HTTP_ROUTE_MODULES = {
     "admin_console": "wecom_ability_service.http.admin_console",
     "admin_jobs": "wecom_ability_service.http.admin_jobs",
     "admin_audit": "wecom_ability_service.http.admin_audit",
+    "admin_api_docs": "wecom_ability_service.http.admin_api_docs",
     "admin_customers": "wecom_ability_service.http.admin_customers",
     "admin_customer_pulse": "wecom_ability_service.http.admin_customer_pulse",
     "admin_followup_orchestrator": "wecom_ability_service.http.admin_followup_orchestrator",
@@ -83,12 +87,14 @@ HTTP_ROUTE_PLACEMENT = {
     ),
     "admin": (
         "admin_console.py for /admin home, shell helpers, and legacy shell embeds",
+        "internal_auth.py for /login, /logout, /auth/wecom/*, session auth, RBAC guard, and old-page sunset interception",
         "admin_jobs.py for /admin/jobs and confirmed sync/task actions",
         "admin_audit.py for /admin/audit governance page and /api/admin/audit/logs",
         "admin_customers.py for /admin/customers* pages and customer detail actions",
         "admin_customer_pulse.py for /admin/customer-pulse and /api/admin/customer-pulse* action-card flows",
         "admin_followup_orchestrator.py for /admin/followup-orchestrator and /api/admin/followup-orchestrator* mission orchestration flows",
-        "admin_mcp.py for /admin/mcp console, preflight, and safe sample-call actions",
+        "admin_api_docs.py for /admin/api-docs human-readable API documentation",
+        "admin_mcp.py for legacy /admin/mcp compatibility redirect only",
         "admin_operations.py for /admin/user-ops, /admin/class-users, and confirmed operations actions",
         "admin_questionnaire_console.py for /admin/questionnaires* shell pages",
         "admin_config.py for /admin/config* pages and /api/admin/config* controllers",
@@ -114,7 +120,9 @@ HTTP_ROUTE_REGISTRARS = (
     ("identity", register_identity_routes),
     ("ops", register_ops_routes),
     ("settings", register_settings_routes),
+    ("internal_auth", register_internal_auth_routes),
     ("admin_console", register_admin_console_routes),
+    ("admin_api_docs", register_admin_api_docs_routes),
     ("admin_jobs", register_admin_jobs_console_routes),
     ("admin_audit", register_admin_audit_console_routes),
     ("admin_customers", register_admin_customer_console_routes),

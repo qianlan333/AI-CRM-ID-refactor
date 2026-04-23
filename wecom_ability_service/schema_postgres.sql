@@ -544,6 +544,61 @@ CREATE TABLE IF NOT EXISTS admin_operation_logs (
 CREATE INDEX IF NOT EXISTS idx_admin_operation_logs_target
 ON admin_operation_logs (target_type, target_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS admin_users (
+    id BIGSERIAL PRIMARY KEY,
+    wecom_userid TEXT NOT NULL,
+    wecom_corpid TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    auth_source TEXT NOT NULL DEFAULT 'wecom_sso',
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_users_wecom_identity
+ON admin_users (wecom_corpid, wecom_userid);
+
+CREATE INDEX IF NOT EXISTS idx_admin_users_active_identity
+ON admin_users (is_active, display_name, wecom_userid);
+
+CREATE TABLE IF NOT EXISTS admin_user_roles (
+    id BIGSERIAL PRIMARY KEY,
+    admin_user_id BIGINT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+    role_code TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_user_roles_binding
+ON admin_user_roles (admin_user_id, role_code);
+
+CREATE INDEX IF NOT EXISTS idx_admin_user_roles_role_code
+ON admin_user_roles (role_code, admin_user_id);
+
+CREATE TABLE IF NOT EXISTS admin_login_audit (
+    id BIGSERIAL PRIMARY KEY,
+    admin_user_id BIGINT REFERENCES admin_users(id) ON DELETE SET NULL,
+    login_type TEXT NOT NULL DEFAULT '',
+    login_result TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_login_audit_created
+ON admin_login_audit (created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS admin_sso_states (
+    state_token TEXT PRIMARY KEY,
+    login_kind TEXT NOT NULL DEFAULT 'wecom_qr',
+    next_path TEXT NOT NULL DEFAULT '/admin/automation-conversion',
+    expires_at TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_sso_states_expires
+ON admin_sso_states (expires_at);
+
 CREATE TABLE IF NOT EXISTS archive_sync_state (
     state_key TEXT PRIMARY KEY,
     last_seq BIGINT NOT NULL DEFAULT 0,

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 from wecom_ability_service import create_app
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import init_db
+from wecom_ability_service.domains.admin_auth import save_admin_user
 
 
 @pytest.fixture()
@@ -32,10 +33,21 @@ def app(tmp_path):
             "WECOM_CALLBACK_TOKEN": "callback-token",
             "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
             "MCP_BEARER_TOKEN": "mcp-token",
+            "SECRET_KEY": "test-secret-key",
         }
     )
     with app.app_context():
         init_db()
+        save_admin_user(
+            {
+                "wecom_userid": "root.admin",
+                "display_name": "Root Admin",
+                "wecom_corpid": "ww-test",
+                "role_codes": ["super_admin"],
+                "is_active": "1",
+            },
+            operator="test-suite",
+        )
     yield app
 
 
@@ -44,124 +56,57 @@ def client(app):
     return app.test_client()
 
 
-def _seed_customer(app) -> None:
-    with app.app_context():
-        db = get_db()
-        db.execute(
-            """
-            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
-            VALUES ('ext-1', '客户一', 'owner-a', '高意向', 'seed customer', '2026-04-02 09:30:00')
-            """
-        )
-        db.execute(
-            """
-            INSERT INTO owner_role_map (userid, display_name, role, active)
-            VALUES ('owner-a', '顾问甲', 'sales', 1)
-            """
-        )
-        db.commit()
-
-
-def test_admin_mcp_console_page_renders_registry_and_runtime(client):
-    response = client.get("/admin/mcp")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "AI 工具控制台" in html
-    assert "AI 工具连接状态" in html
-    assert "工具清单" in html
-    assert "试运行" in html
-    assert "resolve_customer" in html
-    assert "客户定位查询" in html
-
-
-def test_admin_mcp_preflight_writes_audit_log(app, client):
-    response = client.post("/admin/mcp/preflight", data={"operator": "tester-mcp"})
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "环境检查已执行。" in html
-    assert "本次检查" in html
-
-    with app.app_context():
-        row = get_db().execute(
-            """
-            SELECT operator, target_type, target_id
-            FROM admin_operation_logs
-            WHERE target_type = 'mcp_preflight'
-            ORDER BY id DESC
-            LIMIT 1
-            """
-        ).fetchone()
-        assert row is not None
-        assert row["operator"] == "tester-mcp"
-        assert row["target_id"] == "/mcp"
-
-
-def test_admin_mcp_sample_call_defaults_task_tool_to_dry_run(app, client):
-    _seed_customer(app)
-
-    response = client.post(
-        "/admin/mcp/sample-call",
-        data={
-            "tool_name": "create_private_message_task",
-            "arguments_json": json.dumps(
-                {
-                    "external_userid": "ext-1",
-                    "content": "你好，跟进一下报名进度",
-                },
-                ensure_ascii=False,
-            ),
-            "operator": "tester-preview",
+def _login(client, monkeypatch):
+    start = client.get("/auth/wecom/start?mode=qr&next=/admin/api-docs", follow_redirects=False)
+    state = parse_qs(urlparse(start.headers["Location"]).query)["state"][0]
+    monkeypatch.setattr(
+        "wecom_ability_service.http.internal_auth.exchange_code_for_wecom_user",
+        lambda code: {
+            "wecom_userid": "root.admin",
+            "display_name": "Root Admin",
+            "wecom_corpid": "ww-test",
+            "raw_identity": {"UserId": "root.admin"},
         },
     )
+    callback = client.get(f"/auth/wecom/callback?code=mock-code&state={state}", follow_redirects=False)
+    assert callback.status_code == 302
+
+
+def test_admin_mcp_console_redirects_to_api_docs(client):
+    response = client.get("/admin/mcp")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/api-docs")
+
+
+def test_admin_api_docs_page_renders_human_readable_sections(client, monkeypatch):
+    _login(client, monkeypatch)
+    response = client.get("/admin/api-docs")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "试运行预览已生成。" in html
-    assert "create_private_message_task" in html
-    assert "实际执行否" in html
-
-    with app.app_context():
-        outbound_count = get_db().execute("SELECT COUNT(*) AS total FROM outbound_tasks").fetchone()["total"]
-        log = get_db().execute(
-            """
-            SELECT operator, action_type, target_type, target_id
-            FROM admin_operation_logs
-            WHERE target_type = 'mcp_sample_call'
-            ORDER BY id DESC
-            LIMIT 1
-            """
-        ).fetchone()
-        assert outbound_count == 0
-        assert log["operator"] == "tester-preview"
-        assert log["action_type"] == "preview_mcp_sample_call"
-        assert log["target_id"] == "create_private_message_task"
+    assert "API 文档" in html
+    assert "企业微信自建应用登录" in html
+    assert "自动化运营核心接口" in html
+    assert "问卷核心接口" in html
+    assert "常见错误码" in html
 
 
-def test_admin_mcp_sample_call_blocks_live_high_risk_without_confirmation(app, client):
-    _seed_customer(app)
+def test_admin_mcp_preflight_redirects_to_api_docs(client):
+    response = client.post("/admin/mcp/preflight", data={"operator": "tester-mcp"})
 
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/api-docs")
+
+
+def test_admin_mcp_sample_call_redirects_to_api_docs(client):
     response = client.post(
         "/admin/mcp/sample-call",
         data={
             "tool_name": "create_private_message_task",
-            "arguments_json": json.dumps(
-                {
-                    "external_userid": "ext-1",
-                    "content": "需要立即发送",
-                },
-                ensure_ascii=False,
-            ),
-            "live_run": "1",
             "operator": "tester-live",
         },
     )
-    html = response.get_data(as_text=True)
 
-    assert response.status_code == 200
-    assert "高风险工具需要二次确认" in html
-
-    with app.app_context():
-        outbound_count = get_db().execute("SELECT COUNT(*) AS total FROM outbound_tasks").fetchone()["total"]
-        assert outbound_count == 0
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/api-docs")

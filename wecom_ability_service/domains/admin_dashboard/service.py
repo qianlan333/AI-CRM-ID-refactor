@@ -4,60 +4,40 @@ from typing import Any
 
 from flask import current_app
 
+from ..admin_auth import admin_role_can_access_module
 from ..admin_jobs import build_jobs_dashboard_groups, build_jobs_runtime_snapshot
 from ..customer_pulse import build_customer_pulse_dashboard_group, is_customer_pulse_inbox_enabled
 from ..customer_pulse.access import (
-    CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
     build_customer_pulse_legacy_tenant_context,
     current_customer_pulse_request_access_context,
-    customer_pulse_has_permission,
 )
-from ..followup_orchestrator import is_followup_orchestrator_enabled
 from . import repo
 
 ADMIN_NAV_ITEMS = (
-    {"key": "workbench", "label": "工作台", "endpoint": "api.admin_console_home"},
-    {"key": "customers", "label": "客户", "endpoint": "api.admin_console_customers"},
-    {"key": "customer_pulse", "label": "AI推进", "endpoint": "api.admin_customer_pulse_inbox", "feature_flag": "ai_customer_pulse"},
-    {"key": "followup_orchestrator", "label": "团队编排", "endpoint": "api.admin_followup_orchestrator", "feature_flag": "ai_followup_orchestrator"},
-    {"key": "operations", "label": "运营", "endpoint": "api.admin_console_user_ops"},
-    {"key": "automation_conversion", "label": "自动化转化", "endpoint": "api.admin_automation_conversion"},
+    {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
     {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
-    {"key": "mcp", "label": "AI 工具", "endpoint": "api.admin_console_mcp"},
     {"key": "config", "label": "配置", "endpoint": "api.admin_config_home"},
-    {"key": "jobs", "label": "同步任务", "endpoint": "api.admin_console_jobs"},
-    {"key": "audit", "label": "操作记录", "endpoint": "api.admin_audit_logs"},
-    {"key": "system", "label": "系统", "endpoint": "api.admin_console_system"},
+    {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_console_api_docs"},
 )
 
 
-def _customer_pulse_page_visible() -> bool:
-    access_context = current_customer_pulse_request_access_context()
-    return is_customer_pulse_inbox_enabled(access_context=access_context) and customer_pulse_has_permission(
-        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
-        access_context=access_context,
-    )
+def _current_admin_role_codes() -> list[str]:
+    from ...http.internal_auth import current_admin_session_user
 
-
-def _followup_orchestrator_page_visible() -> bool:
-    access_context = current_customer_pulse_request_access_context()
-    return is_followup_orchestrator_enabled(access_context=access_context) and customer_pulse_has_permission(
-        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
-        access_context=access_context,
-    )
+    user = current_admin_session_user()
+    return list((user or {}).get("roles") or [])
 
 
 def list_admin_navigation(active_nav: str) -> list[dict[str, Any]]:
-    normalized_active_nav = str(active_nav or "").strip() or "workbench"
-    return [
-        {**item, "active": item["key"] == normalized_active_nav}
-        for item in ADMIN_NAV_ITEMS
-        if (
-            not item.get("feature_flag")
-            or (item.get("feature_flag") == "ai_customer_pulse" and _customer_pulse_page_visible())
-            or (item.get("feature_flag") == "ai_followup_orchestrator" and _followup_orchestrator_page_visible())
-        )
-    ]
+    normalized_active_nav = str(active_nav or "").strip() or "automation_conversion"
+    role_codes = _current_admin_role_codes()
+    items = []
+    for item in ADMIN_NAV_ITEMS:
+        module_key = str(item["key"] or "").strip()
+        if role_codes and not admin_role_can_access_module(role_codes, module_key):
+            continue
+        items.append({**item, "active": module_key == normalized_active_nav})
+    return items
 
 
 def build_admin_shell_status() -> dict[str, Any]:

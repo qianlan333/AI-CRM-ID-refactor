@@ -1,25 +1,12 @@
 from __future__ import annotations
 
-from flask import render_template, url_for
+from flask import redirect, render_template, url_for
 
-from ..application.ai_assist import (
-    CustomerPulseFeatureGateQueryDTO,
-    FollowupFeatureGateQueryDTO,
-    GetCustomerPulseFeatureGateQuery,
-    GetFollowupOrchestratorFeatureGateQuery,
-)
 from ..domains.admin_audit import build_risk_control_rows, build_runbook_rows
 from ..domains.admin_dashboard import (
     build_admin_shell_status,
-    build_dashboard_summary,
-    build_dashboard_todos,
     build_system_status_payload,
     list_admin_navigation,
-)
-from ..domains.customer_pulse.access import (
-    CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
-    current_customer_pulse_request_access_context,
-    customer_pulse_has_permission,
 )
 from .common import _deprecated_admin_redirect
 
@@ -39,6 +26,8 @@ def _render_admin_template(
     breadcrumbs: list[dict[str, str]],
     **extra,
 ):
+    from .internal_auth import current_admin_session_user, ensure_admin_console_action_token
+
     return render_template(
         f"admin_console/{template_name}",
         page_title=page_title,
@@ -46,6 +35,8 @@ def _render_admin_template(
         breadcrumbs=breadcrumbs,
         nav_items=list_admin_navigation(active_nav),
         shell_status=build_admin_shell_status(),
+        current_admin_user=current_admin_session_user(),
+        admin_action_token=extra.pop("admin_action_token", ensure_admin_console_action_token()),
         show_shell_meta=extra.pop("show_shell_meta", True),
         show_page_header=extra.pop("show_page_header", True),
         **extra,
@@ -63,95 +54,8 @@ def render_admin_user_ops_shell():
 
 
 def admin_console_home():
-    access_context = current_customer_pulse_request_access_context()
-    pulse_feature_gate = GetCustomerPulseFeatureGateQuery()(
-        CustomerPulseFeatureGateQueryDTO(access_context=dict(access_context))
-    )
-    customer_pulse_page_visible = bool(pulse_feature_gate.get("enabled")) and bool(
-        (pulse_feature_gate.get("permissions") or {}).get("page_visible")
-    )
-    followup_feature_gate = GetFollowupOrchestratorFeatureGateQuery()(
-        FollowupFeatureGateQueryDTO(access_context=dict(access_context))
-    )
-    followup_orchestrator_page_visible = bool(followup_feature_gate.get("enabled")) and customer_pulse_has_permission(
-        CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
-        access_context=access_context,
-    )
-    quick_links = [
-        {
-            "label": "进入客户中心",
-            "description": "查看客户资料、沟通记录、标签和任务。",
-            "href": url_for("api.admin_console_customers"),
-        },
-        {
-            "label": "进入问卷中心",
-            "description": "管理问卷、查看提交结果和发布状态。",
-            "href": url_for("api.admin_console_questionnaires"),
-        },
-        {
-            "label": "进入运营管理",
-            "description": "查看运营名单、班期、导入记录和作业状态。",
-            "href": url_for("api.admin_console_user_ops"),
-        },
-        *(
-            [
-                {
-                    "label": "进入 AI推进",
-                    "description": "按行动卡流查看今天该跟进谁、先做什么。",
-                    "href": url_for("api.admin_customer_pulse_inbox"),
-                }
-            ]
-            if customer_pulse_page_visible
-            else []
-        ),
-        *(
-            [
-                {
-                    "label": "进入团队编排",
-                    "description": "按任务包、波次和团队负载查看今天谁接谁、哪些客户需要升级。",
-                    "href": url_for("api.admin_followup_orchestrator"),
-                }
-            ]
-            if followup_orchestrator_page_visible
-            else []
-        ),
-        {
-            "label": "进入同步任务",
-            "description": "查看聊天同步、回调状态、消息批次和待处理作业。",
-            "href": url_for("api.admin_console_jobs"),
-        },
-        {
-            "label": "进入 AI 工具",
-            "description": "查看 AI 工具状态，并做安全试运行。",
-            "href": url_for("api.admin_console_mcp"),
-        },
-        {
-            "label": "进入配置中心",
-            "description": "维护负责人、分配规则、标签规则和系统设置。",
-            "href": url_for("api.admin_config_home"),
-        },
-        {
-            "label": "进入操作记录",
-            "description": "查看后台关键操作和修改记录。",
-            "href": url_for("api.admin_audit_logs"),
-        },
-    ]
-    system_status = build_system_status_payload()
-    dashboard_summary = build_dashboard_summary()
-    dashboard_todos = build_dashboard_todos()
-    return _render_admin_template(
-        "dashboard.html",
-        active_nav="workbench",
-        page_title="工作台",
-        page_summary="在这里可以快速查看系统是否正常、关键业务数据以及待处理事项。",
-        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("工作台", None)),
-        system_status=system_status,
-        dashboard_summary=dashboard_summary,
-        dashboard_cards=dashboard_summary["cards"],
-        todo_groups=dashboard_todos["groups"],
-        todo_total=dashboard_todos["total_pending"],
-        quick_links=quick_links,
-    )
+    # Phase 1 shell slimming: admin root no longer renders the retired workbench.
+    return redirect(url_for("api.admin_automation_conversion"), code=302)
 
 
 def admin_console_system():

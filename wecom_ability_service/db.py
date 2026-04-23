@@ -123,6 +123,18 @@ def _sqlite_table_exists(db, table_name: str) -> bool:
     return bool(_sqlite_table_sql(db, table_name))
 
 
+def _postgres_table_columns(db, table_name: str) -> set[str]:
+    rows = db.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = ?
+        """,
+        (table_name,),
+    ).fetchall()
+    return {row["column_name"] for row in rows}
+
+
 def _ensure_sqlite_questionnaire_question_fields(db) -> None:
     create_sql = _sqlite_table_sql(db, "questionnaire_questions").lower()
     if not create_sql:
@@ -2157,6 +2169,158 @@ def _ensure_sqlite_customer_pulse_tables(db) -> None:
     )
 
 
+def _ensure_sqlite_admin_auth_tables(db) -> None:
+    if not _sqlite_table_exists(db, "admin_users"):
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS admin_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wecom_userid TEXT NOT NULL DEFAULT '',
+                wecom_corpid TEXT NOT NULL DEFAULT '',
+                display_name TEXT NOT NULL DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                auth_source TEXT NOT NULL DEFAULT 'wecom_sso',
+                last_login_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+    columns = _sqlite_table_columns(db, "admin_users")
+    if "wecom_userid" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN wecom_userid TEXT NOT NULL DEFAULT ''")
+        columns.add("wecom_userid")
+    if "wecom_corpid" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN wecom_corpid TEXT NOT NULL DEFAULT ''")
+        columns.add("wecom_corpid")
+    if "auth_source" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN auth_source TEXT NOT NULL DEFAULT 'wecom_sso'")
+        columns.add("auth_source")
+    if "last_login_at" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN last_login_at TEXT")
+        columns.add("last_login_at")
+    if "created_at" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        columns.add("created_at")
+    if "updated_at" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        columns.add("updated_at")
+    if "is_active" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+        columns.add("is_active")
+    legacy_columns = _sqlite_table_columns(db, "admin_users")
+    if "username" in legacy_columns:
+        db.execute(
+            """
+            UPDATE admin_users
+            SET wecom_userid = COALESCE(NULLIF(wecom_userid, ''), username)
+            WHERE COALESCE(NULLIF(wecom_userid, ''), '') = ''
+            """
+        )
+    db.execute(
+        """
+        UPDATE admin_users
+        SET wecom_corpid = COALESCE(NULLIF(wecom_corpid, ''), ?)
+        WHERE COALESCE(NULLIF(wecom_corpid, ''), '') = ''
+        """,
+        (str(current_app.config.get("WECOM_CORP_ID", "") or ""),),
+    )
+    if "password_hash" in legacy_columns:
+        db.execute(
+            """
+            UPDATE admin_users
+            SET auth_source = 'legacy_migrated'
+            WHERE COALESCE(NULLIF(password_hash, ''), '') <> ''
+            """
+        )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_users_wecom_identity
+        ON admin_users (wecom_corpid, wecom_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_users_active_identity
+        ON admin_users (is_active, display_name, wecom_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_user_roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+            role_code TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_user_roles_binding
+        ON admin_user_roles (admin_user_id, role_code)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_user_roles_role_code
+        ON admin_user_roles (role_code, admin_user_id)
+        """
+    )
+    if "role_code" in legacy_columns:
+        rows = db.execute(
+            """
+            SELECT id, role_code
+            FROM admin_users
+            WHERE COALESCE(role_code, '') <> ''
+            """
+        ).fetchall()
+        for row in rows:
+            db.execute(
+                """
+                INSERT OR IGNORE INTO admin_user_roles (admin_user_id, role_code, created_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                """,
+                (int(row["id"]), str(row["role_code"] or "").strip()),
+            )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_login_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+            login_type TEXT NOT NULL DEFAULT '',
+            login_result TEXT NOT NULL DEFAULT '',
+            ip TEXT NOT NULL DEFAULT '',
+            user_agent TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_login_audit_created
+        ON admin_login_audit (created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_sso_states (
+            state_token TEXT PRIMARY KEY,
+            login_kind TEXT NOT NULL DEFAULT 'wecom_qr',
+            next_path TEXT NOT NULL DEFAULT '/admin/automation-conversion',
+            expires_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_sso_states_expires
+        ON admin_sso_states (expires_at)
+        """
+    )
+
+
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
     db.executescript(schema_path.read_text(encoding="utf-8"))
@@ -2169,6 +2333,7 @@ def _init_sqlite(db) -> None:
     _migrate_sqlite_conversion_agent_pools_to_bindings(db)
     _ensure_sqlite_automation_sop_v2_columns(db)
     _ensure_sqlite_customer_pulse_tables(db)
+    _ensure_sqlite_admin_auth_tables(db)
     _ensure_automation_sop_v1_seed_data()
     _ensure_automation_agent_prompt_defaults()
     columns = _sqlite_table_columns(db, "archived_messages")
@@ -2616,6 +2781,147 @@ def _ensure_postgres_customer_marketing_state_tables(db) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_marketing_state_current_person_id_non_null
         ON customer_marketing_state_current (person_id)
         WHERE person_id IS NOT NULL
+        """
+    )
+
+
+def _ensure_postgres_admin_auth_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id BIGSERIAL PRIMARY KEY,
+            wecom_userid TEXT NOT NULL DEFAULT '',
+            wecom_corpid TEXT NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            auth_source TEXT NOT NULL DEFAULT 'wecom_sso',
+            last_login_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS admin_users
+        ADD COLUMN IF NOT EXISTS wecom_userid TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS admin_users
+        ADD COLUMN IF NOT EXISTS wecom_corpid TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS admin_users
+        ADD COLUMN IF NOT EXISTS auth_source TEXT NOT NULL DEFAULT 'wecom_sso'
+        """
+    )
+    admin_user_columns = _postgres_table_columns(db, "admin_users")
+    if "username" in admin_user_columns:
+        db.execute(
+            """
+            UPDATE admin_users
+            SET wecom_userid = COALESCE(NULLIF(wecom_userid, ''), username)
+            WHERE COALESCE(NULLIF(wecom_userid, ''), '') = ''
+            """
+        )
+    db.execute(
+        """
+        UPDATE admin_users
+        SET wecom_corpid = COALESCE(NULLIF(wecom_corpid, ''), ?)
+        WHERE COALESCE(NULLIF(wecom_corpid, ''), '') = ''
+        """,
+        (str(current_app.config.get("WECOM_CORP_ID", "") or ""),),
+    )
+    if "password_hash" in admin_user_columns:
+        db.execute(
+            """
+            UPDATE admin_users
+            SET auth_source = 'legacy_migrated'
+            WHERE COALESCE(NULLIF(password_hash, ''), '') <> ''
+            """
+        )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_users_wecom_identity
+        ON admin_users (wecom_corpid, wecom_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_users_active_identity
+        ON admin_users (is_active, display_name, wecom_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_user_roles (
+            id BIGSERIAL PRIMARY KEY,
+            admin_user_id BIGINT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+            role_code TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_user_roles_binding
+        ON admin_user_roles (admin_user_id, role_code)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_user_roles_role_code
+        ON admin_user_roles (role_code, admin_user_id)
+        """
+    )
+    if "role_code" in admin_user_columns:
+        db.execute(
+            """
+            INSERT INTO admin_user_roles (admin_user_id, role_code, created_at)
+            SELECT id, role_code, CURRENT_TIMESTAMP
+            FROM admin_users
+            WHERE COALESCE(role_code, '') <> ''
+            ON CONFLICT (admin_user_id, role_code) DO NOTHING
+            """
+        )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_login_audit (
+            id BIGSERIAL PRIMARY KEY,
+            admin_user_id BIGINT REFERENCES admin_users(id) ON DELETE SET NULL,
+            login_type TEXT NOT NULL DEFAULT '',
+            login_result TEXT NOT NULL DEFAULT '',
+            ip TEXT NOT NULL DEFAULT '',
+            user_agent TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_login_audit_created
+        ON admin_login_audit (created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_sso_states (
+            state_token TEXT PRIMARY KEY,
+            login_kind TEXT NOT NULL DEFAULT 'wecom_qr',
+            next_path TEXT NOT NULL DEFAULT '/admin/automation-conversion',
+            expires_at TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_sso_states_expires
+        ON admin_sso_states (expires_at)
         """
     )
     db.execute(
@@ -3205,6 +3511,7 @@ def _init_postgres(db) -> None:
     _migrate_postgres_conversion_agent_pools_to_bindings(db)
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)
+    _ensure_postgres_admin_auth_tables(db)
     _ensure_automation_sop_v1_seed_data()
     _ensure_automation_agent_prompt_defaults()
     db.execute("ALTER TABLE questionnaire_questions DROP CONSTRAINT IF EXISTS questionnaire_questions_type_check")

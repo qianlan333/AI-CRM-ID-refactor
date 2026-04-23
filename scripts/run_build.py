@@ -53,11 +53,18 @@ def _flask_smoke_build() -> None:
         with app.app_context():
             init_db()
         client = app.test_client()
+        with client.session_transaction() as sess:
+            sess["admin_session_user_id"] = 0
+            sess["admin_session_wecom_userid"] = ""
+            sess["admin_session_role_list"] = ["super_admin"]
+            sess["admin_session_login_type"] = "break_glass"
+            sess["admin_session_display_name"] = "build-smoke"
+            sess["admin_session_break_glass_username"] = "build-smoke"
         response = client.get("/admin/customer-pulse")
-        if response.status_code != 200:
+        if response.status_code != 410:
             raise SystemExit(f"build smoke route failed: status={response.status_code}")
         orchestrator_response = client.get("/admin/followup-orchestrator")
-        if orchestrator_response.status_code != 200:
+        if orchestrator_response.status_code != 410:
             raise SystemExit(f"build smoke followup orchestrator route failed: status={orchestrator_response.status_code}")
         admin_api_response = client.get("/api/admin/customer-pulse")
         if admin_api_response.status_code != 200:

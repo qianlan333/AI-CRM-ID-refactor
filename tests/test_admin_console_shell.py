@@ -158,26 +158,9 @@ def _seed_dashboard_data(app):
 
 def test_admin_console_home_renders_navigation_and_status_chips(client):
     response = client.get("/admin")
-    html = response.get_data(as_text=True)
 
-    assert response.status_code == 200
-    assert "CRM Console" in html
-    assert "客户管理后台" in html
-    assert "业务管理后台" in html
-    assert "工作台" in html
-    assert "系统概况" in html
-    assert "业务总览" in html
-    assert "待处理事项" in html
-    assert "快捷入口" in html
-    assert "客户" in html
-    assert "运营" in html
-    assert "问卷" in html
-    assert "AI 工具" in html
-    assert "配置" in html
-    assert "同步任务" in html
-    assert "操作记录" in html
-    assert "系统" in html
-    assert "当前版本" in html
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/automation-conversion")
 
 
 def test_admin_dashboard_shell_context_api_returns_shell_status(client):
@@ -241,18 +224,10 @@ def test_admin_dashboard_apis_return_aggregated_metrics_and_todos(app, client):
     assert groups["mcp_runtime"]["count"] == 1
 
 
-def test_admin_console_home_renders_dashboard_sections_from_aggregates(app, client):
+def test_admin_console_home_redirects_to_automation_conversion_after_shell_slimming(app, client):
     _seed_dashboard_data(app)
 
-    response = client.get("/admin")
-    html = response.get_data(as_text=True)
+    response = client.get("/admin", follow_redirects=False)
 
-    assert response.status_code == 200
-    assert "聊天消息" in html
-    assert "运营名单" in html
-    assert "待确认消息批次" in html
-    assert "待处理作业" in html
-    assert "问卷处理失败" in html
-    assert "进入客户中心" in html
-    assert "进入同步任务" in html
-    assert "进入配置中心" in html
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/automation-conversion")

@@ -1,0 +1,50 @@
+{% extends "admin_console/base.html" %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>文档说明</h2>
+      <p>当前文档面向后台运营与技术同学，替代原 AI 工具控制台。</p>
+    </div>
+  </div>
+  <div class="admin-audit-list">
+    {% for item in compatibility_notes %}
+    <div class="admin-audit-item">
+      <strong>兼容说明</strong>
+      <span>{{ item }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% for section in doc_sections %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>{{ section.title }}</h2>
+    </div>
+  </div>
+  <ul class="admin-state-list">
+    {% for item in section["items"] %}
+    <li>{{ item }}</li>
+    {% endfor %}
+  </ul>
+  {% if section["examples"] %}
+  <div class="admin-card-grid">
+    {% for example in section["examples"] %}
+    <article class="admin-card admin-stat-card admin-stat-card--nested">
+      <div class="admin-card-label">{{ example.label }}</div>
+      <div class="admin-card-copy">
+        <p><strong>请求</strong></p>
+        <pre><code>{{ example.request }}</code></pre>
+        <p><strong>响应</strong></p>
+        <pre><code>{{ example.response }}</code></pre>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

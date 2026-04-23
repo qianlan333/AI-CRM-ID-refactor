@@ -55,14 +55,22 @@ def app(tmp_path):
 
 @pytest.fixture()
 def client(app):
-    return app.test_client()
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["admin_session_user_id"] = 0
+        sess["admin_session_wecom_userid"] = ""
+        sess["admin_session_role_list"] = ["super_admin"]
+        sess["admin_session_login_type"] = "break_glass"
+        sess["admin_session_display_name"] = "pulse-test-admin"
+        sess["admin_session_break_glass_username"] = "pulse-test-admin"
+    return client
 
 
 def _fmt(moment: datetime) -> str:
     return moment.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _admin_action_token(client, path: str = "/admin/customer-pulse", headers: dict[str, str] | None = None) -> str:
+def _admin_action_token(client, path: str = "/admin/api-docs", headers: dict[str, str] | None = None) -> str:
     client.get(path, headers=headers or {})
     with client.session_transaction() as sess:
         return str(sess["admin_console_action_token"])
@@ -839,20 +847,18 @@ def test_customer_pulse_page_shows_placeholder_when_flag_disabled(client):
     response = client.get("/admin/customer-pulse")
     html = response.get_data(as_text=True)
 
-    assert response.status_code == 200
-    assert "功能未启用" in html
-    assert "ai_customer_pulse" in html
+    assert response.status_code == 410
+    assert "模块已下线" in html
+    assert "第一阶段只保留 自动化运营、问卷、配置、API 文档" in html
 
 
 def test_customer_pulse_entry_appears_in_admin_home_when_flag_enabled(app, client):
     app.config["ai_customer_pulse"] = True
 
     response = client.get("/admin")
-    html = response.get_data(as_text=True)
 
-    assert response.status_code == 200
-    assert "AI推进" in html
-    assert "进入 AI推进" in html
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/automation-conversion")
 
 
 def test_customer_pulse_flag_policy_supports_tenant_and_role_rollout(app, client):
@@ -892,29 +898,21 @@ def test_customer_pulse_flag_policy_supports_tenant_and_role_rollout(app, client
         },
     )
 
-    alpha_home = client.get(
-        "/admin",
+    alpha_api = client.get(
+        "/api/admin/customer-pulse",
         headers=_request_scoped_headers(tenant_key="tenant-alpha", admin_userid="sales-a", admin_role="sales"),
-    )
-    beta_sales_home = client.get(
-        "/admin",
-        headers=_request_scoped_headers(tenant_key="tenant-beta", admin_userid="sales-b", admin_role="sales"),
-    )
-    beta_ops_home = client.get(
-        "/admin",
-        headers=_request_scoped_headers(tenant_key="tenant-beta", admin_userid="ops-b", admin_role="ops"),
     )
     beta_sales_api = client.get(
         "/api/admin/customer-pulse",
         headers=_request_scoped_headers(tenant_key="tenant-beta", admin_userid="sales-b", admin_role="sales"),
     )
+    beta_ops_api = client.get(
+        "/api/admin/customer-pulse",
+        headers=_request_scoped_headers(tenant_key="tenant-beta", admin_userid="ops-b", admin_role="ops"),
+    )
 
-    assert alpha_home.status_code == 200
-    assert "进入 AI推进" in alpha_home.get_data(as_text=True)
-    assert beta_sales_home.status_code == 200
-    assert "进入 AI推进" not in beta_sales_home.get_data(as_text=True)
-    assert beta_ops_home.status_code == 200
-    assert "进入 AI推进" in beta_ops_home.get_data(as_text=True)
+    assert alpha_api.status_code == 200
+    assert beta_ops_api.status_code == 200
     assert beta_sales_api.status_code == 403
     assert beta_sales_api.get_json()["code"] == "feature_disabled"
 
@@ -951,21 +949,9 @@ def test_customer_pulse_rollout_whitelist_summary_requires_default_disabled_and_
 
 def test_customer_pulse_refresh_execute_and_feedback_flow(app, client):
     app.config["ai_customer_pulse"] = True
-    _seed_reply_draft_candidate_scenario(app)
+    external_userid = _seed_reply_draft_candidate_scenario(app)
     action_token = _admin_action_token(client)
-
-    refresh_response = client.post(
-        "/admin/customer-pulse/actions/refresh",
-        data={"admin_action_token": action_token, "operator": "pulse-admin"},
-    )
-    refresh_html = refresh_response.get_data(as_text=True)
-
-    assert refresh_response.status_code == 200
-    assert "AI推进" in refresh_html
-    assert "推进客户一" in refresh_html
-    assert "今天先处理客户回复" in refresh_html
-    assert "编辑草稿" in refresh_html
-    assert "查看面板" in refresh_html
+    _force_sync_customer_pulse(client, [external_userid])
 
     inbox_response = client.get("/api/admin/customer-pulse")
     inbox_payload = inbox_response.get_json()
@@ -3094,17 +3080,14 @@ def test_customer_pulse_page_permission_hides_entry_and_rejects_inbox_api(app, c
         query_string={"external_userid": external_userid},
     )
 
-    assert admin_home.status_code == 200
-    admin_html = admin_home.get_data(as_text=True)
-    assert "进入 AI推进" not in admin_html
-    assert inbox_page.status_code == 403
-    assert "无权访问" in inbox_page.get_data(as_text=True)
+    assert admin_home.status_code == 302
+    assert admin_home.headers["Location"].endswith("/admin/automation-conversion")
+    assert inbox_page.status_code == 410
+    assert "模块已下线" in inbox_page.get_data(as_text=True)
     assert inbox_api.status_code == 403
     assert inbox_api.get_json()["code"] == "inbox_view_forbidden"
-    assert customer_page.status_code == 200
-    customer_html = customer_page.get_data(as_text=True)
-    assert "AI 下一步" in customer_html
-    assert "查看 AI推进" not in customer_html
+    assert customer_page.status_code == 410
+    assert "模块已下线" in customer_page.get_data(as_text=True)
     assert widget_api.status_code == 200
     assert widget_api.get_json()["customer_pulse"]["card"]["external_userid"] == external_userid
 
