@@ -10,6 +10,13 @@ def _db_bool(value: bool) -> bool | int:
     return value if get_db_backend() == "postgres" else (1 if value else 0)
 
 
+def _fetch_inserted_id(cursor) -> int:
+    if get_db_backend() == "postgres":
+        row = cursor.fetchone() or {}
+        return int((row or {}).get("id") or 0)
+    return int(cursor.lastrowid)
+
+
 def _json_loads(value: Any, *, default: Any) -> Any:
     if isinstance(value, (dict, list)):
         return value
@@ -169,6 +176,7 @@ def upsert_class_term_tag_mapping(
             updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """ + (" RETURNING id" if get_db_backend() == "postgres" else "") + """
         """,
         (
             strategy_id,
@@ -182,7 +190,7 @@ def upsert_class_term_tag_mapping(
         ),
     )
     db.commit()
-    return int(inserted.lastrowid)
+    return _fetch_inserted_id(inserted)
 
 
 def list_app_setting_rows() -> list[dict[str, Any]]:
@@ -339,6 +347,7 @@ def insert_admin_operation_log(
             created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """ + (" RETURNING id" if get_db_backend() == "postgres" else "") + """
         """,
         (
             str(operator or "").strip(),
@@ -350,7 +359,7 @@ def insert_admin_operation_log(
         ),
     )
     get_db().commit()
-    return int(cursor.lastrowid)
+    return _fetch_inserted_id(cursor)
 
 
 def list_admin_operation_logs(*, target_type: str = "", limit: int = 20) -> list[dict[str, Any]]:
