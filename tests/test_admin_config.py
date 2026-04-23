@@ -742,20 +742,29 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
     response = client.get("/admin/automation-conversion")
     html = response.get_data(as_text=True)
     visible_text = _visible_text(html)
+    with app.app_context():
+        default_program_id = int(
+            get_db()
+            .execute("SELECT id FROM automation_program WHERE program_code = 'signup_conversion_v1' LIMIT 1")
+            .fetchone()["id"]
+        )
+    overview_response = client.get(f"/admin/automation-conversion/programs/{default_program_id}/overview")
+    overview_html = overview_response.get_data(as_text=True)
+    overview_text = _visible_text(overview_html)
 
     assert response.status_code == 200
-    assert "自动化转化" in visible_text
-    assert "数据概览" in visible_text
-    assert "运行动作" in visible_text
-    assert "池子用户明细" in visible_text
-    assert "任务流执行摘要" in visible_text
-    assert "未填问卷人群" in visible_text
-    assert "运营中人群" in visible_text
-    assert "已转化人群" in visible_text
-    assert "/admin/automation-conversion/overview" in html
-    assert "/admin/automation-conversion/operations" in html
-    assert "/admin/automation-conversion/auto-reply" in html
-    assert "/admin/automation-conversion/agent-config" in html
+    assert "自动化运营方案列表" in visible_text
+    assert "默认自动化转化方案" in visible_text
+    assert f"/admin/automation-conversion/programs/{default_program_id}/overview" in html
+    assert overview_response.status_code == 200
+    assert "数据概览" in overview_text
+    assert "池子用户明细" in overview_text
+    assert "任务流执行摘要" in overview_text
+    assert "未填问卷人群" in overview_text
+    assert "运营中人群" in overview_text
+    assert "已转化人群" in overview_text
+    assert f"/admin/automation-conversion/programs/{default_program_id}/operations" in overview_html
+    assert "/admin/automation-conversion/shared/agents" not in overview_html
 
 
 @pytest.mark.skip(reason="phase1 slim removed legacy /admin/automation-conversion/settings UI route")

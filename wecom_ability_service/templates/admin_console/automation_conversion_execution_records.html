@@ -7,6 +7,7 @@
 {% block content %}
 {% set workspace = operations_workspace or {} %}
 
+{% include "admin_console/_automation_program_context.html" %}
 <div
   id="automation-execution-records-root"
   class="ac-ops-shell"

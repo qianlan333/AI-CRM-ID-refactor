@@ -71,6 +71,7 @@ def _serialize_profile_segment_option_mapping_row(row: dict[str, Any]) -> dict[s
 def _serialize_workflow_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
+        "program_id": int(row.get("program_id") or 0) or None,
         "profile_segment_template_id": int(row.get("profile_segment_template_id") or 0) or None,
         "enabled": _row_bool(row.get("enabled")),
         "fallback_to_standard_content": _row_bool(row.get("fallback_to_standard_content")),
@@ -152,6 +153,7 @@ def _serialize_node_content_variant_row(row: dict[str, Any]) -> dict[str, Any]:
 def _serialize_workflow_execution_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
+        "program_id": int(row.get("program_id") or 0) or None,
         "summary_json": _json_loads(row.get("summary_json"), default={}),
     }
 
@@ -442,13 +444,16 @@ def insert_profile_segment_option_mapping_row(payload: dict[str, Any]) -> dict[s
     return _serialize_profile_segment_option_mapping_row(dict(row) if row else {})
 
 
-def list_workflow_rows(*, include_archived: bool = False, status: str = "") -> list[dict[str, Any]]:
+def list_workflow_rows(*, include_archived: bool = False, status: str = "", program_id: int | None = None) -> list[dict[str, Any]]:
     sql = """
         SELECT *
         FROM automation_workflow
         WHERE 1 = 1
     """
     params: list[Any] = []
+    if program_id is not None:
+        sql += " AND program_id = ?"
+        params.append(int(program_id))
     if not include_archived:
         sql += " AND status <> ?"
         params.append("archived")
@@ -459,7 +464,7 @@ def list_workflow_rows(*, include_archived: bool = False, status: str = "") -> l
     return [_serialize_workflow_row(row) for row in _fetchall_dicts(sql, tuple(params))]
 
 
-def list_workflow_execution_summary_rows(*, include_archived: bool = False) -> list[dict[str, Any]]:
+def list_workflow_execution_summary_rows(*, include_archived: bool = False, program_id: int | None = None) -> list[dict[str, Any]]:
     sql = """
         SELECT
             w.id AS workflow_id,
@@ -480,6 +485,9 @@ def list_workflow_execution_summary_rows(*, include_archived: bool = False) -> l
         WHERE 1 = 1
     """
     params: list[Any] = []
+    if program_id is not None:
+        sql += " AND w.program_id = ?"
+        params.append(int(program_id))
     if not include_archived:
         sql += " AND w.status <> ?"
         params.append("archived")
@@ -495,13 +503,16 @@ def list_workflow_execution_summary_rows(*, include_archived: bool = False) -> l
     return _fetchall_dicts(sql, tuple(params))
 
 
-def count_workflow_rows(*, include_archived: bool = False, status: str = "") -> int:
+def count_workflow_rows(*, include_archived: bool = False, status: str = "", program_id: int | None = None) -> int:
     sql = """
         SELECT COUNT(*) AS total
         FROM automation_workflow
         WHERE 1 = 1
     """
     params: list[Any] = []
+    if program_id is not None:
+        sql += " AND program_id = ?"
+        params.append(int(program_id))
     if not include_archived:
         sql += " AND status <> ?"
         params.append("archived")
@@ -542,6 +553,7 @@ def insert_workflow_row(payload: dict[str, Any]) -> dict[str, Any]:
     row = get_db().execute(
         """
         INSERT INTO automation_workflow (
+            program_id,
             workflow_code,
             workflow_name,
             description,
@@ -557,10 +569,11 @@ def insert_workflow_row(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
+            int(payload.get("program_id") or 0) or None,
             _normalized_text(payload.get("workflow_code")),
             _normalized_text(payload.get("workflow_name")),
             _normalized_text(payload.get("description")),
@@ -582,7 +595,8 @@ def update_workflow_row(workflow_id: int, payload: dict[str, Any]) -> dict[str, 
     row = get_db().execute(
         """
         UPDATE automation_workflow
-        SET workflow_code = ?,
+        SET program_id = ?,
+            workflow_code = ?,
             workflow_name = ?,
             description = ?,
             status = ?,
@@ -598,6 +612,7 @@ def update_workflow_row(workflow_id: int, payload: dict[str, Any]) -> dict[str, 
         RETURNING *
         """,
         (
+            int(payload.get("program_id") or 0) or None,
             _normalized_text(payload.get("workflow_code")),
             _normalized_text(payload.get("workflow_name")),
             _normalized_text(payload.get("description")),
@@ -1300,13 +1315,22 @@ def get_archived_customer_message_counts(external_userids: list[str]) -> dict[st
     return counts
 
 
-def list_workflow_execution_rows(*, workflow_id: int | None = None, node_id: int | None = None, limit: int = 20) -> list[dict[str, Any]]:
+def list_workflow_execution_rows(
+    *,
+    workflow_id: int | None = None,
+    node_id: int | None = None,
+    program_id: int | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
     sql = """
         SELECT *
         FROM automation_workflow_execution
         WHERE 1 = 1
     """
     params: list[Any] = []
+    if program_id is not None:
+        sql += " AND program_id = ?"
+        params.append(int(program_id))
     if workflow_id is not None:
         sql += " AND workflow_id = ?"
         params.append(int(workflow_id))
@@ -1362,6 +1386,7 @@ def insert_workflow_execution_row(payload: dict[str, Any]) -> dict[str, Any] | N
         """
         INSERT INTO automation_workflow_execution (
             execution_id,
+            program_id,
             workflow_id,
             node_id,
             trigger_type,
@@ -1377,12 +1402,13 @@ def insert_workflow_execution_row(payload: dict[str, Any]) -> dict[str, Any] | N
             updated_at,
             finished_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
         ON CONFLICT(execution_id) DO NOTHING
         RETURNING *
         """,
         (
             _normalized_text(payload.get("execution_id")),
+            int(payload.get("program_id") or 0) or None,
             int(payload.get("workflow_id") or 0) or None,
             int(payload.get("node_id") or 0) or None,
             _normalized_text(payload.get("trigger_type")) or "scheduled_poll",
@@ -1404,7 +1430,8 @@ def update_workflow_execution_row(execution_row_id: int, payload: dict[str, Any]
     row = get_db().execute(
         """
         UPDATE automation_workflow_execution
-        SET workflow_id = ?,
+        SET program_id = ?,
+            workflow_id = ?,
             node_id = ?,
             trigger_type = ?,
             audience_code = ?,
@@ -1421,6 +1448,7 @@ def update_workflow_execution_row(execution_row_id: int, payload: dict[str, Any]
         RETURNING *
         """,
         (
+            int(payload.get("program_id") or 0) or None,
             int(payload.get("workflow_id") or 0) or None,
             int(payload.get("node_id") or 0) or None,
             _normalized_text(payload.get("trigger_type")) or "scheduled_poll",

@@ -1674,6 +1674,90 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_scene ON automation_channel (scene_value)")
 
 
+def _ensure_sqlite_automation_program_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_program (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program_code TEXT NOT NULL UNIQUE,
+            program_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+            config_json TEXT NOT NULL DEFAULT '{}',
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_program_status ON automation_program (status, updated_at DESC, id DESC)"
+    )
+    workflow_columns = _sqlite_table_columns(db, "automation_workflow")
+    if workflow_columns and "program_id" not in workflow_columns:
+        db.execute("ALTER TABLE automation_workflow ADD COLUMN program_id INTEGER REFERENCES automation_program(id) ON DELETE SET NULL")
+    execution_columns = _sqlite_table_columns(db, "automation_workflow_execution")
+    if execution_columns and "program_id" not in execution_columns:
+        db.execute(
+            "ALTER TABLE automation_workflow_execution ADD COLUMN program_id INTEGER REFERENCES automation_program(id) ON DELETE SET NULL"
+        )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_program ON automation_workflow (program_id, status, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_program ON automation_workflow_execution (program_id, created_at DESC, id DESC)"
+    )
+    db.execute(
+        """
+        INSERT INTO automation_program (
+            program_code,
+            program_name,
+            description,
+            status,
+            config_json,
+            created_by,
+            updated_by
+        )
+        SELECT
+            'signup_conversion_v1',
+            '默认自动化转化方案',
+            '承接历史单例自动化运营能力的默认方案。',
+            'active',
+            '{"flow_design_source":"legacy_singleton"}',
+            'system',
+            'system'
+        WHERE NOT EXISTS (
+            SELECT 1 FROM automation_program WHERE program_code = 'signup_conversion_v1'
+        )
+        """
+    )
+    default_row = db.execute(
+        "SELECT id FROM automation_program WHERE program_code = 'signup_conversion_v1' LIMIT 1"
+    ).fetchone()
+    if not default_row:
+        return
+    default_program_id = int(default_row["id"] if hasattr(default_row, "keys") else default_row[0])
+    db.execute("UPDATE automation_workflow SET program_id = ? WHERE program_id IS NULL", (default_program_id,))
+    db.execute(
+        """
+        UPDATE automation_workflow_execution
+        SET program_id = COALESCE(
+            (
+                SELECT automation_workflow.program_id
+                FROM automation_workflow
+                WHERE automation_workflow.id = automation_workflow_execution.workflow_id
+                LIMIT 1
+            ),
+            ?
+        )
+        WHERE program_id IS NULL
+        """,
+        (default_program_id,),
+    )
+
+
 def _ensure_automation_sop_v1_seed_data() -> None:
     from .domains.automation_conversion.service import ensure_sop_v1_defaults
 
@@ -2330,6 +2414,7 @@ def _init_sqlite(db) -> None:
     _ensure_sqlite_customer_value_segment_tables(db)
     _ensure_sqlite_customer_marketing_state_tables(db)
     _ensure_sqlite_automation_conversion_tables(db)
+    _ensure_sqlite_automation_program_tables(db)
     _migrate_sqlite_conversion_agent_pools_to_bindings(db)
     _ensure_sqlite_automation_sop_v2_columns(db)
     _ensure_sqlite_customer_pulse_tables(db)
@@ -2988,6 +3073,103 @@ def _ensure_postgres_admin_auth_tables(db) -> None:
     )
 
 
+def _ensure_postgres_automation_program_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_program (
+            id BIGSERIAL PRIMARY KEY,
+            program_code TEXT NOT NULL UNIQUE,
+            program_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+            config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_program_status
+        ON automation_program (status, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow
+        ADD COLUMN IF NOT EXISTS program_id BIGINT REFERENCES automation_program(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow_execution
+        ADD COLUMN IF NOT EXISTS program_id BIGINT REFERENCES automation_program(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_workflow_program
+        ON automation_workflow (program_id, status, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_program
+        ON automation_workflow_execution (program_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        INSERT INTO automation_program (
+            program_code,
+            program_name,
+            description,
+            status,
+            config_json,
+            created_by,
+            updated_by
+        )
+        SELECT
+            'signup_conversion_v1',
+            '默认自动化转化方案',
+            '承接历史单例自动化运营能力的默认方案。',
+            'active',
+            '{"flow_design_source":"legacy_singleton"}'::jsonb,
+            'system',
+            'system'
+        WHERE NOT EXISTS (
+            SELECT 1 FROM automation_program WHERE program_code = 'signup_conversion_v1'
+        )
+        """
+    )
+    default_row = db.execute(
+        "SELECT id FROM automation_program WHERE program_code = 'signup_conversion_v1' LIMIT 1"
+    ).fetchone()
+    if not default_row:
+        return
+    default_program_id = int(default_row["id"] if hasattr(default_row, "keys") else default_row[0])
+    db.execute("UPDATE automation_workflow SET program_id = ? WHERE program_id IS NULL", (default_program_id,))
+    db.execute(
+        """
+        UPDATE automation_workflow_execution
+        SET program_id = COALESCE(
+            (
+                SELECT automation_workflow.program_id
+                FROM automation_workflow
+                WHERE automation_workflow.id = automation_workflow_execution.workflow_id
+                LIMIT 1
+            ),
+            ?
+        )
+        WHERE program_id IS NULL
+        """,
+        (default_program_id,),
+    )
+
+
 def _init_postgres(db) -> None:
     db.execute(
         """
@@ -3512,6 +3694,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_customer_value_segment_tables(db)
     _ensure_postgres_customer_marketing_state_tables(db)
     _ensure_postgres_admin_auth_tables(db)
+    _ensure_postgres_automation_program_tables(db)
     _ensure_automation_sop_v1_seed_data()
     _ensure_automation_agent_prompt_defaults()
     db.execute("ALTER TABLE questionnaire_questions DROP CONSTRAINT IF EXISTS questionnaire_questions_type_check")

@@ -2003,8 +2003,26 @@ ON automation_profile_segment_option_mapping (category_id, question_id, option_i
 CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_option_mapping_template
 ON automation_profile_segment_option_mapping (template_id, question_id, option_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS automation_program (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    program_code TEXT NOT NULL UNIQUE,
+    program_name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+    config_json TEXT NOT NULL DEFAULT '{}',
+    created_by TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_program_status
+ON automation_program (status, updated_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_workflow (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    program_id INTEGER REFERENCES automation_program(id) ON DELETE SET NULL,
     workflow_code TEXT NOT NULL UNIQUE,
     workflow_name TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
@@ -2026,6 +2044,9 @@ CREATE TABLE IF NOT EXISTS automation_workflow (
 
 CREATE INDEX IF NOT EXISTS idx_automation_workflow_status
 ON automation_workflow (status, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_workflow_program
+ON automation_workflow (program_id, status, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_workflow_enabled
 ON automation_workflow (enabled, updated_at DESC, id DESC);
@@ -2145,6 +2166,7 @@ ON automation_workflow_node_content_variant (variant_scope, segment_key, id DESC
 CREATE TABLE IF NOT EXISTS automation_workflow_execution (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     execution_id TEXT NOT NULL UNIQUE,
+    program_id INTEGER REFERENCES automation_program(id) ON DELETE SET NULL,
     workflow_id INTEGER REFERENCES automation_workflow(id) ON DELETE SET NULL,
     node_id INTEGER REFERENCES automation_workflow_node(id) ON DELETE SET NULL,
     trigger_type TEXT NOT NULL DEFAULT 'scheduled_poll'
@@ -2169,6 +2191,9 @@ ON automation_workflow_execution (status, scheduled_for, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_workflow
 ON automation_workflow_execution (workflow_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_workflow_execution_program
+ON automation_workflow_execution (program_id, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_workflow_execution_item (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -21,11 +21,13 @@
 {% set workspace = flow_design_workspace or {} %}
 {% set default_channel = workspace.default_channel or {} %}
 {% set sop = workspace.sop or {} %}
+{% include "admin_console/_automation_program_context.html" %}
+{% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 <div class="ac-flow-shell">
   <section class="ac-flow-card">
     <div class="ac-eyebrow">流程设计</div>
     <h2>流程设计</h2>
-    <p class="ac-flow-muted">消息活跃同步已迁到运行中心。<a href="{{ url_for('api.admin_automation_conversion_run_center', tab='sync') }}">前往运行中心校验</a></p>
+    <p class="ac-flow-muted">消息活跃同步已迁到运行中心。<a href="{{ url_for('api.admin_automation_conversion_runtime_sync') }}">前往运行中心校验</a></p>
     <div class="ac-flow-nav">
       {% for item in workspace.sections or [] %}
       <a class="ac-section-link{% if item.key == workspace.section %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>

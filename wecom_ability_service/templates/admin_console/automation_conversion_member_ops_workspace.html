@@ -17,6 +17,8 @@
 {% set workspace = member_ops_workspace or {} %}
 {% set stage = workspace.detail.stage or {} %}
 {% set is_focus_mode = workspace.stage_key in ['inactive-focus', 'active-focus'] %}
+{% include "admin_console/_automation_program_context.html" %}
+{% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 <div class="ac-member-shell">
   {% if page_error %}
   <div class="admin-banner admin-banner--error">{{ page_error }}</div>
