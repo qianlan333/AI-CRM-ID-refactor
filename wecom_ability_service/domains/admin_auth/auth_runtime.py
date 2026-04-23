@@ -103,8 +103,8 @@ def exchange_code_for_wecom_user(code: str) -> dict[str, Any]:
     if not normalized_code:
         raise ValueError("missing wecom code")
     client = WeComClient.from_app()
-    identity_payload = client.get("/cgi-bin/auth/getuserinfo", {"code": normalized_code})
-    user_id = _normalized_text(identity_payload.get("UserId"))
+    identity_payload = client.get("/cgi-bin/user/getuserinfo", {"code": normalized_code})
+    user_id = _normalized_text(identity_payload.get("userid")) or _normalized_text(identity_payload.get("UserId"))
     if not user_id:
         raise ValueError("wecom callback did not return UserId")
     display_name = user_id
