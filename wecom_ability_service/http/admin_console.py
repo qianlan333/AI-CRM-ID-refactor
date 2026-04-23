@@ -3,7 +3,11 @@ from __future__ import annotations
 from flask import redirect, render_template, url_for
 
 from ..domains.admin_audit import build_risk_control_rows, build_runbook_rows
-from ..domains.admin_dashboard import build_admin_shell_status, list_admin_navigation
+from ..domains.admin_dashboard import (
+    build_admin_shell_status,
+    build_system_status_payload,
+    list_admin_navigation,
+)
 from .common import _deprecated_admin_redirect
 
 

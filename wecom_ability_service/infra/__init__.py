@@ -6,10 +6,14 @@ from __future__ import annotations
 # - helpers.py: cross-domain low-level helpers with no business ownership
 # - wechat_oauth.py: WeChat OAuth HTTP client helpers
 # - wecom_runtime.py: runtime wrappers for WeCom third-party clients
+# - internal_auth_runtime.py: internal auth runtime delegates used by application/http
+# - mcp_runtime_delegate.py: MCP runtime delegate extracted from transport entrypoints
 
 __all__ = [
     "constants",
     "helpers",
+    "internal_auth_runtime",
+    "mcp_runtime_delegate",
     "settings",
     "wechat_oauth",
     "wecom_runtime",

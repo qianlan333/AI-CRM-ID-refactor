@@ -1,35 +1,56 @@
 from __future__ import annotations
 
+import base64
+import json
+
 import requests
 
-from flask import jsonify, redirect, request, url_for
+from flask import Response, jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
     activate_conversion_workflow,
     apply_dashboard_signup_tag,
     build_rejected_feedback_clipboard_payload,
+    create_agent_output_export_job,
     create_agent_config,
     create_conversion_profile_segment_template,
     create_conversion_workflow,
     create_conversion_workflow_node,
+    create_focus_send_batch,
     delete_agent_config,
     delete_conversion_workflow,
+    delete_sop_v1_template_day,
+    diff_agent_prompt,
+    get_agent_orchestration_payload,
+    get_agent_output_detail,
+    get_agent_output_export_file,
+    get_agent_output_export_job,
+    get_agent_replay_payload,
+    get_agent_run_detail,
     get_conversion_dashboard_payload,
     get_conversion_workflow_detail_summary,
     get_conversion_workflow_execution_detail,
     get_conversion_workflow_execution_item_detail,
-    send_conversion_execution_item_via_bazhuayu,
-    list_agent_configs,
-    list_conversion_agent_options,
-    list_recent_reviewable_agent_outputs,
+    get_debug_payload,
     get_conversion_profile_segment_template_bundle,
     get_conversion_workflow_model_bundle,
+    get_default_channel_settings_payload,
+    get_focus_send_batch_detail,
+    get_focus_send_batches_payload,
     get_member_detail,
+    get_model_infra_payload,
     get_overview_payload,
     get_agent_config_detail,
-    get_default_channel_settings_payload,
-    get_model_infra_payload,
+    get_sop_v1_batches_payload,
+    get_sop_v1_config_payload,
+    get_sop_v1_management_payload,
+    get_sop_v1_templates_payload,
+    get_settings_payload,
+    get_stage_detail_payload,
     handle_agent_router_callback,
+    list_agent_configs,
+    list_agent_outputs,
+    list_conversion_agent_options,
     list_conversion_profile_segment_catalog,
     list_conversion_profile_segment_templates,
     list_conversion_profile_segment_template_options,
@@ -38,26 +59,40 @@ from ..domains.automation_conversion import (
     list_conversion_workflow_nodes,
     list_conversion_workflow_registry,
     list_conversion_workflows,
+    list_pending_agent_prompt_publish_requests,
+    list_router_pending_callbacks,
+    list_recent_reviewable_agent_outputs,
     mark_won,
+    preview_stage_manual_send,
+    publish_agent_config,
     put_in_pool,
     push_openclaw,
     remove_from_pool,
+    replay_router_callback,
+    replay_agent_run,
+    review_agent_reply_output,
+    run_due_focus_send_batches,
+    run_due_sop,
     run_registered_due_jobs,
     run_due_reply_monitor,
     run_message_activity_sync,
+    run_router_pending_callback_check,
     run_router_test_dispatch,
     run_reply_monitor_capture,
-    review_agent_reply_output,
-    publish_agent_config,
     generate_default_channel_qr,
     save_reply_monitor_enabled,
     save_agent_config_draft,
     save_default_channel_settings,
     save_model_infra_settings,
-    pause_conversion_workflow,
+    save_sop_v1_pool_config,
+    save_sop_v1_template,
+    save_settings,
     send_agent_reply_output_via_bazhuayu,
     send_conversion_execution_item_via_bazhuayu,
+    send_stage_manual_message,
+    pause_conversion_workflow,
     set_follow_type,
+    submit_agent_prompt_for_publish,
     unmark_won,
     update_conversion_profile_segment_template,
     update_conversion_workflow,
@@ -110,6 +145,81 @@ def _overview_notice() -> str:
     if reply_monitor_action == "dispatched":
         return "自动接话放行已执行"
     return ""
+
+
+MAX_STAGE_SEND_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+ALLOWED_STAGE_SEND_IMAGE_TYPES = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
+FLOW_DESIGN_SECTIONS = ("stage-model", "questionnaire", "sop", "global-rules", "channel", "publish")
+RUN_CENTER_TABS = ("overview", "sync", "logs", "model-infra", "agent-orchestration", "debug")
+RUN_CENTER_AGENT_SUBTABS = ("router", "agents", "metrics", "outputs", "replay")
+
+
+def _detect_stage_send_image_type(file_bytes: bytes) -> str:
+    if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if file_bytes.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if file_bytes.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
+        return "webp"
+    return ""
+
+
+def _stage_send_images_from_request() -> list[dict[str, str]]:
+    files = [item for item in list(request.files.getlist("images") or []) if getattr(item, "filename", "")]
+    if len(files) > 3:
+        raise ValueError("at most 3 images are allowed")
+    images: list[dict[str, str]] = []
+    for index, file_storage in enumerate(files, start=1):
+        file_name = str(getattr(file_storage, "filename", "") or f"image-{index}.png").strip() or f"image-{index}.png"
+        mime_type = str(getattr(file_storage, "mimetype", "") or "").strip().lower()
+        if not mime_type.startswith("image/"):
+            raise ValueError("only image files are allowed")
+        file_bytes = file_storage.read()
+        if len(file_bytes) > MAX_STAGE_SEND_IMAGE_SIZE_BYTES:
+            raise ValueError("image file is too large (max 5MB)")
+        detected_type = ALLOWED_STAGE_SEND_IMAGE_TYPES.get(_detect_stage_send_image_type(file_bytes), "")
+        if not detected_type:
+            raise ValueError("only image files are allowed")
+        images.append(
+            {
+                "file_name": file_name,
+                "content_type": detected_type,
+                "data_base64": base64.b64encode(file_bytes).decode("ascii"),
+            }
+        )
+    return images
+
+
+def _flow_design_section() -> str:
+    section = _query_text("section") or str(request.values.get("section") or "").strip()
+    return section if section in FLOW_DESIGN_SECTIONS else "questionnaire"
+
+
+def _run_center_tab() -> str:
+    tab = _query_text("tab") or str(request.values.get("tab") or "").strip()
+    return tab if tab in RUN_CENTER_TABS else "overview"
+
+
+def _run_center_agent_subtab() -> str:
+    subtab = _query_text("subtab") or str(request.values.get("subtab") or "").strip()
+    return subtab if subtab in RUN_CENTER_AGENT_SUBTABS else "router"
+
+
+def _member_ops_stage_key() -> str:
+    stage = _query_text("stage")
+    return stage or "new-user"
+
+
+def _member_ops_panel() -> str:
+    panel = _query_text("panel")
+    return panel or "members"
 
 
 _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
@@ -245,7 +355,9 @@ def _build_execution_records_workspace() -> dict[str, object]:
 
 
 def _build_overview_workspace() -> dict[str, object]:
+    snapshot = get_overview_payload()
     return {
+        "snapshot": snapshot,
         "api_urls": {
             "dashboard": url_for("api.api_admin_automation_conversion_dashboard"),
             "apply_signup_tag": url_for("api.admin_automation_conversion_apply_overview_signup_tag"),
@@ -309,6 +421,144 @@ def _build_agent_config_workspace() -> dict[str, object]:
         "initial_templates": initial_templates,
         "initial_template_catalog": initial_catalog,
     }
+
+
+def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None) -> dict[str, object]:
+    settings_payload = get_settings_payload()
+    section = _flow_design_section()
+    selected_pool_key = _query_text("pool") or str((page_input or {}).get("pool_key") or "")
+    try:
+        selected_day_index = int(_query_text("day") or str((page_input or {}).get("day_index") or "0") or "0")
+    except ValueError:
+        selected_day_index = 0
+    sop_payload = get_sop_v1_management_payload(
+        selected_pool_key=selected_pool_key,
+        selected_day_index=selected_day_index,
+    )
+    input_payload = dict(page_input or {})
+    default_channel = {
+        **dict(settings_payload.get("default_channel") or {}),
+        "welcome_message": str(input_payload.get("welcome_message") or dict(settings_payload.get("default_channel") or {}).get("welcome_message") or ""),
+    }
+    return {
+        "section": section,
+        "sections": [
+            {"key": "stage-model", "label": "阶段模型", "href": url_for("api.admin_automation_conversion_flow_design", section="stage-model") + "#flow-stage-model"},
+            {"key": "questionnaire", "label": "入池与问卷规则", "href": url_for("api.admin_automation_conversion_flow_design", section="questionnaire") + "#flow-questionnaire"},
+            {"key": "sop", "label": "SOP 剧本", "href": url_for("api.admin_automation_conversion_flow_design", section="sop") + "#flow-sop"},
+            {"key": "global-rules", "label": "全局规则", "href": url_for("api.admin_automation_conversion_flow_design", section="global-rules") + "#flow-global-rules"},
+            {"key": "channel", "label": "默认渠道入口", "href": url_for("api.admin_automation_conversion_flow_design", section="channel") + "#flow-channel"},
+            {"key": "publish", "label": "发布管理", "href": url_for("api.admin_automation_conversion_flow_design", section="publish") + "#flow-publish"},
+        ],
+        "settings": settings_payload,
+        "default_channel": default_channel,
+        "sop": sop_payload,
+        "saved": _query_bool("saved", default=False),
+        "page_input": input_payload,
+    }
+
+
+def _build_member_ops_workspace() -> dict[str, object]:
+    stage_key = _member_ops_stage_key()
+    panel = _member_ops_panel()
+    stage_payload = get_stage_detail_payload(
+        route_key=stage_key,
+        keyword=_query_text("keyword"),
+        limit=_query_int("limit", default=50, minimum=1, maximum=100),
+        offset=_query_int("offset", default=0, minimum=0, maximum=1000000),
+    )
+    detail_lookup = _query_text("member") or _query_text("external_contact_id")
+    member_detail = get_member_detail(external_contact_id=detail_lookup, phone=_query_text("phone")) if detail_lookup or _query_text("phone") else {}
+    focus_batch_id = _query_int("focus_batch_id", default=0, minimum=0, maximum=100000000)
+    focus_batch_detail = {}
+    if focus_batch_id:
+        try:
+            focus_batch_detail = get_focus_send_batch_detail(batch_id=focus_batch_id)
+        except LookupError:
+            focus_batch_detail = {}
+    return {
+        "stage_key": stage_key,
+        "panel": panel,
+        "detail": stage_payload,
+        "member_detail": member_detail,
+        "member_query": detail_lookup,
+        "manual_send_notice": _query_text("manual_send_notice"),
+        "manual_send_record_id": _query_text("record_id"),
+        "focus_batch_notice": _query_text("focus_batch_notice"),
+        "focus_batch_detail": focus_batch_detail,
+    }
+
+
+def _build_run_center_workspace(*, page_input: dict[str, object] | None = None) -> dict[str, object]:
+    raw_input = dict(page_input or {})
+    tab = _query_text("tab") or str(raw_input.get("tab") or "").strip()
+    if tab not in RUN_CENTER_TABS:
+        tab = "overview"
+    subtab = _query_text("subtab") or str(raw_input.get("subtab") or "").strip()
+    if subtab not in RUN_CENTER_AGENT_SUBTABS:
+        subtab = "router"
+    settings_payload = get_settings_payload()
+    overview_payload = get_overview_payload()
+    context: dict[str, object] = {
+        "tab": tab,
+        "subtab": subtab,
+        "tabs": [
+            {"key": "overview", "label": "运行概况", "href": url_for("api.admin_automation_conversion_run_center", tab="overview")},
+            {"key": "sync", "label": "数据同步", "href": url_for("api.admin_automation_conversion_run_center", tab="sync")},
+            {"key": "logs", "label": "执行日志 / 审计", "href": url_for("api.admin_automation_conversion_run_center", tab="logs")},
+            {"key": "model-infra", "label": "模型基础设施", "href": url_for("api.admin_automation_conversion_run_center", tab="model-infra")},
+            {"key": "agent-orchestration", "label": "Agent Orchestration", "href": url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="router")},
+            {"key": "debug", "label": "调试", "href": url_for("api.admin_automation_conversion_run_center", tab="debug")},
+        ],
+        "overview": overview_payload,
+        "settings": settings_payload,
+        "sync": dict(settings_payload.get("message_activity_sync") or {}),
+        "reply_monitor": dict(settings_payload.get("reply_monitor") or {}),
+        "sop_batches": get_sop_v1_batches_payload(limit=10),
+        "focus_batches": get_focus_send_batches_payload(limit=10),
+        "page_input": raw_input,
+    }
+    if tab == "model-infra":
+        context["model_infra"] = get_model_infra_payload(limit_logs=10)
+    elif tab == "debug":
+        context["debug"] = get_debug_payload(
+            external_contact_id=_query_text("external_contact_id"),
+            phone=_query_text("phone"),
+        )
+    elif tab == "agent-orchestration":
+        orchestration_payload = get_agent_orchestration_payload(
+            subtab=subtab,
+            agent_code=_query_text("agent") or str(raw_input.get("agent") or "").strip(),
+            output_id=_query_text("output_id") or str(raw_input.get("output_id") or "").strip(),
+            run_id=_query_text("run_id") or str(raw_input.get("run_id") or "").strip(),
+            request_id=_query_text("request_id") or str(raw_input.get("request_id") or "").strip(),
+            external_contact_id=_query_text("external_contact_id") or str(raw_input.get("external_contact_id") or "").strip(),
+            userid=_query_text("userid") or str(raw_input.get("userid") or "").strip(),
+            date_from=_query_text("date_from") or str(raw_input.get("date_from") or "").strip(),
+            date_to=_query_text("date_to") or str(raw_input.get("date_to") or "").strip(),
+            output_type=_query_text("output_type") or str(raw_input.get("output_type") or "").strip(),
+            target_pool=_query_text("target_pool") or str(raw_input.get("target_pool") or "").strip(),
+            applied_status=_query_text("applied_status") or str(raw_input.get("applied_status") or "").strip(),
+            batch_id=_query_text("batch_id") or str(raw_input.get("batch_id") or "").strip(),
+            current_pool=_query_text("current_pool") or str(raw_input.get("current_pool") or "").strip(),
+            min_confidence=_query_text("min_confidence") or str(raw_input.get("min_confidence") or "").strip(),
+            max_confidence=_query_text("max_confidence") or str(raw_input.get("max_confidence") or "").strip(),
+            has_error=_query_text("has_error") or str(raw_input.get("has_error") or "").strip(),
+            scripts_only=_query_bool("scripts_only", default=False) or str(raw_input.get("scripts_only") or "").strip().lower() in {"1", "true", "yes", "on"},
+            page=_query_int("page", default=int(str(raw_input.get("page") or "1") or "1"), minimum=1, maximum=100000),
+            page_size=_query_int("page_size", default=int(str(raw_input.get("page_size") or "20") or "20"), minimum=1, maximum=100),
+            export_job_id=_query_text("export_job_id") or str(raw_input.get("export_job_id") or "").strip(),
+        )
+        request_id_filter = str(((orchestration_payload.get("outputs") or {}).get("filters") or {}).get("request_id") or "").strip()
+        if subtab == "outputs" and request_id_filter and not list((orchestration_payload.get("outputs") or {}).get("rows") or []):
+            orchestration_payload["replay_fallback"] = get_agent_replay_payload(
+                request_id=request_id_filter,
+                external_contact_id=_query_text("external_contact_id") or str(raw_input.get("external_contact_id") or "").strip(),
+                userid=_query_text("userid") or str(raw_input.get("userid") or "").strip(),
+                visibility="console",
+            )
+        context["agent_orchestration"] = orchestration_payload
+    return context
 
 
 def _automation_conversion_workspace_tabs(active_key: str) -> list[dict[str, object]]:
@@ -470,6 +720,58 @@ def _render_agent_config_page(*, page_error: str = ""):
     )
 
 
+def _render_flow_design_page(*, page_error: str = "", page_input: dict[str, object] | None = None):
+    return _render_admin_template(
+        "automation_conversion_flow_design_workspace.html",
+        active_nav="automation_conversion",
+        page_title="流程设计",
+        page_summary="兼容旧后台设置入口，当前统一映射到阶段模型、问卷规则、SOP 剧本、全局规则、默认渠道入口和发布管理。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("流程设计", None),
+        ),
+        flow_design_workspace=_build_flow_design_workspace(page_input=page_input),
+        page_error=page_error,
+        admin_action_token=ensure_admin_console_action_token(),
+    )
+
+
+def _render_member_ops_page(*, page_error: str = ""):
+    return _render_admin_template(
+        "automation_conversion_member_ops_workspace.html",
+        active_nav="automation_conversion",
+        page_title="成员运营",
+        page_summary="兼容旧阶段详情和发送入口，统一收口到成员列表工作区与批量动作面板。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("成员运营", None),
+        ),
+        member_ops_workspace=_build_member_ops_workspace(),
+        page_error=page_error,
+        admin_action_token=ensure_admin_console_action_token(),
+    )
+
+
+def _render_run_center_page(*, page_error: str = "", page_notice: str = "", page_input: dict[str, object] | None = None):
+    return _render_admin_template(
+        "automation_conversion_run_center_workspace.html",
+        active_nav="automation_conversion",
+        page_title="运行中心",
+        page_summary="兼容旧运行中心入口，当前收口到运行概况、数据同步、日志、模型基础设施、Agent Orchestration 和调试。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化转化", url_for("api.admin_automation_conversion")),
+            ("运行中心", None),
+        ),
+        run_center_workspace=_build_run_center_workspace(page_input=page_input),
+        page_error=page_error,
+        page_notice=page_notice,
+        admin_action_token=ensure_admin_console_action_token(),
+    )
+
+
 def admin_automation_conversion():
     return _render_overview_page()
 
@@ -507,15 +809,241 @@ def admin_automation_conversion_agent_config():
 
 
 def admin_automation_conversion_flow_design():
-    return _redirect_to("api.admin_automation_conversion_operations")
+    return _render_flow_design_page()
 
 
 def admin_automation_conversion_member_ops():
-    return _redirect_to("api.admin_automation_conversion_operations")
+    return _render_member_ops_page()
 
 
 def admin_automation_conversion_run_center():
-    return _redirect_to("api.admin_automation_conversion_agent_config", **request.args.to_dict(flat=True))
+    return _render_run_center_page(page_notice=_query_text("notice"))
+
+
+def admin_automation_conversion_settings():
+    return _redirect_to(
+        "api.admin_automation_conversion_flow_design",
+        section=_query_text("section") or "questionnaire",
+        saved=_query_text("saved") or None,
+    )
+
+
+def admin_automation_conversion_sop():
+    return _redirect_to(
+        "api.admin_automation_conversion_flow_design",
+        section="sop",
+        pool=_query_text("pool") or None,
+        day=_query_text("day") or None,
+    )
+
+
+def admin_automation_conversion_stage(stage_key: str):
+    return _redirect_to(
+        "api.admin_automation_conversion_member_ops",
+        stage=stage_key,
+        panel="members",
+        keyword=_query_text("keyword") or None,
+        external_contact_id=_query_text("external_contact_id") or None,
+    )
+
+
+def admin_automation_conversion_model_infra():
+    return _redirect_to(
+        "api.admin_automation_conversion_run_center",
+        tab="model-infra",
+        tested=_query_text("tested") or None,
+    )
+
+
+def admin_automation_conversion_debug():
+    return _redirect_to(
+        "api.admin_automation_conversion_run_center",
+        tab="debug",
+        external_contact_id=_query_text("external_contact_id") or None,
+        phone=_query_text("phone") or None,
+    )
+
+
+def admin_automation_conversion_preview():
+    return _redirect_to(
+        "api.admin_automation_conversion_run_center",
+        tab="debug",
+        external_contact_id=_query_text("external_contact_id") or None,
+        phone=_query_text("phone") or None,
+    )
+
+
+def admin_automation_conversion_save_settings():
+    section = str(request.form.get("section") or "questionnaire").strip() or "questionnaire"
+    action_token_error = validate_admin_console_action_token()
+    page_input = dict(request.form or {})
+    if action_token_error:
+        return _render_flow_design_page(page_error=action_token_error, page_input=page_input)
+    try:
+        save_settings(dict(request.form or {}))
+    except ValueError as exc:
+        return _render_flow_design_page(page_error=str(exc), page_input=page_input)
+    return redirect(
+        url_for("api.admin_automation_conversion_flow_design", section=section, saved=1),
+        code=302,
+    )
+
+
+def admin_automation_conversion_generate_default_channel():
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_flow_design_page(page_error=action_token_error, page_input=dict(request.form or {}))
+    result = generate_default_channel_qr(operator=_operator_from_request())
+    if not result.get("generated"):
+        return _render_flow_design_page(
+            page_error=str(result.get("error") or "二维码生成失败"),
+            page_input=dict(request.form or {}),
+        )
+    return redirect(
+        url_for("api.admin_automation_conversion_flow_design", section="channel", saved=1),
+        code=302,
+    )
+
+
+def admin_automation_conversion_stage_send(stage_key: str):
+    if request.method == "GET":
+        return _redirect_to(
+            "api.admin_automation_conversion_member_ops",
+            stage=stage_key,
+            panel="send",
+            phone=_query_text("phone") or None,
+        )
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_member_ops_page(page_error=action_token_error)
+    try:
+        images = _stage_send_images_from_request()
+        route_key = str(stage_key or "").strip()
+        if route_key in {"inactive-focus", "active-focus"}:
+            result = create_focus_send_batch(
+                route_key=route_key,
+                operator_id=_operator_from_request(),
+                operator_type="user",
+            )
+            return redirect(
+                url_for(
+                    "api.admin_automation_conversion_member_ops",
+                    stage=route_key,
+                    panel="send",
+                    focus_batch_notice="created",
+                    focus_batch_id=int((result.get("batch") or {}).get("id") or 0),
+                ),
+                code=302,
+            )
+        result = send_stage_manual_message(
+            route_key=route_key,
+            content=str(request.form.get("content") or "").strip(),
+            images=images,
+            operator_id=_operator_from_request(),
+        )
+        return redirect(
+            url_for(
+                "api.admin_automation_conversion_member_ops",
+                stage=route_key,
+                panel="send",
+                manual_send_notice="sent",
+                record_id=int(result.get("record_id") or 0),
+            ),
+            code=302,
+        )
+    except ValueError as exc:
+        return _render_member_ops_page(page_error=str(exc))
+
+
+def admin_automation_conversion_agent_orchestration_save_draft(agent_code: str):
+    action_token_error = validate_admin_console_action_token()
+    page_input = dict(request.form or {})
+    if action_token_error:
+        return _render_run_center_page(page_error=action_token_error, page_input=page_input)
+    payload = {
+        "display_name": str(request.form.get("display_name") or "").strip(),
+        "enabled": _json_bool(request.form.get("enabled")),
+        "role_prompt": str(request.form.get("role_prompt") or "").strip(),
+        "task_prompt": str(request.form.get("task_prompt") or "").strip(),
+        "change_summary": str(request.form.get("change_summary") or "").strip(),
+    }
+    raw_variables_json = str(request.form.get("variables_json") or "").strip()
+    raw_output_schema_json = str(request.form.get("output_schema_json") or "").strip()
+    page_input = {**page_input, "variables_json": raw_variables_json, "output_schema_json": raw_output_schema_json}
+    try:
+        if raw_variables_json:
+            parsed_variables = json.loads(raw_variables_json)
+            if not isinstance(parsed_variables, list):
+                raise ValueError("variables_json must be valid JSON array")
+            payload["variables"] = parsed_variables
+        if raw_output_schema_json:
+            parsed_output_schema = json.loads(raw_output_schema_json)
+            if not isinstance(parsed_output_schema, list):
+                raise ValueError("output_schema_json must be valid JSON array")
+            payload["output_schema"] = parsed_output_schema
+        save_agent_config_draft(
+            agent_code,
+            payload,
+            operator_id=_operator_from_request(),
+            source="automation_conversion_run_center",
+        )
+    except json.JSONDecodeError:
+        return _render_run_center_page(page_error="variables_json must be valid JSON array", page_input={**page_input, "tab": "agent-orchestration", "subtab": "agents", "agent": agent_code})
+    except (LookupError, ValueError) as exc:
+        query_params = dict(request.args.to_dict(flat=True))
+        if not query_params:
+            query_params = {"tab": "agent-orchestration", "subtab": "agents", "agent": agent_code}
+        return _render_run_center_page(page_error=str(exc), page_input={**query_params, **payload})
+    return redirect(
+        url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="agents", agent=agent_code, saved=1),
+        code=302,
+    )
+
+
+def admin_automation_conversion_agent_orchestration_review_output(output_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(page_error=action_token_error)
+    decision = str(request.form.get("decision") or "").strip()
+    review_note = str(request.form.get("review_note") or "").strip()
+    try:
+        reviewed = review_agent_reply_output(
+            output_id,
+            decision=decision,
+            operator_id=_operator_from_request(),
+            review_note=review_note,
+            source="automation_conversion_run_center",
+        )
+    except (LookupError, ValueError) as exc:
+        return _render_run_center_page(page_error=str(exc))
+    page_notice = "话术已标记为采用" if str(reviewed.get("applied_status") or reviewed.get("outcome_status") or "").strip() == "adopted" else "话术已标记为不采用"
+    return redirect(
+        url_for(
+            "api.admin_automation_conversion_run_center",
+            tab="agent-orchestration",
+            subtab="outputs",
+            external_contact_id=str(request.form.get("external_contact_id") or "").strip() or None,
+            scripts_only=str(request.form.get("scripts_only") or "").strip() or None,
+            output_id=output_id,
+            notice=page_notice,
+        ),
+        code=302,
+    )
+
+
+def admin_automation_conversion_agent_orchestration_replay(run_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_run_center_page(page_error=action_token_error)
+    try:
+        replayed = replay_agent_run(run_id, operator_id=_operator_from_request())
+    except (LookupError, ValueError) as exc:
+        return _render_run_center_page(page_error=str(exc))
+    request_id = str(((replayed.get("run") or {}).get("request_id")) or request.args.get("request_id") or "").strip()
+    return redirect(
+        url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="replay", request_id=request_id, replayed=1),
+        code=302,
+    )
 
 
 def admin_automation_conversion_reply_monitor_toggle():
@@ -726,6 +1254,288 @@ def api_admin_automation_conversion_push_openclaw():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+def api_admin_automation_conversion_stage_manual_send_preview(stage_key: str):
+    try:
+        images = _stage_send_images_from_request()
+        payload = preview_stage_manual_send(
+            route_key=stage_key,
+            content=str(request.form.get("content") or request.values.get("content") or "").strip(),
+            image_media_ids=list((request.form.getlist("image_media_ids") or request.values.getlist("image_media_ids") or [])),
+            images=images,
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify(payload)
+
+
+def api_admin_automation_conversion_stage_manual_send(stage_key: str):
+    payload = request.get_json(silent=True) if request.is_json else {}
+    try:
+        result = send_stage_manual_message(
+            route_key=stage_key,
+            content=str((payload or {}).get("content") or request.values.get("content") or "").strip(),
+            image_media_ids=list((payload or {}).get("image_media_ids") or []),
+            images=list((payload or {}).get("images") or []),
+            attachments=list((payload or {}).get("attachments") or []),
+            operator_id=_operator_from_request(),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify(result)
+
+
+def api_admin_automation_conversion_focus_send_batch_create(stage_key: str):
+    try:
+        result = create_focus_send_batch(
+            route_key=stage_key,
+            operator_id=_operator_from_request(),
+            operator_type="user",
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify(result), 201
+
+
+def api_admin_automation_conversion_focus_send_batch_detail(batch_id: str):
+    try:
+        normalized_batch_id = int(str(batch_id or "").strip())
+    except ValueError:
+        return jsonify({"ok": False, "error": "invalid batch_id"}), 400
+    try:
+        payload = get_focus_send_batch_detail(batch_id=normalized_batch_id)
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_focus_send_batch_run_due():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_due_focus_send_batches(
+        operator_id=_operator_from_request(),
+        operator_type="system",
+        limit=int(payload.get("limit") or 20),
+    )
+    return jsonify(result)
+
+
+def api_admin_automation_conversion_sop_config_list():
+    return jsonify({"ok": True, **get_sop_v1_config_payload()})
+
+
+def api_admin_automation_conversion_sop_config_save(pool_key: str):
+    payload = request.get_json(silent=True) or {}
+    try:
+        config = save_sop_v1_pool_config(
+            pool_key=pool_key,
+            enabled=_json_bool(payload.get("enabled")) if "enabled" in payload else True,
+            send_time=str(payload.get("send_time") or "").strip() or "09:00",
+            timezone=str(payload.get("timezone") or "").strip() or "Asia/Shanghai",
+            effective_start_at=str(payload.get("effective_start_at") or "").strip(),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    templates_payload = get_sop_v1_templates_payload(pool_key, selected_day_index=int(payload.get("day") or 1))
+    return jsonify({"ok": True, "config": config, "template_count": int(templates_payload.get("template_count") or 0)})
+
+
+def api_admin_automation_conversion_sop_templates(pool_key: str):
+    try:
+        payload = get_sop_v1_templates_payload(pool_key, selected_day_index=_query_int("day", default=1, minimum=1, maximum=1000))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_sop_template_save(pool_key: str, day_index: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        template = save_sop_v1_template(
+            pool_key=pool_key,
+            day_index=day_index,
+            content=str(payload.get("content") or "").strip(),
+            images_json=list(payload.get("images_json") or []),
+            enabled=_json_bool(payload.get("enabled")) if "enabled" in payload else True,
+        )
+        templates_payload = get_sop_v1_templates_payload(pool_key, selected_day_index=day_index)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "template": template, **templates_payload})
+
+
+def api_admin_automation_conversion_sop_template_delete(pool_key: str, day_index: int):
+    try:
+        payload = delete_sop_v1_template_day(pool_key=pool_key, day_index=day_index)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_sop_run_due():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    result = run_registered_due_jobs(
+        job_codes=["sop"],
+        operator_id=_operator_from_request(),
+        operator_type="system",
+    )
+    return jsonify(result)
+
+
+def api_admin_automation_conversion_agent_outputs():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = list_agent_outputs(
+        {
+            "request_id": _query_text("request_id"),
+            "batch_id": _query_text("batch_id"),
+            "external_contact_id": _query_text("external_contact_id"),
+            "userid": _query_text("userid"),
+            "agent_code": _query_text("agent_code"),
+            "output_type": _query_text("output_type"),
+            "current_pool": _query_text("current_pool"),
+            "target_pool": _query_text("target_pool"),
+            "applied_status": _query_text("applied_status"),
+            "date_from": _query_text("date_from"),
+            "date_to": _query_text("date_to"),
+            "min_confidence": _query_text("min_confidence"),
+            "max_confidence": _query_text("max_confidence"),
+            "has_error": _query_text("has_error"),
+            "scripts_only": _query_bool("scripts_only", default=False),
+        },
+        page=_query_int("page", default=1, minimum=1, maximum=100000),
+        page_size=_query_int("page_size", default=20, minimum=1, maximum=100),
+        visibility="console",
+    )
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_agent_output_detail(output_id: str):
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    try:
+        payload = get_agent_output_detail(output_id, visibility="console")
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_agent_run_detail(run_id: str):
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    try:
+        payload = get_agent_run_detail(run_id, visibility="console")
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, "run": payload})
+
+
+def api_admin_automation_conversion_agent_outputs_export():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    try:
+        job = create_agent_output_export_job(
+            dict(payload.get("filters") or {}),
+            requested_by=str(payload.get("requested_by") or _operator_from_request() or "crm_console").strip(),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 429
+    return jsonify({"ok": True, "job": job}), 202
+
+
+def api_admin_automation_conversion_agent_outputs_export_detail(job_id: str):
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    if _query_bool("download", default=False):
+        export_file = get_agent_output_export_file(job_id)
+        if not export_file:
+            return jsonify({"ok": False, "error": "export job not found"}), 404
+        return Response(
+            bytes(export_file.get("content_bytes") or b""),
+            mimetype="application/vnd.ms-excel",
+            headers={"Content-Disposition": f"attachment; filename={str(export_file.get('file_name') or 'agent-outputs.xls')}"},
+        )
+    job = get_agent_output_export_job(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "export job not found"}), 404
+    return jsonify({"ok": True, "job": job})
+
+
+def api_admin_automation_conversion_agent_replay():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = get_agent_replay_payload(
+        run_id=_query_text("run_id"),
+        request_id=_query_text("request_id"),
+        external_contact_id=_query_text("external_contact_id"),
+        userid=_query_text("userid"),
+        date_from=_query_text("date_from"),
+        date_to=_query_text("date_to"),
+        visibility="console",
+    )
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_router_pending_callbacks():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = list_router_pending_callbacks(
+        older_than_minutes=_query_int("older_than_minutes", default=15, minimum=1, maximum=24 * 60),
+        limit=_query_int("limit", default=20, minimum=1, maximum=100),
+        visibility="full",
+    )
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_router_callback_replay(run_id: str):
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    try:
+        payload = replay_router_callback(run_id, operator_id=_operator_from_request())
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **payload})
+
+
+def api_admin_automation_conversion_router_pending_callback_check():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = request.get_json(silent=True) or {}
+    result = run_router_pending_callback_check(
+        older_than_minutes=payload.get("older_than_minutes"),
+        limit=int(payload.get("limit") or 100),
+        operator_id=_operator_from_request(),
+    )
+    return jsonify(result)
+
+
+def api_admin_automation_conversion_pending_publish():
+    auth_failure = require_internal_api_token(require_configured=True)
+    if auth_failure is not None:
+        return auth_failure
+    payload = list_pending_agent_prompt_publish_requests(
+        agent_code=_query_text("agent_code"),
+        page=_query_int("page", default=1, minimum=1, maximum=100000),
+        page_size=_query_int("page_size", default=20, minimum=1, maximum=100),
+    )
+    return jsonify({"ok": True, **payload})
+
+
 def api_admin_automation_conversion_agent_options():
     return jsonify(
         {
@@ -817,6 +1627,19 @@ def api_admin_automation_conversion_default_channel_settings():
     return jsonify({"ok": True, **get_default_channel_settings_payload()})
 
 
+def api_admin_automation_conversion_settings():
+    return jsonify({"ok": True, "settings": get_settings_payload()})
+
+
+def api_admin_automation_conversion_settings_save():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_settings(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "settings": result})
+
+
 def api_admin_automation_conversion_default_channel_settings_save():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
@@ -838,20 +1661,35 @@ def api_admin_automation_conversion_default_channel_generate_qr():
     return jsonify({"ok": bool(result.get("generated")), **result}), status_code
 
 
+def api_admin_automation_conversion_settings_default_channel_generate_qr():
+    result = generate_default_channel_qr(operator=_operator_from_request())
+    status_code = int(result.get("status_code") or (200 if result.get("generated") else 400))
+    return jsonify({"ok": bool(result.get("generated")), **result}), status_code
+
+
 def api_admin_automation_conversion_model_settings():
     return jsonify({"ok": True, **get_model_infra_payload(limit_logs=10)})
 
 
 def api_admin_automation_conversion_model_settings_save():
-    action_token_error = validate_admin_console_action_token()
-    if action_token_error:
-        return jsonify({"ok": False, "error": action_token_error}), 400
     payload = request.get_json(silent=True) or {}
     try:
         result = save_model_infra_settings(payload)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify({"ok": True, **result})
+    return jsonify({"ok": True, "model_infra": result, **result})
+
+
+def api_admin_automation_conversion_model_infra_settings_save_legacy():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_model_infra_settings(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    legacy_deepseek = dict(result.get("deepseek") or {})
+    legacy_deepseek.pop("reasoner_model", None)
+    legacy_payload = {**result, "deepseek": legacy_deepseek}
+    return jsonify({"ok": True, "model_infra": legacy_payload, **legacy_payload})
 
 
 def api_admin_automation_conversion_model_settings_test():
@@ -1246,6 +2084,10 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
     bp.route("/admin/automation-conversion/overview", methods=["GET"])(admin_automation_conversion_overview)
     bp.route("/admin/automation-conversion/operations", methods=["GET"])(admin_automation_conversion_operations)
+    bp.route("/admin/automation-conversion/settings", methods=["GET"])(admin_automation_conversion_settings)
+    bp.route("/admin/automation-conversion/settings/save", methods=["POST"])(admin_automation_conversion_save_settings)
+    bp.route("/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(admin_automation_conversion_generate_default_channel)
+    bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
     bp.route("/admin/automation-conversion/operations/workflows/new", methods=["GET"])(admin_automation_conversion_workflow_new)
     bp.route("/admin/automation-conversion/operations/workflows/<int:workflow_id>/edit", methods=["GET"])(admin_automation_conversion_workflow_edit)
     bp.route("/admin/automation-conversion/operations/workflows/<int:workflow_id>/nodes", methods=["GET"])(admin_automation_conversion_workflow_nodes)
@@ -1255,6 +2097,14 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/flow-design", methods=["GET"])(admin_automation_conversion_flow_design)
     bp.route("/admin/automation-conversion/member-ops", methods=["GET"])(admin_automation_conversion_member_ops)
     bp.route("/admin/automation-conversion/run-center", methods=["GET"])(admin_automation_conversion_run_center)
+    bp.route("/admin/automation-conversion/model-infra", methods=["GET"])(admin_automation_conversion_model_infra)
+    bp.route("/admin/automation-conversion/debug", methods=["GET"])(admin_automation_conversion_debug)
+    bp.route("/admin/automation-conversion/preview", methods=["GET"])(admin_automation_conversion_preview)
+    bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage)
+    bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET", "POST"])(admin_automation_conversion_stage_send)
+    bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft", methods=["POST"])(admin_automation_conversion_agent_orchestration_save_draft)
+    bp.route("/admin/automation-conversion/agent-orchestration/outputs/<output_id>/review", methods=["POST"])(admin_automation_conversion_agent_orchestration_review_output)
+    bp.route("/admin/automation-conversion/agent-orchestration/replay/<run_id>", methods=["POST"])(admin_automation_conversion_agent_orchestration_replay)
     bp.route("/admin/automation-conversion/overview/signup-tag/apply", methods=["POST"])(admin_automation_conversion_apply_overview_signup_tag)
     bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
     bp.route("/admin/automation-conversion/reply-monitor/toggle", methods=["POST"])(admin_automation_conversion_reply_monitor_toggle)
@@ -1269,7 +2119,28 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/member/mark-won", methods=["POST"])(api_admin_automation_conversion_mark_won)
     bp.route("/api/admin/automation-conversion/member/unmark-won", methods=["POST"])(api_admin_automation_conversion_unmark_won)
     bp.route("/api/admin/automation-conversion/member/push-openclaw", methods=["POST"])(api_admin_automation_conversion_push_openclaw)
+    bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview", methods=["POST"])(api_admin_automation_conversion_stage_manual_send_preview)
+    bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send", methods=["POST"])(api_admin_automation_conversion_stage_manual_send)
+    bp.route("/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches", methods=["POST"])(api_admin_automation_conversion_focus_send_batch_create)
+    bp.route("/api/admin/automation-conversion/focus-send-batches/<batch_id>", methods=["GET"])(api_admin_automation_conversion_focus_send_batch_detail)
+    bp.route("/api/admin/automation-conversion/focus-send-batches/run-due", methods=["POST"])(api_admin_automation_conversion_focus_send_batch_run_due)
+    bp.route("/api/admin/automation-conversion/sop/config", methods=["GET"])(api_admin_automation_conversion_sop_config_list)
+    bp.route("/api/admin/automation-conversion/sop/config/<pool_key>", methods=["PUT"])(api_admin_automation_conversion_sop_config_save)
+    bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>", methods=["GET"])(api_admin_automation_conversion_sop_templates)
+    bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["PUT"])(api_admin_automation_conversion_sop_template_save)
+    bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["DELETE"])(api_admin_automation_conversion_sop_template_delete)
+    bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
     bp.route("/api/admin/automation-conversion/dashboard", methods=["GET"])(api_admin_automation_conversion_dashboard)
+    bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
+    bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_settings_save)
+    bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_settings_default_channel_generate_qr)
+    bp.route("/api/admin/automation-conversion/agent-outputs", methods=["GET"])(api_admin_automation_conversion_agent_outputs)
+    bp.route("/api/admin/automation-conversion/agent-outputs/<output_id>", methods=["GET"])(api_admin_automation_conversion_agent_output_detail)
+    bp.route("/api/admin/automation-conversion/agent-runs/<run_id>", methods=["GET"])(api_admin_automation_conversion_agent_run_detail)
+    bp.route("/api/admin/automation-conversion/agent-outputs/export", methods=["POST"])(api_admin_automation_conversion_agent_outputs_export)
+    bp.route("/api/admin/automation-conversion/agent-outputs/export/<job_id>", methods=["GET"])(api_admin_automation_conversion_agent_outputs_export_detail)
+    bp.route("/api/admin/automation-conversion/agent-replay", methods=["GET"])(api_admin_automation_conversion_agent_replay)
+    bp.route("/api/admin/automation-conversion/agent-orchestration/pending-publish", methods=["GET"])(api_admin_automation_conversion_pending_publish)
     bp.route("/api/admin/automation-conversion/agents", methods=["POST"])(api_admin_automation_conversion_agent_create)
     bp.route("/api/admin/automation-conversion/agents/options", methods=["GET"])(api_admin_automation_conversion_agent_options)
     bp.route("/api/admin/automation-conversion/agents/<agent_code>", methods=["GET"])(api_admin_automation_conversion_agent_detail)
@@ -1281,7 +2152,11 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/default-channel-settings/generate-qr", methods=["POST"])(api_admin_automation_conversion_default_channel_generate_qr)
     bp.route("/api/admin/automation-conversion/model-settings", methods=["GET"])(api_admin_automation_conversion_model_settings)
     bp.route("/api/admin/automation-conversion/model-settings", methods=["PUT"])(api_admin_automation_conversion_model_settings_save)
+    bp.route("/api/admin/automation-conversion/model-infra/settings", methods=["POST"])(api_admin_automation_conversion_model_infra_settings_save_legacy)
     bp.route("/api/admin/automation-conversion/model-settings/test", methods=["POST"])(api_admin_automation_conversion_model_settings_test)
+    bp.route("/api/admin/automation-conversion/router-pending-callbacks", methods=["GET"])(api_admin_automation_conversion_router_pending_callbacks)
+    bp.route("/api/admin/automation-conversion/router-callback-replay/<run_id>", methods=["POST"])(api_admin_automation_conversion_router_callback_replay)
+    bp.route("/api/admin/automation-conversion/router-pending-callback-check", methods=["POST"])(api_admin_automation_conversion_router_pending_callback_check)
     bp.route("/api/admin/automation-conversion/profile-segment-templates/catalog", methods=["GET"])(api_admin_automation_conversion_profile_segment_catalog)
     bp.route("/api/admin/automation-conversion/profile-segment-templates", methods=["GET"])(api_admin_automation_conversion_profile_segment_templates)
     bp.route("/api/admin/automation-conversion/profile-segment-templates/options", methods=["GET"])(api_admin_automation_conversion_profile_segment_template_options)

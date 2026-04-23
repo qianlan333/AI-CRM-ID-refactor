@@ -1537,9 +1537,7 @@ CREATE TABLE IF NOT EXISTS automation_member (
     in_pool BOOLEAN NOT NULL DEFAULT FALSE,
     current_pool TEXT NOT NULL DEFAULT 'removed',
     follow_type TEXT NOT NULL DEFAULT '',
-    activation_status TEXT NOT NULL DEFAULT 'unknown',
     questionnaire_status TEXT NOT NULL DEFAULT 'pending',
-    questionnaire_result TEXT NOT NULL DEFAULT 'unknown',
     decision_source TEXT NOT NULL DEFAULT 'system',
     source_type TEXT NOT NULL DEFAULT 'system',
     source_channel_id BIGINT REFERENCES automation_channel(id) ON DELETE SET NULL,
@@ -2100,7 +2098,7 @@ CREATE TABLE IF NOT EXISTS automation_workflow_node (
     target_audience_code TEXT NOT NULL
         CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
     trigger_mode TEXT NOT NULL DEFAULT 'scheduled'
-        CHECK (trigger_mode IN ('scheduled', 'audience_entered')),
+        CHECK (trigger_mode IN ('scheduled', 'daily_recurring', 'audience_entered')),
     day_offset INTEGER NOT NULL DEFAULT 1,
     send_time TEXT NOT NULL DEFAULT '09:00',
     timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
@@ -2153,7 +2151,7 @@ CREATE TABLE IF NOT EXISTS automation_workflow_execution (
     workflow_id BIGINT REFERENCES automation_workflow(id) ON DELETE SET NULL,
     node_id BIGINT REFERENCES automation_workflow_node(id) ON DELETE SET NULL,
     trigger_type TEXT NOT NULL DEFAULT 'scheduled_poll'
-        CHECK (trigger_type IN ('scheduled_poll', 'manual_replay', 'debug')),
+        CHECK (trigger_type IN ('scheduled_poll', 'daily_recurring_poll', 'manual_replay', 'debug')),
     audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
         CHECK (audience_code IN ('pending_questionnaire', 'operating', 'converted')),
     scheduled_for TEXT NOT NULL DEFAULT '',
@@ -2258,7 +2256,7 @@ ON automation_focus_send_batch_item (status, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_sop_pool_config (
     id BIGSERIAL PRIMARY KEY,
-    pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     max_day_count INTEGER NOT NULL DEFAULT 5,
     send_time TEXT NOT NULL DEFAULT '09:00',
@@ -2273,7 +2271,7 @@ ON automation_sop_pool_config (updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_sop_template (
     id BIGSERIAL PRIMARY KEY,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     day_index INTEGER NOT NULL DEFAULT 1,
     content TEXT NOT NULL DEFAULT '',
     images_json JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -2288,7 +2286,7 @@ ON automation_sop_template (pool_key, day_index);
 CREATE TABLE IF NOT EXISTS automation_sop_progress (
     id BIGSERIAL PRIMARY KEY,
     member_id BIGINT NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     first_entered_at TEXT NOT NULL DEFAULT '',
     last_entered_at TEXT NOT NULL DEFAULT '',
     sop_anchor_date TEXT NOT NULL DEFAULT '',
@@ -2312,7 +2310,7 @@ ON automation_sop_progress (pool_key, sop_anchor_date, updated_at DESC, id DESC)
 
 CREATE TABLE IF NOT EXISTS automation_sop_batch (
     id BIGSERIAL PRIMARY KEY,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     day_index INTEGER NOT NULL DEFAULT 0,
     template_id BIGINT REFERENCES automation_sop_template(id) ON DELETE SET NULL,
     scheduled_for TEXT NOT NULL DEFAULT '',
@@ -2333,7 +2331,7 @@ CREATE TABLE IF NOT EXISTS automation_sop_batch_item (
     id BIGSERIAL PRIMARY KEY,
     batch_id BIGINT NOT NULL REFERENCES automation_sop_batch(id) ON DELETE CASCADE,
     member_id BIGINT REFERENCES automation_member(id) ON DELETE CASCADE,
-    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('new_user', 'inactive_normal', 'active_normal')),
+    pool_key TEXT NOT NULL DEFAULT '' CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
     day_index INTEGER NOT NULL DEFAULT 0,
     day_index_snapshot INTEGER NOT NULL DEFAULT 0,
     external_userid TEXT NOT NULL DEFAULT '',

@@ -5,22 +5,33 @@ import json
 
 from flask import Response, jsonify, request
 
+from ..application.user_ops import (
+    BackfillOwnerClassTermsCommand,
+    BackfillOwnerClassTermsCommandDTO,
+    ExportUserOpsPoolQuery,
+    ExportUserOpsPoolQueryDTO,
+    GetUserOpsOverviewQuery,
+    GetUserOpsOverviewQueryDTO,
+    ImportActivationStatusCommand,
+    ImportActivationStatusCommandDTO,
+    ImportMobileClassTermCommand,
+    ImportMobileClassTermCommandDTO,
+    LeadPoolFiltersDTO,
+    ListLeadPoolQuery,
+    ListLeadPoolQueryDTO,
+    ListUserOpsHistoryQuery,
+    ListUserOpsHistoryQueryDTO,
+    RunDueUserOpsDeferredJobsCommand,
+    RunDueUserOpsDeferredJobsCommandDTO,
+)
 from ..domains.routing_config import DEFAULT_SALES_ROUTE_OWNER_USERID
 from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
 from ..services import (
-    backfill_owner_class_terms_into_lead_pool,
     execute_user_ops_batch_send,
-    export_user_ops_pool,
-    get_user_ops_overview,
     get_user_ops_send_record_detail,
-    import_activation_status_source,
-    import_mobile_class_term_source,
-    list_user_ops_history,
-    list_user_ops_pool,
     list_user_ops_send_records,
     preview_user_ops_batch_send,
     refresh_user_ops_send_record_status,
-    run_due_user_ops_deferred_jobs,
     set_user_ops_do_not_disturb,
 )
 from ..wecom_client import WeComClientError
@@ -36,15 +47,15 @@ ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES = {
 }
 
 
-def _detect_image_content_type(file_bytes: bytes) -> str:
+def _detect_one_time_batch_send_image_type(file_bytes: bytes) -> str:
     if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-        return ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES["png"]
+        return "png"
     if file_bytes.startswith(b"\xff\xd8\xff"):
-        return ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES["jpeg"]
+        return "jpeg"
     if file_bytes.startswith((b"GIF87a", b"GIF89a")):
-        return ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES["gif"]
+        return "gif"
     if len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
-        return ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES["webp"]
+        return "webp"
     return ""
 
 
@@ -62,6 +73,10 @@ def _page_filters_from_request_args() -> dict[str, str]:
         "huangxiaocan_activation_state": request.args.get("huangxiaocan_activation_state", "").strip(),
         "query": request.args.get("query", "").strip(),
     }
+
+
+def _lead_pool_filters_dto_from_request_args() -> LeadPoolFiltersDTO:
+    return LeadPoolFiltersDTO(**_page_filters_from_request_args())
 
 
 def _parse_json_form_field(field_name: str, default):
@@ -88,7 +103,8 @@ def _normalize_one_time_batch_send_images():
         file_bytes = file_storage.read()
         if len(file_bytes) > MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES:
             raise ValueError("image file is too large (max 5MB)")
-        detected_type = _detect_image_content_type(file_bytes)
+        detected_image_type = _detect_one_time_batch_send_image_type(file_bytes)
+        detected_type = ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES.get(detected_image_type, "")
         if not detected_type:
             raise ValueError("only image files are allowed")
         images.append(
@@ -122,12 +138,16 @@ def _batch_send_payload_from_request() -> dict:
 
 
 def admin_user_ops_overview():
-    payload = get_user_ops_overview(**_page_filters_from_request_args())
+    payload = GetUserOpsOverviewQuery()(
+        GetUserOpsOverviewQueryDTO(filters=_lead_pool_filters_dto_from_request_args())
+    )
     return jsonify({"ok": True, **payload})
 
 
 def admin_user_ops_list():
-    payload = list_user_ops_pool(**_page_filters_from_request_args())
+    payload = ListLeadPoolQuery()(
+        ListLeadPoolQueryDTO(filters=_lead_pool_filters_dto_from_request_args())
+    )
     return jsonify({"ok": True, **payload})
 
 
@@ -136,7 +156,7 @@ def admin_user_ops_history():
         limit = int(request.args.get("limit", "100").strip() or "100")
     except ValueError:
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
-    payload = list_user_ops_history(limit=limit)
+    payload = ListUserOpsHistoryQuery()(ListUserOpsHistoryQueryDTO(limit=limit))
     return jsonify({"ok": True, **payload})
 
 
@@ -171,9 +191,11 @@ def admin_user_ops_import_mobile_class_terms():
     pasted_text = ""
     if uploaded_file and uploaded_file.filename:
         try:
-            payload = import_mobile_class_term_source(
-                file_name=uploaded_file.filename,
-                file_bytes=uploaded_file.read(),
+            payload = ImportMobileClassTermCommand()(
+                ImportMobileClassTermCommandDTO(
+                    file_name=uploaded_file.filename,
+                    file_bytes=uploaded_file.read(),
+                )
             )
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -188,7 +210,9 @@ def admin_user_ops_import_mobile_class_terms():
     if not pasted_text:
         return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
     try:
-        payload = import_mobile_class_term_source(pasted_text=pasted_text)
+        payload = ImportMobileClassTermCommand()(
+            ImportMobileClassTermCommandDTO(pasted_text=pasted_text)
+        )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify(payload)
@@ -199,9 +223,11 @@ def admin_user_ops_import_activation_status():
     pasted_text = ""
     if uploaded_file and uploaded_file.filename:
         try:
-            payload = import_activation_status_source(
-                file_name=uploaded_file.filename,
-                file_bytes=uploaded_file.read(),
+            payload = ImportActivationStatusCommand()(
+                ImportActivationStatusCommandDTO(
+                    file_name=uploaded_file.filename,
+                    file_bytes=uploaded_file.read(),
+                )
             )
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -216,7 +242,9 @@ def admin_user_ops_import_activation_status():
     if not pasted_text:
         return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
     try:
-        payload = import_activation_status_source(pasted_text=pasted_text)
+        payload = ImportActivationStatusCommand()(
+            ImportActivationStatusCommandDTO(pasted_text=pasted_text)
+        )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify(payload)
@@ -247,13 +275,15 @@ def internal_user_ops_backfill_owner_class_terms():
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "class_term_min and class_term_max must be integers"}), 400
     try:
-        payload = backfill_owner_class_terms_into_lead_pool(
-            owner_userid=owner_userid,
-            class_term_min=class_term_min,
-            class_term_max=class_term_max,
-            dry_run=dry_run,
-            operator=str(payload_json.get("operator") or "").strip(),
-            entry_source=str(payload_json.get("entry_source") or "").strip(),
+        payload = BackfillOwnerClassTermsCommand()(
+            BackfillOwnerClassTermsCommandDTO(
+                owner_userid=owner_userid,
+                class_term_min=class_term_min,
+                class_term_max=class_term_max,
+                dry_run=dry_run,
+                operator=str(payload_json.get("operator") or "").strip(),
+                entry_source=str(payload_json.get("entry_source") or "").strip(),
+            )
         )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -269,12 +299,14 @@ def admin_user_ops_run_deferred_jobs():
         limit = int(limit_value)
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
-    payload = run_due_user_ops_deferred_jobs(limit=limit)
+    payload = RunDueUserOpsDeferredJobsCommand()(RunDueUserOpsDeferredJobsCommandDTO(limit=limit))
     return jsonify(payload)
 
 
 def admin_user_ops_export():
-    export_payload = export_user_ops_pool(**_page_filters_from_request_args())
+    export_payload = ExportUserOpsPoolQuery()(
+        ExportUserOpsPoolQueryDTO(filters=_lead_pool_filters_dto_from_request_args())
+    )
     content = _build_excel_xml(export_payload["headers"], export_payload["rows"])
     return Response(
         content,

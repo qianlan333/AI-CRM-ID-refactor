@@ -93,9 +93,9 @@ def resolve_pool_reference_at(
     now: str,
 ) -> str:
     if pool_key in {POOL_ACTIVE_NORMAL, POOL_ACTIVE_FOCUS}:
-        return activation_at or trial_opened_at or submission_at or last_message_at or now
+        return last_message_at or now
     if pool_key in {POOL_INACTIVE_NORMAL, POOL_INACTIVE_FOCUS}:
-        return trial_opened_at or submission_at or last_message_at or now
+        return last_message_at or now
     return last_message_at or submission_at or trial_opened_at or activation_at or now
 
 

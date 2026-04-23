@@ -410,7 +410,7 @@ def _customer_pulse_activity_items(external_userid: str, *, tenant_key: str) -> 
     return items
 
 
-def get_customer_timeline(
+def _get_customer_timeline_impl(
     external_userid: str,
     filters: dict[str, Any],
     *,
@@ -461,3 +461,25 @@ def get_customer_timeline(
         total=len(items),
     )
     return payload.to_dict()
+
+
+def get_customer_timeline(
+    external_userid: str,
+    filters: dict[str, Any],
+    *,
+    customer_pulse_tenant_context: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Legacy compatibility wrapper around the Wave 1 customer read-model query."""
+
+    from ..application.customer_read_model import CustomerTimelineQueryDTO, GetCustomerTimelineQuery
+
+    raw_filters = dict(filters or {})
+    return GetCustomerTimelineQuery()(
+        CustomerTimelineQueryDTO(
+            external_userid=external_userid,
+            event_type=str(raw_filters.get("event_type", "") or ""),
+            limit=raw_filters.get("limit", raw_filters.get("normalized_limit", 50)),
+            offset=raw_filters.get("offset", raw_filters.get("normalized_offset", 0)),
+            customer_pulse_tenant_context=customer_pulse_tenant_context,
+        )
+    )

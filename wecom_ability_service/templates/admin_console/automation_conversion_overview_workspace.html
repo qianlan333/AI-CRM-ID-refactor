@@ -21,6 +21,11 @@
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
+  .ac-overview-additional-stats {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    align-items: start;
+  }
+
   .ac-overview-card,
   .ac-overview-section,
   .ac-overview-stat {
@@ -84,6 +89,44 @@
   .ac-overview-group-grid {
     display: grid;
     gap: 16px;
+  }
+
+  .ac-overview-segmentation-stats {
+    display: grid;
+    gap: 16px;
+    grid-column: 1 / -1;
+  }
+
+  .ac-overview-segmentation-panel {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.92);
+  }
+
+  .ac-overview-segmentation-panel strong {
+    font-size: 14px;
+    color: #0f172a;
+  }
+
+  .ac-overview-segmentation-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ac-overview-segmentation-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    color: #334155;
+    font-size: 13px;
+    line-height: 1.4;
   }
 
   .ac-overview-group-card {
@@ -167,6 +210,10 @@
 
 {% block content %}
 {% set workspace = overview_workspace or {} %}
+{% set snapshot = workspace.snapshot or {} %}
+{% set message_sync = snapshot.message_activity_sync or {} %}
+{% set reply_monitor = snapshot.reply_monitor or {} %}
+{% set sync_last_run = message_sync.last_run or {} %}
 
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
@@ -204,16 +251,22 @@
           <strong id="overview-active-workflow-count">0</strong>
         </article>
       </div>
+      <div class="ac-overview-summary-grid ac-overview-additional-stats" id="overview-additional-stats" hidden>
+        <article class="ac-overview-stat">
+          <span>问卷提交人数</span>
+          <strong id="overview-questionnaire-submitted">0</strong>
+        </article>
+        <div class="ac-overview-segmentation-stats" id="overview-segmentation-stats" hidden></div>
+      </div>
     </article>
 
     <article class="ac-overview-card">
       <div class="ac-overview-head">
         <div>
           <h3>运行动作</h3>
-          <p class="ac-overview-muted">只保留和当前模块直接相关的状态刷新与当前列表批量打标动作。</p>
+          <p class="ac-overview-muted">只保留和当前模块直接相关的状态刷新动作。</p>
         </div>
       </div>
-      <button class="admin-button admin-button--secondary" type="button" id="overview-apply-signup-tag-button">给当前列表用户打报名引流品标签</button>
       <button class="admin-button admin-button--primary" type="button" id="overview-refresh-button">刷新模块状态</button>
       <div class="ac-overview-muted" id="overview-refresh-status">顺序执行消息活跃同步、自动接话扫描、自动接话放行。</div>
     </article>
@@ -264,10 +317,11 @@
     const loading = document.getElementById('overview-loading');
     const summaryGrid = document.getElementById('overview-summary-grid');
     const refreshButton = document.getElementById('overview-refresh-button');
-    const applySignupTagButton = document.getElementById('overview-apply-signup-tag-button');
     const refreshStatus = document.getElementById('overview-refresh-status');
     const memberGroups = document.getElementById('overview-member-groups');
     const profileTemplateNote = document.getElementById('overview-profile-template-note');
+    const additionalStats = document.getElementById('overview-additional-stats');
+    const segmentationStats = document.getElementById('overview-segmentation-stats');
 
     function showFeedback(message, tone) {
       if (!message) {
@@ -303,26 +357,30 @@
       const detail = dashboard.audience_member_details || {};
       const groups = detail.groups || [];
       const profileTemplate = detail.profile_segment_template || {};
-      profileTemplateNote.textContent = profileTemplate.template_name
-        ? `自然画像模板：${profileTemplate.template_name}`
-        : '自然画像模板：当前未启用，相关列暂不展示命中结果';
+      const skippedInvalidCount = Number(profileTemplate.skipped_invalid_enabled_template_count || 0);
+      const reasonMessages = Array.isArray(profileTemplate.reason_messages) ? profileTemplate.reason_messages.filter(Boolean) : [];
+      if (profileTemplate.template_name && profileTemplate.valid !== false) {
+        profileTemplateNote.textContent = skippedInvalidCount > 0
+          ? `自然画像模板：${profileTemplate.template_name}（已跳过 ${skippedInvalidCount} 个无效启用模板）`
+          : `自然画像模板：${profileTemplate.template_name}`;
+      } else if (profileTemplate.selection_status === 'no_valid_enabled_template') {
+        profileTemplateNote.textContent = `自然画像模板：当前没有有效的启用模板，已跳过 ${skippedInvalidCount} 个无效模板。${reasonMessages[0] || ''}`;
+      } else {
+        profileTemplateNote.textContent = '自然画像模板：当前未启用或无有效模板，相关列暂不展示命中结果';
+      }
       memberGroups.innerHTML = groups.map((group) => {
         const rows = (group.items || []).length
           ? group.items.map((item) => `
             <tr>
               <td>${escapeHtml(item.external_contact_id || '-')}</td>
               <td>${escapeHtml(item.phone || '-')}</td>
-              <td>${escapeHtml(item.activation_status_label || '-')}</td>
               <td>${escapeHtml(item.questionnaire_status_label || '-')}</td>
-              <td>${escapeHtml(item.questionnaire_result_label || '-')}</td>
               <td>${escapeHtml(item.profile_segment_label || '-')}</td>
               <td>${escapeHtml(item.behavior_segment_label || '-')}</td>
               <td>${escapeHtml(item.conversation_count || 0)}</td>
-              <td>${escapeHtml(item.owner_staff_id || '-')}</td>
-              <td>${escapeHtml(item.entered_at || '-')}</td>
             </tr>
           `).join('')
-          : '<tr><td colspan="10">当前池子还没有用户。</td></tr>';
+          : '<tr><td colspan="6">当前池子还没有用户。</td></tr>';
         return `
           <article class="ac-overview-group-card">
             <div class="ac-overview-group-head">
@@ -338,14 +396,10 @@
                   <tr>
                     <th>用户 ID</th>
                     <th>手机号</th>
-                    <th>激活状态</th>
                     <th>问卷状态</th>
-                    <th>问卷结果</th>
                     <th>自然画像分层</th>
                     <th>行为画像分层</th>
                     <th>对话次数</th>
-                    <th>归属员工</th>
-                    <th>进入当前池子时间</th>
                   </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -354,6 +408,54 @@
           </article>
         `;
       }).join('');
+    }
+
+    function computeAdditionalStats(dashboard) {
+      const groups = ((dashboard.audience_member_details || {}).groups || []);
+      let questionnaireSubmittedCount = 0;
+      const profileSegments = new Map();
+      const behaviorSegments = new Map();
+
+      function incrementSegment(counter, label) {
+        const normalizedLabel = String(label || '').trim();
+        if (!normalizedLabel || normalizedLabel === '-') return;
+        counter.set(normalizedLabel, Number(counter.get(normalizedLabel) || 0) + 1);
+      }
+
+      groups.forEach((group) => {
+        (group.items || []).forEach((item) => {
+          const questionnaireLabel = String(item.questionnaire_status_label || '').trim();
+
+          if (questionnaireLabel.includes('已提交')) {
+            questionnaireSubmittedCount += 1;
+          }
+
+          incrementSegment(profileSegments, item.profile_segment_label);
+          incrementSegment(behaviorSegments, item.behavior_segment_label);
+        });
+      });
+
+      document.getElementById('overview-questionnaire-submitted').textContent = String(questionnaireSubmittedCount);
+
+      function renderSegmentationPanel(title, segments) {
+        const entries = Array.from(segments.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'zh-CN'));
+        const items = entries.length
+          ? entries.map(([label, count]) => `<span class="ac-overview-segmentation-item">${escapeHtml(label)}：${escapeHtml(count)}</span>`).join('')
+          : '<span class="ac-overview-segmentation-item">暂无数据：0</span>';
+        return `
+          <div class="ac-overview-segmentation-panel">
+            <strong>${escapeHtml(title)}</strong>
+            <div class="ac-overview-segmentation-list">${items}</div>
+          </div>
+        `;
+      }
+
+      segmentationStats.innerHTML = [
+        renderSegmentationPanel('自然画像分层', profileSegments),
+        renderSegmentationPanel('行为画像分层', behaviorSegments),
+      ].join('');
+      additionalStats.hidden = false;
+      segmentationStats.hidden = false;
     }
 
     function renderDashboard(dashboard) {
@@ -377,6 +479,7 @@
         `).join('')
         : '<tr><td colspan="3">当前还没有任务流执行摘要。</td></tr>';
       renderMemberGroups(dashboard);
+      computeAdditionalStats(dashboard);
     }
 
     async function loadDashboard() {
@@ -407,7 +510,6 @@
 
     refreshButton.addEventListener('click', async () => {
       refreshButton.disabled = true;
-      if (applySignupTagButton) applySignupTagButton.disabled = true;
       refreshStatus.textContent = '正在刷新自动化转化模块状态...';
       try {
         await postAdminAction(apiUrls.message_activity_sync_run);
@@ -421,29 +523,8 @@
         showFeedback(error.message || '状态刷新失败', 'error');
       } finally {
         refreshButton.disabled = false;
-        if (applySignupTagButton) applySignupTagButton.disabled = false;
       }
     });
-
-    if (applySignupTagButton) {
-      applySignupTagButton.addEventListener('click', async () => {
-        applySignupTagButton.disabled = true;
-        refreshButton.disabled = true;
-        refreshStatus.textContent = '正在给当前列表用户批量打报名引流品标签...';
-        try {
-          const payload = await postAdminAction(apiUrls.apply_signup_tag);
-          await loadDashboard();
-          refreshStatus.textContent = payload.message || '批量打标完成';
-          showFeedback(payload.message || '当前列表用户已完成报名引流品打标', 'success');
-        } catch (error) {
-          refreshStatus.textContent = error.message || '批量打标失败';
-          showFeedback(error.message || '批量打标失败', 'error');
-        } finally {
-          applySignupTagButton.disabled = false;
-          refreshButton.disabled = false;
-        }
-      });
-    }
 
     loadDashboard().catch((error) => {
       loading.hidden = true;

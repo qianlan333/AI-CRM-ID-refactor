@@ -5,34 +5,168 @@ from datetime import datetime
 
 from flask import current_app
 
-from ..domains.class_user.service import list_class_user_live_base_rows, list_signup_scope_external_userids
-from ..infra.wecom_runtime import get_app_runtime_client
-from ..services import (
-    apply_class_user_status_change,
-    build_class_user_tag_view,
-    get_class_user_snapshot,
-    get_class_user_status_current,
-    get_primary_follow_user_userid,
-    get_signup_status_definition,
-    get_signup_status_definitions,
-    list_available_wecom_tags,
+from ..application.class_user.commands import (
+    ApplyClassUserStatusChangeCommand,
+    UpdateClassUserStatusSyncResultCommand,
+)
+from ..application.class_user.dto import (
+    ApplyClassUserStatusChangeCommandDTO,
+    GetClassUserSnapshotQueryDTO,
+    GetClassUserStatusCurrentQueryDTO,
+    UpdateClassUserStatusSyncResultCommandDTO,
+)
+from ..application.class_user.queries import (
+    GetClassUserSnapshotQuery,
+    GetClassUserStatusCurrentQuery,
+    ListClassUserLiveBaseRowsQuery,
+    ListSignupScopeExternalUseridsQuery,
+)
+from ..application.identity_contact.commands import (
+    BuildExternalContactIdentityRecordCommand,
+    RefreshExternalContactIdentityOwnerCommand,
+    ReplaceFollowUsersCommand,
+    UpsertExternalContactIdentityCommand,
+)
+from ..application.identity_contact.dto import (
+    GetPrimaryFollowUserUseridQueryDTO,
+    RefreshExternalContactIdentityOwnerCommandDTO,
+    ReplaceFollowUsersCommandDTO,
+    UpsertExternalContactIdentityCommandDTO,
+)
+from ..application.identity_contact.queries import (
+    GetPrimaryFollowUserUseridQuery,
+)
+from ..domains.contacts.repo import upsert_contacts
+from ..domains.contacts.service import normalize_contact_record
+from ..domains.marketing_automation.service import mark_enrolled, unmark_enrolled
+from ..domains.questionnaire.service import list_available_wecom_tags
+from ..domains.tags.repo import (
     list_signup_tag_rules,
-    normalize_contact_record,
-    mark_enrolled,
-    normalize_external_contact_identity,
-    refresh_external_contact_identity_owner,
     remove_tag_snapshot,
     remove_tag_snapshots_for_other_users,
-    replace_external_contact_follow_users,
     save_tag_snapshot,
-    update_class_user_status_sync_result,
-    unmark_enrolled,
-    upsert_contacts,
-    upsert_external_contact_identity,
     upsert_signup_tag_rule,
 )
+from ..domains.tags.service import (
+    build_class_user_tag_view,
+    get_signup_status_definition,
+    get_signup_status_definitions,
+)
+from ..infra.wecom_runtime import get_app_runtime_client
 from ..wecom_client import WeComClientError
 from .common import _corp_id, _log_wecom_client_error, wecom_logger
+
+
+def _get_primary_follow_user_userid(external_userid: str) -> str:
+    return GetPrimaryFollowUserUseridQuery()(
+        GetPrimaryFollowUserUseridQueryDTO(external_userid=str(external_userid or "").strip())
+    )
+
+
+def _get_class_user_status_current(external_userid: str) -> dict[str, object] | None:
+    return GetClassUserStatusCurrentQuery()(
+        GetClassUserStatusCurrentQueryDTO(external_userid=str(external_userid or "").strip())
+    )
+
+
+def _get_class_user_snapshot(external_userid: str, owner_userid: str = "") -> dict[str, str]:
+    return GetClassUserSnapshotQuery()(
+        GetClassUserSnapshotQueryDTO(
+            external_userid=str(external_userid or "").strip(),
+            owner_userid=str(owner_userid or "").strip(),
+        )
+    )
+
+
+def _apply_class_user_status_change(
+    *,
+    external_userid: str,
+    signup_status: str,
+    set_by_userid: str,
+    customer_name_snapshot: str,
+    owner_userid_snapshot: str,
+    mobile_snapshot: str,
+) -> dict[str, object]:
+    return ApplyClassUserStatusChangeCommand()(
+        ApplyClassUserStatusChangeCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            signup_status=str(signup_status or "").strip(),
+            set_by_userid=str(set_by_userid or "").strip(),
+            customer_name_snapshot=str(customer_name_snapshot or "").strip(),
+            owner_userid_snapshot=str(owner_userid_snapshot or "").strip(),
+            mobile_snapshot=str(mobile_snapshot or "").strip(),
+        )
+    )
+
+
+def _update_class_user_status_sync_result(
+    *,
+    external_userid: str,
+    wecom_tag_sync_status: str,
+    wecom_tag_sync_error: str = "",
+) -> None:
+    return UpdateClassUserStatusSyncResultCommand()(
+        UpdateClassUserStatusSyncResultCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            wecom_tag_sync_status=str(wecom_tag_sync_status or "").strip(),
+            wecom_tag_sync_error=str(wecom_tag_sync_error or "").strip(),
+        )
+    )
+
+
+def _list_signup_scope_external_userids(corp_id: str) -> list[str]:
+    return ListSignupScopeExternalUseridsQuery()(str(corp_id or "").strip())
+
+
+def _list_class_user_live_base_rows(corp_id: str) -> list[dict[str, object]]:
+    return ListClassUserLiveBaseRowsQuery()(str(corp_id or "").strip())
+
+
+def _build_external_contact_identity_record(
+    *,
+    corp_id: str,
+    detail: dict[str, object],
+    follow_user_userid: str = "",
+    status: str = "",
+) -> dict[str, object]:
+    return BuildExternalContactIdentityRecordCommand()(
+        corp_id=str(corp_id or "").strip(),
+        detail=dict(detail or {}),
+        follow_user_userid=str(follow_user_userid or "").strip(),
+        status=str(status or "").strip(),
+    )
+
+
+def _upsert_external_contact_identity(record: dict[str, object]) -> int:
+    return UpsertExternalContactIdentityCommand()(
+        UpsertExternalContactIdentityCommandDTO(record=dict(record or {}))
+    )
+
+
+def _replace_external_contact_follow_users(
+    *,
+    corp_id: str,
+    external_userid: str,
+    follow_users: list[dict[str, object]],
+    preferred_userid: str = "",
+) -> None:
+    return ReplaceFollowUsersCommand()(
+        ReplaceFollowUsersCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+            follow_users=list(follow_users or []),
+            preferred_userid=str(preferred_userid or "").strip(),
+        )
+    )
+
+
+def _refresh_external_contact_identity_owner(*, corp_id: str, external_userid: str) -> None:
+    return RefreshExternalContactIdentityOwnerCommand()(
+        RefreshExternalContactIdentityOwnerCommandDTO(
+            corp_id=str(corp_id or "").strip(),
+            external_userid=str(external_userid or "").strip(),
+        )
+    )
 
 
 def _sidebar_person_detail_url(binding: dict[str, object] | None) -> str:
@@ -155,7 +289,7 @@ def _refresh_class_user_management_live_data() -> dict[str, object]:
         return {"refreshed": False, "reason": "no_signup_tag_rules"}
 
     corp_id = _corp_id()
-    deduped_external_userids = list_signup_scope_external_userids(corp_id)
+    deduped_external_userids = _list_signup_scope_external_userids(corp_id)
     client = get_app_runtime_client()
     contact_records: list[dict[str, object]] = []
     refreshed_count = 0
@@ -171,20 +305,20 @@ def _refresh_class_user_management_live_data() -> dict[str, object]:
         if follow_users:
             primary_follow_userid = str((follow_users[0] or {}).get("userid") or "").strip()
         contact_records.append(normalize_contact_record(detail, owner_userid=primary_follow_userid or None))
-        identity = normalize_external_contact_identity(
-            corp_id,
-            detail,
+        identity = _build_external_contact_identity_record(
+            corp_id=corp_id,
+            detail=detail,
             follow_user_userid=primary_follow_userid,
             status="active",
         )
-        upsert_external_contact_identity(identity)
-        replace_external_contact_follow_users(
-            corp_id,
-            external_userid,
-            follow_users,
+        _upsert_external_contact_identity(identity)
+        _replace_external_contact_follow_users(
+            corp_id=corp_id,
+            external_userid=external_userid,
+            follow_users=follow_users,
             preferred_userid=primary_follow_userid,
         )
-        refresh_external_contact_identity_owner(corp_id, external_userid)
+        _refresh_external_contact_identity_owner(corp_id=corp_id, external_userid=external_userid)
 
         current_follow_userids: list[str] = []
         for follow_user in follow_users:
@@ -236,7 +370,7 @@ def _list_class_user_management_records_live(signup_status: str = "") -> dict[st
         if str(item.get("tag_id") or "").strip()
     }
     corp_id = _corp_id()
-    base_rows = list_class_user_live_base_rows(corp_id)
+    base_rows = _list_class_user_live_base_rows(corp_id)
     base_by_external = {}
     for row in base_rows:
         external_userid = str(row.get("external_userid") or "").strip()
@@ -375,7 +509,7 @@ def _list_class_user_management_records_live(signup_status: str = "") -> dict[st
 
 def _apply_signup_sidebar_tag(external_userid: str, owner_userid: str, signup_status: str) -> dict[str, object]:
     normalized_external_userid = str(external_userid or "").strip()
-    normalized_owner_userid = str(owner_userid or "").strip() or get_primary_follow_user_userid(normalized_external_userid)
+    normalized_owner_userid = str(owner_userid or "").strip() or _get_primary_follow_user_userid(normalized_external_userid)
     normalized_status = str(signup_status or "").strip()
     definition = get_signup_status_definition(normalized_status)
     if not normalized_external_userid:
@@ -390,7 +524,7 @@ def _apply_signup_sidebar_tag(external_userid: str, owner_userid: str, signup_st
     target_rule = next((item for item in rules if item.get("signup_status") == normalized_status), None)
     if not target_rule:
         raise ValueError("signup tags are not initialized, please initialize them in admin first")
-    current_signup_status = str((get_class_user_status_current(normalized_external_userid) or {}).get("signup_status") or "").strip()
+    current_signup_status = str((_get_class_user_status_current(normalized_external_userid) or {}).get("signup_status") or "").strip()
     if normalized_status.startswith("signed_"):
         conversion_payload = mark_enrolled(
             external_userid=normalized_external_userid,
@@ -410,8 +544,8 @@ def _apply_signup_sidebar_tag(external_userid: str, owner_userid: str, signup_st
         )
         current_record = dict(conversion_payload.get("class_user_status") or {})
     else:
-        snapshot = get_class_user_snapshot(normalized_external_userid, normalized_owner_userid)
-        current_record = apply_class_user_status_change(
+        snapshot = _get_class_user_snapshot(normalized_external_userid, normalized_owner_userid)
+        current_record = _apply_class_user_status_change(
             external_userid=normalized_external_userid,
             signup_status=normalized_status,
             set_by_userid=normalized_owner_userid,
@@ -454,8 +588,8 @@ def _apply_signup_sidebar_tag(external_userid: str, owner_userid: str, signup_st
             "error_category": exc.category or "",
             "error_stage": exc.stage or "",
         }
-    update_class_user_status_sync_result(
-        normalized_external_userid,
+    _update_class_user_status_sync_result(
+        external_userid=normalized_external_userid,
         wecom_tag_sync_status=sync_status,
         wecom_tag_sync_error=sync_error,
     )

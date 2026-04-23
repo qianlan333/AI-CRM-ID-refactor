@@ -5,19 +5,28 @@ from typing import Any
 
 from flask import current_app
 
+from ...application.automation_engine.commands import (
+    RetryOutboundWebhookDeliveryCommand,
+    RunDueOutboundWebhookRetriesCommand,
+)
+from ...application.automation_engine.dto import (
+    OutboundWebhookListQueryDTO,
+    OutboundWebhookRetryBatchCommandDTO,
+    OutboundWebhookRetryCommandDTO,
+)
+from ...application.automation_engine.queries import (
+    GetOutboundWebhookDeliveryCountsQuery,
+    ListOutboundWebhookDeliveriesQuery,
+)
+from ...application.user_ops.commands import RunDueUserOpsDeferredJobsCommand
+from ...application.user_ops.dto import RunDueUserOpsDeferredJobsCommandDTO
+from ...application.user_ops.queries import GetUserOpsDeferredJobCountsQuery
 from ...http.sync_jobs import run_archive_health_check, run_manual_archive_sync
 from ...infra.settings import get_setting
-from ...services import (
-    get_message_batch,
-    get_outbound_webhook_delivery_counts,
-    list_outbound_webhook_deliveries,
-    retry_outbound_webhook_delivery,
-    run_due_outbound_webhook_retries,
-)
+from ...services import get_message_batch
 from ...wecom_callback import get_callback_config
 from ..admin_config import repo as admin_config_repo
 from ..archive.service import ack_message_batch, get_last_sync_run
-from ..user_ops.service import get_user_ops_deferred_job_counts, run_due_user_ops_deferred_jobs
 from . import repo
 
 TARGET_JOBS_ACTION = "jobs_console_action"
@@ -104,6 +113,40 @@ def _webhook_event_type_options() -> list[dict[str, str]]:
         {"value": "openclaw_focus_message", "label": "OpenClaw 焦点消息"},
         {"value": "questionnaire_submit", "label": "问卷提交外发"},
     ]
+
+
+def _get_user_ops_deferred_job_counts_payload() -> dict[str, Any]:
+    return GetUserOpsDeferredJobCountsQuery()()
+
+
+def _run_user_ops_deferred_jobs_payload(limit: int) -> dict[str, Any]:
+    return RunDueUserOpsDeferredJobsCommand()(RunDueUserOpsDeferredJobsCommandDTO(limit=int(limit)))
+
+
+def get_outbound_webhook_delivery_counts() -> dict[str, Any]:
+    return GetOutboundWebhookDeliveryCountsQuery()()
+
+
+def list_outbound_webhook_deliveries(*, event_type: str = "", status: str = "", limit: int = 50) -> dict[str, Any]:
+    return ListOutboundWebhookDeliveriesQuery()(
+        OutboundWebhookListQueryDTO(
+            event_type=_normalized_text(event_type),
+            status=_normalized_text(status),
+            limit=int(limit),
+        )
+    )
+
+
+def retry_outbound_webhook_delivery(delivery_id: int) -> dict[str, Any]:
+    return RetryOutboundWebhookDeliveryCommand()(
+        OutboundWebhookRetryCommandDTO(delivery_id=int(delivery_id))
+    )
+
+
+def run_due_outbound_webhook_retries(*, limit: int = 20) -> dict[str, Any]:
+    return RunDueOutboundWebhookRetriesCommand()(
+        OutboundWebhookRetryBatchCommandDTO(limit=int(limit))
+    )
 
 
 def jobs_tabs(active_key: str) -> list[dict[str, Any]]:
@@ -295,7 +338,7 @@ def _build_pending_message_batches_group() -> dict[str, Any]:
 
 
 def _build_deferred_jobs_group() -> dict[str, Any]:
-    counts = get_user_ops_deferred_job_counts()
+    counts = _get_user_ops_deferred_job_counts_payload()
     total_pending = int(counts.get("pending_count") or 0)
     total_failed = int(counts.get("failed_count") or 0)
     items: list[dict[str, Any]] = []
@@ -378,7 +421,7 @@ def build_jobs_runtime_snapshot(*, include_archive_health: bool = False) -> dict
         "background_async_enabled": bool(current_app.config.get("CALLBACK_ASYNC_ENABLED", True)),
         "callback_counts": repo.get_callback_counts(),
         "batch_counts": repo.get_message_batch_counts(),
-        "deferred_counts": get_user_ops_deferred_job_counts(),
+        "deferred_counts": _get_user_ops_deferred_job_counts_payload(),
         "webhook_counts": get_outbound_webhook_delivery_counts(),
     }
     if include_archive_health:
@@ -707,7 +750,7 @@ def execute_jobs_action(*, action: str, form: Any, operator: str) -> dict[str, A
         if not _normalized_bool(form.get("confirm")):
             raise ValueError("执行待处理作业前请先勾选确认")
         limit = _normalized_int(form.get("limit"), default=20)
-        payload = run_due_user_ops_deferred_jobs(limit=limit)
+        payload = _run_user_ops_deferred_jobs_payload(limit=limit)
         _audit_log(
             operator=operator_value,
             action_type="run_deferred_jobs",

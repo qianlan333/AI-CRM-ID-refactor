@@ -10,6 +10,20 @@ import requests
 from flask import current_app
 
 from ...db import get_db
+from ...application.class_user.commands import (
+    ApplyClassUserStatusChangeCommand,
+    ClearClassUserStatusCurrentCommand,
+)
+from ...application.class_user.dto import (
+    ApplyClassUserStatusChangeCommandDTO,
+    ClearClassUserStatusCurrentCommandDTO,
+    GetClassUserStatusCurrentQueryDTO,
+    GetClassUserStatusDefinitionQueryDTO,
+)
+from ...application.class_user.queries import (
+    GetClassUserStatusCurrentQuery,
+    GetClassUserStatusDefinitionQuery,
+)
 from ...infra.settings import get_setting
 from ...wecom_client import WeComClientError
 from ..automation_state.calculator import (
@@ -31,12 +45,6 @@ from ..automation_state.state_defs import (
     POOL_LABELS as SHARED_POOL_LABELS,
     POOL_NEW_USER as SHARED_POOL_NEW_USER,
     POOL_SILENT as SHARED_POOL_SILENT,
-)
-from ..class_user.service import (
-    apply_class_user_status_change,
-    clear_class_user_status_current,
-    get_class_user_status_current,
-    get_class_user_status_definition,
 )
 from ..archive import repo as archive_repo
 from ..archive.service import extract_roomid_from_raw_payload, format_message_row, get_recent_messages_by_user
@@ -122,6 +130,58 @@ _POOL_SENDABLE_POOL_KEYS = {
     POOL_ACTIVE_NORMAL,
     POOL_ACTIVE_FOCUS,
 }
+
+
+def _get_class_user_status_definition(signup_status: str) -> dict[str, Any] | None:
+    return GetClassUserStatusDefinitionQuery()(
+        GetClassUserStatusDefinitionQueryDTO(signup_status=str(signup_status or "").strip())
+    )
+
+
+def _get_class_user_status_current(external_userid: str) -> dict[str, Any] | None:
+    return GetClassUserStatusCurrentQuery()(
+        GetClassUserStatusCurrentQueryDTO(external_userid=str(external_userid or "").strip())
+    )
+
+
+def _apply_class_user_status_change(
+    *,
+    external_userid: str,
+    signup_status: str,
+    set_by_userid: str,
+    customer_name_snapshot: str,
+    owner_userid_snapshot: str,
+    mobile_snapshot: str,
+) -> dict[str, Any]:
+    return ApplyClassUserStatusChangeCommand()(
+        ApplyClassUserStatusChangeCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            signup_status=str(signup_status or "").strip(),
+            set_by_userid=str(set_by_userid or "").strip(),
+            customer_name_snapshot=str(customer_name_snapshot or "").strip(),
+            owner_userid_snapshot=str(owner_userid_snapshot or "").strip(),
+            mobile_snapshot=str(mobile_snapshot or "").strip(),
+        )
+    )
+
+
+def _clear_class_user_status_current(
+    *,
+    external_userid: str,
+    set_by_userid: str,
+    customer_name_snapshot: str,
+    owner_userid_snapshot: str,
+    mobile_snapshot: str,
+) -> None:
+    return ClearClassUserStatusCurrentCommand()(
+        ClearClassUserStatusCurrentCommandDTO(
+            external_userid=str(external_userid or "").strip(),
+            set_by_userid=str(set_by_userid or "").strip(),
+            customer_name_snapshot=str(customer_name_snapshot or "").strip(),
+            owner_userid_snapshot=str(owner_userid_snapshot or "").strip(),
+            mobile_snapshot=str(mobile_snapshot or "").strip(),
+        )
+    )
 _FOCUS_POOL_KEYS = set(SHARED_FOCUS_POOL_KEYS)
 
 automation_webhook_logger = logging.getLogger("automation_webhook")
@@ -1007,102 +1067,18 @@ def send_pool_private_message(
     image_media_ids: list[str] | None = None,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    normalized_owner_userid, owner_role = _validate_send_owner_userid(owner_userid)
-    normalized_pool_key = _normalized_text(pool_key)
-    if normalized_pool_key not in _POOL_SENDABLE_POOL_KEYS:
-        if normalized_pool_key == POOL_SILENT:
-            raise ValueError("silent pool is record-only and does not support batch send")
-        raise ValueError("pool_key is invalid")
+    from . import message_dispatch_service
 
-    payload = {
-        "content": _normalized_text(content),
-        "images": list(images or []),
-        "image_media_ids": list(image_media_ids or []),
-        "attachments": list(attachments or []),
-    }
-    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(payload)
-    plan = _build_pool_send_plan(owner_userid=normalized_owner_userid, pool_key=normalized_pool_key)
-    result = {
-        "pool_key": normalized_pool_key,
-        "pool_label": _pool_label(normalized_pool_key),
-        "owner_userid": normalized_owner_userid,
-        "owner_display_name": _normalized_text(owner_role.get("display_name")) or normalized_owner_userid,
-        "matched_count": int(plan["matched_count"]),
-        "sendable_count": int(plan["eligible_count"]),
-        "skipped_count": int(plan["skipped_count"]),
-        "skipped_by_reason": dict(plan["skipped_by_reason"]),
-        "content_preview": content_preview,
-        "image_count": image_count,
-        "record_id": None,
-        "confirmed": bool(confirm),
-        "executed": False,
-    }
-    if not confirm:
-        return result
-    if not plan["matched_count"]:
-        result.update({"status": "empty", "empty_reason": "no_customers_in_pool_for_owner"})
-        return result
-    if not plan["eligible_items"]:
-        result.update({"status": "empty", "empty_reason": "no_sendable_customers_in_pool_for_owner"})
-        return result
-
-    task_results: list[dict[str, Any]] = []
-    outbound_task_ids: list[int] = []
-    sender_userids: list[str] = []
-    eligible_items = list(plan["eligible_items"])
-    grouped_targets: dict[str, list[dict[str, Any]]] = {}
-    for item in eligible_items:
-        grouped_targets.setdefault(_normalized_text(item.get("owner_userid")), []).append(item)
-
-    for sender_userid, items in sorted(grouped_targets.items()):
-        if not sender_userid:
-            continue
-        sender_userids.append(sender_userid)
-        request_payload = {
-            "sender": sender_userid,
-            "external_userid": [_normalized_text(item.get("external_userid")) for item in items if _normalized_text(item.get("external_userid"))],
-            **task_payload,
-        }
-        try:
-            wecom_result = dispatch_wecom_task("private_message", "create_private_message_task", request_payload)
-            outbound_task_ids.append(int(wecom_result["task_id"]))
-            task_results.append(user_ops_page_service._build_sender_success_result(sender_userid, items, wecom_result))
-        except (WeComClientError, AttributeError) as exc:
-            task_results.append(user_ops_page_service._build_sender_failure_result(sender_userid, items, exc))
-
-    sent_count = sum(int(item.get("target_count") or 0) for item in task_results if _normalized_text(item.get("status")) != "failed")
-    status = user_ops_page_service._derive_record_status(task_results, eligible_count=int(plan["eligible_count"]))
-    record_id = user_ops_page_service._insert_send_record(
-        outbound_task_ids=outbound_task_ids,
-        task_results=task_results,
-        selected_count=int(plan["matched_count"]),
-        eligible_count=int(plan["eligible_count"]),
-        sent_count=sent_count,
-        skipped_count=int(plan["skipped_count"]),
-        skipped_reasons=dict(plan["skipped_by_reason"]),
-        include_do_not_disturb=False,
-        content_preview=content_preview,
-        image_count=image_count,
-        sender_userids=sender_userids,
-        filter_snapshot={
-            "selection_mode": "marketing_pool",
-            "pool_key": normalized_pool_key,
-            "pool_label": _pool_label(normalized_pool_key),
-            "owner_userid": normalized_owner_userid,
-        },
-        operator=_normalized_text(operator) or "openclaw_pool_send",
-        status=status,
+    return message_dispatch_service.send_pool_private_message(
+        owner_userid=owner_userid,
+        pool_key=pool_key,
+        content=content,
+        confirm=confirm,
+        operator=operator,
+        images=images,
+        image_media_ids=image_media_ids,
+        attachments=attachments,
     )
-    result.update(
-        {
-            "record_id": int(record_id),
-            "sent_count": int(sent_count),
-            "executed": True,
-            "task_results": task_results,
-            "status": status,
-        }
-    )
-    return result
 
 
 def trigger_openclaw_focus_message_webhook(
@@ -1110,77 +1086,18 @@ def trigger_openclaw_focus_message_webhook(
     external_userid: str,
     recent_message_limit: int = 10,
 ) -> dict[str, Any]:
-    normalized_external_userid = _normalized_text(external_userid)
-    if not normalized_external_userid:
-        return {"ok": False, "sent": False, "reason": "missing_external_userid"}
-    marketing_profile = get_openclaw_customer_marketing_profile(
-        external_userid=normalized_external_userid,
-        recent_message_limit=max(1, min(int(recent_message_limit), 20)),
-    )
-    marketing_state = dict(marketing_profile.get("marketing_state") or {})
-    owner_userid = _normalized_text((marketing_profile.get("owner") or {}).get("owner_userid")) or DEFAULT_AUTOMATION_OWNER_USERID
-    pool_key = _normalized_text(marketing_state.get("pool_key"))
-    if pool_key not in _FOCUS_POOL_KEYS:
-        return {"ok": False, "sent": False, "reason": "pool_not_focus_followup", "pool_key": pool_key}
-    payload = _build_openclaw_focus_message_webhook_payload(
-        external_userid=normalized_external_userid,
+    from . import message_dispatch_service
+
+    return message_dispatch_service.trigger_openclaw_focus_message_webhook(
+        external_userid=external_userid,
         recent_message_limit=recent_message_limit,
     )
-    delivery_result = send_outbound_webhook(
-        event_type=EVENT_OPENCLAW_FOCUS_MESSAGE,
-        payload=payload,
-        source_key="external_userid",
-        source_id=normalized_external_userid,
-    )
-    delivery = dict(delivery_result.get("delivery") or {})
-    return {
-        "ok": bool(delivery_result.get("ok")),
-        "sent": bool(delivery_result.get("sent")),
-        "external_userid": normalized_external_userid,
-        "pool_key": pool_key,
-        "owner_userid": owner_userid,
-        "status_code": delivery.get("response_status_code"),
-        "reason": _normalized_text(delivery_result.get("reason")),
-        "error": _normalized_text(delivery_result.get("reason")),
-        "delivery": delivery,
-        "payload": payload,
-    }
 
 
 def process_inbound_messages_for_openclaw(messages: list[dict[str, Any]]) -> dict[str, Any]:
-    latest_by_external_userid: dict[str, dict[str, Any]] = {}
-    for item in messages:
-        normalized_external_userid = _normalized_text(item.get("external_userid"))
-        if not normalized_external_userid:
-            continue
-        if _normalized_text(item.get("chat_type")) != "private":
-            continue
-        if _normalized_text(item.get("sender")) != normalized_external_userid:
-            continue
-        previous = latest_by_external_userid.get(normalized_external_userid)
-        if previous and _normalized_text(previous.get("send_time")) >= _normalized_text(item.get("send_time")):
-            continue
-        latest_by_external_userid[normalized_external_userid] = dict(item)
-    automation_scope_userids: set[str] = set()
-    if latest_by_external_userid:
-        from ..automation_conversion import repo as automation_repo
+    from . import message_dispatch_service
 
-        automation_scope_userids = {
-            _normalized_text(item)
-            for item in automation_repo.list_active_automation_external_contact_ids(sorted(latest_by_external_userid.keys()))
-            if _normalized_text(item)
-        }
-    results = [
-        trigger_openclaw_focus_message_webhook(external_userid=external_userid)
-        for external_userid in sorted(latest_by_external_userid.keys())
-        if external_userid not in automation_scope_userids
-    ]
-    return {
-        "processed_count": len(latest_by_external_userid) - len(automation_scope_userids),
-        "sent_count": sum(1 for item in results if item.get("sent")),
-        "skipped_automation_scope_count": len(automation_scope_userids),
-        "results": results,
-    }
+    return message_dispatch_service.process_inbound_messages_for_openclaw(messages)
 
 
 def apply_activation_webhook(
@@ -2187,7 +2104,7 @@ def _normalize_conversion_source(value: Any, *, default: str) -> str:
 
 def _normalize_enrolled_signup_status(value: Any) -> str:
     normalized = _normalized_text(value) or DEFAULT_ENROLLED_SIGNUP_STATUS
-    definition = get_class_user_status_definition(normalized)
+    definition = _get_class_user_status_definition(normalized)
     if not definition or not _is_signup_success(normalized):
         raise ValueError("signup_status must be an enrolled status")
     return normalized
@@ -2196,7 +2113,7 @@ def _normalize_enrolled_signup_status(value: Any) -> str:
 def _restore_signup_status_for_unmark(external_userid: str, *, restore_signup_status: str = "") -> str:
     normalized_restore_signup_status = _normalized_text(restore_signup_status)
     if normalized_restore_signup_status:
-        definition = get_class_user_status_definition(normalized_restore_signup_status)
+        definition = _get_class_user_status_definition(normalized_restore_signup_status)
         if not definition:
             raise ValueError("restore_signup_status is invalid")
         if _is_signup_success(normalized_restore_signup_status):
@@ -2204,7 +2121,7 @@ def _restore_signup_status_for_unmark(external_userid: str, *, restore_signup_st
         return normalized_restore_signup_status
     restore_row = repo.get_latest_class_user_restore_status(external_userid) or {}
     restored = _normalized_text(restore_row.get("old_signup_status"))
-    if restored and get_class_user_status_definition(restored) and not _is_signup_success(restored):
+    if restored and _get_class_user_status_definition(restored) and not _is_signup_success(restored):
         return restored
     return ""
 
@@ -2214,7 +2131,7 @@ def _build_class_user_snapshot_for_conversion(
     *,
     owner_userid: str = "",
 ) -> dict[str, str]:
-    current = get_class_user_status_current(external_userid) or {}
+    current = _get_class_user_status_current(external_userid) or {}
     base = repo.load_customer_marketing_base(external_userid)
     if not _normalized_text(base.get("external_userid")) and not current:
         raise LookupError("customer not found")
@@ -2378,9 +2295,9 @@ def mark_enrolled(
         normalized_external_userid,
         scenario_key=automation_key,
     )
-    current_class_status = get_class_user_status_current(normalized_external_userid) or {}
+    current_class_status = _get_class_user_status_current(normalized_external_userid) or {}
     if _normalized_text(current_class_status.get("signup_status")) != normalized_signup_status:
-        current_class_status = apply_class_user_status_change(
+        current_class_status = _apply_class_user_status_change(
             external_userid=normalized_external_userid,
             signup_status=normalized_signup_status,
             set_by_userid=normalized_operator,
@@ -2442,9 +2359,9 @@ def unmark_enrolled(
         normalized_external_userid,
         restore_signup_status=restore_signup_status,
     )
-    current_class_status = get_class_user_status_current(normalized_external_userid) or {}
+    current_class_status = _get_class_user_status_current(normalized_external_userid) or {}
     if target_signup_status and _normalized_text(current_class_status.get("signup_status")) != target_signup_status:
-        current_class_status = apply_class_user_status_change(
+        current_class_status = _apply_class_user_status_change(
             external_userid=normalized_external_userid,
             signup_status=target_signup_status,
             set_by_userid=normalized_operator,
@@ -2453,7 +2370,7 @@ def unmark_enrolled(
             mobile_snapshot=_normalized_text(snapshot.get("mobile_snapshot")),
         )
     elif not target_signup_status:
-        clear_class_user_status_current(
+        _clear_class_user_status_current(
             external_userid=normalized_external_userid,
             set_by_userid=normalized_operator,
             customer_name_snapshot=_normalized_text(snapshot.get("customer_name_snapshot")) or normalized_external_userid,

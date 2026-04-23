@@ -1,9 +1,33 @@
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Any, Mapping
 
 from flask import jsonify, request, url_for
 
+from ..application.ai_assist import (
+    AssignFollowupMissionCommand,
+    AssignFollowupMissionCommandDTO,
+    ExecuteFollowupMissionItemActionCommand,
+    ExecuteFollowupMissionItemActionCommandDTO,
+    FollowupCandidatesQueryDTO,
+    FollowupCustomerQueryDTO,
+    FollowupFeatureGateQueryDTO,
+    FollowupMissionBoardQueryDTO,
+    FollowupMissionDetailQueryDTO,
+    FollowupMyMissionsQueryDTO,
+    GetFollowupMissionBoardQuery,
+    GetFollowupMissionDetailQuery,
+    GetFollowupOrchestratorCustomerQuery,
+    GetFollowupOrchestratorFeatureGateQuery,
+    ListFollowupCandidatesQuery,
+    ListFollowupMyMissionsQuery,
+    PreviewFollowupMissionItemActionCommand,
+    PreviewFollowupMissionItemActionCommandDTO,
+    SyncFollowupMissionsCommand,
+    SyncFollowupMissionsCommandDTO,
+    UndoFollowupMissionItemActionCommand,
+    UndoFollowupMissionItemActionCommandDTO,
+)
 from ..domains.admin_config import repo as admin_config_repo
 from ..domains.customer_pulse.access import (
     CustomerPulseAccessDenied,
@@ -14,21 +38,7 @@ from ..domains.customer_pulse.access import (
     customer_pulse_template_access_payload,
     customer_pulse_tenant_context_summary,
 )
-from ..domains.followup_orchestrator import (
-    FOLLOWUP_ORCHESTRATOR_MISSION_ACTIONS,
-    apply_followup_orchestrator_mission_action,
-    build_followup_orchestrator_customer_payload,
-    build_followup_orchestrator_my_missions_payload,
-    build_followup_orchestrator_overview_payload,
-    build_followup_orchestrator_team_board_payload,
-    execute_followup_orchestrator_mission_item_action,
-    followup_orchestrator_feature_gate_summary,
-    get_followup_orchestrator_mission_detail_payload,
-    is_followup_orchestrator_enabled,
-    preview_followup_orchestrator_mission_item_action,
-    sync_followup_orchestrator_missions,
-    undo_followup_orchestrator_mission_item_action,
-)
+from ..domains.followup_orchestrator import FOLLOWUP_ORCHESTRATOR_MISSION_ACTIONS
 from .admin_console import _breadcrumb_items, _render_admin_template
 from .internal_auth import ensure_admin_console_action_token, require_internal_api_token, validate_admin_console_action_token
 
@@ -37,7 +47,7 @@ def _normalized_text(value: object) -> str:
     return str(value or "").strip()
 
 
-def _request_payload() -> dict:
+def _request_payload() -> dict[str, Any]:
     json_payload = request.get_json(silent=True) or {}
     if request.method == "POST" and request.form:
         return {**json_payload, **request.form.to_dict(flat=True)}
@@ -48,8 +58,19 @@ def _access_context() -> Mapping[str, object]:
     return current_customer_pulse_request_access_context()
 
 
+def _feature_gate_result(access_context: Mapping[str, object] | None = None) -> dict[str, object]:
+    return GetFollowupOrchestratorFeatureGateQuery()(
+        FollowupFeatureGateQueryDTO(access_context=dict(access_context or _access_context()))
+    )
+
+
 def _feature_gate(access_context: Mapping[str, object] | None = None) -> dict[str, object]:
-    return followup_orchestrator_feature_gate_summary(access_context or _access_context())
+    feature_gate = (_feature_gate_result(access_context) or {}).get("feature_gate")
+    return dict(feature_gate) if isinstance(feature_gate, Mapping) else {}
+
+
+def _followup_enabled(access_context: Mapping[str, object] | None = None) -> bool:
+    return bool((_feature_gate_result(access_context) or {}).get("enabled"))
 
 
 def _operator(source: dict | None = None) -> str:
@@ -61,6 +82,11 @@ def _operator(source: dict | None = None) -> str:
         or _normalized_text(request.headers.get("X-Admin-Operator"))
         or "crm_console"
     )
+
+
+def _normalized_action_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    extra_payload = payload.get("extra_payload")
+    return dict(extra_payload) if isinstance(extra_payload, dict) else dict(payload)
 
 
 def _audit_followup_orchestrator_operation(
@@ -179,15 +205,17 @@ def _mission_action_result(
         )
     body = dict(payload or {})
     access_context = _access_context()
-    result = apply_followup_orchestrator_mission_action(
-        mission_key=_normalized_text(mission_key),
-        action_type=normalized_action_type,
-        actor_userid=_resolved_actor_userid(body),
-        actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or body.get("actor_role")),
-        operator=_operator(body),
-        tenant_context=access_context,
-        mission_item_key=_normalized_text(body.get("mission_item_key")),
-        note=_normalized_text(body.get("note")),
+    result = AssignFollowupMissionCommand()(
+        AssignFollowupMissionCommandDTO(
+            mission_key=_normalized_text(mission_key),
+            action_type=normalized_action_type,
+            actor_userid=_resolved_actor_userid(body),
+            actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or body.get("actor_role")),
+            operator=_operator(body),
+            access_context=dict(access_context),
+            mission_item_key=_normalized_text(body.get("mission_item_key")),
+            note=_normalized_text(body.get("note")),
+        )
     )
     return jsonify(
         {
@@ -207,14 +235,16 @@ def _render_followup_orchestrator_page(*, page_notice: str = "", page_error: str
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return _render_access_denied_page(exc)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_page(page_notice=page_notice, page_error=page_error)
     filters = _filters(request.args)
-    payload = build_followup_orchestrator_overview_payload(
-        scope=filters["scope"],
-        owner_userid=filters["owner_userid"],
-        external_userid=filters["external_userid"],
-        access_context=access_context,
+    payload = ListFollowupCandidatesQuery()(
+        FollowupCandidatesQueryDTO(
+            scope=filters["scope"],
+            owner_userid=filters["owner_userid"],
+            external_userid=filters["external_userid"],
+            access_context=dict(access_context),
+        )
     )
     return _render_admin_template(
         "followup_orchestrator.html",
@@ -242,31 +272,37 @@ def api_admin_followup_orchestrator():
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_json()
     filters = _filters(request.args)
     try:
         if filters["scope"] == "mine":
-            payload = build_followup_orchestrator_my_missions_payload(
-                actor_userid=_resolved_actor_userid(filters),
-                limit=_resolved_limit(filters),
-                auto_sync=True,
-                access_context=access_context,
+            payload = ListFollowupMyMissionsQuery()(
+                FollowupMyMissionsQueryDTO(
+                    actor_userid=_resolved_actor_userid(filters),
+                    limit=_resolved_limit(filters),
+                    auto_sync=True,
+                    access_context=dict(access_context),
+                )
             )
         elif filters["owner_userid"] or filters["external_userid"] or filters["scope"] not in {"", "team"}:
-            payload = build_followup_orchestrator_overview_payload(
-                scope=filters["scope"],
-                owner_userid=filters["owner_userid"],
-                external_userid=filters["external_userid"],
-                limit=_resolved_limit(filters),
-                auto_sync=True,
-                access_context=access_context,
+            payload = ListFollowupCandidatesQuery()(
+                FollowupCandidatesQueryDTO(
+                    scope=filters["scope"],
+                    owner_userid=filters["owner_userid"],
+                    external_userid=filters["external_userid"],
+                    limit=_resolved_limit(filters),
+                    auto_sync=True,
+                    access_context=dict(access_context),
+                )
             )
         else:
-            payload = build_followup_orchestrator_team_board_payload(
-                limit=_resolved_limit(filters),
-                auto_sync=True,
-                access_context=access_context,
+            payload = GetFollowupMissionBoardQuery()(
+                FollowupMissionBoardQueryDTO(
+                    limit=_resolved_limit(filters),
+                    auto_sync=True,
+                    access_context=dict(access_context),
+                )
             )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -281,11 +317,13 @@ def api_admin_followup_orchestrator_customer(external_userid: str):
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_json()
-    payload = build_followup_orchestrator_customer_payload(
-        external_userid=_normalized_text(external_userid),
-        access_context=access_context,
+    payload = GetFollowupOrchestratorCustomerQuery()(
+        FollowupCustomerQueryDTO(
+            external_userid=_normalized_text(external_userid),
+            access_context=dict(access_context),
+        )
     )
     return jsonify({"ok": True, "customer_orchestrator": payload})
 
@@ -298,12 +336,14 @@ def api_admin_followup_orchestrator_mission_detail(mission_key: str):
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_json()
     try:
-        payload = get_followup_orchestrator_mission_detail_payload(
-            mission_key=_normalized_text(mission_key),
-            access_context=access_context,
+        payload = GetFollowupMissionDetailQuery()(
+            FollowupMissionDetailQueryDTO(
+                mission_key=_normalized_text(mission_key),
+                access_context=dict(access_context),
+            )
         )
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
@@ -323,7 +363,7 @@ def api_admin_followup_orchestrator_mission_action(mission_key: str, action_type
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_json()
     payload = _request_payload()
     operator = _operator(payload)
@@ -367,17 +407,19 @@ def api_admin_followup_orchestrator_mission_item_preview(mission_key: str, missi
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_json()
     payload = _request_payload()
     try:
-        result = preview_followup_orchestrator_mission_item_action(
-            mission_key=_normalized_text(mission_key),
-            mission_item_key=_normalized_text(mission_item_key),
-            action_type=_normalized_text(payload.get("action_type")),
-            actor_userid=_resolved_actor_userid(payload),
-            operator=_operator(payload),
-            access_context=access_context,
+        result = PreviewFollowupMissionItemActionCommand()(
+            PreviewFollowupMissionItemActionCommandDTO(
+                mission_key=_normalized_text(mission_key),
+                mission_item_key=_normalized_text(mission_item_key),
+                action_type=_normalized_text(payload.get("action_type")),
+                actor_userid=_resolved_actor_userid(payload),
+                operator=_operator(payload),
+                access_context=dict(access_context),
+            )
         )
         return jsonify({"ok": True, "preview": result})
     except CustomerPulseAccessDenied as exc:
@@ -399,21 +441,23 @@ def api_admin_followup_orchestrator_mission_item_execute(mission_key: str, missi
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_json()
     payload = _request_payload()
     operator = _operator(payload)
     try:
-        result = execute_followup_orchestrator_mission_item_action(
-            mission_key=_normalized_text(mission_key),
-            mission_item_key=_normalized_text(mission_item_key),
-            action_type=_normalized_text(payload.get("action_type")),
-            actor_userid=_resolved_actor_userid(payload),
-            actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
-            operator=operator,
-            note=_normalized_text(payload.get("note")),
-            extra_payload=payload.get("extra_payload") if isinstance(payload.get("extra_payload"), dict) else payload,
-            access_context=access_context,
+        result = ExecuteFollowupMissionItemActionCommand()(
+            ExecuteFollowupMissionItemActionCommandDTO(
+                mission_key=_normalized_text(mission_key),
+                mission_item_key=_normalized_text(mission_item_key),
+                action_type=_normalized_text(payload.get("action_type")),
+                actor_userid=_resolved_actor_userid(payload),
+                actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
+                operator=operator,
+                note=_normalized_text(payload.get("note")),
+                action_payload=_normalized_action_payload(payload),
+                access_context=dict(access_context),
+            )
         )
         _audit_followup_orchestrator_operation(
             operator=operator,
@@ -451,19 +495,21 @@ def api_admin_followup_orchestrator_mission_item_undo(mission_key: str, mission_
         assert_customer_pulse_inbox_view(access_context)
     except CustomerPulseAccessDenied as exc:
         return jsonify({"ok": False, "error": str(exc), "code": exc.code}), int(exc.http_status)
-    if not is_followup_orchestrator_enabled(access_context=access_context):
+    if not _followup_enabled(access_context):
         return _feature_disabled_json()
     payload = _request_payload()
     operator = _operator(payload)
     try:
-        result = undo_followup_orchestrator_mission_item_action(
-            mission_key=_normalized_text(mission_key),
-            mission_item_key=_normalized_text(mission_item_key),
-            execution_id=int(payload.get("execution_id") or 0),
-            actor_userid=_resolved_actor_userid(payload),
-            actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
-            operator=operator,
-            access_context=access_context,
+        result = UndoFollowupMissionItemActionCommand()(
+            UndoFollowupMissionItemActionCommandDTO(
+                mission_key=_normalized_text(mission_key),
+                mission_item_key=_normalized_text(mission_item_key),
+                execution_id=int(payload.get("execution_id") or 0),
+                actor_userid=_resolved_actor_userid(payload),
+                actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
+                operator=operator,
+                access_context=dict(access_context),
+            )
         )
         _audit_followup_orchestrator_operation(
             operator=operator,
@@ -490,16 +536,14 @@ def internal_followup_orchestrator_team_board_api():
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
-        filters = _filters(request.args)
-        payload = build_followup_orchestrator_overview_payload(
-            scope=filters["scope"] or "team",
-            owner_userid=filters["owner_userid"],
-            external_userid=filters["external_userid"],
-            limit=_resolved_limit(filters),
-            auto_sync=True,
-            access_context=access_context,
+        payload = GetFollowupMissionBoardQuery()(
+            FollowupMissionBoardQueryDTO(
+                limit=_resolved_limit(request.args),
+                auto_sync=True,
+                access_context=dict(access_context),
+            )
         )
         return jsonify({"ok": True, "team_board": payload})
     except CustomerPulseAccessDenied as exc:
@@ -516,14 +560,16 @@ def internal_followup_orchestrator_my_missions_api():
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
         filters = _filters(request.args)
-        payload = build_followup_orchestrator_my_missions_payload(
-            actor_userid=_resolved_actor_userid(filters),
-            limit=_resolved_limit(filters),
-            auto_sync=True,
-            access_context=access_context,
+        payload = ListFollowupMyMissionsQuery()(
+            FollowupMyMissionsQueryDTO(
+                actor_userid=_resolved_actor_userid(filters),
+                limit=_resolved_limit(filters),
+                auto_sync=True,
+                access_context=dict(access_context),
+            )
         )
         return jsonify({"ok": True, "my_missions": payload})
     except CustomerPulseAccessDenied as exc:
@@ -540,11 +586,13 @@ def internal_followup_orchestrator_mission_detail_api(mission_key: str):
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
-        payload = get_followup_orchestrator_mission_detail_payload(
-            mission_key=_normalized_text(mission_key),
-            access_context=access_context,
+        payload = GetFollowupMissionDetailQuery()(
+            FollowupMissionDetailQueryDTO(
+                mission_key=_normalized_text(mission_key),
+                access_context=dict(access_context),
+            )
         )
         return jsonify({"ok": True, "mission": payload})
     except CustomerPulseAccessDenied as exc:
@@ -563,7 +611,7 @@ def internal_followup_orchestrator_mission_action_api(mission_key: str, action_t
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
         response = _mission_action_result(
             mission_key=_normalized_text(mission_key),
@@ -603,16 +651,18 @@ def internal_followup_orchestrator_mission_item_preview_api(mission_key: str, mi
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
         payload = _request_payload()
-        result = preview_followup_orchestrator_mission_item_action(
-            mission_key=_normalized_text(mission_key),
-            mission_item_key=_normalized_text(mission_item_key),
-            action_type=_normalized_text(payload.get("action_type")),
-            actor_userid=_resolved_actor_userid(payload),
-            operator=_operator(payload),
-            access_context=access_context,
+        result = PreviewFollowupMissionItemActionCommand()(
+            PreviewFollowupMissionItemActionCommandDTO(
+                mission_key=_normalized_text(mission_key),
+                mission_item_key=_normalized_text(mission_item_key),
+                action_type=_normalized_text(payload.get("action_type")),
+                actor_userid=_resolved_actor_userid(payload),
+                operator=_operator(payload),
+                access_context=dict(access_context),
+            )
         )
         return jsonify({"ok": True, "preview": result})
     except CustomerPulseAccessDenied as exc:
@@ -633,18 +683,20 @@ def internal_followup_orchestrator_mission_item_execute_api(mission_key: str, mi
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
-        result = execute_followup_orchestrator_mission_item_action(
-            mission_key=_normalized_text(mission_key),
-            mission_item_key=_normalized_text(mission_item_key),
-            action_type=_normalized_text(payload.get("action_type")),
-            actor_userid=_resolved_actor_userid(payload),
-            actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
-            operator=operator,
-            note=_normalized_text(payload.get("note")),
-            extra_payload=payload.get("extra_payload") if isinstance(payload.get("extra_payload"), dict) else payload,
-            access_context=access_context,
+        result = ExecuteFollowupMissionItemActionCommand()(
+            ExecuteFollowupMissionItemActionCommandDTO(
+                mission_key=_normalized_text(mission_key),
+                mission_item_key=_normalized_text(mission_item_key),
+                action_type=_normalized_text(payload.get("action_type")),
+                actor_userid=_resolved_actor_userid(payload),
+                actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
+                operator=operator,
+                note=_normalized_text(payload.get("note")),
+                action_payload=_normalized_action_payload(payload),
+                access_context=dict(access_context),
+            )
         )
         _audit_followup_orchestrator_operation(
             operator=operator,
@@ -681,16 +733,18 @@ def internal_followup_orchestrator_mission_item_undo_api(mission_key: str, missi
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
-        result = undo_followup_orchestrator_mission_item_action(
-            mission_key=_normalized_text(mission_key),
-            mission_item_key=_normalized_text(mission_item_key),
-            execution_id=int(payload.get("execution_id") or 0),
-            actor_userid=_resolved_actor_userid(payload),
-            actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
-            operator=operator,
-            access_context=access_context,
+        result = UndoFollowupMissionItemActionCommand()(
+            UndoFollowupMissionItemActionCommandDTO(
+                mission_key=_normalized_text(mission_key),
+                mission_item_key=_normalized_text(mission_item_key),
+                execution_id=int(payload.get("execution_id") or 0),
+                actor_userid=_resolved_actor_userid(payload),
+                actor_role=_normalized_text(access_context.get("actor_role") or access_context.get("role") or payload.get("actor_role")),
+                operator=operator,
+                access_context=dict(access_context),
+            )
         )
         _audit_followup_orchestrator_operation(
             operator=operator,
@@ -717,15 +771,17 @@ def internal_followup_orchestrator_sync_api():
     try:
         assert_customer_pulse_request_context(access_context)
         assert_customer_pulse_inbox_view(access_context)
-        if not is_followup_orchestrator_enabled(access_context=access_context):
+        if not _followup_enabled(access_context):
             return _feature_disabled_json()
         filters = _filters(_request_payload())
-        payload = sync_followup_orchestrator_missions(
-            scope=filters["scope"],
-            owner_userid=filters["owner_userid"],
-            external_userid=filters["external_userid"],
-            limit=_resolved_limit(filters),
-            access_context=access_context,
+        payload = SyncFollowupMissionsCommand()(
+            SyncFollowupMissionsCommandDTO(
+                scope=filters["scope"],
+                owner_userid=filters["owner_userid"],
+                external_userid=filters["external_userid"],
+                limit=_resolved_limit(filters),
+                access_context=dict(access_context),
+            )
         )
         return jsonify({"ok": True, "sync": payload})
     except CustomerPulseAccessDenied as exc:

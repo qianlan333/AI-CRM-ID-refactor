@@ -7,20 +7,27 @@ from zoneinfo import ZoneInfo
 
 from flask import current_app
 
-from ..admin_auth import count_admin_users
+from ...application.routing_config.commands import (
+    SaveOwnerRoleSettingCommand,
+    SaveRoutingRuleSettingCommand,
+)
+from ...application.routing_config.dto import (
+    GetOwnerRoleMapQueryDTO,
+    GetOwnerRoleQueryDTO,
+    GetRoutingRuleConfigQueryDTO,
+    GetRoutingRuleQueryDTO,
+    SaveOwnerRoleSettingCommandDTO,
+    SaveRoutingRuleSettingCommandDTO,
+)
+from ...application.routing_config.queries import (
+    GetOwnerRoleMapQuery,
+    GetOwnerRoleQuery,
+    GetRoutingRuleConfigQuery,
+    GetRoutingRuleQuery,
+)
 from ...infra.constants import USER_OPS_CLASS_TERM_TAG_GROUP_NAME
 from ...infra.settings import get_setting, mask_value
-from ..routing_config import (
-    OWNER_ROLE_OPTIONS,
-    ROUTING_TARGET_OPTIONS,
-    ensure_routing_rule_config_seed,
-    get_owner_role,
-    get_routing_rule,
-    list_owner_role_map,
-    list_routing_rules,
-    save_owner_role_map_item,
-    save_routing_rule_config_item,
-)
+from ..admin_auth import count_admin_users
 from ..tags import service as tags_service
 from ..user_ops import ensure_class_term_tag_mapping_seed
 from . import repo
@@ -603,9 +610,9 @@ def config_tabs(active_key: str) -> list[dict[str, Any]]:
 
 
 def build_config_home_payload() -> dict[str, Any]:
-    ensure_routing_rule_config_seed()
     ensure_class_term_tag_mapping_seed()
-    routing_rows = list_routing_rules(active_only=False)
+    routing_payload = GetRoutingRuleConfigQuery()(GetRoutingRuleConfigQueryDTO(active_only=False))
+    routing_rows = [dict(item) for item in (routing_payload.get("routing_rules") or {}).values()]
     signup_rules = tags_service.get_signup_tag_rules_config()
     class_term_rows = repo.list_class_term_tag_mappings(active_only=False)
     app_rows = list_admin_app_settings(query="", scope="")
@@ -807,12 +814,19 @@ def automation_conversion_recent_activity(*, filter_value: str = "", limit: int 
 
 
 def list_owner_routing_settings(*, query: str, active_only: bool) -> dict[str, Any]:
-    ensure_routing_rule_config_seed()
-    owner_rows = [dict(item) for item in list_owner_role_map(active_only=active_only)]
+    owner_rows = [
+        dict(item)
+        for item in GetOwnerRoleMapQuery()(
+            GetOwnerRoleMapQueryDTO(active_only=bool(active_only))
+        )
+    ]
     owner_rows = [row for row in owner_rows if _filter_text_match(row, ["userid", "display_name", "role"], query)]
     owner_rows = _apply_audit_meta(owner_rows, target_type=TARGET_OWNER_ROLE_MAP, id_field="userid")
 
-    routing_rows = [dict(item) for item in list_routing_rules(active_only=active_only)]
+    routing_payload = GetRoutingRuleConfigQuery()(
+        GetRoutingRuleConfigQueryDTO(active_only=bool(active_only))
+    )
+    routing_rows = [dict(item) for item in (routing_payload.get("routing_rules") or {}).values()]
     routing_rows = [
         row
         for row in routing_rows
@@ -852,19 +866,21 @@ def list_owner_routing_settings(*, query: str, active_only: bool) -> dict[str, A
         ],
         "audit_entries": _recent_audit_entries(TARGET_ROUTING_RULE_CONFIG, limit=8)
         + _recent_audit_entries(TARGET_OWNER_ROLE_MAP, limit=8),
-        "role_options": list(OWNER_ROLE_OPTIONS),
-        "routing_target_options": list(ROUTING_TARGET_OPTIONS),
+        "role_options": list(routing_payload.get("owner_role_options") or []),
+        "routing_target_options": list(routing_payload.get("routing_target_options") or []),
     }
 
 
 def save_owner_role_setting(payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
     userid = _normalized_text(payload.get("userid"))
-    before = get_owner_role(userid)
-    saved = save_owner_role_map_item(
-        userid=userid,
-        display_name=_normalized_text(payload.get("display_name")),
-        role=_normalized_text(payload.get("role")),
-        active=payload.get("active"),
+    before = GetOwnerRoleQuery()(GetOwnerRoleQueryDTO(userid=userid))
+    saved = SaveOwnerRoleSettingCommand()(
+        SaveOwnerRoleSettingCommandDTO(
+            userid=userid,
+            display_name=_normalized_text(payload.get("display_name")),
+            role=_normalized_text(payload.get("role")),
+            active=payload.get("active"),
+        )
     )
     _audit_log(
         operator=operator,
@@ -879,17 +895,19 @@ def save_owner_role_setting(payload: dict[str, Any], *, operator: str) -> dict[s
 
 def save_routing_rule_setting(payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
     rule_key = _normalized_text(payload.get("rule_key"))
-    before = get_routing_rule(rule_key)
-    saved = save_routing_rule_config_item(
-        rule_key=rule_key,
-        routing_alias=_normalized_text(payload.get("routing_alias")),
-        route_owner_userid=_normalized_text(payload.get("route_owner_userid")),
-        route_owner_role=_normalized_text(payload.get("route_owner_role")),
-        routing_target=_normalized_text(payload.get("routing_target")),
-        fallback_target=_normalized_text(payload.get("fallback_target")),
-        when_owner_role_sales=_normalized_text(payload.get("when_owner_role_sales")),
-        when_owner_role_delivery=_normalized_text(payload.get("when_owner_role_delivery")),
-        active=payload.get("active"),
+    before = GetRoutingRuleQuery()(GetRoutingRuleQueryDTO(rule_key=rule_key))
+    saved = SaveRoutingRuleSettingCommand()(
+        SaveRoutingRuleSettingCommandDTO(
+            rule_key=rule_key,
+            routing_alias=_normalized_text(payload.get("routing_alias")),
+            route_owner_userid=_normalized_text(payload.get("route_owner_userid")),
+            route_owner_role=_normalized_text(payload.get("route_owner_role")),
+            routing_target=_normalized_text(payload.get("routing_target")),
+            fallback_target=_normalized_text(payload.get("fallback_target")),
+            when_owner_role_sales=_normalized_text(payload.get("when_owner_role_sales")),
+            when_owner_role_delivery=_normalized_text(payload.get("when_owner_role_delivery")),
+            active=payload.get("active"),
+        )
     )
     _audit_log(
         operator=operator,

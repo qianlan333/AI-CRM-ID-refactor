@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from flask import jsonify, request, url_for
 
+from ..application.ai_assist import (
+    FollowupFeatureGateQueryDTO,
+    GetFollowupOrchestratorFeatureGateQuery,
+)
 from ..domains.admin_console.customer_profile_service import (
     build_customer_detail_payload,
     build_customer_list_payload,
@@ -12,7 +16,6 @@ from ..domains.admin_console.customer_profile_service import (
     get_customer_questionnaire_answers_payload,
 )
 from ..domains.customer_pulse.access import CustomerPulseAccessDenied, current_customer_pulse_request_access_context, customer_pulse_template_access_payload
-from ..domains.followup_orchestrator import is_followup_orchestrator_enabled
 from ..domains.admin_console.service import (
     execute_customer_tag_action,
     execute_customer_task_action,
@@ -54,6 +57,9 @@ def _render_customer_detail_page(
 ):
     payload = build_customer_detail_payload(external_userid, legacy_tab=legacy_tab)
     access_context = current_customer_pulse_request_access_context()
+    followup_feature_gate = GetFollowupOrchestratorFeatureGateQuery()(
+        FollowupFeatureGateQueryDTO(access_context=dict(access_context))
+    )
     if not payload:
         return _render_admin_template(
             "placeholder.html",
@@ -111,7 +117,7 @@ def _render_customer_detail_page(
             "automation_push_openclaw": url_for("api.api_admin_automation_conversion_push_openclaw"),
         },
         customer_pulse_access=customer_pulse_template_access_payload(access_context),
-        followup_orchestrator_enabled=is_followup_orchestrator_enabled(access_context=access_context),
+        followup_orchestrator_enabled=bool(followup_feature_gate.get("enabled")),
     )
 
 

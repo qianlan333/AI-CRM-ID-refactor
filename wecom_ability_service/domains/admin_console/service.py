@@ -6,29 +6,42 @@ from typing import Any
 
 from flask import current_app, url_for
 
-from ...customer_center.routes import parse_customer_filters
-from ...customer_center.service import get_customer_detail, list_customers
-from ...customer_timeline import get_customer_timeline
-from ...customer_timeline.routes import parse_timeline_filters
+from ...application.customer_read_model import CustomerDetailQueryDTO, GetCustomerDetailQuery
+from ...application.questionnaire.commands import RetryQuestionnaireExternalPushCommand
+from ...application.questionnaire.dto import RetryQuestionnaireExternalPushCommandDTO
+from ...application.questionnaire.queries import (
+    GetGlobalQuestionnaireExternalPushLogsQuery,
+    GetQuestionnaireExternalPushLogsQuery,
+)
+from ...application.user_ops import (
+    BackfillOwnerClassTermsCommand,
+    BackfillOwnerClassTermsCommandDTO,
+    GetUserOpsOverviewQuery,
+    GetUserOpsOverviewQueryDTO,
+    ImportActivationStatusCommand,
+    ImportActivationStatusCommandDTO,
+    ImportMobileClassTermCommand,
+    ImportMobileClassTermCommandDTO,
+    LeadPoolFiltersDTO,
+    ListLeadPoolQuery,
+    ListLeadPoolQueryDTO,
+    ListUserOpsHistoryQuery,
+    ListUserOpsHistoryQueryDTO,
+    RunDueUserOpsDeferredJobsCommand,
+    RunDueUserOpsDeferredJobsCommandDTO,
+)
 from ...services import (
-    backfill_owner_class_terms_into_lead_pool,
     count_external_contact_identity_maps,
     get_group_chat_map,
     get_latest_questionnaire_submit_debug,
     get_owner_role,
     get_routing_config,
     get_signup_status_definition,
-    get_user_ops_overview,
-    import_activation_status_source,
-    import_mobile_class_term_source,
     list_class_user_management_records,
     list_class_user_status_history,
     list_questionnaires,
-    list_user_ops_history,
-    list_user_ops_pool,
     migrate_class_user_status_from_contact_tags,
     resolve_contact_routing_context,
-    run_due_user_ops_deferred_jobs,
     update_questionnaire,
     disable_questionnaire,
     get_questionnaire_detail,
@@ -39,11 +52,6 @@ from ...infra.settings import get_setting
 from ..admin_config.service import list_mcp_tool_settings, mcp_tool_enabled
 from ..admin_config import repo as admin_config_repo
 from ..questionnaire import build_questionnaire_preflight_payload
-from ..questionnaire.service import (
-    is_questionnaire_external_push_global_enabled,
-    retry_questionnaire_external_push_log,
-    retry_questionnaire_external_push_logs,
-)
 from ..tags.service import mark_customer_tags, unmark_customer_tags
 from ..tasks.service import dispatch_wecom_task
 from . import repo
@@ -419,6 +427,10 @@ def build_customer_list_payload(args: Any) -> dict[str, Any]:
     return build_customer_search_payload(args)
 
 
+def _load_customer_detail(external_userid: str) -> dict[str, Any] | None:
+    return GetCustomerDetailQuery()(CustomerDetailQueryDTO(external_userid=_normalized_text(external_userid)))
+
+
 def _build_recent_messages(external_userid: str, *, limit: int = 20) -> list[dict[str, Any]]:
     rows = repo.list_recent_customer_messages(external_userid, limit=limit)
     group_map = get_group_chat_map([extract_roomid_from_raw_payload(row.get("raw_payload")) for row in rows])
@@ -466,7 +478,7 @@ def preview_customer_tag_action(
     action: str,
     tag_ids: list[str],
 ) -> dict[str, Any]:
-    detail = get_customer_detail(external_userid)
+    detail = _load_customer_detail(external_userid)
     if not detail:
         raise ValueError("未找到客户")
     normalized_action = _normalized_text(action)
@@ -516,7 +528,7 @@ def execute_customer_tag_action(
         result = mark_customer_tags(payload)
     else:
         result = unmark_customer_tags(payload)
-    after_detail = get_customer_detail(external_userid) or {}
+    after_detail = _load_customer_detail(external_userid) or {}
     _audit_log(
         operator=operator,
         action_type=f"execute_{preview['action']}",
@@ -545,7 +557,7 @@ def preview_customer_task_action(
     userid: str,
     content: str,
 ) -> dict[str, Any]:
-    detail = get_customer_detail(external_userid)
+    detail = _load_customer_detail(external_userid)
     if not detail:
         raise ValueError("未找到客户")
     normalized_task_type = _normalized_text(task_type)
@@ -703,68 +715,11 @@ def build_questionnaire_external_push_logs_payload(
     status: str = "",
     limit: int = 50,
 ) -> dict[str, Any] | None:
-    questionnaire = get_questionnaire_detail(int(questionnaire_id))
-    if not questionnaire:
-        return None
-    normalized_status = _normalized_text(status)
-    effective_status_filter = ""
-    if normalized_status in {"failed", "failed_current"}:
-        normalized_status = "failed_current"
-        effective_status_filter = "failed"
-    elif normalized_status in {"success", "success_current"}:
-        normalized_status = "success_current"
-        effective_status_filter = "success"
-    normalized_limit = _normalized_int(limit, default=50, minimum=1, maximum=200)
-    summary = repo.summarize_questionnaire_external_push_logs(int(questionnaire_id))
-    rows = repo.list_questionnaire_external_push_log_threads(
-        int(questionnaire_id),
-        status=effective_status_filter,
-        limit=normalized_limit,
+    return GetQuestionnaireExternalPushLogsQuery()(
+        questionnaire_id=int(questionnaire_id),
+        status=status,
+        limit=limit,
     )
-    normalized_rows = []
-    for row in rows:
-        latest_log = dict(row.get("latest_log") or {})
-        normalized_rows.append(
-            {
-                **row,
-                "first_status_label": _questionnaire_external_push_status_label(str(row.get("status") or "").strip()),
-                "first_status_tone": _questionnaire_external_push_status_tone(str(row.get("status") or "").strip()),
-                "effective_status_label": _questionnaire_external_push_effective_state_label(row),
-                "effective_status_tone": _questionnaire_external_push_status_tone(str(row.get("latest_status") or "").strip()),
-                "retries": [
-                    {
-                        **retry,
-                        "status_label": _questionnaire_external_push_status_label(str(retry.get("status") or "").strip()),
-                        "status_tone": _questionnaire_external_push_status_tone(str(retry.get("status") or "").strip()),
-                    }
-                    for retry in row.get("retries") or []
-                ],
-                "latest_log": {
-                    **latest_log,
-                    "status_label": _questionnaire_external_push_status_label(str(latest_log.get("status") or "").strip()),
-                    "status_tone": _questionnaire_external_push_status_tone(str(latest_log.get("status") or "").strip()),
-                },
-            }
-        )
-    return {
-        "is_global": False,
-        "questionnaire": {
-            **questionnaire,
-            **_questionnaire_paths(_normalized_text(questionnaire.get("slug"))),
-        },
-        "filters": {
-            "status": normalized_status,
-            "limit": normalized_limit,
-        },
-        "status_options": [
-            {"value": "", "label": "全部"},
-            {"value": "failed_current", "label": "仅待补发"},
-            {"value": "success_current", "label": "仅当前成功"},
-        ],
-        "summary": summary,
-        "logs": normalized_rows,
-        "retryable_count": sum(1 for row in normalized_rows if row.get("can_retry")),
-    }
 
 
 def build_global_questionnaire_external_push_logs_payload(
@@ -776,112 +731,28 @@ def build_global_questionnaire_external_push_logs_payload(
     target_url: str = "",
     limit: int = 50,
 ) -> dict[str, Any]:
-    normalized_questionnaire_id = _normalized_int(questionnaire_id, default=0, minimum=0, maximum=10**9)
-    questionnaire_id_filter = normalized_questionnaire_id or None
-    normalized_questionnaire_title = _normalized_text(questionnaire_title)
-    normalized_status = _normalized_text(status)
-    normalized_user_id = _normalized_text(user_id)
-    normalized_target_url = _normalized_text(target_url)
-    effective_status_filter = ""
-    if normalized_status in {"failed", "failed_current"}:
-        normalized_status = "failed_current"
-        effective_status_filter = "failed"
-    elif normalized_status in {"success", "success_current"}:
-        normalized_status = "success_current"
-        effective_status_filter = "success"
-    normalized_limit = _normalized_int(limit, default=50, minimum=1, maximum=200)
-    filtered_rows = repo.list_questionnaire_external_push_log_threads(
-        questionnaire_id_filter,
-        questionnaire_title=normalized_questionnaire_title,
-        user_id=normalized_user_id,
-        target_url=normalized_target_url,
-        status=effective_status_filter,
-        limit=None,
+    return GetGlobalQuestionnaireExternalPushLogsQuery()(
+        questionnaire_id=questionnaire_id,
+        questionnaire_title=questionnaire_title,
+        status=status,
+        user_id=user_id,
+        target_url=target_url,
+        limit=limit,
     )
-    all_rows = repo.list_questionnaire_external_push_log_threads(None, limit=None)
-    recent_since = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-
-    normalized_rows = []
-    for row in filtered_rows[:normalized_limit]:
-        latest_log = dict(row.get("latest_log") or {})
-        normalized_rows.append(
-            {
-                **row,
-                "questionnaire_path": url_for("api.admin_console_questionnaire_detail", questionnaire_id=int(row.get("questionnaire_id") or 0)),
-                "questionnaire_logs_path": url_for("api.admin_console_questionnaire_external_push_logs", questionnaire_id=int(row.get("questionnaire_id") or 0)),
-                "first_status_label": _questionnaire_external_push_status_label(str(row.get("status") or "").strip()),
-                "first_status_tone": _questionnaire_external_push_status_tone(str(row.get("status") or "").strip()),
-                "effective_status_label": _questionnaire_external_push_effective_state_label(row),
-                "effective_status_tone": _questionnaire_external_push_status_tone(str(row.get("latest_status") or "").strip()),
-                "retries": [
-                    {
-                        **retry,
-                        "status_label": _questionnaire_external_push_status_label(str(retry.get("status") or "").strip()),
-                        "status_tone": _questionnaire_external_push_status_tone(str(retry.get("status") or "").strip()),
-                    }
-                    for retry in row.get("retries") or []
-                ],
-                "latest_log": {
-                    **latest_log,
-                    "status_label": _questionnaire_external_push_status_label(str(latest_log.get("status") or "").strip()),
-                    "status_tone": _questionnaire_external_push_status_tone(str(latest_log.get("status") or "").strip()),
-                },
-            }
-        )
-    all_questionnaires = list_questionnaires()
-    total_questionnaires = len(all_questionnaires)
-    enabled_questionnaire_count = sum(1 for item in all_questionnaires if item.get("external_push_enabled"))
-    current_failed_count = sum(1 for row in all_rows if row.get("can_retry"))
-    current_success_count = sum(1 for row in all_rows if row.get("latest_status") == "success")
-    current_skipped_count = sum(1 for row in all_rows if row.get("latest_status") == "skipped")
-    global_switch_enabled = is_questionnaire_external_push_global_enabled()
-    return {
-        "is_global": True,
-        "questionnaire": None,
-        "filters": {
-            "questionnaire_id": normalized_questionnaire_id,
-            "questionnaire_title": normalized_questionnaire_title,
-            "status": normalized_status,
-            "user_id": normalized_user_id,
-            "target_url": normalized_target_url,
-            "limit": normalized_limit,
-        },
-        "status_options": [
-            {"value": "", "label": "全部"},
-            {"value": "failed_current", "label": "仅待补发"},
-            {"value": "success_current", "label": "仅当前成功"},
-        ],
-        "summary": {
-            "questionnaire_total_count": total_questionnaires,
-            "enabled_questionnaire_count": enabled_questionnaire_count,
-            "matched_questionnaire_count": len({int(row.get("questionnaire_id") or 0) for row in filtered_rows}),
-            "total_log_count": repo.count_questionnaire_external_push_logs(),
-            "current_failed_count": current_failed_count,
-            "current_success_count": current_success_count,
-            "current_skipped_count": current_skipped_count,
-            "recent_success_count": repo.count_questionnaire_external_push_logs(
-                status="success",
-                created_at_gte=recent_since,
-            ),
-            "recent_failed_count": repo.count_questionnaire_external_push_logs(
-                status="failed",
-                created_at_gte=recent_since,
-            ),
-            "global_switch_enabled": global_switch_enabled,
-            "global_switch_label": "已开启" if global_switch_enabled else "已关闭（止损中）",
-            "global_switch_tone": "ok" if global_switch_enabled else "danger",
-        },
-        "logs": normalized_rows,
-        "retryable_count": sum(1 for row in normalized_rows if row.get("can_retry")),
-    }
 
 
 def retry_questionnaire_external_push_log_for_console(push_log_id: int) -> dict[str, Any]:
-    return retry_questionnaire_external_push_log(int(push_log_id))
+    return RetryQuestionnaireExternalPushCommand()(
+        RetryQuestionnaireExternalPushCommandDTO(push_log_id=int(push_log_id))
+    )
 
 
 def retry_questionnaire_external_push_logs_for_console(push_log_ids: list[int]) -> dict[str, Any]:
-    return retry_questionnaire_external_push_logs(push_log_ids)
+    return RetryQuestionnaireExternalPushCommand()(
+        RetryQuestionnaireExternalPushCommandDTO(
+            push_log_ids=[int(item) for item in push_log_ids],
+        )
+    )
 
 
 def _questionnaire_external_push_status_tone(value: str) -> str:
@@ -992,11 +863,30 @@ def operations_tabs(active_key: str) -> list[dict[str, Any]]:
     ]
 
 
+def _lead_pool_filters_dto(
+    *,
+    is_wecom_added: str = "",
+    is_mobile_bound: str = "",
+    huangxiaocan_activation_state: str = "",
+    class_term_no: str = "",
+    owner_userid: str = "",
+    query: str = "",
+) -> LeadPoolFiltersDTO:
+    return LeadPoolFiltersDTO(
+        is_wecom_added=is_wecom_added,
+        is_mobile_bound=is_mobile_bound,
+        huangxiaocan_activation_state=huangxiaocan_activation_state,
+        class_term_no=class_term_no,
+        owner_userid=owner_userid,
+        query=query,
+    )
+
+
 def build_operations_payload(args: Any) -> dict[str, Any]:
     active_tab = _normalized_text(args.get("tab")) or "overview"
     if active_tab not in {item["key"] for item in OPERATIONS_TABS}:
         active_tab = "overview"
-    overview = get_user_ops_overview()
+    overview = GetUserOpsOverviewQuery()(GetUserOpsOverviewQueryDTO())
     user_ops_filters = {
         "is_wecom_added": _normalized_text(args.get("is_wecom_added")),
         "is_mobile_bound": _normalized_text(args.get("is_mobile_bound")),
@@ -1007,8 +897,17 @@ def build_operations_payload(args: Any) -> dict[str, Any]:
     }
     class_status_filter = _normalized_text(args.get("signup_status"))
     history_limit = _normalized_int(args.get("limit"), default=100, minimum=1, maximum=200)
-    user_ops_list_payload = list_user_ops_pool(**user_ops_filters) if active_tab in {"overview", "user-ops"} else {}
-    user_ops_history_payload = list_user_ops_history(limit=history_limit) if active_tab in {"overview", "history"} else {}
+    user_ops_filters_dto = _lead_pool_filters_dto(**user_ops_filters)
+    user_ops_list_payload = (
+        ListLeadPoolQuery()(ListLeadPoolQueryDTO(filters=user_ops_filters_dto))
+        if active_tab in {"overview", "user-ops"}
+        else {}
+    )
+    user_ops_history_payload = (
+        ListUserOpsHistoryQuery()(ListUserOpsHistoryQueryDTO(limit=history_limit))
+        if active_tab in {"overview", "history"}
+        else {}
+    )
     class_user_payload = (
         list_class_user_management_records(signup_status=class_status_filter) if active_tab in {"overview", "class-users"} else {}
     )
@@ -1048,13 +947,15 @@ def execute_operations_action(
         class_term_min = _normalized_int(form.get("class_term_min"), default=1, minimum=1, maximum=99)
         class_term_max = _normalized_int(form.get("class_term_max"), default=5, minimum=1, maximum=99)
         confirm = _normalize_bool(form.get("confirm"))
-        payload = backfill_owner_class_terms_into_lead_pool(
-            owner_userid=owner_userid,
-            class_term_min=class_term_min,
-            class_term_max=class_term_max,
-            dry_run=not confirm,
-            operator=operator_value,
-            entry_source=_normalized_text(form.get("entry_source")),
+        payload = BackfillOwnerClassTermsCommand()(
+            BackfillOwnerClassTermsCommandDTO(
+                owner_userid=owner_userid,
+                class_term_min=class_term_min,
+                class_term_max=class_term_max,
+                dry_run=not confirm,
+                operator=operator_value,
+                entry_source=_normalized_text(form.get("entry_source")),
+            )
         )
         _audit_log(
             operator=operator_value,
@@ -1070,7 +971,7 @@ def execute_operations_action(
         if not _normalize_bool(form.get("confirm")):
             raise ValueError("执行待处理作业前请先勾选确认")
         limit = _normalized_int(form.get("limit"), default=20, minimum=1, maximum=200)
-        payload = run_due_user_ops_deferred_jobs(limit=limit)
+        payload = RunDueUserOpsDeferredJobsCommand()(RunDueUserOpsDeferredJobsCommandDTO(limit=limit))
         _audit_log(
             operator=operator_value,
             action_type="run_deferred_jobs",
@@ -1104,27 +1005,35 @@ def execute_operations_action(
             raise ValueError("请上传文件或粘贴内容")
         if normalized_action == "import-mobile-class-terms":
             if uploaded_file and uploaded_file.filename:
-                payload = import_mobile_class_term_source(
-                    file_name=uploaded_file.filename,
-                    file_bytes=uploaded_file.read(),
-                    created_by=operator_value,
+                payload = ImportMobileClassTermCommand()(
+                    ImportMobileClassTermCommandDTO(
+                        file_name=uploaded_file.filename,
+                        file_bytes=uploaded_file.read(),
+                        created_by=operator_value,
+                    )
                 )
             else:
-                payload = import_mobile_class_term_source(
-                    pasted_text=pasted_text,
-                    created_by=operator_value,
+                payload = ImportMobileClassTermCommand()(
+                    ImportMobileClassTermCommandDTO(
+                        pasted_text=pasted_text,
+                        created_by=operator_value,
+                    )
                 )
         else:
             if uploaded_file and uploaded_file.filename:
-                payload = import_activation_status_source(
-                    file_name=uploaded_file.filename,
-                    file_bytes=uploaded_file.read(),
-                    created_by=operator_value,
+                payload = ImportActivationStatusCommand()(
+                    ImportActivationStatusCommandDTO(
+                        file_name=uploaded_file.filename,
+                        file_bytes=uploaded_file.read(),
+                        created_by=operator_value,
+                    )
                 )
             else:
-                payload = import_activation_status_source(
-                    pasted_text=pasted_text,
-                    created_by=operator_value,
+                payload = ImportActivationStatusCommand()(
+                    ImportActivationStatusCommandDTO(
+                        pasted_text=pasted_text,
+                        created_by=operator_value,
+                    )
                 )
         _audit_log(
             operator=operator_value,

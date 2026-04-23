@@ -102,6 +102,7 @@
           <span>触发方式</span>
           <select name="trigger_mode">
             <option value="scheduled">进入人群后第 N 天指定时间运行</option>
+            <option value="daily_recurring">从第 N 天开始每天轮巡运行</option>
             <option value="audience_entered">进入目标人群后立即运行</option>
           </select>
         </label>
@@ -278,9 +279,9 @@
 
     function behaviorTierLabel(code, fallback) {
       const normalized = String(code || '').trim();
-      if (normalized === 'lt_2') return '小于 2';
-      if (normalized === 'between_2_9') return '2 ~ 9';
-      if (normalized === 'gte_10') return '大于等于 10';
+      if (normalized === 'lt_2') return '消息少于 2';
+      if (normalized === 'between_2_9') return '消息 2 ~ 9';
+      if (normalized === 'gte_10') return '消息大于等于 10';
       return labelFromRegistry('behavior_tiers', normalized, fallback || normalized);
     }
 
@@ -291,7 +292,7 @@
       }
       const tierKeys = Array.isArray((workflow || {}).recipient_behavior_tier_keys) ? workflow.recipient_behavior_tier_keys : [];
       const tierLabels = tierKeys.map((item) => behaviorTierLabel(item, item)).filter(Boolean);
-      return tierLabels.length ? `按行为层级发：${tierLabels.join(' / ')}` : '按行为层级发';
+      return tierLabels.length ? `按消息条数发：${tierLabels.join(' / ')}` : '按消息条数发';
     }
 
     function workflowContentSummary(workflow, bundle) {
@@ -380,8 +381,8 @@
             <td><strong>${escapeHtml(node.node_name || node.node_code || '-')}</strong><div class="ac-ops-code">${escapeHtml(node.node_code || '')}</div></td>
             <td>${escapeHtml(audienceLabel(node.target_audience_code))}</td>
             <td>${escapeHtml(nodeTriggerModeLabel(node.trigger_mode || 'scheduled'))}</td>
-            <td>${node.trigger_mode === 'audience_entered' ? '-' : `第 ${escapeHtml(node.day_offset || 1)} 天`}</td>
-            <td>${escapeHtml(node.trigger_mode === 'audience_entered' ? '立即运行' : (node.send_time || '-'))}</td>
+            <td>${node.trigger_mode === 'audience_entered' ? '-' : (node.trigger_mode === 'daily_recurring' ? `第 ${escapeHtml(node.day_offset || 1)} 天起` : `第 ${escapeHtml(node.day_offset || 1)} 天`)}</td>
+            <td>${escapeHtml(node.trigger_mode === 'audience_entered' ? '立即运行' : (node.trigger_mode === 'daily_recurring' ? `每日 ${node.send_time || '-'}` : (node.send_time || '-')))}</td>
             <td>${escapeHtml(contentSummary)}</td>
             <td>${node.enabled ? '启用' : '停用'}</td>
             <td>
@@ -398,12 +399,16 @@
 
     function syncNodeTriggerModeFields() {
       const triggerMode = String(elements.nodeForm.elements.trigger_mode.value || 'scheduled');
-      const scheduled = triggerMode === 'scheduled';
-      elements.nodeDayOffsetField.hidden = !scheduled;
-      elements.nodeSendTimeField.hidden = !scheduled;
-      elements.nodeTriggerHelp.textContent = scheduled
-        ? '按时间点运行时，会在进入目标人群后的第 N 天指定时间执行。'
-        : '进入目标人群后立即运行时，不再要求配置第几天和时间。';
+      const usesScheduleFields = triggerMode !== 'audience_entered';
+      elements.nodeDayOffsetField.hidden = !usesScheduleFields;
+      elements.nodeSendTimeField.hidden = !usesScheduleFields;
+      if (triggerMode === 'scheduled') {
+        elements.nodeTriggerHelp.textContent = '按时间点运行时，会在进入目标人群后的第 N 天指定时间执行一次。';
+      } else if (triggerMode === 'daily_recurring') {
+        elements.nodeTriggerHelp.textContent = '每日轮巡时，会从进入目标人群后的第 N 天开始，每天在指定时间对当前仍在该人群内的成员执行一次。';
+      } else {
+        elements.nodeTriggerHelp.textContent = '进入目标人群后立即运行时，不再要求配置第几天和时间。';
+      }
     }
 
     function renderNodeVariantControls(node, segmentationBasis, forceShow) {
@@ -421,7 +426,7 @@
       elements.nodeVariantHelp.textContent =
         segmentationBasis === 'profile'
           ? '填写当前有效画像分类对应的节点内容，输入区会随画像分类配置动态变化。'
-          : '填写当前有效行为层级对应的节点内容，输入区会随行为层级配置动态变化。';
+          : '填写当前有效消息条数层级对应的节点内容，输入区会随消息条数层级配置动态变化。';
       elements.nodeVariantGrid.innerHTML = targets.map((target) => `
         <label class="ac-ops-variant-item">
           <span>${escapeHtml(target.label)}</span>
@@ -444,7 +449,7 @@
       if (contentMode === 'standard_direct') {
         elements.nodeContentHelp.textContent = '当前任务流是统一内容录入，节点层只填写一份统一标准内容。';
       } else if (contentMode === 'manual_layered') {
-        elements.nodeContentHelp.textContent = '当前任务流是手动分层录入，节点层只填写当前有效分层的内容明细。';
+        elements.nodeContentHelp.textContent = '当前任务流是手动分层录入，节点层只填写当前有效分层的内容明细。填写当前有效行为层级对应的节点内容，输入区会随行为层级配置动态变化。';
       } else if (contentMode === 'standard_layered_rewrite') {
         elements.nodeContentHelp.textContent = '当前任务流是自动生成配置，节点层填写统一标准内容，执行时按当前分层和 Agent 配置改写。';
       } else {
@@ -510,7 +515,7 @@
         }
       } else {
         if (!Number.isInteger(payload.day_offset) || payload.day_offset < 1) {
-          throw new Error('定时运行时必须填写有效的第几天');
+          throw new Error('当前触发方式必须填写有效的第几天');
         }
         if (!/^\d{2}:\d{2}$/.test(String(payload.send_time || ''))) {
           throw new Error('时间格式不正确');
@@ -547,7 +552,7 @@
         enabled: !!elements.nodeForm.elements.enabled.checked,
       };
 
-      if (triggerMode === 'scheduled') {
+      if (triggerMode !== 'audience_entered') {
         payload.day_offset = Number(elements.nodeForm.elements.day_offset.value || 1);
         payload.send_time = String(elements.nodeForm.elements.send_time.value || '09:00');
       }

@@ -118,7 +118,7 @@
       </div>
 
       <div class="admin-field" id="workflow-recipient-tier-field" hidden>
-        <span>行为层级</span>
+        <span>消息条数层级</span>
         <div class="ac-ops-checkbox-grid" id="workflow-recipient-tier-options"></div>
       </div>
 
@@ -259,9 +259,9 @@
 
     function behaviorTierLabel(code, fallback) {
       const normalized = String(code || '').trim();
-      if (normalized === 'lt_2') return '小于 2';
-      if (normalized === 'between_2_9') return '2 ~ 9';
-      if (normalized === 'gte_10') return '大于等于 10';
+      if (normalized === 'lt_2') return '消息少于 2';
+      if (normalized === 'between_2_9') return '消息 2 ~ 9';
+      if (normalized === 'gte_10') return '消息大于等于 10';
       return labelFromRegistry('behavior_tiers', normalized, fallback || normalized);
     }
 
@@ -426,7 +426,7 @@
         values.generationMode === 'personalized_single'
           ? '单人定制化生成只允许绑定 1 个 Agent。'
           : contentSegmentationBasis === 'behavior'
-          ? '行为层级分层固定为：小于 2、2 ~ 9、大于等于 10。'
+          ? '消息条数分层固定为：消息少于 2、消息 2 ~ 9、消息大于等于 10。'
           : '标准版分层改写需要为每个画像分类绑定 Agent。';
 
       elements.bindingGrid.innerHTML = targets.map((target) => {
@@ -462,10 +462,10 @@
       if (!payload.workflow_name) throw new Error('任务流名称不能为空');
       if (!payload.audiences.length) throw new Error('请至少选择一个适用人群');
       if (payload.recipient_filter_basis === 'none' && payload.recipient_behavior_tier_keys.length) {
-        throw new Error('不分层发送时不应选择行为层级');
+        throw new Error('不分层发送时不应选择消息条数层级');
       }
       if (payload.recipient_filter_basis === 'behavior' && !payload.recipient_behavior_tier_keys.length) {
-        throw new Error('按行为层级发时至少选择一个行为层级');
+        throw new Error('按消息条数发时至少选择一个层级');
       }
       if (payload.content_segmentation_basis === 'profile' && !payload.content_profile_segment_template_id) {
         throw new Error('基础画像分层时必须选择画像模板');

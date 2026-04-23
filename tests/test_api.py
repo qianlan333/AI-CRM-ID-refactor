@@ -1543,7 +1543,10 @@ def test_questionnaire_preflight_returns_200_with_missing_config(client, app, mo
         WECOM_CONTACT_SECRET="",
         ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API=False,
     )
-    monkeypatch.setattr("wecom_ability_service.routes.list_available_wecom_tags", lambda: [])
+    monkeypatch.setattr(
+        "wecom_ability_service.application.questionnaire.queries.ListAvailableWeComTagsQuery.__call__",
+        lambda self, dto=None: [],
+    )
 
     response = client.get("/api/admin/questionnaires/preflight")
     data = response.get_json()
@@ -1736,7 +1739,10 @@ def test_questionnaire_preflight_requires_non_default_secret_key(client, app, mo
         WECHAT_MP_APP_SECRET="wx-live-secret",
         SECRET_KEY="dev-secret-key-change-me",
     )
-    monkeypatch.setattr("wecom_ability_service.routes.list_available_wecom_tags", lambda: [])
+    monkeypatch.setattr(
+        "wecom_ability_service.application.questionnaire.queries.ListAvailableWeComTagsQuery.__call__",
+        lambda self, dto=None: [],
+    )
 
     response = client.get("/api/admin/questionnaires/preflight")
     data = response.get_json()
@@ -1745,7 +1751,13 @@ def test_questionnaire_preflight_requires_non_default_secret_key(client, app, mo
 
 
 def test_questionnaire_preflight_handles_wecom_tags_error(client, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.routes.list_available_wecom_tags", lambda: (_ for _ in ()).throw(RuntimeError("tags boom")))
+    def _raise_tags_error(self, dto=None):
+        raise RuntimeError("tags boom")
+
+    monkeypatch.setattr(
+        "wecom_ability_service.application.questionnaire.queries.ListAvailableWeComTagsQuery.__call__",
+        _raise_tags_error,
+    )
 
     response = client.get("/api/admin/questionnaires/preflight")
     data = response.get_json()
@@ -4526,7 +4538,10 @@ def test_questionnaire_external_push_failed_logs_can_be_retried_in_batch_with_su
 
 
 def test_questionnaire_submit_success_sends_identity_webhook(client, app, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+    monkeypatch.setattr(
+        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        lambda mobile: f"tp_{mobile}",
+    )
 
     with app.app_context():
         db = get_db()
@@ -4621,7 +4636,10 @@ def test_questionnaire_submit_success_sends_identity_webhook(client, app, monkey
 
 
 def test_questionnaire_submit_webhook_failure_does_not_break_submit(client, app, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+    monkeypatch.setattr(
+        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        lambda mobile: f"tp_{mobile}",
+    )
 
     with app.app_context():
         db = get_db()
@@ -4711,7 +4729,10 @@ def test_questionnaire_submit_webhook_failure_does_not_break_submit(client, app,
 
 
 def test_questionnaire_submit_webhook_retry_due_succeeds(client, app, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+    monkeypatch.setattr(
+        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        lambda mobile: f"tp_{mobile}",
+    )
 
     with app.app_context():
         db = get_db()
@@ -4819,7 +4840,10 @@ def test_questionnaire_submit_webhook_retry_due_rejects_invalid_internal_token(c
 
 
 def test_questionnaire_submit_webhook_without_url_records_unconfigured_delivery(client, app, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+    monkeypatch.setattr(
+        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        lambda mobile: f"tp_{mobile}",
+    )
 
     create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload_with_mobile())
     questionnaire = create_response.get_json()["questionnaire"]
@@ -4882,7 +4906,10 @@ def test_questionnaire_without_mobile_question_does_not_fill_mobile_snapshot(cli
 
 
 def test_questionnaire_mobile_submission_binds_contact_and_overwrites_old_mobile(client, app, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", lambda mobile: f"tp_{mobile}")
+    monkeypatch.setattr(
+        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        lambda mobile: f"tp_{mobile}",
+    )
 
     with app.app_context():
         db = get_db()
@@ -5251,7 +5278,10 @@ def test_sidebar_bind_mobile_succeeds_when_third_party_sync_fails(client, app, m
     def fail_sync(_: str) -> str:
         raise ThirdPartyUserSyncError("third-party resolver is not configured")
 
-    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", fail_sync)
+    monkeypatch.setattr(
+        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        fail_sync,
+    )
 
     response = client.post(
         "/api/sidebar/bind-mobile",
@@ -5296,7 +5326,10 @@ def test_sidebar_bind_mobile_force_rebind_updates_binding(client, app, monkeypat
     def fail_sync(_: str) -> str:
         raise ThirdPartyUserSyncError("third-party resolver is not configured")
 
-    monkeypatch.setattr("wecom_ability_service.services._resolve_third_party_user_id_by_mobile", fail_sync)
+    monkeypatch.setattr(
+        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        fail_sync,
+    )
 
     first = client.post(
         "/api/sidebar/bind-mobile",

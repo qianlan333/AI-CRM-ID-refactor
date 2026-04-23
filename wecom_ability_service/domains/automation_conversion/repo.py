@@ -50,6 +50,25 @@ def _fetchall_dicts(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, An
     return [dict(row) for row in rows]
 
 
+def _sop_pool_lookup_keys(pool_key: str) -> tuple[str, ...]:
+    normalized_pool_key = _normalized_text(pool_key)
+    if not normalized_pool_key:
+        return ()
+    alias_groups = {
+        "pending_questionnaire": ("pending_questionnaire", "new_user"),
+        "operating": (
+            "operating",
+            "inactive_normal",
+            "inactive_focus",
+            "active_normal",
+            "active_focus",
+            "silent",
+        ),
+        "converted": ("converted", "won"),
+    }
+    return alias_groups.get(normalized_pool_key, (normalized_pool_key,))
+
+
 def lookup_person_id_by_external_contact_id(external_contact_id: str) -> int | None:
     row = _fetchone_dict(
         """
@@ -221,9 +240,7 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
         _db_bool(bool(payload.get("in_pool"))),
         _normalized_text(payload.get("current_pool")),
         _normalized_text(payload.get("follow_type")),
-        _normalized_text(payload.get("activation_status")),
         _normalized_text(payload.get("questionnaire_status")),
-        _normalized_text(payload.get("questionnaire_result")),
         _normalized_text(payload.get("decision_source")),
         _normalized_text(payload.get("source_type")),
         payload.get("source_channel_id"),
@@ -242,9 +259,7 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
             in_pool,
             current_pool,
             follow_type,
-            activation_status,
             questionnaire_status,
-            questionnaire_result,
             decision_source,
             source_type,
             source_channel_id,
@@ -255,7 +270,7 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         params,
@@ -273,9 +288,7 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _db_bool(bool(payload.get("in_pool"))),
         _normalized_text(payload.get("current_pool")),
         _normalized_text(payload.get("follow_type")),
-        _normalized_text(payload.get("activation_status")),
         _normalized_text(payload.get("questionnaire_status")),
-        _normalized_text(payload.get("questionnaire_result")),
         _normalized_text(payload.get("decision_source")),
         _normalized_text(payload.get("source_type")),
         payload.get("source_channel_id"),
@@ -295,9 +308,7 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             in_pool = ?,
             current_pool = ?,
             follow_type = ?,
-            activation_status = ?,
             questionnaire_status = ?,
-            questionnaire_result = ?,
             decision_source = ?,
             source_type = ?,
             source_channel_id = ?,
@@ -2645,8 +2656,9 @@ def list_sop_batches(*, pool_key: str = "", limit: int = 50) -> list[dict[str, A
     WHERE 1 = 1
     """
     if normalized_pool_key:
-        sql += " AND pool_key = ?"
-        params.append(normalized_pool_key)
+        lookup_keys = _sop_pool_lookup_keys(normalized_pool_key)
+        sql += f" AND pool_key IN ({', '.join('?' for _ in lookup_keys)})"
+        params.extend(lookup_keys)
     sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
     params.append(max(1, int(limit)))
     return _fetchall_dicts(sql, tuple(params))
@@ -2933,11 +2945,9 @@ def get_overview_counts() -> dict[str, int]:
         SELECT
             COALESCE(SUM(CASE WHEN in_pool THEN 1 ELSE 0 END), 0) AS in_pool_total,
             COALESCE(SUM(CASE WHEN joined_at IS NOT NULL AND joined_at <> '' AND DATE(joined_at) = DATE(CURRENT_TIMESTAMP) THEN 1 ELSE 0 END), 0) AS today_joined,
-            COALESCE(SUM(CASE WHEN questionnaire_status = 'pending' AND in_pool THEN 1 ELSE 0 END), 0) AS questionnaire_pending,
-            COALESCE(SUM(CASE WHEN current_pool IN ('inactive_normal', 'active_normal') THEN 1 ELSE 0 END), 0) AS normal_followup,
-            COALESCE(SUM(CASE WHEN current_pool IN ('inactive_focus', 'active_focus') THEN 1 ELSE 0 END), 0) AS focus_followup,
-            COALESCE(SUM(CASE WHEN current_pool = 'silent' THEN 1 ELSE 0 END), 0) AS silent_total,
-            COALESCE(SUM(CASE WHEN current_pool = 'won' THEN 1 ELSE 0 END), 0) AS won_total
+            COALESCE(SUM(CASE WHEN current_audience_code = 'pending_questionnaire' AND in_pool THEN 1 ELSE 0 END), 0) AS questionnaire_pending,
+            COALESCE(SUM(CASE WHEN current_audience_code = 'operating' AND in_pool THEN 1 ELSE 0 END), 0) AS operating_total,
+            COALESCE(SUM(CASE WHEN current_audience_code = 'converted' AND in_pool THEN 1 ELSE 0 END), 0) AS converted_total
         FROM automation_member
         """
     ) or {}
@@ -2970,6 +2980,40 @@ def get_latest_questionnaire_submission(
     FROM questionnaire_submissions
     WHERE questionnaire_id = ?
       AND (
+    """
+    sql += " OR ".join(filters)
+    sql += """
+      )
+    ORDER BY submitted_at DESC, id DESC
+    LIMIT 1
+    """
+    return _fetchone_dict(sql, tuple(params))
+
+
+def get_latest_any_questionnaire_submission(
+    *,
+    external_contact_ids: list[str] | None = None,
+    phone: str = "",
+) -> dict[str, Any] | None:
+    normalized_external_contact_ids = [
+        _normalized_text(item) for item in (external_contact_ids or []) if _normalized_text(item)
+    ]
+    normalized_phone = _normalized_text(phone)
+    filters: list[str] = []
+    params: list[Any] = []
+    if normalized_external_contact_ids:
+        placeholders = ",".join("?" for _ in normalized_external_contact_ids)
+        filters.append(f"external_userid IN ({placeholders})")
+        params.extend(normalized_external_contact_ids)
+    if normalized_phone:
+        filters.append("mobile_snapshot = ?")
+        params.append(normalized_phone)
+    if not filters:
+        return None
+    sql = """
+    SELECT *
+    FROM questionnaire_submissions
+    WHERE (
     """
     sql += " OR ".join(filters)
     sql += """
@@ -3052,16 +3096,7 @@ def count_stage_members(*, current_pool: str, keyword: str = "") -> int:
 
 
 def list_members_for_silent_refresh() -> list[dict[str, Any]]:
-    return _fetchall_dicts(
-        """
-        SELECT *
-        FROM automation_member
-        WHERE in_pool = ?
-          AND current_pool IN ('new_user', 'inactive_normal', 'inactive_focus', 'active_normal', 'active_focus')
-        ORDER BY updated_at ASC, id ASC
-        """,
-        (_db_bool(True),),
-    )
+    return []
 
 
 def list_members_for_message_activity_sync(*, current_pools: list[str]) -> list[dict[str, Any]]:

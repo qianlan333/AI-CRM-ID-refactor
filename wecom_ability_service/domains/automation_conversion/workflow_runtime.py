@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+from flask import current_app, g, has_app_context
+
 from ...db import get_db
 from ...services import get_recent_messages_by_user
 from ..tasks.service import dispatch_wecom_task
@@ -18,6 +20,7 @@ from .orchestration_service import (
     _resolve_effective_enabled_context_sources,
     get_agent_config_detail,
 )
+from .message_activity_client import get_message_activity_db_status, query_message_activity_counts
 from .workflow_definitions import (
     AGENT_BINDING_SCOPE_BEHAVIOR_TIER,
     AGENT_BINDING_SCOPE_PERSONALIZED,
@@ -29,6 +32,7 @@ from .workflow_definitions import (
     GENERATION_MODE_MANUAL_LAYERED,
     GENERATION_MODE_PERSONALIZED_SINGLE,
     NODE_TRIGGER_MODE_AUDIENCE_ENTERED,
+    NODE_TRIGGER_MODE_DAILY_RECURRING,
     NODE_TRIGGER_MODE_SCHEDULED,
     RECIPIENT_FILTER_BASIS_BEHAVIOR,
     RECIPIENT_FILTER_BASIS_NONE,
@@ -44,6 +48,7 @@ from . import workflow_repo
 
 DEFAULT_AUTOMATION_SENDER = "HuangYouCan"
 _FINAL_EXECUTION_STATUSES = {"finished", "partial_failed", "failed"}
+_USAGE_ACTIVITY_CACHE_KEY = "automation_conversion_usage_activity_counts"
 
 
 def _normalized_text(value: Any) -> str:
@@ -77,9 +82,27 @@ def _parse_timestamp(value: Any) -> datetime | None:
     text = _normalized_text(value)
     if not text:
         return None
-    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+    except ValueError:
+        pass
+    for pattern in (
+        "%Y-%m-%d %H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+    ):
         try:
-            return datetime.strptime(text, pattern)
+            parsed = datetime.strptime(text, pattern)
+            return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
         except ValueError:
             continue
     return None
@@ -95,19 +118,53 @@ def _node_trigger_mode(node: dict[str, Any]) -> str:
     normalized = _normalized_text(node.get("trigger_mode"))
     if normalized == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
         return NODE_TRIGGER_MODE_AUDIENCE_ENTERED
+    if normalized == NODE_TRIGGER_MODE_DAILY_RECURRING:
+        return NODE_TRIGGER_MODE_DAILY_RECURRING
     return NODE_TRIGGER_MODE_SCHEDULED
 
 
 def _iso_now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return _now_dt().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _now_dt() -> datetime:
+    return datetime.now()
+
+
+def _date_text(value: Any) -> str:
+    text = _normalized_text(value)
+    if len(text) >= 10:
+        return text[:10]
+    parsed = _parse_timestamp(text)
+    return parsed.strftime("%Y-%m-%d") if parsed else ""
+
+
+def _log_runtime_event(event: str, payload: dict[str, Any]) -> None:
+    if not has_app_context():
+        return
+    try:
+        current_app.logger.info(
+            "automation_conversion_workflow event=%s payload=%s",
+            _normalized_text(event) or "unknown",
+            json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        )
+    except Exception:
+        current_app.logger.info("automation_conversion_workflow event=%s", _normalized_text(event) or "unknown")
+
+
+def _phone_match_key(phone: Any) -> str:
+    digits = "".join(char for char in _normalized_text(phone) if char.isdigit())
+    if len(digits) < 7:
+        return ""
+    return f"{digits[:3]}_{digits[-4:]}"
 
 
 def _behavior_tier_items() -> list[dict[str, Any]]:
     return [dict(item) for item in list_supported_behavior_tiers()]
 
 
-def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
-    normalized_count = max(0, int(message_count or 0))
+def _behavior_tier_for_count(usage_count: int) -> dict[str, Any]:
+    normalized_count = max(0, int(usage_count or 0))
     for item in _behavior_tier_items():
         min_value = item.get("min_value")
         max_value = item.get("max_value")
@@ -117,6 +174,102 @@ def _behavior_tier_for_count(message_count: int) -> dict[str, Any]:
             continue
         return dict(item)
     return dict(_behavior_tier_items()[0])
+
+
+def _usage_activity_snapshot() -> dict[str, Any]:
+    cached = getattr(g, _USAGE_ACTIVITY_CACHE_KEY, None)
+    if isinstance(cached, dict):
+        return cached
+    status = get_message_activity_db_status()
+    if not bool(status.get("configured")):
+        snapshot = {
+            "available": False,
+            "error": "message_activity_db_not_configured",
+            "counts_by_match_key": {},
+            "source": "message_activity_db",
+            "missing_keys": list(status.get("missing_keys") or []),
+        }
+        setattr(g, _USAGE_ACTIVITY_CACHE_KEY, snapshot)
+        return snapshot
+    try:
+        rows = query_message_activity_counts()
+    except Exception as exc:
+        snapshot = {
+            "available": False,
+            "error": _normalized_text(exc) or "message_activity_query_failed",
+            "counts_by_match_key": {},
+            "source": "message_activity_db",
+            "missing_keys": list(status.get("missing_keys") or []),
+        }
+        setattr(g, _USAGE_ACTIVITY_CACHE_KEY, snapshot)
+        return snapshot
+    counts_by_match_key = {
+        _normalized_text(row.get("phone_match_key")): {
+            "phone_match_key": _normalized_text(row.get("phone_match_key")),
+            "phone_prefix3": _normalized_text(row.get("phone_prefix3")),
+            "phone_last4": _normalized_text(row.get("phone_last4")),
+            "usage_count": int(row.get("message_count") or 0),
+            "source": "message_activity_db",
+        }
+        for row in rows
+        if _normalized_text(row.get("phone_match_key"))
+    }
+    snapshot = {
+        "available": True,
+        "error": "",
+        "counts_by_match_key": counts_by_match_key,
+        "source": "message_activity_db",
+        "missing_keys": list(status.get("missing_keys") or []),
+    }
+    setattr(g, _USAGE_ACTIVITY_CACHE_KEY, snapshot)
+    return snapshot
+
+
+def _usage_activity_for_member(member: dict[str, Any]) -> dict[str, Any]:
+    phone_match_key = _phone_match_key(member.get("phone"))
+    if not phone_match_key:
+        return {
+            "available": False,
+            "reason": "usage_phone_missing",
+            "usage_count": 0,
+            "phone_match_key": "",
+            "source": "message_activity_db",
+        }
+    snapshot = _usage_activity_snapshot()
+    if not bool(snapshot.get("available")):
+        return {
+            "available": False,
+            "reason": _normalized_text(snapshot.get("error")) or "usage_source_unavailable",
+            "usage_count": 0,
+            "phone_match_key": phone_match_key,
+            "source": _normalized_text(snapshot.get("source")) or "message_activity_db",
+            "missing_keys": list(snapshot.get("missing_keys") or []),
+        }
+    usage_row = dict((snapshot.get("counts_by_match_key") or {}).get(phone_match_key) or {})
+    if not usage_row:
+        current_audience_code = _normalized_text(member.get("current_audience_code"))
+        if current_audience_code in {AUDIENCE_OPERATING, AUDIENCE_CONVERTED}:
+            return {
+                "available": True,
+                "reason": "usage_source_missing_treated_as_zero",
+                "usage_count": 0,
+                "phone_match_key": phone_match_key,
+                "source": "message_activity_db_missing_as_zero",
+            }
+        return {
+            "available": False,
+            "reason": "usage_source_not_found",
+            "usage_count": 0,
+            "phone_match_key": phone_match_key,
+            "source": _normalized_text(snapshot.get("source")) or "message_activity_db",
+        }
+    return {
+        "available": True,
+        "reason": "",
+        "usage_count": int(usage_row.get("usage_count") or 0),
+        "phone_match_key": phone_match_key,
+        "source": _normalized_text(usage_row.get("source")) or _normalized_text(snapshot.get("source")) or "message_activity_db",
+    }
 
 
 def _workflow_recipient_filter_config(workflow_bundle: dict[str, Any]) -> dict[str, Any]:
@@ -152,27 +305,51 @@ def _member_behavior_tier_match(member: dict[str, Any], selected_tier_keys: list
     }
 
 
-def _member_matches_workflow_recipient_filter(member: dict[str, Any], workflow_bundle: dict[str, Any]) -> bool:
+def _member_workflow_recipient_filter_result(member: dict[str, Any], workflow_bundle: dict[str, Any]) -> dict[str, Any]:
     config = _workflow_recipient_filter_config(workflow_bundle)
-    if _normalized_text(config.get("recipient_filter_basis")) != RECIPIENT_FILTER_BASIS_BEHAVIOR:
-        return True
+    basis = _normalized_text(config.get("recipient_filter_basis"))
+    if basis != RECIPIENT_FILTER_BASIS_BEHAVIOR:
+        return {
+            "matched": True,
+            "basis": basis or RECIPIENT_FILTER_BASIS_NONE,
+            "reason": "",
+        }
     if not (
         int(member.get("id") or 0)
         or _normalized_text(member.get("external_contact_id"))
         or _normalized_text(member.get("phone"))
     ):
-        return False
-    return bool(_member_behavior_tier_match(member, list(config.get("recipient_behavior_tier_keys") or [])).get("matched"))
+        return {
+            "matched": False,
+            "basis": basis,
+            "reason": "member_identity_missing",
+        }
+    behavior_match = _member_behavior_tier_match(member, list(config.get("recipient_behavior_tier_keys") or []))
+    return {
+        **behavior_match,
+        "basis": basis,
+        "reason": _normalized_text(behavior_match.get("reason")) or ("recipient_filter_not_matched" if not bool(behavior_match.get("matched")) else ""),
+    }
 
 
-def _current_audience_source_snapshot(member: dict[str, Any], marketing_state: dict[str, Any] | None) -> dict[str, Any]:
+def _member_matches_workflow_recipient_filter(member: dict[str, Any], workflow_bundle: dict[str, Any]) -> bool:
+    return bool(_member_workflow_recipient_filter_result(member, workflow_bundle).get("matched"))
+
+
+def _current_audience_source_snapshot(
+    member: dict[str, Any],
+    marketing_state: dict[str, Any] | None,
+    *,
+    questionnaire_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_questionnaire = dict(questionnaire_state or {})
     return {
         "member_id": int(member.get("id") or 0),
         "external_contact_id": _normalized_text(member.get("external_contact_id")),
         "phone": _normalized_text(member.get("phone")),
         "current_pool": _normalized_text(member.get("current_pool")),
-        "questionnaire_status": _normalized_text(member.get("questionnaire_status")),
-        "questionnaire_result": _normalized_text(member.get("questionnaire_result")),
+        "questionnaire_status": _normalized_text(resolved_questionnaire.get("questionnaire_status")) or _normalized_text(member.get("questionnaire_status")),
+        "questionnaire_submitted_at": _normalized_text(resolved_questionnaire.get("submitted_at")),
         "marketing_state": {
             "main_stage": _normalized_text((marketing_state or {}).get("main_stage")),
             "sub_stage": _normalized_text((marketing_state or {}).get("sub_stage")),
@@ -183,17 +360,26 @@ def _current_audience_source_snapshot(member: dict[str, Any], marketing_state: d
 
 
 def _resolve_member_conversion_audience(member: dict[str, Any]) -> dict[str, Any]:
+    from .service import resolve_member_questionnaire_truth
+
     marketing_state = workflow_repo.get_customer_marketing_state_current_row(
         external_userid=_normalized_text(member.get("external_contact_id")),
         person_id=int(member.get("master_customer_id") or 0) or None,
     )
-    latest_submission = workflow_repo.get_latest_any_questionnaire_submission_row(
+    questionnaire_state = resolve_member_questionnaire_truth(
         external_contact_ids=[_normalized_text(member.get("external_contact_id"))],
         phone=_normalized_text(member.get("phone")),
+        member=member,
     )
+    questionnaire_status = _normalized_text(questionnaire_state.get("questionnaire_status"))
+    questionnaire_submitted_at = _normalized_text(questionnaire_state.get("submitted_at"))
     current_audience_code = _normalized_text(member.get("current_audience_code"))
     current_audience_entered_at = _normalized_text(member.get("current_audience_entered_at"))
-    if bool((marketing_state or {}).get("converted")) or _normalized_text((marketing_state or {}).get("main_stage")) == "converted" or _normalized_text(member.get("current_pool")) == "won":
+    if (
+        bool((marketing_state or {}).get("converted"))
+        or _normalized_text((marketing_state or {}).get("main_stage")) == "converted"
+        or _normalized_text(member.get("current_pool")) in {"won", "converted"}
+    ):
         return {
             "audience_code": AUDIENCE_CONVERTED,
             "entered_at": current_audience_entered_at if current_audience_code == AUDIENCE_CONVERTED and current_audience_entered_at else (
@@ -205,20 +391,20 @@ def _resolve_member_conversion_audience(member: dict[str, Any]) -> dict[str, Any
             ),
             "entry_source": "marketing_state",
             "entry_reason": "customer_marketing_state_converted",
-            "source_snapshot_json": _current_audience_source_snapshot(member, marketing_state),
+            "source_snapshot_json": _current_audience_source_snapshot(member, marketing_state, questionnaire_state=questionnaire_state),
         }
-    if latest_submission or _normalized_text(member.get("questionnaire_status")) == "submitted":
+    if questionnaire_status == "submitted":
         return {
             "audience_code": AUDIENCE_OPERATING,
             "entered_at": current_audience_entered_at if current_audience_code == AUDIENCE_OPERATING and current_audience_entered_at else (
-                _normalized_text((latest_submission or {}).get("submitted_at"))
+                questionnaire_submitted_at
                 or _normalized_text(member.get("updated_at"))
                 or _normalized_text(member.get("joined_at"))
                 or _iso_now()
             ),
-            "entry_source": "questionnaire_submission" if latest_submission else "automation_member",
-            "entry_reason": "questionnaire_submitted" if latest_submission else "member_questionnaire_status_submitted",
-            "source_snapshot_json": _current_audience_source_snapshot(member, marketing_state),
+            "entry_source": "questionnaire_submission" if int(questionnaire_state.get("submission_id") or 0) > 0 else "automation_member",
+            "entry_reason": "questionnaire_submitted",
+            "source_snapshot_json": _current_audience_source_snapshot(member, marketing_state, questionnaire_state=questionnaire_state),
         }
     return {
         "audience_code": AUDIENCE_PENDING_QUESTIONNAIRE,
@@ -230,7 +416,7 @@ def _resolve_member_conversion_audience(member: dict[str, Any]) -> dict[str, Any
         ),
         "entry_source": "automation_member",
         "entry_reason": "questionnaire_not_submitted",
-        "source_snapshot_json": _current_audience_source_snapshot(member, marketing_state),
+        "source_snapshot_json": _current_audience_source_snapshot(member, marketing_state, questionnaire_state=questionnaire_state),
     }
 
 
@@ -307,15 +493,19 @@ def _node_schedule_anchor_date(*, entered_at: str, send_time: str) -> datetime.d
     return anchor_dt.date()
 
 
-def _node_day_index_matches(*, entered_at: str, send_time: str, scheduled_for: str, expected_day_offset: int) -> bool:
+def _node_day_index(*, entered_at: str, send_time: str, scheduled_for: str) -> int | None:
     scheduled_dt = _parse_timestamp(scheduled_for)
     if scheduled_dt is None:
-        return False
+        return None
     anchor_date = _node_schedule_anchor_date(entered_at=entered_at, send_time=send_time)
     if anchor_date is None:
-        return False
-    day_index = (scheduled_dt.date() - anchor_date).days + 1
-    return day_index == int(expected_day_offset)
+        return None
+    return (scheduled_dt.date() - anchor_date).days + 1
+
+
+def _node_day_index_matches(*, entered_at: str, send_time: str, scheduled_for: str, expected_day_offset: int) -> bool:
+    day_index = _node_day_index(entered_at=entered_at, send_time=send_time, scheduled_for=scheduled_for)
+    return day_index == int(expected_day_offset) if day_index is not None else False
 
 
 def _resolve_profile_segment_match(
@@ -323,72 +513,56 @@ def _resolve_profile_segment_match(
     member: dict[str, Any],
     workflow_bundle: dict[str, Any],
 ) -> dict[str, Any]:
-    template_bundle = dict(workflow_bundle.get("profile_segment_template") or {})
-    template = dict(template_bundle.get("template") or {})
-    questionnaire_id = int(template.get("questionnaire_id") or 0)
-    question_id = int(template.get("segmentation_question_id") or 0)
-    if questionnaire_id <= 0 or question_id <= 0:
-        return {"matched": False, "reason": "profile_segment_template_missing"}
-    submission = workflow_repo.get_latest_questionnaire_submission_row(
-        questionnaire_id=questionnaire_id,
-        external_contact_ids=[_normalized_text(member.get("external_contact_id"))],
-        phone=_normalized_text(member.get("phone")),
+    from .workflow_service import _resolve_profile_segment_for_member
+
+    resolved = _resolve_profile_segment_for_member(
+        member=member,
+        profile_segment_template_bundle=dict(workflow_bundle.get("profile_segment_template") or {}),
     )
-    if not submission:
-        return {"matched": False, "reason": "questionnaire_submission_missing"}
-    answers = workflow_repo.list_questionnaire_submission_answer_rows(int(submission["id"]))
-    answer = next((item for item in answers if int(item.get("question_id") or 0) == question_id), None)
-    if not answer:
-        return {"matched": False, "reason": "segmentation_question_answer_missing"}
-    selected_option_ids = {
-        int(option_id)
-        for option_id in _json_list(answer.get("selected_option_ids"))
-        if str(option_id).strip()
-    }
-    if not selected_option_ids:
-        return {"matched": False, "reason": "selected_option_ids_empty"}
-    matched_categories = [
-        {
-            "category_key": _normalized_text(category.get("category_key")),
-            "category_name": _normalized_text(category.get("category_name")),
-        }
-        for category in template_bundle.get("categories") or []
-        if bool(set(int(option_id) for option_id in (category.get("option_ids") or [])) & selected_option_ids)
-    ]
-    if len(matched_categories) != 1:
-        return {
-            "matched": False,
-            "reason": "multiple_or_zero_profile_categories",
-            "matched_categories": matched_categories,
-        }
-    category = dict(matched_categories[0])
     return {
-        "matched": True,
-        "segment_key": _normalized_text(category.get("category_key")),
-        "segment_label": _normalized_text(category.get("category_name")),
-        "submission_id": int(submission.get("id") or 0),
-        "selected_option_ids": sorted(selected_option_ids),
+        "matched": bool(resolved.get("matched")),
+        "reason": _normalized_text(resolved.get("reason")),
+        "segment_key": _normalized_text(resolved.get("segment_key")),
+        "segment_label": _normalized_text(resolved.get("segment_label")),
+        "submission_id": int(resolved.get("submission_id") or 0) or None,
+        "selected_option_ids": list(resolved.get("selected_option_ids") or []),
+        "matched_categories": list(resolved.get("matched_categories") or []),
     }
 
 
 def _resolve_behavior_segment_match(member: dict[str, Any]) -> dict[str, Any]:
-    message_count = workflow_repo.count_archived_customer_messages(_normalized_text(member.get("external_contact_id")))
-    tier = _behavior_tier_for_count(message_count)
+    usage_activity = _usage_activity_for_member(member)
+    if not bool(usage_activity.get("available")):
+        return {
+            "matched": False,
+            "reason": _normalized_text(usage_activity.get("reason")) or "usage_source_unavailable",
+            "segment_key": "",
+            "segment_label": "",
+            "usage_count": int(usage_activity.get("usage_count") or 0),
+            "message_count": int(usage_activity.get("usage_count") or 0),
+            "usage_source": _normalized_text(usage_activity.get("source")) or "message_activity_db",
+            "phone_match_key": _normalized_text(usage_activity.get("phone_match_key")),
+        }
+    usage_count = int(usage_activity.get("usage_count") or 0)
+    tier = _behavior_tier_for_count(usage_count)
     return {
         "matched": True,
+        "reason": "",
         "segment_key": _normalized_text(tier.get("tier_code")),
         "segment_label": _normalized_text(tier.get("label")),
-        "message_count": int(message_count),
+        "usage_count": usage_count,
+        "message_count": usage_count,
+        "usage_source": _normalized_text(usage_activity.get("source")) or "message_activity_db",
+        "phone_match_key": _normalized_text(usage_activity.get("phone_match_key")),
     }
 
 
-def _resolve_workflow_segment_match(
+def _resolve_segment_match_for_basis(
     *,
+    segmentation_basis: str,
     workflow_bundle: dict[str, Any],
     member: dict[str, Any],
 ) -> dict[str, Any]:
-    workflow = dict(workflow_bundle.get("workflow") or {})
-    segmentation_basis = _normalized_text(workflow.get("segmentation_basis")) or SEGMENTATION_BASIS_NONE
     if segmentation_basis == SEGMENTATION_BASIS_PROFILE:
         return _resolve_profile_segment_match(member=member, workflow_bundle=workflow_bundle)
     if segmentation_basis == SEGMENTATION_BASIS_BEHAVIOR:
@@ -396,14 +570,50 @@ def _resolve_workflow_segment_match(
     return {"matched": False, "reason": "segmentation_none"}
 
 
-def _select_agent_binding(
-    *,
-    workflow_bundle: dict[str, Any],
-    segment_match: dict[str, Any],
-) -> dict[str, Any] | None:
+def _node_content_mode(node: dict[str, Any], workflow_bundle: dict[str, Any]) -> str:
+    content_mode = _normalized_text(node.get("content_mode"))
+    if content_mode:
+        return content_mode
     workflow = dict(workflow_bundle.get("workflow") or {})
     generation_mode = _normalized_text(workflow.get("generation_mode"))
-    bindings = [dict(item) for item in workflow_bundle.get("agent_bindings") or []]
+    if generation_mode == GENERATION_MODE_MANUAL_LAYERED:
+        return "manual_layered"
+    if generation_mode == GENERATION_MODE_AUTO_LAYERED_REWRITE:
+        return "standard_layered_rewrite"
+    if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
+        return "personalized_single"
+    return "standard_direct"
+
+
+def _node_segmentation_basis(node: dict[str, Any], workflow_bundle: dict[str, Any]) -> str:
+    node_basis = _normalized_text(node.get("segmentation_basis"))
+    if node_basis in {SEGMENTATION_BASIS_NONE, SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
+        return node_basis
+    workflow = dict(workflow_bundle.get("workflow") or {})
+    workflow_basis = _normalized_text(workflow.get("segmentation_basis"))
+    if workflow_basis in {SEGMENTATION_BASIS_PROFILE, SEGMENTATION_BASIS_BEHAVIOR}:
+        return workflow_basis
+    return SEGMENTATION_BASIS_NONE
+
+
+def _node_generation_mode(node: dict[str, Any], workflow_bundle: dict[str, Any]) -> str:
+    content_mode = _node_content_mode(node, workflow_bundle)
+    if content_mode == "manual_layered":
+        return GENERATION_MODE_MANUAL_LAYERED
+    if content_mode == "standard_layered_rewrite":
+        return GENERATION_MODE_AUTO_LAYERED_REWRITE
+    if content_mode == "personalized_single":
+        return GENERATION_MODE_PERSONALIZED_SINGLE
+    return ""
+
+
+def _select_agent_binding(
+    *,
+    generation_mode: str,
+    segmentation_basis: str,
+    bindings: list[dict[str, Any]],
+    segment_match: dict[str, Any],
+) -> dict[str, Any] | None:
     if generation_mode == GENERATION_MODE_PERSONALIZED_SINGLE:
         return next(
             (
@@ -418,7 +628,7 @@ def _select_agent_binding(
     segment_key = _normalized_text(segment_match.get("segment_key"))
     binding_scope = (
         AGENT_BINDING_SCOPE_PROFILE_CATEGORY
-        if _normalized_text((workflow.get("segmentation_basis"))) == SEGMENTATION_BASIS_PROFILE
+        if segmentation_basis == SEGMENTATION_BASIS_PROFILE
         else AGENT_BINDING_SCOPE_BEHAVIOR_TIER
     )
     return next(
@@ -435,10 +645,8 @@ def _select_agent_binding(
 def _select_manual_layered_content(
     *,
     node: dict[str, Any],
-    workflow_bundle: dict[str, Any],
     segment_match: dict[str, Any],
 ) -> dict[str, Any]:
-    del workflow_bundle
     selected_variant = None
     if bool(segment_match.get("matched")):
         selected_variant = next(
@@ -460,6 +668,17 @@ def _select_manual_layered_content(
         if bool(segment_match.get("matched"))
         else (_normalized_text(segment_match.get("reason")) or "segment_not_matched")
     )
+    standard_content_text = _normalized_text(node.get("standard_content_text"))
+    if (
+        _normalized_text(node.get("segmentation_basis")) == SEGMENTATION_BASIS_PROFILE
+        and bool(node.get("fallback_to_standard_content"))
+        and standard_content_text
+    ):
+        return {
+            "content_text": standard_content_text,
+            "content_source": "standard_content_fallback",
+            "fallback_reason": fallback_reason,
+        }
     return {
         "content_text": "",
         "content_source": "",
@@ -509,6 +728,8 @@ def _build_generation_variables(
         if _normalized_text(item.get("tag_name")) or _normalized_text(item.get("tag_id"))
     ]
     workflow = dict(workflow_bundle.get("workflow") or {})
+    node_generation_mode = _node_generation_mode(node, workflow_bundle)
+    node_segmentation_basis = _node_segmentation_basis(node, workflow_bundle)
     return {
         "workflow": {
             "workflow_code": _normalized_text(workflow.get("workflow_code")),
@@ -523,6 +744,9 @@ def _build_generation_variables(
             "trigger_mode": _node_trigger_mode(node),
             "day_offset": int(node.get("day_offset") or 1),
             "send_time": _normalized_text(node.get("send_time")),
+            "content_mode": _node_content_mode(node, workflow_bundle),
+            "generation_mode": node_generation_mode,
+            "segmentation_basis": node_segmentation_basis,
         },
         "member": {
             "member_id": int(member.get("id") or 0),
@@ -532,7 +756,6 @@ def _build_generation_variables(
             "current_pool": _normalized_text(member.get("current_pool")),
             "current_audience_code": _normalized_text(member.get("current_audience_code")),
             "current_audience_entered_at": _normalized_text(member.get("current_audience_entered_at")),
-            "activation_status": _normalized_text(member.get("activation_status")),
         },
         "standard_content_text": _normalized_text(standard_content_text),
         "profile_segment": {
@@ -544,7 +767,11 @@ def _build_generation_variables(
         "behavior_tier": {
             "tier_code": _normalized_text(behavior_match.get("segment_key")),
             "tier_label": _normalized_text(behavior_match.get("segment_label")),
+            "usage_count": int(behavior_match.get("usage_count") or 0),
             "message_count": int(behavior_match.get("message_count") or 0),
+            "usage_source": _normalized_text(behavior_match.get("usage_source")),
+            "phone_match_key": _normalized_text(behavior_match.get("phone_match_key")),
+            "reason": _normalized_text(behavior_match.get("reason")),
         },
         "questionnaire": {
             "submission_id": int((latest_submission or {}).get("id") or 0) or None,
@@ -553,12 +780,6 @@ def _build_generation_variables(
         },
         "recent_messages": recent_messages,
         "user_tags": user_tags,
-        "activation_info": {
-            "activation_status": _normalized_text(member.get("activation_status")),
-            "current_pool": _normalized_text(member.get("current_pool")),
-            "current_audience_code": _normalized_text(member.get("current_audience_code")),
-            "current_audience_entered_at": _normalized_text(member.get("current_audience_entered_at")),
-        },
     }
 
 
@@ -715,7 +936,8 @@ def _send_private_message_to_member(
     operator_id: str,
     filter_snapshot: dict[str, Any],
 ) -> dict[str, Any]:
-    sender_userid = _normalized_text(member.get("owner_staff_id")) or DEFAULT_AUTOMATION_SENDER
+    owner_staff_id = _normalized_text(member.get("owner_staff_id"))
+    sender_userid = owner_staff_id or DEFAULT_AUTOMATION_SENDER
     task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload({"content": _normalized_text(content_text)})
     request_payload = {
         "sender": sender_userid,
@@ -757,6 +979,8 @@ def _send_private_message_to_member(
         "record_id": int(record_id),
         "error_message": error_message,
         "task_results": task_results,
+        "sender_userid": sender_userid,
+        "owner_staff_id_missing": not bool(owner_staff_id),
     }
 
 
@@ -767,16 +991,21 @@ def _render_node_content(
     node: dict[str, Any],
     execution_request_id: str,
 ) -> dict[str, Any]:
-    workflow = dict(workflow_bundle.get("workflow") or {})
-    generation_mode = _normalized_text(workflow.get("generation_mode"))
-    segment_match = _resolve_workflow_segment_match(workflow_bundle=workflow_bundle, member=member)
+    segmentation_basis = _node_segmentation_basis(node, workflow_bundle)
+    generation_mode = _node_generation_mode(node, workflow_bundle)
+    content_mode = _node_content_mode(node, workflow_bundle)
+    segment_match = _resolve_segment_match_for_basis(
+        segmentation_basis=segmentation_basis,
+        workflow_bundle=workflow_bundle,
+        member=member,
+    )
     behavior_match = _resolve_behavior_segment_match(member)
     standard_content_text = _normalized_text(node.get("standard_content_text"))
+    node_bindings = [dict(item) for item in (node.get("agent_bindings") or workflow_bundle.get("agent_bindings") or [])]
 
-    if generation_mode == GENERATION_MODE_MANUAL_LAYERED:
+    if content_mode == "manual_layered":
         content = _select_manual_layered_content(
             node=node,
-            workflow_bundle=workflow_bundle,
             segment_match=segment_match,
         )
         return {
@@ -788,7 +1017,25 @@ def _render_node_content(
             "agent_code": "",
         }
 
-    binding = _select_agent_binding(workflow_bundle=workflow_bundle, segment_match=segment_match if _normalized_text(workflow.get("segmentation_basis")) != SEGMENTATION_BASIS_BEHAVIOR else behavior_match)
+    if content_mode == "standard_direct":
+        return {
+            "content_text": standard_content_text,
+            "content_source": "standard_content",
+            "fallback_reason": "",
+            "segment_match": segment_match,
+            "behavior_match": behavior_match,
+            "agent_run_id": "",
+            "agent_output_id": "",
+            "agent_code": "",
+        }
+
+    effective_segment_match = behavior_match if segmentation_basis == SEGMENTATION_BASIS_BEHAVIOR else segment_match
+    binding = _select_agent_binding(
+        generation_mode=generation_mode,
+        segmentation_basis=segmentation_basis,
+        bindings=node_bindings,
+        segment_match=effective_segment_match,
+    )
     generated = _generate_content_with_agent(
         member=member,
         workflow_bundle=workflow_bundle,
@@ -837,12 +1084,19 @@ def _process_execution_item(
         execution_request_id=f"workflow-node-{int(node['id'])}-item-{int(execution_item['id'])}",
     )
     final_content = _normalized_text(rendered.get("content_text"))
+    node_content_mode = _node_content_mode(node, workflow_bundle)
+    node_segmentation_basis = _node_segmentation_basis(node, workflow_bundle)
+    node_generation_mode = _node_generation_mode(node, workflow_bundle)
     snapshot = {
         "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
+        "workflow_name": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_name")),
         "node_code": _normalized_text(node.get("node_code")),
         "node_name": _normalized_text(node.get("node_name")),
-        "generation_mode": _normalized_text((workflow_bundle.get("workflow") or {}).get("generation_mode")),
-        "segmentation_basis": _normalized_text((workflow_bundle.get("workflow") or {}).get("segmentation_basis")),
+        "node_content_mode": node_content_mode,
+        "node_generation_mode": node_generation_mode,
+        "node_segmentation_basis": node_segmentation_basis,
+        "workflow_generation_mode": _normalized_text((workflow_bundle.get("workflow") or {}).get("generation_mode")),
+        "workflow_segmentation_basis": _normalized_text((workflow_bundle.get("workflow") or {}).get("segmentation_basis")),
         "standard_content_text": _normalized_text(node.get("standard_content_text")),
         "rendered_content_text": final_content,
         "content_source": _normalized_text(rendered.get("content_source")),
@@ -901,7 +1155,11 @@ def _process_execution_item(
             **execution_item,
             "status": "sent" if bool(send_result.get("ok")) else "failed",
             "error_message": _normalized_text(send_result.get("error_message")),
-            "content_snapshot_json": snapshot,
+            "content_snapshot_json": {
+                **snapshot,
+                "sender_userid": _normalized_text(send_result.get("sender_userid")),
+                "owner_staff_id_missing": bool(send_result.get("owner_staff_id_missing")),
+            },
             "rendered_content_text": final_content,
             "agent_code": rendered.get("agent_code"),
             "agent_run_id": rendered.get("agent_run_id"),
@@ -912,29 +1170,217 @@ def _process_execution_item(
     )
 
 
+def _timed_sequence_nodes(
+    workflow_bundle: dict[str, Any],
+    *,
+    target_audience_code: str,
+    trigger_mode: str,
+) -> list[dict[str, Any]]:
+    nodes = [
+        dict(item)
+        for item in (workflow_bundle.get("nodes") or [])
+        if bool(item.get("enabled"))
+        and _node_trigger_mode(dict(item)) == _normalized_text(trigger_mode)
+        and _normalized_text(item.get("target_audience_code")) == _normalized_text(target_audience_code)
+    ]
+    return sorted(
+        nodes,
+        key=lambda item: (
+            int(item.get("day_offset") or 1),
+            _normalized_text(item.get("send_time")) or "00:00",
+            int(item.get("position_index") or 0),
+            int(item.get("id") or 0),
+        ),
+    )
+
+
+def _timed_history_index(
+    *,
+    workflow_id: int,
+    audience_rows: list[dict[str, Any]],
+    trigger_modes: list[str],
+) -> dict[str, dict[int, set[Any]]]:
+    history_rows = workflow_repo.list_workflow_sent_timed_execution_history_rows(
+        workflow_id=int(workflow_id),
+        audience_entry_ids=[int(row.get("id") or 0) for row in audience_rows],
+        trigger_modes=trigger_modes,
+    )
+    sent_node_ids_by_entry: dict[int, set[int]] = {}
+    sent_dates_by_entry: dict[int, set[str]] = {}
+    for row in history_rows:
+        entry_id = int(row.get("audience_entry_id") or 0)
+        node_id = int(row.get("node_id") or 0)
+        scheduled_date = _date_text(row.get("scheduled_for"))
+        if entry_id <= 0 or node_id <= 0:
+            continue
+        sent_node_ids_by_entry.setdefault(entry_id, set()).add(node_id)
+        if scheduled_date:
+            sent_dates_by_entry.setdefault(entry_id, set()).add(scheduled_date)
+    return {
+        "sent_node_ids_by_entry": sent_node_ids_by_entry,
+        "sent_dates_by_entry": sent_dates_by_entry,
+    }
+
+
+def _first_due_unsent_scheduled_node_id(
+    *,
+    sequence_nodes: list[dict[str, Any]],
+    sent_node_ids: set[int],
+    entered_at: str,
+    scheduled_for: str,
+) -> int | None:
+    for sequence_node in sequence_nodes:
+        node_day_index = _node_day_index(
+            entered_at=entered_at,
+            send_time=_normalized_text(sequence_node.get("send_time")),
+            scheduled_for=scheduled_for,
+        )
+        if node_day_index is None or node_day_index < int(sequence_node.get("day_offset") or 1):
+            return None
+        node_id = int(sequence_node.get("id") or 0)
+        if node_id in sent_node_ids:
+            continue
+        return node_id
+    return None
+
+
+def _current_daily_recurring_node_id(
+    *,
+    sequence_nodes: list[dict[str, Any]],
+    entered_at: str,
+    scheduled_for: str,
+) -> int | None:
+    current_node_id: int | None = None
+    for sequence_node in sequence_nodes:
+        node_day_index = _node_day_index(
+            entered_at=entered_at,
+            send_time=_normalized_text(sequence_node.get("send_time")),
+            scheduled_for=scheduled_for,
+        )
+        if node_day_index is None or node_day_index < int(sequence_node.get("day_offset") or 1):
+            continue
+        current_node_id = int(sequence_node.get("id") or 0) or None
+    return current_node_id
+
+
+def _base_execution_diagnostics(*, execution: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "workflow_id": int(execution.get("workflow_id") or 0),
+        "node_id": int(node.get("id") or 0),
+        "trigger_mode": _node_trigger_mode(node),
+        "scheduled_for": _normalized_text(execution.get("scheduled_for")),
+        "candidate_audience_total": 0,
+        "day_offset_miss_count": 0,
+        "audience_miss_count": 0,
+        "recipient_filter_miss_count": 0,
+        "recipient_filter_usage_source_unavailable_count": 0,
+        "recipient_filter_usage_source_not_found_count": 0,
+        "recipient_filter_usage_phone_missing_count": 0,
+        "recipient_filter_behavior_tier_miss_count": 0,
+        "recipient_filter_member_identity_missing_count": 0,
+        "already_sent_count": 0,
+        "sent_today_count": 0,
+        "sequence_wait_count": 0,
+        "inserted_pending_count": 0,
+    }
+
+
+def _update_recipient_filter_diagnostics(diagnostics: dict[str, Any], filter_result: dict[str, Any]) -> None:
+    if bool(filter_result.get("matched")):
+        return
+    diagnostics["recipient_filter_miss_count"] = int(diagnostics.get("recipient_filter_miss_count") or 0) + 1
+    reason = _normalized_text(filter_result.get("reason"))
+    if reason in {"message_activity_db_not_configured", "usage_source_unavailable"}:
+        diagnostics["recipient_filter_usage_source_unavailable_count"] = int(
+            diagnostics.get("recipient_filter_usage_source_unavailable_count") or 0
+        ) + 1
+        return
+    if reason == "usage_source_not_found":
+        diagnostics["recipient_filter_usage_source_not_found_count"] = int(
+            diagnostics.get("recipient_filter_usage_source_not_found_count") or 0
+        ) + 1
+        return
+    if reason == "usage_phone_missing":
+        diagnostics["recipient_filter_usage_phone_missing_count"] = int(
+            diagnostics.get("recipient_filter_usage_phone_missing_count") or 0
+        ) + 1
+        return
+    if reason == "member_identity_missing":
+        diagnostics["recipient_filter_member_identity_missing_count"] = int(
+            diagnostics.get("recipient_filter_member_identity_missing_count") or 0
+        ) + 1
+        return
+    diagnostics["recipient_filter_behavior_tier_miss_count"] = int(
+        diagnostics.get("recipient_filter_behavior_tier_miss_count") or 0
+    ) + 1
+
+
 def _upsert_node_execution_candidates(
     *,
     execution: dict[str, Any],
     node: dict[str, Any],
     workflow_bundle: dict[str, Any],
-) -> dict[int, dict[str, Any]]:
+) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
     scheduled_for = _normalized_text(execution.get("scheduled_for"))
     audience_rows = workflow_repo.list_current_member_audience_rows(_normalized_text(node.get("target_audience_code")))
     audience_map: dict[int, dict[str, Any]] = {}
+    diagnostics = _base_execution_diagnostics(execution=execution, node=node)
     trigger_mode = _node_trigger_mode(node)
+    sequence_nodes = _timed_sequence_nodes(
+        workflow_bundle,
+        target_audience_code=_normalized_text(node.get("target_audience_code")),
+        trigger_mode=trigger_mode,
+    ) if trigger_mode in {NODE_TRIGGER_MODE_SCHEDULED, NODE_TRIGGER_MODE_DAILY_RECURRING} else []
+    history_index = _timed_history_index(
+        workflow_id=int(execution.get("workflow_id") or 0),
+        audience_rows=audience_rows,
+        trigger_modes=[trigger_mode],
+    ) if trigger_mode in {NODE_TRIGGER_MODE_SCHEDULED, NODE_TRIGGER_MODE_DAILY_RECURRING} else {"sent_node_ids_by_entry": {}, "sent_dates_by_entry": {}}
+    scheduled_date = _date_text(scheduled_for)
     for row in audience_rows:
         entry_id = int(row.get("id") or 0)
+        diagnostics["candidate_audience_total"] += 1
         audience_map[entry_id] = dict(row)
-        if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED:
-            if not _node_day_index_matches(
+        if trigger_mode in {NODE_TRIGGER_MODE_SCHEDULED, NODE_TRIGGER_MODE_DAILY_RECURRING}:
+            node_day_index = _node_day_index(
                 entered_at=_normalized_text(row.get("entered_at")),
                 send_time=_normalized_text(node.get("send_time")),
                 scheduled_for=scheduled_for,
-                expected_day_offset=int(node.get("day_offset") or 1),
-            ):
+            )
+            if node_day_index is None or node_day_index < int(node.get("day_offset") or 1):
+                diagnostics["day_offset_miss_count"] += 1
                 continue
+            sent_dates = set((history_index.get("sent_dates_by_entry") or {}).get(entry_id) or set())
+            if scheduled_date and scheduled_date in sent_dates:
+                diagnostics["sent_today_count"] += 1
+                continue
+            if trigger_mode == NODE_TRIGGER_MODE_SCHEDULED:
+                sent_node_ids = set((history_index.get("sent_node_ids_by_entry") or {}).get(entry_id) or set())
+                if int(node.get("id") or 0) in sent_node_ids:
+                    diagnostics["already_sent_count"] += 1
+                    continue
+                first_due_unsent_node_id = _first_due_unsent_scheduled_node_id(
+                    sequence_nodes=sequence_nodes,
+                    sent_node_ids=sent_node_ids,
+                    entered_at=_normalized_text(row.get("entered_at")),
+                    scheduled_for=scheduled_for,
+                )
+                if first_due_unsent_node_id != int(node.get("id") or 0):
+                    diagnostics["sequence_wait_count"] += 1
+                    continue
+            elif trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING:
+                current_recurring_node_id = _current_daily_recurring_node_id(
+                    sequence_nodes=sequence_nodes,
+                    entered_at=_normalized_text(row.get("entered_at")),
+                    scheduled_for=scheduled_for,
+                )
+                if current_recurring_node_id != int(node.get("id") or 0):
+                    diagnostics["sequence_wait_count"] += 1
+                    continue
         member = dict(row.get("member") or {})
-        if not _member_matches_workflow_recipient_filter(member, workflow_bundle):
+        recipient_filter_result = _member_workflow_recipient_filter_result(member, workflow_bundle)
+        if not bool(recipient_filter_result.get("matched")):
+            _update_recipient_filter_diagnostics(diagnostics, recipient_filter_result)
             continue
         workflow_repo.insert_workflow_execution_item_row(
             {
@@ -955,7 +1401,8 @@ def _upsert_node_execution_candidates(
                 "sent_at": "",
             }
         )
-    return audience_map
+        diagnostics["inserted_pending_count"] += 1
+    return audience_map, diagnostics
 
 
 def _execution_summary_from_items(items: list[dict[str, Any]]) -> tuple[str, dict[str, int]]:
@@ -963,6 +1410,33 @@ def _execution_summary_from_items(items: list[dict[str, Any]]) -> tuple[str, dic
     skipped_count = sum(1 for item in items if _normalized_text(item.get("status")) == "skipped")
     failed_count = sum(1 for item in items if _normalized_text(item.get("status")) == "failed")
     pending_count = sum(1 for item in items if _normalized_text(item.get("status")) in {"pending", "prepared"})
+    content_missing_count = sum(1 for item in items if _normalized_text(item.get("error_message")) == "rendered_content_empty")
+    missing_external_contact_id_count = sum(1 for item in items if _normalized_text(item.get("error_message")) == "missing_external_contact_id")
+    owner_staff_id_missing_count = sum(
+        1
+        for item in items
+        if bool(dict(item.get("content_snapshot_json") or {}).get("owner_staff_id_missing"))
+    )
+    segment_or_content_miss_count = sum(
+        1
+        for item in items
+        if _normalized_text(dict(item.get("content_snapshot_json") or {}).get("fallback_reason"))
+        in {
+            "segment_content_missing",
+            "segment_not_matched",
+            "segmentation_none",
+            "usage_phone_missing",
+            "usage_source_not_found",
+            "message_activity_db_not_configured",
+        }
+    )
+    send_api_failed_count = sum(
+        1
+        for item in items
+        if _normalized_text(item.get("status")) == "failed"
+        and _normalized_text(item.get("error_message"))
+        and _normalized_text(item.get("error_message")) not in {"rendered_content_empty", "missing_external_contact_id"}
+    )
     if pending_count > 0:
         status = "running"
     elif success_count and (failed_count or skipped_count):
@@ -976,7 +1450,81 @@ def _execution_summary_from_items(items: list[dict[str, Any]]) -> tuple[str, dic
         "success_count": success_count,
         "skipped_count": skipped_count,
         "failed_count": failed_count,
+        "pending_count": pending_count,
+        "segment_or_content_miss_count": segment_or_content_miss_count,
+        "content_missing_count": content_missing_count,
+        "missing_external_contact_id_count": missing_external_contact_id_count,
+        "owner_staff_id_missing_count": owner_staff_id_missing_count,
+        "send_api_failed_count": send_api_failed_count,
     }
+
+
+def _zero_hit_reasons(diagnostics: dict[str, Any], counters: dict[str, int]) -> list[str]:
+    reasons: list[str] = []
+    trigger_mode = _normalized_text(diagnostics.get("trigger_mode"))
+    if int(diagnostics.get("candidate_audience_total") or 0) <= 0:
+        reasons.append("current_audience_empty")
+    if int(counters.get("total_count") or 0) > 0:
+        return reasons
+    has_specific_recipient_reason = any(
+        int(diagnostics.get(counter_key) or 0) > 0
+        for counter_key in (
+            "recipient_filter_usage_source_unavailable_count",
+            "recipient_filter_usage_source_not_found_count",
+            "recipient_filter_usage_phone_missing_count",
+            "recipient_filter_member_identity_missing_count",
+            "recipient_filter_behavior_tier_miss_count",
+        )
+    )
+    reason_map = (
+        ("day_offset_miss_count", "day_offset_not_due"),
+        ("recipient_filter_usage_source_unavailable_count", "message_activity_db_not_configured"),
+        ("recipient_filter_usage_source_not_found_count", "usage_source_not_found"),
+        ("recipient_filter_usage_phone_missing_count", "usage_phone_missing"),
+        ("recipient_filter_member_identity_missing_count", "member_identity_missing"),
+        ("recipient_filter_behavior_tier_miss_count", "recipient_filter_not_matched"),
+        ("recipient_filter_miss_count", "recipient_filter_not_matched"),
+        ("already_sent_count", "node_already_sent_for_current_audience_entry"),
+        ("sent_today_count", "workflow_already_sent_today"),
+        (
+            "sequence_wait_count",
+            "waiting_for_current_recurring_stage" if trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING else "waiting_for_earlier_scheduled_node",
+        ),
+    )
+    for counter_key, reason_code in reason_map:
+        if counter_key == "recipient_filter_miss_count" and has_specific_recipient_reason:
+            continue
+        if int(diagnostics.get(counter_key) or 0) > 0:
+            reasons.append(reason_code)
+    if not reasons:
+        reasons.append("no_execution_items_created")
+    return reasons
+
+
+def _execution_summary_json(
+    *,
+    workflow_bundle: dict[str, Any],
+    node: dict[str, Any],
+    diagnostics: dict[str, Any],
+    counters: dict[str, int],
+) -> dict[str, Any]:
+    return {
+        "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
+        "workflow_name": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_name")),
+        "node_code": _normalized_text(node.get("node_code")),
+        "node_name": _normalized_text(node.get("node_name")),
+        "trigger_mode": _node_trigger_mode(node),
+        "scheduled_for": _normalized_text(diagnostics.get("scheduled_for")),
+        "diagnostics": diagnostics,
+        "result": counters,
+        "zero_hit_reasons": _zero_hit_reasons(diagnostics, counters),
+    }
+
+
+def _collect_execution_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(result.get("execution"), dict) and result.get("execution"):
+        return [dict(result.get("execution") or {})]
+    return [dict(item) for item in (result.get("executions") or []) if isinstance(item, dict)]
 
 
 def _run_due_node(
@@ -985,14 +1533,15 @@ def _run_due_node(
     node: dict[str, Any],
     operator_id: str,
 ) -> dict[str, Any]:
-    if _node_trigger_mode(node) == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
+    trigger_mode = _node_trigger_mode(node)
+    if trigger_mode == NODE_TRIGGER_MODE_AUDIENCE_ENTERED:
         return _run_immediate_node(
             workflow_bundle=workflow_bundle,
             node=node,
             operator_id=operator_id,
         )
 
-    now_dt = datetime.now()
+    now_dt = _now_dt()
     scheduled_for_dt = now_dt.replace(
         hour=_parse_send_time(node.get("send_time"))[0],
         minute=_parse_send_time(node.get("send_time"))[1],
@@ -1000,7 +1549,15 @@ def _run_due_node(
         microsecond=0,
     )
     if now_dt < scheduled_for_dt:
-        return {"ok": True, "status": "not_due_yet", "node_id": int(node.get("id") or 0)}
+        result = {
+            "ok": True,
+            "status": "not_due_yet",
+            "node_id": int(node.get("id") or 0),
+            "trigger_mode": trigger_mode,
+            "scheduled_for": scheduled_for_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        _log_runtime_event("node_not_due_yet", result)
+        return result
     scheduled_for = scheduled_for_dt.strftime("%Y-%m-%d %H:%M:%S")
     execution_key = f"acwf-{int((workflow_bundle.get('workflow') or {}).get('id') or 0)}-{int(node.get('id') or 0)}-{scheduled_for_dt.strftime('%Y%m%d%H%M')}"
     execution = workflow_repo.get_workflow_execution_row_by_execution_id(execution_key)
@@ -1010,7 +1567,7 @@ def _run_due_node(
                 "execution_id": execution_key,
                 "workflow_id": int((workflow_bundle.get("workflow") or {}).get("id") or 0),
                 "node_id": int(node.get("id") or 0),
-                "trigger_type": "scheduled_poll",
+                "trigger_type": "daily_recurring_poll" if trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING else "scheduled_poll",
                 "audience_code": _normalized_text(node.get("target_audience_code")),
                 "scheduled_for": scheduled_for,
                 "status": "pending",
@@ -1025,9 +1582,17 @@ def _run_due_node(
     if not execution:
         return {"ok": False, "status": "execution_create_failed", "node_id": int(node.get("id") or 0)}
     if _normalized_text(execution.get("status")) in _FINAL_EXECUTION_STATUSES:
-        return {"ok": True, "status": "already_processed", "execution_id": _normalized_text(execution.get("execution_id")), "node_id": int(node.get("id") or 0)}
+        result = {
+            "ok": True,
+            "status": "already_processed",
+            "execution_id": _normalized_text(execution.get("execution_id")),
+            "node_id": int(node.get("id") or 0),
+            "execution": execution,
+        }
+        _log_runtime_event("node_already_processed", result)
+        return result
 
-    workflow_repo.update_workflow_execution_row(
+    execution = workflow_repo.update_workflow_execution_row(
         int(execution["id"]),
         {
             **execution,
@@ -1037,7 +1602,17 @@ def _run_due_node(
             "summary_json": dict(execution.get("summary_json") or {}),
         },
     )
-    audience_map = _upsert_node_execution_candidates(execution=execution, node=node, workflow_bundle=workflow_bundle)
+    audience_map, diagnostics = _upsert_node_execution_candidates(execution=execution, node=node, workflow_bundle=workflow_bundle)
+    _log_runtime_event(
+        "scheduled_node_candidates",
+        {
+            "workflow_id": int(execution.get("workflow_id") or 0),
+            "node_id": int(node.get("id") or 0),
+            "trigger_mode": _node_trigger_mode(node),
+            "scheduled_for": scheduled_for,
+            **diagnostics,
+        },
+    )
     execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
     for item in execution_items:
         if _normalized_text(item.get("status")) != "pending":
@@ -1053,6 +1628,12 @@ def _run_due_node(
         )
     refreshed_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
     final_status, counters = _execution_summary_from_items(refreshed_items)
+    summary_json = _execution_summary_json(
+        workflow_bundle=workflow_bundle,
+        node=node,
+        diagnostics=diagnostics,
+        counters=counters,
+    )
     final_execution = workflow_repo.update_workflow_execution_row(
         int(execution["id"]),
         {
@@ -1063,16 +1644,19 @@ def _run_due_node(
             "success_count": counters["success_count"],
             "skipped_count": counters["skipped_count"],
             "failed_count": counters["failed_count"],
-            "summary_json": {"node_name": _normalized_text(node.get("node_name"))},
+            "summary_json": summary_json,
             "finished_at": _iso_now() if final_status in _FINAL_EXECUTION_STATUSES else "",
         },
     )
-    return {
+    result = {
         "ok": True,
         "status": final_status,
         "execution": final_execution,
         "items": workflow_repo.list_workflow_execution_item_rows(int(final_execution["id"])),
+        "summary": summary_json,
     }
+    _log_runtime_event("scheduled_node_finished", result["summary"])
+    return result
 
 
 def _run_immediate_node(
@@ -1083,11 +1667,32 @@ def _run_immediate_node(
 ) -> dict[str, Any]:
     audience_rows = workflow_repo.list_current_member_audience_rows(_normalized_text(node.get("target_audience_code")))
     processed_executions: list[dict[str, Any]] = []
+    diagnostics = {
+        "workflow_id": int((workflow_bundle.get("workflow") or {}).get("id") or 0),
+        "node_id": int(node.get("id") or 0),
+        "trigger_mode": _node_trigger_mode(node),
+        "scheduled_for": "",
+        "candidate_audience_total": len(audience_rows),
+        "day_offset_miss_count": 0,
+        "audience_miss_count": 0,
+        "recipient_filter_miss_count": 0,
+        "recipient_filter_usage_source_unavailable_count": 0,
+        "recipient_filter_usage_source_not_found_count": 0,
+        "recipient_filter_usage_phone_missing_count": 0,
+        "recipient_filter_behavior_tier_miss_count": 0,
+        "recipient_filter_member_identity_missing_count": 0,
+        "already_sent_count": 0,
+        "sent_today_count": 0,
+        "sequence_wait_count": 0,
+        "inserted_pending_count": 0,
+    }
     for audience_entry in audience_rows:
         audience_entry_id = int(audience_entry.get("id") or 0)
         if audience_entry_id <= 0:
             continue
-        if not _member_matches_workflow_recipient_filter(dict(audience_entry.get("member") or {}), workflow_bundle):
+        recipient_filter_result = _member_workflow_recipient_filter_result(dict(audience_entry.get("member") or {}), workflow_bundle)
+        if not bool(recipient_filter_result.get("matched")):
+            _update_recipient_filter_diagnostics(diagnostics, recipient_filter_result)
             continue
         execution_key = (
             f"acwf-immediate-"
@@ -1117,13 +1722,15 @@ def _run_immediate_node(
         if not execution:
             continue
         if _normalized_text(execution.get("status")) in _FINAL_EXECUTION_STATUSES:
+            diagnostics["already_sent_count"] += 1
             processed_executions.append(execution)
             continue
 
-        workflow_repo.update_workflow_execution_row(
+        execution = workflow_repo.update_workflow_execution_row(
             int(execution["id"]),
             {
                 **execution,
+                "trigger_type": "scheduled_poll",
                 "status": "running",
                 "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now(),
                 "finished_at": "",
@@ -1152,6 +1759,7 @@ def _run_immediate_node(
                 "sent_at": "",
             }
         )
+        diagnostics["inserted_pending_count"] += 1
         execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
         for item in execution_items:
             if _normalized_text(item.get("status")) != "pending":
@@ -1177,19 +1785,38 @@ def _run_immediate_node(
                 "skipped_count": counters["skipped_count"],
                 "failed_count": counters["failed_count"],
                 "summary_json": {
-                    "node_name": _normalized_text(node.get("node_name")),
+                    **_execution_summary_json(
+                        workflow_bundle=workflow_bundle,
+                        node=node,
+                        diagnostics={**diagnostics, "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now()},
+                        counters=counters,
+                    ),
                     "audience_entry_id": audience_entry_id,
                 },
                 "finished_at": _iso_now() if final_status in _FINAL_EXECUTION_STATUSES else "",
             },
         )
         processed_executions.append(final_execution)
-    return {
+    result = {
         "ok": True,
         "status": "finished" if processed_executions else "no_candidates",
         "node_id": int(node.get("id") or 0),
         "executions": processed_executions,
+        "summary": _execution_summary_json(
+            workflow_bundle=workflow_bundle,
+            node=node,
+            diagnostics=diagnostics,
+            counters=_execution_summary_from_items(
+                [
+                    item
+                    for execution_row in processed_executions
+                    for item in workflow_repo.list_workflow_execution_item_rows(int(execution_row.get("id") or 0))
+                ]
+            )[1],
+        ),
     }
+    _log_runtime_event("immediate_node_finished", result["summary"])
+    return result
 
 
 def run_due_conversion_workflows(*, operator_id: str = "", operator_type: str = "system") -> dict[str, Any]:
@@ -1211,13 +1838,40 @@ def run_due_conversion_workflows(*, operator_id: str = "", operator_type: str = 
                     operator_id=_normalized_text(operator_id) or "automation_conversion_workflow_runner",
                 )
             )
+    execution_rows = [
+        execution_row
+        for result in execution_items
+        for execution_row in _collect_execution_rows(result)
+    ]
+    total_success_count = sum(int(item.get("success_count") or 0) for item in execution_rows)
+    total_skipped_count = sum(int(item.get("skipped_count") or 0) for item in execution_rows)
+    total_failed_count = sum(int(item.get("failed_count") or 0) for item in execution_rows)
     get_db().commit()
-    return {
+    result = {
         "ok": True,
         "operator_type": _normalized_text(operator_type) or "system",
         "operator_id": _normalized_text(operator_id) or "automation_conversion_workflow_runner",
         "sync_summary": sync_summary,
         "scanned_workflow_count": scanned_workflow_count,
         "processed_node_count": processed_node_count,
+        "execution_count": len(execution_rows),
+        "total_success_count": total_success_count,
+        "total_skipped_count": total_skipped_count,
+        "total_failed_count": total_failed_count,
         "executions": execution_items,
     }
+    _log_runtime_event(
+        "run_due_conversion_workflows_finished",
+        {
+            "operator_id": result["operator_id"],
+            "operator_type": result["operator_type"],
+            "sync_summary": sync_summary,
+            "scanned_workflow_count": scanned_workflow_count,
+            "processed_node_count": processed_node_count,
+            "execution_count": len(execution_rows),
+            "total_success_count": total_success_count,
+            "total_skipped_count": total_skipped_count,
+            "total_failed_count": total_failed_count,
+        },
+    )
+    return result

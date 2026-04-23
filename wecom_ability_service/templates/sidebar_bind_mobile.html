@@ -695,9 +695,7 @@
       automationElements.currentPool.textContent = member.current_pool_label || member.current_pool || '已移出';
       automationElements.currentStage.textContent = member.current_stage_label || member.current_stage || '已移出';
       automationElements.currentTarget.textContent = member.current_target_label || member.current_target || '无';
-      automationElements.questionnaireStatus.textContent = questionnaire.status_label
-        ? (questionnaire.result_label ? (questionnaire.status_label + ' / ' + questionnaire.result_label) : questionnaire.status_label)
-        : '待提交';
+      automationElements.questionnaireStatus.textContent = questionnaire.status_label || '待提交';
       automationElements.latestManualAction.textContent = latestManualActionText(detail);
       automationElements.lastAiPushAt.textContent = detail.last_ai_push_at || '暂无';
       const remainingSeconds = Number(detail.ai_cooldown_remaining_seconds || 0);

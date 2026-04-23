@@ -19,6 +19,7 @@ GENERATION_MODE_AUTO_LAYERED_REWRITE = "auto_layered_rewrite"
 GENERATION_MODE_PERSONALIZED_SINGLE = "personalized_single"
 
 NODE_TRIGGER_MODE_SCHEDULED = "scheduled"
+NODE_TRIGGER_MODE_DAILY_RECURRING = "daily_recurring"
 NODE_TRIGGER_MODE_AUDIENCE_ENTERED = "audience_entered"
 
 AGENT_BINDING_SCOPE_DEFAULT = "default"
@@ -38,22 +39,22 @@ WORKFLOW_STATUS_ARCHIVED = "archived"
 BEHAVIOR_TIER_DEFINITIONS = (
     {
         "tier_code": "lt_2",
-        "label": "小于 2",
-        "description": "近统计窗口内行为次数小于 2。",
+        "label": "消息少于 2",
+        "description": "按消息数据源统计的用户消息条数小于 2。",
         "min_value": None,
         "max_value": 1,
     },
     {
         "tier_code": "between_2_9",
-        "label": "2 ~ 9",
-        "description": "近统计窗口内行为次数在 2 到 9 之间。",
+        "label": "消息 2 ~ 9",
+        "description": "按消息数据源统计的用户消息条数在 2 到 9 之间。",
         "min_value": 2,
         "max_value": 9,
     },
     {
         "tier_code": "gte_10",
-        "label": "大于等于 10",
-        "description": "近统计窗口内行为次数大于等于 10。",
+        "label": "消息大于等于 10",
+        "description": "按消息数据源统计的用户消息条数大于等于 10。",
         "min_value": 10,
         "max_value": None,
     },
@@ -98,8 +99,8 @@ def list_supported_segmentation_bases() -> list[dict[str, str]]:
         },
         {
             "basis_code": SEGMENTATION_BASIS_BEHAVIOR,
-            "label": "按行为层级分层",
-            "description": "使用系统固定行为层级：小于 2、2 ~ 9、大于等于 10。",
+            "label": "按消息条数分层",
+            "description": "使用系统固定消息条数层级：消息少于 2、消息 2 ~ 9、消息大于等于 10。",
         },
     ]
 
@@ -145,6 +146,11 @@ def list_supported_node_trigger_modes() -> list[dict[str, str]]:
             "trigger_mode": NODE_TRIGGER_MODE_SCHEDULED,
             "label": "按时间点运行",
             "description": "按第 N 天和具体时间执行。",
+        },
+        {
+            "trigger_mode": NODE_TRIGGER_MODE_DAILY_RECURRING,
+            "label": "每日轮巡运行",
+            "description": "从第 N 天开始，每天在指定时间对当前仍在目标人群内的成员轮巡执行。",
         },
         {
             "trigger_mode": NODE_TRIGGER_MODE_AUDIENCE_ENTERED,

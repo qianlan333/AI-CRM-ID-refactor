@@ -8,12 +8,9 @@ from ..admin_auth import admin_role_can_access_module
 from ..admin_jobs import build_jobs_dashboard_groups, build_jobs_runtime_snapshot
 from ..customer_pulse import build_customer_pulse_dashboard_group, is_customer_pulse_inbox_enabled
 from ..customer_pulse.access import (
-    CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
     build_customer_pulse_legacy_tenant_context,
     current_customer_pulse_request_access_context,
-    customer_pulse_has_permission,
 )
-from ..followup_orchestrator import is_followup_orchestrator_enabled
 from . import repo
 
 ADMIN_NAV_ITEMS = (

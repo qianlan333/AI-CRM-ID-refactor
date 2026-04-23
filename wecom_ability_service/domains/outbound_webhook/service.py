@@ -193,124 +193,9 @@ def _delivery_snapshot(delivery: dict[str, Any]) -> dict[str, Any]:
 
 
 def _attempt_delivery(delivery: dict[str, Any]) -> dict[str, Any]:
-    snapshot = _delivery_snapshot(delivery)
-    config = _event_config(snapshot["event_type"])
-    webhook_url = _event_webhook_url(config)
-    webhook_token = _setting_text(config["token_key"])
-    timeout = _setting_int(config["timeout_key"], default=int(config["default_timeout"]), minimum=1)
-    now_text = _iso_now()
-    if not webhook_url:
-        updated = repo.update_outbound_webhook_delivery(
-            int(snapshot["id"]),
-            target_url="",
-            token_configured=bool(webhook_token),
-            status=STATUS_FAILED,
-            attempt_count=int(snapshot["attempt_count"]),
-            response_status_code=None,
-            response_body_summary="",
-            last_error="webhook_not_configured",
-            last_attempted_at=now_text,
-            next_retry_at="",
-        )
-        return {
-            "ok": False,
-            "sent": False,
-            "reason": "webhook_not_configured",
-            "delivery": _delivery_snapshot(updated),
-        }
+    from . import message_dispatch_service
 
-    next_attempt = int(snapshot["attempt_count"]) + 1
-    try:
-        response = requests.post(
-            webhook_url,
-            json=snapshot["payload"],
-            headers=_request_headers(webhook_token),
-            timeout=timeout,
-        )
-        status_code = int(response.status_code)
-        response_summary = _response_body_summary(response)
-        if 200 <= status_code < 300:
-            updated = repo.update_outbound_webhook_delivery(
-                int(snapshot["id"]),
-                target_url=webhook_url,
-                token_configured=bool(webhook_token),
-                status=STATUS_SUCCESS,
-                attempt_count=next_attempt,
-                response_status_code=status_code,
-                response_body_summary=response_summary,
-                last_error="",
-                last_attempted_at=now_text,
-                next_retry_at="",
-            )
-            outbound_webhook_logger.info(
-                "outbound webhook success delivery_id=%s event_type=%s status_code=%s attempt=%s",
-                snapshot["id"],
-                snapshot["event_type"],
-                status_code,
-                next_attempt,
-            )
-            return {
-                "ok": True,
-                "sent": True,
-                "status_code": status_code,
-                "delivery": _delivery_snapshot(updated),
-            }
-        last_error = f"http_status_{status_code}"
-        retryable = _retry_enabled() and next_attempt < int(snapshot["max_attempts"] or 0)
-        updated = repo.update_outbound_webhook_delivery(
-            int(snapshot["id"]),
-            target_url=webhook_url,
-            token_configured=bool(webhook_token),
-            status=STATUS_RETRY_SCHEDULED if retryable else STATUS_EXHAUSTED,
-            attempt_count=next_attempt,
-            response_status_code=status_code,
-            response_body_summary=response_summary,
-            last_error=last_error,
-            last_attempted_at=now_text,
-            next_retry_at=_next_retry_at(now_text) if retryable else "",
-        )
-        outbound_webhook_logger.warning(
-            "outbound webhook non-2xx delivery_id=%s event_type=%s status_code=%s attempt=%s retryable=%s",
-            snapshot["id"],
-            snapshot["event_type"],
-            status_code,
-            next_attempt,
-            retryable,
-        )
-        return {
-            "ok": False,
-            "sent": False,
-            "status_code": status_code,
-            "reason": last_error,
-            "delivery": _delivery_snapshot(updated),
-        }
-    except requests.RequestException as exc:
-        retryable = _retry_enabled() and next_attempt < int(snapshot["max_attempts"] or 0)
-        updated = repo.update_outbound_webhook_delivery(
-            int(snapshot["id"]),
-            target_url=webhook_url,
-            token_configured=bool(webhook_token),
-            status=STATUS_RETRY_SCHEDULED if retryable else STATUS_EXHAUSTED,
-            attempt_count=next_attempt,
-            response_status_code=None,
-            response_body_summary="",
-            last_error=_truncate_text(str(exc), maximum=500),
-            last_attempted_at=now_text,
-            next_retry_at=_next_retry_at(now_text) if retryable else "",
-        )
-        outbound_webhook_logger.exception(
-            "outbound webhook failed delivery_id=%s event_type=%s attempt=%s retryable=%s",
-            snapshot["id"],
-            snapshot["event_type"],
-            next_attempt,
-            retryable,
-        )
-        return {
-            "ok": False,
-            "sent": False,
-            "reason": str(exc),
-            "delivery": _delivery_snapshot(updated),
-        }
+    return message_dispatch_service._attempt_delivery(delivery)
 
 
 def send_outbound_webhook(
@@ -320,45 +205,26 @@ def send_outbound_webhook(
     source_key: str = "",
     source_id: str = "",
 ) -> dict[str, Any]:
-    config = _event_config(event_type)
-    webhook_url = _event_webhook_url(config)
-    webhook_token = _setting_text(config["token_key"])
-    delivery = repo.create_outbound_webhook_delivery(
-        event_type=_normalized_text(event_type),
-        source_key=_normalized_text(source_key),
-        source_id=_normalized_text(source_id),
-        target_url=webhook_url,
-        payload_json=dict(payload or {}),
-        payload_summary=_payload_summary(dict(payload or {})),
-        token_configured=bool(webhook_token),
-        max_attempts=_retry_max_attempts(),
+    from . import message_dispatch_service
+
+    return message_dispatch_service.send_outbound_webhook(
+        event_type=event_type,
+        payload=payload,
+        source_key=source_key,
+        source_id=source_id,
     )
-    return _attempt_delivery(delivery)
 
 
 def retry_outbound_webhook_delivery(delivery_id: int) -> dict[str, Any]:
-    delivery = repo.get_outbound_webhook_delivery(int(delivery_id))
-    if not delivery:
-        raise LookupError("delivery not found")
-    if _normalized_text(delivery.get("status")) == STATUS_SUCCESS:
-        raise ValueError("delivery already succeeded")
-    return _attempt_delivery(delivery)
+    from . import message_dispatch_service
+
+    return message_dispatch_service.retry_outbound_webhook_delivery(delivery_id)
 
 
 def run_due_outbound_webhook_retries(*, limit: int = 20) -> dict[str, Any]:
-    now_text = _iso_now()
-    due_deliveries = repo.list_due_outbound_webhook_deliveries(now_text=now_text, limit=limit)
-    results = [_attempt_delivery(item) for item in due_deliveries]
-    success_count = sum(1 for item in results if bool(item.get("ok")))
-    return {
-        "ok": True,
-        "count": len(results),
-        "scanned_count": len(due_deliveries),
-        "retried_count": len(results),
-        "success_count": success_count,
-        "failed_count": len(results) - success_count,
-        "deliveries": results,
-    }
+    from . import message_dispatch_service
+
+    return message_dispatch_service.run_due_outbound_webhook_retries(limit=limit)
 
 
 def list_outbound_webhook_deliveries(
@@ -367,22 +233,16 @@ def list_outbound_webhook_deliveries(
     status: str = "",
     limit: int = 50,
 ) -> dict[str, Any]:
-    rows = repo.list_outbound_webhook_deliveries(
-        event_type=_normalized_text(event_type),
-        status=_normalized_text(status),
+    from . import message_dispatch_service
+
+    return message_dispatch_service.list_outbound_webhook_deliveries(
+        event_type=event_type,
+        status=status,
         limit=limit,
     )
-    items = [_delivery_snapshot(row) for row in rows]
-    return {
-        "items": items,
-        "count": len(items),
-        "filters": {
-            "event_type": _normalized_text(event_type),
-            "status": _normalized_text(status),
-            "limit": max(1, min(int(limit), 200)),
-        },
-    }
 
 
 def get_outbound_webhook_delivery_counts() -> dict[str, int]:
-    return repo.get_outbound_webhook_delivery_counts()
+    from . import message_dispatch_service
+
+    return message_dispatch_service.get_outbound_webhook_delivery_counts()
