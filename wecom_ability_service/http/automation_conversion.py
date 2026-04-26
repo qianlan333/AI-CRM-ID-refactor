@@ -100,6 +100,7 @@ from ..domains.automation_conversion import (
     set_follow_type,
     submit_agent_prompt_for_publish,
     unmark_won,
+    update_automation_program_basic_info,
     update_conversion_profile_segment_template,
     update_automation_program_status,
     update_conversion_workflow,
@@ -253,8 +254,8 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
     },
     {
         "key": "agent_config",
-        "label": "模型 / Agent 配置",
-        "summary": "可用 Agent 与基础画像分层模板配置",
+        "label": "模型与智能体配置",
+        "summary": "可用智能体与基础画像分层模板配置",
         "endpoint": "api.admin_automation_conversion_agent_config",
         "params": {},
     },
@@ -549,7 +550,7 @@ def _build_run_center_workspace(*, page_input: dict[str, object] | None = None) 
             {"key": "sync", "label": "数据同步", "href": url_for("api.admin_automation_conversion_run_center", tab="sync")},
             {"key": "logs", "label": "执行日志 / 审计", "href": url_for("api.admin_automation_conversion_run_center", tab="logs")},
             {"key": "model-infra", "label": "模型基础设施", "href": url_for("api.admin_automation_conversion_run_center", tab="model-infra")},
-            {"key": "agent-orchestration", "label": "Agent Orchestration", "href": url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="router")},
+            {"key": "agent-orchestration", "label": "智能体编排", "href": url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="router")},
             {"key": "debug", "label": "调试", "href": url_for("api.admin_automation_conversion_run_center", tab="debug")},
         ],
         "overview": overview_payload,
@@ -560,6 +561,7 @@ def _build_run_center_workspace(*, page_input: dict[str, object] | None = None) 
         "focus_batches": get_focus_send_batches_payload(limit=10),
         "page_input": raw_input,
     }
+    context["tab_label"] = next((item["label"] for item in context["tabs"] if item["key"] == tab), "运行概况")
     if tab == "model-infra":
         context["model_infra"] = get_model_infra_payload(limit_logs=10)
     elif tab == "debug":
@@ -643,9 +645,15 @@ def _program_context(program: dict[str, object], *, active_key: str = "overview"
         "id": program_id,
         "program_code": str(program.get("program_code") or ""),
         "program_name": str(program.get("program_name") or ""),
+        "description": str(program.get("description") or ""),
         "status": str(program.get("status") or ""),
         "list_href": url_for("api.admin_automation_conversion"),
         "overview_href": url_for("api.admin_automation_program_overview", program_id=program_id),
+        "update_href": url_for("api.admin_automation_program_update", program_id=program_id),
+        "copy_href": url_for("api.admin_automation_program_copy", program_id=program_id),
+        "activate_href": url_for("api.admin_automation_program_activate", program_id=program_id),
+        "pause_href": url_for("api.admin_automation_program_pause", program_id=program_id),
+        "archive_href": url_for("api.admin_automation_program_archive", program_id=program_id),
         "active_key": active_key,
     }
 
@@ -719,7 +727,7 @@ def _render_workflow_editor_page(*, workflow_id: int | None = None, page_error: 
         "automation_conversion_workflow_editor.html",
         active_nav="automation_conversion",
         page_title="新建任务流" if is_new else "编辑任务流",
-        page_summary="任务流层只负责适用人群、发给谁、怎么发、生成方式和 Agent 绑定，不再和节点配置混排。",
+        page_summary="任务流层只负责适用人群、发给谁、怎么发、生成方式和智能体绑定，不再和节点配置混排。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
@@ -804,12 +812,12 @@ def _render_agent_config_page(*, page_error: str = ""):
     return _render_admin_template(
         "automation_conversion_agent_config_workspace.html",
         active_nav="automation_conversion",
-        page_title="模型 / Agent 配置",
-        page_summary="当前页面已经收口成自动化转化模块的底层配置工作台：Agent 编排、分层模板、欢迎语 / 二维码和大模型配置统一都从这里维护。",
+        page_title="模型与智能体配置",
+        page_summary="当前页面已经收口成自动化转化模块的底层配置工作台：智能体编排、分层模板、欢迎语 / 二维码和大模型配置统一都从这里维护。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
-            ("模型 / Agent 配置", None),
+            ("模型与智能体配置", None),
         ),
         workspace_tabs=_automation_conversion_workspace_tabs("agent_config"),
         agent_config_workspace=_build_agent_config_workspace(),
@@ -824,7 +832,7 @@ def _render_flow_design_page(*, page_error: str = "", page_input: dict[str, obje
         "automation_conversion_flow_design_workspace.html",
         active_nav="automation_conversion",
         page_title="流程设计",
-        page_summary="当前方案内流程设计壳层；Phase 1 保留底层单例配置，方案快照挂在 automation_program.config_json。" if program else "兼容旧后台设置入口，当前统一映射到阶段模型、问卷规则、SOP 剧本、全局规则、默认渠道入口和发布管理。",
+        page_summary="当前方案内流程设计壳层；第一阶段保留底层单例配置，方案快照挂在自动化运营方案配置中。" if program else "兼容旧后台设置入口，当前统一映射到阶段模型、问卷规则、SOP 剧本、全局规则、默认渠道入口和发布管理。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
@@ -845,7 +853,7 @@ def _render_member_ops_page(*, page_error: str = "", program: dict[str, object] 
         "automation_conversion_member_ops_workspace.html",
         active_nav="automation_conversion",
         page_title="成员运营",
-        page_summary="当前方案内成员运营工作区；Phase 1 先不改自动化成员全局唯一约束。" if program else "兼容旧阶段详情和发送入口，统一收口到成员列表工作区与批量动作面板。",
+        page_summary="当前方案内成员运营工作区；第一阶段先不改自动化成员全局唯一约束。" if program else "兼容旧阶段详情和发送入口，统一收口到成员列表工作区与批量动作面板。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
@@ -865,7 +873,7 @@ def _render_run_center_page(*, page_error: str = "", page_notice: str = "", page
         "automation_conversion_run_center_workspace.html",
         active_nav="automation_conversion",
         page_title="运行中心",
-        page_summary="兼容旧运行中心入口，当前收口到运行概况、数据同步、日志、模型基础设施、Agent Orchestration 和调试。",
+        page_summary="兼容旧运行中心入口，当前收口到运行概况、数据同步、日志、模型基础设施、智能体编排和调试。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化转化", url_for("api.admin_automation_conversion")),
@@ -878,7 +886,10 @@ def _render_run_center_page(*, page_error: str = "", page_notice: str = "", page
     )
 
 
-def _render_program_list_page(*, page_error: str = "", page_notice: str = ""):
+def _render_program_list_page(*, page_error: str = "", page_notice: str = "", show_create_form: bool | None = None, edit_program_id: int | None = None):
+    should_show_create = _query_bool("create", default=False) if show_create_form is None else bool(show_create_form)
+    selected_edit_program_id = int(edit_program_id or _query_int("edit_program_id", default=0, minimum=0, maximum=10_000_000) or 0)
+    program_list_payload = list_automation_programs(include_archived=True)
     return _render_admin_template(
         "automation_program_list.html",
         active_nav="automation_conversion",
@@ -888,7 +899,14 @@ def _render_program_list_page(*, page_error: str = "", page_notice: str = ""):
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", None),
         ),
-        program_list_payload=list_automation_programs(include_archived=True),
+        page_actions=[
+            {"label": "共享资源", "href": url_for("api.admin_automation_conversion_shared_agents"), "variant": "secondary"},
+            {"label": "运行时中心", "href": url_for("api.admin_automation_conversion_runtime"), "variant": "secondary"},
+            {"label": "新建方案", "href": url_for("api.admin_automation_conversion", create=1) + "#program-create-panel", "variant": "primary"},
+        ],
+        program_list_payload=program_list_payload,
+        show_create_form=should_show_create,
+        edit_program_id=selected_edit_program_id,
         action_urls={
             "create": url_for("api.admin_automation_program_create"),
             "new": url_for("api.admin_automation_program_new"),
@@ -896,6 +914,7 @@ def _render_program_list_page(*, page_error: str = "", page_notice: str = ""):
             "activate_base": url_for("api.admin_automation_program_activate", program_id=0),
             "pause_base": url_for("api.admin_automation_program_pause", program_id=0),
             "archive_base": url_for("api.admin_automation_program_archive", program_id=0),
+            "update_base": url_for("api.admin_automation_program_update", program_id=0),
             "overview_base": url_for("api.admin_automation_program_overview", program_id=0),
         },
         page_error=page_error,
@@ -915,26 +934,55 @@ def _program_form_payload() -> dict[str, object]:
     }
 
 
+def _program_basic_info_payload() -> dict[str, object]:
+    return {
+        "program_name": str(request.form.get("program_name") or "").strip(),
+        "description": str(request.form.get("description") or "").strip(),
+    }
+
+
+def _program_action_redirect(default_path: str = ""):
+    target = str(request.form.get("next") or "").strip() or default_path
+    if not target.startswith("/admin/automation-conversion") or target.startswith("//"):
+        target = default_path or url_for("api.admin_automation_conversion")
+    return redirect(target, code=302)
+
+
 def admin_automation_conversion():
     return _render_program_list_page()
 
 
 def admin_automation_program_new():
-    return _render_program_list_page(page_notice="在列表顶部填写方案名称后即可创建；也可以从默认方案复制配置快照。")
+    return redirect(url_for("api.admin_automation_conversion", create=1) + "#program-create-panel", code=302)
 
 
 def admin_automation_program_create():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
-        return _render_program_list_page(page_error=action_token_error)
+        return _render_program_list_page(page_error=action_token_error, show_create_form=True)
     try:
         result = create_automation_program(_program_form_payload(), operator_id=_operator_from_request())
     except ValueError as exc:
-        return _render_program_list_page(page_error=str(exc))
+        return _render_program_list_page(page_error=str(exc), show_create_form=True)
     return redirect(
         url_for("api.admin_automation_program_overview", program_id=int((result.get("program") or {}).get("id") or 0)),
         code=302,
     )
+
+
+def admin_automation_program_update(program_id: int):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return _render_program_list_page(page_error=action_token_error, edit_program_id=int(program_id))
+    try:
+        update_automation_program_basic_info(
+            int(program_id),
+            _program_basic_info_payload(),
+            operator_id=_operator_from_request(),
+        )
+    except (LookupError, ValueError) as exc:
+        return _render_program_list_page(page_error=str(exc), edit_program_id=int(program_id))
+    return _program_action_redirect(url_for("api.admin_automation_conversion", edit_program_id=int(program_id)) + f"#program-row-{int(program_id)}")
 
 
 def admin_automation_program_copy(program_id: int):
@@ -971,7 +1019,7 @@ def _program_status_action(program_id: int, status: str):
         update_automation_program_status(int(program_id), status=status, operator_id=_operator_from_request())
     except (LookupError, ValueError) as exc:
         return _render_program_list_page(page_error=str(exc))
-    return redirect(url_for("api.admin_automation_conversion"), code=302)
+    return _program_action_redirect(url_for("api.admin_automation_conversion"))
 
 
 def admin_automation_conversion_overview():
@@ -2370,6 +2418,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
     bp.route("/admin/automation-conversion/programs/new", methods=["GET"])(admin_automation_program_new)
     bp.route("/admin/automation-conversion/programs", methods=["POST"])(admin_automation_program_create)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/update", methods=["POST"])(admin_automation_program_update)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/copy", methods=["POST"])(admin_automation_program_copy)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/activate", methods=["POST"])(admin_automation_program_activate)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/pause", methods=["POST"])(admin_automation_program_pause)

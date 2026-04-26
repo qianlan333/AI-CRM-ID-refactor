@@ -75,6 +75,7 @@ from .program_service import (
     get_default_automation_program,
     get_default_automation_program_id,
     list_automation_programs,
+    update_automation_program_basic_info,
     update_automation_program_status,
 )
 from .workflow_service import (
@@ -316,6 +317,7 @@ __all__ = [
     "test_model_infra_connection",
     "unmark_won",
     "pause_conversion_workflow",
+    "update_automation_program_basic_info",
     "update_conversion_profile_segment_template",
     "update_conversion_workflow",
     "update_conversion_workflow_node",

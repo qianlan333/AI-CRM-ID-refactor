@@ -2,12 +2,21 @@
 
 {% block head_extra %}
 <style>
-  .ac-member-shell { display: grid; gap: 20px; }
+  .ac-member-shell { display: grid; gap: 14px; }
   .ac-member-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .9fr); }
-  .ac-member-card { padding: 18px; border-radius: 18px; border: 1px solid rgba(15,23,42,.08); background: #fff; display: grid; gap: 14px; }
+  .ac-member-card {
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 86, 240, 0.10);
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,251,255,0.98));
+    box-shadow: none;
+    display: grid;
+    gap: 14px;
+  }
   .ac-member-stats { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .admin-card-label { color: #64748b; font-size: 12px; }
-  .ac-member-muted { color: #64748b; line-height: 1.6; }
+  .ac-member-muted { color: #4e5969; line-height: 1.7; margin: 0; }
+  .ac-member-card h3 { margin: 0; }
   .ac-send-box { display: grid; gap: 12px; }
   textarea { width: 100%; min-height: 120px; }
 </style>
@@ -30,14 +39,33 @@
   <div class="admin-banner admin-banner--success">AI 批任务已创建</div>
   {% endif %}
 
-  <section class="ac-member-card">
-    <div class="ac-eyebrow">成员列表工作区</div>
-    <h2>成员列表工作区</h2>
-    <div class="ac-member-stats">
-      <div><div class="admin-card-label">总人数</div><strong>{{ stage.total_count or 0 }}</strong></div>
-      <div><div class="admin-card-label">今日新增</div><strong>{{ stage.today_new_count or 0 }}</strong></div>
+  <section class="admin-page-hero admin-page-hero--workspace">
+    <div class="admin-page-hero__head">
+      <div>
+        <div class="admin-page-hero__eyebrow">成员运营</div>
+        <h1>成员运营工作区</h1>
+        <p>成员运营统一成“成员列表 + 批量动作面板 + 只读上下文”的模式；保留现有群发、AI 批任务与阶段动作接口，不改状态语义。</p>
+      </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">按池子查看</span>
+        <span class="admin-chip admin-chip--neutral">批量动作面板</span>
+      </div>
     </div>
-    <div class="ac-member-muted">创建群发</div>
+    <div class="admin-page-hero__footer">
+      <div class="ac-member-stats">
+        <div class="ac-member-card">
+          <div class="admin-card-label">总人数</div>
+          <strong>{{ stage.total_count or 0 }}</strong>
+        </div>
+        <div class="ac-member-card">
+          <div class="admin-card-label">今日新增</div>
+          <strong>{{ stage.today_new_count or 0 }}</strong>
+        </div>
+      </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">当前池子：{{ stage.label or '-' }}</span>
+      </div>
+    </div>
   </section>
 
   <section class="ac-member-grid">

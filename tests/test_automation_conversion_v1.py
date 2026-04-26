@@ -5660,9 +5660,9 @@ def test_model_infra_page_renders_and_homepage_keeps_existing_sections(app, clie
 
     assert model_infra_page.status_code == 200
     assert "DeepSeek 配置" in model_infra_html
-    assert "Prompt Registry" in model_infra_html
-    assert "Agent Orchestration" in model_infra_html
-    assert "中央路由不再在这里作为普通 Prompt 文本框维护" in model_infra_html
+    assert "提示词注册表" in model_infra_html
+    assert "智能体编排" in model_infra_html
+    assert "中央路由不再在这里作为普通提示词文本框维护" in model_infra_html
     assert "最近模型调用日志" in model_infra_html
     assert "最近执行结果" not in model_infra_html
 
@@ -5683,12 +5683,12 @@ def test_run_center_agent_orchestration_router_subtab_uses_webhook_contract_not_
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Agent Orchestration" in html
+    assert "智能体编排" in html
     assert "龙虾路由接入配置" in html
     assert "启用中央路由接入" in html
     assert "龙虾 webhook 地址" in html
     assert "请求签名 Token" in html
-    assert "fallback" in html
+    assert "兜底处理" in html
     assert "请求 / 返回协议样例" in html
     assert 'name="prompt_text"' not in html
 
@@ -5823,14 +5823,14 @@ def test_run_center_agent_orchestration_agents_subtab_shows_split_prompt_layers(
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "子 Agent 列表" in html
-    assert "Agent 详情" in html
+    assert "子智能体列表" in html
+    assert "智能体详情" in html
     assert "角色提示词" in html
     assert "任务 / 文本提示词" in html
     assert "变量配置（JSON）" in html
     assert "输出协议（JSON）" in html
     assert "草稿态 / 已发布态" in html
-    assert "中央路由不在这里当普通 Prompt 维护" in html
+    assert "中央路由不在这里当普通提示词维护" in html
 
 
 def test_run_center_agent_orchestration_metrics_subtab_renders_shadow_metrics(app, client):
@@ -5883,11 +5883,11 @@ def test_run_center_agent_orchestration_metrics_subtab_renders_shadow_metrics(ap
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "最小 Metrics" in html
+    assert "最小指标" in html
     assert "调用量" in html
     assert "成功率" in html
-    assert "fallback 率" in html
-    assert "schema 非法率" in html
+    assert "兜底率" in html
+    assert "协议非法率" in html
     assert "采纳率" in html
     assert "采纳后转化率" in html
     assert "pricing_agent" in html
