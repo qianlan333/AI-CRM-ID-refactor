@@ -7,17 +7,17 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3f5f0;
-      --panel: rgba(255,255,255,0.94);
-      --line: rgba(41,73,54,0.12);
-      --text: #193325;
-      --muted: #607266;
-      --primary: #2f6a4c;
-      --primary-strong: #234f39;
-      --soft: #edf4ef;
-      --warning-bg: #fff6dc;
-      --warning-text: #7a5a16;
-      --shadow: 0 24px 60px rgba(25,51,37,0.10);
+      --bg: #f2f3f5;
+      --panel: rgba(255,255,255,0.98);
+      --line: #dee0e3;
+      --text: #1f2329;
+      --muted: #8f959e;
+      --primary: #3370ff;
+      --primary-strong: #1456f0;
+      --soft: #ebf2ff;
+      --warning-bg: #fff3e0;
+      --warning-text: #ff8800;
+      --shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     * { box-sizing: border-box; }
     body {
@@ -25,8 +25,8 @@
       min-height: 100vh;
       font-family: "PingFang SC", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
       background:
-        radial-gradient(circle at top left, rgba(76, 132, 98, 0.16), transparent 28%),
-        radial-gradient(circle at bottom right, rgba(47, 106, 76, 0.12), transparent 24%),
+        radial-gradient(circle at top left, rgba(51, 112, 255, 0.08), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(51, 112, 255, 0.06), transparent 24%),
         var(--bg);
       color: var(--text);
     }
@@ -44,9 +44,8 @@
     .questionnaire-card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 28px;
+      border-radius: 24px;
       box-shadow: var(--shadow);
-      backdrop-filter: blur(14px);
     }
     .hero-card {
       padding: 36px 28px;
@@ -62,7 +61,7 @@
       width: 180px;
       height: 180px;
       border-radius: 999px;
-      background: radial-gradient(circle, rgba(47, 106, 76, 0.12), transparent 70%);
+      background: radial-gradient(circle, rgba(51, 112, 255, 0.12), transparent 70%);
       pointer-events: none;
     }
     .hero-card::after {
@@ -74,7 +73,7 @@
       height: 150px;
       border-radius: 30px;
       transform: rotate(18deg);
-      background: linear-gradient(135deg, rgba(47, 106, 76, 0.10), rgba(47, 106, 76, 0));
+      background: linear-gradient(135deg, rgba(51, 112, 255, 0.12), rgba(51, 112, 255, 0));
       pointer-events: none;
     }
     .eyebrow {
@@ -126,7 +125,7 @@
       color: #fff;
       font-size: 16px;
       font-weight: 700;
-      box-shadow: 0 18px 30px rgba(35, 79, 57, 0.18);
+      box-shadow: 0 10px 24px rgba(20, 86, 240, 0.18);
       position: relative;
       z-index: 1;
     }
@@ -159,13 +158,13 @@
     .question {
       margin: 0 0 18px;
       padding: 18px 16px;
-      border-radius: 22px;
-      background: #f7faf7;
-      border: 1px solid rgba(47, 106, 76, 0.10);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+      border-radius: 20px;
+      background: #f7f8fa;
+      border: 1px solid rgba(20, 86, 240, 0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
     }
     .question-title { margin: 0 0 14px; font-size: 16px; font-weight: 700; line-height: 1.5; }
-    .required { color: #bb5433; margin-left: 4px; }
+    .required { color: #f54a45; margin-left: 4px; }
     label.option {
       display: flex;
       gap: 12px;
@@ -174,7 +173,7 @@
       padding: 12px 14px;
       border-radius: 16px;
       background: #fff;
-      border: 1px solid rgba(47, 106, 76, 0.10);
+      border: 1px solid rgba(20, 86, 240, 0.08);
       font-size: 15px;
       color: var(--text);
     }
@@ -182,7 +181,7 @@
       width: 100%;
       min-height: 132px;
       border-radius: 18px;
-      border: 1px solid rgba(47, 106, 76, 0.18);
+      border: 1px solid rgba(20, 86, 240, 0.12);
       padding: 14px 16px;
       font: inherit;
       resize: vertical;
@@ -191,7 +190,7 @@
     input[type="tel"] {
       width: 100%;
       border-radius: 18px;
-      border: 1px solid rgba(47, 106, 76, 0.18);
+      border: 1px solid rgba(20, 86, 240, 0.12);
       padding: 14px 16px;
       font: inherit;
       background: #fff;
@@ -210,11 +209,11 @@
       font-weight: 700;
       background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
       color: #fff;
-      box-shadow: 0 18px 30px rgba(35, 79, 57, 0.18);
+      box-shadow: 0 10px 24px rgba(20, 86, 240, 0.18);
     }
     .submit-btn[disabled] { opacity: 0.6; box-shadow: none; }
     .state { margin-top: 16px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-    .error { color: #bb5433; }
+    .error { color: #f54a45; }
     @media (max-width: 640px) {
       .page-shell { padding: 18px 14px 40px; }
       .hero-card { padding: 28px 20px; }

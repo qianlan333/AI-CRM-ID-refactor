@@ -93,13 +93,14 @@
   }
 
   .ac-ops-step.is-current {
-    border-color: rgba(194, 65, 12, 0.18);
-    background: rgba(255, 247, 237, 0.96);
+    border-color: rgba(51, 112, 255, 0.24);
+    background: rgba(235, 242, 255, 0.96);
+    box-shadow: 0 12px 32px rgba(20, 86, 240, 0.08);
   }
 
   .ac-ops-step-index {
     font-size: 12px;
-    color: #9a3412;
+    color: #1456f0;
     font-weight: 600;
   }
 
@@ -126,9 +127,9 @@
     min-height: 42px;
     padding: 10px 16px;
     border-radius: 999px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(248, 250, 252, 0.9);
-    color: #334155;
+    border: 1px solid rgba(51, 112, 255, 0.12);
+    background: rgba(255, 255, 255, 0.96);
+    color: #1456f0;
     text-decoration: none;
     font-size: 14px;
     font-weight: 600;
@@ -140,8 +141,8 @@
   }
 
   .ac-ops-step-link:hover {
-    border-color: rgba(194, 65, 12, 0.22);
-    background: rgba(255, 247, 237, 0.98);
+    border-color: rgba(51, 112, 255, 0.22);
+    background: rgba(235, 242, 255, 0.98);
   }
 
   .ac-ops-step.is-locked {
@@ -149,7 +150,7 @@
   }
 
   .ac-ops-page-link:hover {
-    background: rgba(241, 245, 249, 0.96);
+    background: rgba(235, 242, 255, 0.96);
   }
 
   .ac-ops-table-wrap {
@@ -179,7 +180,7 @@
   }
 
   .ac-ops-table tbody tr.is-active {
-    background: rgba(255, 247, 237, 0.9);
+    background: rgba(235, 242, 255, 0.9);
   }
 
   .ac-ops-table tbody tr.is-clickable {
@@ -187,7 +188,7 @@
   }
 
   .ac-ops-table tbody tr.is-clickable:hover {
-    background: rgba(248, 242, 233, 0.62);
+    background: rgba(235, 242, 255, 0.62);
   }
 
   .ac-ops-stat {
@@ -211,6 +212,63 @@
   .ac-ops-loading[hidden],
   .ac-ops-feedback[hidden] {
     display: none;
+  }
+
+  .ac-ops-page-summary-card {
+    display: grid;
+    gap: 8px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(51, 112, 255, 0.10);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.98));
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+  }
+
+  .ac-ops-page-summary-card strong {
+    font-size: 26px;
+    line-height: 1;
+    color: #1f2329;
+  }
+
+  .ac-ops-page-summary-label {
+    color: #4e5969;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .ac-ops-page-summary-note {
+    color: #8f959e;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .ac-ops-table-cell-stack {
+    display: grid;
+    gap: 6px;
+  }
+
+  .ac-ops-table-cell-stack strong {
+    color: #1f2329;
+  }
+
+  .ac-ops-inline-metric {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(235, 242, 255, 0.92);
+    color: #1456f0;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .ac-ops-form-card > .ac-ops-head h3,
+  .ac-ops-panel > .ac-ops-head h3,
+  .ac-ops-panel > .ac-ops-head h4,
+  .ac-ops-card > .ac-ops-head h3 {
+    margin: 0;
   }
 
   .ac-ops-field-grid {
@@ -312,6 +370,54 @@
 
   .ac-ops-table td .ac-ops-inline-actions {
     min-width: 172px;
+  }
+
+  .ac-ops-shell,
+  .ac-ops-summary-grid,
+  .ac-ops-detail-grid,
+  .ac-ops-node-summary,
+  .ac-ops-execution-summary,
+  .ac-ops-binding-grid,
+  .ac-ops-variant-grid,
+  .ac-ops-page-summary {
+    gap: 12px;
+  }
+
+  .ac-ops-card,
+  .ac-ops-panel,
+  .ac-ops-stat,
+  .ac-ops-empty,
+  .ac-ops-form-card,
+  .ac-ops-page-summary-card,
+  .ac-ops-step,
+  .ac-ops-binding-item,
+  .ac-ops-variant-item {
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .ac-ops-page-summary-card strong,
+  .ac-ops-stat strong {
+    font-size: 22px;
+  }
+
+  .ac-ops-table-wrap,
+  .ac-ops-loading,
+  .ac-ops-feedback {
+    border-radius: 12px;
+  }
+
+  .ac-ops-table th,
+  .ac-ops-table td {
+    padding: 10px 12px;
+  }
+
+  .ac-ops-page-link {
+    min-height: 36px;
+    padding: 8px 12px;
+    border-radius: 8px;
   }
 
   @media (max-width: 760px) {

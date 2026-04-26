@@ -2,18 +2,48 @@
 
 {% block head_extra %}
 <style>
-  .ac-flow-shell { display: grid; gap: 20px; }
-  .ac-flow-nav { display: flex; flex-wrap: wrap; gap: 10px; }
-  .ac-section-link { display: inline-flex; padding: 8px 14px; border-radius: 999px; background: #eef2ff; color: #334155; text-decoration: none; }
-  .ac-section-link.is-active { background: #dbeafe; color: #1d4ed8; }
-  .ac-flow-card { padding: 18px; border-radius: 18px; border: 1px solid rgba(15,23,42,.08); background: #fff; display: grid; gap: 14px; }
+  .ac-flow-shell { display: grid; gap: 14px; }
+  .ac-flow-nav,
+  .ac-flow-tabs,
+  .ac-flow-hero-meta { display: flex; flex-wrap: wrap; gap: 10px; }
+  .ac-flow-card {
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 86, 240, 0.10);
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,251,255,0.98));
+    box-shadow: none;
+    display: grid;
+    gap: 16px;
+  }
   .ac-flow-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .ac-flow-muted { color: #64748b; line-height: 1.6; }
-  .ac-flow-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-  .ac-flow-day { padding: 6px 10px; border-radius: 999px; background: #f8fafc; }
-  .ac-flow-day.is-selected { background: #dbeafe; color: #1d4ed8; }
+  .ac-flow-muted { color: #4e5969; line-height: 1.7; margin: 0; }
+  .ac-flow-card h3 { margin: 0; }
+  .ac-flow-card strong { color: #1f2329; }
+  .ac-section-link {
+    display: inline-flex;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(20, 86, 240, 0.10);
+    background: #fff;
+    color: #1456f0;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .ac-section-link.is-active { background: #ebf2ff; color: #1456f0; }
+  .ac-flow-day { padding: 8px 12px; border-radius: 999px; background: #f5f6f7; color: #4e5969; }
+  .ac-flow-day.is-selected { background: #ebf2ff; color: #1456f0; }
+  .ac-flow-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #ebf2ff;
+    color: #1456f0;
+    font-size: 12px;
+    font-weight: 700;
+  }
   textarea { min-height: 120px; width: 100%; }
-  input[type="text"], input[type="time"] { width: 100%; padding: 8px 10px; }
+  input[type="text"], input[type="time"] { width: 100%; padding: 10px 12px; }
 </style>
 {% endblock %}
 
@@ -24,14 +54,28 @@
 {% include "admin_console/_automation_program_context.html" %}
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 <div class="ac-flow-shell">
-  <section class="ac-flow-card">
-    <div class="ac-eyebrow">流程设计</div>
-    <h2>流程设计</h2>
-    <p class="ac-flow-muted">消息活跃同步已迁到运行中心。<a href="{{ url_for('api.admin_automation_conversion_runtime_sync') }}">前往运行中心校验</a></p>
-    <div class="ac-flow-nav">
+  <section class="admin-page-hero admin-page-hero--workspace">
+    <div class="admin-page-hero__head">
+      <div>
+        <div class="admin-page-hero__eyebrow">流程设计</div>
+        <h1>方案流程设计</h1>
+        <p>方案内流程设计统一拆成阶段模型、问卷规则、SOP 剧本、全局规则、默认渠道入口和发布管理；只调整界面组织，不改变写入接口。</p>
+      </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">当前方案内</span>
+        <span class="admin-chip admin-chip--neutral">配置语义不变</span>
+      </div>
+    </div>
+    <div class="admin-page-hero__footer">
+      <div class="ac-flow-nav">
       {% for item in workspace.sections or [] %}
       <a class="ac-section-link{% if item.key == workspace.section %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
       {% endfor %}
+      </div>
+      <div class="ac-flow-hero-meta">
+        <span class="ac-flow-chip">消息活跃同步已迁到运行中心</span>
+        <a class="ac-section-link" href="{{ url_for('api.admin_automation_conversion_runtime_sync') }}">前往运行中心校验</a>
+      </div>
     </div>
     {% if workspace.saved %}
     <div class="admin-banner admin-banner--success">已保存</div>

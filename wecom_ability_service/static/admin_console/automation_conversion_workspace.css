@@ -402,3 +402,81 @@
     flex-direction: column;
   }
 }
+
+/* 2026-04 UI redesign overrides */
+.ac-workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #eceef1;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.ac-workspace-tab {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f5f6f7;
+  box-shadow: none;
+}
+
+.ac-workspace-tab:hover {
+  border-color: rgba(51, 112, 255, 0.22);
+  box-shadow: none;
+}
+
+.ac-workspace-tab.is-active {
+  border-color: rgba(51, 112, 255, 0.28);
+  background: #ebf2ff;
+  box-shadow: none;
+}
+
+.ac-workspace-tab__eyebrow {
+  display: none;
+}
+
+.ac-workspace-tab__title {
+  color: #1f2329;
+  font-size: 14px;
+}
+
+.ac-workspace-tab__summary {
+  display: none;
+}
+
+.ac-section-link {
+  border-radius: 8px;
+  background: #f5f6f7;
+  color: #4e5969;
+}
+
+.ac-section-link.is-active {
+  background: #ebf2ff;
+  color: #3370ff;
+}
+
+.ac-eyebrow {
+  color: #3370ff;
+  font-size: 12px;
+}
+
+.ac-subcard,
+.ac-funnel-card,
+.ac-key-value-grid > div,
+.ac-funnel-card__metrics > div {
+  border-color: #eceef1;
+  background: #fafbfc;
+}
+
+.ac-subcard,
+.ac-funnel-card,
+.ac-quick-card,
+.ac-stage-link,
+.ac-todo-item {
+  padding: 14px 16px;
+  border-radius: 12px;
+}

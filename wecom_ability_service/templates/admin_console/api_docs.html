@@ -1,16 +1,21 @@
 {% extends "admin_console/base.html" %}
 
 {% block content %}
-<section class="admin-card">
-  <div class="admin-card-head">
+<section class="admin-page-hero">
+  <div class="admin-page-hero__head">
     <div>
-      <h2>文档说明</h2>
-      <p>当前文档面向后台运营与技术同学，替代原 AI 工具控制台。</p>
+      <div class="admin-eyebrow">Admin Reference</div>
+      <h2>API 文档</h2>
+      <p>当前文档面向后台运营与技术同学，替代原 AI 工具控制台，聚焦企业微信登录、自动化运营、问卷、配置和回调边界。</p>
+    </div>
+    <div class="admin-page-hero__meta">
+      <span class="admin-chip admin-chip--neutral">Human-readable</span>
+      <span class="admin-chip admin-chip--neutral">第一阶段</span>
     </div>
   </div>
-  <div class="admin-audit-list">
+  <div class="admin-doc-note-list">
     {% for item in compatibility_notes %}
-    <div class="admin-audit-item">
+    <div class="admin-doc-note">
       <strong>兼容说明</strong>
       <span>{{ item }}</span>
     </div>
@@ -18,8 +23,9 @@
   </div>
 </section>
 
+<div class="admin-doc-grid">
 {% for section in doc_sections %}
-<section class="admin-card">
+<section class="admin-card admin-doc-card">
   <div class="admin-card-head">
     <div>
       <h2>{{ section.title }}</h2>
@@ -47,4 +53,5 @@
   {% endif %}
 </section>
 {% endfor %}
+</div>
 {% endblock %}
