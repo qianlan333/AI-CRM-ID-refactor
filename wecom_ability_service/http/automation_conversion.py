@@ -53,6 +53,7 @@ from ..domains.automation_conversion import (
     get_settings_payload,
     get_stage_detail_payload,
     handle_agent_router_callback,
+    handle_laohuang_chat_result_callback,
     list_agent_configs,
     list_automation_programs,
     list_agent_outputs,
@@ -65,6 +66,7 @@ from ..domains.automation_conversion import (
     list_conversion_workflow_nodes,
     list_conversion_workflow_registry,
     list_conversion_workflows,
+    list_recent_laohuang_review_outputs,
     list_pending_agent_prompt_publish_requests,
     list_router_pending_callbacks,
     list_recent_reviewable_agent_outputs,
@@ -93,6 +95,8 @@ from ..domains.automation_conversion import (
     save_sop_v1_pool_config,
     save_sop_v1_template,
     save_settings,
+    send_laohuang_review_output_via_webhook,
+    send_laohuang_review_output_via_wecom,
     send_agent_reply_output_via_bazhuayu,
     send_conversion_execution_item_via_bazhuayu,
     send_stage_manual_message,
@@ -421,6 +425,8 @@ def _build_auto_reply_workspace() -> dict[str, object]:
         "api_urls": {
             "review_outputs": url_for("api.api_admin_automation_conversion_review_outputs"),
             "review_output_base": url_for("api.api_admin_automation_conversion_review_output", output_id="__OUTPUT_ID__"),
+            "review_output_webhook_send_base": url_for("api.api_admin_automation_conversion_review_output_send_via_webhook", output_id="__OUTPUT_ID__"),
+            "review_output_wecom_send_base": url_for("api.api_admin_automation_conversion_review_output_send_via_wecom", output_id="__OUTPUT_ID__"),
             "review_output_bazhuayu_send_base": url_for("api.api_admin_automation_conversion_review_output_send_via_bazhuayu", output_id="__OUTPUT_ID__"),
         },
     }
@@ -2260,7 +2266,7 @@ def api_admin_automation_conversion_profile_segment_template_options():
 
 
 def api_admin_automation_conversion_review_outputs():
-    payload = list_recent_reviewable_agent_outputs(
+    payload = list_recent_laohuang_review_outputs(
         limit=_query_int("limit", default=20, minimum=1, maximum=50),
     )
     return jsonify({"ok": True, **payload})
@@ -2299,14 +2305,24 @@ def api_admin_automation_conversion_review_output(output_id: str):
 
 
 def api_admin_automation_conversion_review_output_send_via_bazhuayu(output_id: str):
+    return api_admin_automation_conversion_review_output_send_via_webhook(output_id)
+
+
+def api_admin_automation_conversion_review_output_send_via_webhook(output_id: str):
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         return jsonify({"ok": False, "error": action_token_error}), 400
     try:
-        payload = send_agent_reply_output_via_bazhuayu(
-            output_id,
-            operator_id=_operator_from_request(),
-        )
+        if str(output_id or "").strip().startswith("lhjob-") or str(output_id or "").strip().isdigit():
+            payload = send_laohuang_review_output_via_webhook(
+                output_id,
+                operator_id=_operator_from_request(),
+            )
+        else:
+            payload = send_agent_reply_output_via_bazhuayu(
+                output_id,
+                operator_id=_operator_from_request(),
+            )
     except LookupError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
     except ValueError as exc:
@@ -2314,6 +2330,22 @@ def api_admin_automation_conversion_review_output_send_via_bazhuayu(output_id: s
     except requests.RequestException as exc:
         return jsonify({"ok": False, "error": str(exc)}), 502
     return jsonify(payload)
+
+
+def api_admin_automation_conversion_review_output_send_via_wecom(output_id: str):
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    try:
+        payload = send_laohuang_review_output_via_wecom(
+            output_id,
+            operator_id=_operator_from_request(),
+        )
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify(payload), 200 if payload.get("ok") else 502
 
 
 def api_admin_automation_conversion_run_message_activity_sync():
@@ -2378,6 +2410,14 @@ def api_internal_automation_conversion_lobster_results():
     if result.get("status") == "rejected":
         status_code = 404 if result.get("error") == "request_not_found" else 409
         return jsonify(result), status_code
+    return jsonify(result), 400
+
+
+def api_internal_automation_conversion_laohuang_chat_results():
+    payload = request.get_json(silent=True) or {}
+    result = handle_laohuang_chat_result_callback(payload)
+    if result.get("ok"):
+        return jsonify(result), 200
     return jsonify(result), 400
 
 
@@ -2522,6 +2562,8 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/profile-segment-templates/<int:template_id>", methods=["PUT"])(api_admin_automation_conversion_profile_segment_template_update)
     bp.route("/api/admin/automation-conversion/review-outputs", methods=["GET"])(api_admin_automation_conversion_review_outputs)
     bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/review", methods=["POST"])(api_admin_automation_conversion_review_output)
+    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-webhook", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_webhook)
+    bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-wecom", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_wecom)
     bp.route("/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu", methods=["POST"])(api_admin_automation_conversion_review_output_send_via_bazhuayu)
     bp.route("/api/admin/automation-conversion/workflows/registry", methods=["GET"])(api_admin_automation_conversion_workflow_registry)
     bp.route("/api/admin/automation-conversion/workflows", methods=["GET"])(api_admin_automation_conversion_workflows)
@@ -2545,5 +2587,6 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(api_admin_automation_conversion_reply_monitor_capture)
     bp.route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(api_admin_automation_conversion_reply_monitor_run_due)
     bp.route("/api/internal/automation-conversion/lobster-results", methods=["POST"])(api_internal_automation_conversion_lobster_results)
+    bp.route("/api/internal/automation-conversion/laohuang-chat-results", methods=["POST"])(api_internal_automation_conversion_laohuang_chat_results)
     bp.route("/api/internal/automation-conversion/router-test-dispatch", methods=["POST"])(api_internal_automation_conversion_router_test_dispatch)
     bp.route("/api/admin/automation-conversion/jobs/run-due", methods=["POST"])(api_admin_automation_conversion_jobs_run_due)

@@ -2515,6 +2515,23 @@ def _send_text_via_bazhuayu(
     }
 
 
+def send_text_via_bazhuayu_webhook(
+    *,
+    userid: str,
+    text: str,
+    operator_id: str = "",
+    result_id_key: str,
+    result_id_value: Any,
+) -> dict[str, Any]:
+    return _send_text_via_bazhuayu(
+        userid=userid,
+        text=text,
+        operator_id=operator_id,
+        result_id_key=result_id_key,
+        result_id_value=result_id_value,
+    )
+
+
 def send_conversion_execution_item_via_bazhuayu(execution_item_id: int, *, operator_id: str = "") -> dict[str, Any]:
     detail = get_conversion_workflow_execution_item_detail(int(execution_item_id))
     item = dict(detail.get("item") or {})

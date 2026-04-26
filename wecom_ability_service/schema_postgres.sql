@@ -1715,6 +1715,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_reply_monitor_queue_active_exter
 ON automation_reply_monitor_queue (external_userid)
 WHERE status IN ('pending', 'deferred_quiet_hours', 'paused') AND external_userid <> '';
 
+CREATE TABLE IF NOT EXISTS automation_laohuang_chat_job (
+    id BIGSERIAL PRIMARY KEY,
+    queue_id BIGINT REFERENCES automation_reply_monitor_queue(id) ON DELETE SET NULL,
+    member_id BIGINT REFERENCES automation_member(id) ON DELETE SET NULL,
+    external_contact_id TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    external_message_id TEXT NOT NULL DEFAULT '',
+    external_session_id TEXT NOT NULL DEFAULT '',
+    laohuang_task_id TEXT NOT NULL DEFAULT '',
+    request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    accepted_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    callback_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'created',
+    reply_text TEXT NOT NULL DEFAULT '',
+    error_code TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    send_channel TEXT NOT NULL DEFAULT 'private_message',
+    send_record_id BIGINT REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+    send_result_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_laohuang_chat_job_external_message
+ON automation_laohuang_chat_job (external_message_id)
+WHERE external_message_id <> '';
+
+CREATE INDEX IF NOT EXISTS idx_automation_laohuang_chat_job_task
+ON automation_laohuang_chat_job (laohuang_task_id, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_laohuang_chat_job_status_updated
+ON automation_laohuang_chat_job (status, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_laohuang_chat_job_queue
+ON automation_laohuang_chat_job (queue_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_agent_prompt_registry (
     id BIGSERIAL PRIMARY KEY,
     agent_code TEXT NOT NULL UNIQUE,
