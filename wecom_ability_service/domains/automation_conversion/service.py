@@ -2066,6 +2066,14 @@ def run_due_reply_monitor(
         }
 
     queue_item = due_items[0]
+    from .laohuang_chat_service import dispatch_reply_monitor_queue_item, laohuang_chat_enabled
+
+    if laohuang_chat_enabled():
+        return dispatch_reply_monitor_queue_item(
+            queue_item,
+            operator_id=operator_id,
+            operator_type=operator_type,
+        )
     return _dispatch_reply_monitor_queue_item(
         queue_item,
         operator_id=operator_id,

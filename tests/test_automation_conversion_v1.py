@@ -3592,11 +3592,11 @@ def test_execution_item_send_via_bazhuayu_api_accepts_admin_action_token_and_ret
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: 1713241999)
 
-    action_token = _admin_action_token(client, "/admin/automation-conversion/operations/executions")
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
     response = client.post(
         f"/api/admin/automation-conversion/execution-items/{execution_item_id}/send-via-bazhuayu",
         json={
-            "admin_action_token": action_token,
+            "admin_action_token": "test-token",
             "operator": "console-user",
         },
     )
@@ -3755,11 +3755,11 @@ def test_review_output_send_via_bazhuayu_api_accepts_admin_action_token_and_retu
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: 1713242999)
 
-    action_token = _admin_action_token(client, "/admin/automation-conversion/auto-reply")
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
     response = client.post(
         f"/api/admin/automation-conversion/review-outputs/{output['output_id']}/send-via-bazhuayu",
         json={
-            "admin_action_token": action_token,
+            "admin_action_token": "test-token",
             "operator": "console-user",
         },
     )
@@ -3772,6 +3772,80 @@ def test_review_output_send_via_bazhuayu_api_accepts_admin_action_token_and_retu
     assert payload["request"]["userid"] == "wm_reply_bazhuayu_api_001"
     assert payload["request"]["text"] == "接口触发最近话术自动发送"
     assert payload["response"] == {"code": 0, "message": "ok"}
+
+
+def test_laohuang_review_outputs_api_lists_jobs_and_webhook_action_posts_payload(app, client, monkeypatch):
+    with app.app_context():
+        row = get_db().execute(
+            """
+            INSERT INTO automation_laohuang_chat_job (
+                queue_id, member_id, external_contact_id, phone, external_message_id, external_session_id,
+                laohuang_task_id, request_payload_json, accepted_payload_json, callback_payload_json,
+                status, reply_text, send_channel, send_result_json, created_at, updated_at, finished_at
+            )
+            VALUES (NULL, NULL, 'wm_lh_webhook_001', '13800009213', 'ai-crm:reply-monitor:323:656',
+                    'ai-crm:wm_lh_webhook_001', 'lh-task-webhook-001', '{}', '{}', '{}',
+                    'callback_success', '推 webhook 的话术', 'private_message', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """
+        ).fetchone()
+        job_id = int(row["id"])
+        get_db().commit()
+
+    list_response = client.get("/api/admin/automation-conversion/review-outputs")
+    list_payload = list_response.get_json()
+
+    assert list_response.status_code == 200
+    assert list_payload["source"] == "laohuang_chat_job"
+    assert list_payload["rows"][0]["output_id"] == f"lhjob-{job_id}"
+    assert list_payload["rows"][0]["agent_code"] == "laohuang_chat"
+    assert list_payload["rows"][0]["rendered_output_text"] == "推 webhook 的话术"
+
+    recorded_requests: list[dict[str, object]] = []
+
+    class _BazhuayuResponse:
+        ok = True
+        status_code = 200
+        text = '{"code":0,"message":"ok"}'
+
+        def json(self):
+            return {"code": 0, "message": "ok"}
+
+    def _fake_post(url, *, json=None, headers=None, timeout=None):
+        recorded_requests.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return _BazhuayuResponse()
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.requests.post", _fake_post)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: 1713243999)
+
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+    webhook_response = client.post(
+        f"/api/admin/automation-conversion/review-outputs/lhjob-{job_id}/send-via-webhook",
+        json={
+            "admin_action_token": "test-token",
+            "operator": "console-user",
+        },
+    )
+    webhook_payload = webhook_response.get_json()
+
+    assert webhook_response.status_code == 200
+    assert webhook_payload["ok"] is True
+    assert webhook_payload["job_id"] == job_id
+    assert webhook_payload["request"]["userid"] == "wm_lh_webhook_001"
+    assert webhook_payload["request"]["text"] == "推 webhook 的话术"
+    assert recorded_requests[0]["json"]["params"] == {
+        "userid": "wm_lh_webhook_001",
+        "text": "推 webhook 的话术",
+    }
+    with app.app_context():
+        job_row = get_db().execute(
+            "SELECT status, send_result_json FROM automation_laohuang_chat_job WHERE id = ? LIMIT 1",
+            (job_id,),
+        ).fetchone()
+    assert dict(job_row)["status"] == "callback_success"
+    assert json.loads(dict(job_row)["send_result_json"])["webhook"]["request"]["text"] == "推 webhook 的话术"
+
+
 def _test_png_data_url() -> str:
     encoded = base64.b64encode(_test_png_bytes()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
@@ -3870,6 +3944,7 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "automation_message_activity_sync_item",
             "automation_reply_monitor_config",
             "automation_reply_monitor_queue",
+            "automation_laohuang_chat_job",
             "automation_focus_send_batch",
             "automation_focus_send_batch_item",
             "automation_sop_pool_config",
@@ -3906,6 +3981,10 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "idx_automation_reply_monitor_queue_status_due",
             "idx_automation_reply_monitor_queue_external_updated",
             "uq_automation_reply_monitor_queue_active_external",
+            "uq_automation_laohuang_chat_job_external_message",
+            "idx_automation_laohuang_chat_job_task",
+            "idx_automation_laohuang_chat_job_status_updated",
+            "idx_automation_laohuang_chat_job_queue",
             "idx_automation_focus_send_batch_stage_status",
             "idx_automation_focus_send_batch_item_batch_position",
             "idx_automation_sop_pool_config_updated",
@@ -6059,6 +6138,262 @@ def test_reply_monitor_dispatch_runs_router_shadow_mode_and_applies_async_callba
         "current_pool": "inactive_focus",
         "follow_type": "focus",
     }
+
+
+def test_reply_monitor_dispatch_posts_laohuang_chat_when_enabled(app, monkeypatch):
+    _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
+    app.config["LAOHUANG_CHAT_ENABLED"] = "true"
+    app.config["LAOHUANG_CHAT_WEBHOOK_URL"] = "https://ip.lhbl.com.cn/api/webhook/crm/chat"
+    app.config["LAOHUANG_CHAT_TIMEOUT_SECONDS"] = 7
+    _seed_contact(app, external_userid="wm_lh_dispatch_001", mobile="13800009201", owner_userid="sales_01", customer_name="lh-dispatch")
+    _seed_automation_member(app, external_contact_id="wm_lh_dispatch_001", phone="13900009201", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_status="submitted", decision_source="manual")
+    last_message_id = _seed_archived_message(app, msgid="msg-lh-dispatch-001", seq=1, external_userid="wm_lh_dispatch_001", owner_userid="sales_01", sender="wm_lh_dispatch_001", receiver="sales_01", content="我想问下课程", send_time="2026-04-09 11:00:00")
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.laohuang_chat_service.get_customer_messages_payload",
+        lambda *, external_userid="", mobile="", limit=20, fetch_all=False: {
+            "external_userid": external_userid,
+            "mobile": "13800009201",
+            "count": 3,
+            "messages": [
+                {"sender": "wm_lh_dispatch_001", "content": "用户消息", "send_time": "2026-04-09 10:58:00"},
+                {"sender": "sales_01", "content": "历史员工回复", "send_time": "2026-04-09 10:59:00"},
+                {"sender": "wm_lh_dispatch_001", "content": "用户最新消息", "send_time": "2026-04-09 11:00:00"},
+            ],
+        },
+    )
+    captured_requests: list[dict[str, object]] = []
+
+    class _LaoHuangAcceptedResponse:
+        ok = True
+        status_code = 200
+        text = '{"ok":true,"status":"accepted","task_id":"lh-task-001"}'
+
+        def json(self):
+            return {"ok": True, "status": "accepted", "task_id": "lh-task-001"}
+
+    def _fake_post(url, json=None, timeout=None, **kwargs):
+        captured_requests.append({"url": url, "json": json, "timeout": timeout, "kwargs": kwargs})
+        return _LaoHuangAcceptedResponse()
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.laohuang_chat_service.requests.post", _fake_post)
+
+    with app.app_context():
+        capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
+        dispatch = run_due_reply_monitor(operator_id="tester-reply-monitor", operator_type="system")
+        queue_row = get_db().execute(
+            """
+            SELECT status, payload_snapshot_json
+            FROM automation_reply_monitor_queue
+            WHERE external_userid = ?
+            LIMIT 1
+            """,
+            ("wm_lh_dispatch_001",),
+        ).fetchone()
+        job_row = get_db().execute(
+            """
+            SELECT queue_id, member_id, phone, external_message_id, external_session_id, laohuang_task_id,
+                   request_payload_json, accepted_payload_json, status, send_channel
+            FROM automation_laohuang_chat_job
+            LIMIT 1
+            """
+        ).fetchone()
+
+    request_body = captured_requests[0]["json"]
+    assert capture["summary"]["created_queue_items"] == 1
+    assert dispatch["ok"] is True
+    assert dispatch["laohuang_chat"]["status"] == "accepted"
+    assert captured_requests[0]["url"] == "https://ip.lhbl.com.cn/api/webhook/crm/chat"
+    assert captured_requests[0]["timeout"] == 7
+    assert "headers" not in captured_requests[0]["kwargs"]
+    assert request_body["phone"] == "13900009201"
+    assert request_body["messages"] == [
+        {"role": "user", "content": "用户消息"},
+        {"role": "assistant", "content": "历史员工回复"},
+        {"role": "user", "content": "用户最新消息"},
+    ]
+    assert request_body["external_message_id"] == f"ai-crm:reply-monitor:1:{last_message_id}"
+    assert request_body["external_session_id"] == "ai-crm:wm_lh_dispatch_001"
+    assert request_body["source"] == "ai-crm"
+    assert request_body["meta"]["queue_id"] == 1
+    assert request_body["meta"]["external_contact_id"] == "wm_lh_dispatch_001"
+    assert request_body["meta"]["owner_userid"] == "sales_01"
+    assert dict(queue_row)["status"] == "dispatched"
+    queue_snapshot = json.loads(dict(queue_row)["payload_snapshot_json"])
+    assert queue_snapshot["bridge"] == "laohuang_chat"
+    assert dict(job_row)["phone"] == "13900009201"
+    assert dict(job_row)["external_message_id"] == f"ai-crm:reply-monitor:1:{last_message_id}"
+    assert dict(job_row)["external_session_id"] == "ai-crm:wm_lh_dispatch_001"
+    assert dict(job_row)["laohuang_task_id"] == "lh-task-001"
+    assert dict(job_row)["status"] == "accepted"
+    assert dict(job_row)["send_channel"] == "private_message"
+    assert json.loads(dict(job_row)["request_payload_json"]) == request_body
+    assert json.loads(dict(job_row)["accepted_payload_json"])["task_id"] == "lh-task-001"
+
+
+def test_laohuang_chat_callback_stores_reply_without_auto_wecom_send(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_lh_callback_001", mobile="13800009211", owner_userid="sales_01", customer_name="lh-callback")
+    _seed_automation_member(app, external_contact_id="wm_lh_callback_001", phone="13800009211", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_status="submitted", decision_source="manual")
+    with app.app_context():
+        member = get_db().execute(
+            "SELECT id FROM automation_member WHERE external_contact_id = ? LIMIT 1",
+            ("wm_lh_callback_001",),
+        ).fetchone()
+        member_id = int(member["id"])
+        get_db().execute(
+            """
+            INSERT INTO automation_laohuang_chat_job (
+                queue_id, member_id, external_contact_id, phone, external_message_id, external_session_id,
+                laohuang_task_id, request_payload_json, accepted_payload_json, callback_payload_json,
+                status, send_channel, send_result_json, created_at, updated_at, finished_at
+            )
+            VALUES (NULL, ?, 'wm_lh_callback_001', '13800009211', 'ai-crm:reply-monitor:321:654',
+                    'ai-crm:wm_lh_callback_001', 'lh-task-callback-001', '{}', '{}', '{}',
+                    'accepted', 'private_message', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '')
+            """,
+            (member_id,),
+        )
+        get_db().commit()
+    dispatched_payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.laohuang_chat_service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched_payloads.append({"task_type": task_type, "fn_name": fn_name, "payload": payload}),
+    )
+    callback_payload = {
+        "task_id": "lh-task-callback-001",
+        "source": "ai-crm",
+        "external_session_id": "ai-crm:wm_lh_callback_001",
+        "external_message_id": "ai-crm:reply-monitor:321:654",
+        "status": "success",
+        "phone": "13800009211",
+        "user_id": "lh-user-001",
+        "reply": "老黄 AI 生成的最终回复",
+        "error_code": "",
+        "error_message": "",
+        "meta": {
+            "queue_id": 321,
+            "member_id": member_id,
+            "external_contact_id": "wm_lh_callback_001",
+            "owner_userid": "sales_01",
+        },
+    }
+
+    response = client.post(
+        "/api/internal/automation-conversion/laohuang-chat-results",
+        json=callback_payload,
+    )
+
+    with app.app_context():
+        job_row = get_db().execute(
+            """
+            SELECT status, reply_text, callback_payload_json, send_record_id, send_result_json, error_code, error_message, finished_at
+            FROM automation_laohuang_chat_job
+            WHERE external_message_id = ?
+            LIMIT 1
+            """,
+            ("ai-crm:reply-monitor:321:654",),
+        ).fetchone()
+        send_record_total = int(get_db().execute("SELECT COUNT(*) AS total FROM user_ops_send_records").fetchone()["total"])
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "callback_success"
+    assert dispatched_payloads == []
+    assert dict(job_row)["status"] == "callback_success"
+    assert dict(job_row)["reply_text"] == "老黄 AI 生成的最终回复"
+    assert dict(job_row)["error_code"] == ""
+    assert dict(job_row)["error_message"] == ""
+    assert dict(job_row)["finished_at"]
+    assert json.loads(dict(job_row)["callback_payload_json"])["task_id"] == "lh-task-callback-001"
+    assert json.loads(dict(job_row)["send_result_json"]) == {}
+    assert dict(job_row)["send_record_id"] is None
+    assert send_record_total == 0
+
+
+def test_laohuang_review_output_wecom_send_api_records_send_result(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_lh_manual_send_001", mobile="13800009212", owner_userid="sales_01", customer_name="lh-manual-send")
+    _seed_automation_member(app, external_contact_id="wm_lh_manual_send_001", phone="13800009212", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_status="submitted", decision_source="manual")
+    with app.app_context():
+        member = get_db().execute(
+            "SELECT id FROM automation_member WHERE external_contact_id = ? LIMIT 1",
+            ("wm_lh_manual_send_001",),
+        ).fetchone()
+        member_id = int(member["id"])
+        row = get_db().execute(
+            """
+            INSERT INTO automation_laohuang_chat_job (
+                queue_id, member_id, external_contact_id, phone, external_message_id, external_session_id,
+                laohuang_task_id, request_payload_json, accepted_payload_json, callback_payload_json,
+                status, reply_text, send_channel, send_result_json, created_at, updated_at, finished_at
+            )
+            VALUES (NULL, ?, 'wm_lh_manual_send_001', '13800009212', 'ai-crm:reply-monitor:322:655',
+                    'ai-crm:wm_lh_manual_send_001', 'lh-task-manual-send-001', '{}', '{}',
+                    '{"meta":{"external_contact_id":"wm_lh_manual_send_001","owner_userid":"sales_01"},"reply":"手动推企微的话术"}',
+                    'callback_success', '手动推企微的话术', 'private_message', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """,
+            (member_id,),
+        ).fetchone()
+        job_id = int(row["id"])
+        get_db().commit()
+    dispatched_payloads: list[dict[str, object]] = []
+
+    def _fake_dispatch(task_type, fn_name, payload):
+        dispatched_payloads.append({"task_type": task_type, "fn_name": fn_name, "payload": payload})
+        return {"task_id": 8802, "wecom_result": {"msgid": "wecom-msg-002", "fail_list": []}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.laohuang_chat_service.dispatch_wecom_task", _fake_dispatch)
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+    response = client.post(
+        f"/api/admin/automation-conversion/review-outputs/lhjob-{job_id}/send-via-wecom",
+        json={
+            "admin_action_token": "test-token",
+            "operator": "console-user",
+        },
+    )
+    payload = response.get_json()
+
+    with app.app_context():
+        job_row = get_db().execute(
+            """
+            SELECT status, send_record_id, send_result_json
+            FROM automation_laohuang_chat_job
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+        send_record = get_db().execute(
+            """
+            SELECT id, content_preview, selected_count, eligible_count, sent_count, status, filter_snapshot_json, operator
+            FROM user_ops_send_records
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["status"] == "send_success"
+    assert dispatched_payloads == [
+        {
+            "task_type": "private_message",
+            "fn_name": "create_private_message_task",
+            "payload": {
+                "sender": "sales_01",
+                "external_userid": ["wm_lh_manual_send_001"],
+                "text": {"content": "手动推企微的话术"},
+            },
+        }
+    ]
+    assert dict(job_row)["status"] == "send_success"
+    assert int(dict(job_row)["send_record_id"]) == int(dict(send_record)["id"])
+    assert json.loads(dict(job_row)["send_result_json"])["send_record_id"] == int(dict(send_record)["id"])
+    assert dict(send_record)["content_preview"] == "手动推企微的话术"
+    assert dict(send_record)["selected_count"] == 1
+    assert dict(send_record)["eligible_count"] == 1
+    assert dict(send_record)["sent_count"] == 1
+    assert dict(send_record)["status"] == "sent"
+    assert dict(send_record)["operator"] == "console-user"
+    assert json.loads(dict(send_record)["filter_snapshot_json"])["source"] == "laohuang_chat_manual_wecom"
 
 
 def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatch):
@@ -8646,14 +8981,24 @@ def test_auto_reply_page_exposes_copy_send_and_reject_actions_without_adopt_butt
             }
         )
 
+    with client.session_transaction() as session:
+        session["admin_session_user_id"] = 0
+        session["admin_session_wecom_userid"] = ""
+        session["admin_session_role_list"] = ["super_admin"]
+        session["admin_session_login_type"] = "break_glass"
+        session["admin_session_display_name"] = "test-admin"
+        session["admin_session_break_glass_username"] = "test-admin"
+
     response = client.get("/admin/automation-conversion/auto-reply")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert "复制话术" in html
-    assert "自动化发送" in html
+    assert "一键 webhook" in html
+    assert "一键推企微群发" in html
     assert 'data-review-action="adopted"' not in html
-    assert "review_output_bazhuayu_send_base" in html
+    assert "review_output_webhook_send_base" in html
+    assert "review_output_wecom_send_base" in html
 
 
 def test_agent_output_ledger_api_requires_internal_token_and_export_is_rate_limited(app, client):
