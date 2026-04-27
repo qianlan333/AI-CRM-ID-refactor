@@ -1,57 +1,417 @@
 {% extends "admin_console/base.html" %}
 
-{% block content %}
-<section class="admin-page-hero">
-  <div class="admin-page-hero__head">
-    <div>
-      <div class="admin-eyebrow">Admin Reference</div>
-      <h2>API 文档</h2>
-      <p>当前文档面向后台运营与技术同学，替代原 AI 工具控制台，聚焦企业微信登录、自动化运营、问卷、配置和回调边界。</p>
-    </div>
-    <div class="admin-page-hero__meta">
-      <span class="admin-chip admin-chip--neutral">Human-readable</span>
-      <span class="admin-chip admin-chip--neutral">第一阶段</span>
-    </div>
-  </div>
-  <div class="admin-doc-note-list">
-    {% for item in compatibility_notes %}
-    <div class="admin-doc-note">
-      <strong>兼容说明</strong>
-      <span>{{ item }}</span>
-    </div>
-    {% endfor %}
-  </div>
-</section>
+{% block head_extra %}
+<style>
+  .apidoc-shell {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 0;
+    align-items: start;
+  }
 
-<div class="admin-doc-grid">
-{% for section in doc_sections %}
-<section class="admin-card admin-doc-card">
-  <div class="admin-card-head">
-    <div>
-      <h2>{{ section.title }}</h2>
-    </div>
-  </div>
-  <ul class="admin-state-list">
-    {% for item in section["items"] %}
-    <li>{{ item }}</li>
-    {% endfor %}
-  </ul>
-  {% if section["examples"] %}
-  <div class="admin-card-grid">
-    {% for example in section["examples"] %}
-    <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">{{ example.label }}</div>
-      <div class="admin-card-copy">
-        <p><strong>请求</strong></p>
-        <pre><code>{{ example.request }}</code></pre>
-        <p><strong>响应</strong></p>
-        <pre><code>{{ example.response }}</code></pre>
+  .apidoc-sidenav {
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+    padding-right: 16px;
+    scrollbar-width: thin;
+  }
+
+  .apidoc-sidenav-group {
+    margin-bottom: 22px;
+  }
+
+  .apidoc-sidenav-title {
+    padding: 0 8px;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .apidoc-sidenav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .apidoc-sidenav-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--text);
+    transition: background 0.15s ease;
+    overflow: hidden;
+  }
+
+  .apidoc-sidenav-link:hover {
+    background: rgba(157, 99, 48, 0.08);
+  }
+
+  .apidoc-sidenav-link-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .apidoc-main {
+    padding-left: 28px;
+    border-left: 1px solid var(--line);
+  }
+
+  .apidoc-group {
+    margin-bottom: 48px;
+  }
+
+  .apidoc-group-title {
+    margin: 0 0 6px;
+    font-size: 20px;
+    font-weight: 800;
+  }
+
+  .apidoc-group-desc {
+    margin: 0 0 20px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .apidoc-endpoint {
+    margin-bottom: 14px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--panel-strong);
+    box-shadow: 0 4px 12px rgba(60, 45, 24, 0.04);
+  }
+
+  .apidoc-endpoint-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .apidoc-method {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  .apidoc-method--get {
+    color: #166534;
+    background: #dcfce7;
+  }
+
+  .apidoc-method--post {
+    color: #1e40af;
+    background: #dbeafe;
+  }
+
+  .apidoc-method--put {
+    color: #92400e;
+    background: #fef3c7;
+  }
+
+  .apidoc-method--delete {
+    color: #991b1b;
+    background: #fee2e2;
+  }
+
+  .apidoc-endpoint-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .apidoc-path {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 4px;
+    word-break: break-all;
+  }
+
+  .apidoc-summary {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .apidoc-auth-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  .apidoc-auth-badge--session {
+    color: #5b21b6;
+    background: #ede9fe;
+  }
+
+  .apidoc-auth-badge--bearer {
+    color: #92400e;
+    background: #fef3c7;
+  }
+
+  .apidoc-auth-badge--public {
+    color: #374151;
+    background: #f3f4f6;
+  }
+
+  .apidoc-desc {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .apidoc-section {
+    margin-top: 14px;
+  }
+
+  .apidoc-section-label {
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
+  .apidoc-params-wrap {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .apidoc-params-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .apidoc-params-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: rgba(248, 242, 233, 0.7);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .apidoc-params-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    font-size: 13px;
+  }
+
+  .apidoc-params-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .apidoc-param-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--brand-strong);
+  }
+
+  .apidoc-param-type {
+    color: var(--muted);
+    font-size: 12px;
+    font-style: italic;
+  }
+
+  .apidoc-param-required {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #991b1b;
+    background: #fee2e2;
+  }
+
+  .apidoc-param-optional {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .apidoc-code-block {
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.04);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  @media (max-width: 900px) {
+    .apidoc-shell {
+      grid-template-columns: 1fr;
+    }
+    .apidoc-sidenav {
+      position: static;
+      max-height: none;
+      padding-right: 0;
+      margin-bottom: 24px;
+    }
+    .apidoc-main {
+      padding-left: 0;
+      border-left: none;
+      border-top: 1px solid var(--line);
+      padding-top: 24px;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="apidoc-shell">
+
+  {# ── Left sidebar navigation ── #}
+  <nav class="apidoc-sidenav" aria-label="API 文档导航">
+    {% for group in endpoint_groups %}
+    <div class="apidoc-sidenav-group">
+      <div class="apidoc-sidenav-title">{{ group.title }}</div>
+      <div class="apidoc-sidenav-links">
+        {% for ep in group.endpoints %}
+        <a class="apidoc-sidenav-link" href="#{{ ep.id }}">
+          {% if ep.auth is not none %}
+          <span class="apidoc-method apidoc-method--{{ ep.method | lower }}" aria-hidden="true">{{ ep.method }}</span>
+          {% endif %}
+          <span class="apidoc-sidenav-link-label">{{ ep.summary }}</span>
+        </a>
+        {% endfor %}
       </div>
-    </article>
+    </div>
+    {% endfor %}
+  </nav>
+
+  {# ── Main content ── #}
+  <div class="apidoc-main">
+    {% for group in endpoint_groups %}
+    <section class="apidoc-group" id="group-{{ group.id }}">
+      <h2 class="apidoc-group-title">{{ group.title }}</h2>
+      <p class="apidoc-group-desc">{{ group.description }}</p>
+
+      {% for ep in group.endpoints %}
+      <article class="apidoc-endpoint" id="{{ ep.id }}">
+
+        {# Header row: method badge + path + summary + auth badge #}
+        <div class="apidoc-endpoint-head">
+          {% if ep.auth is not none %}
+          <span class="apidoc-method apidoc-method--{{ ep.method | lower }}">{{ ep.method }}</span>
+          {% endif %}
+          <div class="apidoc-endpoint-info">
+            <p class="apidoc-path">{{ ep.path }}</p>
+            <p class="apidoc-summary">{{ ep.summary }}</p>
+          </div>
+          {% if ep.auth %}
+          <span class="apidoc-auth-badge apidoc-auth-badge--{{ ep.auth }}">
+            {% if ep.auth == "session" %}登录态{% elif ep.auth == "bearer" %}Bearer Token{% else %}公开{% endif %}
+          </span>
+          {% endif %}
+        </div>
+
+        {# Description #}
+        {% if ep.description %}
+        <p class="apidoc-desc">{{ ep.description }}</p>
+        {% endif %}
+
+        {# Params table #}
+        {% if ep.params %}
+        <div class="apidoc-section">
+          <div class="apidoc-section-label">请求参数</div>
+          <div class="apidoc-params-wrap">
+            <table class="apidoc-params-table">
+              <thead>
+                <tr>
+                  <th>参数名</th>
+                  <th>类型</th>
+                  <th>必填</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for param in ep.params %}
+                <tr>
+                  <td><span class="apidoc-param-name">{{ param.name }}</span></td>
+                  <td><span class="apidoc-param-type">{{ param.type }}</span></td>
+                  <td>
+                    {% if param.required %}
+                    <span class="apidoc-param-required">必填</span>
+                    {% else %}
+                    <span class="apidoc-param-optional">可选</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ param.description }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Request example #}
+        {% if ep.request_example %}
+        <div class="apidoc-section">
+          <div class="apidoc-section-label">请求示例</div>
+          <pre class="apidoc-code-block"><code>{{ ep.request_example }}</code></pre>
+        </div>
+        {% endif %}
+
+        {# Response example #}
+        {% if ep.response_example %}
+        <div class="apidoc-section">
+          <div class="apidoc-section-label">响应示例</div>
+          <pre class="apidoc-code-block"><code>{{ ep.response_example }}</code></pre>
+        </div>
+        {% endif %}
+
+      </article>
+      {% endfor %}
+    </section>
     {% endfor %}
   </div>
-  {% endif %}
-</section>
-{% endfor %}
+
 </div>
 {% endblock %}
