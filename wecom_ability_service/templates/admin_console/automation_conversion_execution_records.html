@@ -19,15 +19,24 @@
   data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
   data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
-  <section class="admin-card">
-    <div class="ac-ops-head">
+  <section class="admin-page-hero admin-page-hero--workspace">
+    <div class="admin-page-hero__head">
       <div>
-        <div class="ac-eyebrow">自动化运营</div>
-        <h2>执行记录</h2>
-        <p class="ac-ops-muted">执行记录独立成单页查看。这里专门看批次结果和批次内的发送明细，不再混在自动化运营列表页里。</p>
+        <div class="admin-page-hero__eyebrow">执行记录</div>
+        <h1>执行记录</h1>
+        <p>批次结果和批次内发送明细统一收进单页查看，不再混在任务流列表页；保留原有执行和补发语义，只重做阅读体验。</p>
       </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">批次汇总</span>
+        <span class="admin-chip admin-chip--neutral">明细查看</span>
+      </div>
+    </div>
+    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
         <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回自动化运营</a>
+      </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">执行记录独立成页，降低运营列表负担</span>
       </div>
     </div>
   </section>

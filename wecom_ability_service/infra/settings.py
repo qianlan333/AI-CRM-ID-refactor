@@ -6,6 +6,7 @@ from ..db import get_db
 
 
 DEFAULT_OPENCLAW_WEBHOOK_URL = "http://claw.youcangogogo.com/webhook"
+DEFAULT_LAOHUANG_CHAT_WEBHOOK_URL = "https://ip.lhbl.com.cn/api/webhook/crm/chat"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_ROUTER_MODEL = "deepseek-chat"
 DEFAULT_DEEPSEEK_EXECUTION_MODEL = "deepseek-chat"
@@ -107,6 +108,10 @@ def list_settings_snapshot(config: dict[str, Any]) -> dict[str, str]:
         "WECHAT_MP_APP_SECRET",
         "WECHAT_MP_OAUTH_SCOPE",
         "AUTOMATION_INTERNAL_API_TOKEN",
+        "LAOHUANG_CHAT_ENABLED",
+        "LAOHUANG_CHAT_WEBHOOK_URL",
+        "LAOHUANG_CHAT_TIMEOUT_SECONDS",
+        "LAOHUANG_CHAT_SEND_CHANNEL",
         "DEEPSEEK_ENABLED",
         "DEEPSEEK_API_KEY",
         "DEEPSEEK_BASE_URL",

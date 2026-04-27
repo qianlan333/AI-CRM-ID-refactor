@@ -16,21 +16,53 @@
   data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
   data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
-  <section class="admin-card">
-    <div class="ac-ops-head">
+  <section class="admin-page-hero admin-page-hero--workspace">
+    <div class="admin-page-hero__head">
       <div>
-        <div class="ac-eyebrow">自动化运营</div>
-        <h2>自动化运营</h2>
-        <p class="ac-ops-muted">列表页只保留任务流列表和下一步入口，不再在当前页展开任务流编辑、节点配置或执行记录。</p>
+        <div class="admin-page-hero__eyebrow">运营编排</div>
+        <h1>任务流工作台</h1>
+        <p>集中管理当前方案的任务流。任务流编辑、节点配置和执行记录已拆成独立页面，避免在一个页面里混排。</p>
       </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">当前方案内</span>
+        <span class="admin-chip admin-chip--neutral">只改界面层</span>
+      </div>
+    </div>
+    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
         <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).executions or '#' }}">执行记录</a>
         <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).workflow_new or '#' }}">新建任务流</a>
+      </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">方案信息与返回入口固定展示在页面顶部</span>
       </div>
     </div>
   </section>
 
   {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
+
+  <section class="ac-ops-page-summary">
+    <article class="ac-ops-page-summary-card">
+      <span class="ac-ops-page-summary-label">当前任务流</span>
+      <strong id="workflow-summary-total">0</strong>
+      <span class="ac-ops-page-summary-note">当前列表中的任务流数量</span>
+    </article>
+    <article class="ac-ops-page-summary-card">
+      <span class="ac-ops-page-summary-label">启用中</span>
+      <strong id="workflow-summary-active">0</strong>
+      <span class="ac-ops-page-summary-note">状态为启用的任务流</span>
+    </article>
+    <article class="ac-ops-page-summary-card">
+      <span class="ac-ops-page-summary-label">草稿 / 停用</span>
+      <strong id="workflow-summary-idle">0</strong>
+      <span class="ac-ops-page-summary-note">仍需继续编排或恢复运行</span>
+    </article>
+    <article class="ac-ops-page-summary-card">
+      <span class="ac-ops-page-summary-label">已绑定智能体</span>
+      <strong id="workflow-summary-bound">0</strong>
+      <span class="ac-ops-page-summary-note">已配置智能体绑定的任务流</span>
+    </article>
+  </section>
 
   <section class="ac-ops-panel">
     <div class="ac-ops-head">
@@ -61,7 +93,7 @@
             <th>发给谁</th>
             <th>怎么发</th>
             <th>生成方式</th>
-            <th>Agent 绑定情况</th>
+            <th>智能体绑定情况</th>
             <th>节点数量</th>
             <th>状态</th>
             <th>操作</th>
@@ -90,6 +122,10 @@
       loading: document.getElementById('operations-loading'),
       tableBody: document.getElementById('workflow-table-body'),
       empty: document.getElementById('workflow-empty'),
+      summaryTotal: document.getElementById('workflow-summary-total'),
+      summaryActive: document.getElementById('workflow-summary-active'),
+      summaryIdle: document.getElementById('workflow-summary-idle'),
+      summaryBound: document.getElementById('workflow-summary-bound'),
     };
 
     const state = {
@@ -219,28 +255,47 @@
       return state.workflows.filter((item) => String(((item.workflow || {}).status) || '') === state.statusFilter);
     }
 
+    function updateSummaryCards() {
+      const items = filteredWorkflows();
+      const activeCount = items.filter((item) => String(((item.workflow || {}).status) || '') === 'active').length;
+      const idleCount = items.filter((item) => ['draft', 'paused'].includes(String(((item.workflow || {}).status) || ''))).length;
+      const boundCount = items.filter((item) => Array.isArray(item.agent_bindings) && item.agent_bindings.length).length;
+      elements.summaryTotal.textContent = String(items.length);
+      elements.summaryActive.textContent = String(activeCount);
+      elements.summaryIdle.textContent = String(idleCount);
+      elements.summaryBound.textContent = String(boundCount);
+    }
+
     function workflowEditUrl(workflowId) {
       return withId(entryUrls.workflow_edit_base, workflowId);
     }
 
     function renderTable() {
       const items = filteredWorkflows();
+      updateSummaryCards();
       elements.tableBody.innerHTML = items.map((item) => {
         const workflow = item.workflow || {};
         const workflowId = Number(workflow.id || 0);
         return `
           <tr>
             <td>
-              <strong>${escapeHtml(workflow.workflow_name || workflow.workflow_code || '-')}</strong>
-              <div class="ac-ops-code">${escapeHtml(workflow.workflow_code || '')}</div>
+              <div class="ac-ops-table-cell-stack">
+                <strong>${escapeHtml(workflow.workflow_name || workflow.workflow_code || '-')}</strong>
+                <div class="ac-ops-code">${escapeHtml(workflow.workflow_code || '')}</div>
+              </div>
             </td>
             <td>${(item.audiences || []).map((row) => `<span class="admin-chip admin-chip--neutral">${escapeHtml(audienceLabel(row.audience_code))}</span>`).join(' ') || '-'}</td>
             <td>${escapeHtml(workflowRecipientSummary(workflow))}</td>
             <td>${escapeHtml(workflowContentSummary(workflow, item))}</td>
             <td>${escapeHtml(generationLabel(workflow.generation_mode))}</td>
-            <td>${escapeHtml(workflowBindingsSummary(item))}</td>
+            <td>
+              <div class="ac-ops-table-cell-stack">
+                <span>${escapeHtml(workflowBindingsSummary(item))}</span>
+                <span class="ac-ops-inline-metric">节点 ${(item.nodes || []).length}</span>
+              </div>
+            </td>
             <td>${escapeHtml((item.nodes || []).length)}</td>
-            <td>${escapeHtml(statusLabel(workflow.status))}</td>
+            <td><span class="admin-chip admin-chip--neutral">${escapeHtml(statusLabel(workflow.status))}</span></td>
             <td>
               <div class="ac-ops-inline-actions">
                 <a class="admin-button admin-button--secondary" href="${escapeHtml(workflowEditUrl(workflowId))}">编辑</a>

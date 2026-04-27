@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ page_title }} · CRM Console</title>
+  <title>{{ page_title }} · 客户管理后台</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/admin_console.css') }}">
   {% block head_extra %}{% endblock %}
   <script defer src="{{ url_for('static', filename='admin_console/admin_console.js') }}"></script>
@@ -18,7 +18,7 @@
         <div class="admin-brand-mark">CRM</div>
         <div>
           <div class="admin-brand-title">客户管理后台</div>
-          <div class="admin-brand-subtitle">业务管理后台</div>
+          <div class="admin-brand-subtitle">自动化运营 · 问卷 · 配置</div>
         </div>
       </div>
 
@@ -32,15 +32,21 @@
         </a>
         {% endfor %}
       </nav>
+
+      <div class="admin-sidebar-foot">
+        <p>自动化运营方案已启用</p>
+        <p>当前为后台运营工作台</p>
+      </div>
     </aside>
 
     <div class="admin-main-wrap">
       {% set page_header_visible = show_page_header if show_page_header is defined else True %}
-      {% if page_header_visible or show_shell_meta %}
+      {% set topbar_actions = page_actions if page_actions is defined else [] %}
+      {% if page_header_visible or show_shell_meta or topbar_actions %}
       <header class="admin-topbar">
         {% if page_header_visible %}
         <div class="admin-topbar-head">
-          <nav class="admin-breadcrumbs" aria-label="Breadcrumb">
+          <nav class="admin-breadcrumbs" aria-label="当前位置">
             {% for crumb in breadcrumbs %}
             {% if crumb.href %}
             <a href="{{ crumb.href }}">{{ crumb.label }}</a>
@@ -56,8 +62,16 @@
         </div>
         {% endif %}
 
-        {% if show_shell_meta %}
+        {% if show_shell_meta or topbar_actions %}
         <div class="admin-topbar-meta">
+          {% for action in topbar_actions %}
+          <a
+            class="admin-button{% if action.variant == 'primary' %} admin-button--primary{% elif action.variant == 'secondary' %} admin-button--secondary{% else %} admin-button--ghost{% endif %}"
+            href="{{ action.href }}"
+          >
+            {{ action.label }}
+          </a>
+          {% endfor %}
           {% if current_admin_user %}
           <a class="admin-chip admin-chip--neutral" href="{{ url_for('api.admin_logout') }}">
             {{ current_admin_user.display_name or current_admin_user.wecom_userid or "管理员" }} · 退出登录

@@ -75,6 +75,7 @@ from .program_service import (
     get_default_automation_program,
     get_default_automation_program_id,
     list_automation_programs,
+    update_automation_program_basic_info,
     update_automation_program_status,
 )
 from .workflow_service import (
@@ -104,6 +105,7 @@ from .workflow_service import (
     pause_conversion_workflow,
     send_agent_reply_output_via_bazhuayu,
     send_conversion_execution_item_via_bazhuayu,
+    send_text_via_bazhuayu_webhook,
     update_conversion_profile_segment_template,
     update_conversion_workflow,
     update_conversion_workflow_node,
@@ -164,6 +166,12 @@ from .service import (
     sync_member_from_questionnaire_submission,
     test_model_infra_connection,
     unmark_won,
+)
+from .laohuang_chat_service import (
+    handle_laohuang_chat_result_callback,
+    list_recent_laohuang_review_outputs,
+    send_laohuang_review_output_via_webhook,
+    send_laohuang_review_output_via_wecom,
 )
 
 __all__ = [
@@ -236,6 +244,8 @@ __all__ = [
     "get_sop_v1_templates_payload",
     "get_pool_snapshot",
     "handle_agent_router_callback",
+    "handle_laohuang_chat_result_callback",
+    "list_recent_laohuang_review_outputs",
     "list_agent_configs",
     "list_automation_programs",
     "list_pending_agent_prompt_publish_requests",
@@ -287,7 +297,10 @@ __all__ = [
     "preview_stage_manual_send",
     "send_agent_reply_output_via_bazhuayu",
     "send_conversion_execution_item_via_bazhuayu",
+    "send_laohuang_review_output_via_webhook",
+    "send_laohuang_review_output_via_wecom",
     "send_stage_manual_message",
+    "send_text_via_bazhuayu_webhook",
     "save_agent_config_draft",
     "save_agent_router_settings",
     "save_model_infra_prompt",
@@ -316,6 +329,7 @@ __all__ = [
     "test_model_infra_connection",
     "unmark_won",
     "pause_conversion_workflow",
+    "update_automation_program_basic_info",
     "update_conversion_profile_segment_template",
     "update_conversion_workflow",
     "update_conversion_workflow_node",

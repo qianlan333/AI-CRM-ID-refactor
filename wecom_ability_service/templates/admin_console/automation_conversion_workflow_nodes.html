@@ -19,18 +19,27 @@
   data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
   data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
-  <section class="admin-card">
-    <div class="ac-ops-head">
+  <section class="admin-page-hero admin-page-hero--workspace">
+    <div class="admin-page-hero__head">
       <div>
-        <div class="ac-eyebrow">自动化运营</div>
-        <h2>节点配置</h2>
-        <p class="ac-ops-muted">任务流保存后，在这个页面完成节点配置。这里不再编辑任务流基础信息，也不展示执行记录。</p>
+        <div class="admin-page-hero__eyebrow">节点配置</div>
+        <h1>节点配置</h1>
+        <p>节点页只维护目标人群、触发方式与节点内容；任务流基础信息和执行记录拆到独立页面，提升编排清晰度。</p>
       </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">按节点维护</span>
+        <span class="admin-chip admin-chip--neutral">触发规则清晰</span>
+      </div>
+    </div>
+    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
         {% if (workspace.action_urls or {}).workflow_edit %}
         <a class="ac-ops-page-link" href="{{ (workspace.action_urls or {}).workflow_edit }}">返回任务流编辑</a>
         {% endif %}
         <button class="ac-ops-page-link" id="node-create-button" type="button">新增节点</button>
+      </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">旧版混排已拆开，当前只保留节点配置上下文</span>
       </div>
     </div>
     <div class="ac-ops-feedback" id="nodes-page-feedback" hidden></div>
@@ -375,7 +384,7 @@
         const contentSummary = contentMode === 'manual_layered'
           ? `分层内容 ${((node.content_variants || []).length || 0)} 条`
           : contentMode === 'personalized_single'
-          ? '继承任务流 Agent 配置'
+          ? '继承任务流智能体配置'
           : (node.standard_content_text || '-').slice(0, 40);
         return `
           <tr>
@@ -452,9 +461,9 @@
       } else if (contentMode === 'manual_layered') {
         elements.nodeContentHelp.textContent = '当前任务流是手动分层录入，节点层只填写当前有效分层的内容明细。填写当前有效行为层级对应的节点内容，输入区会随行为层级配置动态变化。';
       } else if (contentMode === 'standard_layered_rewrite') {
-        elements.nodeContentHelp.textContent = '当前任务流是自动生成配置，节点层填写统一标准内容，执行时按当前分层和 Agent 配置改写。';
+        elements.nodeContentHelp.textContent = '当前任务流是自动生成配置，节点层填写统一标准内容，执行时按当前分层和智能体配置改写。';
       } else {
-        elements.nodeContentHelp.textContent = '当前任务流是单人定制化生成，节点层只继承任务流 Agent 配置，不填写人工内容。';
+        elements.nodeContentHelp.textContent = '当前任务流是单人定制化生成，节点层只继承任务流智能体配置，不填写人工内容。';
       }
 
       renderNodeVariantControls(node || null, segmentationBasis, showVariants);

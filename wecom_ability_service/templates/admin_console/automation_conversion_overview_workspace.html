@@ -200,6 +200,37 @@
     color: #334155;
   }
 
+  .ac-overview-shell,
+  .ac-overview-top,
+  .ac-overview-summary-grid,
+  .ac-overview-status-row,
+  .ac-overview-section {
+    gap: 14px;
+  }
+
+  .ac-overview-card,
+  .ac-overview-section,
+  .ac-overview-stat {
+    padding: 16px;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .ac-overview-stat strong {
+    font-size: 22px;
+  }
+
+  .ac-overview-table-wrap,
+  .ac-overview-group-card,
+  .ac-overview-segmentation-panel {
+    border-radius: 12px;
+  }
+
+  .ac-overview-table th,
+  .ac-overview-table td {
+    padding: 10px 12px;
+  }
+
   @media (max-width: 980px) {
     .ac-overview-top {
       grid-template-columns: 1fr;
@@ -225,7 +256,7 @@
         <div>
           <div class="ac-eyebrow">数据概览</div>
           <h2>自动化转化当前运行状态</h2>
-          <p class="ac-overview-muted">只保留自动化转化 overview 首屏核心信息，先看三类大人群规模、池子用户列表、启用中任务流和任务流执行情况。</p>
+          <p class="ac-overview-muted">只保留自动化转化概览首屏核心信息，先看三类大人群规模、池子用户列表、启用中任务流和任务流执行情况。</p>
         </div>
         <div class="ac-overview-status-row">
           <span class="admin-chip admin-chip--neutral" id="overview-last-updated">最近刷新：加载中</span>
@@ -288,7 +319,7 @@
     <div class="ac-overview-head">
       <div>
         <h3>任务流执行摘要</h3>
-        <p class="ac-overview-muted">按任务流统计当前执行次数，保持 overview 只做经营摘要，不展开节点明细。</p>
+        <p class="ac-overview-muted">按任务流统计当前执行次数，保持概览页只做经营摘要，不展开节点明细。</p>
       </div>
     </div>
     <div class="ac-overview-table-wrap">

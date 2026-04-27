@@ -155,6 +155,27 @@ def update_program_row(program_id: int, payload: dict[str, Any]) -> dict[str, An
     return serialize_program_row(dict(row) if row else {})
 
 
+def update_program_basic_info_row(program_id: int, *, program_name: str, description: str, operator_id: str) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        UPDATE automation_program
+        SET program_name = ?,
+            description = ?,
+            updated_by = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        RETURNING *
+        """,
+        (
+            _normalized_text(program_name),
+            _normalized_text(description),
+            _normalized_text(operator_id),
+            int(program_id),
+        ),
+    ).fetchone()
+    return serialize_program_row(dict(row) if row else {})
+
+
 def update_program_status_row(program_id: int, *, status: str, operator_id: str) -> dict[str, Any]:
     row = get_db().execute(
         """
@@ -198,4 +219,3 @@ def get_program_summary(program_id: int) -> dict[str, Any]:
         "workflow_count": int(workflow_count_row.get("total") or 0),
         "latest_execution_at": _normalized_text(execution_row.get("latest_execution_at")),
     }
-

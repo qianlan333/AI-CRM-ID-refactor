@@ -8,7 +8,7 @@ from flask import Flask, Response
 
 from .db import close_db, init_app as init_db_app
 from .domains.customer_pulse.access import bind_customer_pulse_request_context
-from .infra.settings import DEFAULT_OPENCLAW_WEBHOOK_URL
+from .infra.settings import DEFAULT_LAOHUANG_CHAT_WEBHOOK_URL, DEFAULT_OPENCLAW_WEBHOOK_URL
 from .http.internal_auth import register_admin_request_guards
 from .mcp_adapter import mcp_bp
 from .observability import attach_logging_filter, register_request_observability
@@ -127,6 +127,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             "https://www.youcangogogo.com/person/{person_id}",
         ),
         OPENCLAW_WEBHOOK_URL=openclaw_webhook_url,
+        LAOHUANG_CHAT_ENABLED=os.getenv("LAOHUANG_CHAT_ENABLED", "false"),
+        LAOHUANG_CHAT_WEBHOOK_URL=os.getenv("LAOHUANG_CHAT_WEBHOOK_URL", DEFAULT_LAOHUANG_CHAT_WEBHOOK_URL),
+        LAOHUANG_CHAT_TIMEOUT_SECONDS=int(os.getenv("LAOHUANG_CHAT_TIMEOUT_SECONDS", "10")),
+        LAOHUANG_CHAT_SEND_CHANNEL=os.getenv("LAOHUANG_CHAT_SEND_CHANNEL", "private_message"),
         MESSAGE_ACTIVITY_DB_HOST=os.getenv("MESSAGE_ACTIVITY_DB_HOST", ""),
         MESSAGE_ACTIVITY_DB_PORT=int(os.getenv("MESSAGE_ACTIVITY_DB_PORT", "3306")),
         MESSAGE_ACTIVITY_DB_NAME=os.getenv("MESSAGE_ACTIVITY_DB_NAME", ""),

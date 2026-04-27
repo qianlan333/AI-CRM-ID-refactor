@@ -7,18 +7,18 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f5f2ea;
-      --panel: rgba(255,255,255,0.94);
-      --line: rgba(81, 63, 34, 0.12);
-      --text: #2f2416;
-      --muted: #7b6c57;
-      --primary: #91643b;
-      --primary-strong: #754d28;
-      --soft: #f4e9da;
-      --danger: #b24e37;
-      --ok: #2f7d57;
-      --shadow: 0 18px 50px rgba(76, 53, 28, 0.08);
-      --radius: 18px;
+      --bg: #f2f3f5;
+      --panel: rgba(255,255,255,0.98);
+      --line: #dee0e3;
+      --text: #1f2329;
+      --muted: #8f959e;
+      --primary: #3370ff;
+      --primary-strong: #1456f0;
+      --soft: #ebf2ff;
+      --danger: #f54a45;
+      --ok: #00b884;
+      --shadow: 0 2px 8px rgba(0,0,0,0.08);
+      --radius: 12px;
     }
     * { box-sizing: border-box; }
     body {
@@ -27,8 +27,8 @@
       font-family: "PingFang SC", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(201, 153, 96, 0.18), transparent 24%),
-        linear-gradient(180deg, #f9f6ef 0%, var(--bg) 100%);
+        radial-gradient(circle at top left, rgba(51, 112, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, #f7f9fc 0%, var(--bg) 100%);
     }
     .shell { max-width: 720px; margin: 0 auto; padding: 20px 16px 28px; }
     .hero { margin-bottom: 16px; }
@@ -256,6 +256,74 @@
     @media (max-width: 560px) {
       .field-grid { grid-template-columns: 1fr; }
       .action-row { grid-template-columns: 1fr; }
+    }
+
+    /* 2026-04 zip-aligned sidebar overrides */
+    .hero h1,
+    .customer-title,
+    .section-title,
+    .field-item dd,
+    .answer-card strong {
+      color: var(--text);
+    }
+    .hero p,
+    .muted-note,
+    .section-note,
+    .answer-card span,
+    .field-item dt,
+    .action-group-title,
+    .status {
+      color: var(--muted);
+    }
+    .card,
+    .field-item,
+    .action-group,
+    .answer-card {
+      border-color: rgba(20, 86, 240, 0.08);
+      background: rgba(255,255,255,0.98);
+      box-shadow: var(--shadow);
+    }
+    input {
+      border-color: rgba(20, 86, 240, 0.12);
+      background: #fff;
+      color: var(--text);
+    }
+    button,
+    #bind-button,
+    #confirm-rebind-button {
+      background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+      box-shadow: 0 10px 24px rgba(20, 86, 240, 0.18);
+    }
+    .ghost,
+    .ghost-button {
+      border-color: rgba(20, 86, 240, 0.10);
+      background: var(--soft);
+      color: var(--primary-strong);
+      box-shadow: none;
+    }
+    .danger-button {
+      background: linear-gradient(135deg, #ff7875, #f54a45);
+    }
+    .field-item,
+    .action-group,
+    .answer-card {
+      border-radius: 16px;
+    }
+    .pill {
+      background: var(--soft);
+      color: var(--primary-strong);
+    }
+    .info-callout {
+      background: rgba(51, 112, 255, 0.08);
+      color: var(--primary-strong);
+      border-color: rgba(20, 86, 240, 0.12);
+    }
+    .toast {
+      background: rgba(31, 35, 41, 0.92);
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+    }
+    .toast.toast--error {
+      background: rgba(245, 74, 69, 0.96);
     }
   </style>
 </head>
