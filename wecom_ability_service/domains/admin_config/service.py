@@ -311,6 +311,34 @@ APP_SETTING_DEFINITIONS = (
         "description": "重点跟进消息 webhook Bearer Token。页面不会显示完整内容；留空表示保持原值。",
     },
     {
+        "key": "LAOHUANG_CHAT_ENABLED",
+        "label": "老黄 AI 异步接话已启用",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。开启后 reply monitor 放行会请求老黄 AI 异步聊天接口。",
+    },
+    {
+        "key": "LAOHUANG_CHAT_WEBHOOK_URL",
+        "label": "老黄 AI 聊天接口地址",
+        "mode": "editable",
+        "input_type": "url",
+        "description": "AI-CRM 请求老黄 AI 的异步聊天接口地址。",
+    },
+    {
+        "key": "LAOHUANG_CHAT_TIMEOUT_SECONDS",
+        "label": "老黄 AI 请求超时",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "AI-CRM 请求老黄 AI accepted 接口的超时时间（秒）。",
+    },
+    {
+        "key": "LAOHUANG_CHAT_SEND_CHANNEL",
+        "label": "老黄 AI 回复发送通道",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "首版使用 private_message，复用现有企微私聊发送底座。",
+    },
+    {
         "key": "DEEPSEEK_ENABLED",
         "label": "DeepSeek 已启用",
         "mode": "editable",
@@ -1076,6 +1104,7 @@ def _validate_known_setting(key: str, value: str) -> str:
         "WECOM_ARCHIVE_TIMEOUT",
         "DEEPSEEK_TIMEOUT_SECONDS",
         "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
+        "LAOHUANG_CHAT_TIMEOUT_SECONDS",
         "OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS",
         "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
@@ -1085,6 +1114,7 @@ def _validate_known_setting(key: str, value: str) -> str:
     if key in {
         "OUTBOUND_WEBHOOK_RETRY_ENABLED",
         "DEEPSEEK_ENABLED",
+        "LAOHUANG_CHAT_ENABLED",
         "ai_customer_pulse",
         "CUSTOMER_PULSE_DEEPSEEK_USE_REASONER",
         "CUSTOMER_PULSE_SHOW_LOW_CONFIDENCE_SUGGESTIONS",
@@ -1109,6 +1139,10 @@ def _validate_known_setting(key: str, value: str) -> str:
         if normalized not in {"legacy_internal", "request_scoped"}:
             raise ValueError("CUSTOMER_PULSE_TENANT_MODE 只允许 legacy_internal 或 request_scoped")
         return normalized
+    if key == "LAOHUANG_CHAT_SEND_CHANNEL":
+        if normalized and normalized != "private_message":
+            raise ValueError("LAOHUANG_CHAT_SEND_CHANNEL 首版只允许 private_message")
+        return normalized or "private_message"
     if key == "CUSTOMER_PULSE_TENANT_ACCESS_POLICY_JSON":
         if not normalized:
             return ""
@@ -1145,6 +1179,7 @@ def _validate_known_setting(key: str, value: str) -> str:
         "WECOM_API_BASE",
         "DEEPSEEK_BASE_URL",
         "OPENCLAW_WEBHOOK_URL",
+        "LAOHUANG_CHAT_WEBHOOK_URL",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
     } and normalized and not normalized.startswith(("http://", "https://")):
         raise ValueError(f"{key} 必须以 http:// 或 https:// 开头")

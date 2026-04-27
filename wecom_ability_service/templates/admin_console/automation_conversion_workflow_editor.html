@@ -17,12 +17,12 @@
   data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
   data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
-  <section class="admin-card">
-    <div class="ac-ops-head">
+  <section class="admin-page-hero admin-page-hero--workspace">
+    <div class="admin-page-hero__head">
       <div>
-        <div class="ac-eyebrow">自动化运营</div>
-        <h2>{{ '新建任务流' if (workspace.page_mode or '') == 'workflow_new' else '编辑任务流' }}</h2>
-        <p class="ac-ops-muted">
+        <div class="admin-page-hero__eyebrow">任务流编辑</div>
+        <h1>{{ '新建任务流' if (workspace.page_mode or '') == 'workflow_new' else '编辑任务流' }}</h1>
+        <p>
           {% if (workspace.page_mode or '') == 'workflow_new' %}
           当前页面只处理任务流基础信息；新建任务流保存后会自动进入节点配置页。
           {% else %}
@@ -30,11 +30,20 @@
           {% endif %}
         </p>
       </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">只维护基础信息</span>
+        <span class="admin-chip admin-chip--neutral">节点独立配置</span>
+      </div>
+    </div>
+    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
         {% if (workspace.page_mode or '') != 'workflow_new' and ((workspace.action_urls or {}).workflow_nodes) %}
         <a class="ac-ops-page-link" href="{{ (workspace.action_urls or {}).workflow_nodes }}">进入节点配置</a>
         {% endif %}
         <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回列表</a>
+      </div>
+      <div class="admin-page-hero__meta">
+        <span class="admin-chip admin-chip--neutral">{{ '保存后自动进入节点配置' if (workspace.page_mode or '') == 'workflow_new' else '已有任务流可直接进入节点配置' }}</span>
       </div>
     </div>
   </section>
@@ -59,7 +68,7 @@
       <article class="ac-ops-step is-current">
         <span class="ac-ops-step-index">第一步</span>
         <strong class="ac-ops-step-title">任务流信息</strong>
-        <span class="ac-ops-step-desc">配置适用人群、发给谁、怎么发、生成方式和 Agent 绑定。</span>
+        <span class="ac-ops-step-desc">配置适用人群、发给谁、怎么发、生成方式和智能体绑定。</span>
       </article>
       {% if (workspace.page_mode or '') == 'workflow_new' %}
       <article class="ac-ops-step is-locked">
@@ -133,7 +142,7 @@
       <section class="ac-ops-panel" id="workflow-binding-section" hidden>
         <div class="ac-ops-head">
           <div>
-            <h4>Agent 绑定</h4>
+            <h4>智能体绑定</h4>
             <p class="ac-ops-muted" id="workflow-binding-help"></p>
           </div>
         </div>
@@ -386,7 +395,7 @@
       if (values.generationMode === 'manual_layered') {
         elements.bindingSection.hidden = true;
         elements.bindingGrid.innerHTML = '';
-        elements.bindingHelp.textContent = '手动分层录入不需要 Agent 绑定。';
+        elements.bindingHelp.textContent = '手动分层录入不需要绑定智能体。';
         return;
       }
 
@@ -401,14 +410,14 @@
       if (needsProfileTemplate && values.contentProfileSegmentTemplateId) {
         elements.bindingSection.hidden = false;
         elements.bindingHelp.textContent = '正在加载画像模板...';
-        elements.bindingGrid.innerHTML = '<div class="ac-ops-empty">正在准备 Agent 绑定目标...</div>';
+        elements.bindingGrid.innerHTML = '<div class="ac-ops-empty">正在准备智能体绑定目标...</div>';
         profileTemplateDetail = await ensureProfileTemplateDetail(values.contentProfileSegmentTemplateId);
         if (renderToken !== state.bindingRenderToken) return;
       }
 
       if (needsProfileTemplate && !values.contentProfileSegmentTemplateId) {
         elements.bindingSection.hidden = false;
-        elements.bindingHelp.textContent = '请选择画像模板后，再继续绑定 Agent。';
+        elements.bindingHelp.textContent = '请选择画像模板后，再继续绑定智能体。';
         elements.bindingGrid.innerHTML = '<div class="ac-ops-empty">当前还没有可绑定的画像分类。</div>';
         return;
       }
@@ -425,10 +434,10 @@
       elements.bindingSection.hidden = false;
       elements.bindingHelp.textContent =
         values.generationMode === 'personalized_single'
-          ? '单人定制化生成只允许绑定 1 个 Agent。'
+          ? '单人定制化生成只允许绑定 1 个智能体。'
           : contentSegmentationBasis === 'behavior'
           ? '消息条数分层固定为：消息少于 2、消息 2 ~ 9、消息大于等于 10。'
-          : '标准版分层改写需要为每个画像分类绑定 Agent。';
+          : '标准版分层改写需要为每个画像分类绑定智能体。';
 
       elements.bindingGrid.innerHTML = targets.map((target) => {
         const key = `${target.binding_scope}:${target.segment_key || (target.binding_scope === 'personalized' ? 'personalized' : '')}`;
@@ -436,12 +445,12 @@
           <label class="ac-ops-binding-item">
             <span>${escapeHtml(target.label)}</span>
             <select data-binding-scope="${escapeHtml(target.binding_scope)}" data-segment-key="${escapeHtml(target.segment_key || '')}">
-              <option value="">请选择 Agent</option>
+              <option value="">请选择智能体</option>
               ${state.agentOptions.map((item) => `<option value="${escapeHtml(item.agent_code)}" ${String(item.agent_code || '') === String(currentSelections[key] || bindingByKey[key] || '') ? 'selected' : ''}>${escapeHtml(item.agent_name || item.agent_code)}</option>`).join('')}
             </select>
           </label>
         `;
-      }).join('') || '<div class="ac-ops-empty">当前配置不需要 Agent 绑定。</div>';
+      }).join('') || '<div class="ac-ops-empty">当前配置不需要绑定智能体。</div>';
     }
 
     function fillForm(bundle) {
@@ -472,16 +481,16 @@
         throw new Error('基础画像分层时必须选择画像模板');
       }
       if (payload.generation_mode === 'manual_layered' && payload.agent_bindings.length) {
-        throw new Error('手动分层录入不允许绑定 Agent');
+        throw new Error('手动分层录入不允许绑定智能体');
       }
       if (payload.generation_mode === 'auto_layered_rewrite' && payload.content_segmentation_basis === 'none') {
         throw new Error('标准版分层改写必须选择“怎么发”');
       }
       if (payload.generation_mode === 'auto_layered_rewrite' && payload.agent_bindings.length !== expectedBindingCount) {
-        throw new Error('标准版分层改写必须为每个分层目标绑定 Agent');
+        throw new Error('标准版分层改写必须为每个分层目标绑定智能体');
       }
       if (payload.generation_mode === 'personalized_single' && payload.agent_bindings.length !== 1) {
-        throw new Error('单人定制化生成只能绑定 1 个 Agent');
+        throw new Error('单人定制化生成只能绑定 1 个智能体');
       }
     }
 
@@ -584,14 +593,14 @@
     ['recipient_filter_basis', 'content_segmentation_basis', 'generation_mode', 'content_profile_segment_template_id'].forEach((fieldName) => {
       elements.form.elements[fieldName].addEventListener('change', () => {
         renderBindingControls().catch((error) => {
-          showFeedback(elements.formFeedback, error.message || '刷新 Agent 绑定失败', 'error');
+          showFeedback(elements.formFeedback, error.message || '刷新智能体绑定失败', 'error');
         });
       });
     });
 
     elements.recipientTierOptions.addEventListener('change', () => {
       renderBindingControls().catch((error) => {
-        showFeedback(elements.formFeedback, error.message || '刷新 Agent 绑定失败', 'error');
+        showFeedback(elements.formFeedback, error.message || '刷新智能体绑定失败', 'error');
       });
     });
 

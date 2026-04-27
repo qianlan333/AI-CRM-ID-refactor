@@ -4,8 +4,8 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>认证方式</h2>
-      <p>后台主认证使用企业微信 SSO；CRM 本地仅维护 RBAC 授权与登录审计。</p>
+      <h2>企微成员授权页</h2>
+      <p>后台主认证使用企业微信登录；客户管理后台本地仅维护角色权限与登录审计。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
@@ -16,11 +16,11 @@
           <td><code>{{ auth_mode }}</code></td>
         </tr>
         <tr>
-          <th>当前 Corp ID</th>
+          <th>当前企业 ID</th>
           <td><code>{{ corp_id or "-" }}</code></td>
         </tr>
         <tr>
-          <th>break-glass</th>
+          <th>本地应急入口</th>
           <td>{{ "已开启" if break_glass_enabled else "默认关闭" }}</td>
         </tr>
       </tbody>
@@ -29,111 +29,114 @@
 </section>
 
 <section class="admin-card">
-  <div class="admin-card-head">
-    <div>
-      <h2>已授权成员</h2>
-      <p>按企微成员 <code>UserId</code> 绑定后台权限；部门结构不直接作为权限系统。</p>
-    </div>
-  </div>
-  <div class="admin-table-wrap">
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>企微 UserId</th>
-          <th>显示名称</th>
-          <th>角色</th>
-          <th>状态</th>
-          <th>最近登录</th>
-          <th>授权来源</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-        <tr>
-          <td>{{ row.id }}</td>
-          <td><code>{{ row.wecom_userid }}</code></td>
-          <td>{{ row.display_name }}</td>
-          <td>{{ row.roles_display }}</td>
-          <td>{{ "启用" if row.is_active else "停用" }}</td>
-          <td>{{ row.last_login_at or "-" }}</td>
-          <td>{{ row.auth_source }}</td>
-          <td>
-            {% if can_manage_accounts %}
-            <a class="admin-inline-link" href="/admin/config/login-access?edit_id={{ row.id }}">编辑</a>
-            {% else %}
-            <span>-</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="admin-card">
-  <div class="admin-card-head">
-    <div>
-      <h2>{{ "编辑授权成员" if form_row.id else "新增授权成员" }}</h2>
-      <p>这里只管理可登录后台的企微成员与角色，不维护本地密码。</p>
-    </div>
-  </div>
-
-  {% if can_manage_accounts %}
-  <form class="admin-form-grid" method="post" action="/admin/config/login-access/save">
-    <input type="hidden" name="id" value="{{ form_row.id or '' }}">
-    <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
-    <input type="hidden" name="auth_source" value="{{ form_row.auth_source or 'wecom_sso' }}">
-    <label>
-      <span>企微 UserId</span>
-      <input type="text" name="wecom_userid" value="{{ form_row.wecom_userid or '' }}" placeholder="如 qianlan333" required>
-    </label>
-    <label>
-      <span>显示名称</span>
-      <input type="text" name="display_name" value="{{ form_row.display_name or '' }}" placeholder="如 千岚">
-    </label>
-    <label>
-      <span>Corp ID</span>
-      <input type="text" name="wecom_corpid" value="{{ form_row.wecom_corpid or corp_id or '' }}" placeholder="默认使用当前 Corp ID">
-    </label>
-    <label class="admin-checkbox">
-      <input type="checkbox" name="is_active" value="1" {% if form_row.is_active %}checked{% endif %}>
-      <span>启用该成员</span>
-    </label>
-    <div style="grid-column: 1 / -1;">
-      <span style="display:block; margin-bottom: 8px; font-weight: 600;">角色分配</span>
-      <div style="display:grid; gap:8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
-        {% for option in role_options %}
-        <label class="admin-checkbox">
-          <input type="checkbox" name="role_codes" value="{{ option.value }}" {% if option.value in (form_row.roles or []) %}checked{% endif %}>
-          <span>{{ option.label }}</span>
-        </label>
-        {% endfor %}
+  <div class="config-editor-layout">
+    <div class="config-list-stack">
+      <div class="admin-card-head">
+        <div>
+          <h2>已授权成员</h2>
+          <p>按企微成员 <code>UserId</code> 绑定后台权限；部门结构不直接作为权限系统。</p>
+        </div>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>企微 UserId</th>
+              <th>显示名称</th>
+              <th>角色</th>
+              <th>状态</th>
+              <th>最近登录</th>
+              <th>授权来源</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td>{{ row.id }}</td>
+              <td><code>{{ row.wecom_userid }}</code></td>
+              <td>{{ row.display_name }}</td>
+              <td>{{ row.roles_display }}</td>
+              <td>{{ "启用" if row.is_active else "停用" }}</td>
+              <td>{{ row.last_login_at or "-" }}</td>
+              <td>{{ row.auth_source }}</td>
+              <td>
+                {% if can_manage_accounts %}
+                <a class="admin-inline-link" href="/admin/config/login-access?edit_id={{ row.id }}">编辑</a>
+                {% else %}
+                <span>-</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
-    <label>
-      <span>操作人</span>
-      <input type="text" name="operator" placeholder="默认取当前登录账号">
-    </label>
-    <div class="admin-form-actions">
-      <button class="admin-button admin-button--primary" type="submit">{{ "保存授权成员" if form_row.id else "创建授权成员" }}</button>
-    </div>
-  </form>
-  {% else %}
-  <div class="admin-state admin-state--empty">
-    <strong>只读访问</strong>
-    <span>当前账号没有修改登录与权限的写权限，可以查看但不能创建或编辑授权成员。</span>
+    <aside class="config-editor-aside">
+      <div class="admin-card-head">
+        <div>
+          <h2>{{ "编辑授权成员" if form_row.id else "新增授权成员" }}</h2>
+          <p>这里只管理可登录后台的企微成员与角色，不维护本地密码。</p>
+        </div>
+      </div>
+
+      {% if can_manage_accounts %}
+      <form class="admin-form-grid admin-form-grid--stacked" method="post" action="/admin/config/login-access/save">
+        <input type="hidden" name="id" value="{{ form_row.id or '' }}">
+        <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+        <input type="hidden" name="auth_source" value="{{ form_row.auth_source or 'wecom_sso' }}">
+        <label>
+          <span>企微 UserId</span>
+          <input type="text" name="wecom_userid" value="{{ form_row.wecom_userid or '' }}" placeholder="如 qianlan333" required>
+        </label>
+        <label>
+          <span>显示名称</span>
+          <input type="text" name="display_name" value="{{ form_row.display_name or '' }}" placeholder="如 千岚">
+        </label>
+        <label>
+          <span>企业 ID</span>
+          <input type="text" name="wecom_corpid" value="{{ form_row.wecom_corpid or corp_id or '' }}" placeholder="默认使用当前企业 ID">
+        </label>
+        <label class="admin-checkbox">
+          <input type="checkbox" name="is_active" value="1" {% if form_row.is_active %}checked{% endif %}>
+          <span>启用该成员</span>
+        </label>
+        <div>
+          <span style="display:block; margin-bottom: 8px; font-weight: 600;">角色分配</span>
+          <div style="display:grid; gap:8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+            {% for option in role_options %}
+            <label class="admin-checkbox">
+              <input type="checkbox" name="role_codes" value="{{ option.value }}" {% if option.value in (form_row.roles or []) %}checked{% endif %}>
+              <span>{{ option.label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        <label>
+          <span>操作人</span>
+          <input type="text" name="operator" placeholder="默认取当前登录账号">
+        </label>
+        <div class="admin-form-actions">
+          <button class="admin-button admin-button--primary" type="submit">{{ "保存授权成员" if form_row.id else "创建授权成员" }}</button>
+        </div>
+      </form>
+      {% else %}
+      <div class="admin-state admin-state--empty">
+        <strong>只读访问</strong>
+        <span>当前账号没有修改登录与权限的写权限，可以查看但不能创建或编辑授权成员。</span>
+      </div>
+      {% endif %}
+    </aside>
   </div>
-  {% endif %}
 </section>
 
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
       <h2>最近登录审计</h2>
-      <p>记录企微 SSO / break-glass 登录结果，用于排障和 7 天观察期核对。</p>
+      <p>记录企业微信登录和本地应急登录结果，用于排障和 7 天观察期核对。</p>
     </div>
   </div>
   <div class="admin-table-wrap">
@@ -145,7 +148,7 @@
           <th>登录方式</th>
           <th>结果</th>
           <th>IP</th>
-          <th>User Agent</th>
+          <th>客户端信息</th>
         </tr>
       </thead>
       <tbody>

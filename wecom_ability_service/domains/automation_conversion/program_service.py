@@ -144,3 +144,17 @@ def update_automation_program_status(program_id: int, *, status: str, operator_i
     get_db().commit()
     return {"program": program, "summary": program_repo.get_program_summary(int(program["id"]))}
 
+
+def update_automation_program_basic_info(program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+    get_automation_program(int(program_id))
+    program_name = _normalized_text(payload.get("program_name"))
+    if not program_name:
+        raise ValueError("program_name is required")
+    program = program_repo.update_program_basic_info_row(
+        int(program_id),
+        program_name=program_name,
+        description=_normalized_text(payload.get("description")),
+        operator_id=operator_id,
+    )
+    get_db().commit()
+    return {"program": program, "summary": program_repo.get_program_summary(int(program["id"]))}

@@ -159,12 +159,12 @@
       <div>
         <div class="ac-eyebrow">自动化应答</div>
         <h2>自动化应答稳定入口</h2>
-        <p>这一步不重做应答业务逻辑，只把现有自动接话监控和 Agent 配置入口稳定接回到自动化转化模块内。</p>
+        <p>这一步不重做应答业务逻辑，只把现有自动接话监控和智能体配置入口稳定接回到自动化转化模块内。</p>
         <div class="reply-action-row" style="margin-top:14px;">
           <button class="admin-button admin-button--primary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).toggle }}" data-reply-toggle-enabled="{{ 0 if reply_monitor.enabled else 1 }}">{{ "关闭监控" if reply_monitor.enabled else "开启监控" }}</button>
           <button class="admin-button admin-button--secondary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).capture }}">立即扫描</button>
           <button class="admin-button admin-button--secondary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).run_due }}">立即放行</button>
-          <a class="admin-button admin-button--ghost" href="{{ workspace.agent_config_href }}">进入模型 / Agent 配置</a>
+          <a class="admin-button admin-button--ghost" href="{{ workspace.agent_config_href }}">进入模型与智能体配置</a>
         </div>
         <div class="admin-muted" id="reply-action-status" style="margin-top:8px;font-size:13px;">{{ reply_monitor.status_label or ("已开启" if reply_monitor.enabled else "已关闭") }}</div>
       </div>
@@ -187,9 +187,9 @@
         <p class="admin-card-copy">最近放行状态：{{ reply_monitor.last_dispatch_status_label or '-' }}</p>
       </article>
       <article class="reply-card">
-        <div class="admin-card-label">可用 Agent</div>
+        <div class="admin-card-label">可用智能体</div>
         <div class="admin-card-value admin-card-value--compact">{{ workspace.agent_config_total or 0 }}</div>
-        <p class="admin-card-copy">继续复用现有应答 Agent 配置，不额外造一套假页面。</p>
+        <p class="admin-card-copy">继续复用现有应答智能体配置，不额外造一套假页面。</p>
       </article>
     </div>
   </section>
@@ -242,13 +242,13 @@
     <div class="admin-card-head">
       <div>
         <h2>最近生成话术</h2>
-        <p>保留未采用评审能力，并补充复制话术、自动化发送能力。未采用时会生成仅包含 recent_chats、tags、questionnaire、not_adopted_reason 的 JSON 并自动复制。</p>
+        <p>展示老黄 AI 异步回调生成的话术。回调只做留存，不自动推企微；需要时从这里复制、推 webhook 或手动推企微群发。</p>
       </div>
       <div class="admin-muted" id="reply-review-status">正在加载最近话术...</div>
     </div>
     <div id="reply-output-empty" class="admin-state admin-state--inline" hidden>
       <strong>当前没有可评审话术</strong>
-      <span>这里会展示最近生成的自动化应答话术，并提供复制、自动化发送、未采用操作。</span>
+      <span>这里会展示老黄 AI 最新生成的话术，并提供复制、webhook、企微群发操作。</span>
     </div>
     <div id="reply-output-list" class="reply-output-list" hidden></div>
   </section>
@@ -322,6 +322,14 @@
 
     function withSendOutputId(outputId) {
       return String(apiUrls.review_output_bazhuayu_send_base || '').replace('__OUTPUT_ID__', encodeURIComponent(String(outputId || '')));
+    }
+
+    function withWebhookOutputId(outputId) {
+      return String(apiUrls.review_output_webhook_send_base || apiUrls.review_output_bazhuayu_send_base || '').replace('__OUTPUT_ID__', encodeURIComponent(String(outputId || '')));
+    }
+
+    function withWecomOutputId(outputId) {
+      return String(apiUrls.review_output_wecom_send_base || '').replace('__OUTPUT_ID__', encodeURIComponent(String(outputId || '')));
     }
 
     async function requestJson(url, options = {}) {
@@ -400,22 +408,23 @@
         reviewStatusEl.textContent = '当前没有可评审话术';
         return;
       }
-      reviewStatusEl.textContent = `最近 ${rows.length} 条可评审话术`;
+      reviewStatusEl.textContent = `最近 ${rows.length} 条老黄 AI 话术`;
       outputListEl.innerHTML = rows.map((item) => `
         <article class="reply-output-item" data-output-id="${escapeHtml(item.output_id)}">
           <div class="reply-output-head">
             <div>
-              <div class="reply-output-title">${escapeHtml(item.external_contact_id || '匿名客户')} · ${escapeHtml(item.agent_code || '-')}</div>
+              <div class="reply-output-title">${escapeHtml(item.external_contact_id || '匿名客户')} · 老黄 AI</div>
               <div class="reply-output-meta">
                 <span>${escapeHtml(item.created_at || '-')}</span>
-                <span>${escapeHtml(item.output_type || '-')}</span>
+                <span>${escapeHtml(item.external_message_id || item.request_id || '-')}</span>
                 <span>${escapeHtml(item.outcome_status_label || '未闭环')}</span>
+                ${item.send_record_id ? `<span>send_record_id: ${escapeHtml(item.send_record_id)}</span>` : ''}
               </div>
             </div>
             <div class="reply-output-actions">
+              <button class="admin-button" type="button" data-review-action="webhook">一键 webhook</button>
               <button class="admin-button admin-button--secondary" type="button" data-review-action="copy">复制话术</button>
-              <button class="admin-button" type="button" data-review-action="send">自动化发送</button>
-              <button class="admin-button admin-button--ghost" type="button" data-review-action="rejected">未采用</button>
+              <button class="admin-button admin-button--ghost" type="button" data-review-action="wecom_send">一键推企微群发</button>
             </div>
           </div>
           <div class="reply-output-body">${escapeHtml(item.rendered_output_text || item.reason || '-')}</div>
@@ -500,22 +509,44 @@
         }
         return;
       }
-      if (action === 'send') {
-        if (!window.confirm('确认通过八爪鱼自动发送这条话术？')) {
+      if (action === 'webhook') {
+        if (!window.confirm('确认把这条话术推送到 webhook？')) {
           return;
         }
         const defaultLabel = button.textContent;
         button.disabled = true;
-        button.textContent = '发送中...';
-        reviewStatusEl.textContent = '正在提交自动化发送...';
+        button.textContent = '推送中...';
+        reviewStatusEl.textContent = '正在提交 webhook...';
         try {
-          await requestJson(withSendOutputId(outputId), {
+          await requestJson(withWebhookOutputId(outputId), {
             method: 'POST',
             body: JSON.stringify({ admin_action_token: "{{ admin_action_token }}", operator: "crm_console" }),
           });
-          reviewStatusEl.textContent = '自动化发送已受理';
+          reviewStatusEl.textContent = 'webhook 已推送';
         } catch (error) {
-          reviewStatusEl.textContent = error.message || '自动化发送失败';
+          reviewStatusEl.textContent = error.message || 'webhook 推送失败';
+        } finally {
+          button.disabled = false;
+          button.textContent = defaultLabel;
+          await loadOutputs();
+        }
+      }
+      if (action === 'wecom_send') {
+        if (!window.confirm('确认一键推企微群发？')) {
+          return;
+        }
+        const defaultLabel = button.textContent;
+        button.disabled = true;
+        button.textContent = '推送中...';
+        reviewStatusEl.textContent = '正在推企微群发...';
+        try {
+          await requestJson(withWecomOutputId(outputId), {
+            method: 'POST',
+            body: JSON.stringify({ admin_action_token: "{{ admin_action_token }}", operator: "crm_console" }),
+          });
+          reviewStatusEl.textContent = '企微群发已受理';
+        } catch (error) {
+          reviewStatusEl.textContent = error.message || '企微群发失败';
         } finally {
           button.disabled = false;
           button.textContent = defaultLabel;

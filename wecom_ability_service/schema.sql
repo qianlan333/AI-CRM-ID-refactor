@@ -1712,6 +1712,43 @@ ON automation_reply_monitor_queue (external_userid)
 WHERE external_userid <> ''
   AND status IN ('pending', 'deferred_quiet_hours', 'paused');
 
+CREATE TABLE IF NOT EXISTS automation_laohuang_chat_job (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue_id INTEGER REFERENCES automation_reply_monitor_queue(id) ON DELETE SET NULL,
+    member_id INTEGER REFERENCES automation_member(id) ON DELETE SET NULL,
+    external_contact_id TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    external_message_id TEXT NOT NULL DEFAULT '',
+    external_session_id TEXT NOT NULL DEFAULT '',
+    laohuang_task_id TEXT NOT NULL DEFAULT '',
+    request_payload_json TEXT NOT NULL DEFAULT '{}',
+    accepted_payload_json TEXT NOT NULL DEFAULT '{}',
+    callback_payload_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'created',
+    reply_text TEXT NOT NULL DEFAULT '',
+    error_code TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    send_channel TEXT NOT NULL DEFAULT 'private_message',
+    send_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+    send_result_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_laohuang_chat_job_external_message
+ON automation_laohuang_chat_job (external_message_id)
+WHERE external_message_id <> '';
+
+CREATE INDEX IF NOT EXISTS idx_automation_laohuang_chat_job_task
+ON automation_laohuang_chat_job (laohuang_task_id, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_laohuang_chat_job_status_updated
+ON automation_laohuang_chat_job (status, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_laohuang_chat_job_queue
+ON automation_laohuang_chat_job (queue_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_agent_prompt_registry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_code TEXT NOT NULL UNIQUE,

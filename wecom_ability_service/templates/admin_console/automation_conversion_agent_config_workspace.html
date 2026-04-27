@@ -546,9 +546,9 @@
   <section class="ac-config-panel">
     <div class="ac-config-head">
       <div>
-        <div class="ac-eyebrow">模型 / Agent 配置</div>
-        <h2>Agent 直绑 + 基础画像分层模板</h2>
-        <p class="ac-config-muted">任务流后续直接绑定 Agent。这里已经收口成自动化转化模块自己的底层配置工作台：Agent 编排、基础画像分层模板、欢迎语 / 二维码，以及大模型 API 配置统一都在这里完成。</p>
+        <div class="ac-eyebrow">模型与智能体配置</div>
+        <h2>智能体直绑 + 基础画像分层模板</h2>
+        <p class="ac-config-muted">任务流后续直接绑定智能体。这里已经收口成自动化转化模块自己的底层配置工作台：智能体编排、基础画像分层模板、欢迎语 / 二维码，以及大模型接口配置统一都在这里完成。</p>
       </div>
       <div class="ac-config-row-actions">
         <a class="admin-button admin-button--secondary" href="{{ (workspace.entry_urls or {}).operations }}">查看任务流绑定</a>
@@ -556,15 +556,15 @@
     </div>
 
     <div class="ac-config-feedback" id="agent-config-feedback" hidden></div>
-    <div class="ac-config-loading" id="agent-config-loading" hidden>正在加载 Agent 与分层模板数据...</div>
+    <div class="ac-config-loading" id="agent-config-loading" hidden>正在加载智能体与分层模板数据...</div>
 
     <div class="ac-config-top" id="agent-config-summary-grid">
       <article class="ac-config-summary-card">
-        <span>可用 Agent</span>
+        <span>可用智能体</span>
         <strong id="agent-total">{{ initial_agents|length }}</strong>
       </article>
       <article class="ac-config-summary-card">
-        <span>已发布 Agent</span>
+        <span>已发布智能体</span>
         <strong id="agent-published-total">{{ initial_agents|selectattr('status', 'equalto', 'published')|list|length }}</strong>
       </article>
       <article class="ac-config-summary-card">
@@ -582,11 +582,11 @@
     <section class="ac-config-panel">
       <div class="ac-config-head">
         <div>
-          <h3>可用 Agent 列表</h3>
-          <p class="ac-config-muted">表头只保留新增入口，每个 Agent 单独编辑。说明和更新时间不再占表格位置，状态统一显示中文。</p>
+          <h3>可用智能体列表</h3>
+          <p class="ac-config-muted">表头只保留新增入口，每个智能体单独编辑。说明和更新时间不再占表格位置，状态统一显示中文。</p>
         </div>
         <div class="ac-config-row-actions">
-          <button class="admin-button admin-button--primary" id="agent-create-button" type="button">新增 Agent</button>
+          <button class="admin-button admin-button--primary" id="agent-create-button" type="button">新增智能体</button>
         </div>
       </div>
 
@@ -594,7 +594,7 @@
         <table class="ac-config-table">
           <thead>
             <tr>
-              <th>Agent</th>
+              <th>智能体</th>
               <th>状态</th>
               <th>操作</th>
             </tr>
@@ -623,13 +623,13 @@
         </table>
       </div>
 
-      <div class="ac-config-empty" id="agent-empty" {% if initial_agents %}hidden{% endif %}>当前没有可用 Agent。</div>
+      <div class="ac-config-empty" id="agent-empty" {% if initial_agents %}hidden{% endif %}>当前没有可用智能体。</div>
 
       <section class="ac-config-panel ac-config-editor-shell" id="agent-form-panel" hidden>
         <div class="ac-config-head">
           <div>
-            <h4 id="agent-form-title">Agent 编排工作台</h4>
-            <p class="ac-config-muted">这里直接维护 Agent 的草稿态：显示名、启用状态、角色提示词和任务提示词。信息来源不再单独勾选，系统会根据你在提示词里实际写到的占位符自动注入，而且每类信息只整理一次。</p>
+            <h4 id="agent-form-title">智能体编排工作台</h4>
+            <p class="ac-config-muted">这里直接维护智能体的草稿态：显示名、启用状态、角色提示词和任务提示词。信息来源不再单独勾选，系统会根据你在提示词里实际写到的占位符自动注入，而且每类信息只整理一次。</p>
           </div>
           <button class="admin-button admin-button--ghost" id="agent-form-cancel" type="button">收起</button>
         </div>
@@ -642,18 +642,18 @@
 
           <div class="ac-config-form-grid">
             <label class="admin-field">
-              <span>Agent Code</span>
+              <span>智能体内部编码</span>
               <input type="text" name="agent_code" placeholder="例如：conversion_followup_agent">
             </label>
             <label class="admin-field">
               <span>显示名称</span>
-              <input type="text" name="display_name" placeholder="例如：成交推进 Agent">
+              <input type="text" name="display_name" placeholder="例如：成交推进智能体">
             </label>
           </div>
 
           <label class="admin-checkbox">
             <input type="checkbox" name="enabled" value="1">
-            <span>启用当前 Agent</span>
+            <span>启用当前智能体</span>
           </label>
 
           <dl class="ac-config-summary-meta" id="agent-form-meta">
@@ -950,7 +950,7 @@
       <div class="ac-config-head">
         <div>
           <h3>大模型 / API 配置</h3>
-          <p class="ac-config-muted">这里承接原来模型基础设施页的核心能力：模型开关、API Key、Base URL、模型名与连通性测试。</p>
+          <p class="ac-config-muted">这里承接原来模型基础设施页的核心能力：模型开关、接口密钥、接口地址、模型名与连通性测试。</p>
         </div>
         <div class="ac-config-row-actions">
           <button class="admin-button admin-button--secondary" id="model-settings-test-button" type="button">测试连接</button>
@@ -961,7 +961,7 @@
 
       <dl class="ac-config-summary-meta">
         <div><dt>当前状态</dt><dd id="model-settings-enabled-label">-</dd></div>
-        <div><dt>API Key</dt><dd id="model-settings-api-key-mask">-</dd></div>
+        <div><dt>接口密钥</dt><dd id="model-settings-api-key-mask">-</dd></div>
         <div><dt>最近更新</dt><dd id="model-settings-updated-at">-</dd></div>
         <div><dt>最近测试</dt><dd id="model-settings-test-result">未测试</dd></div>
       </dl>
@@ -976,13 +976,13 @@
             </select>
           </label>
           <label class="admin-field">
-            <span>DeepSeek API Key</span>
+            <span>DeepSeek 接口密钥</span>
             <input type="password" name="api_key" placeholder="留空表示保持当前值">
           </label>
         </div>
         <div class="ac-config-form-grid">
           <label class="admin-field">
-            <span>Base URL</span>
+            <span>接口地址</span>
             <input type="url" name="base_url" placeholder="https://api.deepseek.com">
           </label>
           <label class="admin-field">
@@ -992,11 +992,11 @@
         </div>
         <div class="ac-config-form-grid">
           <label class="admin-field">
-            <span>Router Model</span>
+            <span>路由模型</span>
             <input type="text" name="router_model" placeholder="deepseek-chat">
           </label>
           <label class="admin-field">
-            <span>Execution Model</span>
+            <span>执行模型</span>
             <input type="text" name="execution_model" placeholder="deepseek-chat">
           </label>
         </div>
@@ -1602,7 +1602,7 @@
       }
       if (agentFields.displayName) agentFields.displayName.value = '';
       if (agentFields.enabled) agentFields.enabled.checked = true;
-      if (agentFields.changeSummary) agentFields.changeSummary.value = '创建新 Agent 草稿';
+      if (agentFields.changeSummary) agentFields.changeSummary.value = '创建新智能体草稿';
       if (agentFields.rolePrompt) agentFields.rolePrompt.value = '';
       if (agentFields.taskPrompt) agentFields.taskPrompt.value = '';
       elements.agentMetaStatus.textContent = '新建态';
@@ -1900,11 +1900,11 @@
       if (agentFields.agentCode) agentFields.agentCode.readOnly = true;
       if (agentFields.displayName) agentFields.displayName.value = item.display_name || '';
       if (agentFields.enabled) agentFields.enabled.checked = !!item.enabled;
-      if (agentFields.changeSummary) agentFields.changeSummary.value = item.last_change_summary || '更新 Agent 草稿';
+      if (agentFields.changeSummary) agentFields.changeSummary.value = item.last_change_summary || '更新智能体草稿';
       if (agentFields.rolePrompt) agentFields.rolePrompt.value = draft.role_prompt || '';
       if (agentFields.taskPrompt) agentFields.taskPrompt.value = draft.task_prompt || '';
       if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = String(item.draft_version || 1);
-      elements.agentFormTitle.textContent = `编辑 Agent · ${item.display_name || item.agent_code || ''}`;
+      elements.agentFormTitle.textContent = `编辑智能体 · ${item.display_name || item.agent_code || ''}`;
       elements.agentPublishButton.hidden = false;
 
       elements.agentMetaStatus.textContent = item.enabled
@@ -1919,7 +1919,7 @@
     async function loadAgentDetail(agentCode) {
       const normalizedCode = String(agentCode || '').trim();
       if (!normalizedCode) {
-        throw new Error('请选择 Agent');
+        throw new Error('请选择智能体');
       }
       const result = await requestJson(withCode(apiUrls.agent_detail_base, normalizedCode), { credentials: 'same-origin' });
       state.agentDetails[normalizedCode] = result.item || {};
@@ -1933,7 +1933,7 @@
       state.selectedAgentCode = null;
       renderAgents();
       resetAgentForm();
-      elements.agentFormTitle.textContent = '新增 Agent';
+      elements.agentFormTitle.textContent = '新增智能体';
       elements.agentFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
       if (agentFields.agentCode) requestAnimationFrame(() => agentFields.agentCode.focus());
     }
@@ -1941,7 +1941,7 @@
     async function openAgentEditForm(agentCode) {
       const normalizedCode = String(agentCode || '').trim();
       if (!normalizedCode) {
-        throw new Error('请选择 Agent');
+        throw new Error('请选择智能体');
       }
       elements.agentFormPanel.hidden = false;
       showAgentFormFeedback('', '');
@@ -1953,11 +1953,11 @@
     async function deleteAgent(agentCode) {
       const normalizedCode = String(agentCode || '').trim();
       if (!normalizedCode) {
-        throw new Error('请选择 Agent');
+        throw new Error('请选择智能体');
       }
       const selected = state.agents.find((item) => item.agent_code === normalizedCode) || {};
       const agentLabel = selected.agent_name || normalizedCode;
-      if (!window.confirm(`确认删除 Agent「${agentLabel}」吗？删除后会从可用 Agent 列表中移除。`)) {
+      if (!window.confirm(`确认删除智能体「${agentLabel}」吗？删除后会从可用智能体列表中移除。`)) {
         return;
       }
       const result = await requestJson(withCode(apiUrls.agent_delete_base, normalizedCode), {
@@ -1973,7 +1973,7 @@
         resetAgentForm();
       }
       await refreshAgents();
-      showFeedback((result || {}).message || 'Agent 已删除', 'success');
+      showFeedback((result || {}).message || '智能体已删除', 'success');
     }
 
     function closeAgentForm() {
@@ -1987,8 +1987,8 @@
       const rolePrompt = String((agentFields.rolePrompt || {}).value || '').trim();
       const taskPrompt = String((agentFields.taskPrompt || {}).value || '').trim();
       const changeSummary = String((agentFields.changeSummary || {}).value || '').trim();
-      if (!agentCode) throw new Error('Agent Code 不能为空');
-      if (!/^[a-z][a-z0-9_]*$/.test(agentCode)) throw new Error('Agent Code 只能使用小写字母、数字和下划线，且必须以字母开头');
+      if (!agentCode) throw new Error('智能体内部编码不能为空');
+      if (!/^[a-z][a-z0-9_]*$/.test(agentCode)) throw new Error('智能体内部编码只能使用小写字母、数字和下划线，且必须以字母开头');
       if (!displayName) throw new Error('显示名称不能为空');
       if (!rolePrompt) throw new Error('角色提示词不能为空');
       if (!taskPrompt) throw new Error('任务提示词不能为空');
@@ -1997,7 +1997,7 @@
         admin_action_token: adminActionToken,
         display_name: displayName,
         enabled: !!((agentFields.enabled || {}).checked),
-        change_summary: changeSummary || (state.agentFormMode === 'create' ? '创建新 Agent 草稿' : '更新 Agent 草稿'),
+        change_summary: changeSummary || (state.agentFormMode === 'create' ? '创建新智能体草稿' : '更新智能体草稿'),
         role_prompt: rolePrompt,
         task_prompt: taskPrompt,
         expected_draft_version: Number((agentFields.expectedDraftVersion || {}).value || 1) || 1,
@@ -2170,7 +2170,7 @@
     if (elements.agentCreateButton) {
       elements.agentCreateButton.addEventListener('click', function () {
         openAgentCreateForm().catch((error) => {
-          showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
+          showFeedback(error.message || '打开智能体编辑器失败', 'error');
         });
       });
     }
@@ -2180,14 +2180,14 @@
         const editButton = event.target.closest('button[data-agent-edit]');
         if (editButton) {
           openAgentEditForm(editButton.dataset.agentEdit || '').catch((error) => {
-            showFeedback(error.message || '打开 Agent 编辑器失败', 'error');
+            showFeedback(error.message || '打开智能体编辑器失败', 'error');
           });
           return;
         }
         const deleteButton = event.target.closest('button[data-agent-delete]');
         if (!deleteButton) return;
         deleteAgent(deleteButton.dataset.agentDelete || '').catch((error) => {
-          showFeedback(error.message || '删除 Agent 失败', 'error');
+          showFeedback(error.message || '删除智能体失败', 'error');
         });
       });
     }
@@ -2214,12 +2214,12 @@
               body: JSON.stringify(payload),
             }
           );
-          showAgentFormFeedback(isCreateMode ? 'Agent 已创建' : 'Agent 草稿已保存', 'success');
+          showAgentFormFeedback(isCreateMode ? '智能体已创建' : '智能体草稿已保存', 'success');
           await refreshAgents();
           await openAgentEditForm(((result || {}).agent || {}).agent_code || agentCode);
-          showFeedback(isCreateMode ? 'Agent 已创建' : 'Agent 草稿已保存', 'success');
+          showFeedback(isCreateMode ? '智能体已创建' : '智能体草稿已保存', 'success');
         } catch (error) {
-          showAgentFormFeedback(error.message || '保存 Agent 草稿失败', 'error');
+          showAgentFormFeedback(error.message || '保存智能体草稿失败', 'error');
         }
       });
     }
@@ -2228,19 +2228,19 @@
       elements.agentPublishButton.addEventListener('click', async function () {
         try {
           const agentCode = String((agentFields.agentCode || {}).value || '').trim();
-          if (!agentCode) throw new Error('请选择 Agent');
+          if (!agentCode) throw new Error('请选择智能体');
           const result = await requestJson(withCode(apiUrls.agent_publish_base, agentCode), {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ admin_action_token: adminActionToken }),
           });
-          showAgentFormFeedback('Agent 已发布', 'success');
+          showAgentFormFeedback('智能体已发布', 'success');
           await refreshAgents();
           await loadAgentDetail(((result || {}).agent || {}).agent_code || agentCode);
-          showFeedback('Agent 已发布', 'success');
+          showFeedback('智能体已发布', 'success');
         } catch (error) {
-          showAgentFormFeedback(error.message || '发布 Agent 失败', 'error');
+          showAgentFormFeedback(error.message || '发布智能体失败', 'error');
         }
       });
     }
@@ -2250,7 +2250,7 @@
         const detail = state.selectedAgentDetail || {};
         const published = detail.published || {};
         if (!detail.agent_code) {
-          showAgentFormFeedback('请先选择一个已有 Agent，再使用已发布版本覆盖草稿。', 'error');
+          showAgentFormFeedback('请先选择一个已有智能体，再使用已发布版本覆盖草稿。', 'error');
           return;
         }
         if (agentFields.rolePrompt) agentFields.rolePrompt.value = published.role_prompt || '';
@@ -2541,7 +2541,7 @@
         await Promise.all([refreshAgents(), refreshTemplates(), refreshDefaultChannel(), refreshModelSettings(), loadAvailableTags()]);
       } catch (error) {
         elements.loading.hidden = true;
-        showFeedback(error.message || '加载模型 / Agent 配置失败', 'error');
+        showFeedback(error.message || '加载模型与智能体配置失败', 'error');
       }
     })();
   })();
