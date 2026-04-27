@@ -160,14 +160,15 @@
         <div class="ac-eyebrow">自动化应答</div>
         <h2>自动化应答稳定入口</h2>
         <p>这一步不重做应答业务逻辑，只把现有自动接话监控和 Agent 配置入口稳定接回到自动化转化模块内。</p>
+        <div class="reply-action-row" style="margin-top:14px;">
+          <button class="admin-button admin-button--primary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).toggle }}" data-reply-toggle-enabled="{{ 0 if reply_monitor.enabled else 1 }}">{{ "关闭监控" if reply_monitor.enabled else "开启监控" }}</button>
+          <button class="admin-button admin-button--secondary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).capture }}">立即扫描</button>
+          <button class="admin-button admin-button--secondary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).run_due }}">立即放行</button>
+          <a class="admin-button admin-button--ghost" href="{{ workspace.agent_config_href }}">进入模型 / Agent 配置</a>
+        </div>
+        <div class="admin-muted" id="reply-action-status" style="margin-top:8px;font-size:13px;">{{ reply_monitor.status_label or ("已开启" if reply_monitor.enabled else "已关闭") }}</div>
       </div>
-      <div class="reply-action-row">
-        <button class="admin-button admin-button--primary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).toggle }}" data-reply-toggle-enabled="{{ 0 if reply_monitor.enabled else 1 }}">{{ "关闭监控" if reply_monitor.enabled else "开启监控" }}</button>
-        <button class="admin-button admin-button--secondary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).capture }}">立即扫描</button>
-        <button class="admin-button admin-button--secondary" type="button" data-reply-action-url="{{ (workspace.action_urls or {}).run_due }}">立即放行</button>
-        <a class="admin-button admin-button--ghost" href="{{ workspace.agent_config_href }}">进入模型 / Agent 配置</a>
-      </div>
-      <div class="admin-muted" id="reply-action-status">当前状态：{{ reply_monitor.status_label or ("已开启" if reply_monitor.enabled else "已关闭") }}</div>
+      <span class="admin-chip admin-chip--{{ 'ok' if reply_monitor.enabled else 'neutral' }}">当前状态：{{ reply_monitor.status_label or ("开启中" if reply_monitor.enabled else "已关闭") }}</span>
     </div>
     <div class="reply-summary-grid">
       <article class="reply-card">
