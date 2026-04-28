@@ -23,7 +23,7 @@
    - `/admin`
    - `/admin/questionnaires`
    - `/admin/automation-conversion`
-   - `/admin/automation-conversion/sop`
+   - `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop`
 7. 自动化转化问卷已经配置完成
 8. 至少准备好 2 个线上验收客户：
    - 普通路径客户
@@ -120,7 +120,7 @@
 
 ### 自动 SOP smoke
 
-1. 打开 `/admin/automation-conversion/sop`
+1. 打开 `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop`
 2. 确认只出现三个池子：
    - `new_user`
    - `inactive_normal`
@@ -150,7 +150,7 @@ curl -sS -X POST http://127.0.0.1:5001/api/admin/automation-conversion/sop/run-d
    - `total_failed_count`
    - `batch_ids`
 8. 再次立即触发一次，确认同一成员同一池同一天不会重复发送
-9. 再到 `/api/admin/automation-conversion/sop/batches` 确认最近 batch 摘要可见
+9. 再到 `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop` 确认最近 batch 摘要可见
 
 ## 6.1 自动 SOP v1 业务规则
 
@@ -240,7 +240,7 @@ sudo systemctl status openclaw-automation-conversion-due-runner.timer --no-pager
 
 如果 runner 没挂上，会出现：
 
-- `/admin/automation-conversion/sop` 能正常配置
+- `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop` 能正常配置
 - 但 `recent_batches` 长时间无新记录
 - 成员不会按 day 推进发送
 

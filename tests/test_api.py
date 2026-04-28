@@ -79,10 +79,18 @@ def app(tmp_path):
 
 @pytest.fixture()
 def client(app):
-    return app.test_client()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["admin_session_user_id"] = 0
+        session["admin_session_wecom_userid"] = ""
+        session["admin_session_role_list"] = ["super_admin"]
+        session["admin_session_login_type"] = "break_glass"
+        session["admin_session_display_name"] = "test-admin"
+        session["admin_session_break_glass_username"] = "test-admin"
+    return client
 
 
-def _admin_action_token(client, path: str = "/admin/automation-conversion/agent-config") -> str:
+def _admin_action_token(client, path: str = "/admin/automation-conversion/shared/agents") -> str:
     client.get(path, follow_redirects=True)
     with client.session_transaction() as session:
         return str(session["admin_console_action_token"])
@@ -1410,8 +1418,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     assert "报名引流品" not in export_text
 
     ui_response = client.get("/admin/class-user-management/ui", follow_redirects=False)
-    assert ui_response.status_code == 302
-    assert ui_response.headers["Location"].endswith("/admin/class-users?tab=class-users")
+    assert ui_response.status_code == 410
 
     shell_response = client.get("/admin/class-users?tab=class-users")
     shell_text = shell_response.get_data(as_text=True)
@@ -1421,12 +1428,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     assert "班级状态" in shell_text
 
     legacy_response = client.get("/admin/_legacy/class-user-management")
-    ui_text = legacy_response.get_data(as_text=True)
-    assert legacy_response.status_code == 200
-    assert "班期用户管理" in ui_text
-    assert "导出当前筛选结果" in ui_text
-    assert "检查并补齐标签" in ui_text
-    assert "status_fields.operation_flags" in ui_text
+    assert legacy_response.status_code == 410
 
 
 def test_admin_questionnaire_ui_redirects_to_management_page(client):
@@ -1437,12 +1439,10 @@ def test_admin_questionnaire_ui_redirects_to_management_page(client):
     assert response.headers["X-Admin-Deprecated"] == "true"
 
 
-def test_admin_questionnaire_legacy_ui_redirects_to_management_page(client):
+def test_admin_questionnaire_legacy_ui_is_gone(client):
     response = client.get("/admin/_legacy/questionnaires", follow_redirects=False)
 
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/questionnaires")
-    assert response.headers["X-Admin-Deprecated"] == "true"
+    assert response.status_code == 410
 
 
 def test_admin_questionnaire_management_page_exists(client):
@@ -1521,12 +1521,10 @@ def test_admin_questionnaire_editor_page_uses_scrollable_sticky_inspector(client
     assert "overscroll-behavior: contain;" in text
 
 
-def test_class_user_backoffice_ui_redirects_to_shell(client):
+def test_class_user_backoffice_legacy_ui_is_gone(client):
     response = client.get("/admin/class-user-backoffice/ui", follow_redirects=False)
 
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/class-users?tab=class-users")
-    assert response.headers["X-Admin-Deprecated"] == "true"
+    assert response.status_code == 410
 
     shell_response = client.get("/admin/class-users?tab=class-users")
     shell_text = shell_response.get_data(as_text=True)

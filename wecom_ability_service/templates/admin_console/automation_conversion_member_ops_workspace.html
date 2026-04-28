@@ -92,6 +92,7 @@
       <div>发送记录 ID {{ workspace.manual_send_record_id }}</div>
       {% endif %}
       <form class="ac-send-box" method="post" action="{{ url_for('api.admin_automation_conversion_stage_send', stage_key=workspace.stage_key) }}" enctype="multipart/form-data">
+        {% if program_context %}<input type="hidden" name="program_id" value="{{ program_context.id }}">{% endif %}
         <textarea name="content"></textarea>
         <input id="stage-send-image-input" type="file" name="images" multiple>
         <div>添加图片</div>

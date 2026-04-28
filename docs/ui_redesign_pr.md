@@ -76,7 +76,7 @@
 ## 路由口径说明
 
 - 真实执行记录页当前 route 是 `/admin/automation-conversion/programs/<id>/executions`。
-- 旧全局入口 `/admin/automation-conversion/operations/executions` 是 legacy 口径，不再作为主设计对象。
+- 旧全局入口 `/admin/automation-conversion/operations/executions` 已下线；真实执行记录页当前 route 是 `/admin/automation-conversion/programs/<id>/executions`。
 - `/s/<slug>` 会按环境分支渲染：
   - 问卷授权门页
   - 问卷填写页

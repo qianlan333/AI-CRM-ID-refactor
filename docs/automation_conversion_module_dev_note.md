@@ -2,12 +2,15 @@
 
 ## 页面与入口
 
-- `/admin/automation-conversion`、`/admin/automation-conversion/overview`：数据概览
-- `/admin/automation-conversion/operations`：自动化运营
+- `/admin/automation-conversion`：自动化运营方案列表
+- `/admin/automation-conversion/programs/<program_id>/overview`：数据概览
+- `/admin/automation-conversion/programs/<program_id>/operations`：自动化运营
+- `/admin/automation-conversion/programs/<program_id>/flow-design`：流程设计
+- `/admin/automation-conversion/programs/<program_id>/member-ops`：成员运营
 - `/admin/automation-conversion/auto-reply`：自动化应答
-- `/admin/automation-conversion/agent-config`：模型 / Agent 配置
+- `/admin/automation-conversion/shared/agents`：模型 / Agent 配置
 
-当前模块内只保留这 4 个入口。`flow-design`、`member-ops`、`run-center` 仅保留一级兼容跳转，其余旧深层页面已下线。
+当前模块使用方案列表、方案内页面、共享资源入口和 runtime 入口。旧 `overview`、`operations`、`flow-design`、`member-ops`、`settings`、`sop`、`stage/<stage_key>`、`model-infra`、`debug`、`preview`、`agent-config`、`run-center` 页面入口已下线。
 
 ## 核心数据结构
 

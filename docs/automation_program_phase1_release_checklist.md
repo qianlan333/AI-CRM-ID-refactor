@@ -7,12 +7,16 @@
 - [ ] 历史 workflow 已 backfill 到默认方案
 - [ ] 历史 workflow_execution 已 backfill 到默认方案
 - [ ] `/admin/automation-conversion` 已切换为方案列表
-- [ ] `/admin/automation-conversion/overview` 已 302 到默认方案 overview
-- [ ] `/admin/automation-conversion/operations` 已 302 到默认方案 operations
-- [ ] `/admin/automation-conversion/flow-design` 已 302 到默认方案 flow-design
-- [ ] `/admin/automation-conversion/member-ops` 已 302 到默认方案 member-ops
-- [ ] `/admin/automation-conversion/agent-config` 已 302 到 `/admin/automation-conversion/shared/agents`
-- [ ] `/admin/automation-conversion/run-center` 已 302 到 `/admin/automation-conversion/runtime`
+- [ ] `/admin/automation-conversion/programs/<program_id>/overview` 可访问
+- [ ] `/admin/automation-conversion/programs/<program_id>/operations` 可访问
+- [ ] `/admin/automation-conversion/programs/<program_id>/flow-design` 可访问
+- [ ] `/admin/automation-conversion/programs/<program_id>/member-ops` 可访问
+- [ ] 旧 `/admin/automation-conversion/overview` 已下线，不再注册
+- [ ] 旧 `/admin/automation-conversion/operations` 已下线，不再注册
+- [ ] 旧 `/admin/automation-conversion/flow-design` 已下线，不再注册
+- [ ] 旧 `/admin/automation-conversion/member-ops` 已下线，不再注册
+- [ ] 旧 `/admin/automation-conversion/agent-config` 已下线，不再作为可用页面入口
+- [ ] 旧 `/admin/automation-conversion/run-center` 已下线，不再作为可用页面入口
 - [ ] `/admin/automation-conversion/shared/agents` 可访问
 - [ ] `/admin/automation-conversion/shared/profile-segments` 可访问
 - [ ] `/admin/automation-conversion/shared/model-infra` 可访问
@@ -26,7 +30,7 @@
 - [ ] 未引入 `automation_program_member`
 - [ ] 未重构 `automation_member` 唯一约束
 - [ ] `auto-reply` 仍保持模块级
-- [ ] `agent-config` 仍保持共享资源级
-- [ ] `model-infra` 仍保持模块级
+- [ ] Agent 配置仍保持共享资源级
+- [ ] model-infra 仍保持共享资源级
 - [ ] 已跑最小 smoke：`python -m pytest tests/test_automation_program_phase1.py -q`
 - [ ] 人工 UAT 已至少覆盖方案列表、默认方案、旧入口跳转、shared、runtime

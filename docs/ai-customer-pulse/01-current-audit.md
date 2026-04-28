@@ -15,7 +15,7 @@
 
 - `/admin` 工作台背后的 `todos`（`/api/admin/dashboard/todos`）
 - `/admin/jobs` 的待处理队列
-- `/admin/automation-conversion/run-center?tab=reply-monitor`
+- `/admin/automation-conversion/runtime?tab=reply-monitor`
 - `/admin/customers/<external_userid>` 上的单客户 `AI Customer Pulse`
 
 如果要做“AI 客户推进收件箱”，最佳切入点不是从零新造消息系统，而是复用现有客户聚合读模型、自动化转化队列、预览后执行发送链路和 `ai_customer_pulse` feature flag，把它们收口成新的读模型和操作面板。
@@ -29,9 +29,9 @@
 | 客户详情 | `/admin/customers/<external_userid>` | 客户档案、实时标签、问卷答案、聊天记录、自动化转化侧栏 | `domains.admin_console.customer_profile_service` | 已有 `AI Customer Pulse` 卡位，且已挂 `ai_customer_pulse` flag |
 | 用户运营页 | `/admin/user-ops/ui` | 运营池筛选、全选、免打扰、批量私信预览/执行、发送记录 | `domains.user_ops.page_service` | 可复用“先预览再执行”的发送链路 |
 | 自动化转化概览 | `/admin/automation-conversion` | 经营驾驶舱、阶段看板、消息活跃同步、自动接话监控 | `domains.automation_conversion.service` | 最接近“收件箱运营面板” |
-| 自动化转化成员运营 | `/admin/automation-conversion/member-ops` | 按阶段看成员、做池子操作 | `automation_member` 读模型 | 可作为候选客户列表承载页 |
-| 自动化转化 Run Center | `/admin/automation-conversion/run-center` | sync、reply-monitor、model-infra、agent-orchestration、logs、debug | AI、SOP、队列、日志都在这里 | 最强接入点 |
-| SOP 管理 | `/admin/automation-conversion/sop` | 池子 SOP 配置、模板、batch 摘要 | `automation_sop_*` | 可复用模板与批次执行模型，但不是收件箱 |
+| 自动化转化成员运营 | `/admin/automation-conversion/programs/<program_id>/member-ops` | 按阶段看成员、做池子操作 | `automation_member` 读模型 | 可作为候选客户列表承载页 |
+| 自动化转化 Run Center | `/admin/automation-conversion/runtime` | sync、reply-monitor、model-infra、agent-orchestration、logs、debug | AI、SOP、队列、日志都在这里 | 最强接入点 |
+| SOP 管理 | `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop` | 池子 SOP 配置、模板、batch 摘要 | `automation_sop_*` | 可复用模板与批次执行模型，但不是收件箱 |
 | 问卷控制台 | `/admin/questionnaires`、`/admin/questionnaires/<id>` | 问卷建模、打分、外推日志、调试 | `domains.questionnaire` | 提供客户意图证据源 |
 | 同步任务页 | `/admin/jobs` | archive sync、callbacks、message batches、deferred jobs、webhooks | `domains.admin_jobs` | 提供“队列/失败/重试”式 inbox 基础体验 |
 | 配置中心 | `/admin/config/*` | app settings、routing、signup tags、MCP tools | `domains.admin_config` | feature flag 与 AI / webhook 配置入口 |
@@ -186,8 +186,8 @@ flowchart LR
 | `/admin/customers/<external_userid>` | 客户基本资料、实时标签、问卷答案、聊天记录、自动化转化侧栏、可选 Pulse 卡位 |
 | `/admin/user-ops/ui` | 运营池筛选、免打扰、批量私信预览/执行、发送记录 |
 | `/admin/automation-conversion` | 自动化经营概览、消息活跃同步、自动接话监控、阶段看板 |
-| `/admin/automation-conversion/run-center` | sync、reply-monitor、model-infra、agent-orchestration、replay、outputs、logs、debug |
-| `/admin/automation-conversion/sop` | SOP 配置、模板、recent batch |
+| `/admin/automation-conversion/runtime` | sync、reply-monitor、model-infra、agent-orchestration、replay、outputs、logs、debug |
+| `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop` | SOP 配置、模板、recent batch |
 | `/admin/questionnaires` | 问卷创建、编辑、导出、debug、外推日志 |
 | `/admin/jobs` | 同步任务、回调、消息批次、deferred job、webhook 投递 |
 | `/admin/config/*` | app settings、路由、标签规则、MCP 工具配置 |
@@ -370,7 +370,7 @@ flowchart LR
 
 位置：
 
-- `/admin/automation-conversion/run-center`
+- `/admin/automation-conversion/runtime`
 - `domains.automation_conversion.service`
 - `automation_reply_monitor_queue`、`automation_agent_output`、`automation_member`
 

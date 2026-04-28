@@ -200,10 +200,10 @@ def test_legacy_mcp_redirects_to_api_docs_and_docs_page_renders(app, client, mon
     assert response.headers["Location"].endswith("/admin/api-docs")
     assert docs_response.status_code == 200
     assert "API 文档" in docs_html
-    assert "企业微信自建应用登录" in docs_html
-    assert "自动化运营核心接口" in docs_html
-    assert "问卷核心接口" in docs_html
-    assert "Webhook / Callback" in docs_html
+    assert "企业微信 SSO 扫码登录" in docs_html
+    assert "自动化运营" in docs_html
+    assert "问卷" in docs_html
+    assert "Webhook / 回调" in docs_html
 
 
 def test_config_center_keeps_login_access_and_removes_mcp_tools_tab(app, client, monkeypatch):

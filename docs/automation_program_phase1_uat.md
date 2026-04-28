@@ -44,7 +44,7 @@
 - 每个页面顶部都能看到方案名、方案状态、返回方案列表
 - 方案内 tabs 只围绕当前 program 工作面，不混入 shared/runtime
 
-## 4. 旧入口兼容跳转
+## 4. 旧入口下线校验
 
 ### 操作步骤
 - 依次访问：
@@ -52,12 +52,15 @@
   - `/admin/automation-conversion/operations`
   - `/admin/automation-conversion/flow-design`
   - `/admin/automation-conversion/member-ops`
-  - `/admin/automation-conversion/operations/executions`
 
 ### 预期结果
-- 所有旧入口均返回 `302`
-- 目标地址均为默认方案对应页面
+- 所有旧入口均已下线，不再注册
+- 当前页面从 `/admin/automation-conversion/programs/<program_id>/overview`
+  `/admin/automation-conversion/programs/<program_id>/operations`
+  `/admin/automation-conversion/programs/<program_id>/flow-design`
+  `/admin/automation-conversion/programs/<program_id>/member-ops` 访问
 - 不再直接渲染旧单例工作面
+- workflow / executions 旧深层入口已下线，当前使用 `/admin/automation-conversion/programs/<default_program_id>/operations/workflows/*` 和 `/admin/automation-conversion/programs/<default_program_id>/executions`
 
 ## 5. 共享资源入口
 
@@ -66,11 +69,11 @@
   - `/admin/automation-conversion/shared/agents`
   - `/admin/automation-conversion/shared/profile-segments`
   - `/admin/automation-conversion/shared/model-infra`
-- 访问兼容入口 `/admin/automation-conversion/agent-config`
+- 不再访问旧 `/admin/automation-conversion/agent-config`，当前只使用 `/admin/automation-conversion/shared/agents`
 
 ### 预期结果
 - shared 路由都能打开
-- `agent-config` 会兼容跳到 `/shared/agents`
+- 旧 `agent-config` 入口已下线，不再作为可用页面入口
 - shared 页面不显示 program context，不被误塞进某个方案页
 
 ## 6. 模块运行时入口
@@ -82,11 +85,11 @@
   - `/admin/automation-conversion/runtime/router`
   - `/admin/automation-conversion/runtime/logs`
   - `/admin/automation-conversion/runtime/debug`
-- 访问兼容入口 `/admin/automation-conversion/run-center`
+- 不再访问旧 `/admin/automation-conversion/run-center`，当前只使用 `/admin/automation-conversion/runtime`
 
 ### 预期结果
 - runtime 路由都能打开
-- `run-center` 会兼容跳到 `/runtime`
+- 旧 `run-center` 入口已下线，不再作为可用页面入口
 - runtime 页面保持模块级，不显示 program context
 
 ## 7. workflow / execution program 化

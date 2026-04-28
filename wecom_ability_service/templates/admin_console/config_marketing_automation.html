@@ -9,7 +9,7 @@
     </div>
     <div class="admin-toolbar">
       <a class="admin-button admin-button--primary" href="/admin/automation-conversion">进入自动化转化后台</a>
-      <a class="admin-button admin-button--ghost" href="/admin/automation-conversion/overview">进入数据概览</a>
+      <a class="admin-button admin-button--ghost" href="{{ automation_program_overview_href or url_for('api.admin_automation_conversion') }}">进入数据概览</a>
     </div>
   </div>
 

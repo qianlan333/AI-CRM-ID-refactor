@@ -239,14 +239,14 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
         "key": "overview",
         "label": "数据概览",
         "summary": "概览、运行状态与任务流执行摘要",
-        "endpoint": "api.admin_automation_conversion_overview",
+        "program_endpoint": "api.admin_automation_program_overview",
         "params": {},
     },
     {
         "key": "operations",
         "label": "自动化运营",
         "summary": "任务流列表、节点摘要与执行入口",
-        "endpoint": "api.admin_automation_conversion_operations",
+        "program_endpoint": "api.admin_automation_program_operations",
         "params": {},
     },
     {
@@ -260,17 +260,39 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
         "key": "agent_config",
         "label": "模型与智能体配置",
         "summary": "可用智能体与基础画像分层模板配置",
-        "endpoint": "api.admin_automation_conversion_agent_config",
+        "endpoint": "api.admin_automation_conversion_shared_agents",
         "params": {},
     },
 )
-def _redirect_to(endpoint: str, **params):
-    compact_params = {key: value for key, value in params.items() if value not in (None, "", False)}
-    return redirect(url_for(endpoint, **compact_params), code=302)
+def _coerce_program_id(program_id: object) -> int | None:
+    try:
+        normalized_program_id = int(program_id or 0)
+    except (TypeError, ValueError):
+        return None
+    return normalized_program_id if normalized_program_id > 0 else None
 
 
-def _default_program_redirect(endpoint: str, **params):
-    return _redirect_to(endpoint, program_id=get_default_automation_program_id(), **params)
+def _request_program_id() -> int | None:
+    return _coerce_program_id(request.values.get("program_id"))
+
+
+def _default_program_id_or_none() -> int | None:
+    try:
+        return _coerce_program_id(get_default_automation_program_id())
+    except Exception:
+        return None
+
+
+def _program_route_or_main(endpoint: str, *, program_id: int | None = None, **params) -> str:
+    normalized_program_id = _coerce_program_id(program_id) or _default_program_id_or_none()
+    if not normalized_program_id:
+        return url_for("api.admin_automation_conversion")
+    compact_params = {key: value for key, value in params.items() if value is not None and value != ""}
+    return url_for(endpoint, program_id=normalized_program_id, **compact_params)
+
+
+def _redirect_to_program(endpoint: str, *, program_id: int | None = None, **params):
+    return redirect(_program_route_or_main(endpoint, program_id=program_id, **params), code=302)
 
 
 def _program_route(endpoint: str, program_id: int, **params) -> str:
@@ -293,7 +315,7 @@ def _operations_page_api_urls(*, program_id: int | None = None) -> dict[str, str
         "workflow_activate_base": url_for("api.api_admin_automation_conversion_workflow_activate", workflow_id=0, **program_params),
         "workflow_pause_base": url_for("api.api_admin_automation_conversion_workflow_pause", workflow_id=0, **program_params),
         "workflow_delete_base": url_for("api.api_admin_automation_conversion_workflow_delete", workflow_id=0, **program_params),
-        "workflow_nodes_base": url_for("api.api_admin_automation_conversion_workflow_nodes", workflow_id=0),
+        "workflow_nodes_base": url_for("api.api_admin_automation_conversion_workflow_node_list", workflow_id=0),
         "workflow_node_base": url_for("api.api_admin_automation_conversion_workflow_node_update", node_id=0),
         "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
         "profile_segment_templates_options": url_for("api.api_admin_automation_conversion_profile_segment_template_options", enabled_only=0),
@@ -306,21 +328,22 @@ def _operations_page_api_urls(*, program_id: int | None = None) -> dict[str, str
 
 
 def _operations_page_entry_urls(*, program_id: int | None = None) -> dict[str, str]:
-    if program_id:
-        normalized_program_id = int(program_id)
+    normalized_program_id = _coerce_program_id(program_id) or _default_program_id_or_none()
+    if not normalized_program_id:
+        fallback = url_for("api.admin_automation_conversion")
         return {
-            "list": _program_route("api.admin_automation_program_operations", normalized_program_id),
-            "workflow_new": _program_route("api.admin_automation_program_workflow_new", normalized_program_id),
-            "workflow_edit_base": _program_route("api.admin_automation_program_workflow_edit", normalized_program_id, workflow_id=0),
-            "workflow_nodes_base": _program_route("api.admin_automation_program_workflow_nodes", normalized_program_id, workflow_id=0),
-            "executions": _program_route("api.admin_automation_program_executions", normalized_program_id),
+            "list": fallback,
+            "workflow_new": fallback,
+            "workflow_edit_base": fallback,
+            "workflow_nodes_base": fallback,
+            "executions": fallback,
         }
     return {
-        "list": url_for("api.admin_automation_conversion_operations"),
-        "workflow_new": url_for("api.admin_automation_conversion_workflow_new"),
-        "workflow_edit_base": url_for("api.admin_automation_conversion_workflow_edit", workflow_id=0),
-        "workflow_nodes_base": url_for("api.admin_automation_conversion_workflow_nodes", workflow_id=0),
-        "executions": url_for("api.admin_automation_conversion_execution_records"),
+        "list": _program_route("api.admin_automation_program_operations", normalized_program_id),
+        "workflow_new": _program_route("api.admin_automation_program_workflow_new", normalized_program_id),
+        "workflow_edit_base": _program_route("api.admin_automation_program_workflow_edit", normalized_program_id, workflow_id=0),
+        "workflow_nodes_base": _program_route("api.admin_automation_program_workflow_nodes", normalized_program_id, workflow_id=0),
+        "executions": _program_route("api.admin_automation_program_executions", normalized_program_id),
     }
 
 
@@ -395,12 +418,13 @@ def _build_execution_records_workspace(*, program_id: int | None = None) -> dict
 
 def _build_overview_workspace(*, program_id: int | None = None) -> dict[str, object]:
     snapshot = get_overview_payload()
+    action_params = {"program_id": int(program_id)} if _coerce_program_id(program_id) else {}
     return {
         "snapshot": snapshot,
         "api_urls": {
             "dashboard": url_for("api.api_admin_automation_conversion_dashboard", **_program_api_params(program_id)),
-            "apply_signup_tag": url_for("api.admin_automation_conversion_apply_overview_signup_tag"),
-            "message_activity_sync_run": url_for("api.admin_automation_conversion_run_message_activity_sync"),
+            "apply_signup_tag": url_for("api.admin_automation_conversion_apply_overview_signup_tag", **action_params),
+            "message_activity_sync_run": url_for("api.admin_automation_conversion_run_message_activity_sync", **action_params),
             "reply_monitor_capture": url_for("api.admin_automation_conversion_reply_monitor_capture"),
             "reply_monitor_run_due": url_for("api.admin_automation_conversion_reply_monitor_run_due"),
         },
@@ -416,7 +440,7 @@ def _build_auto_reply_workspace() -> dict[str, object]:
         "message_activity_sync": dict(overview_payload.get("message_activity_sync") or {}),
         "agent_configs": list(agent_config_bundle.get("items") or []),
         "agent_config_total": int(agent_config_bundle.get("total") or 0),
-        "agent_config_href": url_for("api.admin_automation_conversion_agent_config"),
+        "agent_config_href": url_for("api.admin_automation_conversion_shared_agents"),
         "action_urls": {
             "toggle": url_for("api.admin_automation_conversion_reply_monitor_toggle"),
             "capture": url_for("api.admin_automation_conversion_reply_monitor_capture"),
@@ -454,7 +478,7 @@ def _build_agent_config_workspace() -> dict[str, object]:
             "profile_segment_template_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
         },
         "entry_urls": {
-            "operations": url_for("api.admin_automation_conversion_operations"),
+            "operations": _program_route_or_main("api.admin_automation_program_operations"),
             "auto_reply": url_for("api.admin_automation_conversion_auto_reply"),
         },
         "selected_template_id": _query_int("template_id", default=0, minimum=0, maximum=100000000) or None,
@@ -481,13 +505,12 @@ def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None,
         **dict(settings_payload.get("default_channel") or {}),
         "welcome_message": str(input_payload.get("welcome_message") or dict(settings_payload.get("default_channel") or {}).get("welcome_message") or ""),
     }
-    flow_endpoint = "api.admin_automation_program_flow_design" if program_id else "api.admin_automation_conversion_flow_design"
-
     def _flow_href(section_key: str, anchor: str) -> str:
-        params = {"section": section_key}
-        if program_id:
-            params["program_id"] = int(program_id)
-        return url_for(flow_endpoint, **params) + anchor
+        return _program_route_or_main(
+            "api.admin_automation_program_flow_design",
+            program_id=program_id,
+            section=section_key,
+        ) + anchor
 
     return {
         "section": section,
@@ -552,12 +575,12 @@ def _build_run_center_workspace(*, page_input: dict[str, object] | None = None) 
         "tab": tab,
         "subtab": subtab,
         "tabs": [
-            {"key": "overview", "label": "运行概况", "href": url_for("api.admin_automation_conversion_run_center", tab="overview")},
-            {"key": "sync", "label": "数据同步", "href": url_for("api.admin_automation_conversion_run_center", tab="sync")},
-            {"key": "logs", "label": "执行日志 / 审计", "href": url_for("api.admin_automation_conversion_run_center", tab="logs")},
-            {"key": "model-infra", "label": "模型基础设施", "href": url_for("api.admin_automation_conversion_run_center", tab="model-infra")},
-            {"key": "agent-orchestration", "label": "智能体编排", "href": url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="router")},
-            {"key": "debug", "label": "调试", "href": url_for("api.admin_automation_conversion_run_center", tab="debug")},
+            {"key": "overview", "label": "运行概况", "href": url_for("api.admin_automation_conversion_runtime")},
+            {"key": "sync", "label": "数据同步", "href": url_for("api.admin_automation_conversion_runtime_sync")},
+            {"key": "logs", "label": "执行日志 / 审计", "href": url_for("api.admin_automation_conversion_runtime_logs")},
+            {"key": "model-infra", "label": "模型基础设施", "href": url_for("api.admin_automation_conversion_shared_model_infra")},
+            {"key": "agent-orchestration", "label": "智能体编排", "href": url_for("api.admin_automation_conversion_runtime_router")},
+            {"key": "debug", "label": "调试", "href": url_for("api.admin_automation_conversion_runtime_debug")},
         ],
         "overview": overview_payload,
         "settings": settings_payload,
@@ -614,10 +637,15 @@ def _build_run_center_workspace(*, page_input: dict[str, object] | None = None) 
 def _automation_conversion_workspace_tabs(active_key: str) -> list[dict[str, object]]:
     items: list[dict[str, object]] = []
     for item in _AUTOMATION_CONVERSION_WORKSPACE_TABS:
+        program_endpoint = item.get("program_endpoint")
+        if program_endpoint:
+            href = _program_route_or_main(str(program_endpoint))
+        else:
+            href = url_for(str(item["endpoint"]), **dict(item.get("params") or {}))
         items.append(
             {
                 **item,
-                "href": url_for(str(item["endpoint"]), **dict(item.get("params") or {})),
+                "href": href,
                 "active": item["key"] == active_key,
             }
         )
@@ -737,7 +765,10 @@ def _render_workflow_editor_page(*, workflow_id: int | None = None, page_error: 
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
-            ((program or {}).get("program_name") or "自动化运营", url_for("api.admin_automation_program_operations", program_id=program_id) if program_id else url_for("api.admin_automation_conversion_operations")),
+            (
+                (program or {}).get("program_name") or "自动化运营",
+                _program_route_or_main("api.admin_automation_program_operations", program_id=program_id),
+            ),
             ("新建任务流" if is_new else "编辑任务流", None),
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else _automation_conversion_workspace_tabs("operations"),
@@ -760,7 +791,10 @@ def _render_workflow_nodes_page(*, workflow_id: int, page_error: str = "", progr
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
-            ((program or {}).get("program_name") or "自动化运营", url_for("api.admin_automation_program_operations", program_id=program_id) if program_id else url_for("api.admin_automation_conversion_operations")),
+            (
+                (program or {}).get("program_name") or "自动化运营",
+                _program_route_or_main("api.admin_automation_program_operations", program_id=program_id),
+            ),
             ("节点配置", None),
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else _automation_conversion_workspace_tabs("operations"),
@@ -782,7 +816,10 @@ def _render_execution_records_page(*, page_error: str = "", program: dict[str, o
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
-            ((program or {}).get("program_name") or "自动化运营", url_for("api.admin_automation_program_operations", program_id=program_id) if program_id else url_for("api.admin_automation_conversion_operations")),
+            (
+                (program or {}).get("program_name") or "自动化运营",
+                _program_route_or_main("api.admin_automation_program_executions", program_id=program_id),
+            ),
             ("执行记录", None),
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "executions") if program_id else _automation_conversion_workspace_tabs("operations"),
@@ -1028,48 +1065,8 @@ def _program_status_action(program_id: int, status: str):
     return _program_action_redirect(url_for("api.admin_automation_conversion"))
 
 
-def admin_automation_conversion_overview():
-    return _default_program_redirect("api.admin_automation_program_overview")
-
-
-def admin_automation_conversion_operations():
-    return _default_program_redirect("api.admin_automation_program_operations")
-
-
-def admin_automation_conversion_workflow_new():
-    return _default_program_redirect("api.admin_automation_program_workflow_new")
-
-
-def admin_automation_conversion_workflow_edit(workflow_id: int):
-    return _default_program_redirect("api.admin_automation_program_workflow_edit", workflow_id=workflow_id)
-
-
-def admin_automation_conversion_workflow_nodes(workflow_id: int):
-    return _default_program_redirect("api.admin_automation_program_workflow_nodes", workflow_id=workflow_id)
-
-
-def admin_automation_conversion_execution_records():
-    return _default_program_redirect("api.admin_automation_program_executions")
-
-
 def admin_automation_conversion_auto_reply():
     return _render_auto_reply_page()
-
-
-def admin_automation_conversion_agent_config():
-    return _redirect_to("api.admin_automation_conversion_shared_agents")
-
-
-def admin_automation_conversion_flow_design():
-    return _default_program_redirect("api.admin_automation_program_flow_design")
-
-
-def admin_automation_conversion_member_ops():
-    return _default_program_redirect("api.admin_automation_program_member_ops")
-
-
-def admin_automation_conversion_run_center():
-    return _redirect_to("api.admin_automation_conversion_runtime", notice=_query_text("notice") or None)
 
 
 def admin_automation_program_overview(program_id: int):
@@ -1150,58 +1147,9 @@ def admin_automation_conversion_runtime_debug():
     )
 
 
-def admin_automation_conversion_settings():
-    return _default_program_redirect(
-        "api.admin_automation_program_flow_design",
-        section=_query_text("section") or "questionnaire",
-        saved=_query_text("saved") or None,
-    )
-
-
-def admin_automation_conversion_sop():
-    return _default_program_redirect(
-        "api.admin_automation_program_flow_design",
-        section="sop",
-        pool=_query_text("pool") or None,
-        day=_query_text("day") or None,
-    )
-
-
-def admin_automation_conversion_stage(stage_key: str):
-    return _default_program_redirect(
-        "api.admin_automation_program_member_ops",
-        stage=stage_key,
-        panel="members",
-        keyword=_query_text("keyword") or None,
-        external_contact_id=_query_text("external_contact_id") or None,
-    )
-
-
-def admin_automation_conversion_model_infra():
-    return _redirect_to(
-        "api.admin_automation_conversion_shared_model_infra",
-        tested=_query_text("tested") or None,
-    )
-
-
-def admin_automation_conversion_debug():
-    return _redirect_to(
-        "api.admin_automation_conversion_runtime_debug",
-        external_contact_id=_query_text("external_contact_id") or None,
-        phone=_query_text("phone") or None,
-    )
-
-
-def admin_automation_conversion_preview():
-    return _redirect_to(
-        "api.admin_automation_conversion_runtime_debug",
-        external_contact_id=_query_text("external_contact_id") or None,
-        phone=_query_text("phone") or None,
-    )
-
-
 def admin_automation_conversion_save_settings():
     section = str(request.form.get("section") or "questionnaire").strip() or "questionnaire"
+    program_id = _request_program_id()
     action_token_error = validate_admin_console_action_token()
     page_input = dict(request.form or {})
     if action_token_error:
@@ -1211,12 +1159,20 @@ def admin_automation_conversion_save_settings():
     except ValueError as exc:
         return _render_flow_design_page(page_error=str(exc), page_input=page_input)
     return redirect(
-        url_for("api.admin_automation_conversion_flow_design", section=section, saved=1),
+        _program_route_or_main(
+            "api.admin_automation_program_flow_design",
+            program_id=program_id,
+            section=section,
+            pool=str(request.values.get("pool") or "").strip() or None,
+            day=str(request.values.get("day") or "").strip() or None,
+            saved=1,
+        ),
         code=302,
     )
 
 
 def admin_automation_conversion_generate_default_channel():
+    program_id = _request_program_id()
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         return _render_flow_design_page(page_error=action_token_error, page_input=dict(request.form or {}))
@@ -1227,15 +1183,24 @@ def admin_automation_conversion_generate_default_channel():
             page_input=dict(request.form or {}),
         )
     return redirect(
-        url_for("api.admin_automation_conversion_flow_design", section="channel", saved=1),
+        _program_route_or_main(
+            "api.admin_automation_program_flow_design",
+            program_id=program_id,
+            section="channel",
+            pool=str(request.values.get("pool") or "").strip() or None,
+            day=str(request.values.get("day") or "").strip() or None,
+            saved=1,
+        ),
         code=302,
     )
 
 
 def admin_automation_conversion_stage_send(stage_key: str):
+    program_id = _request_program_id()
     if request.method == "GET":
-        return _redirect_to(
-            "api.admin_automation_conversion_member_ops",
+        return _redirect_to_program(
+            "api.admin_automation_program_member_ops",
+            program_id=program_id,
             stage=stage_key,
             panel="send",
             phone=_query_text("phone") or None,
@@ -1253,8 +1218,9 @@ def admin_automation_conversion_stage_send(stage_key: str):
                 operator_type="user",
             )
             return redirect(
-                url_for(
-                    "api.admin_automation_conversion_member_ops",
+                _program_route_or_main(
+                    "api.admin_automation_program_member_ops",
+                    program_id=program_id,
                     stage=route_key,
                     panel="send",
                     focus_batch_notice="created",
@@ -1269,8 +1235,9 @@ def admin_automation_conversion_stage_send(stage_key: str):
             operator_id=_operator_from_request(),
         )
         return redirect(
-            url_for(
-                "api.admin_automation_conversion_member_ops",
+            _program_route_or_main(
+                "api.admin_automation_program_member_ops",
+                program_id=program_id,
                 stage=route_key,
                 panel="send",
                 manual_send_notice="sent",
@@ -1322,7 +1289,7 @@ def admin_automation_conversion_agent_orchestration_save_draft(agent_code: str):
             query_params = {"tab": "agent-orchestration", "subtab": "agents", "agent": agent_code}
         return _render_run_center_page(page_error=str(exc), page_input={**query_params, **payload})
     return redirect(
-        url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="agents", agent=agent_code, saved=1),
+        url_for("api.admin_automation_conversion_runtime_router", subtab="agents", agent=agent_code, saved=1),
         code=302,
     )
 
@@ -1346,8 +1313,7 @@ def admin_automation_conversion_agent_orchestration_review_output(output_id: str
     page_notice = "话术已标记为采用" if str(reviewed.get("applied_status") or reviewed.get("outcome_status") or "").strip() == "adopted" else "话术已标记为不采用"
     return redirect(
         url_for(
-            "api.admin_automation_conversion_run_center",
-            tab="agent-orchestration",
+            "api.admin_automation_conversion_runtime_router",
             subtab="outputs",
             external_contact_id=str(request.form.get("external_contact_id") or "").strip() or None,
             scripts_only=str(request.form.get("scripts_only") or "").strip() or None,
@@ -1368,7 +1334,7 @@ def admin_automation_conversion_agent_orchestration_replay(run_id: str):
         return _render_run_center_page(page_error=str(exc))
     request_id = str(((replayed.get("run") or {}).get("request_id")) or request.args.get("request_id") or "").strip()
     return redirect(
-        url_for("api.admin_automation_conversion_run_center", tab="agent-orchestration", subtab="replay", request_id=request_id, replayed=1),
+        url_for("api.admin_automation_conversion_runtime_router", subtab="replay", request_id=request_id, replayed=1),
         code=302,
     )
 
@@ -1458,11 +1424,12 @@ def admin_automation_conversion_reply_monitor_run_due():
 
 
 def admin_automation_conversion_run_message_activity_sync():
+    program_id = _request_program_id()
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         if _wants_json_response():
             return jsonify({"ok": False, "error": action_token_error}), 400
-        return _render_overview_page(page_error=action_token_error)
+        return _redirect_to_program("api.admin_automation_program_overview", program_id=program_id)
     result = run_message_activity_sync(
         operator_id=_operator_from_request(),
         operator_type="user",
@@ -1485,29 +1452,31 @@ def admin_automation_conversion_run_message_activity_sync():
         )
     if result.get("ok"):
         return redirect(
-            url_for("api.admin_automation_conversion_overview", message_activity_sync=1),
+            _program_route_or_main("api.admin_automation_program_overview", program_id=program_id, message_activity_sync=1),
             code=302,
         )
+    return _redirect_to_program("api.admin_automation_program_overview", program_id=program_id)
 
 
 def admin_automation_conversion_apply_overview_signup_tag():
+    program_id = _request_program_id()
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         if _wants_json_response():
             return jsonify({"ok": False, "error": action_token_error}), 400
-        return _render_overview_page(page_error=action_token_error)
+        return _redirect_to_program("api.admin_automation_program_overview", program_id=program_id)
     try:
         result = apply_dashboard_signup_tag(operator_id=_operator_from_request())
     except ValueError as exc:
         if _wants_json_response():
             return jsonify({"ok": False, "error": str(exc)}), 400
-        return _render_overview_page(page_error=str(exc))
+        return _redirect_to_program("api.admin_automation_program_overview", program_id=program_id)
     status_code = 200 if result.get("ok") else 502
     if _wants_json_response():
         return jsonify(result), status_code
     if result.get("ok"):
-        return redirect(url_for("api.admin_automation_conversion_overview"), code=302)
-    return _render_overview_page(page_error=str(result.get("message") or "批量打标失败"))
+        return _redirect_to_program("api.admin_automation_program_overview", program_id=program_id)
+    return _redirect_to_program("api.admin_automation_program_overview", program_id=program_id)
     if result.get("status") == "not_configured":
         missing_keys = "、".join(result.get("missing_keys") or [])
         return _render_overview_page(page_error=f"消息库尚未配置，请先补齐 {missing_keys}")
@@ -1954,7 +1923,7 @@ def api_admin_automation_conversion_default_channel_settings():
     return jsonify({"ok": True, **get_default_channel_settings_payload()})
 
 
-def api_admin_automation_conversion_settings():
+def api_admin_automation_conversion_settings_payload():
     return jsonify({"ok": True, "settings": get_settings_payload()})
 
 
@@ -2005,18 +1974,6 @@ def api_admin_automation_conversion_model_settings_save():
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "model_infra": result, **result})
-
-
-def api_admin_automation_conversion_model_infra_settings_save_legacy():
-    payload = request.get_json(silent=True) or {}
-    try:
-        result = save_model_infra_settings(payload)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    legacy_deepseek = dict(result.get("deepseek") or {})
-    legacy_deepseek.pop("reasoner_model", None)
-    legacy_payload = {**result, "deepseek": legacy_deepseek}
-    return jsonify({"ok": True, "model_infra": legacy_payload, **legacy_payload})
 
 
 def api_admin_automation_conversion_model_settings_test():
@@ -2161,7 +2118,7 @@ def api_admin_automation_conversion_workflow_delete(workflow_id: int):
     return jsonify({"ok": True, **result})
 
 
-def api_admin_automation_conversion_workflow_nodes(workflow_id: int):
+def api_admin_automation_conversion_workflow_node_list(workflow_id: int):
     try:
         payload = list_conversion_workflow_nodes(int(workflow_id))
     except LookupError as exc:
@@ -2479,25 +2436,9 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/runtime/router", methods=["GET"])(admin_automation_conversion_runtime_router)
     bp.route("/admin/automation-conversion/runtime/logs", methods=["GET"])(admin_automation_conversion_runtime_logs)
     bp.route("/admin/automation-conversion/runtime/debug", methods=["GET"])(admin_automation_conversion_runtime_debug)
-    bp.route("/admin/automation-conversion/overview", methods=["GET"])(admin_automation_conversion_overview)
-    bp.route("/admin/automation-conversion/operations", methods=["GET"])(admin_automation_conversion_operations)
-    bp.route("/admin/automation-conversion/settings", methods=["GET"])(admin_automation_conversion_settings)
     bp.route("/admin/automation-conversion/settings/save", methods=["POST"])(admin_automation_conversion_save_settings)
     bp.route("/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(admin_automation_conversion_generate_default_channel)
-    bp.route("/admin/automation-conversion/sop", methods=["GET"])(admin_automation_conversion_sop)
-    bp.route("/admin/automation-conversion/operations/workflows/new", methods=["GET"])(admin_automation_conversion_workflow_new)
-    bp.route("/admin/automation-conversion/operations/workflows/<int:workflow_id>/edit", methods=["GET"])(admin_automation_conversion_workflow_edit)
-    bp.route("/admin/automation-conversion/operations/workflows/<int:workflow_id>/nodes", methods=["GET"])(admin_automation_conversion_workflow_nodes)
-    bp.route("/admin/automation-conversion/operations/executions", methods=["GET"])(admin_automation_conversion_execution_records)
     bp.route("/admin/automation-conversion/auto-reply", methods=["GET"])(admin_automation_conversion_auto_reply)
-    bp.route("/admin/automation-conversion/agent-config", methods=["GET"])(admin_automation_conversion_agent_config)
-    bp.route("/admin/automation-conversion/flow-design", methods=["GET"])(admin_automation_conversion_flow_design)
-    bp.route("/admin/automation-conversion/member-ops", methods=["GET"])(admin_automation_conversion_member_ops)
-    bp.route("/admin/automation-conversion/run-center", methods=["GET"])(admin_automation_conversion_run_center)
-    bp.route("/admin/automation-conversion/model-infra", methods=["GET"])(admin_automation_conversion_model_infra)
-    bp.route("/admin/automation-conversion/debug", methods=["GET"])(admin_automation_conversion_debug)
-    bp.route("/admin/automation-conversion/preview", methods=["GET"])(admin_automation_conversion_preview)
-    bp.route("/admin/automation-conversion/stage/<stage_key>", methods=["GET"])(admin_automation_conversion_stage)
     bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET", "POST"])(admin_automation_conversion_stage_send)
     bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft", methods=["POST"])(admin_automation_conversion_agent_orchestration_save_draft)
     bp.route("/admin/automation-conversion/agent-orchestration/outputs/<output_id>/review", methods=["POST"])(admin_automation_conversion_agent_orchestration_review_output)
@@ -2528,7 +2469,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/sop/templates/<pool_key>/<int:day_index>", methods=["DELETE"])(api_admin_automation_conversion_sop_template_delete)
     bp.route("/api/admin/automation-conversion/sop/run-due", methods=["POST"])(api_admin_automation_conversion_sop_run_due)
     bp.route("/api/admin/automation-conversion/dashboard", methods=["GET"])(api_admin_automation_conversion_dashboard)
-    bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings)
+    bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings_payload)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_settings_save)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_settings_default_channel_generate_qr)
     bp.route("/api/admin/automation-conversion/agent-outputs", methods=["GET"])(api_admin_automation_conversion_agent_outputs)
@@ -2549,7 +2490,6 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/default-channel-settings/generate-qr", methods=["POST"])(api_admin_automation_conversion_default_channel_generate_qr)
     bp.route("/api/admin/automation-conversion/model-settings", methods=["GET"])(api_admin_automation_conversion_model_settings)
     bp.route("/api/admin/automation-conversion/model-settings", methods=["PUT"])(api_admin_automation_conversion_model_settings_save)
-    bp.route("/api/admin/automation-conversion/model-infra/settings", methods=["POST"])(api_admin_automation_conversion_model_infra_settings_save_legacy)
     bp.route("/api/admin/automation-conversion/model-settings/test", methods=["POST"])(api_admin_automation_conversion_model_settings_test)
     bp.route("/api/admin/automation-conversion/router-pending-callbacks", methods=["GET"])(api_admin_automation_conversion_router_pending_callbacks)
     bp.route("/api/admin/automation-conversion/router-callback-replay/<run_id>", methods=["POST"])(api_admin_automation_conversion_router_callback_replay)
@@ -2574,7 +2514,7 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>", methods=["DELETE"])(api_admin_automation_conversion_workflow_delete)
     bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>/activate", methods=["POST"])(api_admin_automation_conversion_workflow_activate)
     bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>/pause", methods=["POST"])(api_admin_automation_conversion_workflow_pause)
-    bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>/nodes", methods=["GET"])(api_admin_automation_conversion_workflow_nodes)
+    bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>/nodes", methods=["GET"])(api_admin_automation_conversion_workflow_node_list)
     bp.route("/api/admin/automation-conversion/workflows/<int:workflow_id>/nodes", methods=["POST"])(api_admin_automation_conversion_workflow_node_create)
     bp.route("/api/admin/automation-conversion/workflow-nodes/<int:node_id>", methods=["PUT"])(api_admin_automation_conversion_workflow_node_update)
     bp.route("/api/admin/automation-conversion/workflow-nodes/<int:node_id>", methods=["DELETE"])(api_admin_automation_conversion_workflow_node_delete)

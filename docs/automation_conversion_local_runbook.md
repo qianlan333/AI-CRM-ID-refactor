@@ -76,7 +76,7 @@ PY
 6. 配置至少 1 道关键题
 7. 配置普通跟进 / 重点跟进门槛
 8. 配置 5 个池子的沉默阈值
-9. 如果要联调自动 SOP，再打开 `/admin/automation-conversion/sop`
+9. 如果要联调自动 SOP，再打开 `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop`
 10. 至少为 `new_user / inactive_normal / active_normal` 配置：
    - enabled
    - max_day_count
@@ -214,10 +214,10 @@ curl "http://127.0.0.1:5000/api/sidebar/marketing-status?external_userid=wm_demo
    - `立即刷新一次`
    - `自动启动时间窗`
    - 每个阶段都包含 `查看名单 / 创建群发`
-3. 打开 `/admin/automation-conversion/stage/new-user`
-4. 点击 `创建群发` 进入 `/admin/automation-conversion/stage/new-user/send`
+3. 打开 `/admin/automation-conversion/programs/<program_id>/member-ops?stage=new-user&panel=members`
+4. 点击 `创建群发` 进入 `/admin/automation-conversion/programs/<program_id>/member-ops?stage=new-user&panel=send`
 5. 验证页面显示 `官方群发`
-6. 打开 `/admin/automation-conversion/stage/inactive-focus/send`
+6. 打开 `/admin/automation-conversion/programs/<program_id>/member-ops?stage=inactive-focus&panel=send`
 7. 验证页面显示 `AI 批量处理`
 
 ## 10. 验证非重点阶段官方群发
@@ -290,7 +290,7 @@ curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/sop/run-due \
 
 再执行一次，预期同一天不会重复给同一个 `member + pool + day` 发送。
 
-打开 `/admin/automation-conversion/sop`，确认最近 batch 区域能看到：
+打开 `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop`，确认最近 batch 区域能看到：
 
 - pool
 - day
@@ -356,7 +356,7 @@ curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/message-activ
 
 ## 13. 验证默认渠道二维码
 
-在 `/admin/automation-conversion/settings`：
+在 `/admin/automation-conversion/programs/<program_id>/flow-design`：
 
 - 配置 `欢迎语`
 - 打开 `免验证直接添加好友`
