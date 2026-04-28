@@ -77,7 +77,7 @@
 | `wecom_ability_service/http/automation_conversion.py` | `/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches` | `create_focus_send_batch` | `CreateFocusSendBatchCommand` | focus-send batch create 入口 | P3 |
 | `wecom_ability_service/http/automation_conversion.py` | `/api/admin/automation-conversion/focus-send-batches/<batch_id>` | `get_focus_send_batch_detail` | `GetFocusSendBatchDetailQuery` | focus-send detail 读面 | P3 |
 | `wecom_ability_service/http/automation_conversion.py` | `/api/admin/automation-conversion/focus-send-batches/run-due` | `run_due_focus_send_batches` | `RunDueFocusSendBatchesCommand` | focus-send due runner | P3 |
-| `wecom_ability_service/http/automation_conversion.py` | `/admin/automation-conversion/reply-monitor/*`、`/api/admin/automation-conversion/reply-monitor/*` | `save_reply_monitor_enabled`、`run_reply_monitor_capture`、`run_due_reply_monitor` | `SetReplyMonitorEnabledCommand`、`CaptureReplyMonitorQueueCommand`、`RunDueReplyMonitorCommand` | reply monitor 全链仍直连 legacy service | P3 |
+| `wecom_ability_service/http/automation_conversion.py` | `/admin/automation-conversion/auto-reply/reply-monitor/*`、`/api/admin/automation-conversion/reply-monitor/*` | `save_reply_monitor_enabled`、`run_reply_monitor_capture`、`run_due_reply_monitor` | `SetReplyMonitorEnabledCommand`、`CaptureReplyMonitorQueueCommand`、`RunDueReplyMonitorCommand` | reply monitor 全链仍直连 legacy service；旧浏览器路径 `/admin/automation-conversion/reply-monitor/*` 已下线 | P3 |
 | `wecom_ability_service/http/tasks.py` | `/api/tasks/private-message` 等 | `domains.tasks.service.dispatch_wecom_task` | 长期应由 integration/transport owner 收口；Wave 4 只盘 automation caller 依赖 | `tasks` 自身不是 automation owner，但 automation runtime 强依赖它 | P3 |
 
 ## 3. 当前跨 context 直连点

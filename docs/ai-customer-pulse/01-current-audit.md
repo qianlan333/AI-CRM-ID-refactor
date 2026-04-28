@@ -133,7 +133,7 @@ flowchart LR
 | `GET /api/admin/automation-conversion/agent-outputs/<output_id>` | 单输出详情 | 可溯源 reason/confidence |
 | `POST /api/admin/automation-conversion/stage/<stage_key>/manual-send/preview` | 阶段群发预览 | 已有草稿前置 |
 | `POST /api/admin/automation-conversion/stage/<stage_key>/manual-send` | 阶段群发执行 | 已有执行链路 |
-| `POST /api/admin/automation-conversion/reply-monitor/run-due` | 自动接话队列放行 | 当前像队列消费入口 |
+| `POST /api/admin/automation-conversion/reply-monitor/run-due` | 自动接话队列放行 | internal-token 调用；浏览器页面入口为 `/admin/automation-conversion/auto-reply/reply-monitor/run-due` |
 | `POST /api/admin/automation-conversion/sop/run-due` | 自动 SOP runner | 既可手动，也可 cron 调度 |
 
 ### 3.4 配置 / 治理 / 内部调用

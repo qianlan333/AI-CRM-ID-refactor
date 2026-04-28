@@ -339,7 +339,14 @@ curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/focus-send-ba
 - `MESSAGE_ACTIVITY_DB_USER`
 - `MESSAGE_ACTIVITY_DB_PASS`
 
-首页直接点一次 `立即刷新一次`，或者直接调接口：
+首页直接点一次 `立即刷新一次`。浏览器页面使用 program-scoped 入口：
+
+```text
+POST /admin/automation-conversion/programs/<program_id>/overview/signup-tag/apply
+POST /admin/automation-conversion/programs/<program_id>/overview/message-activity-sync/run
+```
+
+脚本或服务端巡检直接调 internal-token 接口：
 
 ```bash
 curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/message-activity-sync/run \
