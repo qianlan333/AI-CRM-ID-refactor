@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime
 
@@ -145,10 +146,19 @@ def handle_qrcode_enter_from_callback(
     operator_id: str = "",
     send_welcome_message: bool = False,
 ) -> dict[str, object]:
+    normalized_payload_json: dict[str, object] = {}
+    if isinstance(payload_json, str):
+        try:
+            parsed_payload = json.loads(payload_json)
+            normalized_payload_json = parsed_payload if isinstance(parsed_payload, dict) else {}
+        except json.JSONDecodeError:
+            normalized_payload_json = {}
+    else:
+        normalized_payload_json = dict(payload_json or {})
     return HandleQrcodeEnterFromCallbackCommand()(
         external_contact_id=str(external_contact_id or "").strip(),
         phone=str(phone or "").strip(),
-        payload_json=dict(payload_json or {}),
+        payload_json=normalized_payload_json,
         operator_id=str(operator_id or "").strip(),
         send_welcome_message=bool(send_welcome_message),
     )

@@ -3,7 +3,7 @@
 基线说明：
 
 - 本文只基于当前仓库真实 controller -> template 映射整理，不按历史口头叫法或旧 PR 文案推断。
-- `/admin/automation-conversion`、`/admin/automation-conversion/operations/*` 等旧全局入口，当前大多会重定向到默认方案页；实际承载页面以 `programs/<id>` 路由为主。
+- `/admin/automation-conversion` 是方案列表；旧全局页面入口已下线，实际承载页面以 `programs/<id>` 路由为主。
 - `/s/<slug>` 会根据环境分支渲染问卷填写页或“请在微信客户端打开”页。
 - 侧边栏当前真实落地页面只有 `/sidebar/bind-mobile`。
 
@@ -85,5 +85,5 @@
 
 ## 补充说明
 
-- `/admin/automation-conversion/overview`、`/admin/automation-conversion/operations`、`/admin/automation-conversion/flow-design`、`/admin/automation-conversion/member-ops` 等旧全局入口，当前会重定向到默认方案对应页面；真实 UI 应优先按 `programs/<id>` 路由设计。
+- `/admin/automation-conversion/overview`、`/admin/automation-conversion/operations`、`/admin/automation-conversion/flow-design`、`/admin/automation-conversion/member-ops` 等旧全局入口已下线；真实 UI 按 `programs/<id>` 路由设计。
 - `/admin/questionnaires/ui` 是旧 UI 入口，当前会重定向到 `/admin/questionnaires`。

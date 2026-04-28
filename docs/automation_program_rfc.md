@@ -24,18 +24,18 @@
 
 当前后台页面入口：
 
-- `/admin/automation-conversion`：当前默认进入 overview 工作面
-- `/admin/automation-conversion/overview`：数据概览
-- `/admin/automation-conversion/operations`：任务流列表、节点摘要、执行入口
-- `/admin/automation-conversion/operations/workflows/new`：新建任务流
-- `/admin/automation-conversion/operations/workflows/<workflow_id>/edit`：编辑任务流
-- `/admin/automation-conversion/operations/workflows/<workflow_id>/nodes`：节点配置
-- `/admin/automation-conversion/operations/executions`：执行记录
+- `/admin/automation-conversion`：方案列表
+- `/admin/automation-conversion/programs/<program_id>/overview`：方案数据概览
+- `/admin/automation-conversion/programs/<program_id>/operations`：方案运营编排
+- `/admin/automation-conversion/programs/<program_id>/operations/workflows/new`：新建任务流
+- `/admin/automation-conversion/programs/<program_id>/operations/workflows/<workflow_id>/edit`：编辑任务流
+- `/admin/automation-conversion/programs/<program_id>/operations/workflows/<workflow_id>/nodes`：节点配置
+- `/admin/automation-conversion/programs/<program_id>/executions`：执行记录
 - `/admin/automation-conversion/auto-reply`：自动化应答
-- `/admin/automation-conversion/agent-config`：模型 / Agent 配置
-- `/admin/automation-conversion/flow-design`：流程设计，包含阶段模型、问卷规则、SOP、全局规则、默认渠道、发布
-- `/admin/automation-conversion/member-ops`：成员运营
-- `/admin/automation-conversion/run-center`：运行中心，包含运行概况、同步、日志、模型基础设施、Agent Orchestration、调试
+- `/admin/automation-conversion/shared/agents`：模型 / Agent 配置
+- `/admin/automation-conversion/programs/<program_id>/flow-design`：流程设计，包含阶段模型、问卷规则、SOP、全局规则、默认渠道、发布
+- `/admin/automation-conversion/programs/<program_id>/member-ops`：成员运营
+- `/admin/automation-conversion/runtime`：运行中心，包含运行概况、同步、日志、模型基础设施、Agent Orchestration、调试
 
 当前 API 入口包括：
 
@@ -249,7 +249,7 @@ SOP 剧本属于方案；SOP 进度和批次属于某方案下的用户执行状
 
 ### 5.3 运行中心
 
-当前 `/admin/automation-conversion/run-center` 混合了方案执行信息与模块平台信息。推荐拆分：
+当前 `/admin/automation-conversion/runtime` 混合了方案执行信息与模块平台信息。推荐拆分：
 
 - 方案内运行：某方案的执行批次、SOP 批次、成员状态、自动接话队列
 - 模块运行时：全局 sync jobs、router callback、模型基础设施、debug、全局错误
@@ -313,7 +313,7 @@ flowchart TD
 - `/admin/automation-conversion/programs/<program_id>/operations/workflows/new`
 - `/admin/automation-conversion/programs/<program_id>/operations/workflows/<workflow_id>/edit`
 - `/admin/automation-conversion/programs/<program_id>/operations/workflows/<workflow_id>/nodes`
-- `/admin/automation-conversion/programs/<program_id>/operations/executions`
+- `/admin/automation-conversion/programs/<program_id>/executions`
 - `/admin/automation-conversion/programs/<program_id>/auto-reply`
 
 这些页面都依赖方案内状态、方案内规则或方案内执行。
@@ -343,15 +343,39 @@ flowchart TD
 
 ### 7.5 兼容路由
 
-保留当前旧路由，先做兼容跳转：
+以下旧方案内路由已下线，不再作为当前操作入口：
 
-- `/admin/automation-conversion/overview` -> 默认方案的 overview
-- `/admin/automation-conversion/operations` -> 默认方案的 operations
-- `/admin/automation-conversion/flow-design` -> 默认方案的 flow-design
-- `/admin/automation-conversion/member-ops` -> 默认方案的 member-ops
-- `/admin/automation-conversion/auto-reply` -> 默认方案的 auto-reply
-- `/admin/automation-conversion/agent-config` -> shared/agents 或 shared 资源中心
-- `/admin/automation-conversion/run-center` -> runtime
+- `/admin/automation-conversion/overview`
+- `/admin/automation-conversion/operations`
+- `/admin/automation-conversion/flow-design`
+- `/admin/automation-conversion/member-ops`
+
+当前页面使用 `/admin/automation-conversion/programs/<program_id>/overview|operations|flow-design|member-ops`。`/admin/automation-conversion/auto-reply` 仍保留为自动化应答入口。
+
+以下 workflow / executions 旧兼容入口已下线，不再作为当前操作入口：
+
+- `/admin/automation-conversion/operations/workflows/new`
+- `/admin/automation-conversion/operations/workflows/<workflow_id>/edit`
+- `/admin/automation-conversion/operations/workflows/<workflow_id>/nodes`
+- `/admin/automation-conversion/operations/executions`
+
+以下旧深层页面入口已下线，不再作为当前操作入口：
+
+- `/admin/automation-conversion/settings`
+- `/admin/automation-conversion/sop`
+- `/admin/automation-conversion/stage/<stage_key>`
+- `/admin/automation-conversion/model-infra`
+- `/admin/automation-conversion/debug`
+- `/admin/automation-conversion/preview`
+- `/admin/automation-conversion/agent-config`
+- `/admin/automation-conversion/run-center`
+
+共享资源和 runtime 当前直接使用：
+
+- `/admin/automation-conversion/shared/agents`
+- `/admin/automation-conversion/shared/model-infra`
+- `/admin/automation-conversion/runtime`
+- `/admin/automation-conversion/runtime/debug`
 
 ## 8. 推荐数据模型
 

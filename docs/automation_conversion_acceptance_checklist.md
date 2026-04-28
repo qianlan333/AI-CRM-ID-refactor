@@ -4,8 +4,8 @@
 
 - [ ] `/admin/automation-conversion` 可正常打开
 - [ ] 首页每个阶段卡都同时提供 `查看名单` 和 `创建群发`
-- [ ] `/admin/automation-conversion/stage/<stage_key>` 可正常打开
-- [ ] `/admin/automation-conversion/stage/<stage_key>/send` 可正常打开
+- [ ] `/admin/automation-conversion/programs/<program_id>/member-ops?stage=<stage_key>&panel=members` 可正常打开
+- [ ] `/admin/automation-conversion/programs/<program_id>/member-ops?stage=<stage_key>&panel=send` 可正常打开
 - [ ] 当前只保留自动化转化主链路，不依赖旧兼容页或 `user_ops` 页面
 
 ## 自动启动时间窗

@@ -129,6 +129,7 @@
     </div>
     <form method="post" action="{{ url_for('api.admin_automation_conversion_save_settings') }}">
       <input type="hidden" name="section" value="sop">
+      {% if program_context %}<input type="hidden" name="program_id" value="{{ program_context.id }}">{% endif %}
       <div class="ac-flow-grid">
         <label>
           发送时间
@@ -152,6 +153,7 @@
     <h3>默认渠道入口</h3>
     <form method="post" action="{{ url_for('api.admin_automation_conversion_save_settings') }}">
       <input type="hidden" name="section" value="channel">
+      {% if program_context %}<input type="hidden" name="program_id" value="{{ program_context.id }}">{% endif %}
       <label>
         <input type="checkbox" name="auto_accept_friend" value="1"{% if default_channel.auto_accept_friend %} checked{% endif %}>
         免验证直接添加好友

@@ -122,26 +122,37 @@ def test_default_program_bootstraps_and_automation_entry_lists_programs(app, cli
     assert "归档" in html
 
 
-def test_program_routes_render_and_legacy_routes_redirect(app, client, monkeypatch):
+def test_program_routes_render_and_removed_legacy_routes_404(app, client, monkeypatch):
     _login(client, app, monkeypatch)
     program_id = _default_program_id(app)
 
     overview_response = client.get(f"/admin/automation-conversion/programs/{program_id}/overview")
+    operations_response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations")
+    flow_design_response = client.get(f"/admin/automation-conversion/programs/{program_id}/flow-design")
+    member_ops_response = client.get(f"/admin/automation-conversion/programs/{program_id}/member-ops")
+    workflow_new_response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations/workflows/new")
+    executions_response = client.get(f"/admin/automation-conversion/programs/{program_id}/executions")
     legacy_overview = client.get("/admin/automation-conversion/overview", follow_redirects=False)
     legacy_operations = client.get("/admin/automation-conversion/operations", follow_redirects=False)
     legacy_flow_design = client.get("/admin/automation-conversion/flow-design", follow_redirects=False)
     legacy_member_ops = client.get("/admin/automation-conversion/member-ops", follow_redirects=False)
 
     assert overview_response.status_code == 200
+    assert operations_response.status_code == 200
+    assert flow_design_response.status_code == 200
+    assert member_ops_response.status_code == 200
+    assert workflow_new_response.status_code == 200
+    assert executions_response.status_code == 200
     assert "默认自动化转化方案" in overview_response.get_data(as_text=True)
-    assert legacy_overview.status_code == 302
-    assert legacy_overview.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/overview")
-    assert legacy_operations.status_code == 302
-    assert legacy_operations.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/operations")
-    assert legacy_flow_design.status_code == 302
-    assert legacy_flow_design.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/flow-design")
-    assert legacy_member_ops.status_code == 302
-    assert legacy_member_ops.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/member-ops")
+    assert legacy_overview.status_code == 404
+    assert legacy_operations.status_code == 404
+    assert legacy_flow_design.status_code == 404
+    assert legacy_member_ops.status_code == 404
+
+    assert client.get("/admin/automation-conversion/operations/workflows/new").status_code == 404
+    assert client.get("/admin/automation-conversion/operations/workflows/1/edit").status_code == 404
+    assert client.get("/admin/automation-conversion/operations/workflows/1/nodes").status_code == 404
+    assert client.get("/admin/automation-conversion/operations/executions").status_code == 404
 
 
 def test_program_basic_info_edit_updates_list_and_context_header(app, client, monkeypatch):
@@ -195,16 +206,18 @@ def test_archived_program_badge_renders(app, client, monkeypatch):
     assert ">归档</span>" in html
 
 
-def test_shared_and_runtime_compatibility_redirects(app, client, monkeypatch):
+def test_removed_shared_and_runtime_legacy_routes_are_gone(app, client, monkeypatch):
     _login(client, app, monkeypatch)
 
-    agent_config = client.get("/admin/automation-conversion/agent-config", follow_redirects=False)
-    run_center = client.get("/admin/automation-conversion/run-center", follow_redirects=False)
+    legacy_agent_config = client.get("/admin/automation-conversion/agent-config", follow_redirects=False)
+    legacy_run_center = client.get("/admin/automation-conversion/run-center", follow_redirects=False)
+    shared_agents = client.get("/admin/automation-conversion/shared/agents", follow_redirects=False)
+    runtime = client.get("/admin/automation-conversion/runtime", follow_redirects=False)
 
-    assert agent_config.status_code == 302
-    assert agent_config.headers["Location"].endswith("/admin/automation-conversion/shared/agents")
-    assert run_center.status_code == 302
-    assert run_center.headers["Location"].endswith("/admin/automation-conversion/runtime")
+    assert legacy_agent_config.status_code == 404
+    assert legacy_run_center.status_code == 404
+    assert shared_agents.status_code == 200
+    assert runtime.status_code == 200
 
 
 def test_workflow_list_filters_by_program_id(app, client, monkeypatch):

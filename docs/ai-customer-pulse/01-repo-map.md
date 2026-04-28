@@ -230,7 +230,7 @@
 1. 单客户能力继续放 `customer_center/pulse_service.py`，因为这里已经有 flag 和 evidence 逻辑。
 2. 列表级收件箱读模型优先放 `domains/automation_conversion/`，因为 AI 输出、reply monitor、SOP、队列都在这个域。
 3. 页面层优先加在：
-   - `/admin/automation-conversion/run-center` 新 subtab
+   - `/admin/automation-conversion/runtime` 新 subtab
    - `/admin/customers/<external_userid>` 详情增强
    - `/admin` todo 汇总提醒
 

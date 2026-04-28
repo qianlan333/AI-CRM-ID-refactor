@@ -49,7 +49,7 @@
 
 ## 自动 SOP 检查
 
-- [ ] `/admin/automation-conversion/sop` 可打开
+- [ ] `/admin/automation-conversion/programs/<program_id>/flow-design?section=sop` 可打开
 - [ ] 只出现 `new_user / inactive_normal / active_normal` 三个 SOP 池
 - [ ] 三个 pool config 可保存
 - [ ] `max_day_count` 扩容会自动补空模板

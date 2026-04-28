@@ -54,12 +54,16 @@
 
 ### 路由兼容策略
 
-- `/admin/automation-conversion/overview` -> 默认方案 overview
-- `/admin/automation-conversion/operations` -> 默认方案 operations
-- `/admin/automation-conversion/flow-design` -> 默认方案 flow-design
-- `/admin/automation-conversion/member-ops` -> 默认方案 member-ops
-- `/admin/automation-conversion/agent-config` -> `/admin/automation-conversion/shared/agents`
-- `/admin/automation-conversion/run-center` -> `/admin/automation-conversion/runtime`
+- 当前使用 `/admin/automation-conversion/programs/<program_id>/overview`
+- 当前使用 `/admin/automation-conversion/programs/<program_id>/operations`
+- 当前使用 `/admin/automation-conversion/programs/<program_id>/flow-design`
+- 当前使用 `/admin/automation-conversion/programs/<program_id>/member-ops`
+- 旧 `/admin/automation-conversion/overview` 已下线，不再注册
+- 旧 `/admin/automation-conversion/operations` 已下线，不再注册
+- 旧 `/admin/automation-conversion/flow-design` 已下线，不再注册
+- 旧 `/admin/automation-conversion/member-ops` 已下线，不再注册
+- 旧 `/admin/automation-conversion/agent-config` 已下线，当前使用 `/admin/automation-conversion/shared/agents`
+- 旧 `/admin/automation-conversion/run-center` 已下线，当前使用 `/admin/automation-conversion/runtime`
 
 ## 数据模型变化
 
