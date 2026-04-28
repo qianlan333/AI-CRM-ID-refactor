@@ -418,15 +418,17 @@ def _build_execution_records_workspace(*, program_id: int | None = None) -> dict
 
 def _build_overview_workspace(*, program_id: int | None = None) -> dict[str, object]:
     snapshot = get_overview_payload()
-    action_params = {"program_id": int(program_id)} if _coerce_program_id(program_id) else {}
     return {
         "snapshot": snapshot,
         "api_urls": {
             "dashboard": url_for("api.api_admin_automation_conversion_dashboard", **_program_api_params(program_id)),
-            "apply_signup_tag": url_for("api.admin_automation_conversion_apply_overview_signup_tag", **action_params),
-            "message_activity_sync_run": url_for("api.admin_automation_conversion_run_message_activity_sync", **action_params),
-            "reply_monitor_capture": url_for("api.admin_automation_conversion_reply_monitor_capture"),
-            "reply_monitor_run_due": url_for("api.admin_automation_conversion_reply_monitor_run_due"),
+            "apply_signup_tag": _program_route_or_main("api.admin_automation_program_overview_signup_tag_apply", program_id=program_id),
+            "message_activity_sync_run": _program_route_or_main(
+                "api.admin_automation_program_overview_message_activity_sync_run",
+                program_id=program_id,
+            ),
+            "reply_monitor_capture": url_for("api.admin_automation_auto_reply_monitor_capture"),
+            "reply_monitor_run_due": url_for("api.admin_automation_auto_reply_monitor_run_due"),
         },
     }
 
@@ -442,9 +444,9 @@ def _build_auto_reply_workspace() -> dict[str, object]:
         "agent_config_total": int(agent_config_bundle.get("total") or 0),
         "agent_config_href": url_for("api.admin_automation_conversion_shared_agents"),
         "action_urls": {
-            "toggle": url_for("api.admin_automation_conversion_reply_monitor_toggle"),
-            "capture": url_for("api.admin_automation_conversion_reply_monitor_capture"),
-            "run_due": url_for("api.admin_automation_conversion_reply_monitor_run_due"),
+            "toggle": url_for("api.admin_automation_auto_reply_monitor_toggle"),
+            "capture": url_for("api.admin_automation_auto_reply_monitor_capture"),
+            "run_due": url_for("api.admin_automation_auto_reply_monitor_run_due"),
         },
         "api_urls": {
             "review_outputs": url_for("api.api_admin_automation_conversion_review_outputs"),
@@ -1339,25 +1341,32 @@ def admin_automation_conversion_agent_orchestration_replay(run_id: str):
     )
 
 
-def admin_automation_conversion_reply_monitor_toggle():
+def admin_automation_auto_reply_monitor_toggle():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": action_token_error}), 400
         return _render_auto_reply_page(page_error=action_token_error)
     enabled = _json_bool(request.form.get("enabled") or request.values.get("enabled"))
     try:
         save_reply_monitor_enabled(enabled=enabled, operator_id=_operator_from_request())
     except ValueError as exc:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": str(exc)}), 400
         return _render_auto_reply_page(page_error=str(exc))
+    status = "enabled" if enabled else "disabled"
+    if _wants_json_response():
+        return jsonify({"ok": True, "status": status, "message": "自动接话已开启" if enabled else "自动接话已关闭"})
     return redirect(
         url_for(
             "api.admin_automation_conversion_auto_reply",
-            reply_monitor="enabled" if enabled else "disabled",
+            reply_monitor=status,
         ),
         code=302,
     )
 
 
-def admin_automation_conversion_reply_monitor_capture():
+def admin_automation_auto_reply_monitor_capture():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         if _wants_json_response():
@@ -1390,7 +1399,7 @@ def admin_automation_conversion_reply_monitor_capture():
     return _render_auto_reply_page(page_error=str(result.get("error") or "自动接话监控扫描失败"))
 
 
-def admin_automation_conversion_reply_monitor_run_due():
+def admin_automation_auto_reply_monitor_run_due():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         if _wants_json_response():
@@ -1423,8 +1432,8 @@ def admin_automation_conversion_reply_monitor_run_due():
     return _render_auto_reply_page(page_error=str(result.get("error") or "自动接话监控放行失败"))
 
 
-def admin_automation_conversion_run_message_activity_sync():
-    program_id = _request_program_id()
+def admin_automation_program_overview_message_activity_sync_run(program_id: int):
+    _load_program_or_404(program_id)
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         if _wants_json_response():
@@ -1458,8 +1467,8 @@ def admin_automation_conversion_run_message_activity_sync():
     return _redirect_to_program("api.admin_automation_program_overview", program_id=program_id)
 
 
-def admin_automation_conversion_apply_overview_signup_tag():
-    program_id = _request_program_id()
+def admin_automation_program_overview_signup_tag_apply(program_id: int):
+    _load_program_or_404(program_id)
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         if _wants_json_response():
@@ -2443,11 +2452,11 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft", methods=["POST"])(admin_automation_conversion_agent_orchestration_save_draft)
     bp.route("/admin/automation-conversion/agent-orchestration/outputs/<output_id>/review", methods=["POST"])(admin_automation_conversion_agent_orchestration_review_output)
     bp.route("/admin/automation-conversion/agent-orchestration/replay/<run_id>", methods=["POST"])(admin_automation_conversion_agent_orchestration_replay)
-    bp.route("/admin/automation-conversion/overview/signup-tag/apply", methods=["POST"])(admin_automation_conversion_apply_overview_signup_tag)
-    bp.route("/admin/automation-conversion/message-activity-sync/run", methods=["POST"])(admin_automation_conversion_run_message_activity_sync)
-    bp.route("/admin/automation-conversion/reply-monitor/toggle", methods=["POST"])(admin_automation_conversion_reply_monitor_toggle)
-    bp.route("/admin/automation-conversion/reply-monitor/capture", methods=["POST"])(admin_automation_conversion_reply_monitor_capture)
-    bp.route("/admin/automation-conversion/reply-monitor/run-due", methods=["POST"])(admin_automation_conversion_reply_monitor_run_due)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/overview/signup-tag/apply", methods=["POST"])(admin_automation_program_overview_signup_tag_apply)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/overview/message-activity-sync/run", methods=["POST"])(admin_automation_program_overview_message_activity_sync_run)
+    bp.route("/admin/automation-conversion/auto-reply/reply-monitor/toggle", methods=["POST"])(admin_automation_auto_reply_monitor_toggle)
+    bp.route("/admin/automation-conversion/auto-reply/reply-monitor/capture", methods=["POST"])(admin_automation_auto_reply_monitor_capture)
+    bp.route("/admin/automation-conversion/auto-reply/reply-monitor/run-due", methods=["POST"])(admin_automation_auto_reply_monitor_run_due)
 
     bp.route("/api/admin/automation-conversion/member", methods=["GET"])(api_admin_automation_conversion_member)
     bp.route("/api/admin/automation-conversion/member/put-in-pool", methods=["POST"])(api_admin_automation_conversion_put_in_pool)

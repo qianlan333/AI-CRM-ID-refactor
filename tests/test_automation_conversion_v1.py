@@ -2468,8 +2468,7 @@ def test_admin_overview_apply_signup_tag_endpoint_returns_json(app, client, monk
     )
 
     response = client.post(
-        "/admin/automation-conversion/overview/signup-tag/apply",
-        query_string={"program_id": program_id},
+        f"/admin/automation-conversion/programs/{program_id}/overview/signup-tag/apply",
         data={"admin_action_token": action_token},
         headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
     )
@@ -7292,11 +7291,11 @@ def test_automation_conversion_home_page_renders_message_activity_sync_summary(a
     assert response.status_code == 200
     assert "刷新模块状态" in html
     assert "消息活跃同步" in html
-    assert f"/admin/automation-conversion/message-activity-sync/run?program_id={program_id}" in html
+    assert f"/admin/automation-conversion/programs/{program_id}/overview/message-activity-sync/run" in html
     assert "顺序执行消息活跃同步、自动接话扫描、自动接话放行" in html
 
 
-def test_admin_automation_conversion_run_message_activity_sync_returns_json_for_homepage(app, client, monkeypatch):
+def test_admin_automation_program_overview_message_activity_sync_returns_json(app, client, monkeypatch):
     _configure_message_activity_db(app)
     _seed_contact(app, external_userid="wm_home_run_001", mobile="13800009442", owner_userid="sales_home", customer_name="首页运行客户")
     _seed_automation_member(
@@ -7321,8 +7320,9 @@ def test_admin_automation_conversion_run_message_activity_sync_returns_json_for_
         lambda: "2026-04-08 10:40:00",
     )
 
+    program_id = _default_program_id(app)
     response = client.post(
-        "/admin/automation-conversion/message-activity-sync/run",
+        f"/admin/automation-conversion/programs/{program_id}/overview/message-activity-sync/run",
         data={"admin_action_token": "ok", "operator": "homepage-sync"},
         headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
     )
@@ -7348,9 +7348,121 @@ def test_automation_conversion_home_page_renders_reply_monitor_section(app, clie
     assert "自动接话监控" in html
     assert "已关闭" in html
     assert "开启监控" in html
-    assert "/admin/automation-conversion/reply-monitor/toggle" in html
-    assert "/admin/automation-conversion/reply-monitor/capture" in html
-    assert "/admin/automation-conversion/reply-monitor/run-due" in html
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/toggle" in html
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/capture" in html
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/run-due" in html
+    assert "/admin/automation-conversion/reply-monitor/toggle" not in html
+    assert "/admin/automation-conversion/reply-monitor/capture" not in html
+    assert "/admin/automation-conversion/reply-monitor/run-due" not in html
+
+
+def test_automation_browser_post_legacy_routes_are_removed(app, client):
+    old_routes = {
+        "/admin/automation-conversion/overview/signup-tag/apply",
+        "/admin/automation-conversion/message-activity-sync/run",
+        "/admin/automation-conversion/reply-monitor/toggle",
+        "/admin/automation-conversion/reply-monitor/capture",
+        "/admin/automation-conversion/reply-monitor/run-due",
+    }
+    old_endpoints = {
+        f"api.admin_automation_conversion_{suffix}"
+        for suffix in (
+            "apply_overview_signup_tag",
+            "run_message_activity_sync",
+            "reply_monitor_toggle",
+            "reply_monitor_capture",
+            "reply_monitor_run_due",
+        )
+    }
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    endpoints = set(app.view_functions.keys())
+
+    assert old_routes.isdisjoint(rules)
+    assert old_endpoints.isdisjoint(endpoints)
+    for path in sorted(old_routes):
+        assert client.post(path).status_code in {404, 405}
+
+
+def test_automation_browser_post_routes_require_admin_action_token(app, client, monkeypatch):
+    program_id = _default_program_id(app)
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.apply_dashboard_signup_tag",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("apply_dashboard_signup_tag should not be called")),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_message_activity_sync",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_message_activity_sync should not be called")),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.save_reply_monitor_enabled",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("save_reply_monitor_enabled should not be called")),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_reply_monitor_capture",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_reply_monitor_capture should not be called")),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_due_reply_monitor",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_due_reply_monitor should not be called")),
+    )
+    headers = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"}
+    paths = [
+        f"/admin/automation-conversion/programs/{program_id}/overview/signup-tag/apply",
+        f"/admin/automation-conversion/programs/{program_id}/overview/message-activity-sync/run",
+        "/admin/automation-conversion/auto-reply/reply-monitor/toggle",
+        "/admin/automation-conversion/auto-reply/reply-monitor/capture",
+        "/admin/automation-conversion/auto-reply/reply-monitor/run-due",
+    ]
+
+    for path in paths:
+        response = client.post(path, data={"enabled": "1"}, headers=headers)
+        assert response.status_code == 400
+        assert "令牌" in response.get_json()["error"]
+
+
+def test_automation_auto_reply_monitor_browser_routes_return_json(app, client, monkeypatch):
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.save_reply_monitor_enabled",
+        lambda *, enabled, operator_id: calls.append(("toggle", enabled)),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_reply_monitor_capture",
+        lambda *, operator_id, operator_type: {"ok": True, "status": "captured", "message": "扫描完成"},
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_due_reply_monitor",
+        lambda *, operator_id, operator_type: {"ok": True, "status": "idle", "message": "本次无到期项"},
+    )
+    headers = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"}
+
+    toggle = client.post(
+        "/admin/automation-conversion/auto-reply/reply-monitor/toggle",
+        data={"admin_action_token": "ok", "enabled": "1"},
+        headers=headers,
+    )
+    capture = client.post(
+        "/admin/automation-conversion/auto-reply/reply-monitor/capture",
+        data={"admin_action_token": "ok"},
+        headers=headers,
+    )
+    run_due = client.post(
+        "/admin/automation-conversion/auto-reply/reply-monitor/run-due",
+        data={"admin_action_token": "ok"},
+        headers=headers,
+    )
+
+    assert toggle.status_code == 200
+    assert toggle.get_json()["ok"] is True
+    assert toggle.get_json()["status"] == "enabled"
+    assert calls == [("toggle", True)]
+    assert capture.status_code == 200
+    assert capture.get_json()["ok"] is True
+    assert capture.get_json()["status"] == "captured"
+    assert run_due.status_code == 200
+    assert run_due.get_json()["ok"] is True
+    assert run_due.get_json()["status"] == "idle"
 
 
 def test_reply_monitor_capture_filters_private_inbound_messages_and_groups_by_user(app, monkeypatch):
