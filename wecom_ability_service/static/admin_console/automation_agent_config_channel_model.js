@@ -318,11 +318,19 @@
   }
 
   async function loadChannelModelState() {
-    await Promise.all([
-      loadDefaultChannelSettings(),
-      loadModelSettings(),
-      AutomationAgentConfig.loadWeComTags ? AutomationAgentConfig.loadWeComTags() : Promise.resolve(),
-    ]);
+    const elements = AutomationAgentConfig.elements();
+    const apiUrls = AutomationAgentConfig.getApiUrls();
+    const tasks = [];
+    if ((elements.defaultChannelForm || elements.defaultChannelGenerateButton) && apiUrls.default_channel_settings) {
+      tasks.push(loadDefaultChannelSettings());
+      if (AutomationAgentConfig.loadWeComTags && apiUrls.wecom_tags) {
+        tasks.push(AutomationAgentConfig.loadWeComTags());
+      }
+    }
+    if (elements.modelSettingsForm && apiUrls.model_settings) {
+      tasks.push(loadModelSettings());
+    }
+    await Promise.all(tasks);
   }
 
   AutomationAgentConfig.showDefaultChannelFeedback = showDefaultChannelFeedback;

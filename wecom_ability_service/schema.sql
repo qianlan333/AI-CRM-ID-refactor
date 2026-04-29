@@ -1502,6 +1502,7 @@ ON questionnaire_external_push_logs (retry_from_log_id, created_at DESC, id DESC
 
 CREATE TABLE IF NOT EXISTS automation_channel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    program_id INTEGER,
     channel_code TEXT NOT NULL UNIQUE,
     channel_name TEXT NOT NULL DEFAULT '',
     qr_url TEXT NOT NULL DEFAULT '',
@@ -1520,6 +1521,9 @@ CREATE TABLE IF NOT EXISTS automation_channel (
 
 CREATE INDEX IF NOT EXISTS idx_automation_channel_status
 ON automation_channel (status, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_channel_program
+ON automation_channel (program_id, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_channel_scene
 ON automation_channel (scene_value);
@@ -1991,6 +1995,7 @@ ON automation_agent_skill_call_audit (skill_code, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    program_id INTEGER,
     template_code TEXT NOT NULL UNIQUE,
     template_name TEXT NOT NULL DEFAULT '',
     questionnaire_id INTEGER REFERENCES questionnaires(id) ON DELETE SET NULL,
@@ -2006,6 +2011,9 @@ CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
 
 CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_enabled
 ON automation_profile_segment_template (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_program
+ON automation_profile_segment_template (program_id, enabled, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_profile_segment_category (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

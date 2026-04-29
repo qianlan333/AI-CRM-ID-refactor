@@ -874,7 +874,12 @@ def _validate_workflow_agent_bindings(
     return [resolved_by_key[key] for key in expected_keys]
 
 
-def _normalize_workflow_payload(payload: dict[str, Any], *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+def _normalize_workflow_payload(
+    payload: dict[str, Any],
+    *,
+    existing: dict[str, Any] | None = None,
+    program_id: int | None = None,
+) -> dict[str, Any]:
     source = dict(payload or {})
     current = dict(existing or {})
     workflow_name = _normalized_text(source.get("workflow_name") or current.get("workflow_name"))
@@ -928,7 +933,10 @@ def _normalize_workflow_payload(payload: dict[str, Any], *, existing: dict[str, 
     if segmentation_basis == SEGMENTATION_BASIS_PROFILE:
         if not profile_segment_template_id:
             raise ValueError("profile_segment_template_id is required for profile segmentation")
-        get_conversion_profile_segment_template_bundle(int(profile_segment_template_id))
+        template_bundle = get_conversion_profile_segment_template_bundle(int(profile_segment_template_id))
+        template_program_id = int(((template_bundle.get("template") or {}).get("program_id")) or 0) or None
+        if program_id and template_program_id and int(template_program_id) != int(program_id):
+            raise ValueError("profile_segment_template_id does not belong to current program")
     else:
         profile_segment_template_id = None
     if generation_mode == GENERATION_MODE_AUTO_LAYERED_REWRITE and segmentation_basis == SEGMENTATION_BASIS_NONE:
@@ -1483,8 +1491,14 @@ def list_conversion_agent_options(*, enabled_only: bool = True) -> dict[str, Any
     return {"items": items, "total": len(items)}
 
 
-def list_conversion_profile_segment_templates(*, enabled_only: bool = False) -> dict[str, Any]:
-    items = [_build_profile_segment_template_bundle(item) for item in workflow_repo.list_profile_segment_template_rows(enabled_only=enabled_only)]
+def list_conversion_profile_segment_templates(*, enabled_only: bool = False, program_id: int | None = None) -> dict[str, Any]:
+    items = [
+        _build_profile_segment_template_bundle(item)
+        for item in workflow_repo.list_profile_segment_template_rows(
+            enabled_only=enabled_only,
+            program_id=_effective_program_id(program_id),
+        )
+    ]
     return {"items": items, "total": len(items)}
 
 
@@ -1495,7 +1509,13 @@ def get_conversion_profile_segment_template_bundle(template_id: int) -> dict[str
     return _build_profile_segment_template_bundle(template)
 
 
-def create_conversion_profile_segment_template(payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+def create_conversion_profile_segment_template(
+    payload: dict[str, Any],
+    *,
+    operator_id: str,
+    program_id: int | None = None,
+) -> dict[str, Any]:
+    effective_program_id = _effective_program_id(program_id or payload.get("program_id"))
     template_name = _normalized_text(payload.get("template_name"))
     if not template_name:
         raise ValueError("template_name is required")
@@ -1520,6 +1540,7 @@ def create_conversion_profile_segment_template(payload: dict[str, Any], *, opera
     _validate_segmentation_question(questionnaire_id, question_id, categories)
     saved_template = workflow_repo.insert_profile_segment_template_row(
         {
+            "program_id": effective_program_id,
             "template_code": template_code,
             "template_name": template_name,
             "questionnaire_id": questionnaire_id,
@@ -1536,10 +1557,19 @@ def create_conversion_profile_segment_template(payload: dict[str, Any], *, opera
     return {"template_bundle": get_conversion_profile_segment_template_bundle(int(saved_template["id"]))}
 
 
-def update_conversion_profile_segment_template(template_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
+def update_conversion_profile_segment_template(
+    template_id: int,
+    payload: dict[str, Any],
+    *,
+    operator_id: str,
+    program_id: int | None = None,
+) -> dict[str, Any]:
     existing = workflow_repo.get_profile_segment_template_row(int(template_id))
     if not existing:
         raise LookupError("profile segment template not found")
+    effective_program_id = _effective_program_id(program_id or payload.get("program_id") or existing.get("program_id"))
+    if existing.get("program_id") and int(existing.get("program_id") or 0) != int(effective_program_id):
+        raise ValueError("profile segment template does not belong to current program")
     existing_bundle = _build_profile_segment_template_bundle(existing)
     next_template_name = _normalized_text(payload.get("template_name") or existing.get("template_name"))
     if not next_template_name:
@@ -1575,6 +1605,7 @@ def update_conversion_profile_segment_template(template_id: int, payload: dict[s
                 raise ValueError(f"enabled category '{_profile_segment_category_label(category)}' must bind at least one option")
         _validate_segmentation_question(next_questionnaire_id, next_question_id, next_categories)
     next_state = {
+        "program_id": effective_program_id,
         "template_code": next_template_code,
         "template_name": next_template_name,
         "questionnaire_id": next_questionnaire_id or None,
@@ -1584,6 +1615,7 @@ def update_conversion_profile_segment_template(template_id: int, payload: dict[s
         "categories": next_categories,
     }
     previous_state = {
+        "program_id": int(existing.get("program_id") or 0),
         "template_code": _normalized_text(existing.get("template_code")),
         "template_name": _normalized_text(existing.get("template_name")),
         "questionnaire_id": int(existing.get("questionnaire_id") or 0),
@@ -1596,6 +1628,7 @@ def update_conversion_profile_segment_template(template_id: int, payload: dict[s
     workflow_repo.update_profile_segment_template_row(
         int(existing["id"]),
         {
+            "program_id": next_state["program_id"],
             "template_code": next_state["template_code"],
             "template_name": next_state["template_name"],
             "questionnaire_id": next_state["questionnaire_id"],
@@ -1639,7 +1672,7 @@ def get_conversion_workflow_model_bundle(workflow_id: int) -> dict[str, Any]:
 
 def create_conversion_workflow(payload: dict[str, Any], *, operator_id: str, program_id: int | None = None) -> dict[str, Any]:
     effective_program_id = _effective_program_id(program_id or payload.get("program_id"))
-    normalized = _normalize_workflow_payload(payload)
+    normalized = _normalize_workflow_payload(payload, program_id=effective_program_id)
     duplicate = workflow_repo.get_workflow_row_by_code(normalized["workflow_code"])
     if duplicate:
         raise ValueError("workflow_code already exists")
@@ -1653,6 +1686,7 @@ def create_conversion_workflow(payload: dict[str, Any], *, operator_id: str, pro
 
 def update_conversion_workflow(workflow_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
     existing = get_conversion_workflow_model_bundle(int(workflow_id))
+    effective_program_id = int((existing.get("workflow") or {}).get("program_id") or 0) or _effective_program_id()
     normalized = _normalize_workflow_payload(payload, existing={**existing["workflow"], "audiences": existing["audiences"], "agent_bindings": [
         {
             "node_id": int(item.get("node_id") or 0) or None,
@@ -1661,7 +1695,7 @@ def update_conversion_workflow(workflow_id: int, payload: dict[str, Any], *, ope
             "agent_code": _normalized_text(item.get("agent_code") or (item.get("agent") or {}).get("agent_code")),
         }
         for item in existing.get("agent_bindings") or []
-    ]})
+    ]}, program_id=effective_program_id)
     duplicate = workflow_repo.get_workflow_row_by_code(normalized["workflow_code"])
     if duplicate and int(duplicate["id"]) != int(workflow_id):
         raise ValueError("workflow_code already exists")
@@ -1669,7 +1703,7 @@ def update_conversion_workflow(workflow_id: int, payload: dict[str, Any], *, ope
         int(workflow_id),
         {
             **normalized,
-            "program_id": int((existing.get("workflow") or {}).get("program_id") or 0) or _effective_program_id(),
+            "program_id": effective_program_id,
             "updated_by": operator_id,
         },
     )
@@ -1916,9 +1950,12 @@ def _message_activity_for_phone(phone: Any, *, counts_by_match_key: dict[str, in
     }
 
 
-def _latest_enabled_profile_segment_template_bundle() -> dict[str, Any]:
+def _latest_enabled_profile_segment_template_bundle(*, program_id: int | None = None) -> dict[str, Any]:
     invalid_enabled_templates: list[dict[str, Any]] = []
-    for template in workflow_repo.list_profile_segment_template_rows(enabled_only=True):
+    for template in workflow_repo.list_profile_segment_template_rows(
+        enabled_only=True,
+        program_id=_effective_program_id(program_id),
+    ):
         bundle = _build_profile_segment_template_bundle(template)
         if _profile_segment_template_is_valid(bundle):
             bundle["selection"] = {
@@ -2130,7 +2167,7 @@ def _build_dashboard_member_detail_item(
     return payload
 
 
-def _build_dashboard_audience_member_details() -> dict[str, Any]:
+def _build_dashboard_audience_member_details(*, program_id: int | None = None) -> dict[str, Any]:
     audience_definitions = list_supported_conversion_audiences()
     audience_meta_map = _conversion_audience_meta_map()
     rows_by_audience: dict[str, list[dict[str, Any]]] = {}
@@ -2139,7 +2176,7 @@ def _build_dashboard_audience_member_details() -> dict[str, Any]:
         rows = workflow_repo.list_current_member_audience_rows(audience_code)
         rows_by_audience[audience_code] = rows
     message_activity_counts_by_match_key = _message_activity_count_map_by_phone_match_key()
-    profile_segment_template_bundle = _latest_enabled_profile_segment_template_bundle()
+    profile_segment_template_bundle = _latest_enabled_profile_segment_template_bundle(program_id=program_id)
     groups: list[dict[str, Any]] = []
     total = 0
     for definition in audience_definitions:
@@ -2316,7 +2353,7 @@ def get_conversion_dashboard_payload(*, program_id: int | None = None) -> dict[s
             "total_count": sum(int(value or 0) for value in audience_counts.values()),
         },
         "active_workflow_count": workflow_repo.count_workflow_rows(status=WORKFLOW_STATUS_ACTIVE, program_id=effective_program_id),
-        "audience_member_details": _build_dashboard_audience_member_details(),
+        "audience_member_details": _build_dashboard_audience_member_details(program_id=effective_program_id),
         "task_execution_summary": {
             "items": workflow_execution_summary,
             "total": len(workflow_execution_summary),
@@ -2355,8 +2392,14 @@ def get_conversion_workflow_detail_summary(workflow_id: int) -> dict[str, Any]:
     }
 
 
-def list_conversion_profile_segment_template_options(*, enabled_only: bool = True) -> dict[str, Any]:
-    bundles = [_build_profile_segment_template_bundle(item) for item in workflow_repo.list_profile_segment_template_rows(enabled_only=enabled_only)]
+def list_conversion_profile_segment_template_options(*, enabled_only: bool = True, program_id: int | None = None) -> dict[str, Any]:
+    bundles = [
+        _build_profile_segment_template_bundle(item)
+        for item in workflow_repo.list_profile_segment_template_rows(
+            enabled_only=enabled_only,
+            program_id=_effective_program_id(program_id),
+        )
+    ]
     if enabled_only:
         bundles = [item for item in bundles if _profile_segment_template_is_valid(item)]
     items = [

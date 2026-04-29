@@ -43,6 +43,7 @@ def _fetchall_dicts(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, An
 def _serialize_profile_segment_template_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
+        "program_id": int(row.get("program_id") or 0) or None,
         "questionnaire_id": int(row.get("questionnaire_id") or 0) or None,
         "segmentation_question_id": int(row.get("segmentation_question_id") or 0) or None,
         "enabled": _row_bool(row.get("enabled")),
@@ -251,15 +252,21 @@ def list_questionnaire_option_rows(question_id: int) -> list[dict[str, Any]]:
     )
 
 
-def list_profile_segment_template_rows(*, enabled_only: bool = False) -> list[dict[str, Any]]:
+def list_profile_segment_template_rows(*, enabled_only: bool = False, program_id: int | None = None) -> list[dict[str, Any]]:
     sql = """
         SELECT *
         FROM automation_profile_segment_template
     """
+    where_clauses: list[str] = []
     params: list[Any] = []
+    if program_id is not None:
+        where_clauses.append("program_id = ?")
+        params.append(int(program_id))
     if enabled_only:
-        sql += " WHERE enabled = ?"
+        where_clauses.append("enabled = ?")
         params.append(True)
+    if where_clauses:
+        sql += " WHERE " + " AND ".join(where_clauses)
     sql += " ORDER BY updated_at DESC, id DESC"
     return [_serialize_profile_segment_template_row(row) for row in _fetchall_dicts(sql, tuple(params))]
 
@@ -294,6 +301,7 @@ def insert_profile_segment_template_row(payload: dict[str, Any]) -> dict[str, An
     row = get_db().execute(
         """
         INSERT INTO automation_profile_segment_template (
+            program_id,
             template_code,
             template_name,
             questionnaire_id,
@@ -306,10 +314,11 @@ def insert_profile_segment_template_row(payload: dict[str, Any]) -> dict[str, An
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
+            int(payload.get("program_id") or 0) or None,
             _normalized_text(payload.get("template_code")),
             _normalized_text(payload.get("template_name")),
             payload.get("questionnaire_id"),
@@ -328,7 +337,8 @@ def update_profile_segment_template_row(template_id: int, payload: dict[str, Any
     row = get_db().execute(
         """
         UPDATE automation_profile_segment_template
-        SET template_code = ?,
+        SET program_id = ?,
+            template_code = ?,
             template_name = ?,
             questionnaire_id = ?,
             segmentation_question_id = ?,
@@ -341,6 +351,7 @@ def update_profile_segment_template_row(template_id: int, payload: dict[str, Any
         RETURNING *
         """,
         (
+            int(payload.get("program_id") or 0) or None,
             _normalized_text(payload.get("template_code")),
             _normalized_text(payload.get("template_name")),
             payload.get("questionnaire_id"),

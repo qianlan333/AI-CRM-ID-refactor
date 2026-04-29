@@ -33,8 +33,8 @@ def test_inventory_agent_config_workspace_json_contract():
     assert "data-admin-action-token" in payload["root_contract"]["data_attributes"]
     assert "data-selected-template-id" in payload["root_contract"]["data_attributes"]
     assert "automation-agent-config-initial-agents" in payload["initial_json_blocks"]
-    assert "automation-agent-config-initial-templates" in payload["initial_json_blocks"]
-    assert "automation-agent-config-initial-catalog" in payload["initial_json_blocks"]
+    assert "automation-agent-config-initial-templates" not in payload["initial_json_blocks"]
+    assert "automation-agent-config-initial-catalog" not in payload["initial_json_blocks"]
     assert "test_impact_inventory" in payload
     assert isinstance(payload["test_impact_inventory"], list)
     allowed_categories = {
