@@ -251,17 +251,16 @@ def list_questionnaire_option_rows(question_id: int) -> list[dict[str, Any]]:
     )
 
 
-def list_profile_segment_template_rows(*, enabled_only: bool = False, program_id: int | None = None) -> list[dict[str, Any]]:
-    conditions: list[str] = []
+def list_profile_segment_template_rows(*, enabled_only: bool = False) -> list[dict[str, Any]]:
+    sql = """
+        SELECT *
+        FROM automation_profile_segment_template
+    """
     params: list[Any] = []
     if enabled_only:
-        conditions.append("enabled = ?")
+        sql += " WHERE enabled = ?"
         params.append(True)
-    if program_id is not None:
-        conditions.append("(program_id = ? OR program_id IS NULL)")
-        params.append(int(program_id))
-    where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-    sql = f"SELECT * FROM automation_profile_segment_template{where} ORDER BY program_id DESC NULLS LAST, updated_at DESC, id DESC"
+    sql += " ORDER BY updated_at DESC, id DESC"
     return [_serialize_profile_segment_template_row(row) for row in _fetchall_dicts(sql, tuple(params))]
 
 
@@ -292,11 +291,9 @@ def get_profile_segment_template_row_by_code(template_code: str) -> dict[str, An
 
 
 def insert_profile_segment_template_row(payload: dict[str, Any]) -> dict[str, Any]:
-    program_id = int(payload.get("program_id") or 0) or None
     row = get_db().execute(
         """
         INSERT INTO automation_profile_segment_template (
-            program_id,
             template_code,
             template_name,
             questionnaire_id,
@@ -309,11 +306,10 @@ def insert_profile_segment_template_row(payload: dict[str, Any]) -> dict[str, An
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
-            program_id,
             _normalized_text(payload.get("template_code")),
             _normalized_text(payload.get("template_name")),
             payload.get("questionnaire_id"),

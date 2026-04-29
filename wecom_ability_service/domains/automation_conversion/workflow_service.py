@@ -1483,11 +1483,8 @@ def list_conversion_agent_options(*, enabled_only: bool = True) -> dict[str, Any
     return {"items": items, "total": len(items)}
 
 
-def list_conversion_profile_segment_templates(*, enabled_only: bool = False, program_id: int | None = None) -> dict[str, Any]:
-    items = [
-        _build_profile_segment_template_bundle(item)
-        for item in workflow_repo.list_profile_segment_template_rows(enabled_only=enabled_only, program_id=program_id)
-    ]
+def list_conversion_profile_segment_templates(*, enabled_only: bool = False) -> dict[str, Any]:
+    items = [_build_profile_segment_template_bundle(item) for item in workflow_repo.list_profile_segment_template_rows(enabled_only=enabled_only)]
     return {"items": items, "total": len(items)}
 
 
@@ -1521,10 +1518,8 @@ def create_conversion_profile_segment_template(payload: dict[str, Any], *, opera
         if not list(category.get("option_ids") or []):
             raise ValueError(f"enabled category '{_profile_segment_category_label(category)}' must bind at least one option")
     _validate_segmentation_question(questionnaire_id, question_id, categories)
-    program_id: int | None = int(payload.get("program_id") or 0) or None
     saved_template = workflow_repo.insert_profile_segment_template_row(
         {
-            "program_id": program_id,
             "template_code": template_code,
             "template_name": template_name,
             "questionnaire_id": questionnaire_id,
