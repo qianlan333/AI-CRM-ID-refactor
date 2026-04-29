@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -33,9 +36,29 @@ AUTOMATION_AUTO_REPLY_MODULES = [
     "automation_auto_reply.js",
 ]
 
+PROTECTED_MODULE_TEMPLATES = [
+    "customer_detail.html",
+    "customer_pulse_inbox.html",
+    "automation_conversion_auto_reply_workspace.html",
+]
+
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _run_audit(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "audit_admin_static_js.py"), *args],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _inline_script_blocks(source: str):
+    return re.finditer(r"<script\b(?P<attrs>[^>]*)>(?P<body>.*?)</script>", source, re.IGNORECASE | re.DOTALL)
 
 
 def test_base_template_loads_admin_api_client_before_page_scripts():
@@ -325,7 +348,58 @@ def test_automation_auto_reply_entrypoint_only_bootstraps_modules():
     assert "function requestJson" not in source
 
 
-def test_no_frontend_build_tooling_was_added():
+def test_audit_admin_static_js_script_json_contract():
+    result = _run_audit("--json")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["blocking_count"] == 0
+    assert "checks" in payload
+    assert payload["checks"]
+
+
+def test_audit_admin_static_js_script_strict_passes():
+    result = _run_audit("--strict")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "admin static JS audit: OK" in result.stdout
+
+
+def test_guardrails_protected_templates_have_no_large_inline_js():
+    for filename in PROTECTED_MODULE_TEMPLATES:
+        source = _read(ADMIN_TEMPLATES / filename)
+        for match in _inline_script_blocks(source):
+            attrs = match.group("attrs")
+            body = match.group("body").strip()
+            if "src=" in attrs or "application/json" in attrs or not body:
+                continue
+            assert len(body) <= 160
+            assert "function " not in body
+            assert "=>" not in body
+            assert "addEventListener" not in body
+
+    auto_reply_source = _read(ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html")
+    assert "function requestJson" not in auto_reply_source
+    assert "function renderOutputs" not in auto_reply_source
+    assert "function runAction" not in auto_reply_source
+
+
+def test_guardrails_action_token_contract():
+    expectations = [
+        (ADMIN_STATIC / "customer_profile_pulse.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_STATIC / "customer_pulse_inbox_actions.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_STATIC / "automation_auto_reply_actions.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_STATIC / "automation_auto_reply_outputs.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html", ("data-admin-action-token",)),
+    ]
+
+    for path, markers in expectations:
+        source = _read(path)
+        assert any(marker in source for marker in markers), path
+
+
+def test_guardrails_no_frontend_build_tooling():
     forbidden_paths = [
         ROOT / "package.json",
         ROOT / "vite.config.ts",
