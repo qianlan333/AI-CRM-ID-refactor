@@ -318,5 +318,9 @@
 {% endblock %}
 
 {% block scripts_extra %}
+<script defer src="{{ url_for('static', filename='admin_console/customer_pulse_inbox_core.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/customer_pulse_inbox_renderers.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/customer_pulse_inbox_actions.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/customer_pulse_inbox_boot.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/customer_pulse_inbox.js') }}"></script>
 {% endblock %}

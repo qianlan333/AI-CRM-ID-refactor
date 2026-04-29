@@ -51,14 +51,14 @@ def _api_endpoint_groups() -> list[dict]:
                     "response_example": 'HTTP 302 → /admin/automation-conversion\n# 或 HTTP 403 当该企微成员未被授权',
                 },
                 {
-                    "id": "post-logout",
-                    "method": "POST",
-                    "path": "/admin/logout",
-                    "summary": "退出登录",
-                    "description": "清除当前登录 session，重定向到登录页。",
+                    "id": "get-logout",
+                    "method": "GET",
+                    "path": "/logout",
+                    "summary": "退出后台登录",
+                    "description": "清除当前登录 session，并重定向到登录页。后台顶部退出链接直接访问该路径。",
                     "auth": "session",
                     "params": [],
-                    "request_example": None,
+                    "request_example": "GET /logout",
                     "response_example": "HTTP 302 → /login",
                 },
             ],
@@ -93,6 +93,23 @@ def _api_endpoint_groups() -> list[dict]:
     }
   }
 }""",
+                },
+                {
+                    "id": "post-automation-member-ops-stage-send",
+                    "method": "POST",
+                    "path": "/admin/automation-conversion/programs/<program_id>/member-ops/stage/<stage_key>/send",
+                    "summary": "成员运营 no-JS 阶段发送表单",
+                    "description": "后台 member-ops 页面 multipart/form-data 兜底入口，支持页面直接上传 images 并在成功后重定向回方案内 member-ops。旧路径 /admin/automation-conversion/stage/<stage_key>/send 已下线；manual-send API 仍保持 JSON/API 调用协议，不承担页面 multipart 实际发送。",
+                    "auth": "session",
+                    "params": [
+                        {"name": "program_id", "type": "int (path)", "required": True, "description": "自动化运营方案 ID"},
+                        {"name": "stage_key", "type": "string (path)", "required": True, "description": "阶段 route key，如 new-user 或 inactive-focus"},
+                        {"name": "admin_action_token", "type": "string", "required": True, "description": "后台动作令牌"},
+                        {"name": "content", "type": "string", "required": False, "description": "普通阶段群发正文"},
+                        {"name": "images", "type": "file[]", "required": False, "description": "普通阶段本地图片，最多 3 张，每张不超过 5MB"},
+                    ],
+                    "request_example": "POST /admin/automation-conversion/programs/1/member-ops/stage/new-user/send\nContent-Type: multipart/form-data\n\nadmin_action_token=TOKEN&content=hello&images=@page.png",
+                    "response_example": "HTTP 302 → /admin/automation-conversion/programs/1/member-ops?stage=new-user&panel=send&manual_send_notice=sent&record_id=123",
                 },
                 {
                     "id": "post-reply-monitor-toggle",
@@ -189,14 +206,14 @@ def _api_endpoint_groups() -> list[dict]:
                 {
                     "id": "get-questionnaire",
                     "method": "GET",
-                    "path": "/api/questionnaires/<slug>",
+                    "path": "/api/h5/questionnaires/<slug>",
                     "summary": "获取问卷定义",
                     "description": "前台问卷页面加载时调用，返回题目列表、问卷配置及展示文案。slug 为问卷唯一标识符。",
                     "auth": "public",
                     "params": [
                         {"name": "slug", "type": "string (path)", "required": True, "description": "问卷唯一标识，如 intent-survey"},
                     ],
-                    "request_example": "GET /api/questionnaires/intent-survey",
+                    "request_example": "GET /api/h5/questionnaires/intent-survey",
                     "response_example": """{
   "ok": true,
   "questionnaire": {
@@ -212,7 +229,7 @@ def _api_endpoint_groups() -> list[dict]:
                 {
                     "id": "post-questionnaire-submit",
                     "method": "POST",
-                    "path": "/api/questionnaires/<slug>/submit",
+                    "path": "/api/h5/questionnaires/<slug>/submit",
                     "summary": "提交问卷答案",
                     "description": "前台用户提交问卷，包含答案列表和手机号。提交成功后返回 submission_id 及可选跳转 URL。",
                     "auth": "public",
@@ -222,7 +239,7 @@ def _api_endpoint_groups() -> list[dict]:
                         {"name": "mobile", "type": "string", "required": True, "description": "用户手机号"},
                         {"name": "external_userid", "type": "string", "required": False, "description": "企业微信外部联系人 ID，用于关联 CRM 记录"},
                     ],
-                    "request_example": 'POST /api/questionnaires/intent-survey/submit\nContent-Type: application/json\n\n{"answers": [{"question_id": 1, "value": "价格"}], "mobile": "13800000000"}',
+                    "request_example": 'POST /api/h5/questionnaires/intent-survey/submit\nContent-Type: application/json\n\n{"answers": [{"question_id": 1, "value": "价格"}], "mobile": "13800000000"}',
                     "response_example": '{"ok": true, "submission_id": 123, "redirect_url": ""}',
                 },
                 {

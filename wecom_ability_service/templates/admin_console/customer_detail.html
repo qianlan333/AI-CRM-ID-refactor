@@ -259,5 +259,10 @@
 {% endblock %}
 
 {% block scripts_extra %}
+<script defer src="{{ url_for('static', filename='admin_console/customer_profile_core.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/customer_profile_sections.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/customer_profile_pulse.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/customer_profile_followup.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/customer_profile_automation.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/customer_profile.js') }}"></script>
 {% endblock %}

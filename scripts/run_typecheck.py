@@ -31,8 +31,7 @@ TARGETS = [
 
 
 def main() -> int:
-    mypy_path = ROOT / ".venv310" / "bin" / "mypy"
-    command = [str(mypy_path if mypy_path.exists() else "mypy"), "--config-file", str(ROOT / "pyproject.toml"), *TARGETS]
+    command = [sys.executable, "-m", "mypy", "--config-file", str(ROOT / "pyproject.toml"), *TARGETS]
     return subprocess.run(command, cwd=ROOT).returncode
 
 

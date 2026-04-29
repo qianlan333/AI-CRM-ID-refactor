@@ -57,7 +57,7 @@
 - `auto_reply`
 - `agent_config`
 
-但实际还存在兼容入口和子工作面：
+但实际还存在模块级入口和子工作面：
 
 - `flow_design`：阶段模型、入池与问卷规则、SOP 剧本、全局规则、渠道、发布
 - `member_ops`：成员列表、阶段详情、批量/手动触达
@@ -300,7 +300,7 @@ flowchart TD
 - `/admin/automation-conversion/programs/new`：新建方案
 - `/admin/automation-conversion/programs/<program_id>`：方案概览
 
-当前 `/admin/automation-conversion` 可先 302 到默认方案，或直接渲染方案列表。基于产品目标，推荐直接渲染方案列表。
+当前 `/admin/automation-conversion` 直接渲染方案列表，不再重定向到旧单例工作面或默认方案工作面。
 
 ### 7.2 方案内页面
 
@@ -341,7 +341,7 @@ flowchart TD
 
 这些页面用于看全局运行状态，也可以通过 `program_id` filter 下钻。
 
-### 7.5 兼容路由
+### 7.5 旧路由下线策略
 
 以下旧方案内路由已下线，不再作为当前操作入口：
 
@@ -352,7 +352,7 @@ flowchart TD
 
 当前页面使用 `/admin/automation-conversion/programs/<program_id>/overview|operations|flow-design|member-ops`。`/admin/automation-conversion/auto-reply` 仍保留为自动化应答入口。
 
-以下 workflow / executions 旧兼容入口已下线，不再作为当前操作入口：
+以下 workflow / executions 旧全局入口已下线，不再作为当前操作入口：
 
 - `/admin/automation-conversion/operations/workflows/new`
 - `/admin/automation-conversion/operations/workflows/<workflow_id>/edit`
@@ -606,7 +606,7 @@ CREATE TABLE automation_program_member (
 
 第三阶段：
 
-- 旧路由 302 到默认方案路由
+- 旧页面 route 下线，不再注册兼容 redirect
 - 旧 API 标记 deprecated
 
 ## 11. 分阶段实施计划
