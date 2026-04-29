@@ -44,7 +44,15 @@ def app(tmp_path):
 
 @pytest.fixture()
 def client(app):
-    return app.test_client()
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["admin_session_user_id"] = 0
+        sess["admin_session_wecom_userid"] = ""
+        sess["admin_session_role_list"] = ["super_admin"]
+        sess["admin_session_login_type"] = "break_glass"
+        sess["admin_session_display_name"] = "phase4-test-admin"
+        sess["admin_session_break_glass_username"] = "phase4-test-admin"
+    return client
 
 
 def _seed_phase4_data(app) -> None:
@@ -291,7 +299,7 @@ def test_admin_customers_pages_render_as_search_and_profile(app, client):
     assert "客户查找" in list_html
     assert "查看档案" in list_html
     assert "name=\"status\"" not in list_html
-    assert "name=\"tag\"" not in list_html
+    assert "name=\"tag\"" in list_html
     assert "最近消息" not in list_html
     assert "更新时间" not in list_html
 

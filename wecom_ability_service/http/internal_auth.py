@@ -49,6 +49,7 @@ ADMIN_AUTH_EXEMPT_PATHS = {
 ADMIN_API_CONFIG_PREFIX = "/api/admin/config"
 ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin/automation-conversion", "automation_conversion"),
+    ("/admin/customers", "customers"),
     ("/admin/questionnaires", "questionnaires"),
     ("/admin/config", "config"),
     ("/admin/api-docs", "api_docs"),
@@ -56,7 +57,6 @@ ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin", "automation_conversion"),
 )
 ADMIN_SUNSET_PAGE_PREFIXES = (
-    "/admin/customers",
     "/admin/user-ops",
     "/admin/customer-pulse",
     "/admin/followup-orchestrator",
@@ -260,7 +260,7 @@ def _render_sunset_page(path: str):
                 {"label": "查看 API 文档", "href": "/admin/api-docs", "variant": "ghost"},
             ],
             state_title="模块已临时下线",
-            state_body="第一阶段只保留 自动化运营、问卷、配置、API 文档 四个一级能力。",
+            state_body="第一阶段保留 自动化运营、客户、问卷、配置、API 文档 五个一级能力。",
             state_items=[
                 f"本次访问路径：{_normalized_text(path)}",
                 f"请求方法：{request.method}",
@@ -269,6 +269,7 @@ def _render_sunset_page(path: str):
             table_headers=["保留入口", "状态", "说明"],
             table_rows=[
                 ["/admin/automation-conversion", "保留", "自动化运营主入口"],
+                ["/admin/customers", "恢复", "全量客户查询入口"],
                 ["/admin/questionnaires", "保留", "问卷主入口"],
                 ["/admin/config", "保留", "配置中心主入口"],
                 ["/admin/api-docs", "新增", "后台内置 API 文档"],

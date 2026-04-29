@@ -41,7 +41,7 @@ def admin_console_customers():
         "customers.html",
         active_nav="customers",
         page_title="客户中心",
-        page_summary="按关键词、负责人或手机号快速找到客户。",
+        page_summary="按关键词、负责人、手机号或标签快速找到客户。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("客户", None)),
         customer_payload=payload,
     )

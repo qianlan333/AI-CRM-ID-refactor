@@ -204,12 +204,14 @@ def build_customer_list_payload(args: Any) -> dict[str, Any]:
         getattr(args, "get", lambda *_: "")("owner_userid")
     )
     mobile = _normalized_text(getattr(args, "get", lambda *_: "")("mobile"))
+    tag = _normalized_text(getattr(args, "get", lambda *_: "")("tag"))
     offset = _normalized_text(getattr(args, "get", lambda *_: "")("offset")) or "0"
     payload = ListCustomersQuery()(
         CustomerListQueryDTO(
             keyword=keyword,
             owner_userid=owner,
             mobile=mobile,
+            tag=tag,
             limit=CUSTOMER_PAGE_LIMIT,
             offset=offset,
         )
@@ -236,6 +238,7 @@ def build_customer_list_payload(args: Any) -> dict[str, Any]:
             "keyword": keyword,
             "owner": owner,
             "mobile": mobile,
+            "tag": tag,
         },
         "pagination": {
             "total": total,

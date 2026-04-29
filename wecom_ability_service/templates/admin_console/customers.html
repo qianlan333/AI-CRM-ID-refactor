@@ -21,6 +21,10 @@
       <span>手机号</span>
       <input type="text" name="mobile" value="{{ customer_payload.filters.mobile }}" placeholder="客户手机号">
     </label>
+    <label>
+      <span>标签</span>
+      <input type="text" name="tag" value="{{ customer_payload.filters.tag }}" placeholder="标签 ID 或标签名">
+    </label>
     <div class="admin-toolbar">
       <button type="submit" class="admin-button admin-button--primary">查询</button>
       <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_console_customers') }}">清空</a>
@@ -32,7 +36,7 @@
   <div class="admin-card-head admin-card-head--tight">
     <div>
       <h2>客户列表</h2>
-      <p>本页固定显示每页 50 条结果。</p>
+      <p>本页固定显示每页 50 条结果，按当前筛选逐页加载。</p>
     </div>
     <div class="admin-chip admin-chip--neutral">共 {{ customer_payload.pagination.total }} 位客户</div>
   </div>
@@ -81,7 +85,7 @@
     {% if customer_payload.pagination.has_prev %}
     <a
       class="admin-button admin-button--ghost"
-      href="{{ url_for('api.admin_console_customers', keyword=customer_payload.filters.keyword, owner=customer_payload.filters.owner, mobile=customer_payload.filters.mobile, offset=customer_payload.pagination.prev_offset) }}"
+      href="{{ url_for('api.admin_console_customers', keyword=customer_payload.filters.keyword, owner=customer_payload.filters.owner, mobile=customer_payload.filters.mobile, tag=customer_payload.filters.tag, offset=customer_payload.pagination.prev_offset) }}"
     >
       上一页
     </a>
@@ -89,7 +93,7 @@
     {% if customer_payload.pagination.has_next %}
     <a
       class="admin-button admin-button--ghost"
-      href="{{ url_for('api.admin_console_customers', keyword=customer_payload.filters.keyword, owner=customer_payload.filters.owner, mobile=customer_payload.filters.mobile, offset=customer_payload.pagination.next_offset) }}"
+      href="{{ url_for('api.admin_console_customers', keyword=customer_payload.filters.keyword, owner=customer_payload.filters.owner, mobile=customer_payload.filters.mobile, tag=customer_payload.filters.tag, offset=customer_payload.pagination.next_offset) }}"
     >
       下一页
     </a>

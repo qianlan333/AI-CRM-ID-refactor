@@ -52,6 +52,7 @@
 - [ ] 访问 `/admin` 返回 `302` 到 `/admin/automation-conversion`。
 - [ ] 访问 `/auth/wecom/start?mode=qr` 返回 `302` 到企业微信扫码地址。
 - [ ] 登录后访问 `/admin/automation-conversion` 返回 `200`。
+- [ ] 登录后访问 `/admin/customers` 返回 `200`，支持关键词、负责人、手机号、标签查询和分页。
 - [ ] 登录后访问 `/admin/questionnaires` 返回 `200`。
 - [ ] 登录后访问 `/admin/config` 返回 `200`。
 - [ ] 登录后访问 `/admin/api-docs` 返回 `200`。
@@ -59,7 +60,6 @@
 
 ## 8. 旧页面 sunset 日志观察检查
 
-- [ ] 访问 `/admin/customers` 返回 `410` 和“模块已下线”。
 - [ ] 访问 `/admin/user-ops` 返回 `410` 和“模块已下线”。
 - [ ] 访问 `/admin/customer-pulse` 返回 `410` 和“模块已下线”。
 - [ ] 访问 `/admin/followup-orchestrator` 返回 `410` 和“模块已下线”。

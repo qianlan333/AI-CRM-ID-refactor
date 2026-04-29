@@ -25,8 +25,8 @@
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |
 | `/admin` 默认入口 | 登录后访问 `/admin` | 返回 `302`，跳转到 `/admin/automation-conversion` |
-| 左侧一级导航 | 分别访问 `/admin/automation-conversion`、`/admin/questionnaires`、`/admin/config`、`/admin/api-docs` | 左侧只显示“自动化运营、问卷、配置、API 文档” |
-| 旧一级入口隐藏 | 检查左侧导航 | 不出现“工作台、客户、运营、AI 推进、团队编排、AI 工具、同步任务、操作记录、系统” |
+| 左侧一级导航 | 分别访问 `/admin/automation-conversion`、`/admin/customers`、`/admin/questionnaires`、`/admin/config`、`/admin/api-docs` | 左侧显示“自动化运营、客户、问卷、配置、API 文档” |
+| 旧一级入口隐藏 | 检查左侧导航 | 不出现“工作台、运营、AI 推进、团队编排、AI 工具、同步任务、操作记录、系统” |
 | 旧 MCP 页面入口 | 访问 `/admin/mcp` | 返回 `302`，跳转到 `/admin/api-docs` |
 
 ## 3. 自动化运营
@@ -34,20 +34,28 @@
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |
 | 自动化运营入口 | 登录后访问 `/admin/automation-conversion` | 页面正常渲染，标题为自动化运营相关文案 |
-| 自动化运营导航状态 | 在自动化运营页面查看左侧导航 | “自动化运营”为当前激活入口，其余入口仍只有问卷、配置、API 文档 |
+| 自动化运营导航状态 | 在自动化运营页面查看左侧导航 | “自动化运营”为当前激活入口，其余入口包含客户、问卷、配置、API 文档 |
 | 自动化角色访问 | 使用 `automation_admin` 登录访问 `/admin/automation-conversion` | 返回 `200` |
 | 非授权角色访问 | 使用 `questionnaire_admin` 或 `config_admin` 登录访问 `/admin/automation-conversion` | 返回 `403` |
 
-## 4. 问卷
+## 4. 客户
+
+| 验收项 | 操作步骤 | 预期结果 |
+| --- | --- | --- |
+| 客户入口 | 登录后访问 `/admin/customers` | 页面正常渲染，可按关键词、负责人、手机号、标签查询 |
+| 客户详情 | 从客户列表点击“查看档案” | 能进入客户档案页，查看基础资料、实时标签、问卷记录和聊天记录 |
+| 客户分页 | 在客户列表点击下一页 | 只加载当前页结果，不因客户总量大而长时间阻塞 |
+
+## 5. 问卷
 
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |
 | 问卷入口 | 登录后访问 `/admin/questionnaires` | 页面正常渲染 |
-| 问卷导航状态 | 在问卷页面查看左侧导航 | “问卷”为当前激活入口，其余入口仍只有自动化运营、配置、API 文档 |
+| 问卷导航状态 | 在问卷页面查看左侧导航 | “问卷”为当前激活入口，其余入口包含自动化运营、客户、配置、API 文档 |
 | 问卷角色访问 | 使用 `questionnaire_admin` 登录访问 `/admin/questionnaires` | 返回 `200` |
 | 非授权角色访问 | 使用 `automation_admin` 或 `config_admin` 登录访问 `/admin/questionnaires` | 返回 `403` |
 
-## 5. 配置
+## 6. 配置
 
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |
@@ -59,7 +67,7 @@
 | 配置角色访问 | 使用 `config_admin` 登录访问 `/admin/config` | 返回 `200` |
 | viewer 写操作 | 使用 `viewer` 提交配置写操作 | 返回 `403` |
 
-## 6. API 文档
+## 7. API 文档
 
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |
@@ -68,11 +76,10 @@
 | 非控制台验证 | 检查 `/admin/api-docs` | 不出现旧 MCP 控制台的 preflight、sample-call、tool registry 交互入口 |
 | 所有角色访问 | 使用各后台角色访问 `/admin/api-docs` | 均返回 `200` |
 
-## 7. 旧页面下线观察
+## 8. 旧页面下线观察
 
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |
-| 客户页下线 | 访问 `/admin/customers` | 返回 `410`，页面展示“模块已下线” |
 | 运营页下线 | 访问 `/admin/user-ops` | 返回 `410`，页面展示“模块已下线” |
 | Customer Pulse 下线 | 访问 `/admin/customer-pulse` | 返回 `410`，页面展示“模块已下线” |
 | Followup Orchestrator 下线 | 访问 `/admin/followup-orchestrator` | 返回 `410`，页面展示“模块已下线” |
@@ -81,7 +88,7 @@
 | 操作记录下线 | 访问 `/admin/audit` | 返回 `410`，页面展示“模块已下线” |
 | 观察日志 | 访问任一旧页面后查询 `admin_operation_logs` | 有 `target_type='sunset_route'`、`action_type='sunset_route_access'` 的访问记录 |
 
-## 8. 回滚点
+## 9. 回滚点
 
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |

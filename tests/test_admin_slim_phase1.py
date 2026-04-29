@@ -169,7 +169,7 @@ def test_admin_root_redirects_to_automation_conversion(client):
     assert response.headers["Location"].endswith("/admin/automation-conversion")
 
 
-def test_super_admin_navigation_only_keeps_four_primary_entries(app, client, monkeypatch):
+def test_super_admin_navigation_restores_customer_primary_entry(app, client, monkeypatch):
     _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"], next_path="/admin/config")
 
     response = client.get("/admin/config")
@@ -177,10 +177,11 @@ def test_super_admin_navigation_only_keeps_four_primary_entries(app, client, mon
 
     assert response.status_code == 200
     assert "自动化运营" in html
+    assert "客户" in html
     assert "问卷" in html
     assert "配置" in html
     assert "API 文档" in html
-    assert 'href="/admin/customers"' not in html
+    assert 'href="/admin/customers"' in html
     assert 'href="/admin/user-ops"' not in html
     assert 'href="/admin/customer-pulse"' not in html
     assert 'href="/admin/followup-orchestrator"' not in html
@@ -222,10 +223,12 @@ def test_core_pages_still_open_after_login(app, client, monkeypatch):
     _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"])
 
     automation_response = client.get("/admin/automation-conversion")
+    customers_response = client.get("/admin/customers")
     questionnaire_response = client.get("/admin/questionnaires")
     config_response = client.get("/admin/config")
 
     assert automation_response.status_code == 200
+    assert customers_response.status_code == 200
     assert questionnaire_response.status_code == 200
     assert config_response.status_code == 200
 
@@ -265,7 +268,7 @@ def test_login_access_page_renders_login_audit(app, client, monkeypatch):
 def test_sunset_pages_are_offline_and_logged(app, client, monkeypatch):
     _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"])
 
-    response = client.get("/admin/customers")
+    response = client.get("/admin/jobs")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 410
@@ -282,7 +285,7 @@ def test_sunset_pages_are_offline_and_logged(app, client, monkeypatch):
             """
         ).fetchone()
         assert row is not None
-        assert row["target_id"] == "/admin/customers"
+        assert row["target_id"] == "/admin/jobs"
         assert row["action_type"] == "sunset_route_access"
 
 
