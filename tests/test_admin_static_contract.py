@@ -17,6 +17,14 @@ CUSTOMER_PROFILE_MODULES = [
     "customer_profile.js",
 ]
 
+CUSTOMER_PULSE_INBOX_MODULES = [
+    "customer_pulse_inbox_core.js",
+    "customer_pulse_inbox_renderers.js",
+    "customer_pulse_inbox_actions.js",
+    "customer_pulse_inbox_boot.js",
+    "customer_pulse_inbox.js",
+]
+
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -141,13 +149,81 @@ def test_customer_profile_followup_module_keeps_widget_contract():
 def test_customer_pulse_inbox_uses_admin_api_without_local_request_helper_copy():
     source = _read(ADMIN_STATIC / "customer_pulse_inbox.js")
 
-    assert "window.AdminApi" in source or "AdminApi" in source
+    assert "DOMContentLoaded" in source
+    assert "CustomerPulseInbox.boot" in source
     assert not re.search(r"\bfunction\s+requestJson\s*\(", source)
     assert "fetch(" not in source
-    assert "customerPulseAccessHeaders" in source
-    assert "pulseInboxStore" in source
+    assert "function renderDetail" not in source
+    assert "function loadPreview" not in source
+    assert "function submitAction" not in source
+
+
+def test_customer_pulse_inbox_loads_modules_in_order():
+    source = _read(ADMIN_TEMPLATES / "customer_pulse_inbox.html")
+
+    positions = [source.index(f"admin_console/{filename}") for filename in CUSTOMER_PULSE_INBOX_MODULES]
+
+    assert positions == sorted(positions)
+    assert source.index("{% block scripts_extra %}") < positions[0]
+    assert positions[-1] < source.index("{% endblock %}", positions[-1])
+    for filename in CUSTOMER_PULSE_INBOX_MODULES:
+        script_start = source.rfind("<script", 0, source.index(f"admin_console/{filename}"))
+        script_end = source.index("</script>", source.index(f"admin_console/{filename}"))
+        script_tag = source[script_start:script_end]
+        assert "defer" in script_tag
+
+
+def test_customer_pulse_inbox_module_files_exist_and_stay_plain_browser_js():
+    forbidden_tokens = ["import ", "export ", "require(", 'from "', "from '"]
+
+    for filename in CUSTOMER_PULSE_INBOX_MODULES:
+        source = _read(ADMIN_STATIC / filename)
+
+        assert "window.CustomerPulseInbox" in source or "CustomerPulseInbox" in source
+        for token in forbidden_tokens:
+            assert token not in source
+
+
+def test_customer_pulse_inbox_core_exposes_shared_contract():
+    source = _read(ADMIN_STATIC / "customer_pulse_inbox_core.js")
+
+    assert "store" in source
     assert "cardApiUrl" in source
+    assert "customerPulseAccessHeaders" in source
+    assert "setDetailState" in source
+    assert "inlineStateHtml" in source
+
+
+def test_customer_pulse_inbox_renderers_keep_detail_contract():
+    source = _read(ADMIN_STATIC / "customer_pulse_inbox_renderers.js")
+
+    assert "renderDetail" in source
+    assert "renderSelectedCard" in source
+    assert "evidenceRefsHtml" in source
+    assert "actionSlotHtml" in source
+    assert "pulseFormFields" in source
+
+
+def test_customer_pulse_inbox_actions_keep_api_contract():
+    source = _read(ADMIN_STATIC / "customer_pulse_inbox_actions.js")
+
+    assert "ensureCardDetail" in source
+    assert "loadCardDetail" in source
+    assert "loadPreview" in source
+    assert "loadEvidence" in source
+    assert "submitAction" in source
+    assert "submitFeedback" in source
     assert "admin_action_token" in source or "adminActionToken" in source
+
+
+def test_customer_pulse_inbox_boot_keeps_interaction_contract():
+    source = _read(ADMIN_STATIC / "customer_pulse_inbox_boot.js")
+
+    assert "wireInboxInteractions" in source or "wireInteractions" in source
+    assert "data-card-select" in source
+    assert "data-detail-action-form" in source
+    assert "data-customer-pulse-inbox-json" in source
+    assert "boot" in source
 
 
 def test_no_frontend_build_tooling_was_added():
