@@ -7,6 +7,7 @@ import json
 import re
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 import requests
@@ -9322,12 +9323,15 @@ def test_auto_reply_page_exposes_copy_send_and_reject_actions_without_adopt_butt
 
     response = client.get("/admin/automation-conversion/auto-reply")
     html = response.get_data(as_text=True)
+    outputs_js = Path("wecom_ability_service/static/admin_console/automation_auto_reply_outputs.js").read_text(encoding="utf-8")
 
     assert response.status_code == 200
-    assert "复制话术" in html
-    assert "一键 webhook" in html
-    assert "一键推企微群发" in html
+    assert "automation_auto_reply_outputs.js" in html
+    assert "复制话术" in outputs_js
+    assert "一键 webhook" in outputs_js
+    assert "一键推企微群发" in outputs_js
     assert 'data-review-action="adopted"' not in html
+    assert 'data-review-action="adopted"' not in outputs_js
     assert "review_output_webhook_send_base" in html
     assert "review_output_wecom_send_base" in html
 
