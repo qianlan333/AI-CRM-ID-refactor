@@ -316,6 +316,7 @@ sudo journalctl -u openclaw-wecom-postgres.service -n 100 --no-pager
 
 - 先停掉 cron / timer，不再触发 `/api/admin/automation-conversion/sop/run-due`
 - 保留原有 `manual-send` 和 `focus batch`
+- 后台页面 no-JS 表单兜底入口使用 `POST /admin/automation-conversion/programs/<program_id>/member-ops/stage/<stage_key>/send`；旧 `/admin/automation-conversion/stage/<stage_key>/send` 已下线
 
 影响：
 

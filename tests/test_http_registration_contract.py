@@ -107,3 +107,98 @@ def test_http_package_contains_no_direct_third_party_runtime_calls():
             assert "requests." not in source, f"{path} must not call requests directly"
         assert "WeComClient.from_app(" not in source, f"{path} must not instantiate WeComClient.from_app() directly"
         assert "WeComClient.from_contact_app(" not in source, f"{path} must not instantiate WeComClient.from_contact_app() directly"
+
+
+def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
+    from wecom_ability_service import create_app
+
+    app = create_app({"TESTING": True})
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    endpoints = set(app.view_functions.keys())
+
+    removed_routes = {
+        "/admin/automation-conversion/settings",
+        "/admin/automation-conversion/sop",
+        "/admin/automation-conversion/stage/<stage_key>",
+        "/admin/automation-conversion/model-infra",
+        "/admin/automation-conversion/debug",
+        "/admin/automation-conversion/preview",
+        "/admin/automation-conversion/agent-config",
+        "/admin/automation-conversion/run-center",
+        "/admin/automation-conversion/operations/workflows/new",
+        "/admin/automation-conversion/operations/workflows/<int:workflow_id>/edit",
+        "/admin/automation-conversion/operations/workflows/<int:workflow_id>/nodes",
+        "/admin/automation-conversion/operations/executions",
+        "/admin/automation-conversion/overview",
+        "/admin/automation-conversion/operations",
+        "/admin/automation-conversion/flow-design",
+        "/admin/automation-conversion/member-ops",
+        "/admin/automation-conversion/overview/signup-tag/apply",
+        "/admin/automation-conversion/message-activity-sync/run",
+        "/admin/automation-conversion/reply-monitor/toggle",
+        "/admin/automation-conversion/reply-monitor/capture",
+        "/admin/automation-conversion/reply-monitor/run-due",
+        "/admin/automation-conversion/stage/<stage_key>/send",
+        "/api/admin/automation-conversion/model-infra/settings",
+    }
+    removed_endpoints = {
+        "admin_automation_conversion_settings",
+        "admin_automation_conversion_sop",
+        "admin_automation_conversion_stage",
+        "admin_automation_conversion_model_infra",
+        "admin_automation_conversion_debug",
+        "admin_automation_conversion_preview",
+        "admin_automation_conversion_agent_config",
+        "admin_automation_conversion_run_center",
+        "admin_automation_conversion_workflow_new",
+        "admin_automation_conversion_workflow_edit",
+        "admin_automation_conversion_workflow_nodes",
+        "admin_automation_conversion_execution_records",
+        "admin_automation_conversion_overview",
+        "admin_automation_conversion_operations",
+        "admin_automation_conversion_flow_design",
+        "admin_automation_conversion_member_ops",
+        "admin_automation_conversion_apply_overview_signup_tag",
+        "admin_automation_conversion_run_message_activity_sync",
+        "admin_automation_conversion_reply_monitor_toggle",
+        "admin_automation_conversion_reply_monitor_capture",
+        "admin_automation_conversion_reply_monitor_run_due",
+        "admin_automation_conversion_stage_send",
+        "api_admin_automation_conversion_model_infra_settings_save_legacy",
+    }
+    kept_routes = {
+        "/admin/automation-conversion",
+        "/admin/automation-conversion/programs/<int:program_id>/overview",
+        "/admin/automation-conversion/programs/<int:program_id>/operations",
+        "/admin/automation-conversion/programs/<int:program_id>/flow-design",
+        "/admin/automation-conversion/programs/<int:program_id>/member-ops",
+        "/admin/automation-conversion/programs/<int:program_id>/executions",
+        "/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send",
+        "/admin/automation-conversion/programs/<int:program_id>/overview/signup-tag/apply",
+        "/admin/automation-conversion/programs/<int:program_id>/overview/message-activity-sync/run",
+        "/admin/automation-conversion/auto-reply/reply-monitor/toggle",
+        "/admin/automation-conversion/auto-reply/reply-monitor/capture",
+        "/admin/automation-conversion/auto-reply/reply-monitor/run-due",
+        "/admin/automation-conversion/shared/agents",
+        "/admin/automation-conversion/shared/model-infra",
+        "/admin/automation-conversion/runtime/debug",
+        "/api/admin/automation-conversion/model-settings",
+        "/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview",
+        "/api/admin/automation-conversion/stage/<stage_key>/manual-send",
+        "/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches",
+        "/api/admin/automation-conversion/message-activity-sync/run",
+        "/api/admin/automation-conversion/reply-monitor/capture",
+        "/api/admin/automation-conversion/reply-monitor/run-due",
+    }
+
+    restored_routes = removed_routes & rules
+    missing_routes = kept_routes - rules
+    restored_endpoints = {
+        name
+        for name in removed_endpoints
+        if name in endpoints or f"api.{name}" in endpoints
+    }
+
+    assert not restored_routes, f"legacy automation conversion routes were restored: {sorted(restored_routes)}"
+    assert not restored_endpoints, f"legacy automation conversion endpoints were restored: {sorted(restored_endpoints)}"
+    assert not missing_routes, f"current automation conversion routes are missing: {sorted(missing_routes)}"

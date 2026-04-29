@@ -225,12 +225,12 @@ def _run_center_agent_subtab() -> str:
 
 
 def _member_ops_stage_key() -> str:
-    stage = _query_text("stage")
+    stage = _query_text("stage") or str(request.values.get("stage") or "").strip()
     return stage or "new-user"
 
 
 def _member_ops_panel() -> str:
-    panel = _query_text("panel")
+    panel = _query_text("panel") or str(request.values.get("panel") or "").strip()
     return panel or "members"
 
 
@@ -1132,7 +1132,10 @@ def admin_automation_conversion_runtime_sync():
 
 
 def admin_automation_conversion_runtime_router():
-    return _render_run_center_page(page_input={"tab": "agent-orchestration", "subtab": "router"})
+    return _render_run_center_page(
+        page_notice=_query_text("notice"),
+        page_input={"tab": "agent-orchestration", "subtab": "router"},
+    )
 
 
 def admin_automation_conversion_runtime_logs():
@@ -1197,19 +1200,24 @@ def admin_automation_conversion_generate_default_channel():
     )
 
 
-def admin_automation_conversion_stage_send(stage_key: str):
-    program_id = _request_program_id()
-    if request.method == "GET":
-        return _redirect_to_program(
-            "api.admin_automation_program_member_ops",
-            program_id=program_id,
-            stage=stage_key,
-            panel="send",
-            phone=_query_text("phone") or None,
-        )
+def _stage_send_member_ops_params(stage_key: str, **notice_params) -> dict[str, object]:
+    params: dict[str, object] = {
+        "stage": str(stage_key or "").strip(),
+        "panel": "send",
+    }
+    for key in ("keyword", "external_contact_id", "member", "phone"):
+        value = str(request.values.get(key) or "").strip()
+        if value:
+            params[key] = value
+    params.update({key: value for key, value in notice_params.items() if value is not None and value != ""})
+    return params
+
+
+def _handle_stage_send_post(stage_key: str, *, program: dict[str, object]):
+    program_id = int(program.get("id") or 0)
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
-        return _render_member_ops_page(page_error=action_token_error)
+        return _render_member_ops_page(page_error=action_token_error, program=program)
     try:
         images = _stage_send_images_from_request()
         route_key = str(stage_key or "").strip()
@@ -1220,13 +1228,14 @@ def admin_automation_conversion_stage_send(stage_key: str):
                 operator_type="user",
             )
             return redirect(
-                _program_route_or_main(
+                _program_route(
                     "api.admin_automation_program_member_ops",
                     program_id=program_id,
-                    stage=route_key,
-                    panel="send",
-                    focus_batch_notice="created",
-                    focus_batch_id=int((result.get("batch") or {}).get("id") or 0),
+                    **_stage_send_member_ops_params(
+                        route_key,
+                        focus_batch_notice="created",
+                        focus_batch_id=int((result.get("batch") or {}).get("id") or 0),
+                    ),
                 ),
                 code=302,
             )
@@ -1237,18 +1246,24 @@ def admin_automation_conversion_stage_send(stage_key: str):
             operator_id=_operator_from_request(),
         )
         return redirect(
-            _program_route_or_main(
+            _program_route(
                 "api.admin_automation_program_member_ops",
                 program_id=program_id,
-                stage=route_key,
-                panel="send",
-                manual_send_notice="sent",
-                record_id=int(result.get("record_id") or 0),
+                **_stage_send_member_ops_params(
+                    route_key,
+                    manual_send_notice="sent",
+                    record_id=int(result.get("record_id") or 0),
+                ),
             ),
             code=302,
         )
     except ValueError as exc:
-        return _render_member_ops_page(page_error=str(exc))
+        return _render_member_ops_page(page_error=str(exc), program=program)
+
+
+def admin_automation_program_member_ops_stage_send(program_id: int, stage_key: str):
+    program = _load_program_or_404(program_id)
+    return _handle_stage_send_post(stage_key, program=program)
 
 
 def admin_automation_conversion_agent_orchestration_save_draft(agent_code: str):
@@ -2437,6 +2452,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/programs/<int:program_id>/executions", methods=["GET"])(admin_automation_program_executions)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/flow-design", methods=["GET"])(admin_automation_program_flow_design)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/member-ops", methods=["GET"])(admin_automation_program_member_ops)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send", methods=["POST"])(admin_automation_program_member_ops_stage_send)
     bp.route("/admin/automation-conversion/shared/agents", methods=["GET"])(admin_automation_conversion_shared_agents)
     bp.route("/admin/automation-conversion/shared/profile-segments", methods=["GET"])(admin_automation_conversion_shared_profile_segments)
     bp.route("/admin/automation-conversion/shared/model-infra", methods=["GET"])(admin_automation_conversion_shared_model_infra)
@@ -2448,7 +2464,6 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/settings/save", methods=["POST"])(admin_automation_conversion_save_settings)
     bp.route("/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(admin_automation_conversion_generate_default_channel)
     bp.route("/admin/automation-conversion/auto-reply", methods=["GET"])(admin_automation_conversion_auto_reply)
-    bp.route("/admin/automation-conversion/stage/<stage_key>/send", methods=["GET", "POST"])(admin_automation_conversion_stage_send)
     bp.route("/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft", methods=["POST"])(admin_automation_conversion_agent_orchestration_save_draft)
     bp.route("/admin/automation-conversion/agent-orchestration/outputs/<output_id>/review", methods=["POST"])(admin_automation_conversion_agent_orchestration_review_output)
     bp.route("/admin/automation-conversion/agent-orchestration/replay/<run_id>", methods=["POST"])(admin_automation_conversion_agent_orchestration_replay)

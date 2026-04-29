@@ -95,6 +95,23 @@ def _api_endpoint_groups() -> list[dict]:
 }""",
                 },
                 {
+                    "id": "post-automation-member-ops-stage-send",
+                    "method": "POST",
+                    "path": "/admin/automation-conversion/programs/<program_id>/member-ops/stage/<stage_key>/send",
+                    "summary": "成员运营 no-JS 阶段发送表单",
+                    "description": "后台 member-ops 页面 multipart/form-data 兜底入口，支持页面直接上传 images 并在成功后重定向回方案内 member-ops。旧路径 /admin/automation-conversion/stage/<stage_key>/send 已下线；manual-send API 仍保持 JSON/API 调用协议，不承担页面 multipart 实际发送。",
+                    "auth": "session",
+                    "params": [
+                        {"name": "program_id", "type": "int (path)", "required": True, "description": "自动化运营方案 ID"},
+                        {"name": "stage_key", "type": "string (path)", "required": True, "description": "阶段 route key，如 new-user 或 inactive-focus"},
+                        {"name": "admin_action_token", "type": "string", "required": True, "description": "后台动作令牌"},
+                        {"name": "content", "type": "string", "required": False, "description": "普通阶段群发正文"},
+                        {"name": "images", "type": "file[]", "required": False, "description": "普通阶段本地图片，最多 3 张，每张不超过 5MB"},
+                    ],
+                    "request_example": "POST /admin/automation-conversion/programs/1/member-ops/stage/new-user/send\nContent-Type: multipart/form-data\n\nadmin_action_token=TOKEN&content=hello&images=@page.png",
+                    "response_example": "HTTP 302 → /admin/automation-conversion/programs/1/member-ops?stage=new-user&panel=send&manual_send_notice=sent&record_id=123",
+                },
+                {
                     "id": "post-reply-monitor-toggle",
                     "method": "POST",
                     "path": "/admin/automation-conversion/auto-reply/reply-monitor/toggle",
