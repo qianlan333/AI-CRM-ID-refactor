@@ -2,9 +2,10 @@ function customerProfileRoot() {
   return document.querySelector("[data-customer-profile-root]");
 }
 
-var adminConsoleApi = window.AdminApi || {};
+var AdminApi = window.AdminApi || {};
 
-var safeJsonParse = adminConsoleApi.safeJsonParse || function safeJsonParse(text) {
+var safeJsonParse = AdminApi.safeJsonParse || function safeJsonParse(text) {
+  if (!text) return null;
   try {
     return JSON.parse(text);
   } catch (_error) {
@@ -12,7 +13,7 @@ var safeJsonParse = adminConsoleApi.safeJsonParse || function safeJsonParse(text
   }
 };
 
-var escapeHtml = adminConsoleApi.escapeHtml || function escapeHtml(value) {
+var escapeHtml = AdminApi.escapeHtml || function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -36,41 +37,9 @@ function customerPulseAccessHeaders(root) {
   return headers;
 }
 
-function requestJson(url, options = {}) {
-  if (adminConsoleApi.requestJson) {
-    return adminConsoleApi.requestJson(url, options);
-  }
-  const finalOptions = {
-    ...options,
-    headers: {
-      Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
-    },
-  };
-  return fetch(url, finalOptions)
-    .then((response) =>
-      response.text().then((text) => ({
-        response,
-        payload: text ? safeJsonParse(text) : null,
-      })),
-    )
-    .then(({ response, payload }) => {
-      if (!response.ok) {
-        const error = new Error((payload && payload.error) || "request failed");
-        error.status = response.status;
-        error.payload = payload;
-        throw error;
-      }
-      if (payload && payload.ok === false) {
-        const error = new Error(payload.error || "request failed");
-        error.status = response.status;
-        error.payload = payload;
-        throw error;
-      }
-      return payload || { ok: true };
-    });
-}
+var requestJson = AdminApi.requestJson || function adminApiRequestJsonUnavailable() {
+  return Promise.reject(new Error("AdminApi.requestJson unavailable"));
+};
 
 function requestCustomerPulseJson(root, url, options = {}) {
   return requestJson(url, {
@@ -82,7 +51,7 @@ function requestCustomerPulseJson(root, url, options = {}) {
   });
 }
 
-var isPermissionError = adminConsoleApi.isPermissionError || function isPermissionError(error) {
+var isPermissionError = AdminApi.isPermissionError || function isPermissionError(error) {
   const message = String((error && error.message) || "");
   return Boolean(error) && (error.status === 401 || error.status === 403 || message.includes("令牌无效"));
 };
@@ -570,11 +539,11 @@ function loadCustomerPulsePreview(root, cardId, actionType, options = {}) {
   renderCustomerPulse({ customer_pulse: currentCustomerPulsePayload });
   return requestCustomerPulseJson(root, customerPulseCardApiUrl(root, cardId, "/actions/preview"), {
     method: "POST",
-    body: JSON.stringify({
+    body: {
       action_type: actionType || card.suggested_action_type,
       track_click: Boolean(options.trackClick),
       metric_source: options.metricSource || "customer_profile_widget",
-    }),
+    },
   })
     .then((payload) => {
       currentCustomerPulsePreview = payload.preview || {};
@@ -618,11 +587,11 @@ function executeCustomerPulseAction(root, form) {
   if (!card) return Promise.resolve(null);
   return requestCustomerPulseJson(root, customerPulseCardApiUrl(root, card.id, "/actions/execute"), {
     method: "POST",
-    body: JSON.stringify({
+    body: {
       admin_action_token: root.dataset.adminActionToken,
       action_type: form.dataset.actionType || "",
       ...customerPulseActionPayload(form),
-    }),
+    },
   })
     .then((payload) => {
       const execution = (payload && payload.execution) || {};
@@ -642,11 +611,11 @@ function executeCustomerPulseAction(root, form) {
 function submitCustomerPulseFeedback(root, cardId, feedbackType) {
   return requestCustomerPulseJson(root, customerPulseCardApiUrl(root, cardId, "/feedback"), {
     method: "POST",
-    body: JSON.stringify({
+    body: {
       admin_action_token: root.dataset.adminActionToken,
       feedback_type: feedbackType,
       feedback_source: "customer_profile_widget",
-    }),
+    },
   })
     .then(() => {
       customerPulseFeedback("反馈已记录，正在刷新当前客户脉冲。", "success");
@@ -1001,7 +970,7 @@ function runAutomationAction(root, action) {
   const payload = memberLookupPayload(root);
   return requestJson(url, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: payload,
   })
     .then((response) => {
       if (action === "push_openclaw" && response.accepted) {
