@@ -10,6 +10,7 @@
 - Phase 7: automation overview workspace inline JS extracted into ordinary static JS files under `window.AutomationOverview`.
 - Phase 8A: automation Agent Config workspace inventory only; no JS extraction yet.
 - Phase 8B-1: automation Agent Config core, agent list/form, and placeholder insertion extracted into ordinary static JS files under `window.AutomationAgentConfig`.
+- Phase 8B-2: automation Agent Config profile segment template and tag picker logic extracted into ordinary static JS files under `window.AutomationAgentConfig`.
 
 ## Shared Principles
 
@@ -40,7 +41,7 @@
 - Customer Pulse Inbox script order and `CustomerPulseInbox` modules.
 - Automation auto reply script order and `AutomationAutoReply` modules.
 - Automation overview script order and `AutomationOverview` modules.
-- Agent Config partial script order and `AutomationAgentConfig` agent modules.
+- Agent Config partial script order and `AutomationAgentConfig` agent, template, and tag picker modules.
 - `AdminApi` shared-client contract.
 - Base template order: `admin_api_client.js` before `admin_console.js`.
 - No frontend build tooling in the repository root.
@@ -50,6 +51,8 @@ The executable audit is `scripts/audit_admin_static_js.py`. It is intentionally 
 Agent Config is intentionally not in strict protected scope during Phase 8A. It remains a legacy inline-JS page until Phase 8B starts extracting `automation_conversion_agent_config_workspace.html`. Phase 8A adds `scripts/inventory_agent_config_workspace.py` and `docs/refactor/js_api_phase8_agent_config_inventory.md` so the large workspace can be split with a known DOM/API/test inventory before any behavior changes.
 
 Phase 8B-1 starts partial Agent Config protection. The new `automation_agent_config*.js` files must pass namespace, no module-system, no duplicated helper, and action-token guardrails. The Agent Config template is checked for script order plus root/data/initial JSON markers, but it is not yet in the no-large-inline-JS strict list because template/profile-segment, tag picker, default channel, and model settings logic remain inline for later Phase 8B steps.
+
+Phase 8B-2 extends partial Agent Config protection to `automation_agent_config_templates.js` and `automation_agent_config_tag_picker.js`. The Agent Config page still is not an entire no-inline-JS protected template because default channel / QR and model settings/test logic remain inline until Phase 8B-3.
 
 For large legacy workspaces, do the inventory pass before extraction. When moving inline JavaScript into static files, migrate tests with the same pattern used after PR #121: HTML tests should assert root/data/script/initial JSON contracts, while button copy, `data-*` actions, placeholders, and modal copy that move into static JS should be asserted by reading the target static JS file.
 

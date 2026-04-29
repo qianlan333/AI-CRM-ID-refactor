@@ -46,6 +46,8 @@ AUTOMATION_OVERVIEW_MODULES = [
 AUTOMATION_AGENT_CONFIG_MODULES = [
     "automation_agent_config_core.js",
     "automation_agent_config_agents.js",
+    "automation_agent_config_templates.js",
+    "automation_agent_config_tag_picker.js",
     "automation_agent_config_boot.js",
     "automation_agent_config.js",
 ]
@@ -476,6 +478,15 @@ def test_automation_agent_config_template_loads_agent_modules_in_order_and_keeps
     assert "function loadAgentDetail" not in source
     assert "function collectAgentPayload" not in source
     assert "function insertPromptPlaceholder" not in source
+    assert "function renderTemplateTable" not in source
+    assert "function openTemplateForm" not in source
+    assert "function loadTemplateDetail" not in source
+    assert "function renderTagGroups" not in source
+    assert "function openTagPicker" not in source
+    assert "template-table-body" in source
+    assert "template-form-panel" in source
+    assert "default-channel-tag-modal-overlay" in source
+    assert "data-template-id" in source
 
 
 def test_automation_agent_config_module_files_exist_and_stay_plain_browser_js():
@@ -518,7 +529,37 @@ def test_automation_agent_config_agents_keep_agent_action_contract():
     assert "admin_action_token" in source or "adminActionToken" in source
 
 
-def test_automation_agent_config_boot_keeps_placeholder_contract():
+def test_automation_agent_config_templates_keep_profile_segment_contract():
+    source = _read(ADMIN_STATIC / "automation_agent_config_templates.js")
+
+    assert "renderTemplateTable" in source
+    assert "openTemplateForm" in source
+    assert "loadTemplateDetail" in source
+    assert "collectTemplatePayload" in source
+    assert "saveTemplate" in source
+    assert "renderTemplateCategories" in source
+    assert "addTemplateCategory" in source
+    assert "removeTemplateCategory" in source
+    assert "profile_segment_templates" in source
+    assert "profile_segment_template_detail_base" in source
+    assert "profile_segment_template_catalog" in source
+    assert "admin_action_token" in source or "adminActionToken" in source
+
+
+def test_automation_agent_config_tag_picker_keeps_modal_contract():
+    source = _read(ADMIN_STATIC / "automation_agent_config_tag_picker.js")
+
+    assert "openTagPicker" in source
+    assert "closeTagPicker" in source
+    assert "loadWeComTags" in source
+    assert "renderTagGroups" in source
+    assert "renderSelectedTags" in source
+    assert "confirmTagSelection" in source
+    assert "wecom_tags" in source
+    assert "data-tag-id" in source or "data-tag-picker" in source
+
+
+def test_automation_agent_config_boot_keeps_placeholder_and_partial_binding_contract():
     source = _read(ADMIN_STATIC / "automation_agent_config_boot.js")
 
     assert "boot" in source
@@ -526,6 +567,8 @@ def test_automation_agent_config_boot_keeps_placeholder_contract():
     assert "focusedPromptField" in source
     assert "role_prompt" in source
     assert "task_prompt" in source
+    assert "bindTemplateInteractions" in source
+    assert "bindTagPickerInteractions" in source
 
 
 def test_automation_agent_config_entrypoint_only_bootstraps_modules():
@@ -537,6 +580,8 @@ def test_automation_agent_config_entrypoint_only_bootstraps_modules():
     assert "function saveAgentDraft" not in source
     assert "function publishAgent" not in source
     assert "function deleteAgent" not in source
+    assert "function renderTemplateTable" not in source
+    assert "function openTagPicker" not in source
 
 
 def test_audit_admin_static_js_script_json_contract():

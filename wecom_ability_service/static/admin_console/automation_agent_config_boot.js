@@ -55,12 +55,26 @@
     if (!root) return;
     AutomationAgentConfig.syncInitialState();
     AutomationAgentConfig.renderAgentTable();
+    if (typeof AutomationAgentConfig.initializeTemplates === "function") {
+      AutomationAgentConfig.initializeTemplates(root);
+    }
     AutomationAgentConfig.updateSummaryCounters();
     AutomationAgentConfig.bindAgentInteractions(root);
+    if (typeof AutomationAgentConfig.bindTemplateInteractions === "function") {
+      AutomationAgentConfig.bindTemplateInteractions(root);
+    }
+    if (typeof AutomationAgentConfig.bindTagPickerInteractions === "function") {
+      AutomationAgentConfig.bindTagPickerInteractions(root);
+    }
     bindPlaceholderInsertion(root);
     AutomationAgentConfig.loadAgents(root).catch((error) => {
       AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
     });
+    if (typeof AutomationAgentConfig.refreshTemplates === "function") {
+      AutomationAgentConfig.refreshTemplates(root).catch((error) => {
+        AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
+      });
+    }
   }
 
   AutomationAgentConfig.insertPromptPlaceholder = insertPromptPlaceholder;

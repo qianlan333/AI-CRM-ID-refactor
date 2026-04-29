@@ -73,6 +73,8 @@ SCRIPT_ORDER_CONTRACTS = {
     ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html": [
         "automation_agent_config_core.js",
         "automation_agent_config_agents.js",
+        "automation_agent_config_templates.js",
+        "automation_agent_config_tag_picker.js",
         "automation_agent_config_boot.js",
         "automation_agent_config.js",
     ],
@@ -255,6 +257,7 @@ def check_action_token_contract() -> dict[str, object]:
         (ADMIN_STATIC / "automation_overview_actions.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html", ["data-admin-action-token"]),
         (ADMIN_STATIC / "automation_agent_config_agents.js", ["admin_action_token", "adminActionToken"]),
+        (ADMIN_STATIC / "automation_agent_config_templates.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html", ["data-admin-action-token"]),
     ]
     details: list[str] = []
@@ -278,6 +281,26 @@ def check_agent_config_partial_contract() -> dict[str, object]:
         "automation-agent-config-initial-catalog",
     ]
     details = [f"{rel(path)} missing Agent Config partial contract marker: {token}" for token in required if token not in source]
+    module_markers = [
+        (ADMIN_STATIC / "automation_agent_config_templates.js", [
+            "profile_segment_templates",
+            "profile_segment_template_detail_base",
+            "profile_segment_template_catalog",
+            "renderTemplateTable",
+            "saveTemplate",
+        ]),
+        (ADMIN_STATIC / "automation_agent_config_tag_picker.js", [
+            "wecom_tags",
+            "openTagPicker",
+            "renderTagGroups",
+            "confirmTagSelection",
+        ]),
+    ]
+    for module_path, markers in module_markers:
+        module_source = read_text(module_path)
+        for marker in markers:
+            if marker not in module_source:
+                details.append(f"{rel(module_path)} missing Agent Config module marker: {marker}")
     return check_result("agent_config_partial_contract", details)
 
 
