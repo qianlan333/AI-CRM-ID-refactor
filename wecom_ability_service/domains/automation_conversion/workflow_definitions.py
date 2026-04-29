@@ -150,7 +150,7 @@ def list_supported_node_trigger_modes() -> list[dict[str, str]]:
         {
             "trigger_mode": NODE_TRIGGER_MODE_DAILY_RECURRING,
             "label": "每日轮巡运行",
-            "description": "从第 N 天开始，每天在指定时间对当前仍在目标人群内的成员轮巡执行。",
+            "description": "仅在进入目标人群后的第 N 天指定时间，对当前仍在目标人群内的成员执行。",
         },
         {
             "trigger_mode": NODE_TRIGGER_MODE_AUDIENCE_ENTERED,

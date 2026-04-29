@@ -51,6 +51,9 @@ DEFAULT_CHANNEL_NAME = "默认渠道二维码"
 AI_PUSH_SCENE_SIDEBAR_SCRIPT = "sidebar_script"
 AI_PUSH_COOLDOWN_SECONDS = 30
 FOCUS_SEND_INTERVAL_SECONDS = 20
+TOUCH_PROGRAM_SIGNUP_CONVERSION = "signup_conversion_v1"
+TOUCH_SURFACE_STAGE_MANUAL_SEND = "stage_manual_send"
+TOUCH_SURFACE_FOCUS_SEND = "focus_send"
 MESSAGE_ACTIVITY_SYNC_SOURCE_MANUAL = "manual"
 MESSAGE_ACTIVITY_SYNC_SOURCE_SCHEDULED = "scheduled"
 ACTIVE_FOCUS_MESSAGE_THRESHOLD = 15
@@ -3760,8 +3763,36 @@ def _dispatch_private_message_batch(
     }
 
 
-def _stage_manual_send_targets(route_key: str) -> dict[str, Any]:
+def _has_existing_touch_delivery(*, touch_surface: str, rule_key: str, external_contact_id: str) -> bool:
+    normalized_surface = _normalized_text(touch_surface)
+    normalized_rule_key = _normalized_text(rule_key)
+    normalized_external_contact_id = _normalized_text(external_contact_id)
+    if not normalized_surface or not normalized_rule_key or not normalized_external_contact_id:
+        return False
+    existing_delivery = repo.get_active_touch_delivery(
+        program_code=TOUCH_PROGRAM_SIGNUP_CONVERSION,
+        touch_surface=normalized_surface,
+        rule_key=normalized_rule_key,
+        external_contact_id=normalized_external_contact_id,
+    )
+    if existing_delivery:
+        return True
+    if normalized_surface == TOUCH_SURFACE_FOCUS_SEND:
+        return repo.has_historical_focus_send_delivery(
+            rule_key=normalized_rule_key,
+            external_contact_id=normalized_external_contact_id,
+        )
+    if normalized_surface == TOUCH_SURFACE_STAGE_MANUAL_SEND:
+        return repo.has_historical_stage_manual_send_delivery(
+            rule_key=normalized_rule_key,
+            external_contact_id=normalized_external_contact_id,
+        )
+    return False
+
+
+def _stage_manual_send_targets(route_key: str, *, claim_delivery: bool = False, operator_id: str = "") -> dict[str, Any]:
     definition = _manual_send_stage_definition(route_key)
+    normalized_route_key = _normalized_text(definition.get("route_key")) or _normalized_text(route_key)
     pool_key = _normalized_text(definition.get("pool"))
     rows = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool_key)]
     final_targets: list[dict[str, Any]] = []
@@ -3780,6 +3811,38 @@ def _stage_manual_send_targets(route_key: str) -> dict[str, Any]:
         if not external_userid:
             skipped_reasons["missing_external_userid"] = int(skipped_reasons.get("missing_external_userid") or 0) + 1
             continue
+        delivery_metadata = {
+            "stage_key": normalized_route_key,
+            "pool_key": pool_key,
+            "operator_id": _normalized_text(operator_id),
+        }
+        if _has_existing_touch_delivery(
+            touch_surface=TOUCH_SURFACE_STAGE_MANUAL_SEND,
+            rule_key=normalized_route_key,
+            external_contact_id=external_userid,
+        ):
+            skipped_reasons["already_touched"] = int(skipped_reasons.get("already_touched") or 0) + 1
+            continue
+        if claim_delivery:
+            now_text = _iso_now()
+            delivery = repo.claim_touch_delivery_once(
+                {
+                    "program_code": TOUCH_PROGRAM_SIGNUP_CONVERSION,
+                    "touch_surface": TOUCH_SURFACE_STAGE_MANUAL_SEND,
+                    "rule_key": normalized_route_key,
+                    "member_id": int(member.get("id") or 0) or None,
+                    "external_contact_id": external_userid,
+                    "detail": "",
+                    "metadata": delivery_metadata,
+                    "claimed_at": now_text,
+                    "created_at": now_text,
+                    "updated_at": now_text,
+                }
+            )
+            if not bool(delivery.get("_did_claim")):
+                skipped_reasons["already_touched"] = int(skipped_reasons.get("already_touched") or 0) + 1
+                continue
+            target["delivery_id"] = int(delivery.get("id") or 0)
         sendable_targets.append(target)
     return {
         "definition": definition,
@@ -3844,30 +3907,39 @@ def send_stage_manual_message(
             "attachments": list(attachments or []),
         }
     )
-    targets_payload = _stage_manual_send_targets(route_key)
-    dispatch_result = _dispatch_private_message_batch(
-        target_items=list(targets_payload.get("sendable_targets") or []),
-        content=_normalized_text(content),
-        image_media_ids=list(image_media_ids or []),
-        images=list(images or []),
+    targets_payload = _stage_manual_send_targets(
+        route_key,
+        claim_delivery=True,
         operator_id=_normalized_text(operator_id) or "crm_console",
-        filter_snapshot={
-            "selection_mode": "automation_conversion_stage",
-            "stage_key": _normalized_text(route_key),
-            "pool_key": _normalized_text(targets_payload.get("pool_key")),
-        },
-    ) if int(targets_payload.get("eligible_count") or 0) > 0 else {
-        "ok": False,
-        "status": "skipped",
-        "record_id": 0,
-        "task_ids": [],
-        "task_results": [],
-        "content_preview": _normalized_text(content),
-        "image_count": len(list(image_media_ids or [])) + len(list(images or [])),
-        "sent_count": 0,
-        "fail_external_userids": [],
-        "error": "",
-    }
+    )
+    sendable_targets = list(targets_payload.get("sendable_targets") or [])
+    if int(targets_payload.get("eligible_count") or 0) > 0:
+        dispatch_result = _dispatch_private_message_batch(
+            target_items=sendable_targets,
+            content=_normalized_text(content),
+            image_media_ids=list(image_media_ids or []),
+            images=list(images or []),
+            operator_id=_normalized_text(operator_id) or "crm_console",
+            filter_snapshot={
+                "selection_mode": "automation_conversion_stage",
+                "stage_key": _normalized_text(route_key),
+                "pool_key": _normalized_text(targets_payload.get("pool_key")),
+            },
+        )
+        _finalize_stage_manual_touch_deliveries(sendable_targets, dispatch_result)
+    else:
+        dispatch_result = {
+            "ok": False,
+            "status": "skipped",
+            "record_id": 0,
+            "task_ids": [],
+            "task_results": [],
+            "content_preview": _normalized_text(content),
+            "image_count": len(list(image_media_ids or [])) + len(list(images or [])),
+            "sent_count": 0,
+            "fail_external_userids": [],
+            "error": "",
+        }
     return {
         "ok": bool(dispatch_result.get("ok")) or int(targets_payload.get("eligible_count") or 0) == 0,
         "stage_key": _normalized_text(route_key),
@@ -3885,6 +3957,44 @@ def send_stage_manual_message(
         "image_count": int(dispatch_result.get("image_count") or 0),
         "error": _normalized_text(dispatch_result.get("error")),
     }
+
+
+def _finalize_stage_manual_touch_deliveries(target_items: list[dict[str, Any]], dispatch_result: dict[str, Any]) -> None:
+    if not target_items:
+        return
+    now_text = _iso_now()
+    dispatch_status = _normalized_text(dispatch_result.get("status"))
+    fail_external_userids = {
+        _normalized_text(item)
+        for item in list(dispatch_result.get("fail_external_userids") or [])
+        if _normalized_text(item)
+    }
+    if dispatch_status == "failed":
+        fail_external_userids = {
+            _normalized_text(item.get("external_userid"))
+            for item in target_items
+            if _normalized_text(item.get("external_userid"))
+        }
+    for item in target_items:
+        delivery_id = int(item.get("delivery_id") or 0)
+        external_userid = _normalized_text(item.get("external_userid"))
+        if delivery_id <= 0 or not external_userid:
+            continue
+        delivery_status = "failed" if external_userid in fail_external_userids else "sent"
+        repo.update_touch_delivery_log_status(
+            delivery_id,
+            status=delivery_status,
+            send_record_id=int(dispatch_result.get("record_id") or 0) or None,
+            detail=_normalized_text(dispatch_result.get("error")) if delivery_status == "failed" else "",
+            metadata={
+                "dispatch_status": dispatch_status,
+                "task_ids": list(dispatch_result.get("task_ids") or []),
+                "task_results": list(dispatch_result.get("task_results") or []),
+            },
+            sent_at=now_text if delivery_status == "sent" else "",
+            updated_at=now_text,
+        )
+    get_db().commit()
 
 
 def _sop_skip_reason_label(reason: str) -> str:
@@ -4474,6 +4584,7 @@ def create_focus_send_batch(
     operator_type: str = "user",
 ) -> dict[str, Any]:
     definition = local_projection.focus_send_stage_definition(route_key)
+    normalized_route_key = _normalized_text(definition.get("route_key")) or _normalized_text(route_key)
     existing = repo.find_active_focus_send_batch_by_stage(_normalized_text(route_key))
     if existing:
         detail = _focus_batch_detail_payload(existing)
@@ -4485,7 +4596,6 @@ def create_focus_send_batch(
     now_text = _iso_now()
     pool_key = _normalized_text(definition.get("pool"))
     members = [_serialize_member(row) for row in repo.list_stage_members_for_manual_send(current_pool=pool_key)]
-    batch_status = "pending" if members else "finished"
     batch = _serialize_focus_send_batch(
         repo.insert_focus_send_batch(
             {
@@ -4493,48 +4603,112 @@ def create_focus_send_batch(
                 "pool_key": pool_key,
                 "operator_type": _normalized_text(operator_type) or "user",
                 "operator_id": _normalized_text(operator_id) or "crm_console",
-                "status": batch_status,
-                "total_count": len(members),
+                "status": "pending",
+                "total_count": 0,
                 "sent_count": 0,
                 "failed_count": 0,
                 "skipped_count": 0,
                 "cancelled_count": 0,
-                "next_run_at": now_text if members else "",
+                "next_run_at": "",
                 "last_run_at": "",
                 "created_at": now_text,
                 "updated_at": now_text,
-                "finished_at": now_text if not members else "",
+                "finished_at": "",
             }
         )
     )
     items: list[dict[str, Any]] = []
-    for position_index, member in enumerate(members, start=1):
-        items.append(
-            _serialize_focus_send_batch_item(
-                repo.insert_focus_send_batch_item(
-                    {
-                        "batch_id": int(batch.get("id") or 0),
-                        "member_id": int(member.get("id") or 0) or None,
-                        "external_contact_id": _normalized_text(member.get("external_contact_id")),
-                        "phone": _normalized_text(member.get("phone")),
-                        "position_index": position_index,
-                        "status": "pending",
-                        "detail": "",
-                        "result_payload": {},
-                        "created_at": now_text,
-                        "updated_at": now_text,
-                        "started_at": "",
-                        "finished_at": "",
-                    }
-                )
+    skipped_reasons: dict[str, int] = {}
+    for member in members:
+        external_contact_id = _normalized_text(member.get("external_contact_id"))
+        if not external_contact_id:
+            skipped_reasons["missing_external_userid"] = int(skipped_reasons.get("missing_external_userid") or 0) + 1
+            continue
+        if _has_existing_touch_delivery(
+            touch_surface=TOUCH_SURFACE_FOCUS_SEND,
+            rule_key=normalized_route_key,
+            external_contact_id=external_contact_id,
+        ):
+            skipped_reasons["already_touched"] = int(skipped_reasons.get("already_touched") or 0) + 1
+            continue
+        delivery = repo.claim_touch_delivery_once(
+            {
+                "program_code": TOUCH_PROGRAM_SIGNUP_CONVERSION,
+                "touch_surface": TOUCH_SURFACE_FOCUS_SEND,
+                "rule_key": normalized_route_key,
+                "member_id": int(member.get("id") or 0) or None,
+                "external_contact_id": external_contact_id,
+                "source_batch_id": int(batch.get("id") or 0) or None,
+                "detail": "",
+                "metadata": {
+                    "stage_key": normalized_route_key,
+                    "requested_stage_key": _normalized_text(route_key),
+                    "pool_key": pool_key,
+                    "operator_id": _normalized_text(operator_id),
+                },
+                "claimed_at": now_text,
+                "created_at": now_text,
+                "updated_at": now_text,
+            }
+        )
+        if not bool(delivery.get("_did_claim")):
+            skipped_reasons["already_touched"] = int(skipped_reasons.get("already_touched") or 0) + 1
+            continue
+        item = _serialize_focus_send_batch_item(
+            repo.insert_focus_send_batch_item(
+                {
+                    "batch_id": int(batch.get("id") or 0),
+                    "member_id": int(member.get("id") or 0) or None,
+                    "external_contact_id": external_contact_id,
+                    "phone": _normalized_text(member.get("phone")),
+                    "position_index": len(items) + 1,
+                    "status": "pending",
+                    "detail": "",
+                    "result_payload": {},
+                    "created_at": now_text,
+                    "updated_at": now_text,
+                    "started_at": "",
+                    "finished_at": "",
+                }
             )
         )
+        repo.update_touch_delivery_log_status(
+            int(delivery.get("id") or 0),
+            status="claimed",
+            source_batch_id=int(batch.get("id") or 0) or None,
+            source_item_id=int(item.get("id") or 0) or None,
+            detail="",
+            metadata={
+                "stage_key": normalized_route_key,
+                "requested_stage_key": _normalized_text(route_key),
+                "pool_key": pool_key,
+                "operator_id": _normalized_text(operator_id),
+            },
+            updated_at=now_text,
+        )
+        items.append(item)
+    skipped_count = sum(int(value or 0) for value in skipped_reasons.values())
+    batch = _serialize_focus_send_batch(
+        repo.update_focus_send_batch(
+            int(batch.get("id") or 0),
+            {
+                **batch,
+                "status": "pending" if items else "finished",
+                "total_count": len(items) + skipped_count,
+                "skipped_count": skipped_count,
+                "next_run_at": now_text if items else "",
+                "updated_at": now_text,
+                "finished_at": "" if items else now_text,
+            },
+        )
+    )
     get_db().commit()
     return {
         "ok": True,
         "status": "created",
         "batch": batch,
         "items": items,
+        "skipped_reasons": skipped_reasons,
     }
 
 
@@ -4619,6 +4793,17 @@ def run_due_focus_send_batches(
                 "started_at": _normalized_text(serialized_item.get("started_at")) or now_text,
                 "finished_at": now_text,
             },
+        )
+        repo.update_touch_delivery_log_status_by_source(
+            touch_surface=TOUCH_SURFACE_FOCUS_SEND,
+            source_batch_id=int(batch.get("id") or 0),
+            source_item_id=int(serialized_item.get("id") or 0),
+            external_contact_id=external_contact_id,
+            status=item_status,
+            detail="" if accepted else (_normalized_text(push_result.get("error")) or _normalized_text(push_result.get("status"))),
+            metadata=dict(push_result or {}),
+            sent_at=now_text if accepted else "",
+            updated_at=now_text,
         )
         processed_count += 1
         refreshed_batch = _update_focus_batch_counters(

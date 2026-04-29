@@ -2313,6 +2313,36 @@ ON automation_focus_send_batch_item (batch_id, position_index ASC, id ASC);
 CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_status
 ON automation_focus_send_batch_item (status, updated_at DESC, id DESC);
 
+CREATE TABLE IF NOT EXISTS automation_touch_delivery_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    program_code TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+    touch_surface TEXT NOT NULL DEFAULT '',
+    rule_key TEXT NOT NULL DEFAULT '',
+    member_id INTEGER REFERENCES automation_member(id) ON DELETE SET NULL,
+    external_contact_id TEXT NOT NULL DEFAULT '',
+    source_batch_id INTEGER,
+    source_item_id INTEGER,
+    send_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'claimed'
+        CHECK (status IN ('claimed', 'sent', 'failed', 'skipped', 'cancelled')),
+    detail TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    claimed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_touch_delivery_active
+ON automation_touch_delivery_log (program_code, touch_surface, rule_key, external_contact_id)
+WHERE external_contact_id <> '' AND status IN ('claimed', 'sent');
+
+CREATE INDEX IF NOT EXISTS idx_automation_touch_delivery_external
+ON automation_touch_delivery_log (external_contact_id, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_touch_delivery_source
+ON automation_touch_delivery_log (touch_surface, source_batch_id, source_item_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_sop_pool_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pool_key TEXT NOT NULL UNIQUE CHECK (pool_key IN ('pending_questionnaire', 'operating', 'converted')),
