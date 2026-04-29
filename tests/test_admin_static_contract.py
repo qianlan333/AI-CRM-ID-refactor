@@ -36,10 +36,18 @@ AUTOMATION_AUTO_REPLY_MODULES = [
     "automation_auto_reply.js",
 ]
 
+AUTOMATION_OVERVIEW_MODULES = [
+    "automation_overview_core.js",
+    "automation_overview_renderers.js",
+    "automation_overview_actions.js",
+    "automation_overview.js",
+]
+
 PROTECTED_MODULE_TEMPLATES = [
     "customer_detail.html",
     "customer_pulse_inbox.html",
     "automation_conversion_auto_reply_workspace.html",
+    "automation_conversion_overview_workspace.html",
 ]
 
 
@@ -348,6 +356,92 @@ def test_automation_auto_reply_entrypoint_only_bootstraps_modules():
     assert "function requestJson" not in source
 
 
+def test_automation_overview_template_loads_modules_in_order_and_removes_inline_logic():
+    source = _read(ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html")
+
+    positions = [source.index(f"admin_console/{filename}") for filename in AUTOMATION_OVERVIEW_MODULES]
+
+    assert positions == sorted(positions)
+    assert "{{ super() }}" in source
+    assert source.index("{% block scripts_extra %}") < positions[0]
+    assert positions[-1] < source.index("{% endblock %}", positions[-1])
+    for filename in AUTOMATION_OVERVIEW_MODULES:
+        script_start = source.rfind("<script", 0, source.index(f"admin_console/{filename}"))
+        script_end = source.index("</script>", source.index(f"admin_console/{filename}"))
+        script_tag = source[script_start:script_end]
+        assert "defer" in script_tag
+
+    assert 'id="automation-overview-root"' in source
+    assert "data-api-urls" in source
+    assert "data-admin-action-token" in source
+    assert "function requestJson" not in source
+    assert "function renderDashboard" not in source
+    assert "function renderMemberGroups" not in source
+    assert "function postAdminAction" not in source
+    assert "overview-refresh-button" in source
+    assert "overview-member-groups" in source
+    assert "overview-execution-body" in source
+
+
+def test_automation_overview_module_files_exist_and_stay_plain_browser_js():
+    forbidden_tokens = ["import ", "export ", "require(", 'from "', "from '"]
+
+    for filename in AUTOMATION_OVERVIEW_MODULES:
+        source = _read(ADMIN_STATIC / filename)
+
+        assert "window.AutomationOverview" in source or "AutomationOverview" in source
+        for token in forbidden_tokens:
+            assert token not in source
+
+
+def test_automation_overview_core_exposes_shared_contract():
+    source = _read(ADMIN_STATIC / "automation_overview_core.js")
+
+    assert "getAdminActionToken" in source
+    assert "getApiUrls" in source
+    assert "showFeedback" in source
+    assert "requestJson" in source
+    assert "escapeHtml" in source
+
+
+def test_automation_overview_renderers_keep_dashboard_contract():
+    source = _read(ADMIN_STATIC / "automation_overview_renderers.js")
+
+    assert "renderDashboard" in source
+    assert "renderMemberGroups" in source
+    assert "computeAdditionalStats" in source
+    assert "profileTemplateNote" in source
+    assert "overview-execution-body" in source
+    assert "overview-questionnaire-submitted" in source
+
+
+def test_automation_overview_actions_keep_refresh_contract():
+    source = _read(ADMIN_STATIC / "automation_overview_actions.js")
+
+    assert "loadDashboard" in source
+    assert "postAdminAction" in source
+    assert "bindRefreshAction" in source
+    assert "FormData" in source
+    assert "admin_action_token" in source or "adminActionToken" in source
+    assert "X-Requested-With" in source
+    assert "message_activity_sync_run" in source
+    assert "reply_monitor_capture" in source
+    assert "reply_monitor_run_due" in source
+    for status in ["disabled", "idle", "throttled", "quiet_hours"]:
+        assert status in source
+
+
+def test_automation_overview_entrypoint_only_bootstraps_modules():
+    source = _read(ADMIN_STATIC / "automation_overview.js")
+
+    assert "DOMContentLoaded" in source
+    assert "boot" in source
+    assert "function renderDashboard" not in source
+    assert "function renderMemberGroups" not in source
+    assert "function postAdminAction" not in source
+    assert "function requestJson" not in source
+
+
 def test_audit_admin_static_js_script_json_contract():
     result = _run_audit("--json")
 
@@ -384,6 +478,12 @@ def test_guardrails_protected_templates_have_no_large_inline_js():
     assert "function renderOutputs" not in auto_reply_source
     assert "function runAction" not in auto_reply_source
 
+    overview_source = _read(ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html")
+    assert "function requestJson" not in overview_source
+    assert "function renderDashboard" not in overview_source
+    assert "function renderMemberGroups" not in overview_source
+    assert "function postAdminAction" not in overview_source
+
 
 def test_guardrails_action_token_contract():
     expectations = [
@@ -392,6 +492,8 @@ def test_guardrails_action_token_contract():
         (ADMIN_STATIC / "automation_auto_reply_actions.js", ("admin_action_token", "adminActionToken")),
         (ADMIN_STATIC / "automation_auto_reply_outputs.js", ("admin_action_token", "adminActionToken")),
         (ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html", ("data-admin-action-token",)),
+        (ADMIN_STATIC / "automation_overview_actions.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html", ("data-admin-action-token",)),
     ]
 
     for path, markers in expectations:
