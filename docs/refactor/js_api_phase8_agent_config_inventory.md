@@ -8,6 +8,16 @@
 - Prepare the Phase 8B module split for `automation_conversion_agent_config_workspace.html`.
 - Include test-impact inventory using the PR #121 static-JS assertion migration pattern.
 
+## Phase 8A 非目标 / Non-goals
+
+- 不拆 JS：本阶段只做 inventory，不把 inline JS 迁移到静态文件。
+- 不改 API：不修改任何 API path、method、payload 或 response contract。
+- 不改后端：不修改 automation_conversion.py 或其他后端业务逻辑。
+- 不改 Agent Config 模板行为：不修改 automation_conversion_agent_config_workspace.html 的运行行为。
+- 不改数据库：不修改 schema、迁移或数据写入逻辑。
+- 不改认证：不修改 session、RBAC、admin_action_token 或 internal token 逻辑。
+- 不引入 Vite/TypeScript/React/Vue：本阶段仍然保持普通静态 JS 路线。
+
 ## Root Contract
 
 - root id: `automation-agent-config-root`
@@ -167,7 +177,7 @@
 - `defaultChannelSelectedTag`: present; default channel selected tag state
 - `modelSettings`: present; model/default channel state
 
-## Test Impact Inventory
+## Test Impact Inventory / Test impact inventory
 
 Phase 8B migration rules:
 

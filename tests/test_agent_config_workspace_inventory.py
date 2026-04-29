@@ -36,6 +36,24 @@ def test_inventory_agent_config_workspace_json_contract():
     assert "automation-agent-config-initial-templates" in payload["initial_json_blocks"]
     assert "automation-agent-config-initial-catalog" in payload["initial_json_blocks"]
     assert "test_impact_inventory" in payload
+    assert isinstance(payload["test_impact_inventory"], list)
+    allowed_categories = {
+        "html_contract_assertion",
+        "api_contract_assertion",
+        "static_js_expected_after_migration",
+        "behavior_flow_test",
+        "unknown",
+    }
+    for item in payload["test_impact_inventory"]:
+        assert "file" in item
+        assert "line_number" in item
+        assert isinstance(item["line_number"], int)
+        assert item["line_number"] > 0
+        assert "matched_keyword" in item
+        assert "matched_line" in item
+        assert "category" in item
+        assert item["category"] in allowed_categories
+        assert "migration_note" in item
     assert payload["module_proposal"]
     assert payload["risk_flags"]
 
@@ -52,6 +70,10 @@ def test_agent_config_phase8_inventory_doc_exists_with_required_sections():
 
     required_sections = [
         "Phase 8A",
+        "Phase 8A 非目标",
+        "不拆 JS",
+        "不改 API",
+        "不改后端",
         "Root Contract",
         "API URL Inventory",
         "Inline JS Function Inventory",
