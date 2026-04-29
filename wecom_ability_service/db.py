@@ -2600,15 +2600,14 @@ def _init_sqlite(db) -> None:
 
 def _prepare_sqlite_schema_columns_for_executescript(db) -> None:
     """Add columns required by schema indexes before CREATE INDEX runs."""
-    if _sqlite_table_exists(db, "automation_channel"):
-        channel_columns = _sqlite_table_columns(db, "automation_channel")
-        if "program_id" not in channel_columns:
-            db.execute("ALTER TABLE automation_channel ADD COLUMN program_id INTEGER")
-
-    if _sqlite_table_exists(db, "automation_profile_segment_template"):
-        profile_template_columns = _sqlite_table_columns(db, "automation_profile_segment_template")
-        if "program_id" not in profile_template_columns:
-            db.execute("ALTER TABLE automation_profile_segment_template ADD COLUMN program_id INTEGER")
+    for table_name in (
+        "automation_channel",
+        "automation_profile_segment_template",
+        "automation_workflow",
+        "automation_workflow_execution",
+    ):
+        if _sqlite_table_exists(db, table_name) and "program_id" not in _sqlite_table_columns(db, table_name):
+            db.execute(f"ALTER TABLE {table_name} ADD COLUMN program_id INTEGER")
 
 
 def _ensure_postgres_user_ops_page_tables(db) -> None:
@@ -3342,6 +3341,24 @@ def _init_postgres(db) -> None:
     )
     db.execute(
         """
+        ALTER TABLE IF EXISTS automation_profile_segment_template
+        ADD COLUMN IF NOT EXISTS program_id BIGINT
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow
+        ADD COLUMN IF NOT EXISTS program_id BIGINT
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_workflow_execution
+        ADD COLUMN IF NOT EXISTS program_id BIGINT
+        """
+    )
+    db.execute(
+        """
         ALTER TABLE IF EXISTS class_term_tag_mapping
         ADD COLUMN IF NOT EXISTS strategy_id TEXT NOT NULL DEFAULT ''
         """
@@ -3400,9 +3417,8 @@ def _init_postgres(db) -> None:
         ADD COLUMN IF NOT EXISTS images_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb
         """
     )
-    # Existing PostgreSQL installs may already have pre-tenant tables.
-    # Add the tenant key before replaying schema indexes so CREATE INDEX
-    # statements in schema_postgres.sql do not fail on upgraded databases.
+    # Existing PostgreSQL installs may already have older tables. Add columns
+    # required by schema indexes before replaying schema_postgres.sql.
     pre_schema_tenant_backfills = (
         "user_ops_deferred_jobs",
         "customer_pulse_signal_events",

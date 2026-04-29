@@ -128,6 +128,30 @@ def test_init_db_adds_program_id_before_schema_indexes_on_existing_sqlite_db(app
             )
             """
         )
+        db.execute(
+            """
+            CREATE TABLE automation_workflow (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_code TEXT NOT NULL UNIQUE,
+                workflow_name TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE automation_workflow_execution (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id TEXT NOT NULL UNIQUE,
+                workflow_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending',
+                scheduled_for TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         db.commit()
 
         init_db()
@@ -137,11 +161,19 @@ def test_init_db_adds_program_id_before_schema_indexes_on_existing_sqlite_db(app
             row["name"]
             for row in db.execute("PRAGMA table_info(automation_profile_segment_template)").fetchall()
         }
+        workflow_columns = {row["name"] for row in db.execute("PRAGMA table_info(automation_workflow)").fetchall()}
+        execution_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(automation_workflow_execution)").fetchall()
+        }
         index_names = _sqlite_object_names(db, "index")
         assert "program_id" in channel_columns
         assert "program_id" in template_columns
+        assert "program_id" in workflow_columns
+        assert "program_id" in execution_columns
         assert "idx_automation_channel_program" in index_names
         assert "idx_automation_profile_segment_template_program" in index_names
+        assert "idx_automation_workflow_program" in index_names
+        assert "idx_automation_workflow_execution_program" in index_names
 
 
 def test_init_db_rebuilds_legacy_marketing_state_current_without_fake_external_userid(app):
@@ -235,3 +267,19 @@ def test_postgres_schema_includes_required_marketing_automation_tables_and_index
 
     for index_name in REQUIRED_INDEXES:
         assert f"CREATE INDEX IF NOT EXISTS {index_name}" in schema_text
+
+
+def test_postgres_init_adds_program_id_columns_before_schema_indexes():
+    db_path = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "db.py"
+    source = db_path.read_text(encoding="utf-8")
+    init_postgres_source = source[source.index("def _init_postgres") :]
+    schema_replay_index = init_postgres_source.index("schema_path = Path(current_app.root_path) / \"schema_postgres.sql\"")
+
+    for table_name in (
+        "automation_profile_segment_template",
+        "automation_workflow",
+        "automation_workflow_execution",
+    ):
+        table_index = init_postgres_source.index(f"ALTER TABLE IF EXISTS {table_name}")
+        assert "ADD COLUMN IF NOT EXISTS program_id BIGINT" in init_postgres_source[table_index:schema_replay_index]
+        assert table_index < schema_replay_index
