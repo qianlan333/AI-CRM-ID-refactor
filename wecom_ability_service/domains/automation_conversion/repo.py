@@ -69,6 +69,67 @@ def _sop_pool_lookup_keys(pool_key: str) -> tuple[str, ...]:
     return alias_groups.get(normalized_pool_key, (normalized_pool_key,))
 
 
+def _stage_route_lookup_keys(route_key: str) -> tuple[str, ...]:
+    normalized_route_key = _normalized_text(route_key)
+    if not normalized_route_key:
+        return ()
+    alias_groups = {
+        "pending-questionnaire": ("pending-questionnaire", "new-user"),
+        "new-user": ("pending-questionnaire", "new-user"),
+        "operating": (
+            "operating",
+            "inactive-normal",
+            "inactive-focus",
+            "active-normal",
+            "active-focus",
+            "silent",
+        ),
+        "inactive-normal": (
+            "operating",
+            "inactive-normal",
+            "inactive-focus",
+            "active-normal",
+            "active-focus",
+            "silent",
+        ),
+        "inactive-focus": (
+            "operating",
+            "inactive-normal",
+            "inactive-focus",
+            "active-normal",
+            "active-focus",
+            "silent",
+        ),
+        "active-normal": (
+            "operating",
+            "inactive-normal",
+            "inactive-focus",
+            "active-normal",
+            "active-focus",
+            "silent",
+        ),
+        "active-focus": (
+            "operating",
+            "inactive-normal",
+            "inactive-focus",
+            "active-normal",
+            "active-focus",
+            "silent",
+        ),
+        "silent": (
+            "operating",
+            "inactive-normal",
+            "inactive-focus",
+            "active-normal",
+            "active-focus",
+            "silent",
+        ),
+        "converted": ("converted", "won"),
+        "won": ("converted", "won"),
+    }
+    return alias_groups.get(normalized_route_key, (normalized_route_key,))
+
+
 def lookup_person_id_by_external_contact_id(external_contact_id: str) -> int | None:
     row = _fetchone_dict(
         """
@@ -2259,16 +2320,20 @@ def get_focus_send_batch(batch_id: int) -> dict[str, Any] | None:
 
 
 def find_active_focus_send_batch_by_stage(stage_key: str) -> dict[str, Any] | None:
+    stage_keys = _stage_route_lookup_keys(stage_key)
+    if not stage_keys:
+        return None
+    placeholders = ",".join("?" for _ in stage_keys)
     return _fetchone_dict(
-        """
+        f"""
         SELECT *
         FROM automation_focus_send_batch
-        WHERE stage_key = ?
+        WHERE stage_key IN ({placeholders})
           AND status IN ('pending', 'running')
         ORDER BY id DESC
         LIMIT 1
         """,
-        (_normalized_text(stage_key),),
+        tuple(stage_keys),
     )
 
 
@@ -2411,6 +2476,235 @@ def claim_next_focus_send_batch_item(*, batch_id: int, started_at: str) -> dict[
             _normalized_text(started_at),
             _normalized_text(started_at),
             int(candidate["id"]),
+        ),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_active_touch_delivery(
+    *,
+    program_code: str,
+    touch_surface: str,
+    rule_key: str,
+    external_contact_id: str,
+) -> dict[str, Any] | None:
+    return _fetchone_dict(
+        """
+        SELECT *
+        FROM automation_touch_delivery_log
+        WHERE program_code = ?
+          AND touch_surface = ?
+          AND rule_key = ?
+          AND external_contact_id = ?
+          AND status IN ('claimed', 'sent')
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (
+            _normalized_text(program_code),
+            _normalized_text(touch_surface),
+            _normalized_text(rule_key),
+            _normalized_text(external_contact_id),
+        ),
+    )
+
+
+def has_historical_focus_send_delivery(*, rule_key: str, external_contact_id: str) -> bool:
+    rule_keys = _stage_route_lookup_keys(rule_key)
+    if not rule_keys:
+        return False
+    placeholders = ",".join("?" for _ in rule_keys)
+    row = _fetchone_dict(
+        f"""
+        SELECT item.id
+        FROM automation_focus_send_batch_item item
+        JOIN automation_focus_send_batch batch ON batch.id = item.batch_id
+        WHERE batch.stage_key IN ({placeholders})
+          AND item.external_contact_id = ?
+          AND item.status = 'sent'
+        ORDER BY item.id DESC
+        LIMIT 1
+        """,
+        (*rule_keys, _normalized_text(external_contact_id)),
+    )
+    return bool(row)
+
+
+def has_historical_stage_manual_send_delivery(*, rule_key: str, external_contact_id: str) -> bool:
+    normalized_rule_key = _normalized_text(rule_key)
+    normalized_external_contact_id = _normalized_text(external_contact_id)
+    if not normalized_rule_key or not normalized_external_contact_id:
+        return False
+    rule_keys = set(_stage_route_lookup_keys(normalized_rule_key))
+    like_clauses = " OR ".join("filter_snapshot_json LIKE ?" for _ in rule_keys)
+    rows = _fetchall_dicts(
+        f"""
+        SELECT task_results_json, filter_snapshot_json, status
+        FROM user_ops_send_records
+        WHERE status IN ('sent', 'partial_failed', 'created')
+          AND ({like_clauses})
+        ORDER BY id DESC
+        LIMIT 500
+        """,
+        tuple(f"%{rule_key}%" for rule_key in rule_keys),
+    )
+    for row in rows:
+        filter_snapshot = _json_loads(row.get("filter_snapshot_json"), default={})
+        if _normalized_text(filter_snapshot.get("selection_mode")) != "automation_conversion_stage":
+            continue
+        if _normalized_text(filter_snapshot.get("stage_key")) not in rule_keys:
+            continue
+        task_results = _json_loads(row.get("task_results_json"), default=[])
+        if not isinstance(task_results, list):
+            continue
+        for item in task_results:
+            if not isinstance(item, dict) or _normalized_text(item.get("status")) == "failed":
+                continue
+            external_userids = item.get("external_userids")
+            if not isinstance(external_userids, list):
+                continue
+            if normalized_external_contact_id in {_normalized_text(value) for value in external_userids}:
+                return True
+    return False
+
+
+def claim_touch_delivery_once(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized_external_contact_id = _normalized_text(payload.get("external_contact_id"))
+    if not normalized_external_contact_id:
+        return {"_did_claim": False}
+    row = get_db().execute(
+        """
+        INSERT INTO automation_touch_delivery_log (
+            program_code,
+            touch_surface,
+            rule_key,
+            member_id,
+            external_contact_id,
+            source_batch_id,
+            source_item_id,
+            send_record_id,
+            status,
+            detail,
+            metadata_json,
+            claimed_at,
+            sent_at,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'claimed', ?, ?, ?, '', ?, ?)
+        ON CONFLICT DO NOTHING
+        RETURNING *
+        """,
+        (
+            _normalized_text(payload.get("program_code")) or "signup_conversion_v1",
+            _normalized_text(payload.get("touch_surface")),
+            _normalized_text(payload.get("rule_key")),
+            payload.get("member_id"),
+            normalized_external_contact_id,
+            payload.get("source_batch_id"),
+            payload.get("source_item_id"),
+            payload.get("send_record_id"),
+            _normalized_text(payload.get("detail")),
+            _json_dumps(payload.get("metadata") or {}),
+            _normalized_text(payload.get("claimed_at")),
+            _normalized_text(payload.get("created_at")),
+            _normalized_text(payload.get("updated_at")),
+        ),
+    ).fetchone()
+    if row:
+        return {**dict(row), "_did_claim": True}
+    existing = get_active_touch_delivery(
+        program_code=_normalized_text(payload.get("program_code")) or "signup_conversion_v1",
+        touch_surface=_normalized_text(payload.get("touch_surface")),
+        rule_key=_normalized_text(payload.get("rule_key")),
+        external_contact_id=normalized_external_contact_id,
+    )
+    return {**dict(existing or {}), "_did_claim": False}
+
+
+def update_touch_delivery_log_status(
+    delivery_id: int,
+    *,
+    status: str,
+    send_record_id: int | None = None,
+    source_batch_id: int | None = None,
+    source_item_id: int | None = None,
+    detail: str = "",
+    metadata: dict[str, Any] | None = None,
+    sent_at: str = "",
+    updated_at: str = "",
+) -> dict[str, Any] | None:
+    row = get_db().execute(
+        """
+        UPDATE automation_touch_delivery_log
+        SET status = ?,
+            send_record_id = COALESCE(?, send_record_id),
+            source_batch_id = COALESCE(?, source_batch_id),
+            source_item_id = COALESCE(?, source_item_id),
+            detail = ?,
+            metadata_json = ?,
+            sent_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        RETURNING *
+        """,
+        (
+            _normalized_text(status),
+            send_record_id,
+            source_batch_id,
+            source_item_id,
+            _normalized_text(detail),
+            _json_dumps(metadata or {}),
+            _normalized_text(sent_at),
+            _normalized_text(updated_at),
+            int(delivery_id),
+        ),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_touch_delivery_log_status_by_source(
+    *,
+    touch_surface: str,
+    source_batch_id: int,
+    source_item_id: int,
+    external_contact_id: str,
+    status: str,
+    detail: str = "",
+    metadata: dict[str, Any] | None = None,
+    sent_at: str = "",
+    updated_at: str = "",
+) -> dict[str, Any] | None:
+    row = get_db().execute(
+        """
+        UPDATE automation_touch_delivery_log
+        SET status = ?,
+            detail = ?,
+            metadata_json = ?,
+            sent_at = ?,
+            updated_at = ?
+        WHERE id = (
+            SELECT id
+            FROM automation_touch_delivery_log
+            WHERE touch_surface = ?
+              AND source_batch_id = ?
+              AND source_item_id = ?
+              AND external_contact_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+        )
+        RETURNING *
+        """,
+        (
+            _normalized_text(status),
+            _normalized_text(detail),
+            _json_dumps(metadata or {}),
+            _normalized_text(sent_at),
+            _normalized_text(updated_at),
+            _normalized_text(touch_surface),
+            int(source_batch_id),
+            int(source_item_id),
+            _normalized_text(external_contact_id),
         ),
     ).fetchone()
     return dict(row) if row else None
@@ -3076,13 +3370,14 @@ def get_stage_metrics() -> list[dict[str, Any]]:
     return _fetchall_dicts(
         """
         SELECT
-            current_pool,
+            current_audience_code AS current_pool,
             COUNT(*) AS total_count,
             COALESCE(SUM(CASE WHEN follow_type = 'focus' THEN 1 ELSE 0 END), 0) AS focus_count,
             COALESCE(SUM(CASE WHEN follow_type = 'normal' THEN 1 ELSE 0 END), 0) AS normal_count,
             COALESCE(SUM(CASE WHEN joined_at IS NOT NULL AND joined_at <> '' AND DATE(joined_at) = DATE(CURRENT_TIMESTAMP) THEN 1 ELSE 0 END), 0) AS today_new_count
         FROM automation_member
-        GROUP BY current_pool
+        WHERE current_audience_code IN ('pending_questionnaire', 'operating', 'converted')
+        GROUP BY current_audience_code
         """
     )
 
@@ -3093,9 +3388,9 @@ def get_overview_counts() -> dict[str, int]:
         SELECT
             COALESCE(SUM(CASE WHEN in_pool THEN 1 ELSE 0 END), 0) AS in_pool_total,
             COALESCE(SUM(CASE WHEN joined_at IS NOT NULL AND joined_at <> '' AND DATE(joined_at) = DATE(CURRENT_TIMESTAMP) THEN 1 ELSE 0 END), 0) AS today_joined,
-            COALESCE(SUM(CASE WHEN current_audience_code = 'pending_questionnaire' AND in_pool THEN 1 ELSE 0 END), 0) AS questionnaire_pending,
-            COALESCE(SUM(CASE WHEN current_audience_code = 'operating' AND in_pool THEN 1 ELSE 0 END), 0) AS operating_total,
-            COALESCE(SUM(CASE WHEN current_audience_code = 'converted' AND in_pool THEN 1 ELSE 0 END), 0) AS converted_total
+            COALESCE(SUM(CASE WHEN current_audience_code = 'pending_questionnaire' THEN 1 ELSE 0 END), 0) AS questionnaire_pending,
+            COALESCE(SUM(CASE WHEN current_audience_code = 'operating' THEN 1 ELSE 0 END), 0) AS operating_total,
+            COALESCE(SUM(CASE WHEN current_audience_code = 'converted' THEN 1 ELSE 0 END), 0) AS converted_total
         FROM automation_member
         """
     ) or {}
@@ -3186,12 +3481,20 @@ def list_questionnaire_submission_answers(submission_id: int) -> list[dict[str, 
 
 def list_stage_members(*, current_pool: str, keyword: str = "", limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
     normalized_keyword = _normalized_text(keyword)
-    params: list[Any] = [_normalized_text(current_pool)]
-    sql = """
-    SELECT *
-    FROM automation_member
-    WHERE current_pool = ?
-    """
+    normalized_pool = _normalized_text(current_pool)
+    params: list[Any] = [normalized_pool]
+    if normalized_pool in {"pending_questionnaire", "operating", "converted"}:
+        sql = """
+        SELECT *
+        FROM automation_member
+        WHERE current_audience_code = ?
+        """
+    else:
+        sql = """
+        SELECT *
+        FROM automation_member
+        WHERE current_pool = ?
+        """
     if normalized_keyword:
         sql += """
           AND (
@@ -3211,25 +3514,36 @@ def list_stage_members(*, current_pool: str, keyword: str = "", limit: int = 50,
 
 
 def list_stage_members_for_manual_send(*, current_pool: str) -> list[dict[str, Any]]:
+    normalized_pool = _normalized_text(current_pool)
+    if normalized_pool not in {"pending_questionnaire", "operating", "converted"}:
+        return []
     return _fetchall_dicts(
         """
         SELECT *
         FROM automation_member
-        WHERE current_pool = ?
+        WHERE current_audience_code = ?
         ORDER BY updated_at DESC, id DESC
         """,
-        (_normalized_text(current_pool),),
+        (normalized_pool,),
     )
 
 
 def count_stage_members(*, current_pool: str, keyword: str = "") -> int:
     normalized_keyword = _normalized_text(keyword)
-    params: list[Any] = [_normalized_text(current_pool)]
-    sql = """
-    SELECT COUNT(*) AS total
-    FROM automation_member
-    WHERE current_pool = ?
-    """
+    normalized_pool = _normalized_text(current_pool)
+    params: list[Any] = [normalized_pool]
+    if normalized_pool in {"pending_questionnaire", "operating", "converted"}:
+        sql = """
+        SELECT COUNT(*) AS total
+        FROM automation_member
+        WHERE current_audience_code = ?
+        """
+    else:
+        sql = """
+        SELECT COUNT(*) AS total
+        FROM automation_member
+        WHERE current_pool = ?
+        """
     if normalized_keyword:
         like_value = f"%{normalized_keyword}%"
         sql += """

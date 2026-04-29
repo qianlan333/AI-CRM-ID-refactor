@@ -1151,7 +1151,7 @@ def test_run_due_conversion_workflows_supports_operating_audience_scheduled_node
     assert dispatched[0]["text"]["content"] == "运营中人群定时触达"
 
 
-def test_run_due_conversion_workflows_backfills_existing_audience_members_after_workflow_activation(app, monkeypatch):
+def test_run_due_conversion_workflows_does_not_backfill_missed_scheduled_day(app, monkeypatch):
     _seed_contact(app, external_userid="wm_backfill_existing_001", mobile="13800005553", owner_userid="sales_01", customer_name="存量客户")
     _seed_automation_member(
         app,
@@ -1178,13 +1178,13 @@ def test_run_due_conversion_workflows_backfills_existing_audience_members_after_
         create_conversion_workflow_node(
             workflow_id,
             {
-                "node_name": "补发第2天提醒",
+                "node_name": "第2天提醒",
                 "target_audience_code": "pending_questionnaire",
                 "trigger_mode": "scheduled",
                 "day_offset": 2,
                 "send_time": "09:00",
                 "content_mode": "standard_direct",
-                "standard_content_text": "存量补发仍可命中",
+                "standard_content_text": "第2天当天提醒",
                 "enabled": True,
             },
             operator_id="tester",
@@ -1207,11 +1207,12 @@ def test_run_due_conversion_workflows_backfills_existing_audience_members_after_
             """
         ).fetchall()
 
-    assert result["total_success_count"] == 1
-    assert len(dispatched) == 1
+    assert result["total_success_count"] == 0
+    assert dispatched == []
     summary = json.loads(execution_rows[0]["summary_json"])
-    assert summary["result"]["success_count"] == 1
-    assert summary["zero_hit_reasons"] == []
+    assert summary["result"]["success_count"] == 0
+    assert summary["diagnostics"]["day_offset_miss_count"] == 1
+    assert "day_offset_not_due" in summary["zero_hit_reasons"]
 
 
 def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_current_low_usage_members(app, monkeypatch):
@@ -1219,6 +1220,7 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
         ("wm_operating_recurring_day3", "13800006531", "2026-04-18 08:00:00", "第3天激活提醒"),
         ("wm_operating_recurring_day4", "13800006541", "2026-04-17 08:00:00", "第4天使用场景激活"),
         ("wm_operating_recurring_day5", "13800006551", "2026-04-16 08:00:00", "第5天结果预期激活"),
+        ("wm_operating_recurring_day6", "13800006571", "2026-04-15 08:00:00", ""),
     )
     for external_userid, mobile, entered_at, _expected_text in members:
         _seed_contact(app, external_userid=external_userid, mobile=mobile, owner_userid="sales_01", customer_name=external_userid)
@@ -1320,6 +1322,7 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
             "13800006531": 1,
             "13800006541": 1,
             "13800006551": 1,
+            "13800006571": 1,
             "13800006521": 1,
             "13800006561": 12,
         },
@@ -1347,8 +1350,9 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
     ]
     summaries = [json.loads(row["summary_json"]) for row in execution_rows]
     assert [summary["result"]["success_count"] for summary in summaries] == [1, 1, 1]
-    assert summaries[0]["diagnostics"]["day_offset_miss_count"] == 1
+    assert summaries[0]["diagnostics"]["day_offset_miss_count"] == 5
     assert summaries[2]["diagnostics"]["recipient_filter_behavior_tier_miss_count"] == 1
+    assert summaries[2]["diagnostics"]["day_offset_miss_count"] == 4
 
 
 def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_usage_source_as_zero(app, monkeypatch):
@@ -3976,6 +3980,7 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "automation_laohuang_chat_job",
             "automation_focus_send_batch",
             "automation_focus_send_batch_item",
+            "automation_touch_delivery_log",
             "automation_sop_pool_config",
             "automation_sop_template",
             "automation_sop_progress",
@@ -4016,6 +4021,9 @@ def test_init_db_creates_automation_conversion_tables_and_indexes(app):
             "idx_automation_laohuang_chat_job_queue",
             "idx_automation_focus_send_batch_stage_status",
             "idx_automation_focus_send_batch_item_batch_position",
+            "uq_automation_touch_delivery_active",
+            "idx_automation_touch_delivery_external",
+            "idx_automation_touch_delivery_source",
             "idx_automation_sop_pool_config_updated",
             "uq_automation_sop_template_pool_day",
             "uq_automation_sop_progress_member_pool",
@@ -4058,7 +4066,11 @@ def test_automation_overview_counts_only_from_automation_member(app, client):
     assert counts["in_pool_total"] == 4
     assert counts["questionnaire_pending"] == 1
     assert counts["operating_total"] == 3
-    assert counts["converted_total"] == 0
+    assert counts["converted_total"] == 1
+    stage_totals = {item["pool"]: item["total_count"] for item in payload["stage_columns"]}
+    assert stage_totals["pending_questionnaire"] == 1
+    assert stage_totals["operating"] == 3
+    assert stage_totals["converted"] == 1
 
 
 def test_automation_member_actions_write_events(app, client):
@@ -8396,6 +8408,161 @@ def test_focus_send_batch_runner_item_failure_does_not_block_batch(app, client, 
     assert [item["status"] for item in detail["items"]] == ["failed", "sent"]
 
 
+def test_focus_send_batch_does_not_requeue_already_sent_member(app, client, monkeypatch):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "focus-token"
+    _seed_contact(app, external_userid="wm_focus_once_001", mobile="13800009341", owner_userid="sales_focus", customer_name="重点客户一次")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_focus_once_001",
+        phone="13800009341",
+        owner_staff_id="sales_focus",
+        current_pool="active_focus",
+        follow_type="focus",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="focus",
+    )
+    times = iter(["2026-04-07 12:00:00", "2026-04-07 12:00:00", "2026-04-07 12:01:00", "2026-04-07 12:01:00"])
+    push_calls: list[str] = []
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: next(times))
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.push_openclaw",
+        lambda **payload: (
+            push_calls.append(str(payload.get("external_contact_id") or "")),
+            {"accepted": True, "status": "accepted", "member": {"external_contact_id": payload.get("external_contact_id")}},
+        )[1],
+    )
+
+    first_created = client.post(
+        "/api/admin/automation-conversion/stage/active-focus/focus-send-batches",
+        json={"operator": "tester"},
+    ).get_json()
+    first_run = client.post(
+        "/api/admin/automation-conversion/focus-send-batches/run-due",
+        headers={"Authorization": "Bearer focus-token"},
+    ).get_json()
+    second_created = client.post(
+        "/api/admin/automation-conversion/stage/active-focus/focus-send-batches",
+        json={"operator": "tester"},
+    ).get_json()
+    second_run = client.post(
+        "/api/admin/automation-conversion/focus-send-batches/run-due",
+        headers={"Authorization": "Bearer focus-token"},
+    ).get_json()
+
+    assert first_created["batch"]["total_count"] == 1
+    assert first_run["batches"][0]["batch"]["status"] == "finished"
+    assert second_created["batch"]["status"] == "finished"
+    assert second_created["batch"]["total_count"] == 1
+    assert second_created["batch"]["skipped_count"] == 1
+    assert second_created["batch"]["remaining_count"] == 0
+    assert second_created["items"] == []
+    assert second_created["skipped_reasons"] == {"already_touched": 1}
+    assert second_run["processed_count"] == 0
+    assert push_calls == ["wm_focus_once_001"]
+
+    with app.app_context():
+        rows = get_db().execute(
+            """
+            SELECT touch_surface, rule_key, external_contact_id, status
+            FROM automation_touch_delivery_log
+            WHERE external_contact_id = ?
+            ORDER BY id ASC
+            """,
+            ("wm_focus_once_001",),
+        ).fetchall()
+    assert [dict(row) for row in rows] == [
+        {
+            "touch_surface": "focus_send",
+            "rule_key": "operating",
+            "external_contact_id": "wm_focus_once_001",
+            "status": "sent",
+        }
+    ]
+
+
+def test_focus_send_batch_respects_historical_sent_items_before_touch_log(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_focus_history_001", mobile="13800009342", owner_userid="sales_focus", customer_name="历史重点客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_focus_history_001",
+        phone="13800009342",
+        owner_staff_id="sales_focus",
+        current_pool="active_focus",
+        follow_type="focus",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="focus",
+    )
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_focus_send_batch (
+                stage_key, pool_key, operator_type, operator_id, status, total_count, sent_count,
+                failed_count, skipped_count, cancelled_count, next_run_at, last_run_at, created_at, updated_at, finished_at
+            )
+            VALUES ('active-focus', 'operating', 'system', 'legacy', 'finished', 1, 1, 0, 0, 0, '', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        batch_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+        db.execute(
+            """
+            INSERT INTO automation_focus_send_batch_item (
+                batch_id, member_id, external_contact_id, phone, position_index, status, detail,
+                result_payload, created_at, updated_at, started_at, finished_at
+            )
+            VALUES (?, NULL, 'wm_focus_history_001', '13800009342', 1, 'sent', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (batch_id,),
+        )
+        db.commit()
+    push_calls: list[str] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.push_openclaw",
+        lambda **payload: push_calls.append(str(payload.get("external_contact_id") or "")) or {"accepted": True, "status": "accepted"},
+    )
+
+    created = client.post(
+        "/api/admin/automation-conversion/stage/active-focus/focus-send-batches",
+        json={"operator": "tester"},
+    ).get_json()
+
+    assert created["batch"]["status"] == "finished"
+    assert created["batch"]["skipped_count"] == 1
+    assert created["items"] == []
+    assert created["skipped_reasons"] == {"already_touched": 1}
+    assert push_calls == []
+
+
+def test_focus_send_batch_reuses_active_batch_across_legacy_route_aliases(app, client):
+    _seed_contact(app, external_userid="wm_focus_alias_001", mobile="13800009343", owner_userid="sales_focus", customer_name="重点别名客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_focus_alias_001",
+        phone="13800009343",
+        owner_staff_id="sales_focus",
+        current_pool="active_focus",
+        follow_type="focus",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="focus",
+    )
+
+    first_created = client.post(
+        "/api/admin/automation-conversion/stage/active-focus/focus-send-batches",
+        json={"operator": "tester"},
+    ).get_json()
+    second_created = client.post(
+        "/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches",
+        json={"operator": "tester"},
+    ).get_json()
+
+    assert first_created["status"] == "created"
+    assert second_created["status"] == "existing"
+    assert second_created["batch"]["id"] == first_created["batch"]["id"]
+
+
 
 def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app, client, monkeypatch):
     _seed_contact(app, external_userid="wm_manual_new_001", mobile="13800009201", owner_userid="sales_01", customer_name="新用户一")
@@ -8469,6 +8636,265 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
         assert row["selected_count"] == 2
         assert row["eligible_count"] == 2
         assert row["sent_count"] == 2
+
+
+def test_manual_send_skips_already_touched_member_on_repeat(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_once_001", mobile="13800009203", owner_userid="sales_01", customer_name="新用户一次")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_once_001",
+        phone="13800009203",
+        owner_staff_id="sales_01",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+    )
+    dispatched_payloads: list[dict[str, object]] = []
+
+    def fake_dispatch(task_type: str, fn_name: str, payload: dict[str, object]) -> dict[str, object]:
+        dispatched_payloads.append(dict(payload))
+        return {"task_id": 706, "wecom_result": {"msgid": "msg-706"}}
+
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task", fake_dispatch)
+
+    first_response = client.post(
+        "/api/admin/automation-conversion/stage/new-user/manual-send",
+        json={"content": "第一次触达", "operator": "tester"},
+    )
+    second_response = client.post(
+        "/api/admin/automation-conversion/stage/new-user/manual-send",
+        json={"content": "第二次触达", "operator": "tester"},
+    )
+
+    first_payload = first_response.get_json()
+    second_payload = second_response.get_json()
+    assert first_response.status_code == 200
+    assert first_payload["sent_count"] == 1
+    assert first_payload["skipped_count"] == 0
+    assert second_response.status_code == 200
+    assert second_payload["sent_count"] == 0
+    assert second_payload["eligible_count"] == 0
+    assert second_payload["skipped_count"] == 1
+    assert second_payload["skipped_reasons"] == {"already_touched": 1}
+    assert len(dispatched_payloads) == 1
+    assert dispatched_payloads[0]["external_userid"] == ["wm_manual_once_001"]
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT touch_surface, rule_key, external_contact_id, status, send_record_id
+            FROM automation_touch_delivery_log
+            WHERE external_contact_id = ?
+            LIMIT 1
+            """,
+            ("wm_manual_once_001",),
+        ).fetchone()
+    assert dict(row)["touch_surface"] == "stage_manual_send"
+    assert dict(row)["rule_key"] == "pending-questionnaire"
+    assert dict(row)["status"] == "sent"
+    assert int(dict(row)["send_record_id"]) == int(first_payload["record_id"])
+
+
+def test_manual_send_respects_historical_send_records_before_touch_log(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_history_001", mobile="13800009206", owner_userid="sales_01", customer_name="历史新用户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_history_001",
+        phone="13800009206",
+        owner_staff_id="sales_01",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+    )
+    with app.app_context():
+        get_db().execute(
+            """
+            INSERT INTO user_ops_send_records (
+                task_type, outbound_task_ids_json, task_results_json, selected_count, eligible_count,
+                sent_count, skipped_count, skipped_reasons_json, include_do_not_disturb, content_preview,
+                image_count, sender_userids_json, filter_snapshot_json, operator, status, created_at
+            )
+            VALUES ('private_message', '[708]', ?, 1, 1, 1, 0, '{}', 0, '历史触达', 0, '["HuangYouCan"]', ?, 'legacy', 'sent', CURRENT_TIMESTAMP)
+            """,
+            (
+                json.dumps(
+                    [
+                        {
+                            "status": "created",
+                            "external_userids": ["wm_manual_history_001"],
+                            "target_count": 1,
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "selection_mode": "automation_conversion_stage",
+                        "stage_key": "new-user",
+                        "pool_key": "pending_questionnaire",
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+        get_db().commit()
+    dispatched_payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 709, "wecom_result": {"msgid": "msg-709"}},
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/stage/new-user/manual-send",
+        json={"content": "再次触达", "operator": "tester"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["sent_count"] == 0
+    assert payload["eligible_count"] == 0
+    assert payload["skipped_reasons"] == {"already_touched": 1}
+    assert dispatched_payloads == []
+
+
+def test_manual_send_operating_stage_uses_current_audience_not_pool_status(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_pool_001", mobile="13800009204", owner_userid="sales_01", customer_name="运营中")
+    _seed_contact(app, external_userid="wm_manual_pool_002", mobile="13800009205", owner_userid="sales_01", customer_name="待问卷")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_pool_001",
+        phone="13800009204",
+        owner_staff_id="sales_01",
+        in_pool=1,
+        current_pool="active_normal",
+        follow_type="normal",
+        activation_status="active",
+        questionnaire_status="submitted",
+        questionnaire_follow_type="normal",
+    )
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_member (
+                external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
+                questionnaire_status, decision_source, source_type, last_active_pool,
+                current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
+            )
+            VALUES ('wm_manual_pool_002', '13800009205', 'sales_01', 1, 'active_normal', 'normal',
+                    'pending', 'legacy', 'manual', '', 'pending_questionnaire',
+                    '2026-04-06 10:00:00', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        db.commit()
+    dispatched_payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 707, "wecom_result": {"msgid": "msg-707"}},
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/stage/active-normal/manual-send",
+        json={"content": "运营池触达", "operator": "tester"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["total_target_count"] == 1
+    assert payload["sent_count"] == 1
+    assert payload["skipped_count"] == 0
+    assert dispatched_payloads[0]["external_userid"] == ["wm_manual_pool_001"]
+
+
+def test_manual_send_operating_stage_includes_legacy_pool_aliases(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_alias_001", mobile="13800009207", owner_userid="sales_01", customer_name="旧池普通")
+    _seed_contact(app, external_userid="wm_manual_alias_002", mobile="13800009208", owner_userid="sales_01", customer_name="旧池重点")
+    with app.app_context():
+        db = get_db()
+        for external_contact_id, phone, current_pool, follow_type in [
+            ("wm_manual_alias_001", "13800009207", "active_normal", "normal"),
+            ("wm_manual_alias_002", "13800009208", "active_focus", "focus"),
+        ]:
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
+                    questionnaire_status, decision_source, source_type, last_active_pool,
+                    current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
+                )
+                VALUES (?, ?, 'sales_01', 1, ?, ?, 'submitted', 'legacy', 'manual', '', 'operating',
+                        '2026-04-06 10:00:00', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (external_contact_id, phone, current_pool, follow_type),
+            )
+        db.commit()
+    dispatched_payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 710, "wecom_result": {"msgid": "msg-710"}},
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/stage/active-normal/manual-send",
+        json={"content": "旧池兼容触达", "operator": "tester"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["total_target_count"] == 2
+    assert payload["sent_count"] == 2
+    assert sorted(dispatched_payloads[0]["external_userid"]) == ["wm_manual_alias_001", "wm_manual_alias_002"]
+
+
+def test_manual_send_operating_stage_treats_legacy_terminal_pool_as_audience_metadata(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_terminal_001", mobile="13800009209", owner_userid="sales_01", customer_name="旧人工状态")
+    _seed_contact(app, external_userid="wm_manual_terminal_002", mobile="13800009210", owner_userid="sales_01", customer_name="旧不回复状态")
+    with app.app_context():
+        db = get_db()
+        for external_contact_id, phone, current_pool in [
+            ("wm_manual_terminal_001", "13800009209", "human_reply"),
+            ("wm_manual_terminal_002", "13800009210", "no_reply"),
+        ]:
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
+                    questionnaire_status, decision_source, source_type, last_active_pool,
+                    current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
+                )
+                VALUES (?, ?, 'sales_01', 1, ?, '', 'submitted', 'legacy', 'manual', '', 'operating',
+                        '2026-04-06 10:00:00', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (external_contact_id, phone, current_pool),
+            )
+        db.commit()
+    with app.app_context():
+        stage_detail = get_stage_detail_payload(route_key="operating", limit=10, offset=0)
+    assert stage_detail["pagination"]["total"] == 2
+    assert sorted(item["external_userid"] for item in stage_detail["customers"]) == [
+        "wm_manual_terminal_001",
+        "wm_manual_terminal_002",
+    ]
+    dispatched_payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 711, "wecom_result": {"msgid": "msg-711"}},
+    )
+
+    response = client.post(
+        "/api/admin/automation-conversion/stage/operating/manual-send",
+        json={"content": "按当前人群触达", "operator": "tester"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["total_target_count"] == 2
+    assert payload["sent_count"] == 2
+    assert sorted(dispatched_payloads[0]["external_userid"]) == ["wm_manual_terminal_001", "wm_manual_terminal_002"]
 
 
 def test_manual_send_preview_supports_local_images_and_uses_qianlan_sender(app, client):
@@ -10416,7 +10842,7 @@ def test_recent_execution_summary_appears_on_pool_cards(app, client):
             VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
-                "active_normal",
+                "operating",
                 2,
                 "2026-04-08 10:00:00",
                 "finished",
@@ -10432,7 +10858,7 @@ def test_recent_execution_summary_appears_on_pool_cards(app, client):
     program_id = _default_program_id(app)
     response = client.get(
         f"/admin/automation-conversion/programs/{program_id}/flow-design",
-        query_string={"section": "sop", "pool": "active_normal", "day": 1},
+        query_string={"section": "sop", "pool": "operating", "day": 1},
     )
     html = response.get_data(as_text=True)
 

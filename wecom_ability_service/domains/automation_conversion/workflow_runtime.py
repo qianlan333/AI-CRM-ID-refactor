@@ -1222,45 +1222,21 @@ def _timed_history_index(
     }
 
 
-def _first_due_unsent_scheduled_node_id(
-    *,
-    sequence_nodes: list[dict[str, Any]],
-    sent_node_ids: set[int],
-    entered_at: str,
-    scheduled_for: str,
-) -> int | None:
-    for sequence_node in sequence_nodes:
-        node_day_index = _node_day_index(
-            entered_at=entered_at,
-            send_time=_normalized_text(sequence_node.get("send_time")),
-            scheduled_for=scheduled_for,
-        )
-        if node_day_index is None or node_day_index < int(sequence_node.get("day_offset") or 1):
-            return None
-        node_id = int(sequence_node.get("id") or 0)
-        if node_id in sent_node_ids:
-            continue
-        return node_id
-    return None
-
-
 def _current_daily_recurring_node_id(
     *,
     sequence_nodes: list[dict[str, Any]],
     entered_at: str,
     scheduled_for: str,
 ) -> int | None:
-    current_node_id: int | None = None
     for sequence_node in sequence_nodes:
         node_day_index = _node_day_index(
             entered_at=entered_at,
             send_time=_normalized_text(sequence_node.get("send_time")),
             scheduled_for=scheduled_for,
         )
-        if node_day_index is None or node_day_index < int(sequence_node.get("day_offset") or 1):
-            continue
-        current_node_id = int(sequence_node.get("id") or 0) or None
-    return current_node_id
+        if node_day_index == int(sequence_node.get("day_offset") or 1):
+            return int(sequence_node.get("id") or 0) or None
+    return None
 
 
 def _base_execution_diagnostics(*, execution: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
@@ -1347,7 +1323,7 @@ def _upsert_node_execution_candidates(
                 send_time=_normalized_text(node.get("send_time")),
                 scheduled_for=scheduled_for,
             )
-            if node_day_index is None or node_day_index < int(node.get("day_offset") or 1):
+            if node_day_index != int(node.get("day_offset") or 1):
                 diagnostics["day_offset_miss_count"] += 1
                 continue
             sent_dates = set((history_index.get("sent_dates_by_entry") or {}).get(entry_id) or set())
@@ -1358,15 +1334,6 @@ def _upsert_node_execution_candidates(
                 sent_node_ids = set((history_index.get("sent_node_ids_by_entry") or {}).get(entry_id) or set())
                 if int(node.get("id") or 0) in sent_node_ids:
                     diagnostics["already_sent_count"] += 1
-                    continue
-                first_due_unsent_node_id = _first_due_unsent_scheduled_node_id(
-                    sequence_nodes=sequence_nodes,
-                    sent_node_ids=sent_node_ids,
-                    entered_at=_normalized_text(row.get("entered_at")),
-                    scheduled_for=scheduled_for,
-                )
-                if first_due_unsent_node_id != int(node.get("id") or 0):
-                    diagnostics["sequence_wait_count"] += 1
                     continue
             elif trigger_mode == NODE_TRIGGER_MODE_DAILY_RECURRING:
                 current_recurring_node_id = _current_daily_recurring_node_id(
