@@ -8,6 +8,7 @@
 - Phase 4: Customer Pulse Inbox split into ordinary static JS files under `window.CustomerPulseInbox`.
 - Phase 5: automation auto reply workspace inline JS extracted into ordinary static JS files under `window.AutomationAutoReply`.
 - Phase 7: automation overview workspace inline JS extracted into ordinary static JS files under `window.AutomationOverview`.
+- Phase 8A: automation Agent Config workspace inventory only; no JS extraction yet.
 
 ## Shared Principles
 
@@ -43,6 +44,10 @@
 - No frontend build tooling in the repository root.
 
 The executable audit is `scripts/audit_admin_static_js.py`. It is intentionally scoped to the protected Phase 3-7 pages and static JS files, including `automation_conversion_overview_workspace.html` and `automation_overview*.js`, not to every legacy admin template.
+
+Agent Config is intentionally not in strict protected scope during Phase 8A. It remains a legacy inline-JS page until Phase 8B starts extracting `automation_conversion_agent_config_workspace.html`. Phase 8A adds `scripts/inventory_agent_config_workspace.py` and `docs/refactor/js_api_phase8_agent_config_inventory.md` so the large workspace can be split with a known DOM/API/test inventory before any behavior changes.
+
+For large legacy workspaces, do the inventory pass before extraction. When moving inline JavaScript into static files, migrate tests with the same pattern used after PR #121: HTML tests should assert root/data/script/initial JSON contracts, while button copy, `data-*` actions, placeholders, and modal copy that move into static JS should be asserted by reading the target static JS file.
 
 ## Next Steps
 
