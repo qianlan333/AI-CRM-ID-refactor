@@ -2,9 +2,10 @@ function pulseInboxRoot() {
   return document.querySelector("[data-customer-pulse-inbox-root]");
 }
 
-var adminConsoleApi = window.AdminApi || {};
+var AdminApi = window.AdminApi || {};
 
-var safeJsonParse = adminConsoleApi.safeJsonParse || function safeJsonParse(text) {
+var safeJsonParse = AdminApi.safeJsonParse || function safeJsonParse(text) {
+  if (!text) return null;
   try {
     return JSON.parse(text);
   } catch (_error) {
@@ -12,7 +13,7 @@ var safeJsonParse = adminConsoleApi.safeJsonParse || function safeJsonParse(text
   }
 };
 
-var escapeHtml = adminConsoleApi.escapeHtml || function escapeHtml(value) {
+var escapeHtml = AdminApi.escapeHtml || function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -36,44 +37,21 @@ function customerPulseAccessHeaders(root) {
   return headers;
 }
 
-function requestJson(url, options = {}, root = null) {
-  const requestOptions = {
+var requestJson = AdminApi.requestJson || function adminApiRequestJsonUnavailable() {
+  return Promise.reject(new Error("AdminApi.requestJson unavailable"));
+};
+
+function requestCustomerPulseJson(root, url, options = {}) {
+  return requestJson(url, {
     ...options,
     headers: {
       ...customerPulseAccessHeaders(root),
       ...(options.headers || {}),
     },
-  };
-  if (adminConsoleApi.requestJson) {
-    return adminConsoleApi.requestJson(url, requestOptions);
-  }
-  const finalOptions = {
-    ...requestOptions,
-    headers: {
-      Accept: "application/json",
-      ...(requestOptions.body ? { "Content-Type": "application/json" } : {}),
-      ...(requestOptions.headers || {}),
-    },
-  };
-  return fetch(url, finalOptions)
-    .then((response) =>
-      response.text().then((text) => ({
-        response,
-        payload: text ? safeJsonParse(text) : null,
-      })),
-    )
-    .then(({ response, payload }) => {
-      if (!response.ok || (payload && payload.ok === false)) {
-        const error = new Error((payload && payload.error) || "request failed");
-        error.status = response.status;
-        error.payload = payload;
-        throw error;
-      }
-      return payload || { ok: true };
-    });
+  });
 }
 
-var isPermissionError = adminConsoleApi.isPermissionError || function isPermissionError(error) {
+var isPermissionError = AdminApi.isPermissionError || function isPermissionError(error) {
   const message = String((error && error.message) || "");
   return error && (error.status === 401 || error.status === 403 || message.includes("令牌无效"));
 };
@@ -280,7 +258,7 @@ function ensureCardDetail(root, cardId) {
   if (cached) {
     return Promise.resolve(cached);
   }
-  return requestJson(cardApiUrl(root, cardId, ""), { method: "GET" }, root).then((payload) => {
+  return requestCustomerPulseJson(root, cardApiUrl(root, cardId, ""), { method: "GET" }).then((payload) => {
     pulseInboxStore.detailPayloads[String(cardId)] = payload;
     if (payload && payload.card) {
       upsertStoredCard(payload.card);
@@ -540,17 +518,17 @@ function loadPreview(root, cardId, actionType, options = {}) {
         return null;
       }
       renderSelectedCard(root, cardId);
-      return requestJson(
+      return requestCustomerPulseJson(
+        root,
         cardApiUrl(root, cardId, "/actions/preview"),
         {
           method: "POST",
-          body: JSON.stringify({
+          body: {
             action_type: actionType || card.suggested_action_type,
             track_click: Boolean(options.trackClick),
             metric_source: options.metricSource || "customer_pulse_inbox",
-          }),
+          },
         },
-        root,
       );
     })
     .then((payload) => {
@@ -571,7 +549,7 @@ function loadEvidence(root, cardId) {
   pulseInboxStore.evidencePayloads[String(cardId)] = null;
   ensureCardDetail(root, cardId)
     .then(() =>
-      requestJson(cardApiUrl(root, cardId, "/evidence"), { method: "GET" }, root).then((payload) => {
+      requestCustomerPulseJson(root, cardApiUrl(root, cardId, "/evidence"), { method: "GET" }).then((payload) => {
         pulseInboxStore.evidencePayloads[String(cardId)] = payload;
         renderSelectedCard(root, cardId);
       }),
@@ -633,13 +611,13 @@ function submitAction(root, form) {
     action_type: actionType,
     ...currentFormPayload(form),
   };
-  requestJson(
+  requestCustomerPulseJson(
+    root,
     cardApiUrl(root, cardId, "/actions/execute"),
     {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: payload,
     },
-    root,
   )
     .then((responsePayload) => {
       const execution = (responsePayload && responsePayload.execution) || {};
@@ -660,17 +638,17 @@ function submitAction(root, form) {
 }
 
 function submitFeedback(root, cardId, feedbackType, feedbackSource) {
-  requestJson(
+  requestCustomerPulseJson(
+    root,
     cardApiUrl(root, cardId, "/feedback"),
     {
       method: "POST",
-      body: JSON.stringify({
+      body: {
         admin_action_token: root.dataset.adminActionToken,
         feedback_type: feedbackType,
         feedback_source: feedbackSource || "customer_pulse_inbox",
-      }),
+      },
     },
-    root,
   )
     .then(() => {
       setFeedback("反馈已记录，正在刷新收件箱。", "success");
