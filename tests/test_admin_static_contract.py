@@ -48,6 +48,7 @@ AUTOMATION_AGENT_CONFIG_MODULES = [
     "automation_agent_config_agents.js",
     "automation_agent_config_templates.js",
     "automation_agent_config_tag_picker.js",
+    "automation_agent_config_channel_model.js",
     "automation_agent_config_boot.js",
     "automation_agent_config.js",
 ]
@@ -57,6 +58,7 @@ PROTECTED_MODULE_TEMPLATES = [
     "customer_pulse_inbox.html",
     "automation_conversion_auto_reply_workspace.html",
     "automation_conversion_overview_workspace.html",
+    "automation_conversion_agent_config_workspace.html",
 ]
 
 
@@ -483,6 +485,9 @@ def test_automation_agent_config_template_loads_agent_modules_in_order_and_keeps
     assert "function loadTemplateDetail" not in source
     assert "function renderTagGroups" not in source
     assert "function openTagPicker" not in source
+    assert "function saveDefaultChannelSettings" not in source
+    assert "function loadModelSettings" not in source
+    assert "document.addEventListener" not in source
     assert "template-table-body" in source
     assert "template-form-panel" in source
     assert "default-channel-tag-modal-overlay" in source
@@ -559,6 +564,25 @@ def test_automation_agent_config_tag_picker_keeps_modal_contract():
     assert "data-tag-id" in source or "data-tag-picker" in source
 
 
+def test_automation_agent_config_channel_model_keeps_channel_model_contract():
+    source = _read(ADMIN_STATIC / "automation_agent_config_channel_model.js")
+
+    assert "loadDefaultChannelSettings" in source
+    assert "saveDefaultChannelSettings" in source
+    assert "generateDefaultChannelQr" in source
+    assert "renderDefaultChannelQr" in source
+    assert "applyTagSelectionToDefaultChannel" in source
+    assert "loadModelSettings" in source
+    assert "saveModelSettings" in source
+    assert "testModelSettings" in source
+    assert "renderModelFieldStatus" in source
+    assert "default_channel_settings" in source
+    assert "default_channel_generate_qr" in source
+    assert "model_settings" in source
+    assert "model_settings_test" in source
+    assert "admin_action_token" in source or "adminActionToken" in source
+
+
 def test_automation_agent_config_boot_keeps_placeholder_and_partial_binding_contract():
     source = _read(ADMIN_STATIC / "automation_agent_config_boot.js")
 
@@ -569,6 +593,7 @@ def test_automation_agent_config_boot_keeps_placeholder_and_partial_binding_cont
     assert "task_prompt" in source
     assert "bindTemplateInteractions" in source
     assert "bindTagPickerInteractions" in source
+    assert "bindChannelModelInteractions" in source
 
 
 def test_automation_agent_config_entrypoint_only_bootstraps_modules():
@@ -582,6 +607,8 @@ def test_automation_agent_config_entrypoint_only_bootstraps_modules():
     assert "function deleteAgent" not in source
     assert "function renderTemplateTable" not in source
     assert "function openTagPicker" not in source
+    assert "function saveDefaultChannelSettings" not in source
+    assert "function loadModelSettings" not in source
 
 
 def test_audit_admin_static_js_script_json_contract():
@@ -626,6 +653,14 @@ def test_guardrails_protected_templates_have_no_large_inline_js():
     assert "function renderMemberGroups" not in overview_source
     assert "function postAdminAction" not in overview_source
 
+    agent_config_source = _read(ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html")
+    assert "function requestJson" not in agent_config_source
+    assert "function renderAgentTable" not in agent_config_source
+    assert "function renderTemplateTable" not in agent_config_source
+    assert "function saveDefaultChannelSettings" not in agent_config_source
+    assert "function loadModelSettings" not in agent_config_source
+    assert "document.addEventListener" not in agent_config_source
+
 
 def test_guardrails_action_token_contract():
     expectations = [
@@ -637,6 +672,8 @@ def test_guardrails_action_token_contract():
         (ADMIN_STATIC / "automation_overview_actions.js", ("admin_action_token", "adminActionToken")),
         (ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html", ("data-admin-action-token",)),
         (ADMIN_STATIC / "automation_agent_config_agents.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_STATIC / "automation_agent_config_templates.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_STATIC / "automation_agent_config_channel_model.js", ("admin_action_token", "adminActionToken")),
         (ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html", ("data-admin-action-token",)),
     ]
 

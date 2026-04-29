@@ -66,12 +66,20 @@
     if (typeof AutomationAgentConfig.bindTagPickerInteractions === "function") {
       AutomationAgentConfig.bindTagPickerInteractions(root);
     }
+    if (typeof AutomationAgentConfig.bindChannelModelInteractions === "function") {
+      AutomationAgentConfig.bindChannelModelInteractions(root);
+    }
     bindPlaceholderInsertion(root);
     AutomationAgentConfig.loadAgents(root).catch((error) => {
       AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
     });
     if (typeof AutomationAgentConfig.refreshTemplates === "function") {
       AutomationAgentConfig.refreshTemplates(root).catch((error) => {
+        AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
+      });
+    }
+    if (typeof AutomationAgentConfig.loadChannelModelState === "function") {
+      AutomationAgentConfig.loadChannelModelState(root).catch((error) => {
         AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
       });
     }

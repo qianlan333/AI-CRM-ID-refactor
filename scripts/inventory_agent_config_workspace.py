@@ -426,19 +426,21 @@ def extract_test_impact_inventory() -> list[dict[str, object]]:
 
 def build_risk_flags(template_source: str, script_source: str, api_keys: list[str], test_impacts: list[dict[str, object]]) -> list[str]:
     flags: list[str] = []
+    if not script_source.strip():
+        flags.append("remaining inline behavior is empty after Phase 8B-3")
     if len(script_source.splitlines()) > 500:
         flags.append("very large inline script")
     if "function requestJson" in script_source or "function escapeHtml" in script_source:
         flags.append("duplicate requestJson / escapeHtml")
     if len(api_keys) >= 10:
         flags.append("many API endpoints in one page")
-    if "adminActionToken" in script_source or "admin_action_token" in script_source:
+    if "adminActionToken" in script_source or "admin_action_token" in script_source or "data-admin-action-token" in template_source:
         flags.append("admin_action_token required for writes")
     if "tagModal" in script_source or "default-channel-tag-modal" in template_source:
         flags.append("tag picker modal state")
     if "textarea" in template_source and ("role_prompt" in template_source or "task_prompt" in template_source):
         flags.append("JSON editor or prompt textarea state")
-    if "deleteAgent" in script_source or "agent_publish_base" in script_source:
+    if "deleteAgent" in script_source or "agent_publish_base" in script_source or "data-agent-delete" in template_source:
         flags.append("publish/delete destructive actions")
     flags.append("backend API paths should not change")
     if all(block in template_source for block in EXPECTED_INITIAL_JSON_BLOCKS):
@@ -462,8 +464,6 @@ def strict_failures(payload: dict[str, object]) -> list[str]:
     all_ids = [node_id for group in payload["important_ids"].values() for node_id in group]
     if len(all_ids) < 20:
         failures.append("expected at least 20 id attributes")
-    if not payload["inline_functions"]:
-        failures.append("expected inline functions")
     markers = {
         "agent": ["agent-table-body", "agent-form-panel"],
         "template": ["template-table-body", "template-form-panel"],

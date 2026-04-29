@@ -25,6 +25,7 @@ PROTECTED_TEMPLATES = [
     ADMIN_TEMPLATES / "customer_pulse_inbox.html",
     ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html",
     ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html",
+    ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html",
     ADMIN_TEMPLATES / "base.html",
 ]
 
@@ -75,6 +76,7 @@ SCRIPT_ORDER_CONTRACTS = {
         "automation_agent_config_agents.js",
         "automation_agent_config_templates.js",
         "automation_agent_config_tag_picker.js",
+        "automation_agent_config_channel_model.js",
         "automation_agent_config_boot.js",
         "automation_agent_config.js",
     ],
@@ -162,6 +164,18 @@ def check_protected_templates_no_large_inline_js() -> dict[str, object]:
                 "function renderMemberGroups",
                 "function postAdminAction",
                 "(() =>",
+            ]:
+                if token in source:
+                    details.append(f"{rel(path)} contains legacy inline marker: {token}")
+        if path.name == "automation_conversion_agent_config_workspace.html":
+            for token in [
+                "function requestJson",
+                "function renderAgentTable",
+                "function renderTemplateTable",
+                "function saveDefaultChannelSettings",
+                "function loadModelSettings",
+                "(() =>",
+                "document.addEventListener",
             ]:
                 if token in source:
                     details.append(f"{rel(path)} contains legacy inline marker: {token}")
@@ -258,6 +272,7 @@ def check_action_token_contract() -> dict[str, object]:
         (ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html", ["data-admin-action-token"]),
         (ADMIN_STATIC / "automation_agent_config_agents.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_STATIC / "automation_agent_config_templates.js", ["admin_action_token", "adminActionToken"]),
+        (ADMIN_STATIC / "automation_agent_config_channel_model.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html", ["data-admin-action-token"]),
     ]
     details: list[str] = []
@@ -268,7 +283,7 @@ def check_action_token_contract() -> dict[str, object]:
     return check_result("action_token_contract", details)
 
 
-def check_agent_config_partial_contract() -> dict[str, object]:
+def check_agent_config_contract() -> dict[str, object]:
     path = ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html"
     source = read_text(path)
     required = [
@@ -280,7 +295,7 @@ def check_agent_config_partial_contract() -> dict[str, object]:
         "automation-agent-config-initial-templates",
         "automation-agent-config-initial-catalog",
     ]
-    details = [f"{rel(path)} missing Agent Config partial contract marker: {token}" for token in required if token not in source]
+    details = [f"{rel(path)} missing Agent Config contract marker: {token}" for token in required if token not in source]
     module_markers = [
         (ADMIN_STATIC / "automation_agent_config_templates.js", [
             "profile_segment_templates",
@@ -295,13 +310,22 @@ def check_agent_config_partial_contract() -> dict[str, object]:
             "renderTagGroups",
             "confirmTagSelection",
         ]),
+        (ADMIN_STATIC / "automation_agent_config_channel_model.js", [
+            "default_channel_settings",
+            "default_channel_generate_qr",
+            "model_settings",
+            "model_settings_test",
+            "saveDefaultChannelSettings",
+            "loadModelSettings",
+            "testModelSettings",
+        ]),
     ]
     for module_path, markers in module_markers:
         module_source = read_text(module_path)
         for marker in markers:
             if marker not in module_source:
                 details.append(f"{rel(module_path)} missing Agent Config module marker: {marker}")
-    return check_result("agent_config_partial_contract", details)
+    return check_result("agent_config_contract", details)
 
 
 def run_checks() -> dict[str, object]:
@@ -314,7 +338,7 @@ def run_checks() -> dict[str, object]:
         check_admin_api_client_contract(),
         check_script_order_contract(),
         check_action_token_contract(),
-        check_agent_config_partial_contract(),
+        check_agent_config_contract(),
     ]
     blocking_count = sum(1 for check in checks if not check["ok"] and check["severity"] == "blocking")
     warnings_count = sum(1 for check in checks if not check["ok"] and check["severity"] == "warning")
