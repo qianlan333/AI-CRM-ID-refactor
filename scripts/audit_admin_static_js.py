@@ -70,6 +70,12 @@ SCRIPT_ORDER_CONTRACTS = {
         "automation_overview_actions.js",
         "automation_overview.js",
     ],
+    ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html": [
+        "automation_agent_config_core.js",
+        "automation_agent_config_agents.js",
+        "automation_agent_config_boot.js",
+        "automation_agent_config.js",
+    ],
 }
 
 NAMESPACE_RULES = [
@@ -77,6 +83,7 @@ NAMESPACE_RULES = [
     ("customer_pulse_inbox", "CustomerPulseInbox"),
     ("automation_auto_reply", "AutomationAutoReply"),
     ("automation_overview", "AutomationOverview"),
+    ("automation_agent_config", "AutomationAgentConfig"),
 ]
 
 
@@ -98,6 +105,7 @@ def protected_js_files() -> list[Path]:
         "customer_pulse_inbox*.js",
         "automation_auto_reply*.js",
         "automation_overview*.js",
+        "automation_agent_config*.js",
     ]:
         files.extend(sorted(ADMIN_STATIC.glob(pattern)))
     return sorted(dict.fromkeys(files))
@@ -246,6 +254,8 @@ def check_action_token_contract() -> dict[str, object]:
         (ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html", ["data-admin-action-token"]),
         (ADMIN_STATIC / "automation_overview_actions.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html", ["data-admin-action-token"]),
+        (ADMIN_STATIC / "automation_agent_config_agents.js", ["admin_action_token", "adminActionToken"]),
+        (ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html", ["data-admin-action-token"]),
     ]
     details: list[str] = []
     for path, markers in expectations:
@@ -253,6 +263,22 @@ def check_action_token_contract() -> dict[str, object]:
         if not any(marker in source for marker in markers):
             details.append(f"{rel(path)} missing action-token marker: {' or '.join(markers)}")
     return check_result("action_token_contract", details)
+
+
+def check_agent_config_partial_contract() -> dict[str, object]:
+    path = ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html"
+    source = read_text(path)
+    required = [
+        'id="automation-agent-config-root"',
+        "data-api-urls",
+        "data-selected-template-id",
+        "data-admin-action-token",
+        "automation-agent-config-initial-agents",
+        "automation-agent-config-initial-templates",
+        "automation-agent-config-initial-catalog",
+    ]
+    details = [f"{rel(path)} missing Agent Config partial contract marker: {token}" for token in required if token not in source]
+    return check_result("agent_config_partial_contract", details)
 
 
 def run_checks() -> dict[str, object]:
@@ -265,6 +291,7 @@ def run_checks() -> dict[str, object]:
         check_admin_api_client_contract(),
         check_script_order_contract(),
         check_action_token_contract(),
+        check_agent_config_partial_contract(),
     ]
     blocking_count = sum(1 for check in checks if not check["ok"] and check["severity"] == "blocking")
     warnings_count = sum(1 for check in checks if not check["ok"] and check["severity"] == "warning")

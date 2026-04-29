@@ -1047,188 +1047,29 @@
 
 {% block scripts_extra %}
 {{ super() }}
+<script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_core.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_agents.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_boot.js') }}"></script>
+<script defer src="{{ url_for('static', filename='admin_console/automation_agent_config.js') }}"></script>
 <script>
-  (function () {
-    const root = document.getElementById('automation-agent-config-root');
+  document.addEventListener('DOMContentLoaded', function () {
+    const AutomationAgentConfig = window.AutomationAgentConfig || {};
+    const root = typeof AutomationAgentConfig.root === 'function' ? AutomationAgentConfig.root() : null;
     if (!root) return;
 
-    const apiUrls = JSON.parse(root.dataset.apiUrls || '{}');
-    const adminActionToken = String(root.dataset.adminActionToken || '').trim();
-    const initialSelectedTemplateId = Number(root.dataset.selectedTemplateId || 0) || null;
-    const initialAgentPayload = JSON.parse((document.getElementById('automation-agent-config-initial-agents') || {}).textContent || '[]');
-    const initialTemplatePayload = JSON.parse((document.getElementById('automation-agent-config-initial-templates') || {}).textContent || '[]');
-    const initialCatalogPayload = JSON.parse((document.getElementById('automation-agent-config-initial-catalog') || {}).textContent || '[]');
-
-    const elements = {
-      feedback: document.getElementById('agent-config-feedback'),
-      loading: document.getElementById('agent-config-loading'),
-      summaryGrid: document.getElementById('agent-config-summary-grid'),
-      agentTotal: document.getElementById('agent-total'),
-      agentPublishedTotal: document.getElementById('agent-published-total'),
-      templateTotal: document.getElementById('template-total'),
-      catalogTotal: document.getElementById('catalog-total'),
-      agentTableBody: document.getElementById('agent-table-body'),
-      agentEmpty: document.getElementById('agent-empty'),
-      agentCreateButton: document.getElementById('agent-create-button'),
-      agentFormPanel: document.getElementById('agent-form-panel'),
-      agentFormTitle: document.getElementById('agent-form-title'),
-      agentFormFeedback: document.getElementById('agent-form-feedback'),
-      agentForm: document.getElementById('agent-form'),
-      agentFormCancel: document.getElementById('agent-form-cancel'),
-      agentPublishButton: document.getElementById('agent-publish-button'),
-      agentMetaStatus: document.getElementById('agent-meta-status'),
-      agentMetaDraftVersion: document.getElementById('agent-meta-draft-version'),
-      agentMetaPublishedVersion: document.getElementById('agent-meta-published-version'),
-      agentMetaChangeSummary: document.getElementById('agent-meta-change-summary'),
-      agentLoadPublishedButton: document.getElementById('agent-load-published-button'),
-      agentPublishedRolePrompt: document.getElementById('agent-published-role-prompt'),
-      agentPublishedTaskPrompt: document.getElementById('agent-published-task-prompt'),
-      agentPublishedContextSources: document.getElementById('agent-published-context-sources'),
-      agentDiffSummary: document.getElementById('agent-diff-summary'),
-      templateTableBody: document.getElementById('template-table-body'),
-      templateEmpty: document.getElementById('template-empty'),
-      templateDetailPanel: document.getElementById('template-detail-panel'),
-      templateDetailTitle: document.getElementById('template-detail-title'),
-      templateDetailCode: document.getElementById('template-detail-code'),
-      templateDetailSummary: document.getElementById('template-detail-summary'),
-      templateDetailCategories: document.getElementById('template-detail-categories'),
-      templateCreateButton: document.getElementById('template-create-button'),
-      templateEditButton: document.getElementById('template-edit-button'),
-      templateFormPanel: document.getElementById('template-form-panel'),
-      templateFormTitle: document.getElementById('template-form-title'),
-      templateForm: document.getElementById('template-form'),
-      templateFormFeedback: document.getElementById('template-form-feedback'),
-      templateFormCancel: document.getElementById('template-form-cancel'),
-      categoryAddButton: document.getElementById('category-add-button'),
-      categoryList: document.getElementById('template-category-list'),
-      defaultChannelFeedback: document.getElementById('default-channel-feedback'),
-      defaultChannelGenerateButton: document.getElementById('default-channel-generate-button'),
-      defaultChannelQrImage: document.getElementById('default-channel-qr-image'),
-      defaultChannelQrEmpty: document.getElementById('default-channel-qr-empty'),
-      defaultChannelName: document.getElementById('default-channel-name'),
-      defaultChannelStatus: document.getElementById('default-channel-status'),
-      defaultChannelProvider: document.getElementById('default-channel-provider'),
-      defaultChannelOwner: document.getElementById('default-channel-owner'),
-      defaultChannelQrLink: document.getElementById('default-channel-qr-link'),
-      defaultChannelFieldStatuses: document.getElementById('default-channel-field-statuses'),
-      defaultChannelForm: document.getElementById('default-channel-form'),
-      defaultChannelEntryTagDisplay: document.getElementById('default-channel-entry-tag-display'),
-      defaultChannelEntryTagHelp: document.getElementById('default-channel-entry-tag-help'),
-      defaultChannelEntryTagPickButton: document.getElementById('default-channel-entry-tag-pick-button'),
-      defaultChannelEntryTagClearButton: document.getElementById('default-channel-entry-tag-clear-button'),
-      defaultChannelTagModalOverlay: document.getElementById('default-channel-tag-modal-overlay'),
-      defaultChannelTagModalClose: document.getElementById('default-channel-tag-modal-close'),
-      defaultChannelTagModalCancel: document.getElementById('default-channel-tag-modal-cancel'),
-      defaultChannelTagModalConfirm: document.getElementById('default-channel-tag-modal-confirm'),
-      defaultChannelTagSearch: document.getElementById('default-channel-tag-search'),
-      defaultChannelTagGroups: document.getElementById('default-channel-tag-groups'),
-      defaultChannelTagSelected: document.getElementById('default-channel-tag-selected'),
-      defaultChannelTagManualInput: document.getElementById('default-channel-tag-manual-input'),
-      modelSettingsFeedback: document.getElementById('model-settings-feedback'),
-      modelSettingsEnabledLabel: document.getElementById('model-settings-enabled-label'),
-      modelSettingsApiKeyMask: document.getElementById('model-settings-api-key-mask'),
-      modelSettingsUpdatedAt: document.getElementById('model-settings-updated-at'),
-      modelSettingsTestResult: document.getElementById('model-settings-test-result'),
-      modelSettingsForm: document.getElementById('model-settings-form'),
-      modelSettingsTestButton: document.getElementById('model-settings-test-button'),
-    };
-
-    const agentFields = {
-      formMode: elements.agentForm ? elements.agentForm.querySelector('[name="form_mode"]') : null,
-      expectedDraftVersion: elements.agentForm ? elements.agentForm.querySelector('[name="expected_draft_version"]') : null,
-      agentCode: elements.agentForm ? elements.agentForm.querySelector('[name="agent_code"]') : null,
-      displayName: elements.agentForm ? elements.agentForm.querySelector('[name="display_name"]') : null,
-      enabled: elements.agentForm ? elements.agentForm.querySelector('[name="enabled"]') : null,
-      changeSummary: elements.agentForm ? elements.agentForm.querySelector('[name="change_summary"]') : null,
-      rolePrompt: elements.agentForm ? elements.agentForm.querySelector('[name="role_prompt"]') : null,
-      taskPrompt: elements.agentForm ? elements.agentForm.querySelector('[name="task_prompt"]') : null,
-    };
-
-    const templateFields = {
-      templateId: elements.templateForm ? elements.templateForm.querySelector('[name="template_id"]') : null,
-      templateName: elements.templateForm ? elements.templateForm.querySelector('[name="template_name"]') : null,
-      templateCode: elements.templateForm ? elements.templateForm.querySelector('[name="template_code"]') : null,
-      description: elements.templateForm ? elements.templateForm.querySelector('[name="description"]') : null,
-      questionnaireId: elements.templateForm ? elements.templateForm.querySelector('[name="questionnaire_id"]') : null,
-      segmentationQuestionId: elements.templateForm ? elements.templateForm.querySelector('[name="segmentation_question_id"]') : null,
-      enabled: elements.templateForm ? elements.templateForm.querySelector('[name="enabled"]') : null,
-    };
-
-    const defaultChannelFields = {
-      channelName: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="channel_name"]') : null,
-      autoAcceptFriend: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="auto_accept_friend"]') : null,
-      entryTagId: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="entry_tag_id"]') : null,
-      entryTagIdManual: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="entry_tag_id_manual"]') : null,
-      welcomeMessage: elements.defaultChannelForm ? elements.defaultChannelForm.querySelector('[name="welcome_message"]') : null,
-    };
-
-    const modelSettingsFields = {
-      enabled: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="enabled"]') : null,
-      apiKey: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="api_key"]') : null,
-      baseUrl: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="base_url"]') : null,
-      timeoutSeconds: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="timeout_seconds"]') : null,
-      routerModel: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="router_model"]') : null,
-      executionModel: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="execution_model"]') : null,
-      reasonerModel: elements.modelSettingsForm ? elements.modelSettingsForm.querySelector('[name="reasoner_model"]') : null,
-    };
-
-    const state = {
-      agents: [],
-      agentDetails: {},
-      agentFormMode: 'create',
-      selectedAgentCode: null,
-      templates: [],
-      templateCatalog: [],
-      selectedTemplateId: initialSelectedTemplateId,
-      selectedTemplateDetail: null,
-      categoryDrafts: [],
-      defaultChannel: null,
-      defaultChannelSelectedTag: null,
-      providerAvailable: false,
-      availableTags: [],
-      availableTagMap: new Map(),
-      tagModal: {
-        open: false,
-        search: '',
-        selected: '',
-      },
-      modelSettings: null,
-      selectedAgentDetail: null,
-    };
-
-    function escapeHtml(value) {
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    function withId(base, id) {
-      return String(base || '').replace(/\/0(?=\/|$|\?)/, '/' + encodeURIComponent(String(id)));
-    }
-
-    function withCode(base, code) {
-      return String(base || '').replace('__AGENT_CODE__', encodeURIComponent(String(code || '').trim()));
-    }
-
-    async function requestJson(url, options) {
-      const response = await fetch(url, options);
-      const rawText = await response.text();
-      let payload = {};
-      if (rawText) {
-        try {
-          payload = JSON.parse(rawText);
-        } catch (error) {
-          payload = {};
-        }
-      }
-      if (!response.ok || payload.ok === false) {
-        throw new Error(payload.error || payload.message || `请求失败（HTTP ${response.status || 0}）`);
-      }
-      return payload;
-    }
+    const apiUrls = AutomationAgentConfig.getApiUrls(root);
+    const adminActionToken = AutomationAgentConfig.getAdminActionToken(root);
+    const elements = AutomationAgentConfig.elements();
+    const agentFields = AutomationAgentConfig.agentFields();
+    const templateFields = AutomationAgentConfig.templateFields();
+    const defaultChannelFields = AutomationAgentConfig.defaultChannelFields();
+    const modelSettingsFields = AutomationAgentConfig.modelSettingsFields();
+    const state = AutomationAgentConfig.state;
+    const escapeHtml = AutomationAgentConfig.escapeHtml;
+    const requestJson = AutomationAgentConfig.requestJson;
+    const withId = AutomationAgentConfig.withId;
+    const statusBadgeClass = AutomationAgentConfig.statusBadgeClass;
+    const showFeedback = AutomationAgentConfig.showFeedback;
 
     function prettyJson(value) {
       return JSON.stringify(Array.isArray(value) ? value : [], null, 2);
@@ -1271,101 +1112,6 @@
       return `<span class="ac-config-tag-badge${isUnknown ? ' is-unknown' : ''}">${escapeHtml(formatTagLabel(tag))}</span>`;
     }
 
-    function contextSourceSpecs() {
-      return [
-        { code: 'questionnaire', label: '问卷信息', placeholder: '{{问卷信息}}' },
-        { code: 'recent_messages', label: '最近20条聊天信息', placeholder: '{{最近20条聊天信息}}' },
-        { code: 'user_tags', label: '用户标签', placeholder: '{{用户标签}}' },
-        { code: 'activation_info', label: '阶段信息', placeholder: '{{阶段信息}}' },
-      ];
-    }
-
-    function detectContextSourcesFromPrompt(rolePrompt, taskPrompt) {
-      const promptText = [rolePrompt, taskPrompt].map((item) => String(item || '')).join('\n');
-      return contextSourceSpecs()
-        .filter((item) => item.placeholder && promptText.includes(item.placeholder))
-        .map((item) => item.code);
-    }
-
-    function formatContextSourcesFromPrompt(rolePrompt, taskPrompt) {
-      const usedCodes = new Set(detectContextSourcesFromPrompt(rolePrompt, taskPrompt));
-      const items = contextSourceSpecs()
-        .filter((item) => usedCodes.has(item.code))
-        .map((item) => `${item.label} <- ${item.placeholder}`);
-      return items.length ? items.join('\n') : '当前未引用任何上下文占位符';
-    }
-
-    function insertPromptPlaceholder(placeholder) {
-      const value = String(placeholder || '').trim();
-      if (!value) return;
-      const activeElement = document.activeElement;
-      const target = activeElement === agentFields.rolePrompt || activeElement === agentFields.taskPrompt
-        ? activeElement
-        : agentFields.taskPrompt;
-      if (!target) return;
-      const start = Number(target.selectionStart || 0);
-      const end = Number(target.selectionEnd || start);
-      const before = String(target.value || '').slice(0, start);
-      const after = String(target.value || '').slice(end);
-      target.value = before + value + after;
-      const nextCursor = start + value.length;
-      target.focus();
-      target.setSelectionRange(nextCursor, nextCursor);
-    }
-
-    function statusLabel(status) {
-      const normalized = String(status || '').trim();
-      if (normalized === 'published') return '已发布';
-      if (normalized === 'disabled') return '停用';
-      if (normalized === 'draft') return '草稿';
-      return normalized || '-';
-    }
-
-    function statusBadgeClass(status) {
-      const normalized = String(status || '').trim();
-      if (normalized === 'published') return 'ac-config-status-badge is-published';
-      if (normalized === 'disabled') return 'ac-config-status-badge is-disabled';
-      return 'ac-config-status-badge is-draft';
-    }
-
-    function renderAgentPublishedSnapshot(detail) {
-      const published = ((detail || {}).published) || {};
-      const diffSummary = Array.isArray((detail || {}).diff_summary) ? detail.diff_summary : [];
-      elements.agentPublishedRolePrompt.textContent = published.role_prompt || '-';
-      elements.agentPublishedTaskPrompt.textContent = published.task_prompt || '-';
-      elements.agentPublishedContextSources.textContent = formatContextSourcesFromPrompt(
-        published.role_prompt || '',
-        published.task_prompt || ''
-      );
-      elements.agentDiffSummary.innerHTML = diffSummary.length
-        ? diffSummary.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
-        : '<li>当前草稿与已发布版本一致。</li>';
-    }
-
-    function showFeedback(message, tone) {
-      if (!message) {
-        elements.feedback.hidden = true;
-        elements.feedback.textContent = '';
-        elements.feedback.className = 'ac-config-feedback';
-        return;
-      }
-      elements.feedback.hidden = false;
-      elements.feedback.textContent = message;
-      elements.feedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
-    }
-
-    function showAgentFormFeedback(message, tone) {
-      if (!message) {
-        elements.agentFormFeedback.hidden = true;
-        elements.agentFormFeedback.textContent = '';
-        elements.agentFormFeedback.className = 'ac-config-feedback';
-        return;
-      }
-      elements.agentFormFeedback.hidden = false;
-      elements.agentFormFeedback.textContent = message;
-      elements.agentFormFeedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
-    }
-
     function showTemplateFormFeedback(message, tone) {
       if (!message) {
         elements.templateFormFeedback.hidden = true;
@@ -1402,15 +1148,6 @@
       elements.modelSettingsFeedback.className = 'ac-config-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
     }
 
-    function normalizeAgentItem(item) {
-      const status = String(item.status || item.status_code || '').trim() || 'draft';
-      return {
-        agent_code: String(item.agent_code || '').trim(),
-        agent_name: String(item.agent_name || item.display_name || item.agent_code || '').trim(),
-        status,
-      };
-    }
-
     function selectedCatalogQuestionnaire() {
       const questionnaireId = Number((templateFields.questionnaireId || {}).value || 0);
       return state.templateCatalog.find((item) => Number(item.id || 0) === questionnaireId) || null;
@@ -1427,36 +1164,7 @@
     }
 
     function renderSummary() {
-      elements.loading.hidden = true;
-      elements.summaryGrid.hidden = false;
-      elements.agentTotal.textContent = String(state.agents.length);
-      elements.agentPublishedTotal.textContent = String(state.agents.filter((item) => item.status === 'published').length);
-      elements.templateTotal.textContent = String(state.templates.length);
-      elements.catalogTotal.textContent = String(state.templateCatalog.length);
-    }
-
-    function renderAgents() {
-      elements.agentTableBody.innerHTML = state.agents.map((item) => {
-        const isActive = item.agent_code === state.selectedAgentCode;
-        return `
-          <tr data-agent-code="${escapeHtml(item.agent_code)}"${isActive ? ' class="is-active"' : ''}>
-            <td>
-              <strong>${escapeHtml(item.agent_name || item.agent_code || '-')}</strong>
-              <div class="ac-config-code">${escapeHtml(item.agent_code || '')}</div>
-            </td>
-            <td>
-              <span class="${statusBadgeClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
-            </td>
-            <td>
-              <div class="ac-config-row-actions">
-                <button class="admin-button admin-button--secondary" type="button" data-agent-edit="${escapeHtml(item.agent_code)}">编辑</button>
-                <button class="admin-button admin-button--ghost" type="button" data-agent-delete="${escapeHtml(item.agent_code)}">删除</button>
-              </div>
-            </td>
-          </tr>
-        `;
-      }).join('');
-      elements.agentEmpty.hidden = state.agents.length > 0;
+      AutomationAgentConfig.updateSummaryCounters();
     }
 
     function renderQuestionnaireOptions() {
@@ -1590,29 +1298,6 @@
           </div>
         </section>
       `).join('') || '<div class="ac-config-empty">当前模板还没有分类。</div>';
-    }
-
-    function resetAgentForm() {
-      if (elements.agentForm) elements.agentForm.reset();
-      if (agentFields.formMode) agentFields.formMode.value = 'create';
-      if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = '1';
-      if (agentFields.agentCode) {
-        agentFields.agentCode.value = '';
-        agentFields.agentCode.readOnly = false;
-      }
-      if (agentFields.displayName) agentFields.displayName.value = '';
-      if (agentFields.enabled) agentFields.enabled.checked = true;
-      if (agentFields.changeSummary) agentFields.changeSummary.value = '创建新智能体草稿';
-      if (agentFields.rolePrompt) agentFields.rolePrompt.value = '';
-      if (agentFields.taskPrompt) agentFields.taskPrompt.value = '';
-      elements.agentMetaStatus.textContent = '新建态';
-      elements.agentMetaDraftVersion.textContent = '1';
-      elements.agentMetaPublishedVersion.textContent = '0';
-      elements.agentMetaChangeSummary.textContent = '保存后生成首版草稿';
-      elements.agentPublishButton.hidden = true;
-      state.selectedAgentDetail = null;
-      renderAgentPublishedSnapshot(null);
-      showAgentFormFeedback('', '');
     }
 
     function normalizeTemplateBundle(payload) {
@@ -1852,11 +1537,8 @@
     }
 
     function syncInitialState() {
-      state.agents = Array.isArray(initialAgentPayload) ? initialAgentPayload.map(normalizeAgentItem) : [];
-      state.templates = Array.isArray(initialTemplatePayload) ? initialTemplatePayload : [];
-      state.templateCatalog = Array.isArray(initialCatalogPayload) ? initialCatalogPayload : [];
+      AutomationAgentConfig.syncInitialState();
       renderSummary();
-      renderAgents();
       renderTemplateTable();
       renderQuestionnaireOptions();
       renderQuestionOptions();
@@ -1871,137 +1553,6 @@
         state.selectedTemplateId = null;
         renderTemplateDetail();
       }
-    }
-
-    async function refreshAgents() {
-      const result = await requestJson(apiUrls.agents_options, { credentials: 'same-origin' });
-      state.agents = (result.items || []).map(normalizeAgentItem);
-      if (state.selectedAgentCode && !state.agents.some((item) => item.agent_code === state.selectedAgentCode)) {
-        state.selectedAgentCode = null;
-      }
-      renderSummary();
-      renderAgents();
-    }
-
-    function fillAgentForm(detail) {
-      const item = detail || {};
-      const draft = item.draft || {};
-      const publishedVersion = Number(item.published_version || 0);
-      const hasUnpublishedChanges = !!item.has_unpublished_changes;
-      const derivedStatus = !item.enabled ? 'disabled' : publishedVersion > 0 && !hasUnpublishedChanges ? 'published' : 'draft';
-
-      state.agentFormMode = 'edit';
-      state.selectedAgentCode = item.agent_code || state.selectedAgentCode;
-      state.selectedAgentDetail = item;
-      renderAgents();
-
-      if (agentFields.formMode) agentFields.formMode.value = 'edit';
-      if (agentFields.agentCode) agentFields.agentCode.value = item.agent_code || '';
-      if (agentFields.agentCode) agentFields.agentCode.readOnly = true;
-      if (agentFields.displayName) agentFields.displayName.value = item.display_name || '';
-      if (agentFields.enabled) agentFields.enabled.checked = !!item.enabled;
-      if (agentFields.changeSummary) agentFields.changeSummary.value = item.last_change_summary || '更新智能体草稿';
-      if (agentFields.rolePrompt) agentFields.rolePrompt.value = draft.role_prompt || '';
-      if (agentFields.taskPrompt) agentFields.taskPrompt.value = draft.task_prompt || '';
-      if (agentFields.expectedDraftVersion) agentFields.expectedDraftVersion.value = String(item.draft_version || 1);
-      elements.agentFormTitle.textContent = `编辑智能体 · ${item.display_name || item.agent_code || ''}`;
-      elements.agentPublishButton.hidden = false;
-
-      elements.agentMetaStatus.textContent = item.enabled
-        ? (hasUnpublishedChanges && publishedVersion > 0 ? '已发布，当前有未发布草稿' : statusLabel(derivedStatus))
-        : '停用';
-      elements.agentMetaDraftVersion.textContent = String(item.draft_version || 1);
-      elements.agentMetaPublishedVersion.textContent = String(item.published_version || 0);
-      elements.agentMetaChangeSummary.textContent = item.last_change_summary || '暂无变更摘要';
-      renderAgentPublishedSnapshot(item);
-    }
-
-    async function loadAgentDetail(agentCode) {
-      const normalizedCode = String(agentCode || '').trim();
-      if (!normalizedCode) {
-        throw new Error('请选择智能体');
-      }
-      const result = await requestJson(withCode(apiUrls.agent_detail_base, normalizedCode), { credentials: 'same-origin' });
-      state.agentDetails[normalizedCode] = result.item || {};
-      fillAgentForm(state.agentDetails[normalizedCode]);
-      return state.agentDetails[normalizedCode];
-    }
-
-    async function openAgentCreateForm() {
-      elements.agentFormPanel.hidden = false;
-      state.agentFormMode = 'create';
-      state.selectedAgentCode = null;
-      renderAgents();
-      resetAgentForm();
-      elements.agentFormTitle.textContent = '新增智能体';
-      elements.agentFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      if (agentFields.agentCode) requestAnimationFrame(() => agentFields.agentCode.focus());
-    }
-
-    async function openAgentEditForm(agentCode) {
-      const normalizedCode = String(agentCode || '').trim();
-      if (!normalizedCode) {
-        throw new Error('请选择智能体');
-      }
-      elements.agentFormPanel.hidden = false;
-      showAgentFormFeedback('', '');
-      await loadAgentDetail(normalizedCode);
-      elements.agentFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      if (agentFields.displayName) requestAnimationFrame(() => agentFields.displayName.focus());
-    }
-
-    async function deleteAgent(agentCode) {
-      const normalizedCode = String(agentCode || '').trim();
-      if (!normalizedCode) {
-        throw new Error('请选择智能体');
-      }
-      const selected = state.agents.find((item) => item.agent_code === normalizedCode) || {};
-      const agentLabel = selected.agent_name || normalizedCode;
-      if (!window.confirm(`确认删除智能体「${agentLabel}」吗？删除后会从可用智能体列表中移除。`)) {
-        return;
-      }
-      const result = await requestJson(withCode(apiUrls.agent_delete_base, normalizedCode), {
-        method: 'DELETE',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_action_token: adminActionToken }),
-      });
-      if (state.selectedAgentCode === normalizedCode) {
-        state.selectedAgentCode = null;
-        state.selectedAgentDetail = null;
-        closeAgentForm();
-        resetAgentForm();
-      }
-      await refreshAgents();
-      showFeedback((result || {}).message || '智能体已删除', 'success');
-    }
-
-    function closeAgentForm() {
-      elements.agentFormPanel.hidden = true;
-      showAgentFormFeedback('', '');
-    }
-
-    function collectAgentPayload() {
-      const agentCode = String((agentFields.agentCode || {}).value || '').trim();
-      const displayName = String((agentFields.displayName || {}).value || '').trim();
-      const rolePrompt = String((agentFields.rolePrompt || {}).value || '').trim();
-      const taskPrompt = String((agentFields.taskPrompt || {}).value || '').trim();
-      const changeSummary = String((agentFields.changeSummary || {}).value || '').trim();
-      if (!agentCode) throw new Error('智能体内部编码不能为空');
-      if (!/^[a-z][a-z0-9_]*$/.test(agentCode)) throw new Error('智能体内部编码只能使用小写字母、数字和下划线，且必须以字母开头');
-      if (!displayName) throw new Error('显示名称不能为空');
-      if (!rolePrompt) throw new Error('角色提示词不能为空');
-      if (!taskPrompt) throw new Error('任务提示词不能为空');
-      return {
-        agent_code: agentCode,
-        admin_action_token: adminActionToken,
-        display_name: displayName,
-        enabled: !!((agentFields.enabled || {}).checked),
-        change_summary: changeSummary || (state.agentFormMode === 'create' ? '创建新智能体草稿' : '更新智能体草稿'),
-        role_prompt: rolePrompt,
-        task_prompt: taskPrompt,
-        expected_draft_version: Number((agentFields.expectedDraftVersion || {}).value || 1) || 1,
-      };
     }
 
     async function refreshTemplates() {
@@ -2165,109 +1716,6 @@
       state.selectedTemplateDetail = bundle;
       renderTemplateTable();
       renderTemplateDetail();
-    }
-
-    if (elements.agentCreateButton) {
-      elements.agentCreateButton.addEventListener('click', function () {
-        openAgentCreateForm().catch((error) => {
-          showFeedback(error.message || '打开智能体编辑器失败', 'error');
-        });
-      });
-    }
-
-    if (elements.agentTableBody) {
-      elements.agentTableBody.addEventListener('click', function (event) {
-        const editButton = event.target.closest('button[data-agent-edit]');
-        if (editButton) {
-          openAgentEditForm(editButton.dataset.agentEdit || '').catch((error) => {
-            showFeedback(error.message || '打开智能体编辑器失败', 'error');
-          });
-          return;
-        }
-        const deleteButton = event.target.closest('button[data-agent-delete]');
-        if (!deleteButton) return;
-        deleteAgent(deleteButton.dataset.agentDelete || '').catch((error) => {
-          showFeedback(error.message || '删除智能体失败', 'error');
-        });
-      });
-    }
-
-    if (elements.agentFormCancel) {
-      elements.agentFormCancel.addEventListener('click', function () {
-        closeAgentForm();
-      });
-    }
-
-    if (elements.agentForm) {
-      elements.agentForm.addEventListener('submit', async function (event) {
-        event.preventDefault();
-        try {
-          const payload = collectAgentPayload();
-          const isCreateMode = state.agentFormMode === 'create';
-          const agentCode = String(payload.agent_code || '').trim();
-          const result = await requestJson(
-            isCreateMode ? apiUrls.agent_create : withCode(apiUrls.agent_draft_base, agentCode),
-            {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            }
-          );
-          showAgentFormFeedback(isCreateMode ? '智能体已创建' : '智能体草稿已保存', 'success');
-          await refreshAgents();
-          await openAgentEditForm(((result || {}).agent || {}).agent_code || agentCode);
-          showFeedback(isCreateMode ? '智能体已创建' : '智能体草稿已保存', 'success');
-        } catch (error) {
-          showAgentFormFeedback(error.message || '保存智能体草稿失败', 'error');
-        }
-      });
-    }
-
-    if (elements.agentPublishButton) {
-      elements.agentPublishButton.addEventListener('click', async function () {
-        try {
-          const agentCode = String((agentFields.agentCode || {}).value || '').trim();
-          if (!agentCode) throw new Error('请选择智能体');
-          const result = await requestJson(withCode(apiUrls.agent_publish_base, agentCode), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ admin_action_token: adminActionToken }),
-          });
-          showAgentFormFeedback('智能体已发布', 'success');
-          await refreshAgents();
-          await loadAgentDetail(((result || {}).agent || {}).agent_code || agentCode);
-          showFeedback('智能体已发布', 'success');
-        } catch (error) {
-          showAgentFormFeedback(error.message || '发布智能体失败', 'error');
-        }
-      });
-    }
-
-    if (elements.agentLoadPublishedButton) {
-      elements.agentLoadPublishedButton.addEventListener('click', function () {
-        const detail = state.selectedAgentDetail || {};
-        const published = detail.published || {};
-        if (!detail.agent_code) {
-          showAgentFormFeedback('请先选择一个已有智能体，再使用已发布版本覆盖草稿。', 'error');
-          return;
-        }
-        if (agentFields.rolePrompt) agentFields.rolePrompt.value = published.role_prompt || '';
-        if (agentFields.taskPrompt) agentFields.taskPrompt.value = published.task_prompt || '';
-        if (agentFields.changeSummary && !String(agentFields.changeSummary.value || '').trim()) {
-          agentFields.changeSummary.value = '用已发布版本覆盖草稿';
-        }
-        showAgentFormFeedback('已将已发布版本回填到草稿编辑区，保存后会生成新的草稿版本。', 'success');
-      });
-    }
-
-    if (elements.agentFormPanel) {
-      elements.agentFormPanel.addEventListener('click', function (event) {
-        const button = event.target.closest('[data-agent-placeholder]');
-        if (!button) return;
-        insertPromptPlaceholder(button.getAttribute('data-agent-placeholder'));
-      });
     }
 
     if (elements.templateCreateButton) {
@@ -2538,12 +1986,12 @@
     (async function initialize() {
       try {
         syncInitialState();
-        await Promise.all([refreshAgents(), refreshTemplates(), refreshDefaultChannel(), refreshModelSettings(), loadAvailableTags()]);
+        await Promise.all([refreshTemplates(), refreshDefaultChannel(), refreshModelSettings(), loadAvailableTags()]);
       } catch (error) {
         elements.loading.hidden = true;
         showFeedback(error.message || '加载模型与智能体配置失败', 'error');
       }
     })();
-  })();
+  });
 </script>
 {% endblock %}

@@ -8,6 +8,12 @@
 - Prepare the Phase 8B module split for `automation_conversion_agent_config_workspace.html`.
 - Include test-impact inventory using the PR #121 static-JS assertion migration pattern.
 
+## Phase 8B-1 Follow-Up
+
+- Phase 8B-1 extracted the Agent Config core, agent list/form, and prompt placeholder insertion logic into `automation_agent_config*.js`.
+- Template/profile segment, tag picker, default channel, and model settings logic remain inline for later Phase 8B steps.
+- The inventory below remains the Phase 8A baseline and should be read as historical input for the staged migration.
+
 ## Phase 8A 非目标 / Non-goals
 
 - 不拆 JS：本阶段只做 inventory，不把 inline JS 迁移到静态文件。

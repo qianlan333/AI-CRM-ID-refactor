@@ -43,6 +43,13 @@ AUTOMATION_OVERVIEW_MODULES = [
     "automation_overview.js",
 ]
 
+AUTOMATION_AGENT_CONFIG_MODULES = [
+    "automation_agent_config_core.js",
+    "automation_agent_config_agents.js",
+    "automation_agent_config_boot.js",
+    "automation_agent_config.js",
+]
+
 PROTECTED_MODULE_TEMPLATES = [
     "customer_detail.html",
     "customer_pulse_inbox.html",
@@ -442,6 +449,96 @@ def test_automation_overview_entrypoint_only_bootstraps_modules():
     assert "function requestJson" not in source
 
 
+def test_automation_agent_config_template_loads_agent_modules_in_order_and_keeps_partial_contract():
+    source = _read(ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html")
+
+    positions = [source.index(f"admin_console/{filename}") for filename in AUTOMATION_AGENT_CONFIG_MODULES]
+
+    assert positions == sorted(positions)
+    assert "{{ super() }}" in source
+    assert source.index("{% block scripts_extra %}") < positions[0]
+    assert positions[-1] < source.index("{% endblock %}", positions[-1])
+    for filename in AUTOMATION_AGENT_CONFIG_MODULES:
+        script_start = source.rfind("<script", 0, source.index(f"admin_console/{filename}"))
+        script_end = source.index("</script>", source.index(f"admin_console/{filename}"))
+        script_tag = source[script_start:script_end]
+        assert "defer" in script_tag
+
+    assert 'id="automation-agent-config-root"' in source
+    assert "data-api-urls" in source
+    assert "data-selected-template-id" in source
+    assert "data-admin-action-token" in source
+    assert "automation-agent-config-initial-agents" in source
+    assert "automation-agent-config-initial-templates" in source
+    assert "automation-agent-config-initial-catalog" in source
+    assert "function renderAgents" not in source
+    assert "function refreshAgents" not in source
+    assert "function loadAgentDetail" not in source
+    assert "function collectAgentPayload" not in source
+    assert "function insertPromptPlaceholder" not in source
+
+
+def test_automation_agent_config_module_files_exist_and_stay_plain_browser_js():
+    forbidden_tokens = ["import ", "export ", "require(", 'from "', "from '"]
+
+    for filename in AUTOMATION_AGENT_CONFIG_MODULES:
+        source = _read(ADMIN_STATIC / filename)
+
+        assert "window.AutomationAgentConfig" in source or "AutomationAgentConfig" in source
+        for token in forbidden_tokens:
+            assert token not in source
+
+
+def test_automation_agent_config_core_exposes_shared_contract():
+    source = _read(ADMIN_STATIC / "automation_agent_config_core.js")
+
+    assert "getApiUrls" in source
+    assert "getAdminActionToken" in source
+    assert "parseJsonScript" in source
+    assert "state" in source
+    assert "showFeedback" in source
+    assert "requestJson" in source
+    assert "statusLabel" in source
+    assert "updateSummaryCounters" in source
+
+
+def test_automation_agent_config_agents_keep_agent_action_contract():
+    source = _read(ADMIN_STATIC / "automation_agent_config_agents.js")
+
+    assert "renderAgentTable" in source
+    assert "openAgentForm" in source
+    assert "loadAgentDetail" in source
+    assert "collectAgentPayload" in source
+    assert "saveAgentDraft" in source
+    assert "publishAgent" in source
+    assert "deleteAgent" in source
+    assert "loadPublishedIntoDraft" in source
+    assert "data-agent-edit" in source
+    assert "data-agent-delete" in source
+    assert "admin_action_token" in source or "adminActionToken" in source
+
+
+def test_automation_agent_config_boot_keeps_placeholder_contract():
+    source = _read(ADMIN_STATIC / "automation_agent_config_boot.js")
+
+    assert "boot" in source
+    assert "data-agent-placeholder" in source
+    assert "focusedPromptField" in source
+    assert "role_prompt" in source
+    assert "task_prompt" in source
+
+
+def test_automation_agent_config_entrypoint_only_bootstraps_modules():
+    source = _read(ADMIN_STATIC / "automation_agent_config.js")
+
+    assert "DOMContentLoaded" in source
+    assert "boot" in source
+    assert "function renderAgentTable" not in source
+    assert "function saveAgentDraft" not in source
+    assert "function publishAgent" not in source
+    assert "function deleteAgent" not in source
+
+
 def test_audit_admin_static_js_script_json_contract():
     result = _run_audit("--json")
 
@@ -494,6 +591,8 @@ def test_guardrails_action_token_contract():
         (ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html", ("data-admin-action-token",)),
         (ADMIN_STATIC / "automation_overview_actions.js", ("admin_action_token", "adminActionToken")),
         (ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html", ("data-admin-action-token",)),
+        (ADMIN_STATIC / "automation_agent_config_agents.js", ("admin_action_token", "adminActionToken")),
+        (ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html", ("data-admin-action-token",)),
     ]
 
     for path, markers in expectations:
