@@ -91,13 +91,20 @@
       <div>本次执行结果</div>
       <div>发送记录 ID {{ workspace.manual_send_record_id }}</div>
       {% endif %}
-      <form class="ac-send-box" method="post" action="{{ url_for('api.admin_automation_conversion_stage_send', stage_key=workspace.stage_key) }}" enctype="multipart/form-data">
-        {% if program_context %}<input type="hidden" name="program_id" value="{{ program_context.id }}">{% endif %}
+      {% if program_context %}
+      <form class="ac-send-box" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}" enctype="multipart/form-data">
+        <input type="hidden" name="program_id" value="{{ program_context.id }}">
+        <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+        <input type="hidden" name="stage" value="{{ workspace.stage_key }}">
+        <input type="hidden" name="panel" value="send">
         <textarea name="content"></textarea>
         <input id="stage-send-image-input" type="file" name="images" multiple>
         <div>添加图片</div>
         <button class="admin-button admin-button--primary" type="submit">发送</button>
       </form>
+      {% else %}
+      <div class="admin-banner admin-banner--error">当前方案上下文缺失，无法提交群发。</div>
+      {% endif %}
       {% endif %}
       {% else %}
       <h3>成员列表</h3>

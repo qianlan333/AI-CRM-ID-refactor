@@ -2,13 +2,45 @@
 
 ## 页面与入口
 
+### 自动化运营当前入口总览
+
+页面入口：
+
 - `/admin/automation-conversion`：自动化运营方案列表
 - `/admin/automation-conversion/programs/<program_id>/overview`：数据概览
 - `/admin/automation-conversion/programs/<program_id>/operations`：自动化运营
 - `/admin/automation-conversion/programs/<program_id>/flow-design`：流程设计
 - `/admin/automation-conversion/programs/<program_id>/member-ops`：成员运营
-- `/admin/automation-conversion/auto-reply`：自动化应答
+- `/admin/automation-conversion/programs/<program_id>/executions`：执行记录
 - `/admin/automation-conversion/shared/agents`：模型 / Agent 配置
+- `/admin/automation-conversion/shared/model-infra`：共享模型基础设施
+- `/admin/automation-conversion/runtime/debug`：运行调试
+
+浏览器表单 / browser-safe POST：
+
+- `/admin/automation-conversion/programs/<program_id>/overview/signup-tag/apply`
+- `/admin/automation-conversion/programs/<program_id>/overview/message-activity-sync/run`
+- `/admin/automation-conversion/auto-reply/reply-monitor/toggle`
+- `/admin/automation-conversion/auto-reply/reply-monitor/capture`
+- `/admin/automation-conversion/auto-reply/reply-monitor/run-due`
+- `/admin/automation-conversion/programs/<program_id>/member-ops/stage/<stage_key>/send`
+
+internal API：
+
+- `/api/admin/automation-conversion/model-settings`
+- `/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview`
+- `/api/admin/automation-conversion/stage/<stage_key>/manual-send`
+- `/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches`
+- `/api/admin/automation-conversion/message-activity-sync/run`
+- `/api/admin/automation-conversion/reply-monitor/capture`
+- `/api/admin/automation-conversion/reply-monitor/run-due`
+
+注意事项：
+
+- browser-safe POST 使用后台 session + admin action token。
+- internal API 使用 internal token，不作为浏览器页面直接调用入口。
+- member-ops stage send 仍保留 no-JS multipart form 兜底入口；manual-send API 不承担页面 multipart 实际发送。
+- 旧 route 不再提供兼容 redirect。
 
 当前模块使用方案列表、方案内页面、共享资源入口和 runtime 入口。旧 `overview`、`operations`、`flow-design`、`member-ops`、`settings`、`sop`、`stage/<stage_key>`、`model-infra`、`debug`、`preview`、`agent-config`、`run-center` 页面入口已下线。
 
@@ -67,7 +99,7 @@
   - run_center
   - Agent 池
 - `/api/admin/automation-conversion/agent-pools*` 已移除
-- 深层旧页面路由已下线，仅保留极少数一级兼容跳转
+- 深层旧页面路由和旧一级 alias 已下线，不再注册兼容 redirect
 
 ## 当前明确风险
 

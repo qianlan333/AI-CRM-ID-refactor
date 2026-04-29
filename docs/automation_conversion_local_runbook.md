@@ -245,6 +245,12 @@ curl -X POST http://127.0.0.1:5000/api/admin/automation-conversion/stage/silent/
   }'
 ```
 
+后台 `member-ops` 页面保留 no-JS 表单兜底入口，用于浏览器 session、admin action token 和 multipart 图片实际发送：
+
+- 当前路径：`POST /admin/automation-conversion/programs/<program_id>/member-ops/stage/<stage_key>/send`
+- 旧路径：`/admin/automation-conversion/stage/<stage_key>/send` 已下线，不再注册
+- 注意：`manual-send` API 仍保持 JSON/API 调用协议，不承担页面 multipart 实际发送；图片预览仍使用 `/manual-send/preview`
+
 预期：
 
 - 返回 `ok / stage_key / total_target_count / sent_count / skipped_count / skipped_reasons / record_id / task_ids`

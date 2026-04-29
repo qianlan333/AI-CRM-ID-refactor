@@ -4087,8 +4087,8 @@ def test_automation_member_actions_write_events(app, client):
             ("wm_action_001",),
         ).fetchone()
         assert member is not None
-        assert member["in_pool"] == 0
-        assert member["current_pool"] == "won"
+        assert member["in_pool"] == 1
+        assert member["current_pool"] == "converted"
         assert member["source_type"] == "manual"
         events = db.execute(
             """
@@ -4106,20 +4106,18 @@ def test_automation_member_actions_write_events(app, client):
 
 def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
     _seed_contact(app, external_userid="wm_ai_001", mobile="13800003001", owner_userid="sales_ai", customer_name="AI 客户")
-    with app.app_context():
-        db = get_db()
-        db.execute(
-            """
-            INSERT INTO automation_member (
-                external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, decision_source,
-                source_type, joined_at, created_at, updated_at
-            )
-            VALUES (?, ?, ?, 1, 'active_focus', 'focus', 'active', 'submitted', 'manual', 'manual', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            ("wm_ai_001", "13800003001", "sales_ai"),
-        )
-        db.commit()
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_ai_001",
+        phone="13800003001",
+        owner_staff_id="sales_ai",
+        current_pool="active_focus",
+        follow_type="focus",
+        questionnaire_status="submitted",
+        decision_source="manual",
+        source_type="manual",
+        joined_at="2026-04-06 10:00:00",
+    )
 
     monkeypatch.setattr(
         "wecom_ability_service.domains.admin_console.customer_profile_service.get_customer_profile_tags_payload",
@@ -4205,7 +4203,7 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
         assert accepted_payload["questionnaire"]["answers"] == [{"question": "预算", "answer": "999"}]
 
 
-def test_openclaw_push_does_not_recompute_active_focus_member_before_send(app, client, monkeypatch):
+def test_openclaw_push_uses_canonical_operating_member_before_send(app, client, monkeypatch):
     _seed_contact(app, external_userid="wm_ai_keep_001", mobile="13800003011", owner_userid="sales_ai", customer_name="AI 稳定客户")
     _seed_automation_member(
         app,
@@ -4265,40 +4263,40 @@ def test_openclaw_push_does_not_recompute_active_focus_member_before_send(app, c
 
     assert response.status_code == 202
     assert payload["status"] == "accepted"
-    assert captured["payload"]["currentPool"] == "active_focus"
-    assert captured["payload"]["currentStage"] == "active_focus_followup"
-    assert captured["payload"]["currentTarget"] == "focus_followup"
+    assert captured["payload"]["currentPool"] == "operating"
+    assert captured["payload"]["currentStage"] == "operating_followup"
+    assert captured["payload"]["currentTarget"] == "followup"
 
     with app.app_context():
         row = get_db().execute(
             """
-            SELECT activation_status, current_pool
+            SELECT current_pool, follow_type
             FROM automation_member
             WHERE external_contact_id = ?
             """,
             ("wm_ai_keep_001",),
         ).fetchone()
 
-    assert row["activation_status"] == "active"
-    assert row["current_pool"] == "active_focus"
+    assert row["current_pool"] == "operating"
+    assert row["follow_type"] == "focus"
 
 
 def test_automation_member_detail_uses_sidebar_button_rules_for_won_members(app, client):
     _seed_contact(app, external_userid="wm_won_001", mobile="13800003099", owner_userid="sales_won", customer_name="已成交客户")
-    with app.app_context():
-        db = get_db()
-        db.execute(
-            """
-            INSERT INTO automation_member (
-                external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, decision_source,
-                source_type, last_active_pool, joined_at, created_at, updated_at
-            )
-            VALUES (?, ?, ?, 0, 'won', 'focus', 'active', 'submitted', 'manual', 'manual', 'active_focus', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            ("wm_won_001", "13800003099", "sales_won"),
-        )
-        db.commit()
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_won_001",
+        phone="13800003099",
+        owner_staff_id="sales_won",
+        in_pool=1,
+        current_pool="won",
+        follow_type="focus",
+        questionnaire_status="submitted",
+        decision_source="manual",
+        source_type="manual",
+        last_active_pool="active_focus",
+        joined_at="2026-04-06 10:00:00",
+    )
 
     response = client.get(
         "/api/admin/automation-conversion/member",
@@ -4309,7 +4307,7 @@ def test_automation_member_detail_uses_sidebar_button_rules_for_won_members(app,
     assert response.status_code == 200
     assert payload["ok"] is True
     detail = payload["detail"]
-    assert detail["member"]["current_pool"] == "won"
+    assert detail["member"]["current_pool"] == "converted"
     assert detail["actions"]["put_in_pool"]["enabled"] is False
     assert detail["actions"]["remove_from_pool"]["enabled"] is False
     assert detail["actions"]["set_focus"]["enabled"] is False
@@ -4319,7 +4317,7 @@ def test_automation_member_detail_uses_sidebar_button_rules_for_won_members(app,
     assert detail["actions"]["push_openclaw"]["enabled"] is True
 
 
-def test_sync_member_activation_recomputes_pool_from_inactive_focus_to_active_focus(app, monkeypatch):
+def test_sync_member_activation_recomputes_pool_from_pending_questionnaire_to_operating(app, monkeypatch):
     _seed_contact(app, external_userid="wm_sync_active_001", mobile="13800003101", owner_userid="sales_sync", customer_name="激活刷新客户")
     _seed_automation_member(
         app,
@@ -4327,10 +4325,10 @@ def test_sync_member_activation_recomputes_pool_from_inactive_focus_to_active_fo
         phone="13800003101",
         owner_staff_id="sales_sync",
         in_pool=1,
-        current_pool="inactive_focus",
+        current_pool="new_user",
         follow_type="focus",
         activation_status="inactive",
-        questionnaire_status="submitted",
+        questionnaire_status="pending",
         questionnaire_follow_type="focus",
         decision_source="questionnaire",
         source_type="manual",
@@ -4353,7 +4351,7 @@ def test_sync_member_activation_recomputes_pool_from_inactive_focus_to_active_fo
         )
         row = get_db().execute(
             """
-            SELECT activation_status, current_pool
+            SELECT current_pool, follow_type
             FROM automation_member
             WHERE external_contact_id = ?
             """,
@@ -4373,18 +4371,18 @@ def test_sync_member_activation_recomputes_pool_from_inactive_focus_to_active_fo
         ).fetchone()
 
     assert payload["updated"] is True
-    assert payload["member"]["activation_status"] == "active"
-    assert payload["member"]["current_pool"] == "active_focus"
-    assert row["activation_status"] == "active"
-    assert row["current_pool"] == "active_focus"
-    assert event["action"] == "activation_refresh"
+    assert payload["member"]["current_pool"] == "operating"
+    assert payload["member"]["follow_type"] == "focus"
+    assert row["current_pool"] == "operating"
+    assert row["follow_type"] == "focus"
+    assert event["action"] == "member_refresh"
     assert event["operator_type"] == "system"
     assert event["operator_id"] == "activation_webhook"
-    assert json.loads(event["before_snapshot"])["current_pool"] == "inactive_focus"
-    assert json.loads(event["after_snapshot"])["current_pool"] == "active_focus"
+    assert json.loads(event["before_snapshot"])["current_pool"] == "pending_questionnaire"
+    assert json.loads(event["after_snapshot"])["current_pool"] == "operating"
 
 
-def test_get_member_detail_view_sync_updates_activation_status_and_pool(app, monkeypatch):
+def test_get_member_detail_view_sync_updates_questionnaire_pool(app, monkeypatch):
     _seed_contact(app, external_userid="wm_view_sync_001", mobile="13800003102", owner_userid="sales_view", customer_name="查看同步客户")
     _seed_automation_member(
         app,
@@ -4392,10 +4390,10 @@ def test_get_member_detail_view_sync_updates_activation_status_and_pool(app, mon
         phone="13800003102",
         owner_staff_id="sales_view",
         in_pool=1,
-        current_pool="inactive_normal",
+        current_pool="new_user",
         follow_type="normal",
         activation_status="inactive",
-        questionnaire_status="submitted",
+        questionnaire_status="pending",
         questionnaire_follow_type="normal",
         decision_source="questionnaire",
         source_type="manual",
@@ -4415,21 +4413,21 @@ def test_get_member_detail_view_sync_updates_activation_status_and_pool(app, mon
         detail = get_member_detail(external_contact_id="wm_view_sync_001")
         row = get_db().execute(
             """
-            SELECT activation_status, current_pool
+            SELECT current_pool, follow_type
             FROM automation_member
             WHERE external_contact_id = ?
             """,
             ("wm_view_sync_001",),
         ).fetchone()
 
-    assert detail["member"]["activation_status"] == "active"
-    assert detail["member"]["current_pool"] == "active_normal"
-    assert row["activation_status"] == "active"
-    assert row["current_pool"] == "active_normal"
+    assert detail["member"]["current_pool"] == "operating"
+    assert detail["member"]["follow_type"] == "normal"
+    assert row["current_pool"] == "operating"
+    assert row["follow_type"] == "normal"
     assert detail["actions"]["ai_push"]["enabled"] is True
 
 
-def test_mark_won_and_unmark_restore_active_normal(app, client, monkeypatch):
+def test_mark_won_and_unmark_restore_operating_normal(app, client, monkeypatch):
     _seed_automation_member(
         app,
         external_contact_id="wm_restore_normal_001",
@@ -4461,11 +4459,11 @@ def test_mark_won_and_unmark_restore_active_normal(app, client, monkeypatch):
     )
 
     assert marked.status_code == 200
-    assert marked.get_json()["member"]["current_pool"] == "won"
-    assert marked.get_json()["member"]["last_active_pool"] == "active_normal"
+    assert marked.get_json()["member"]["current_pool"] == "converted"
+    assert marked.get_json()["member"]["last_active_pool"] == "operating"
     assert restored.status_code == 200
-    assert restored.get_json()["member"]["current_pool"] == "active_normal"
-    assert restored.get_json()["member"]["last_active_pool"] == "active_normal"
+    assert restored.get_json()["member"]["current_pool"] == "operating"
+    assert restored.get_json()["member"]["last_active_pool"] == "operating"
 
     with app.app_context():
         member = get_db().execute(
@@ -4473,13 +4471,13 @@ def test_mark_won_and_unmark_restore_active_normal(app, client, monkeypatch):
             ("wm_restore_normal_001",),
         ).fetchone()
         assert dict(member) == {
-            "current_pool": "active_normal",
+            "current_pool": "operating",
             "in_pool": 1,
-            "last_active_pool": "active_normal",
+            "last_active_pool": "operating",
         }
 
 
-def test_mark_won_and_unmark_restore_active_focus(app, client, monkeypatch):
+def test_mark_won_and_unmark_restore_operating_focus(app, client, monkeypatch):
     _seed_automation_member(
         app,
         external_contact_id="wm_restore_focus_001",
@@ -4511,11 +4509,12 @@ def test_mark_won_and_unmark_restore_active_focus(app, client, monkeypatch):
     )
 
     assert marked.status_code == 200
-    assert marked.get_json()["member"]["current_pool"] == "won"
-    assert marked.get_json()["member"]["last_active_pool"] == "active_focus"
+    assert marked.get_json()["member"]["current_pool"] == "converted"
+    assert marked.get_json()["member"]["last_active_pool"] == "operating"
     assert restored.status_code == 200
-    assert restored.get_json()["member"]["current_pool"] == "active_focus"
-    assert restored.get_json()["member"]["last_active_pool"] == "active_focus"
+    assert restored.get_json()["member"]["current_pool"] == "operating"
+    assert restored.get_json()["member"]["last_active_pool"] == "operating"
+    assert restored.get_json()["member"]["follow_type"] == "focus"
 
     with app.app_context():
         member = get_db().execute(
@@ -4523,9 +4522,9 @@ def test_mark_won_and_unmark_restore_active_focus(app, client, monkeypatch):
             ("wm_restore_focus_001",),
         ).fetchone()
         assert dict(member) == {
-            "current_pool": "active_focus",
+            "current_pool": "operating",
             "in_pool": 1,
-            "last_active_pool": "active_focus",
+            "last_active_pool": "operating",
         }
 
 
@@ -4559,8 +4558,8 @@ def test_unmark_won_falls_back_when_last_active_pool_missing(app, client, monkey
     )
 
     assert restored.status_code == 200
-    assert restored.get_json()["member"]["current_pool"] == "inactive_normal"
-    assert restored.get_json()["member"]["last_active_pool"] == "inactive_normal"
+    assert restored.get_json()["member"]["current_pool"] == "operating"
+    assert restored.get_json()["member"]["last_active_pool"] == "operating"
 
     with app.app_context():
         member = get_db().execute(
@@ -4568,9 +4567,9 @@ def test_unmark_won_falls_back_when_last_active_pool_missing(app, client, monkey
             ("wm_restore_fallback_001",),
         ).fetchone()
         assert dict(member) == {
-            "current_pool": "inactive_normal",
+            "current_pool": "operating",
             "in_pool": 1,
-            "last_active_pool": "inactive_normal",
+            "last_active_pool": "operating",
         }
 
 
@@ -5463,6 +5462,7 @@ def test_agent_config_page_renders_entry_tag_fields_for_default_channel(app, cli
 
 def test_removed_admin_automation_conversion_routes_are_not_registered(app, client):
     rules = {rule.rule: rule.endpoint for rule in app.url_map.iter_rules()}
+    rule_methods = {rule.rule: rule.methods for rule in app.url_map.iter_rules()}
     endpoints = set(rules.values())
 
     removed_routes = {
@@ -5478,6 +5478,7 @@ def test_removed_admin_automation_conversion_routes_are_not_registered(app, clie
         "/admin/automation-conversion/operations",
         "/admin/automation-conversion/flow-design",
         "/admin/automation-conversion/member-ops",
+        "/admin/automation-conversion/stage/<stage_key>/send",
         "/admin/automation-conversion/operations/workflows/new",
         "/admin/automation-conversion/operations/workflows/<int:workflow_id>/edit",
         "/admin/automation-conversion/operations/workflows/<int:workflow_id>/nodes",
@@ -5497,6 +5498,7 @@ def test_removed_admin_automation_conversion_routes_are_not_registered(app, clie
         "operations",
         "flow_design",
         "member_ops",
+        "stage_send",
         "workflow_new",
         "workflow_edit",
         "workflow_nodes",
@@ -5510,13 +5512,15 @@ def test_removed_admin_automation_conversion_routes_are_not_registered(app, clie
         "/admin/automation-conversion",
         "/admin/automation-conversion/programs/<int:program_id>/flow-design",
         "/admin/automation-conversion/programs/<int:program_id>/member-ops",
+        "/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send",
         "/admin/automation-conversion/shared/agents",
         "/admin/automation-conversion/shared/model-infra",
         "/admin/automation-conversion/runtime/debug",
-        "/admin/automation-conversion/stage/<stage_key>/send",
         "/api/admin/automation-conversion/settings",
         "/api/admin/automation-conversion/sop/config",
         "/api/admin/automation-conversion/stage/<stage_key>/manual-send",
+        "/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview",
+        "/api/admin/automation-conversion/stage/<stage_key>/focus-send-batches",
     }
 
     assert not (removed_routes & set(rules))
@@ -5536,6 +5540,7 @@ def test_removed_admin_automation_conversion_routes_are_not_registered(app, clie
         "/admin/automation-conversion/operations",
         "/admin/automation-conversion/flow-design",
         "/admin/automation-conversion/member-ops",
+        "/admin/automation-conversion/stage/new-user/send",
         "/admin/automation-conversion/operations/workflows/new",
         "/admin/automation-conversion/operations/workflows/1/edit",
         "/admin/automation-conversion/operations/workflows/1/nodes",
@@ -5543,16 +5548,13 @@ def test_removed_admin_automation_conversion_routes_are_not_registered(app, clie
     ]:
         assert client.get(path).status_code == 404
 
-    stage_send = client.get(
-        "/admin/automation-conversion/stage/active-focus/send",
-        query_string={"phone": "13800001234"},
-    )
-    assert stage_send.status_code == 302
     program_id = _default_program_id(app)
-    assert f"/admin/automation-conversion/programs/{program_id}/member-ops" in stage_send.headers["Location"]
-    assert "stage=active-focus" in stage_send.headers["Location"]
-    assert "panel=send" in stage_send.headers["Location"]
-    assert "phone=13800001234" in stage_send.headers["Location"]
+    new_stage_send_rule = "/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send"
+    assert rules[new_stage_send_rule] == "api.admin_automation_program_member_ops_stage_send"
+    assert "POST" in rule_methods[new_stage_send_rule]
+    assert "GET" not in rule_methods[new_stage_send_rule]
+    assert client.get(f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send").status_code in {404, 405}
+    assert client.post("/admin/automation-conversion/stage/new-user/send").status_code in {404, 405}
 
 
 def test_admin_automation_conversion_save_settings_redirects_back_to_current_flow_design_section(app, client, monkeypatch):
@@ -5995,7 +5997,7 @@ def test_save_agent_router_settings_persists_callback_policy_and_cleans_legacy_s
     response_sample = json.loads(row["response_sample_json"])
 
     assert fallback_strategy["min_confidence"] == pytest.approx(0.93)
-    assert fallback_strategy["human_review_target_pool"] == "silent"
+    assert fallback_strategy["human_review_target_pool"] == "human_reply"
     assert set(request_sample.keys()) == {"request_id", "external_contact_id", "recent_messages"}
     assert "member_snapshot" not in request_sample
     assert set(response_sample.keys()) >= {"request_id", "external_contact_id", "target_pool", "agent_code"}
@@ -6543,7 +6545,7 @@ def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatc
     first_payload = {
         "request_id": request_id,
         "external_contact_id": "wm_reply_idempotent_001",
-        "target_pool": "inactive_focus",
+        "target_pool": "operating",
         "agent_code": "pricing_agent",
         "reason": "继续咨询价格",
         "confidence": 0.88,
@@ -6560,7 +6562,7 @@ def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatc
     second_payload = {
         "request_id": request_id,
         "external_contact_id": "wm_reply_idempotent_001",
-        "target_pool": "active_focus",
+        "target_pool": "converted",
         "agent_code": "closing_agent",
         "reason": "重复回调",
         "confidence": 0.95,
@@ -6598,7 +6600,7 @@ def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatc
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.get_json()["status"] == "idempotent"
-    assert dict(member_row)["current_pool"] == "inactive_focus"
+    assert dict(member_row)["current_pool"] == "operating"
     assert [dict(item)["output_type"] for item in outputs] == [
         "route_ingress_sent",
         "route_ingress_acked",
@@ -6647,7 +6649,7 @@ def test_router_callback_stores_reply_draft_output_when_payload_contains_reply_t
     payload = {
         "request_id": request_id,
         "external_contact_id": "wm_reply_draft_001",
-        "target_pool": "inactive_focus",
+        "target_pool": "operating",
         "agent_code": "pricing_agent",
         "reason": "客户在追问价格",
         "confidence": 0.93,
@@ -6753,7 +6755,7 @@ def test_router_callback_generates_child_reply_draft_when_callback_only_routes(a
     payload = {
         "request_id": request_id,
         "external_contact_id": "wm_reply_autodraft_001",
-        "target_pool": "inactive_focus",
+        "target_pool": "operating",
         "agent_code": "pricing_agent",
         "reason": "客户需要价格说明",
         "confidence": 0.91,
@@ -6979,7 +6981,7 @@ def test_router_callback_rejects_invalid_target_pool_and_records_error(app, clie
         "callback_received",
         "callback_rejected",
     ]
-    assert dict(member_row)["current_pool"] == "inactive_normal"
+    assert dict(member_row)["current_pool"] == "operating"
 
 
 def test_router_pending_callbacks_api_lists_acked_runs_without_callback(app, client, monkeypatch):
@@ -7076,7 +7078,7 @@ def test_router_callback_uses_optional_metadata_and_configurable_review_pool(app
     callback_payload = {
         "request_id": request_id,
         "external_contact_id": "wm_reply_meta_001",
-        "target_pool": "inactive_focus",
+        "target_pool": "operating",
         "agent_code": "pricing_agent",
         "reason": "建议转人工看方案",
         "confidence": 0.96,
@@ -7111,7 +7113,7 @@ def test_router_callback_uses_optional_metadata_and_configurable_review_pool(app
         ).fetchone()
 
     assert response.status_code == 200
-    assert dict(member_row)["current_pool"] == "silent"
+    assert dict(member_row)["current_pool"] == "human_reply"
     assert json.loads(run_row["variables_snapshot_json"])["callback_meta"] == {
         "trace_id": "trace-meta-001",
         "processing_latency_ms": 1820,
@@ -7165,7 +7167,7 @@ def test_router_callback_replay_api_replays_stored_callback_payload(app, client,
     callback_payload = {
         "request_id": request_id,
         "external_contact_id": "wm_reply_replay_001",
-        "target_pool": "inactive_focus",
+        "target_pool": "operating",
         "agent_code": "pricing_agent",
         "reason": "价格意图明确",
         "confidence": 0.92,
@@ -7238,17 +7240,23 @@ def test_special_router_pools_are_recognized_by_crm_stage_payloads(app, client):
     assert human_reply_stage["pagination"]["total"] == 1
 
 
-def test_automation_conversion_home_stage_cards_show_view_and_send_actions(app, client):
+def test_automation_conversion_home_stage_cards_route_renders_program_list_without_legacy_actions(app, client):
+    program_id = _default_program_id(app)
     response = client.get("/admin/automation-conversion")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "消息活跃同步" in html
+    assert "方案列表" in html
+    assert "方案总数" in html
+    assert "当前所有可见自动化运营方案" in html
+    assert f"/admin/automation-conversion/programs/{program_id}/overview" in html
+    assert "编辑" in html
+    assert "消息活跃同步" not in html
     assert "立即刷新一次" not in html
     assert 'data-message-activity-sync-root' not in html
     assert 'data-message-activity-sync-button' not in html
-    assert "阶段漏斗" in html
-    assert html.count("进入成员运营") == 7
+    assert "阶段漏斗" not in html
+    assert "进入成员运营" not in html
     assert "创建群发" not in html
 
 
@@ -7418,6 +7426,59 @@ def test_automation_browser_post_routes_require_admin_action_token(app, client, 
         response = client.post(path, data={"enabled": "1"}, headers=headers)
         assert response.status_code == 400
         assert "令牌" in response.get_json()["error"]
+
+
+def test_automation_pages_use_browser_safe_post_urls_not_internal_apis(app, client):
+    program_id = _default_program_id(app)
+
+    overview_response = client.get(f"/admin/automation-conversion/programs/{program_id}/overview")
+    overview_html = overview_response.get_data(as_text=True)
+
+    assert overview_response.status_code == 200
+    assert f"/admin/automation-conversion/programs/{program_id}/overview/signup-tag/apply" in overview_html
+    assert f"/admin/automation-conversion/programs/{program_id}/overview/message-activity-sync/run" in overview_html
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/capture" in overview_html
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/run-due" in overview_html
+    assert "/api/admin/automation-conversion/message-activity-sync/run" not in overview_html
+    assert "/api/admin/automation-conversion/reply-monitor/capture" not in overview_html
+    assert "/api/admin/automation-conversion/reply-monitor/run-due" not in overview_html
+
+    auto_reply_response = client.get("/admin/automation-conversion/auto-reply")
+    auto_reply_html = auto_reply_response.get_data(as_text=True)
+
+    assert auto_reply_response.status_code == 200
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/toggle" in auto_reply_html
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/capture" in auto_reply_html
+    assert "/admin/automation-conversion/auto-reply/reply-monitor/run-due" in auto_reply_html
+    assert "/api/admin/automation-conversion/reply-monitor/capture" not in auto_reply_html
+    assert "/api/admin/automation-conversion/reply-monitor/run-due" not in auto_reply_html
+
+
+def test_automation_internal_apis_require_internal_token_when_configured(app, client, monkeypatch):
+    app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "internal-token"
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_message_activity_sync",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_message_activity_sync should not be called")),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_reply_monitor_capture",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_reply_monitor_capture should not be called")),
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.http.automation_conversion.run_due_reply_monitor",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_due_reply_monitor should not be called")),
+    )
+
+    paths = [
+        "/api/admin/automation-conversion/message-activity-sync/run",
+        "/api/admin/automation-conversion/reply-monitor/capture",
+        "/api/admin/automation-conversion/reply-monitor/run-due",
+    ]
+
+    for path in paths:
+        response = client.post(path, json={"limit": 10, "trigger_source": "scheduled"})
+        assert response.status_code == 401
+        assert response.get_json()["error"] == "missing internal token"
 
 
 def test_automation_auto_reply_monitor_browser_routes_return_json(app, client, monkeypatch):
@@ -7954,7 +8015,7 @@ def test_process_inbound_messages_for_openclaw_skips_automation_scope_users(app,
 
     triggered: list[str] = []
     monkeypatch.setattr(
-        "wecom_ability_service.domains.marketing_automation.service.trigger_openclaw_focus_message_webhook",
+        "wecom_ability_service.domains.marketing_automation.message_dispatch_service.trigger_openclaw_focus_message_webhook",
         lambda *, external_userid: triggered.append(external_userid) or {"sent": True, "external_userid": external_userid},
     )
 
@@ -8048,8 +8109,15 @@ def test_member_ops_page_renders_business_detail_sidebar_with_member_query(app, 
 
 
 def test_automation_conversion_stage_send_page_switches_between_manual_and_focus_modes(app, client):
-    normal_response = client.get("/admin/automation-conversion/stage/new-user/send", follow_redirects=True)
-    focus_response = client.get("/admin/automation-conversion/stage/inactive-focus/send", follow_redirects=True)
+    program_id = _default_program_id(app)
+    normal_response = client.get(
+        f"/admin/automation-conversion/programs/{program_id}/member-ops",
+        query_string={"stage": "new-user", "panel": "send"},
+    )
+    focus_response = client.get(
+        f"/admin/automation-conversion/programs/{program_id}/member-ops",
+        query_string={"stage": "inactive-focus", "panel": "send"},
+    )
 
     normal_html = normal_response.get_data(as_text=True)
     focus_html = focus_response.get_data(as_text=True)
@@ -8058,11 +8126,18 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
     assert "官方群发" in normal_html
     assert "文本 + 图片" in normal_html
     assert 'id="stage-send-image-input"' in normal_html
+    assert 'name="images" multiple' in normal_html
+    assert 'enctype="multipart/form-data"' in normal_html
+    assert 'name="admin_action_token"' in normal_html
     assert "添加图片" in normal_html
     assert "发送前预览" in normal_html
     assert "/manual-send/preview" in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/manual-send" in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/focus-send-batches" not in normal_html
+    assert f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send" in normal_html
+    assert f'action="/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send"' in normal_html
+    assert 'action="/api/admin/automation-conversion/stage/new-user/manual-send' not in normal_html
+    assert "/admin/automation-conversion/stage/new-user/send" not in normal_html
 
     assert focus_response.status_code == 200
     assert "AI 批量处理" in focus_html
@@ -8387,7 +8462,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
         filter_snapshot = json.loads(row["filter_snapshot_json"])
         assert filter_snapshot["selection_mode"] == "automation_conversion_stage"
         assert filter_snapshot["stage_key"] == "new-user"
-        assert filter_snapshot["pool_key"] == "new_user"
+        assert filter_snapshot["pool_key"] == "pending_questionnaire"
         assert "owner_userid" not in filter_snapshot
         assert json.loads(row["sender_userids_json"]) == ["HuangYouCan"]
         assert row["selected_count"] == 2
@@ -8557,6 +8632,21 @@ def test_manual_send_skips_members_missing_external_userid(app, client, monkeypa
     assert dispatched_payloads[0]["external_userid"] == ["wm_manual_skip_001"]
 
 
+def test_admin_stage_send_program_route_requires_action_token(app, client):
+    program_id = _default_program_id(app)
+
+    response = client.post(
+        f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send",
+        data={"content": "缺少 token", "stage": "new-user", "panel": "send"},
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "后台动作令牌无效，请刷新页面后重试" in html
+    assert "成员运营工作区" in html
+    assert "官方群发" in html
+
+
 def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatch):
     _seed_contact(app, external_userid="wm_manual_page_001", mobile="13800009241", owner_userid="sales_page", customer_name="页面客户")
     _seed_automation_member(
@@ -8574,20 +8664,25 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
         "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
         lambda task_type, fn_name, payload: captured_payloads.append(dict(payload)) or {"task_id": 705, "wecom_result": {"msgid": "msg-705"}},
     )
-    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
     captured_payloads: list[dict[str, object]] = []
+    program_id = _default_program_id(app)
+    action_token = _admin_action_token(
+        client,
+        f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=new-user&panel=send",
+    )
+    form_data = _build_stage_send_form_data(
+        content="页面触达",
+        operator="tester",
+        images=[("page.png", _test_png_bytes(), "image/png")],
+    )
+    form_data["admin_action_token"] = action_token
 
     redirect_response = client.post(
-        "/admin/automation-conversion/stage/new-user/send",
-        data=_build_stage_send_form_data(
-            content="页面触达",
-            operator="tester",
-            images=[("page.png", _test_png_bytes(), "image/png")],
-        ),
+        f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send",
+        data=form_data,
         content_type="multipart/form-data",
     )
     assert redirect_response.status_code == 302
-    program_id = _default_program_id(app)
     assert f"/admin/automation-conversion/programs/{program_id}/member-ops" in redirect_response.headers["Location"]
     assert "stage=new-user" in redirect_response.headers["Location"]
     assert "panel=send" in redirect_response.headers["Location"]
@@ -8620,14 +8715,17 @@ def test_admin_stage_send_page_shows_focus_batch_summary(app, client, monkeypatc
         questionnaire_status="submitted",
         questionnaire_follow_type="focus",
     )
-    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
+    program_id = _default_program_id(app)
+    action_token = _admin_action_token(
+        client,
+        f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=inactive-focus&panel=send",
+    )
 
     redirect_response = client.post(
-        "/admin/automation-conversion/stage/inactive-focus/send",
-        data={"operator": "tester"},
+        f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/inactive-focus/send",
+        data={"operator": "tester", "admin_action_token": action_token, "stage": "inactive-focus", "panel": "send"},
     )
     assert redirect_response.status_code == 302
-    program_id = _default_program_id(app)
     assert f"/admin/automation-conversion/programs/{program_id}/member-ops" in redirect_response.headers["Location"]
     assert "stage=inactive-focus" in redirect_response.headers["Location"]
     assert "panel=send" in redirect_response.headers["Location"]
@@ -8804,8 +8902,8 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
                 "agent_code": "welcome_agent",
                 "agent_type": "child_agent",
                 "provider": "deepseek",
-                "input_snapshot": {"messages": ["你好"], "member_snapshot": {"current_pool": "new_user"}},
-                "variables_snapshot": {"current_pool": "new_user", "recent_messages": ["你好"]},
+                "input_snapshot": {"messages": ["你好"], "member_snapshot": {"current_pool": "pending_questionnaire"}},
+                "variables_snapshot": {"current_pool": "pending_questionnaire", "recent_messages": ["你好"]},
                 "final_prompt_preview": "角色+任务+变量",
                 "role_prompt_version": "v2",
                 "task_prompt_version": "v5",
@@ -8826,7 +8924,7 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
                 "normalized_output": {
                     "agent_code": "welcome_agent",
                     "userid": "sales_agent",
-                    "target_pool": "new_user",
+                    "target_pool": "pending_questionnaire",
                     "confidence": 0.93,
                     "reason": "新用户需要欢迎回复",
                     "draft_reply": "欢迎联系我",
@@ -8834,7 +8932,7 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
                 },
                 "rendered_output_text": "欢迎联系我",
                 "target_agent_code": "welcome_agent",
-                "target_pool": "new_user",
+                "target_pool": "pending_questionnaire",
                 "confidence": 0.93,
                 "reason": "新用户需要欢迎回复",
                 "applied_status": "applied",
@@ -8853,7 +8951,7 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
                 "raw_output_text": "timeout",
                 "normalized_output": {"status": "timeout"},
                 "rendered_output_text": "timeout",
-                "target_pool": "new_user",
+                "target_pool": "pending_questionnaire",
                 "confidence": 0.1,
                 "reason": "请求超时",
                 "applied_status": "pending",
@@ -8867,7 +8965,7 @@ def test_agent_output_ledger_api_supports_filter_detail_export_and_replay(app, c
         "/api/admin/automation-conversion/agent-outputs",
         query_string={
             "request_id": "req-ledger-001",
-            "current_pool": "new_user",
+            "current_pool": "pending_questionnaire",
             "min_confidence": "0.9",
             "has_error": "0",
         },
@@ -9040,7 +9138,7 @@ def test_run_center_output_console_formats_user_datetime_and_unicode_text(app, c
                 },
                 "rendered_output_text": "你好，这里是中文话术。",
                 "target_agent_code": "pricing_agent",
-                "target_pool": "active_focus",
+                "target_pool": "operating",
                 "confidence": 0.92,
                 "reason": "\\u7528\\u6237\\u6700\\u8fd1\\u8fde\\u7eed\\u5728\\u95ee\\u4ed8\\u8d39\\u65b9\\u5f0f",
                 "applied_status": "generated",
@@ -9382,15 +9480,15 @@ def test_mcp_agent_orchestration_tools_list_and_call_outputs(app, client):
 
     stage_payload = _mcp_call(client, "crm.get_member_stage", {"external_contact_id": "wm_agent_tool_001"}).get_json()["result"]["structuredContent"]
     assert stage_payload["member_exists"] is True
-    assert stage_payload["stage"]["current_pool"] in {"new_user", "inactive_normal"}
-    assert stage_payload["stage"]["current_pool_label"] in {"新用户池", "未激活普通池"}
-    assert stage_payload["stage"]["current_stage_label"] in {"等待提交问卷", "未激活普通跟进"}
+    assert stage_payload["stage"]["current_pool"] in {"pending_questionnaire", "operating"}
+    assert stage_payload["stage"]["current_pool_label"] in {"未填问卷人群", "运营中人群"}
+    assert stage_payload["stage"]["current_stage_label"] in {"等待提交问卷", "运营中跟进"}
 
     snapshot_payload = _mcp_call(client, "crm.get_member_snapshot", {"external_contact_id": "wm_agent_tool_001"}).get_json()["result"]["structuredContent"]
     assert snapshot_payload["member_exists"] is True
-    assert snapshot_payload["stage"]["current_pool"] in {"new_user", "inactive_normal"}
+    assert snapshot_payload["stage"]["current_pool"] in {"pending_questionnaire", "operating"}
 
-    current_pool = snapshot_payload["stage"]["current_pool"] or "inactive_normal"
+    current_pool = snapshot_payload["stage"]["current_pool"] or "operating"
     pool_snapshot_payload = _mcp_call(client, "get_pool_snapshot", {"pool_key": current_pool, "limit": 5}).get_json()["result"]["structuredContent"]
     assert pool_snapshot_payload["pool_key"] == current_pool
     assert pool_snapshot_payload["member_count"] >= 1
