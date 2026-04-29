@@ -576,11 +576,7 @@ def _sqlite_normalized_sop_pool_sql(column_name: str) -> str:
 
 
 def _sqlite_legacy_compatible_sop_pool_check_values_sql() -> str:
-    return (
-        "'pending_questionnaire', 'operating', 'converted', "
-        "'new_user', 'inactive_normal', 'inactive_focus', "
-        "'active_normal', 'active_focus', 'silent', 'won'"
-    )
+    return "'pending_questionnaire', 'operating', 'converted'"
 
 
 def _rebuild_sqlite_automation_sop_tables(db) -> None:
@@ -982,7 +978,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     if "current_audience_entered_at" not in member_columns:
         db.execute("ALTER TABLE automation_member ADD COLUMN current_audience_entered_at TEXT NOT NULL DEFAULT ''")
     sop_pool_config_sql = _sqlite_table_sql(db, "automation_sop_pool_config")
-    if "'new_user'" not in sop_pool_config_sql or "'inactive_normal'" not in sop_pool_config_sql or "'active_normal'" not in sop_pool_config_sql:
+    if "'new_user'" in sop_pool_config_sql or "'inactive_normal'" in sop_pool_config_sql or "'active_normal'" in sop_pool_config_sql:
         _rebuild_sqlite_automation_sop_tables(db)
     db.execute(
         """
@@ -1165,6 +1161,29 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             started_at TEXT NOT NULL DEFAULT '',
             finished_at TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_touch_delivery_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program_code TEXT NOT NULL DEFAULT 'signup_conversion_v1',
+            touch_surface TEXT NOT NULL DEFAULT '',
+            rule_key TEXT NOT NULL DEFAULT '',
+            member_id INTEGER REFERENCES automation_member(id) ON DELETE SET NULL,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            source_batch_id INTEGER,
+            source_item_id INTEGER,
+            send_record_id INTEGER REFERENCES user_ops_send_records(id) ON DELETE SET NULL,
+            status TEXT NOT NULL DEFAULT 'claimed'
+                CHECK (status IN ('claimed', 'sent', 'failed', 'skipped', 'cancelled')),
+            detail TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            claimed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            sent_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -1681,6 +1700,25 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_focus_send_batch_item_status ON automation_focus_send_batch_item (status, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_touch_delivery_active
+        ON automation_touch_delivery_log (program_code, touch_surface, rule_key, external_contact_id)
+        WHERE external_contact_id <> '' AND status IN ('claimed', 'sent')
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_touch_delivery_external
+        ON automation_touch_delivery_log (external_contact_id, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_touch_delivery_source
+        ON automation_touch_delivery_log (touch_surface, source_batch_id, source_item_id, id DESC)
+        """
     )
     db.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_template_pool_day ON automation_sop_template (pool_key, day_index)"
