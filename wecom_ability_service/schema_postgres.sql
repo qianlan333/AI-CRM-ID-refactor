@@ -1506,6 +1506,8 @@ ON questionnaire_external_push_logs (retry_from_log_id, created_at DESC, id DESC
 
 CREATE TABLE IF NOT EXISTS automation_channel (
     id BIGSERIAL PRIMARY KEY,
+    -- program_id 为 NULL 表示全局默认渠道（历史数据兼容）；非 NULL 表示方案专属渠道。
+    program_id BIGINT REFERENCES automation_program(id) ON DELETE CASCADE,
     channel_code TEXT NOT NULL UNIQUE,
     channel_name TEXT NOT NULL DEFAULT '',
     qr_url TEXT NOT NULL DEFAULT '',
@@ -1522,11 +1524,17 @@ CREATE TABLE IF NOT EXISTS automation_channel (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE automation_channel
+    ADD COLUMN IF NOT EXISTS program_id BIGINT REFERENCES automation_program(id) ON DELETE CASCADE;
+
 CREATE INDEX IF NOT EXISTS idx_automation_channel_status
 ON automation_channel (status, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_automation_channel_scene
 ON automation_channel (scene_value);
+
+CREATE INDEX IF NOT EXISTS idx_automation_channel_program
+ON automation_channel (program_id, status, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_member (
     id BIGSERIAL PRIMARY KEY,
@@ -1994,6 +2002,8 @@ ON automation_agent_skill_call_audit (skill_code, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
     id BIGSERIAL PRIMARY KEY,
+    -- program_id 为 NULL 表示全局共享模板（历史数据兼容）；非 NULL 表示方案专属模板。
+    program_id BIGINT REFERENCES automation_program(id) ON DELETE CASCADE,
     template_code TEXT NOT NULL UNIQUE,
     template_name TEXT NOT NULL DEFAULT '',
     questionnaire_id BIGINT REFERENCES questionnaires(id) ON DELETE SET NULL,
@@ -2007,8 +2017,14 @@ CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE automation_profile_segment_template
+    ADD COLUMN IF NOT EXISTS program_id BIGINT REFERENCES automation_program(id) ON DELETE CASCADE;
+
 CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_enabled
 ON automation_profile_segment_template (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_program
+ON automation_profile_segment_template (program_id, enabled, updated_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS automation_profile_segment_category (
     id BIGSERIAL PRIMARY KEY,

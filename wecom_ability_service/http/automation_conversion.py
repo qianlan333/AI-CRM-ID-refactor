@@ -234,21 +234,10 @@ def _member_ops_panel() -> str:
     return panel or "members"
 
 
+# 共享资源标签页：仅收录真正跨方案共享的底座模块。
+# 数据概览 和 自动化运营 是方案内页面，统一归入 _automation_program_workspace_tabs，
+# 不在此处出现，否则会误导用户以为它们是全局模块。
 _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
-    {
-        "key": "overview",
-        "label": "数据概览",
-        "summary": "概览、运行状态与任务流执行摘要",
-        "program_endpoint": "api.admin_automation_program_overview",
-        "params": {},
-    },
-    {
-        "key": "operations",
-        "label": "自动化运营",
-        "summary": "任务流列表、节点摘要与执行入口",
-        "program_endpoint": "api.admin_automation_program_operations",
-        "params": {},
-    },
     {
         "key": "auto_reply",
         "label": "自动化应答",
@@ -259,7 +248,7 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
     {
         "key": "agent_config",
         "label": "模型与智能体配置",
-        "summary": "可用智能体与基础画像分层模板配置",
+        "summary": "智能体、画像分层模板、渠道二维码与大模型配置",
         "endpoint": "api.admin_automation_conversion_shared_agents",
         "params": {},
     },
@@ -459,8 +448,8 @@ def _build_auto_reply_workspace() -> dict[str, object]:
 
 
 def _build_agent_config_workspace() -> dict[str, object]:
-    initial_templates = list(list_conversion_profile_segment_templates(enabled_only=False).get("items") or [])
-    initial_catalog = list(list_conversion_profile_segment_catalog().get("items") or [])
+    # 共享底座：只包含智能体列表和大模型配置。
+    # 渠道二维码和画像分层模板已移至方案内 flow_design 页面（per-program）。
     return {
         "api_urls": {
             "registry": url_for("api.api_admin_automation_conversion_workflow_registry"),
@@ -470,23 +459,14 @@ def _build_agent_config_workspace() -> dict[str, object]:
             "agent_draft_base": url_for("api.api_admin_automation_conversion_agent_draft", agent_code="__AGENT_CODE__"),
             "agent_delete_base": url_for("api.api_admin_automation_conversion_agent_delete", agent_code="__AGENT_CODE__"),
             "agent_publish_base": url_for("api.api_admin_automation_conversion_agent_publish", agent_code="__AGENT_CODE__"),
-            "default_channel_settings": url_for("api.api_admin_automation_conversion_default_channel_settings"),
-            "default_channel_generate_qr": url_for("api.api_admin_automation_conversion_default_channel_generate_qr"),
-            "wecom_tags": "/api/admin/wecom/tags",
             "model_settings": url_for("api.api_admin_automation_conversion_model_settings"),
             "model_settings_test": url_for("api.api_admin_automation_conversion_model_settings_test"),
-            "profile_segment_templates": url_for("api.api_admin_automation_conversion_profile_segment_templates", enabled_only=0),
-            "profile_segment_template_detail_base": url_for("api.api_admin_automation_conversion_profile_segment_template_detail", template_id=0),
-            "profile_segment_template_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
         },
         "entry_urls": {
             "operations": _program_route_or_main("api.admin_automation_program_operations"),
             "auto_reply": url_for("api.admin_automation_conversion_auto_reply"),
         },
-        "selected_template_id": _query_int("template_id", default=0, minimum=0, maximum=100000000) or None,
         "available_agents": list(list_conversion_agent_options(enabled_only=False).get("items") or []),
-        "initial_templates": initial_templates,
-        "initial_template_catalog": initial_catalog,
     }
 
 
@@ -503,10 +483,25 @@ def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None,
         selected_day_index=selected_day_index,
     )
     input_payload = dict(page_input or {})
+
+    # 方案专属渠道：每个方案拥有自己的渠道二维码配置
+    channel_payload = get_default_channel_settings_payload(program_id=program_id)
     default_channel = {
-        **dict(settings_payload.get("default_channel") or {}),
-        "welcome_message": str(input_payload.get("welcome_message") or dict(settings_payload.get("default_channel") or {}).get("welcome_message") or ""),
+        **dict(channel_payload.get("default_channel") or {}),
+        "welcome_message": str(
+            input_payload.get("welcome_message")
+            or dict(channel_payload.get("default_channel") or {}).get("welcome_message")
+            or ""
+        ),
     }
+
+    # 方案专属分层模板列表
+    segment_templates_payload = list_conversion_profile_segment_templates(
+        enabled_only=False,
+        program_id=program_id,
+    )
+    segment_catalog = list_conversion_profile_segment_catalog()
+
     def _flow_href(section_key: str, anchor: str) -> str:
         return _program_route_or_main(
             "api.admin_automation_program_flow_design",
@@ -514,6 +509,8 @@ def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None,
             section=section_key,
         ) + anchor
 
+    # API URLs for channel and template management within this program
+    program_api_params = _program_api_params(program_id)
     return {
         "section": section,
         "sections": [
@@ -521,14 +518,28 @@ def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None,
             {"key": "questionnaire", "label": "入池与问卷规则", "href": _flow_href("questionnaire", "#flow-questionnaire")},
             {"key": "sop", "label": "SOP 剧本", "href": _flow_href("sop", "#flow-sop")},
             {"key": "global-rules", "label": "全局规则", "href": _flow_href("global-rules", "#flow-global-rules")},
-            {"key": "channel", "label": "默认渠道入口", "href": _flow_href("channel", "#flow-channel")},
+            {"key": "channel", "label": "渠道二维码", "href": _flow_href("channel", "#flow-channel")},
+            {"key": "segmentation", "label": "画像分层模板", "href": _flow_href("segmentation", "#flow-segmentation")},
             {"key": "publish", "label": "发布管理", "href": _flow_href("publish", "#flow-publish")},
         ],
         "settings": settings_payload,
         "default_channel": default_channel,
+        "provider_available": bool(channel_payload.get("provider_available")),
+        "segment_templates": list(segment_templates_payload.get("items") or []),
+        "segment_catalog": list(segment_catalog.get("items") or []),
         "sop": sop_payload,
         "saved": _query_bool("saved", default=False),
         "page_input": input_payload,
+        # API URLs 传给前端 JS 使用
+        "api_urls": {
+            "default_channel_settings": url_for("api.api_admin_automation_conversion_default_channel_settings", **program_api_params),
+            "default_channel_generate_qr": url_for("api.api_admin_automation_conversion_default_channel_generate_qr", **program_api_params),
+            "wecom_tags": "/api/admin/wecom/tags",
+            "profile_segment_templates": url_for("api.api_admin_automation_conversion_profile_segment_templates", enabled_only=0, **program_api_params),
+            "profile_segment_template_create": url_for("api.api_admin_automation_conversion_profile_segment_template_create", **program_api_params),
+            "profile_segment_template_detail_base": url_for("api.api_admin_automation_conversion_profile_segment_template_detail", template_id=0),
+            "profile_segment_template_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
+        },
     }
 
 
@@ -723,7 +734,7 @@ def _render_overview_page(*, page_error: str = "", program: dict[str, object] | 
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
             ((program or {}).get("program_name") or "自动化转化", None),
         ),
-        workspace_tabs=_automation_program_workspace_tabs(program_id, "overview") if program_id else _automation_conversion_workspace_tabs("overview"),
+        workspace_tabs=_automation_program_workspace_tabs(program_id, "overview") if program_id else [],
         program_context=_program_context(program, active_key="overview") if program else None,
         overview_workspace=_build_overview_workspace(program_id=program_id),
         page_notice=_overview_notice(),
@@ -746,7 +757,7 @@ def _render_operations_page(*, page_error: str = "", program: dict[str, object] 
             ((program or {}).get("program_name") or "自动化运营", url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None),
             ("运营编排", None),
         ),
-        workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else _automation_conversion_workspace_tabs("operations"),
+        workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else [],
         program_context=_program_context(program, active_key="operations") if program else None,
         operations_workspace=_build_operations_list_workspace(program_id=program_id),
         admin_action_token=ensure_admin_console_action_token(),
@@ -773,7 +784,7 @@ def _render_workflow_editor_page(*, workflow_id: int | None = None, page_error: 
             ),
             ("新建任务流" if is_new else "编辑任务流", None),
         ),
-        workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else _automation_conversion_workspace_tabs("operations"),
+        workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else [],
         program_context=_program_context(program, active_key="operations") if program else None,
         operations_workspace=_build_workflow_editor_workspace(workflow_id=workflow_id, program_id=program_id),
         admin_action_token=ensure_admin_console_action_token(),
@@ -799,7 +810,7 @@ def _render_workflow_nodes_page(*, workflow_id: int, page_error: str = "", progr
             ),
             ("节点配置", None),
         ),
-        workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else _automation_conversion_workspace_tabs("operations"),
+        workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else [],
         program_context=_program_context(program, active_key="operations") if program else None,
         operations_workspace=_build_workflow_nodes_workspace(workflow_id=workflow_id, program_id=program_id),
         admin_action_token=ensure_admin_console_action_token(),
@@ -824,7 +835,7 @@ def _render_execution_records_page(*, page_error: str = "", program: dict[str, o
             ),
             ("执行记录", None),
         ),
-        workspace_tabs=_automation_program_workspace_tabs(program_id, "executions") if program_id else _automation_conversion_workspace_tabs("operations"),
+        workspace_tabs=_automation_program_workspace_tabs(program_id, "executions") if program_id else [],
         program_context=_program_context(program, active_key="executions") if program else None,
         operations_workspace=_build_execution_records_workspace(program_id=program_id),
         admin_action_token=ensure_admin_console_action_token(),
@@ -1944,7 +1955,8 @@ def api_admin_automation_conversion_agent_delete(agent_code: str):
 
 
 def api_admin_automation_conversion_default_channel_settings():
-    return jsonify({"ok": True, **get_default_channel_settings_payload()})
+    program_id = _request_program_id()
+    return jsonify({"ok": True, **get_default_channel_settings_payload(program_id=program_id)})
 
 
 def api_admin_automation_conversion_settings_payload():
@@ -1976,7 +1988,8 @@ def api_admin_automation_conversion_default_channel_generate_qr():
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         return jsonify({"ok": False, "error": action_token_error}), 400
-    result = generate_default_channel_qr(operator=_operator_from_request())
+    program_id = _request_program_id()
+    result = generate_default_channel_qr(operator=_operator_from_request(), program_id=program_id)
     status_code = int(result.get("status_code") or (200 if result.get("generated") else 400))
     return jsonify({"ok": bool(result.get("generated")), **result}), status_code
 
@@ -2014,7 +2027,11 @@ def api_admin_automation_conversion_profile_segment_catalog():
 
 
 def api_admin_automation_conversion_profile_segment_templates():
-    payload = list_conversion_profile_segment_templates(enabled_only=_query_bool("enabled_only", default=False))
+    program_id = _request_program_id()
+    payload = list_conversion_profile_segment_templates(
+        enabled_only=_query_bool("enabled_only", default=False),
+        program_id=program_id,
+    )
     return jsonify({"ok": True, **payload})
 
 
@@ -2028,6 +2045,11 @@ def api_admin_automation_conversion_profile_segment_template_detail(template_id:
 
 def api_admin_automation_conversion_profile_segment_template_create():
     payload = request.get_json(silent=True) or {}
+    # program_id 可从请求体或 query param 传入
+    if "program_id" not in payload:
+        program_id = _request_program_id()
+        if program_id:
+            payload = {**payload, "program_id": program_id}
     try:
         result = create_conversion_profile_segment_template(payload, operator_id=_operator_from_request())
     except LookupError as exc:
