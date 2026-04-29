@@ -19,6 +19,10 @@ jobs:
             set -e
             cd '/home/ubuntu/极简 crm'
             git pull origin main
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            test -n "${DATABASE_URL:-}"
             source /home/ubuntu/venvs/openclaw/bin/activate
             pip install -r requirements.txt
             python3 app.py init-db
