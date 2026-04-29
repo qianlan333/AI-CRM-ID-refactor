@@ -7,6 +7,7 @@
 - Phase 3: customer detail split into ordinary static JS files under `window.CustomerProfile`.
 - Phase 4: Customer Pulse Inbox split into ordinary static JS files under `window.CustomerPulseInbox`.
 - Phase 5: automation auto reply workspace inline JS extracted into ordinary static JS files under `window.AutomationAutoReply`.
+- Phase 7: automation overview workspace inline JS extracted into ordinary static JS files under `window.AutomationOverview`.
 
 ## Shared Principles
 
@@ -36,11 +37,12 @@
 - Customer detail page script order and `CustomerProfile` modules.
 - Customer Pulse Inbox script order and `CustomerPulseInbox` modules.
 - Automation auto reply script order and `AutomationAutoReply` modules.
+- Automation overview script order and `AutomationOverview` modules.
 - `AdminApi` shared-client contract.
 - Base template order: `admin_api_client.js` before `admin_console.js`.
 - No frontend build tooling in the repository root.
 
-The executable audit is `scripts/audit_admin_static_js.py`. It is intentionally scoped to the protected Phase 3-5 pages and static JS files, not to every legacy admin template.
+The executable audit is `scripts/audit_admin_static_js.py`. It is intentionally scoped to the protected Phase 3-7 pages and static JS files, including `automation_conversion_overview_workspace.html` and `automation_overview*.js`, not to every legacy admin template.
 
 ## Next Steps
 

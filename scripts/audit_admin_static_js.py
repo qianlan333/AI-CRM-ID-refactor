@@ -24,6 +24,7 @@ PROTECTED_TEMPLATES = [
     ADMIN_TEMPLATES / "customer_detail.html",
     ADMIN_TEMPLATES / "customer_pulse_inbox.html",
     ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html",
+    ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html",
     ADMIN_TEMPLATES / "base.html",
 ]
 
@@ -63,12 +64,19 @@ SCRIPT_ORDER_CONTRACTS = {
         "automation_auto_reply_actions.js",
         "automation_auto_reply.js",
     ],
+    ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html": [
+        "automation_overview_core.js",
+        "automation_overview_renderers.js",
+        "automation_overview_actions.js",
+        "automation_overview.js",
+    ],
 }
 
 NAMESPACE_RULES = [
     ("customer_profile", "CustomerProfile"),
     ("customer_pulse_inbox", "CustomerPulseInbox"),
     ("automation_auto_reply", "AutomationAutoReply"),
+    ("automation_overview", "AutomationOverview"),
 ]
 
 
@@ -89,6 +97,7 @@ def protected_js_files() -> list[Path]:
         "customer_profile*.js",
         "customer_pulse_inbox*.js",
         "automation_auto_reply*.js",
+        "automation_overview*.js",
     ]:
         files.extend(sorted(ADMIN_STATIC.glob(pattern)))
     return sorted(dict.fromkeys(files))
@@ -134,6 +143,16 @@ def check_protected_templates_no_large_inline_js() -> dict[str, object]:
                 details.append(f"{rel(path)} contains disallowed inline script")
         if path.name == "automation_conversion_auto_reply_workspace.html":
             for token in ["function requestJson", "function renderOutputs", "function runAction"]:
+                if token in source:
+                    details.append(f"{rel(path)} contains legacy inline marker: {token}")
+        if path.name == "automation_conversion_overview_workspace.html":
+            for token in [
+                "function requestJson",
+                "function renderDashboard",
+                "function renderMemberGroups",
+                "function postAdminAction",
+                "(() =>",
+            ]:
                 if token in source:
                     details.append(f"{rel(path)} contains legacy inline marker: {token}")
     return check_result("protected_templates_no_large_inline_js", details)
@@ -225,6 +244,8 @@ def check_action_token_contract() -> dict[str, object]:
         (ADMIN_STATIC / "automation_auto_reply_actions.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_STATIC / "automation_auto_reply_outputs.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html", ["data-admin-action-token"]),
+        (ADMIN_STATIC / "automation_overview_actions.js", ["admin_action_token", "adminActionToken"]),
+        (ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html", ["data-admin-action-token"]),
     ]
     details: list[str] = []
     for path, markers in expectations:
