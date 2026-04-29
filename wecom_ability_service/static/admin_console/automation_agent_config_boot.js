@@ -53,13 +53,22 @@
   function boot() {
     const root = AutomationAgentConfig.root ? AutomationAgentConfig.root() : null;
     if (!root) return;
+    const elements = AutomationAgentConfig.elements ? AutomationAgentConfig.elements() : {};
+    const hasAgentSurface = !!(elements.agentTableBody || elements.agentForm);
+    const hasTemplateSurface = !!(elements.templateTableBody || elements.templateForm);
+    const hasChannelSurface = !!(elements.defaultChannelForm || elements.defaultChannelGenerateButton);
+    const hasModelSurface = !!elements.modelSettingsForm;
     AutomationAgentConfig.syncInitialState();
-    AutomationAgentConfig.renderAgentTable();
-    if (typeof AutomationAgentConfig.initializeTemplates === "function") {
+    if (hasAgentSurface && typeof AutomationAgentConfig.renderAgentTable === "function") {
+      AutomationAgentConfig.renderAgentTable();
+    }
+    if (hasTemplateSurface && typeof AutomationAgentConfig.initializeTemplates === "function") {
       AutomationAgentConfig.initializeTemplates(root);
     }
     AutomationAgentConfig.updateSummaryCounters();
-    AutomationAgentConfig.bindAgentInteractions(root);
+    if (hasAgentSurface && typeof AutomationAgentConfig.bindAgentInteractions === "function") {
+      AutomationAgentConfig.bindAgentInteractions(root);
+    }
     if (typeof AutomationAgentConfig.bindTemplateInteractions === "function") {
       AutomationAgentConfig.bindTemplateInteractions(root);
     }
@@ -69,16 +78,20 @@
     if (typeof AutomationAgentConfig.bindChannelModelInteractions === "function") {
       AutomationAgentConfig.bindChannelModelInteractions(root);
     }
-    bindPlaceholderInsertion(root);
-    AutomationAgentConfig.loadAgents(root).catch((error) => {
-      AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
-    });
-    if (typeof AutomationAgentConfig.refreshTemplates === "function") {
+    if (hasAgentSurface) {
+      bindPlaceholderInsertion(root);
+    }
+    if (hasAgentSurface && typeof AutomationAgentConfig.loadAgents === "function") {
+      AutomationAgentConfig.loadAgents(root).catch((error) => {
+        AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
+      });
+    }
+    if (hasTemplateSurface && typeof AutomationAgentConfig.refreshTemplates === "function") {
       AutomationAgentConfig.refreshTemplates(root).catch((error) => {
         AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
       });
     }
-    if (typeof AutomationAgentConfig.loadChannelModelState === "function") {
+    if ((hasChannelSurface || hasModelSurface) && typeof AutomationAgentConfig.loadChannelModelState === "function") {
       AutomationAgentConfig.loadChannelModelState(root).catch((error) => {
         AutomationAgentConfig.showFeedback(error.message || "加载模型与智能体配置失败", "error");
       });

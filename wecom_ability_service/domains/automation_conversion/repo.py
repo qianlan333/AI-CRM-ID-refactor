@@ -3238,7 +3238,30 @@ def list_sop_batch_items(*, batch_id: int, limit: int = 200) -> list[dict[str, A
     )
 
 
-def get_default_channel() -> dict[str, Any] | None:
+def get_default_channel(*, program_id: int | None = None) -> dict[str, Any] | None:
+    if program_id is not None:
+        row = _fetchone_dict(
+            """
+            SELECT *
+            FROM automation_channel
+            WHERE program_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(program_id),),
+        )
+        if row:
+            return row
+        return _fetchone_dict(
+            """
+            SELECT *
+            FROM automation_channel
+            WHERE channel_code = ?
+              AND program_id IS NULL
+            LIMIT 1
+            """,
+            ("default_qrcode",),
+        )
     return _fetchone_dict(
         """
         SELECT *
@@ -3278,10 +3301,18 @@ def find_channel_by_scene_value(scene_value: str) -> dict[str, Any] | None:
 
 
 def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
-    existing = get_default_channel() if _normalized_text(payload.get("channel_code")) == "default_qrcode" else None
+    program_id = int(payload.get("program_id") or 0) or None
+    channel_code = _normalized_text(payload.get("channel_code"))
+    if program_id and channel_code == "default_qrcode":
+        channel_code = f"program_{program_id}_default_qrcode"
+    is_default_channel_code = channel_code == "default_qrcode" or bool(
+        program_id and channel_code == f"program_{program_id}_default_qrcode"
+    )
+    existing = get_default_channel(program_id=program_id) if is_default_channel_code else None
     db = get_db()
     params = (
-        _normalized_text(payload.get("channel_code")),
+        program_id,
+        channel_code,
         _normalized_text(payload.get("channel_name")),
         _normalized_text(payload.get("qr_url")),
         _normalized_text(payload.get("qr_ticket")),
@@ -3298,7 +3329,9 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
         row = db.execute(
             """
             UPDATE automation_channel
-            SET channel_name = ?,
+            SET program_id = ?,
+                channel_code = ?,
+                channel_name = ?,
                 qr_url = ?,
                 qr_ticket = ?,
                 scene_value = ?,
@@ -3314,6 +3347,8 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
             RETURNING *
             """,
             (
+                program_id,
+                channel_code,
                 _normalized_text(payload.get("channel_name")),
                 _normalized_text(payload.get("qr_url")),
                 _normalized_text(payload.get("qr_ticket")),
@@ -3332,6 +3367,7 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
     row = db.execute(
         """
         INSERT INTO automation_channel (
+            program_id,
             channel_code,
             channel_name,
             qr_url,
@@ -3347,7 +3383,7 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         params,

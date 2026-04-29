@@ -527,8 +527,6 @@
 {% block content %}
 {% set workspace = agent_config_workspace or {} %}
 {% set initial_agents = workspace.available_agents or [] %}
-{% set initial_templates = workspace.initial_templates or [] %}
-{% set initial_catalog = workspace.initial_template_catalog or [] %}
 
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
@@ -540,15 +538,13 @@
   data-admin-action-token="{{ admin_action_token }}"
 >
   <script type="application/json" id="automation-agent-config-initial-agents">{{ initial_agents|tojson }}</script>
-  <script type="application/json" id="automation-agent-config-initial-templates">{{ initial_templates|tojson }}</script>
-  <script type="application/json" id="automation-agent-config-initial-catalog">{{ initial_catalog|tojson }}</script>
 
   <section class="ac-config-panel">
     <div class="ac-config-head">
       <div>
         <div class="ac-eyebrow">模型与智能体配置</div>
-        <h2>智能体直绑 + 基础画像分层模板</h2>
-        <p class="ac-config-muted">任务流后续直接绑定智能体。这里已经收口成自动化转化模块自己的底层配置工作台：智能体编排、基础画像分层模板、欢迎语 / 二维码，以及大模型接口配置统一都在这里完成。</p>
+        <h2>共享智能体本体 + 大模型配置</h2>
+        <p class="ac-config-muted">这里仅维护可跨方案复用的智能体定义和大模型接口。画像分层、欢迎语、二维码入口和运营编排都在具体方案里单独维护。</p>
       </div>
       <div class="ac-config-row-actions">
         <a class="admin-button admin-button--secondary" href="{{ (workspace.entry_urls or {}).operations }}">查看任务流绑定</a>
@@ -556,7 +552,7 @@
     </div>
 
     <div class="ac-config-feedback" id="agent-config-feedback" hidden></div>
-    <div class="ac-config-loading" id="agent-config-loading" hidden>正在加载智能体与分层模板数据...</div>
+    <div class="ac-config-loading" id="agent-config-loading" hidden>正在加载智能体与模型配置...</div>
 
     <div class="ac-config-top" id="agent-config-summary-grid">
       <article class="ac-config-summary-card">
@@ -566,14 +562,6 @@
       <article class="ac-config-summary-card">
         <span>已发布智能体</span>
         <strong id="agent-published-total">{{ initial_agents|selectattr('status', 'equalto', 'published')|list|length }}</strong>
-      </article>
-      <article class="ac-config-summary-card">
-        <span>基础画像分层模板</span>
-        <strong id="template-total">{{ initial_templates|length }}</strong>
-      </article>
-      <article class="ac-config-summary-card">
-        <span>问卷目录</span>
-        <strong id="catalog-total">{{ initial_catalog|length }}</strong>
       </article>
     </div>
   </section>
@@ -754,201 +742,6 @@
     <section class="ac-config-panel">
       <div class="ac-config-head">
         <div>
-          <h3>基础画像分层模板</h3>
-          <p class="ac-config-muted">选择问卷中的一道题作为分层依据，并为多个分类绑定多个选项。未命中时后续直接回落到标准版原文。</p>
-        </div>
-        <div class="ac-config-row-actions">
-          <button class="admin-button admin-button--primary" id="template-create-button" type="button">新建分层模板</button>
-        </div>
-      </div>
-
-      <div class="ac-config-table-wrap">
-        <table class="ac-config-table">
-          <thead>
-            <tr>
-              <th>模板名</th>
-              <th>问卷 / 题目</th>
-              <th>分类数</th>
-              <th>状态</th>
-              <th>更新时间</th>
-            </tr>
-          </thead>
-          <tbody id="template-table-body">
-            {% for item in initial_templates %}
-            {% set template = item.template or {} %}
-            {% set questionnaire = item.questionnaire or {} %}
-            {% set question = item.segmentation_question or {} %}
-            {% set template_status = '启用' if template.enabled else '停用' %}
-            <tr class="is-clickable" data-template-id="{{ template.id or '' }}">
-              <td>
-                <strong>{{ template.template_name or template.template_code or '-' }}</strong>
-                <div class="ac-config-code">{{ template.template_code or '' }}</div>
-              </td>
-              <td>{{ questionnaire.name or '-' }} / {{ question.title or '-' }}</td>
-              <td>{{ (item.categories or [])|length }}</td>
-              <td>{{ template_status }}</td>
-              <td>{{ template.updated_at or '-' }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="ac-config-empty" id="template-empty" {% if initial_templates %}hidden{% endif %}>当前还没有基础画像分层模板。</div>
-
-      <section class="ac-config-panel" id="template-detail-panel" hidden>
-        <div class="ac-config-head">
-          <div>
-            <h4 id="template-detail-title">模板详情</h4>
-            <p class="ac-config-code" id="template-detail-code"></p>
-          </div>
-          <button class="admin-button admin-button--secondary" id="template-edit-button" type="button">编辑模板</button>
-        </div>
-        <dl class="ac-config-summary-meta" id="template-detail-summary"></dl>
-        <div id="template-detail-categories"></div>
-      </section>
-
-      <section class="ac-config-panel" id="template-form-panel" hidden>
-        <div class="ac-config-head">
-          <div>
-            <h4 id="template-form-title">新建分层模板</h4>
-            <p class="ac-config-muted">点开后直接展开表单，保存成功或失败都会有明确反馈。</p>
-          </div>
-          <button class="admin-button admin-button--ghost" id="template-form-cancel" type="button">收起</button>
-        </div>
-
-        <div class="ac-config-feedback" id="template-form-feedback" hidden></div>
-
-        <form id="template-form" class="admin-form-grid admin-form-grid--stacked">
-          <input type="hidden" name="template_id" value="">
-
-          <div class="ac-config-form-grid">
-            <label class="admin-field">
-              <span>模板名称</span>
-              <input type="text" name="template_name" placeholder="例如：基础画像首轮分层">
-            </label>
-            <label class="admin-field">
-              <span>template_code</span>
-              <input type="text" name="template_code" placeholder="可选，不填则后端自动生成">
-            </label>
-          </div>
-
-          <label class="admin-field">
-            <span>说明</span>
-            <textarea name="description" rows="3" placeholder="补充模板用途"></textarea>
-          </label>
-
-          <div class="ac-config-form-grid">
-            <label class="admin-field">
-              <span>问卷</span>
-              <select name="questionnaire_id"></select>
-            </label>
-            <label class="admin-field">
-              <span>分层题目</span>
-              <select name="segmentation_question_id"></select>
-            </label>
-          </div>
-
-          <label class="admin-checkbox">
-            <input type="checkbox" name="enabled" value="1" checked>
-            <span>启用当前模板</span>
-          </label>
-
-          <div class="ac-config-head">
-            <div>
-              <strong>分类与选项映射</strong>
-              <p class="ac-config-muted">未命中的用户不进入默认分类，后续直接回落到标准版原文。</p>
-            </div>
-            <button class="admin-button admin-button--secondary" id="category-add-button" type="button">新增分类</button>
-          </div>
-
-          <div class="ac-config-category-list" id="template-category-list"></div>
-
-          <div class="admin-form-actions">
-            <button class="admin-button admin-button--primary" id="template-form-submit" type="submit">保存模板</button>
-          </div>
-        </form>
-      </section>
-    </section>
-  </div>
-
-  <div class="ac-config-main">
-    <section class="ac-config-panel">
-      <div class="ac-config-head">
-        <div>
-          <h3>欢迎语 / 自动通过 / 二维码</h3>
-          <p class="ac-config-muted">这里保留自动化转化模块真实需要的默认渠道底层配置：欢迎语、是否免验证通过、扫码自动打标签，以及当前默认二维码。</p>
-        </div>
-        <div class="ac-config-row-actions">
-          <button class="admin-button admin-button--secondary" id="default-channel-generate-button" type="button">重新生成二维码</button>
-        </div>
-      </div>
-
-      <div class="ac-config-feedback" id="default-channel-feedback" hidden></div>
-
-      <div class="ac-config-qr-card">
-        <img class="ac-config-qr-preview" id="default-channel-qr-image" src="" alt="默认二维码" hidden>
-        <div class="ac-config-stack">
-          <div class="ac-config-empty" id="default-channel-qr-empty">当前还没有可用二维码，保存配置后可重新生成。</div>
-          <dl class="ac-config-summary-meta">
-            <div><dt>渠道名称</dt><dd id="default-channel-name">-</dd></div>
-            <div><dt>当前状态</dt><dd id="default-channel-status">-</dd></div>
-            <div><dt>Provider</dt><dd id="default-channel-provider">-</dd></div>
-            <div><dt>默认负责人</dt><dd id="default-channel-owner">-</dd></div>
-          </dl>
-          <p class="ac-config-code" id="default-channel-qr-link"></p>
-        </div>
-      </div>
-
-      <div class="ac-config-field-status-list" id="default-channel-field-statuses"></div>
-
-      <form id="default-channel-form" class="admin-form-grid admin-form-grid--stacked">
-        <div class="ac-config-form-grid">
-          <label class="admin-field">
-            <span>渠道名称</span>
-            <input type="text" name="channel_name" placeholder="默认渠道二维码">
-          </label>
-          <label class="admin-field">
-            <span>自动通过</span>
-            <select name="auto_accept_friend">
-              <option value="0">关闭，走好友验证</option>
-              <option value="1">开启，自动通过</option>
-            </select>
-          </label>
-        </div>
-        <div class="ac-config-form-grid">
-          <div class="admin-field ac-config-tag-picker-field">
-            <span>扫码自动打标签</span>
-            <input type="hidden" name="entry_tag_id">
-            <div class="ac-config-tag-picker">
-              <div class="ac-config-tag-picker-display" id="default-channel-entry-tag-display">
-                <span class="ac-config-tag-picker-note">未配置扫码自动打标签</span>
-              </div>
-              <div class="ac-config-row-actions">
-                <button class="admin-button admin-button--secondary" id="default-channel-entry-tag-pick-button" type="button">选择已有标签</button>
-                <button class="admin-button admin-button--ghost" id="default-channel-entry-tag-clear-button" type="button">清空</button>
-              </div>
-            </div>
-            <p class="ac-config-code" id="default-channel-entry-tag-help">从已有企微标签和标签组中选择；只有在标签列表加载失败时，才需要手工填写 tag_id。</p>
-            <details class="ac-config-tag-fallback">
-              <summary>手工填写 tag_id 兜底</summary>
-              <input type="text" name="entry_tag_id_manual" placeholder="仅当标签列表加载失败时，再手工填写企微 tag_id">
-            </details>
-          </div>
-        </div>
-        <label class="admin-field">
-          <span>欢迎语</span>
-          <textarea name="welcome_message" rows="5" placeholder="扫码加好友后的默认欢迎语"></textarea>
-        </label>
-        <div class="admin-form-actions">
-          <button class="admin-button admin-button--primary" type="submit">保存渠道配置</button>
-        </div>
-      </form>
-    </section>
-
-    <section class="ac-config-panel">
-      <div class="ac-config-head">
-        <div>
           <h3>大模型 / API 配置</h3>
           <p class="ac-config-muted">这里承接原来模型基础设施页的核心能力：模型开关、接口密钥、接口地址、模型名与连通性测试。</p>
         </div>
@@ -1010,38 +803,6 @@
       </form>
     </section>
   </div>
-
-  <div class="ac-config-tag-modal-overlay" id="default-channel-tag-modal-overlay" hidden>
-    <div class="ac-config-tag-modal" role="dialog" aria-modal="true" aria-labelledby="default-channel-tag-modal-title">
-      <div class="ac-config-head">
-        <div>
-          <h3 id="default-channel-tag-modal-title">选择标签</h3>
-          <p class="ac-config-muted">按标签组选择，确认后仅保存 tag_id，不再手工填写标签名称和标签分组。</p>
-        </div>
-        <button class="admin-button admin-button--ghost" id="default-channel-tag-modal-close" type="button">关闭</button>
-      </div>
-      <input class="ac-config-tag-search" id="default-channel-tag-search" type="text" placeholder="搜索标签名称、标签组或 tag_id">
-      <div class="ac-config-tag-modal-grid">
-        <div class="ac-config-tag-modal-panel">
-          <div class="ac-config-tag-group-list" id="default-channel-tag-groups"></div>
-        </div>
-        <div class="ac-config-tag-modal-panel ac-config-tag-selected-panel">
-          <div>
-            <h4>已选标签</h4>
-            <div class="ac-config-tag-selected-display" id="default-channel-tag-selected"></div>
-          </div>
-          <details class="ac-config-tag-fallback">
-            <summary>手工填写 tag_id 兜底</summary>
-            <input id="default-channel-tag-manual-input" type="text" placeholder="仅在标签列表异常时手工填写 tag_id">
-          </details>
-        </div>
-      </div>
-      <div class="ac-config-tag-modal-actions">
-        <button class="admin-button admin-button--ghost" id="default-channel-tag-modal-cancel" type="button">取消</button>
-        <button class="admin-button admin-button--primary" id="default-channel-tag-modal-confirm" type="button">确认选择</button>
-      </div>
-    </div>
-  </div>
 </div>
 {% endblock %}
 
@@ -1049,8 +810,6 @@
 {{ super() }}
 <script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_core.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_agents.js') }}"></script>
-<script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_templates.js') }}"></script>
-<script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_tag_picker.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_channel_model.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/automation_agent_config_boot.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/automation_agent_config.js') }}"></script>

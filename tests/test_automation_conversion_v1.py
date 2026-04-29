@@ -347,6 +347,7 @@ def _seed_profile_segment_template(
     *,
     questionnaire_id: int = 701,
     template_name: str = "测试画像模板",
+    program_id: int | None = None,
 ) -> dict[str, object]:
     questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=questionnaire_id)
     with app.app_context():
@@ -369,6 +370,7 @@ def _seed_profile_segment_template(
                 ],
             },
             operator_id="tester",
+            program_id=program_id,
         )
     return {
         **questionnaire_seed,
@@ -4589,6 +4591,7 @@ def test_unmark_won_falls_back_when_last_active_pool_missing(app, client, monkey
 def test_generate_default_channel_generates_real_channel_via_wecom_provider(app, client, monkeypatch):
     captured = {}
     questionnaire_seed = _seed_settings_questionnaire(app, questionnaire_id=601)
+    program_id = _default_program_id(app)
 
     class _FakeRuntimeClient:
         def create_contact_way(self, payload: dict) -> dict:
@@ -4639,7 +4642,7 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
     assert payload["ok"] is True
     assert payload["generated"] is True
     assert payload["provider_available"] is True
-    assert payload["channel"]["channel_code"] == "default_qrcode"
+    assert payload["channel"]["channel_code"] == f"program_{program_id}_default_qrcode"
     assert payload["channel"]["owner_staff_id"] == "HuangYouCan"
     assert payload["channel"]["qr_url"] == "https://wecom.example/qr/cfg-001"
     assert payload["channel"]["qr_ticket"] == "cfg-001"
@@ -4664,11 +4667,12 @@ def test_generate_default_channel_generates_real_channel_via_wecom_provider(app,
             """
             SELECT channel_code, owner_staff_id, qr_url, qr_ticket, scene_value, status, welcome_message, auto_accept_friend
             FROM automation_channel
-            WHERE channel_code = 'default_qrcode'
-            """
+            WHERE channel_code = ?
+            """,
+            (f"program_{program_id}_default_qrcode",),
         ).fetchone()
         assert row is not None
-        assert row["channel_code"] == "default_qrcode"
+        assert row["channel_code"] == f"program_{program_id}_default_qrcode"
         assert row["owner_staff_id"] == "HuangYouCan"
         assert row["qr_url"] == "https://wecom.example/qr/cfg-001"
         assert row["qr_ticket"] == "cfg-001"
@@ -4732,8 +4736,9 @@ def test_default_channel_settings_save_and_readback_welcome_and_auto_accept(app,
             """
             SELECT welcome_message, auto_accept_friend, status
             FROM automation_channel
-            WHERE channel_code = 'default_qrcode'
-            """
+            WHERE channel_code = ?
+            """,
+            (f"program_{program_id}_default_qrcode",),
         ).fetchone()
         assert row is not None
         assert row["welcome_message"] == "这里是默认渠道欢迎语"
@@ -4799,7 +4804,7 @@ def test_generate_default_channel_reports_config_incomplete_when_wecom_config_mi
     assert payload["ok"] is False
     assert payload["provider_available"] is True
     assert payload["generated"] is False
-    assert payload["channel"]["channel_code"] == "default_qrcode"
+    assert payload["channel"]["channel_code"] == f"program_{_default_program_id(app)}_default_qrcode"
     assert payload["channel"]["owner_staff_id"] == "HuangYouCan"
     assert payload["channel"]["status"] == "config_incomplete"
     assert payload["error_code"] == "config_incomplete"
@@ -5439,29 +5444,36 @@ def test_automation_conversion_flow_design_page_focuses_on_settings_sections(app
     assert "流程设计" in html
     assert "阶段模型" in html
     assert "入池与问卷规则" in html
+    assert "画像分层" in html
+    assert "基础画像分层模板" in html
     assert "SOP 剧本" in html
     assert "全局规则" in html
-    assert "默认渠道入口" in html
+    assert "方案入口二维码" in html
     assert "发布管理" in html
     assert "立即刷新一次" not in html
     assert "消息活跃同步已迁到运行中心" in html
     assert "前往运行中心校验" in html
 
 
-def test_agent_config_page_renders_entry_tag_fields_for_default_channel(app, client):
+def test_flow_design_page_renders_entry_tag_fields_for_program_channel(app, client):
+    program_id = _default_program_id(app)
     with app.app_context():
         db = get_db()
         db.execute(
             """
             INSERT INTO automation_channel (
-                channel_code, channel_name, entry_tag_id, entry_tag_name, entry_tag_group_name, owner_staff_id, status, created_at, updated_at
+                program_id, channel_code, channel_name, entry_tag_id, entry_tag_name, entry_tag_group_name, owner_staff_id, status, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'tag-channel-001', '渠道报名', '渠道来源', 'HuangYouCan', 'configured', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """
+            VALUES (?, ?, '默认渠道二维码', 'tag-channel-001', '渠道报名', '渠道来源', 'HuangYouCan', 'configured', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (program_id, f"program_{program_id}_default_qrcode"),
         )
         db.commit()
 
-    response = client.get("/admin/automation-conversion/shared/agents")
+    response = client.get(
+        f"/admin/automation-conversion/programs/{program_id}/flow-design",
+        query_string={"section": "channel"},
+    )
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
@@ -5471,6 +5483,74 @@ def test_agent_config_page_renders_entry_tag_fields_for_default_channel(app, cli
     assert "选择已有标签" in html
     assert "default-channel-tag-modal-overlay" in html
     assert "按标签组选择，确认后仅保存 tag_id" in html
+
+
+def test_profile_segment_templates_and_channel_settings_are_scoped_by_program(app, client):
+    default_program_id = _default_program_id(app)
+    with app.app_context():
+        cursor = get_db().execute(
+            """
+            INSERT INTO automation_program (program_code, program_name, status, config_json, created_at, updated_at)
+            VALUES ('program_scoped_assets', '独立资源方案', 'draft', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+        )
+        other_program_id = int(cursor.lastrowid)
+        get_db().commit()
+
+    default_seed = _seed_profile_segment_template(
+        app,
+        questionnaire_id=741,
+        template_name="默认方案画像",
+        program_id=default_program_id,
+    )
+    other_seed = _seed_profile_segment_template(
+        app,
+        questionnaire_id=742,
+        template_name="独立方案画像",
+        program_id=other_program_id,
+    )
+
+    default_list = client.get(
+        "/api/admin/automation-conversion/profile-segment-templates",
+        query_string={"program_id": default_program_id},
+    ).get_json()
+    other_list = client.get(
+        "/api/admin/automation-conversion/profile-segment-templates",
+        query_string={"program_id": other_program_id},
+    ).get_json()
+
+    assert [item["template"]["template_name"] for item in default_list["items"]] == ["默认方案画像"]
+    assert [item["template"]["template_name"] for item in other_list["items"]] == ["独立方案画像"]
+
+    cross_detail = client.get(
+        f"/api/admin/automation-conversion/profile-segment-templates/{default_seed['template_id']}",
+        query_string={"program_id": other_program_id},
+    )
+    assert cross_detail.status_code == 404
+
+    with app.app_context():
+        from wecom_ability_service.domains.automation_conversion.service import (
+            get_default_channel_settings_payload,
+            save_default_channel_settings,
+        )
+
+        save_default_channel_settings(
+            {"channel_name": "默认方案入口", "welcome_message": "默认方案欢迎语", "auto_accept_friend": True},
+            program_id=default_program_id,
+        )
+        save_default_channel_settings(
+            {"channel_name": "独立方案入口", "welcome_message": "独立方案欢迎语", "auto_accept_friend": False},
+            program_id=other_program_id,
+        )
+        default_channel = get_default_channel_settings_payload(program_id=default_program_id)["default_channel"]
+        other_channel = get_default_channel_settings_payload(program_id=other_program_id)["default_channel"]
+
+    assert default_channel["welcome_message"] == "默认方案欢迎语"
+    assert default_channel["auto_accept_friend"] is True
+    assert other_channel["welcome_message"] == "独立方案欢迎语"
+    assert other_channel["auto_accept_friend"] is False
+    assert default_channel["channel_code"] != other_channel["channel_code"]
+    assert other_seed["template_id"] != default_seed["template_id"]
 
 
 def test_removed_admin_automation_conversion_routes_are_not_registered(app, client):
@@ -5589,7 +5669,7 @@ def test_admin_automation_conversion_save_settings_redirects_back_to_current_flo
 def test_admin_automation_conversion_save_settings_error_keeps_current_flow_design_section(app, client, monkeypatch):
     monkeypatch.setattr(
         "wecom_ability_service.http.automation_conversion.save_settings",
-        lambda payload: (_ for _ in ()).throw(ValueError("保存失败")),
+        lambda payload, program_id=None: (_ for _ in ()).throw(ValueError("保存失败")),
     )
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
 
@@ -5603,7 +5683,7 @@ def test_admin_automation_conversion_save_settings_error_keeps_current_flow_desi
     assert response.status_code == 200
     assert "保存失败" in html
     assert "保留输入" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
     assert 'ac-section-link is-active' in html
 
 
@@ -5618,13 +5698,13 @@ def test_admin_automation_conversion_save_settings_requires_action_token_and_kee
     assert response.status_code == 200
     assert "后台动作令牌无效，请刷新页面后重试" in html
     assert "未提交成功" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
 
 
 def test_admin_generate_default_channel_error_keeps_channel_section(app, client, monkeypatch):
     monkeypatch.setattr(
         "wecom_ability_service.http.automation_conversion.generate_default_channel_qr",
-        lambda operator: {"generated": False, "error": "二维码生成失败"},
+        lambda operator="", program_id=None: {"generated": False, "error": "二维码生成失败"},
     )
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
 
@@ -5634,7 +5714,7 @@ def test_admin_generate_default_channel_error_keeps_channel_section(app, client,
 
     assert response.status_code == 200
     assert "二维码生成失败" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
     assert 'ac-section-link is-active' in html
 
 
@@ -5645,7 +5725,7 @@ def test_admin_generate_default_channel_requires_action_token(app, client):
 
     assert response.status_code == 200
     assert "后台动作令牌无效，请刷新页面后重试" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">默认渠道入口</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
 
 
 def test_model_infra_settings_save_and_mask_deepseek_api_key(app, client):

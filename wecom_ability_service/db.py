@@ -905,6 +905,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
         CREATE TABLE IF NOT EXISTS automation_channel (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program_id INTEGER,
             channel_code TEXT NOT NULL UNIQUE,
             channel_name TEXT NOT NULL DEFAULT '',
             qr_url TEXT NOT NULL DEFAULT '',
@@ -923,6 +924,8 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
     )
     channel_columns = _sqlite_table_columns(db, "automation_channel")
+    if "program_id" not in channel_columns:
+        db.execute("ALTER TABLE automation_channel ADD COLUMN program_id INTEGER")
     if "welcome_message" not in channel_columns:
         db.execute("ALTER TABLE automation_channel ADD COLUMN welcome_message TEXT NOT NULL DEFAULT ''")
     if "auto_accept_friend" not in channel_columns:
@@ -1388,6 +1391,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         """
         CREATE TABLE IF NOT EXISTS automation_profile_segment_template (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program_id INTEGER,
             template_code TEXT NOT NULL UNIQUE,
             template_name TEXT NOT NULL DEFAULT '',
             questionnaire_id INTEGER REFERENCES questionnaires(id) ON DELETE SET NULL,
@@ -1603,6 +1607,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         "CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_enabled ON automation_profile_segment_template (enabled, updated_at DESC, id DESC)"
     )
     db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_program ON automation_profile_segment_template (program_id, enabled, updated_at DESC, id DESC)"
+    )
+    db.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_profile_segment_category_template_key ON automation_profile_segment_category (template_id, category_key)"
     )
     db.execute(
@@ -1748,6 +1755,7 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_sop_batch_item_member_pool_day_success ON automation_sop_batch_item (member_id, pool_key, day_index) WHERE status = 'success'"
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_status ON automation_channel (status, updated_at DESC, id DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_program ON automation_channel (program_id, updated_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_channel_scene ON automation_channel (scene_value)")
 
 
@@ -1817,6 +1825,15 @@ def _ensure_sqlite_automation_program_tables(db) -> None:
         return
     default_program_id = int(default_row["id"] if hasattr(default_row, "keys") else default_row[0])
     db.execute("UPDATE automation_workflow SET program_id = ? WHERE program_id IS NULL", (default_program_id,))
+    channel_columns = _sqlite_table_columns(db, "automation_channel")
+    if channel_columns and "program_id" in channel_columns:
+        db.execute("UPDATE automation_channel SET program_id = ? WHERE program_id IS NULL", (default_program_id,))
+    profile_template_columns = _sqlite_table_columns(db, "automation_profile_segment_template")
+    if profile_template_columns and "program_id" in profile_template_columns:
+        db.execute(
+            "UPDATE automation_profile_segment_template SET program_id = ? WHERE program_id IS NULL",
+            (default_program_id,),
+        )
     db.execute(
         """
         UPDATE automation_workflow_execution
@@ -2565,6 +2582,8 @@ def _init_sqlite(db) -> None:
             """
         )
     profile_template_columns = _sqlite_table_columns(db, "automation_profile_segment_template")
+    if profile_template_columns and "program_id" not in profile_template_columns:
+        db.execute("ALTER TABLE automation_profile_segment_template ADD COLUMN program_id INTEGER")
     if profile_template_columns and "segmentation_question_id" not in profile_template_columns:
         db.execute("ALTER TABLE automation_profile_segment_template ADD COLUMN segmentation_question_id INTEGER")
     agent_config_columns = _sqlite_table_columns(db, "automation_agent_config")
@@ -2627,7 +2646,19 @@ def _ensure_postgres_automation_agent_config_tables(db) -> None:
     db.execute(
         """
         ALTER TABLE IF EXISTS automation_profile_segment_template
+        ADD COLUMN IF NOT EXISTS program_id BIGINT
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_profile_segment_template
         ADD COLUMN IF NOT EXISTS segmentation_question_id BIGINT REFERENCES questionnaire_questions(id) ON DELETE SET NULL
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_profile_segment_template_program
+        ON automation_profile_segment_template (program_id, enabled, updated_at DESC, id DESC)
         """
     )
 
@@ -3229,6 +3260,11 @@ def _ensure_postgres_automation_program_tables(db) -> None:
         return
     default_program_id = int(default_row["id"] if hasattr(default_row, "keys") else default_row[0])
     db.execute("UPDATE automation_workflow SET program_id = ? WHERE program_id IS NULL", (default_program_id,))
+    db.execute("UPDATE automation_channel SET program_id = ? WHERE program_id IS NULL", (default_program_id,))
+    db.execute(
+        "UPDATE automation_profile_segment_template SET program_id = ? WHERE program_id IS NULL",
+        (default_program_id,),
+    )
     db.execute(
         """
         UPDATE automation_workflow_execution
@@ -3248,6 +3284,12 @@ def _ensure_postgres_automation_program_tables(db) -> None:
 
 
 def _init_postgres(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_channel
+        ADD COLUMN IF NOT EXISTS program_id BIGINT
+        """
+    )
     db.execute(
         """
         ALTER TABLE IF EXISTS automation_channel
@@ -3276,6 +3318,12 @@ def _init_postgres(db) -> None:
         """
         ALTER TABLE IF EXISTS automation_channel
         ADD COLUMN IF NOT EXISTS entry_tag_group_name TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_program
+        ON automation_channel (program_id, updated_at DESC, id DESC)
         """
     )
     db.execute(

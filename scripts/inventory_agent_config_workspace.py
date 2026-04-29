@@ -36,8 +36,6 @@ EXPECTED_ROOT_DATA_ATTRIBUTES = [
 ]
 EXPECTED_INITIAL_JSON_BLOCKS = [
     "automation-agent-config-initial-agents",
-    "automation-agent-config-initial-templates",
-    "automation-agent-config-initial-catalog",
 ]
 EXPECTED_API_URL_KEYS = [
     "registry",
@@ -47,20 +45,12 @@ EXPECTED_API_URL_KEYS = [
     "agent_draft_base",
     "agent_delete_base",
     "agent_publish_base",
-    "default_channel_settings",
-    "default_channel_generate_qr",
-    "wecom_tags",
     "model_settings",
     "model_settings_test",
-    "profile_segment_templates",
-    "profile_segment_template_detail_base",
-    "profile_segment_template_catalog",
 ]
 MODULE_PROPOSAL = [
     "automation_agent_config_core.js",
     "automation_agent_config_agents.js",
-    "automation_agent_config_templates.js",
-    "automation_agent_config_tag_picker.js",
     "automation_agent_config_channel_model.js",
     "automation_agent_config_boot.js",
     "automation_agent_config.js",
@@ -177,10 +167,6 @@ def extract_dom_sections(source: str) -> list[dict[str, object]]:
         ("agent form panel", "agent-form-panel", "Agent draft editor, prompt placeholders, save and publish controls."),
         ("published preview", "agent-published-role-prompt", "Published role/task prompt comparison area."),
         ("draft diff summary", "agent-diff-summary", "Draft versus published diff summary."),
-        ("profile segment template table", "template-table-body", "Profile segment template list."),
-        ("template form panel", "template-form-panel", "Profile segment template editor."),
-        ("tag picker modal", "default-channel-tag-modal-overlay", "WeCom tag picker modal for default channel entry tag."),
-        ("default channel / QR card", "default-channel-qr-image", "Default QR and welcome-message channel configuration."),
         ("model infra settings", "model-settings-form", "DeepSeek/model infra form and connection test."),
         ("feedback / loading blocks", "agent-config-feedback", "Top-level feedback and loading state blocks."),
     ]
@@ -462,12 +448,10 @@ def strict_failures(payload: dict[str, object]) -> list[str]:
         if block_id not in payload["initial_json_blocks"]:
             failures.append(f"missing initial JSON block {block_id}")
     all_ids = [node_id for group in payload["important_ids"].values() for node_id in group]
-    if len(all_ids) < 20:
-        failures.append("expected at least 20 id attributes")
+    if len(all_ids) < 15:
+        failures.append("expected at least 15 id attributes")
     markers = {
         "agent": ["agent-table-body", "agent-form-panel"],
-        "template": ["template-table-body", "template-form-panel"],
-        "tag picker": ["default-channel-tag-modal-overlay", "data-tag-id"],
         "model settings": ["model-settings-form", "model-settings-test-button"],
     }
     template_source = read_text(TEMPLATE)

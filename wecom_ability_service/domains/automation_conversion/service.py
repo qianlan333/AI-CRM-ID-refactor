@@ -80,6 +80,11 @@ CHANNEL_STATUS_NOT_GENERATED = "not_generated"
 CHANNEL_STATUS_CONFIGURED = "configured"
 CHANNEL_STATUS_ACTIVE = "active"
 
+
+def _program_default_channel_code(program_id: int | None = None) -> str:
+    normalized_program_id = int(program_id or 0)
+    return f"program_{normalized_program_id}_default_qrcode" if normalized_program_id > 0 else DEFAULT_CHANNEL_CODE
+
 POOL_WON = local_projection.POOL_WON
 POOL_REMOVED = local_projection.POOL_REMOVED
 POOL_NO_REPLY = local_projection.POOL_NO_REPLY
@@ -2939,16 +2944,17 @@ def save_model_infra_settings(payload: dict[str, Any]) -> dict[str, Any]:
     return get_model_infra_payload()
 
 
-def get_default_channel_settings_payload() -> dict[str, Any]:
-    payload = get_settings_payload()
+def get_default_channel_settings_payload(*, program_id: int | None = None) -> dict[str, Any]:
+    payload = get_settings_payload(program_id=program_id)
     return {
         "default_channel": dict(payload.get("default_channel") or {}),
         "provider_available": bool(payload.get("provider_available")),
     }
 
 
-def save_default_channel_settings(payload: dict[str, Any]) -> dict[str, Any]:
-    existing = repo.get_default_channel() or {}
+def save_default_channel_settings(payload: dict[str, Any], *, program_id: int | None = None) -> dict[str, Any]:
+    normalized_program_id = int(program_id or payload.get("program_id") or 0) or None
+    existing = repo.get_default_channel(program_id=normalized_program_id) or {}
     entry_tag_payload = _effective_channel_entry_tag_payload(payload, existing)
     next_channel_name = _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
     next_welcome_message = (
@@ -2974,7 +2980,8 @@ def save_default_channel_settings(payload: dict[str, Any]) -> dict[str, Any]:
     )
     repo.save_channel(
         {
-            "channel_code": DEFAULT_CHANNEL_CODE,
+            "program_id": normalized_program_id,
+            "channel_code": _program_default_channel_code(normalized_program_id),
             "channel_name": next_channel_name,
             "qr_url": _normalized_text(payload.get("qr_url")) or _normalized_text(existing.get("qr_url")),
             "qr_ticket": _normalized_text(payload.get("qr_ticket")) or _normalized_text(existing.get("qr_ticket")),
@@ -2993,7 +3000,7 @@ def save_default_channel_settings(payload: dict[str, Any]) -> dict[str, Any]:
         }
     )
     get_db().commit()
-    return get_default_channel_settings_payload()
+    return get_default_channel_settings_payload(program_id=normalized_program_id)
 
 
 def save_model_infra_prompt(*, agent_code: str, display_name: str, prompt_text: str, enabled: bool) -> dict[str, Any]:
@@ -3071,9 +3078,10 @@ def test_model_infra_connection() -> dict[str, Any]:
         }
 
 
-def get_settings_payload() -> dict[str, Any]:
+def get_settings_payload(*, program_id: int | None = None) -> dict[str, Any]:
     config = get_signup_conversion_config()
-    channel = repo.get_default_channel() or {}
+    normalized_program_id = int(program_id or 0) or None
+    channel = repo.get_default_channel(program_id=normalized_program_id) or {}
     provider = load_channel_provider()
     questionnaires = list_questionnaires()
     questionnaire_rule_catalog = _build_questionnaire_rule_catalog(questionnaires)
@@ -3109,6 +3117,7 @@ def get_settings_payload() -> dict[str, Any]:
             "rules_invalidated": questionnaire_missing,
         },
         "default_channel": {
+            "program_id": normalized_program_id,
             "channel_code": _normalized_text(channel.get("channel_code")) or DEFAULT_CHANNEL_CODE,
             "channel_name": _normalized_text(channel.get("channel_name")) or DEFAULT_CHANNEL_NAME,
             "qr_url": _normalized_text(channel.get("qr_url")),
@@ -3165,8 +3174,9 @@ def _coerce_legacy_settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return normalized_payload
 
 
-def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
+def save_settings(payload: dict[str, Any], *, program_id: int | None = None) -> dict[str, Any]:
     normalized_payload = _coerce_legacy_settings_payload(payload or {})
+    normalized_program_id = int(program_id or normalized_payload.get("program_id") or 0) or None
     config_payload = {
         "enabled": _normalize_bool(normalized_payload.get("enabled", True)),
         "questionnaire_id": normalized_payload.get("questionnaire_id"),
@@ -3179,7 +3189,7 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
         "question_rules": normalized_payload.get("question_rules"),
     }
     save_signup_conversion_config(config_payload, enforce_required_mobile_question=True)
-    existing = repo.get_default_channel() or {}
+    existing = repo.get_default_channel(program_id=normalized_program_id) or {}
     entry_tag_payload = _effective_channel_entry_tag_payload(normalized_payload, existing)
     next_channel_name = _normalized_text(normalized_payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
     next_welcome_message = (
@@ -3205,7 +3215,8 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
     )
     repo.save_channel(
         {
-            "channel_code": DEFAULT_CHANNEL_CODE,
+            "program_id": normalized_program_id,
+            "channel_code": _program_default_channel_code(normalized_program_id),
             "channel_name": next_channel_name,
             "qr_url": _normalized_text(normalized_payload.get("qr_url")) or _normalized_text(existing.get("qr_url")),
             "qr_ticket": _normalized_text(normalized_payload.get("qr_ticket")) or _normalized_text(existing.get("qr_ticket")),
@@ -3228,12 +3239,13 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
         }
     )
     get_db().commit()
-    return get_settings_payload()
+    return get_settings_payload(program_id=normalized_program_id)
 
 
-def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
+def generate_default_channel_qr(*, operator: str = "", program_id: int | None = None) -> dict[str, Any]:
     provider = load_channel_provider()
-    existing = repo.get_default_channel() or {}
+    normalized_program_id = int(program_id or 0) or None
+    existing = repo.get_default_channel(program_id=normalized_program_id) or {}
     if provider is None:
         return {
             "generated": False,
@@ -3259,6 +3271,7 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
         saved = repo.save_channel(
             {
                 "channel_code": _normalized_text(existing.get("channel_code")) or DEFAULT_CHANNEL_CODE,
+                "program_id": normalized_program_id,
                 "channel_name": _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME,
                 "qr_url": _normalized_text(existing.get("qr_url")),
                 "qr_ticket": _normalized_text(existing.get("qr_ticket")),
@@ -3293,6 +3306,7 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
         saved = repo.save_channel(
             {
                 "channel_code": _normalized_text(existing.get("channel_code")) or DEFAULT_CHANNEL_CODE,
+                "program_id": normalized_program_id,
                 "channel_name": _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME,
                 "qr_url": _normalized_text(existing.get("qr_url")),
                 "qr_ticket": _normalized_text(existing.get("qr_ticket")),
@@ -3329,7 +3343,8 @@ def generate_default_channel_qr(*, operator: str = "") -> dict[str, Any]:
         }
     saved = repo.save_channel(
         {
-            "channel_code": DEFAULT_CHANNEL_CODE,
+            "program_id": normalized_program_id,
+            "channel_code": _program_default_channel_code(normalized_program_id),
             "channel_name": _normalized_text(channel_payload.get("channel_name")) or DEFAULT_CHANNEL_NAME,
             "qr_url": _normalized_text(channel_payload.get("qr_url")),
             "qr_ticket": _normalized_text(channel_payload.get("qr_ticket")),
