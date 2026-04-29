@@ -4,35 +4,35 @@
 <section class="admin-card">
   <div class="admin-card-head">
     <div>
-      <h2>自动化转化兼容入口</h2>
-      <p>旧的自动化转化配置模板已经并入新的自动化转化后台，不再单独维护第二套页面。</p>
+      <h2>自动化运营兼容入口</h2>
+      <p>旧的自动化转化配置模板已经并入新的自动化运营后台，不再单独维护第二套页面。</p>
     </div>
     <div class="admin-toolbar">
-      <a class="admin-button admin-button--primary" href="/admin/automation-conversion">进入自动化转化后台</a>
-      <a class="admin-button admin-button--ghost" href="{{ automation_program_overview_href or url_for('api.admin_automation_conversion') }}">进入数据概览</a>
+      <a class="admin-button admin-button--primary" href="/admin/automation-conversion">进入方案列表</a>
+      <a class="admin-button admin-button--ghost" href="{{ automation_program_overview_href or url_for('api.admin_automation_conversion') }}">进入默认方案概览</a>
     </div>
   </div>
 
   <div class="admin-state admin-state--inline">
     <strong>当前统一口径</strong>
-    <span>当前自动化转化统一维护 3 类系统人群，以及数据概览 / 自动化运营 / 自动化应答 / 模型与智能体配置 4 个入口。</span>
+    <span>自动化运营现在分为三层：方案列表、方案内工作面、共享资源。数据概览和自动化运营属于具体方案；自动化应答、模型与智能体配置属于模块共享底座。</span>
   </div>
 
   <div class="admin-card-grid">
     <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">问卷配置</div>
-      <div class="admin-card-value admin-card-value--compact">统一到新页面</div>
-      <p class="admin-card-copy">问卷与基础画像分层模板在自动化转化模块内统一管理，继续复用现有问卷定义与答案存储。</p>
+      <div class="admin-card-label">方案内工作面</div>
+      <div class="admin-card-value admin-card-value--compact">按方案独立</div>
+      <p class="admin-card-copy">数据概览、流程设计、成员运营、运营编排和执行记录都跟随某个自动化运营方案，避免多个方案共用同一套运营编排。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">系统大人群</div>
-      <div class="admin-card-value admin-card-value--compact">统一到新页面</div>
-      <p class="admin-card-copy">未填问卷、运营中、已转化 3 类系统大人群，以及成员进入人群的时间记录，都在新页面查看。</p>
+      <div class="admin-card-label">共享资源</div>
+      <div class="admin-card-value admin-card-value--compact">模块级复用</div>
+      <p class="admin-card-copy">自动化应答、模型与智能体配置、模型基础设施和通用分层模板作为底座能力，被多个方案引用，不直接代表某一个方案。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
       <div class="admin-card-label">任务流与节点</div>
-      <div class="admin-card-value admin-card-value--compact">线性节点配置</div>
-      <p class="admin-card-copy">任务流、节点配置、执行记录和通用智能体池都已统一收口到自动化转化模块，不再维护旧剧本和阶段页面。</p>
+      <div class="admin-card-value admin-card-value--compact">方案资产</div>
+      <p class="admin-card-copy">任务流、节点配置和执行记录应从方案列表进入，在当前方案上下文里创建、编辑和验收。</p>
     </article>
   </div>
 </section>
