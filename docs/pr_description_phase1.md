@@ -32,7 +32,6 @@
 
 ### 旧页面 sunset 与 7 天观察
 
-- `/admin/customers*`
 - `/admin/user-ops*`
 - `/admin/customer-pulse*`
 - `/admin/followup-orchestrator*`
@@ -41,6 +40,8 @@
 - `/admin/audit*`
 - `/admin/class-user-management*`
 - `/admin/class-user-backoffice*`
+
+`/admin/customers*` 已恢复为全量客户查询入口，不再作为 sunset 页面处理。
 
 ## 影响范围
 

@@ -18,6 +18,7 @@ ROLE_LABELS = {
 
 MODULE_LABELS = {
     "automation_conversion": "自动化运营",
+    "customers": "客户",
     "questionnaires": "问卷",
     "config": "配置",
     "api_docs": "API 文档",
@@ -25,11 +26,11 @@ MODULE_LABELS = {
 }
 
 ROLE_MODULE_ACCESS = {
-    "super_admin": {"automation_conversion", "questionnaires", "config", "api_docs", "sunset"},
-    "automation_admin": {"automation_conversion", "api_docs", "sunset"},
+    "super_admin": {"automation_conversion", "customers", "questionnaires", "config", "api_docs", "sunset"},
+    "automation_admin": {"automation_conversion", "customers", "api_docs", "sunset"},
     "questionnaire_admin": {"questionnaires", "api_docs", "sunset"},
     "config_admin": {"config", "api_docs", "sunset"},
-    "viewer": {"automation_conversion", "questionnaires", "config", "api_docs", "sunset"},
+    "viewer": {"automation_conversion", "customers", "questionnaires", "config", "api_docs", "sunset"},
 }
 
 READ_ONLY_ROLES = {"viewer"}

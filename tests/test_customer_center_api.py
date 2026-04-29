@@ -290,6 +290,18 @@ def test_customers_list_filters_by_owner_userid(client, app):
     assert payload["customers"][0]["owner_userid"] == "sales_01"
 
 
+def test_customers_list_filters_by_tag(client, app):
+    seed_customer_fixture(app)
+
+    response = client.get("/api/customers", query_string={"tag": "高意向"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["count"] == 1
+    assert payload["customers"][0]["external_userid"] == "wm_customer_001"
+    assert payload["filters"]["tag"] == "高意向"
+
+
 def test_customers_list_filters_by_is_bound(client, app):
     seed_customer_fixture(app)
 
@@ -353,6 +365,41 @@ def test_customers_list_rejects_invalid_eligible_for_conversion_filter(client, a
     payload = response.get_json()
     assert payload["ok"] is False
     assert payload["error"] == "eligible_for_conversion must be one of true/false/1/0"
+
+
+def test_customers_list_uses_database_pagination_for_common_filters(client, app, monkeypatch):
+    seed_customer_fixture(app)
+    with app.app_context():
+        db = get_db()
+        for index in range(3, 28):
+            db.execute(
+                """
+                INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+                VALUES (?, ?, ?, '', '', ?)
+                """,
+                (
+                    f"wm_customer_{index:03d}",
+                    f"客户{index:03d}",
+                    "sales_01" if index % 2 else "sales_02",
+                    f"2026-03-24 08:{index:02d}:00",
+                ),
+            )
+        db.commit()
+
+    def _fail_marketing_profile(_external_userid):
+        raise AssertionError("common customer list filters must not build marketing profile for every customer")
+
+    monkeypatch.setattr(
+        "wecom_ability_service.customer_center.service.get_customer_marketing_profile",
+        _fail_marketing_profile,
+    )
+
+    response = client.get("/api/customers", query_string={"keyword": "客户", "limit": 5, "offset": 0})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["total"] == 27
+    assert len(payload["customers"]) == 5
 
 
 def test_customer_detail_returns_unified_dto(client, app):

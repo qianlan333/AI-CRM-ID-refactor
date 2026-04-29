@@ -48,7 +48,6 @@
 
 以下页面不再作为产品能力展示，访问时会进入“模块已下线”占位页并记录观察日志：
 
-- `/admin/customers*`
 - `/admin/user-ops*`
 - `/admin/customer-pulse*`
 - `/admin/followup-orchestrator*`
@@ -57,6 +56,8 @@
 - `/admin/audit*`
 - `/admin/class-user-management*`
 - `/admin/class-user-backoffice*`
+
+`/admin/customers*` 已恢复为全量客户查询入口，继续支持分页、关键词、负责人、手机号、标签查询和客户档案。
 
 ## 观察期判断标准
 

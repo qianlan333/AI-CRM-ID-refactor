@@ -717,7 +717,7 @@ def _render_overview_page(*, page_error: str = "", program: dict[str, object] | 
         "automation_conversion_overview_workspace.html",
         active_nav="automation_conversion",
         page_title="自动化运营方案概览" if program else "自动化转化",
-        page_summary="当前方案内的运行状态和任务流执行摘要。" if program else "先看四个一级入口、当前运行状态和任务流执行摘要，再进入对应工作面处理。",
+        page_summary="当前方案内的运行状态和任务流执行摘要。" if program else "先看五个一级入口、当前运行状态和任务流执行摘要，再进入对应工作面处理。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),

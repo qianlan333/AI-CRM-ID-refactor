@@ -16,6 +16,7 @@ from .dto import (
     CustomerTagDTO,
 )
 from .repo import (
+    count_customer_scope_external_userids,
     fetch_binding_map,
     fetch_class_status_map,
     fetch_contact_map,
@@ -29,6 +30,7 @@ from .repo import (
     fetch_last_message_map,
     fetch_owner_role_map,
     fetch_tag_map,
+    list_customer_scope_external_userids,
     list_scope_external_userids,
 )
 
@@ -321,10 +323,57 @@ def _matches_filters(item: CustomerListItemDTO, filters: dict[str, Any], marketi
     return True
 
 
-def _list_customers_impl(filters: dict[str, Any] | None = None) -> dict[str, Any]:
-    normalized_filters = {key: str(value or "").strip() for key, value in (filters or {}).items()}
-    limit = _normalize_limit(normalized_filters.get("limit"))
-    offset = _normalize_offset(normalized_filters.get("offset"))
+def _has_marketing_filters(filters: dict[str, Any]) -> bool:
+    return any(
+        str(filters.get(key) or "").strip().lower() not in {"", "all"}
+        for key in (
+            "marketing_segment",
+            "marketing_main_stage",
+            "marketing_sub_stage",
+            "eligible_for_conversion",
+        )
+    )
+
+
+def _customer_list_result(
+    *,
+    items: list[CustomerListItemDTO],
+    total: int,
+    limit: int,
+    offset: int,
+    filters: dict[str, Any],
+) -> dict[str, Any]:
+    serialized = [item.to_dict() for item in items]
+    return {
+        "customers": serialized,
+        "count": int(total),
+        "items": serialized,
+        "total": int(total),
+        "limit": int(limit),
+        "offset": int(offset),
+        "filters": {
+            "owner_userid": str(filters.get("owner_userid", "") or ""),
+            "tag": str(filters.get("tag", "") or ""),
+            "status": str(filters.get("status", "") or ""),
+            "is_bound": str(filters.get("is_bound", "") or ""),
+            "marketing_segment": str(filters.get("marketing_segment", "") or ""),
+            "marketing_main_stage": str(filters.get("marketing_main_stage", "") or ""),
+            "marketing_sub_stage": str(filters.get("marketing_sub_stage", "") or ""),
+            "eligible_for_conversion": str(filters.get("eligible_for_conversion", "") or ""),
+            "mobile": str(filters.get("mobile", "") or ""),
+            "keyword": str(filters.get("keyword", "") or ""),
+            "limit": str(limit),
+            "offset": str(offset),
+        },
+    }
+
+
+def _list_customers_with_marketing_filters(
+    normalized_filters: dict[str, Any],
+    *,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
     external_userids = list_scope_external_userids()
     context = _build_context(external_userids)
 
@@ -337,28 +386,50 @@ def _list_customers_impl(filters: dict[str, Any] | None = None) -> dict[str, Any
 
     items.sort(key=lambda item: (item.updated_at, item.external_userid), reverse=True)
     sliced = items[offset : offset + limit]
-    return {
-        "customers": [item.to_dict() for item in sliced],
-        "count": len(items),
-        "items": [item.to_dict() for item in sliced],
-        "total": len(items),
-        "limit": limit,
-        "offset": offset,
-        "filters": {
-            "owner_userid": normalized_filters.get("owner_userid", ""),
-            "tag": normalized_filters.get("tag", ""),
-            "status": normalized_filters.get("status", ""),
-            "is_bound": normalized_filters.get("is_bound", ""),
-            "marketing_segment": normalized_filters.get("marketing_segment", ""),
-            "marketing_main_stage": normalized_filters.get("marketing_main_stage", ""),
-            "marketing_sub_stage": normalized_filters.get("marketing_sub_stage", ""),
-            "eligible_for_conversion": normalized_filters.get("eligible_for_conversion", ""),
-            "mobile": normalized_filters.get("mobile", ""),
-            "keyword": normalized_filters.get("keyword", ""),
-            "limit": str(limit),
-            "offset": str(offset),
-        },
+    return _customer_list_result(
+        items=sliced,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+        filters=normalized_filters,
+    )
+
+
+def _list_customers_impl(filters: dict[str, Any] | None = None) -> dict[str, Any]:
+    normalized_filters = {key: str(value or "").strip() for key, value in (filters or {}).items()}
+    limit = _normalize_limit(normalized_filters.get("limit"))
+    offset = _normalize_offset(normalized_filters.get("offset"))
+    _normalize_bool_filter(normalized_filters.get("is_bound"))
+    if _has_marketing_filters(normalized_filters):
+        _normalize_optional_bool_filter(
+            normalized_filters.get("eligible_for_conversion"),
+            field_name="eligible_for_conversion",
+        )
+        return _list_customers_with_marketing_filters(normalized_filters, limit=limit, offset=offset)
+
+    total = count_customer_scope_external_userids(normalized_filters)
+    external_userids = list_customer_scope_external_userids(
+        normalized_filters,
+        limit=limit,
+        offset=offset,
+    )
+    context = _build_context(external_userids)
+    item_by_external_userid = {
+        external_userid: _build_customer_list_item(external_userid, context)
+        for external_userid in external_userids
     }
+    items = [
+        item_by_external_userid[external_userid]
+        for external_userid in external_userids
+        if external_userid in item_by_external_userid
+    ]
+    return _customer_list_result(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        filters=normalized_filters,
+    )
 
 
 def list_customers(filters: dict[str, Any] | None = None) -> dict[str, Any]:
