@@ -2,22 +2,24 @@ function pulseInboxRoot() {
   return document.querySelector("[data-customer-pulse-inbox-root]");
 }
 
-function safeJsonParse(text) {
+var adminConsoleApi = window.AdminApi || {};
+
+var safeJsonParse = adminConsoleApi.safeJsonParse || function safeJsonParse(text) {
   try {
     return JSON.parse(text);
   } catch (_error) {
     return null;
   }
-}
+};
 
-function escapeHtml(value) {
+var escapeHtml = adminConsoleApi.escapeHtml || function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
+};
 
 function customerPulseAccessHeaders(root) {
   const headers = {};
@@ -35,14 +37,23 @@ function customerPulseAccessHeaders(root) {
 }
 
 function requestJson(url, options = {}, root = null) {
-  const finalOptions = {
+  const requestOptions = {
+    ...options,
     headers: {
-      Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...customerPulseAccessHeaders(root),
       ...(options.headers || {}),
     },
-    ...options,
+  };
+  if (adminConsoleApi.requestJson) {
+    return adminConsoleApi.requestJson(url, requestOptions);
+  }
+  const finalOptions = {
+    ...requestOptions,
+    headers: {
+      Accept: "application/json",
+      ...(requestOptions.body ? { "Content-Type": "application/json" } : {}),
+      ...(requestOptions.headers || {}),
+    },
   };
   return fetch(url, finalOptions)
     .then((response) =>
@@ -55,16 +66,17 @@ function requestJson(url, options = {}, root = null) {
       if (!response.ok || (payload && payload.ok === false)) {
         const error = new Error((payload && payload.error) || "request failed");
         error.status = response.status;
+        error.payload = payload;
         throw error;
       }
       return payload || { ok: true };
     });
 }
 
-function isPermissionError(error) {
+var isPermissionError = adminConsoleApi.isPermissionError || function isPermissionError(error) {
   const message = String((error && error.message) || "");
   return error && (error.status === 401 || error.status === 403 || message.includes("令牌无效"));
-}
+};
 
 function toDateTimeLocalValue(value) {
   const text = String(value || "").trim();

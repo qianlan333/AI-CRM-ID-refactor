@@ -51,14 +51,14 @@ def _api_endpoint_groups() -> list[dict]:
                     "response_example": 'HTTP 302 → /admin/automation-conversion\n# 或 HTTP 403 当该企微成员未被授权',
                 },
                 {
-                    "id": "post-logout",
-                    "method": "POST",
-                    "path": "/admin/logout",
-                    "summary": "退出登录",
-                    "description": "清除当前登录 session，重定向到登录页。",
+                    "id": "get-logout",
+                    "method": "GET",
+                    "path": "/logout",
+                    "summary": "退出后台登录",
+                    "description": "清除当前登录 session，并重定向到登录页。后台顶部退出链接直接访问该路径。",
                     "auth": "session",
                     "params": [],
-                    "request_example": None,
+                    "request_example": "GET /logout",
                     "response_example": "HTTP 302 → /login",
                 },
             ],
@@ -206,14 +206,14 @@ def _api_endpoint_groups() -> list[dict]:
                 {
                     "id": "get-questionnaire",
                     "method": "GET",
-                    "path": "/api/questionnaires/<slug>",
+                    "path": "/api/h5/questionnaires/<slug>",
                     "summary": "获取问卷定义",
                     "description": "前台问卷页面加载时调用，返回题目列表、问卷配置及展示文案。slug 为问卷唯一标识符。",
                     "auth": "public",
                     "params": [
                         {"name": "slug", "type": "string (path)", "required": True, "description": "问卷唯一标识，如 intent-survey"},
                     ],
-                    "request_example": "GET /api/questionnaires/intent-survey",
+                    "request_example": "GET /api/h5/questionnaires/intent-survey",
                     "response_example": """{
   "ok": true,
   "questionnaire": {
@@ -229,7 +229,7 @@ def _api_endpoint_groups() -> list[dict]:
                 {
                     "id": "post-questionnaire-submit",
                     "method": "POST",
-                    "path": "/api/questionnaires/<slug>/submit",
+                    "path": "/api/h5/questionnaires/<slug>/submit",
                     "summary": "提交问卷答案",
                     "description": "前台用户提交问卷，包含答案列表和手机号。提交成功后返回 submission_id 及可选跳转 URL。",
                     "auth": "public",
@@ -239,7 +239,7 @@ def _api_endpoint_groups() -> list[dict]:
                         {"name": "mobile", "type": "string", "required": True, "description": "用户手机号"},
                         {"name": "external_userid", "type": "string", "required": False, "description": "企业微信外部联系人 ID，用于关联 CRM 记录"},
                     ],
-                    "request_example": 'POST /api/questionnaires/intent-survey/submit\nContent-Type: application/json\n\n{"answers": [{"question_id": 1, "value": "价格"}], "mobile": "13800000000"}',
+                    "request_example": 'POST /api/h5/questionnaires/intent-survey/submit\nContent-Type: application/json\n\n{"answers": [{"question_id": 1, "value": "价格"}], "mobile": "13800000000"}',
                     "response_example": '{"ok": true, "submission_id": 123, "redirect_url": ""}',
                 },
                 {
