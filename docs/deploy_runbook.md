@@ -66,6 +66,10 @@ sudo journalctl -u openclaw-wecom-postgres.service -n 100 --no-pager
 
 ```bash
 cd /home/ubuntu/极简\ crm
+set -a
+source /home/ubuntu/.openclaw-wecom-pg.env
+set +a
+test -n "${DATABASE_URL:-}"
 source /home/ubuntu/venvs/openclaw/bin/activate
 python3 -m pip install -r requirements.txt
 python3 app.py init-db
