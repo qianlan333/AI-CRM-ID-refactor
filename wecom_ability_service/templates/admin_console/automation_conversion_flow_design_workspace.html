@@ -51,8 +51,6 @@
 {% set workspace = flow_design_workspace or {} %}
 {% set default_channel = workspace.default_channel or {} %}
 {% set sop = workspace.sop or {} %}
-{% set segment_templates = workspace.segment_templates or [] %}
-{% set api_urls = workspace.api_urls or {} %}
 {% include "admin_console/_automation_program_context.html" %}
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 <div class="ac-flow-shell">
@@ -151,133 +149,21 @@
     <div class="ac-flow-muted">时区与自动化全局规则集中维护。</div>
   </section>
 
-  <section id="flow-channel" class="ac-flow-card"
-    data-api-urls='{{ api_urls|tojson }}'
-    data-program-id="{{ program_context.id if program_context else '' }}"
-    data-admin-action-token="{{ admin_action_token }}"
-  >
-    <div class="ac-flow-head">
-      <div>
-        <h3>渠道二维码</h3>
-        <p class="ac-flow-muted">当前方案专属的企微渠道入口。扫码加好友后的欢迎语、自动通过设置和标签均属于本方案。</p>
-      </div>
-      <button class="admin-button admin-button--secondary" id="flow-channel-generate-button" type="button">重新生成二维码</button>
-    </div>
-
-    <div class="ac-flow-feedback" id="flow-channel-feedback" hidden></div>
-
-    {% if default_channel.qr_url %}
-    <div class="ac-flow-qr-preview-wrap">
-      <img id="flow-channel-qr-image" src="{{ default_channel.qr_url }}" alt="方案渠道二维码" style="width:160px;height:160px;border-radius:8px;border:1px solid rgba(0,0,0,.08);">
-      <div style="color:#64748b;font-size:12px;margin-top:6px;">状态：{{ default_channel.status or '未生成' }}{% if default_channel.channel_name %} · {{ default_channel.channel_name }}{% endif %}</div>
-    </div>
-    {% else %}
-    <div id="flow-channel-qr-empty" class="ac-flow-muted" style="padding:12px;border-radius:8px;background:rgba(0,0,0,.03);">当前方案还没有渠道二维码，保存配置后点「重新生成二维码」。</div>
-    <img id="flow-channel-qr-image" src="" alt="方案渠道二维码" style="width:160px;height:160px;display:none;border-radius:8px;border:1px solid rgba(0,0,0,.08);">
-    {% endif %}
-
-    <form id="flow-channel-form" class="ac-flow-grid" style="align-items:start;">
-      <label class="admin-field">
-        <span>渠道名称</span>
-        <input type="text" name="channel_name" value="{{ default_channel.channel_name or '' }}" placeholder="例如：春招 A 方案渠道">
+  <section id="flow-channel" class="ac-flow-card">
+    <h3>默认渠道入口</h3>
+    <form method="post" action="{{ url_for('api.admin_automation_conversion_save_settings') }}">
+      <input type="hidden" name="section" value="channel">
+      {% if program_context %}<input type="hidden" name="program_id" value="{{ program_context.id }}">{% endif %}
+      <label>
+        <input type="checkbox" name="auto_accept_friend" value="1"{% if default_channel.auto_accept_friend %} checked{% endif %}>
+        免验证直接添加好友
       </label>
-      <label class="admin-field">
-        <span>自动通过好友申请</span>
-        <select name="auto_accept_friend">
-          <option value="0"{% if not default_channel.auto_accept_friend %} selected{% endif %}>关闭，走好友验证</option>
-          <option value="1"{% if default_channel.auto_accept_friend %} selected{% endif %}>开启，自动通过</option>
-        </select>
+      <label>
+        欢迎语
+        <textarea name="welcome_message">{{ workspace.page_input.welcome_message or default_channel.welcome_message or '' }}</textarea>
       </label>
-      <label class="admin-field" style="grid-column:1/-1;">
-        <span>欢迎语</span>
-        <textarea name="welcome_message" rows="4" placeholder="扫码加好友后的默认欢迎语">{{ workspace.page_input.welcome_message or default_channel.welcome_message or '' }}</textarea>
-      </label>
-      <div class="admin-form-actions" style="grid-column:1/-1;">
-        <button class="admin-button admin-button--primary" id="flow-channel-save-button" type="submit">保存渠道配置</button>
-      </div>
+      <button class="admin-button admin-button--secondary" type="submit">保存默认渠道入口</button>
     </form>
-  </section>
-
-  <section id="flow-segmentation" class="ac-flow-card">
-    <div class="ac-flow-head">
-      <div>
-        <h3>画像分层模板</h3>
-        <p class="ac-flow-muted">为本方案配置专属的问卷分层逻辑；每个方案可以有自己的问卷和分类绑定，互不影响。</p>
-      </div>
-      <button class="admin-button admin-button--primary" id="flow-seg-create-button" type="button">新建分层模板</button>
-    </div>
-
-    <div class="ac-flow-feedback" id="flow-seg-feedback" hidden></div>
-
-    {% if segment_templates %}
-    <div style="overflow:auto;border-radius:10px;border:1px solid rgba(0,0,0,.07);">
-      <table style="width:100%;border-collapse:collapse;">
-        <thead>
-          <tr style="background:rgba(248,250,252,.95);">
-            <th style="padding:10px 14px;text-align:left;font-size:12px;color:#64748b;">模板名</th>
-            <th style="padding:10px 14px;text-align:left;font-size:12px;color:#64748b;">问卷 / 题目</th>
-            <th style="padding:10px 14px;text-align:left;font-size:12px;color:#64748b;">分类数</th>
-            <th style="padding:10px 14px;text-align:left;font-size:12px;color:#64748b;">状态</th>
-            <th style="padding:10px 14px;text-align:left;font-size:12px;color:#64748b;">更新时间</th>
-          </tr>
-        </thead>
-        <tbody id="flow-seg-table-body">
-          {% for item in segment_templates %}
-          {% set tpl = item.template or {} %}
-          {% set q = item.questionnaire or {} %}
-          {% set question = item.segmentation_question or {} %}
-          <tr style="border-top:1px solid rgba(0,0,0,.05);">
-            <td style="padding:10px 14px;">
-              <strong>{{ tpl.template_name or tpl.template_code or '-' }}</strong>
-              <div style="font-size:11px;color:#94a3b8;">{{ tpl.template_code or '' }}</div>
-            </td>
-            <td style="padding:10px 14px;">{{ q.name or '-' }} / {{ question.title or '-' }}</td>
-            <td style="padding:10px 14px;">{{ (item.categories or [])|length }}</td>
-            <td style="padding:10px 14px;">
-              <span class="admin-chip {% if tpl.enabled %}admin-chip--success{% else %}admin-chip--neutral{% endif %}">
-                {{ '启用' if tpl.enabled else '停用' }}
-              </span>
-            </td>
-            <td style="padding:10px 14px;font-size:12px;color:#64748b;">{{ tpl.updated_at or '-' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div id="flow-seg-empty" class="ac-flow-muted" style="padding:12px;border-radius:8px;background:rgba(0,0,0,.03);">当前方案还没有画像分层模板，点「新建分层模板」创建第一个。</div>
-    {% endif %}
-
-    <div id="flow-seg-form-wrap" hidden style="border:1px solid rgba(20,86,240,.12);border-radius:10px;padding:16px;display:grid;gap:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <strong>新建分层模板</strong>
-        <button class="admin-button admin-button--ghost" id="flow-seg-form-cancel" type="button">收起</button>
-      </div>
-      <div class="ac-flow-feedback" id="flow-seg-form-feedback" hidden></div>
-      <form id="flow-seg-form" class="ac-flow-grid">
-        <label class="admin-field">
-          <span>模板名称</span>
-          <input type="text" name="template_name" placeholder="例如：春招首轮画像分层" required>
-        </label>
-        <label class="admin-field">
-          <span>问卷</span>
-          <select name="questionnaire_id">
-            <option value="">— 选择问卷 —</option>
-            {% for entry in workspace.segment_catalog or [] %}
-            {% set q = entry.questionnaire or {} %}
-            <option value="{{ q.id }}">{{ q.title or q.name or q.id }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="admin-field">
-          <span>说明（选填）</span>
-          <textarea name="description" rows="2" placeholder="补充模板用途"></textarea>
-        </label>
-        <div class="admin-form-actions">
-          <button class="admin-button admin-button--primary" id="flow-seg-form-submit" type="submit">创建模板</button>
-        </div>
-      </form>
-    </div>
   </section>
 
   <section id="flow-publish" class="ac-flow-card">
@@ -285,177 +171,4 @@
     <div class="ac-flow-muted">草稿态 / 已发布态的发布入口统一收口到这里。</div>
   </section>
 </div>
-{% endblock %}
-
-{% block scripts_extra %}
-{{ super() }}
-<script>
-(function () {
-  'use strict';
-
-  // ---- 渠道二维码管理 ----
-  const channelSection = document.getElementById('flow-channel');
-  if (channelSection) {
-    const apiUrls = JSON.parse(channelSection.dataset.apiUrls || '{}');
-    const programId = channelSection.dataset.programId || '';
-    const adminToken = channelSection.dataset.adminActionToken || '';
-    const feedback = document.getElementById('flow-channel-feedback');
-    const generateBtn = document.getElementById('flow-channel-generate-button');
-    const saveBtn = document.getElementById('flow-channel-save-button');
-    const channelForm = document.getElementById('flow-channel-form');
-    const qrImage = document.getElementById('flow-channel-qr-image');
-    const qrEmpty = document.getElementById('flow-channel-qr-empty');
-
-    function showChannelFeedback(msg, tone) {
-      if (!feedback) return;
-      if (!msg) { feedback.hidden = true; feedback.textContent = ''; return; }
-      feedback.hidden = false;
-      feedback.textContent = msg;
-      feedback.className = 'ac-flow-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
-    }
-
-    function updateQrDisplay(channel) {
-      if (!channel) return;
-      if (qrImage && channel.qr_url) {
-        qrImage.src = channel.qr_url;
-        qrImage.style.display = '';
-        if (qrEmpty) qrEmpty.hidden = true;
-      }
-    }
-
-    if (generateBtn && apiUrls.default_channel_generate_qr) {
-      generateBtn.addEventListener('click', async function () {
-        generateBtn.disabled = true;
-        showChannelFeedback('正在生成二维码...', '');
-        try {
-          const url = new URL(apiUrls.default_channel_generate_qr, location.href);
-          if (programId) url.searchParams.set('program_id', programId);
-          const res = await fetch(url.toString(), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-Admin-Action-Token': adminToken },
-            body: JSON.stringify({}),
-          });
-          const data = await res.json();
-          if (data.ok) {
-            showChannelFeedback('二维码生成成功', 'success');
-            updateQrDisplay(data.channel || {});
-          } else {
-            showChannelFeedback(data.error || '生成失败', 'error');
-          }
-        } catch (e) {
-          showChannelFeedback(e.message || '请求失败', 'error');
-        } finally {
-          generateBtn.disabled = false;
-        }
-      });
-    }
-
-    if (channelForm && apiUrls.default_channel_settings) {
-      channelForm.addEventListener('submit', async function (e) {
-        e.preventDefault();
-        if (saveBtn) saveBtn.disabled = true;
-        showChannelFeedback('正在保存...', '');
-        const fd = new FormData(channelForm);
-        const body = {};
-        for (const [k, v] of fd.entries()) body[k] = v;
-        body.auto_accept_friend = body.auto_accept_friend === '1';
-        if (programId) body.program_id = parseInt(programId, 10);
-        try {
-          const res = await fetch(apiUrls.default_channel_settings, {
-            method: 'PUT',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-Admin-Action-Token': adminToken },
-            body: JSON.stringify(body),
-          });
-          const data = await res.json();
-          if (data.ok) {
-            showChannelFeedback('渠道配置已保存', 'success');
-          } else {
-            showChannelFeedback(data.error || '保存失败', 'error');
-          }
-        } catch (e) {
-          showChannelFeedback(e.message || '请求失败', 'error');
-        } finally {
-          if (saveBtn) saveBtn.disabled = false;
-        }
-      });
-    }
-  }
-
-  // ---- 画像分层模板管理 ----
-  const segCreateBtn = document.getElementById('flow-seg-create-button');
-  const segFormWrap = document.getElementById('flow-seg-form-wrap');
-  const segFormCancel = document.getElementById('flow-seg-form-cancel');
-  const segForm = document.getElementById('flow-seg-form');
-  const segFeedback = document.getElementById('flow-seg-feedback');
-  const segFormFeedback = document.getElementById('flow-seg-form-feedback');
-  const segEmpty = document.getElementById('flow-seg-empty');
-  const segTableBody = document.getElementById('flow-seg-table-body');
-  const channelSectionForSeg = document.getElementById('flow-channel');
-  const apiUrlsForSeg = channelSectionForSeg ? JSON.parse(channelSectionForSeg.dataset.apiUrls || '{}') : {};
-  const programIdForSeg = channelSectionForSeg ? (channelSectionForSeg.dataset.programId || '') : '';
-  const adminTokenForSeg = channelSectionForSeg ? (channelSectionForSeg.dataset.adminActionToken || '') : '';
-
-  function showSegFeedback(msg, tone) {
-    if (!segFeedback) return;
-    if (!msg) { segFeedback.hidden = true; segFeedback.textContent = ''; return; }
-    segFeedback.hidden = false; segFeedback.textContent = msg;
-    segFeedback.className = 'ac-flow-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
-  }
-
-  function showSegFormFeedback(msg, tone) {
-    if (!segFormFeedback) return;
-    if (!msg) { segFormFeedback.hidden = true; segFormFeedback.textContent = ''; return; }
-    segFormFeedback.hidden = false; segFormFeedback.textContent = msg;
-    segFormFeedback.className = 'ac-flow-feedback' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
-  }
-
-  if (segCreateBtn && segFormWrap) {
-    segCreateBtn.addEventListener('click', function () {
-      segFormWrap.hidden = false;
-      segFormWrap.style.display = 'grid';
-    });
-  }
-  if (segFormCancel && segFormWrap) {
-    segFormCancel.addEventListener('click', function () {
-      segFormWrap.hidden = true;
-    });
-  }
-
-  if (segForm && apiUrlsForSeg.profile_segment_template_create) {
-    segForm.addEventListener('submit', async function (e) {
-      e.preventDefault();
-      const submitBtn = document.getElementById('flow-seg-form-submit');
-      if (submitBtn) submitBtn.disabled = true;
-      showSegFormFeedback('正在创建...', '');
-      const fd = new FormData(segForm);
-      const body = {};
-      for (const [k, v] of fd.entries()) body[k] = v;
-      if (programIdForSeg) body.program_id = parseInt(programIdForSeg, 10);
-      try {
-        const res = await fetch(apiUrlsForSeg.profile_segment_template_create, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', 'X-Admin-Action-Token': adminTokenForSeg },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          showSegFormFeedback('模板创建成功，请刷新页面查看', 'success');
-          segFormWrap.hidden = true;
-          if (segEmpty) segEmpty.hidden = true;
-          showSegFeedback('新分层模板已创建，刷新页面可见完整列表', 'success');
-        } else {
-          showSegFormFeedback(data.error || '创建失败', 'error');
-        }
-      } catch (err) {
-        showSegFormFeedback(err.message || '请求失败', 'error');
-      } finally {
-        if (submitBtn) submitBtn.disabled = false;
-      }
-    });
-  }
-})();
-</script>
 {% endblock %}

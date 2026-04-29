@@ -3239,7 +3239,6 @@ def list_sop_batch_items(*, batch_id: int, limit: int = 200) -> list[dict[str, A
 
 
 def get_default_channel() -> dict[str, Any] | None:
-    """全局默认渠道（历史兼容入口）。优先用 get_program_channel(program_id)。"""
     return _fetchone_dict(
         """
         SELECT *
@@ -3248,25 +3247,6 @@ def get_default_channel() -> dict[str, Any] | None:
         LIMIT 1
         """
     )
-
-
-def get_program_channel(program_id: int) -> dict[str, Any] | None:
-    """返回方案专属渠道；若方案尚未创建专属渠道则回落到全局默认渠道。"""
-    normalized = int(program_id)
-    program_channel = _fetchone_dict(
-        """
-        SELECT *
-        FROM automation_channel
-        WHERE program_id = ?
-        ORDER BY updated_at DESC, id DESC
-        LIMIT 1
-        """,
-        (normalized,),
-    )
-    if program_channel:
-        return program_channel
-    # 回落：历史全局默认渠道
-    return get_default_channel()
 
 
 def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
@@ -3298,22 +3278,10 @@ def find_channel_by_scene_value(scene_value: str) -> dict[str, Any] | None:
 
 
 def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
-    """保存渠道配置。若 payload 含 program_id，则 upsert 方案专属渠道；否则 upsert 全局默认渠道。"""
-    program_id: int | None = int(payload.get("program_id") or 0) or None
-    channel_code = _normalized_text(payload.get("channel_code"))
+    existing = get_default_channel() if _normalized_text(payload.get("channel_code")) == "default_qrcode" else None
     db = get_db()
-
-    # 查找已有记录：方案专属优先，否则按 channel_code 全局查
-    existing: dict[str, Any] | None = None
-    if program_id is not None:
-        existing = _fetchone_dict(
-            "SELECT * FROM automation_channel WHERE program_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
-            (program_id,),
-        )
-    if existing is None and channel_code == "default_qrcode":
-        existing = get_default_channel()
-
-    update_params = (
+    params = (
+        _normalized_text(payload.get("channel_code")),
         _normalized_text(payload.get("channel_name")),
         _normalized_text(payload.get("qr_url")),
         _normalized_text(payload.get("qr_ticket")),
@@ -3345,16 +3313,25 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
             WHERE id = ?
             RETURNING *
             """,
-            (*update_params, int(existing["id"])),
+            (
+                _normalized_text(payload.get("channel_name")),
+                _normalized_text(payload.get("qr_url")),
+                _normalized_text(payload.get("qr_ticket")),
+                _normalized_text(payload.get("scene_value")),
+                _normalized_text(payload.get("welcome_message")),
+                _db_bool(bool(payload.get("auto_accept_friend"))),
+                _normalized_text(payload.get("entry_tag_id")),
+                _normalized_text(payload.get("entry_tag_name")),
+                _normalized_text(payload.get("entry_tag_group_name")),
+                _normalized_text(payload.get("owner_staff_id")),
+                _normalized_text(payload.get("status")),
+                int(existing["id"]),
+            ),
         ).fetchone()
         return dict(row) if row else {}
-
-    # 新建渠道（方案专属或全局默认）
-    effective_code = channel_code or (f"program_{program_id}_qrcode" if program_id else "default_qrcode")
     row = db.execute(
         """
         INSERT INTO automation_channel (
-            program_id,
             channel_code,
             channel_name,
             qr_url,
@@ -3370,10 +3347,10 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
-        (program_id, effective_code, *update_params),
+        params,
     ).fetchone()
     return dict(row) if row else {}
 
