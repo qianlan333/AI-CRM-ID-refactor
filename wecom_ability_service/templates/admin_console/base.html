@@ -6,6 +6,7 @@
   <title>{{ page_title }} · 客户管理后台</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/admin_console.css') }}">
   {% block head_extra %}{% endblock %}
+  <script defer src="{{ url_for('static', filename='admin_console/admin_api_client.js') }}"></script>
   <script defer src="{{ url_for('static', filename='admin_console/admin_console.js') }}"></script>
 </head>
 <body
@@ -109,4 +110,3 @@
   {% block scripts_extra %}{% endblock %}
 </body>
 </html>
-

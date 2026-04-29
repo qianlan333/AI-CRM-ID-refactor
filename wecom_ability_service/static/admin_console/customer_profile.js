@@ -2,22 +2,24 @@ function customerProfileRoot() {
   return document.querySelector("[data-customer-profile-root]");
 }
 
-function safeJsonParse(text) {
+var adminConsoleApi = window.AdminApi || {};
+
+var safeJsonParse = adminConsoleApi.safeJsonParse || function safeJsonParse(text) {
   try {
     return JSON.parse(text);
   } catch (_error) {
     return null;
   }
-}
+};
 
-function escapeHtml(value) {
+var escapeHtml = adminConsoleApi.escapeHtml || function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
+};
 
 function customerPulseAccessHeaders(root) {
   const headers = {};
@@ -35,13 +37,16 @@ function customerPulseAccessHeaders(root) {
 }
 
 function requestJson(url, options = {}) {
+  if (adminConsoleApi.requestJson) {
+    return adminConsoleApi.requestJson(url, options);
+  }
   const finalOptions = {
+    ...options,
     headers: {
       Accept: "application/json",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),
     },
-    ...options,
   };
   return fetch(url, finalOptions)
     .then((response) =>
@@ -54,11 +59,13 @@ function requestJson(url, options = {}) {
       if (!response.ok) {
         const error = new Error((payload && payload.error) || "request failed");
         error.status = response.status;
+        error.payload = payload;
         throw error;
       }
       if (payload && payload.ok === false) {
         const error = new Error(payload.error || "request failed");
         error.status = response.status;
+        error.payload = payload;
         throw error;
       }
       return payload || { ok: true };
@@ -75,10 +82,10 @@ function requestCustomerPulseJson(root, url, options = {}) {
   });
 }
 
-function isPermissionError(error) {
+var isPermissionError = adminConsoleApi.isPermissionError || function isPermissionError(error) {
   const message = String((error && error.message) || "");
   return Boolean(error) && (error.status === 401 || error.status === 403 || message.includes("令牌无效"));
-}
+};
 
 function toDateTimeLocalValue(value) {
   const text = String(value || "").trim();
