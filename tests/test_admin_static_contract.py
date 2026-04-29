@@ -25,6 +25,14 @@ CUSTOMER_PULSE_INBOX_MODULES = [
     "customer_pulse_inbox.js",
 ]
 
+AUTOMATION_AUTO_REPLY_MODULES = [
+    "automation_auto_reply_core.js",
+    "automation_auto_reply_outputs.js",
+    "automation_auto_reply_modal.js",
+    "automation_auto_reply_actions.js",
+    "automation_auto_reply.js",
+]
+
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -224,6 +232,97 @@ def test_customer_pulse_inbox_boot_keeps_interaction_contract():
     assert "data-detail-action-form" in source
     assert "data-customer-pulse-inbox-json" in source
     assert "boot" in source
+
+
+def test_automation_auto_reply_template_loads_modules_in_order_and_removes_inline_logic():
+    source = _read(ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html")
+
+    positions = [source.index(f"admin_console/{filename}") for filename in AUTOMATION_AUTO_REPLY_MODULES]
+
+    assert positions == sorted(positions)
+    assert "{{ super() }}" in source
+    assert source.index("{% block scripts_extra %}") < positions[0]
+    assert positions[-1] < source.index("{% endblock %}", positions[-1])
+    for filename in AUTOMATION_AUTO_REPLY_MODULES:
+        script_start = source.rfind("<script", 0, source.index(f"admin_console/{filename}"))
+        script_end = source.index("</script>", source.index(f"admin_console/{filename}"))
+        script_tag = source[script_start:script_end]
+        assert "defer" in script_tag
+
+    assert 'id="automation-auto-reply-root"' in source
+    assert "data-api-urls" in source
+    assert "data-admin-action-token" in source
+    assert "function requestJson" not in source
+    assert "function renderOutputs" not in source
+    assert "function runAction" not in source
+    assert "data-reply-action-url" in source
+    assert "reply-output-modal" in source
+
+
+def test_automation_auto_reply_module_files_exist_and_stay_plain_browser_js():
+    forbidden_tokens = ["import ", "export ", "require(", 'from "', "from '"]
+
+    for filename in AUTOMATION_AUTO_REPLY_MODULES:
+        source = _read(ADMIN_STATIC / filename)
+
+        assert "window.AutomationAutoReply" in source or "AutomationAutoReply" in source
+        for token in forbidden_tokens:
+            assert token not in source
+
+
+def test_automation_auto_reply_core_exposes_shared_contract():
+    source = _read(ADMIN_STATIC / "automation_auto_reply_core.js")
+
+    assert "getAdminActionToken" in source
+    assert "getApiUrls" in source
+    assert "withOutputId" in source
+    assert "withWebhookOutputId" in source
+    assert "withWecomOutputId" in source
+    assert "copyClipboardText" in source
+    assert "state" in source
+
+
+def test_automation_auto_reply_outputs_keeps_review_output_contract():
+    source = _read(ADMIN_STATIC / "automation_auto_reply_outputs.js")
+
+    assert "renderOutputs" in source
+    assert "loadOutputs" in source
+    assert "data-review-action" in source
+    assert "webhook" in source
+    assert "wecom_send" in source
+    assert "admin_action_token" in source or "adminActionToken" in source
+
+
+def test_automation_auto_reply_modal_keeps_rejected_contract():
+    source = _read(ADMIN_STATIC / "automation_auto_reply_modal.js")
+
+    assert "openRejectModal" in source
+    assert "closeRejectModal" in source
+    assert "setModalFeedback" in source
+    assert "review_note" in source
+    assert "decision" in source
+    assert "rejected" in source
+
+
+def test_automation_auto_reply_actions_keep_formdata_action_contract():
+    source = _read(ADMIN_STATIC / "automation_auto_reply_actions.js")
+
+    assert "runAction" in source
+    assert "data-reply-action-url" in source
+    assert "data-reply-toggle-enabled" in source
+    assert "FormData" in source
+    assert "admin_action_token" in source
+    assert "X-Requested-With" in source
+
+
+def test_automation_auto_reply_entrypoint_only_bootstraps_modules():
+    source = _read(ADMIN_STATIC / "automation_auto_reply.js")
+
+    assert "DOMContentLoaded" in source
+    assert "boot" in source
+    assert "function renderOutputs" not in source
+    assert "function runAction" not in source
+    assert "function requestJson" not in source
 
 
 def test_no_frontend_build_tooling_was_added():
