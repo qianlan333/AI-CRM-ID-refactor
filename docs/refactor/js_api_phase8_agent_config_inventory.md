@@ -351,6 +351,12 @@ Phase 8B migration rules:
 
 ## Recommended Order for Phase 8B
 
-- Phase 8B-1: core + boot + agent list/form + related test migration.
-- Phase 8B-2: templates + tag picker + related test migration.
+- Phase 8B-1: core + boot + agent list/form + related test migration. Completed in `docs/refactor/js_api_phase8b1_agent_config_agents_modules.md`.
+- Phase 8B-2: templates + tag picker + related test migration. Completed in `docs/refactor/js_api_phase8b2_agent_config_templates_tag_picker.md`.
 - Phase 8B-3: default channel + model settings + guardrails.
+
+## Phase 8B-2 Status
+
+Phase 8B-2 migrated the profile segment template list/detail/form/category/options logic and the tag picker modal into `automation_agent_config_templates.js` and `automation_agent_config_tag_picker.js`.
+
+The remaining inline scope is intentionally limited to default channel / QR and model settings/test behavior. The Phase 8B test migration rule remains the PR #121 pattern: HTML checks root/data/script/initial JSON contracts, while moved button copy, `data-*` actions, placeholders, modal copy, and static behavior markers are checked in the corresponding static JS files.
