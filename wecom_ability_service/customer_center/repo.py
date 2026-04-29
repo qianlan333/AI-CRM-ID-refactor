@@ -53,7 +53,16 @@ def _normalize_bool_filter(value: Any) -> bool | None:
 
 
 def _customer_list_scope_sql() -> str:
-    return """
+    if get_db_backend() == "postgres":
+        class_status_updated_at = "class_status.updated_at::text"
+        contact_updated_at = "contact.updated_at::text"
+        binding_updated_at = "binding.updated_at::text"
+    else:
+        class_status_updated_at = "class_status.updated_at"
+        contact_updated_at = "contact.updated_at"
+        binding_updated_at = "binding.updated_at"
+
+    return f"""
     WITH scope AS (
         SELECT external_userid FROM contacts
         UNION
@@ -124,9 +133,9 @@ def _customer_list_scope_sql() -> str:
             COALESCE(class_status.signup_label_name, '') AS signup_label_name,
             CASE WHEN binding.external_userid IS NULL THEN 0 ELSE 1 END AS is_bound,
             COALESCE(
-                NULLIF(class_status.updated_at, ''),
-                NULLIF(contact.updated_at, ''),
-                NULLIF(binding.updated_at, ''),
+                NULLIF({class_status_updated_at}, ''),
+                NULLIF({contact_updated_at}, ''),
+                NULLIF({binding_updated_at}, ''),
                 NULLIF(latest_messages.last_message_at, ''),
                 ''
             ) AS sort_updated_at

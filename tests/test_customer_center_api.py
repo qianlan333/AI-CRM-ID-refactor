@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wecom_ability_service import create_app
+from wecom_ability_service.customer_center import repo as customer_repo
 from wecom_ability_service.db import get_db, init_db
 
 
@@ -400,6 +401,19 @@ def test_customers_list_uses_database_pagination_for_common_filters(client, app,
     payload = response.get_json()
     assert payload["total"] == 27
     assert len(payload["customers"]) == 5
+
+
+def test_customer_list_scope_sql_casts_timestamp_sort_columns_for_postgres(monkeypatch):
+    monkeypatch.setattr(customer_repo, "get_db_backend", lambda: "postgres")
+
+    sql = customer_repo._customer_list_scope_sql()
+
+    assert "NULLIF(class_status.updated_at::text, '')" in sql
+    assert "NULLIF(contact.updated_at::text, '')" in sql
+    assert "NULLIF(binding.updated_at::text, '')" in sql
+    assert "NULLIF(class_status.updated_at, '')" not in sql
+    assert "NULLIF(contact.updated_at, '')" not in sql
+    assert "NULLIF(binding.updated_at, '')" not in sql
 
 
 def test_customer_detail_returns_unified_dto(client, app):

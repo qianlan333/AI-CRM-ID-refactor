@@ -2501,6 +2501,7 @@ def _ensure_sqlite_admin_auth_tables(db) -> None:
 
 def _init_sqlite(db) -> None:
     schema_path = Path(current_app.root_path) / "schema.sql"
+    _prepare_sqlite_schema_columns_for_executescript(db)
     db.executescript(schema_path.read_text(encoding="utf-8"))
     _ensure_sqlite_questionnaire_question_fields(db)
     _ensure_sqlite_questionnaire_external_push_tables(db)
@@ -2595,6 +2596,19 @@ def _init_sqlite(db) -> None:
         if "submitted_by" not in agent_config_columns:
             db.execute("ALTER TABLE automation_agent_config ADD COLUMN submitted_by TEXT NOT NULL DEFAULT ''")
     db.commit()
+
+
+def _prepare_sqlite_schema_columns_for_executescript(db) -> None:
+    """Add columns required by schema indexes before CREATE INDEX runs."""
+    if _sqlite_table_exists(db, "automation_channel"):
+        channel_columns = _sqlite_table_columns(db, "automation_channel")
+        if "program_id" not in channel_columns:
+            db.execute("ALTER TABLE automation_channel ADD COLUMN program_id INTEGER")
+
+    if _sqlite_table_exists(db, "automation_profile_segment_template"):
+        profile_template_columns = _sqlite_table_columns(db, "automation_profile_segment_template")
+        if "program_id" not in profile_template_columns:
+            db.execute("ALTER TABLE automation_profile_segment_template ADD COLUMN program_id INTEGER")
 
 
 def _ensure_postgres_user_ops_page_tables(db) -> None:

@@ -104,6 +104,46 @@ def test_init_db_backfills_missing_marketing_automation_tables_on_existing_sqlit
         assert REQUIRED_TABLES.issubset(table_names)
 
 
+def test_init_db_adds_program_id_before_schema_indexes_on_existing_sqlite_db(app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            CREATE TABLE automation_channel (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_code TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'active',
+                scene_value TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE automation_profile_segment_template (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_code TEXT NOT NULL UNIQUE,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        db.commit()
+
+        init_db()
+
+        channel_columns = {row["name"] for row in db.execute("PRAGMA table_info(automation_channel)").fetchall()}
+        template_columns = {
+            row["name"]
+            for row in db.execute("PRAGMA table_info(automation_profile_segment_template)").fetchall()
+        }
+        index_names = _sqlite_object_names(db, "index")
+        assert "program_id" in channel_columns
+        assert "program_id" in template_columns
+        assert "idx_automation_channel_program" in index_names
+        assert "idx_automation_profile_segment_template_program" in index_names
+
+
 def test_init_db_rebuilds_legacy_marketing_state_current_without_fake_external_userid(app):
     with app.app_context():
         init_db()
