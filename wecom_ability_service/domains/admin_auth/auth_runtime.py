@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote
 
 from flask import current_app, g, jsonify, redirect, request, session, url_for
@@ -13,6 +13,7 @@ from . import repo
 from .service import (
     ROLE_LABELS,
     admin_role_can_access_module,
+    admin_user_can_login,
     get_admin_user_by_id,
     get_admin_user_by_wecom_userid,
     is_break_glass_login_enabled,
@@ -142,6 +143,8 @@ def login_break_glass_session(*, username: str) -> None:
         "roles": ["super_admin"],
         "role_labels": [ROLE_LABELS["super_admin"]],
         "is_active": True,
+        "login_enabled": True,
+        "admin_level": "super_admin",
         "auth_source": "break_glass",
         "login_type": "break_glass",
     }
@@ -189,6 +192,8 @@ def current_admin_user() -> dict[str, Any] | None:
             "roles": ["super_admin"],
             "role_labels": [ROLE_LABELS["super_admin"]],
             "is_active": True,
+            "login_enabled": True,
+            "admin_level": "super_admin",
             "auth_source": "break_glass",
             "login_type": "break_glass",
         }
@@ -200,7 +205,7 @@ def current_admin_user() -> dict[str, Any] | None:
         g._current_admin_session_user = None
         return None
     user = get_admin_user_by_id(user_id)
-    if not user or not bool(user.get("is_active")):
+    if not admin_user_can_login(user):
         logout_admin_session()
         return None
     session[ADMIN_SESSION_ROLE_LIST_KEY] = list(user.get("roles") or [])

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import secrets
-from typing import Iterable
 from urllib.parse import quote
 
 from flask import (
@@ -394,7 +393,9 @@ def admin_wecom_callback():
         return _render_admin_auth_page(page_error=f"企微登录失败：{exc}", next_path=next_path), 502
 
     user = resolve_admin_user_from_wecom_identity(identity)
-    if not user or not bool(user.get("is_active")):
+    from ..domains.admin_auth import admin_user_can_login
+
+    if not admin_user_can_login(user):
         record_admin_login(
             admin_user_id=int((user or {}).get("id") or 0) or None,
             login_type=login_type,
