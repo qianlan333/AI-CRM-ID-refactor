@@ -118,6 +118,22 @@ def _admin_action_token(client, path: str = "/admin/config/login-access") -> str
         return str(sess["admin_console_action_token"])
 
 
+def _admin_user_id(app, wecom_userid: str) -> int:
+    with app.app_context():
+        row = get_db().execute(
+            "SELECT id FROM admin_users WHERE wecom_userid = ?",
+            (wecom_userid,),
+        ).fetchone()
+        assert row is not None
+        return int(row["id"])
+
+
+def _start_wecom_login(client, next_path: str = "/admin/config/login-access") -> str:
+    start_response = client.get(f"/auth/wecom/start?mode=qr&next={next_path}", follow_redirects=False)
+    assert start_response.status_code == 302
+    return _extract_state_from_redirect(start_response.headers["Location"])
+
+
 def test_unauthenticated_admin_request_redirects_to_login(client):
     response = client.get("/admin/automation-conversion", follow_redirects=False)
 
@@ -167,6 +183,39 @@ def test_auth_wecom_callback_builds_session_on_success(app, client, monkeypatch)
         assert sess["admin_session_wecom_userid"] == "root.admin"
         assert sess["admin_session_role_list"] == ["super_admin"]
         assert sess["admin_session_login_type"] == "wecom_qr"
+
+
+def test_wecom_member_without_roles_cannot_login(app, client, monkeypatch):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO admin_users (
+                wecom_userid, wecom_corpid, display_name, is_active, login_enabled, admin_level,
+                auth_source, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 1, 1, 'admin', 'wecom_sso', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            ("no.roles", app.config["WECOM_CORP_ID"], "无角色成员"),
+        )
+        db.commit()
+
+    state = _start_wecom_login(client)
+    monkeypatch.setattr(
+        "wecom_ability_service.http.internal_auth.exchange_code_for_wecom_user",
+        lambda code: {
+            "wecom_userid": "no.roles",
+            "display_name": "无角色成员",
+            "wecom_corpid": app.config["WECOM_CORP_ID"],
+            "raw_identity": {"UserId": "no.roles"},
+        },
+    )
+
+    response = client.get(f"/auth/wecom/callback?code=mock-code&state={state}", follow_redirects=True)
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 403
+    assert "尚未被授权登录后台" in html
 
 
 def test_admin_root_redirects_to_automation_conversion(client):
@@ -270,6 +319,125 @@ def test_login_access_page_renders_login_audit(app, client, monkeypatch):
     assert response.status_code == 200
     assert "最近登录审计" in html
     assert "企微 UserId" in html
+
+
+def test_regular_config_admin_cannot_modify_super_admin(app, client, monkeypatch):
+    _authorize_admin_user(app, wecom_userid="root.admin", roles=["super_admin"], display_name="Root Admin")
+    _authorize_admin_user(app, wecom_userid="config.admin", roles=["config_admin"], display_name="Config Admin")
+    root_id = _admin_user_id(app, "root.admin")
+
+    _login_via_wecom(client, app, monkeypatch, wecom_userid="config.admin", roles=["config_admin"])
+    action_token = _admin_action_token(client)
+    response = client.post(
+        "/admin/config/login-access/save",
+        data={
+            "id": str(root_id),
+            "admin_action_token": action_token,
+            "wecom_userid": "root.admin",
+            "wecom_corpid": app.config["WECOM_CORP_ID"],
+            "display_name": "Changed Root",
+            "is_active": "1",
+            "login_enabled": "1",
+            "admin_level": "super_admin",
+            "role_codes": ["super_admin"],
+        },
+    )
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "只有超级管理员可以创建、转让或修改超级管理员" in html
+    with app.app_context():
+        row = get_db().execute("SELECT display_name FROM admin_users WHERE id = ?", (root_id,)).fetchone()
+        assert row["display_name"] == "Root Admin"
+
+
+def test_super_admin_transfer_requires_confirmation_and_demotes_previous_super(app, client, monkeypatch):
+    _authorize_admin_user(app, wecom_userid="root.admin", roles=["super_admin"], display_name="Root Admin")
+    _authorize_admin_user(app, wecom_userid="config.admin", roles=["config_admin"], display_name="Config Admin")
+    target_id = _admin_user_id(app, "config.admin")
+
+    _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"])
+    action_token = _admin_action_token(client)
+    missing_confirm_response = client.post(
+        "/admin/config/login-access/save",
+        data={
+            "id": str(target_id),
+            "admin_action_token": action_token,
+            "wecom_userid": "config.admin",
+            "wecom_corpid": app.config["WECOM_CORP_ID"],
+            "display_name": "Config Admin",
+            "is_active": "1",
+            "login_enabled": "1",
+            "admin_level": "super_admin",
+        },
+    )
+    assert missing_confirm_response.status_code == 200
+    assert "当前企业已有超级管理员" in missing_confirm_response.get_data(as_text=True)
+
+    transfer_token = _admin_action_token(client)
+    transfer_response = client.post(
+        "/admin/config/login-access/save",
+        data={
+            "id": str(target_id),
+            "admin_action_token": transfer_token,
+            "wecom_userid": "config.admin",
+            "wecom_corpid": app.config["WECOM_CORP_ID"],
+            "display_name": "Config Admin",
+            "is_active": "1",
+            "login_enabled": "1",
+            "admin_level": "super_admin",
+            "confirm_super_admin_transfer": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert transfer_response.status_code == 302
+    with app.app_context():
+        rows = get_db().execute(
+            """
+            SELECT wecom_userid, admin_level
+            FROM admin_users
+            WHERE wecom_userid IN ('root.admin', 'config.admin')
+            ORDER BY wecom_userid
+            """
+        ).fetchall()
+        assert {row["wecom_userid"]: row["admin_level"] for row in rows} == {
+            "config.admin": "super_admin",
+            "root.admin": "admin",
+        }
+        super_roles = get_db().execute(
+            """
+            SELECT role_code
+            FROM admin_user_roles
+            WHERE admin_user_id = ?
+            """,
+            (target_id,),
+        ).fetchall()
+        assert [row["role_code"] for row in super_roles] == ["super_admin"]
+
+
+def test_cannot_disable_only_super_admin(app, client, monkeypatch):
+    _authorize_admin_user(app, wecom_userid="root.admin", roles=["super_admin"], display_name="Root Admin")
+    root_id = _admin_user_id(app, "root.admin")
+
+    _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"])
+    action_token = _admin_action_token(client)
+    response = client.post(
+        "/admin/config/login-access/save",
+        data={
+            "id": str(root_id),
+            "admin_action_token": action_token,
+            "wecom_userid": "root.admin",
+            "wecom_corpid": app.config["WECOM_CORP_ID"],
+            "display_name": "Root Admin",
+            "is_active": "1",
+            "admin_level": "admin",
+            "role_codes": ["config_admin"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "不能停用或降级唯一超级管理员" in response.get_data(as_text=True)
 
 
 def test_login_access_refreshes_wecom_directory_and_authorizes_cached_member(app, client, monkeypatch):

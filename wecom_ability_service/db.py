@@ -2357,8 +2357,12 @@ def _ensure_sqlite_admin_auth_tables(db) -> None:
                 wecom_corpid TEXT NOT NULL DEFAULT '',
                 display_name TEXT NOT NULL DEFAULT '',
                 is_active INTEGER NOT NULL DEFAULT 1,
+                login_enabled INTEGER NOT NULL DEFAULT 1,
+                admin_level TEXT NOT NULL DEFAULT 'admin',
                 auth_source TEXT NOT NULL DEFAULT 'wecom_sso',
                 last_login_at TEXT,
+                created_by TEXT NOT NULL DEFAULT '',
+                updated_by TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -2386,6 +2390,18 @@ def _ensure_sqlite_admin_auth_tables(db) -> None:
     if "is_active" not in columns:
         db.execute("ALTER TABLE admin_users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
         columns.add("is_active")
+    if "login_enabled" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN login_enabled INTEGER NOT NULL DEFAULT 1")
+        columns.add("login_enabled")
+    if "admin_level" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN admin_level TEXT NOT NULL DEFAULT 'admin'")
+        columns.add("admin_level")
+    if "created_by" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
+        columns.add("created_by")
+    if "updated_by" not in columns:
+        db.execute("ALTER TABLE admin_users ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+        columns.add("updated_by")
     legacy_columns = _sqlite_table_columns(db, "admin_users")
     if "username" in legacy_columns:
         db.execute(
@@ -2491,6 +2507,17 @@ def _ensure_sqlite_admin_auth_tables(db) -> None:
                 """,
                 (int(row["id"]), str(row["role_code"] or "").strip()),
             )
+    db.execute(
+        """
+        UPDATE admin_users
+        SET admin_level = 'super_admin'
+        WHERE id IN (
+            SELECT admin_user_id
+            FROM admin_user_roles
+            WHERE role_code = 'super_admin'
+        )
+        """
+    )
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS admin_login_audit (
@@ -3030,8 +3057,12 @@ def _ensure_postgres_admin_auth_tables(db) -> None:
             wecom_corpid TEXT NOT NULL DEFAULT '',
             display_name TEXT NOT NULL DEFAULT '',
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            login_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            admin_level TEXT NOT NULL DEFAULT 'admin',
             auth_source TEXT NOT NULL DEFAULT 'wecom_sso',
             last_login_at TIMESTAMPTZ,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -3053,6 +3084,30 @@ def _ensure_postgres_admin_auth_tables(db) -> None:
         """
         ALTER TABLE IF EXISTS admin_users
         ADD COLUMN IF NOT EXISTS auth_source TEXT NOT NULL DEFAULT 'wecom_sso'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS admin_users
+        ADD COLUMN IF NOT EXISTS login_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS admin_users
+        ADD COLUMN IF NOT EXISTS admin_level TEXT NOT NULL DEFAULT 'admin'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS admin_users
+        ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS admin_users
+        ADD COLUMN IF NOT EXISTS updated_by TEXT NOT NULL DEFAULT ''
         """
     )
     admin_user_columns = _postgres_table_columns(db, "admin_users")
@@ -3154,6 +3209,17 @@ def _ensure_postgres_admin_auth_tables(db) -> None:
             ON CONFLICT (admin_user_id, role_code) DO NOTHING
             """
         )
+    db.execute(
+        """
+        UPDATE admin_users
+        SET admin_level = 'super_admin'
+        WHERE id IN (
+            SELECT admin_user_id
+            FROM admin_user_roles
+            WHERE role_code = 'super_admin'
+        )
+        """
+    )
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS admin_login_audit (
