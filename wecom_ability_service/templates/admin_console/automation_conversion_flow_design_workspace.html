@@ -126,20 +126,19 @@
 {% set profile_workspace = workspace.profile_segment_workspace or {} %}
 {% set initial_templates = profile_workspace.initial_templates or [] %}
 {% set initial_catalog = profile_workspace.initial_template_catalog or [] %}
-{% set sop = workspace.sop or {} %}
 {% include "admin_console/_automation_program_context.html" %}
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 <div class="ac-flow-shell">
   <section class="admin-page-hero admin-page-hero--workspace">
     <div class="admin-page-hero__head">
       <div>
-        <div class="admin-page-hero__eyebrow">流程设计</div>
-        <h1>方案流程设计</h1>
-        <p>方案内流程设计统一拆成阶段模型、问卷规则、画像分层、SOP 剧本、全局规则、方案入口二维码和发布管理；画像与入口配置只归属于当前方案。</p>
+        <div class="admin-page-hero__eyebrow">基础配置</div>
+        <h1>方案基础配置</h1>
+        <p>当前页面只维护问卷分层、欢迎语、扫码标签和入口二维码；画像与入口配置只归属于当前方案。</p>
       </div>
       <div class="admin-page-hero__meta">
         <span class="admin-chip admin-chip--neutral">当前方案内</span>
-        <span class="admin-chip admin-chip--neutral">配置语义不变</span>
+        <span class="admin-chip admin-chip--neutral">基础配置</span>
       </div>
     </div>
     <div class="admin-page-hero__footer">
@@ -147,10 +146,6 @@
       {% for item in workspace.sections or [] %}
       <a class="ac-section-link{% if item.key == workspace.section %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
       {% endfor %}
-      </div>
-      <div class="ac-flow-hero-meta">
-        <span class="ac-flow-chip">消息活跃同步已迁到运行中心</span>
-        <a class="ac-section-link" href="{{ url_for('api.admin_automation_conversion_runtime_sync') }}">前往运行中心校验</a>
       </div>
     </div>
     {% if workspace.saved %}
@@ -161,25 +156,10 @@
     {% endif %}
   </section>
 
-  <section id="flow-stage-model" class="ac-flow-card">
-    <h3>阶段模型</h3>
-    <div class="ac-flow-grid">
-      <div><strong>未填问卷人群</strong><div class="ac-flow-muted">等待提交问卷</div></div>
-      <div><strong>运营中人群</strong><div class="ac-flow-muted">问卷提交后的统一运营跟进</div></div>
-      <div><strong>已转化人群</strong><div class="ac-flow-muted">确认转化后的后续维护</div></div>
-    </div>
-  </section>
-
-  <section id="flow-questionnaire" class="ac-flow-card">
-    <h3>入池与问卷规则</h3>
-    <div class="ac-flow-muted">当前问卷规则和入池规则统一从这里维护。</div>
-    <div>当前问卷：{{ ((workspace.settings or {}).selected_questionnaire or {}).title or ((workspace.settings or {}).missing_questionnaire_id and '问卷缺失') or '未配置' }}</div>
-  </section>
-
   <section id="flow-profile-segments" class="ac-flow-card">
     <div class="ac-config-head">
       <div>
-        <h3>画像分层与方案入口</h3>
+        <h3>问卷分层与方案入口</h3>
         <p class="ac-flow-muted">画像分层模板按当前方案独立维护；每个模板绑定自己的问卷和分层题目。欢迎语、自动通过、二维码和扫码标签也只作用于当前方案入口。</p>
       </div>
       <span class="ac-flow-chip">当前方案独有</span>
@@ -428,59 +408,6 @@
     </div>
   </section>
 
-  <section id="flow-sop" class="ac-flow-card">
-    <h3>SOP 剧本</h3>
-    <div class="ac-flow-muted">池子 / 阶段选择</div>
-    <div class="ac-flow-grid">
-      {% for card in sop.pool_cards or [] %}
-      <article class="ac-flow-card">
-        <strong>{{ card.pool_label }}</strong>
-        <div>{{ card.send_time }}</div>
-        {% set recent = card.recent_execution or {} %}
-        <div>{{ recent.label or '暂无执行记录' }}</div>
-        <div>
-          {% if recent.has_record %}
-          成功 {{ recent.success_count }} / 跳过 {{ recent.skipped_count }} / 失败 {{ recent.failed_count }}
-          {% else %}
-          暂无执行记录
-          {% endif %}
-        </div>
-      </article>
-      {% endfor %}
-    </div>
-    <div class="ac-flow-muted">当前 Day 编辑器</div>
-    <div class="ac-flow-tabs">
-      {% for day in (sop.current_pool or {}).day_tabs or [] %}
-      <span class="ac-flow-day{% if day.is_selected %} is-selected{% endif %}">day{{ day.day_index }}</span>
-      {% endfor %}
-      <span class="ac-flow-day">新增一天</span>
-    </div>
-    <form method="post" action="{{ url_for('api.admin_automation_conversion_save_settings') }}">
-      <input type="hidden" name="section" value="sop">
-      {% if program_context %}<input type="hidden" name="program_id" value="{{ program_context.id }}">{% endif %}
-      <div class="ac-flow-grid">
-        <label>
-          发送时间
-          <input type="time" name="send_time" value="{{ ((sop.current_pool or {}).config or {}).send_time or '09:00' }}">
-        </label>
-        <label>
-          时区
-          <input type="text" name="timezone" value="Asia/Shanghai">
-        </label>
-      </div>
-      <button class="admin-button admin-button--secondary" type="submit">保存池子配置</button>
-    </form>
-  </section>
-
-  <section id="flow-global-rules" class="ac-flow-card">
-    <h3>全局规则</h3>
-    <div class="ac-flow-muted">时区与自动化全局规则集中维护。</div>
-  </section>
-
-  <section id="flow-publish" class="ac-flow-card">
-    <h3>发布管理</h3>
-    <div class="ac-flow-muted">草稿态 / 已发布态的发布入口统一收口到这里。</div>
-  </section>
 </div>
 {% endblock %}
 

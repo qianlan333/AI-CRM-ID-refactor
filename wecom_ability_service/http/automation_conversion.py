@@ -48,7 +48,6 @@ from ..domains.automation_conversion import (
     get_agent_config_detail,
     get_sop_v1_batches_payload,
     get_sop_v1_config_payload,
-    get_sop_v1_management_payload,
     get_sop_v1_templates_payload,
     get_settings_payload,
     get_stage_detail_payload,
@@ -166,7 +165,7 @@ ALLOWED_STAGE_SEND_IMAGE_TYPES = {
     "gif": "image/gif",
     "webp": "image/webp",
 }
-FLOW_DESIGN_SECTIONS = ("stage-model", "questionnaire", "sop", "global-rules", "channel", "publish")
+FLOW_DESIGN_SECTIONS = ("profile-segments", "channel")
 RUN_CENTER_TABS = ("overview", "sync", "logs", "model-infra", "agent-orchestration", "debug")
 RUN_CENTER_AGENT_SUBTABS = ("router", "agents", "metrics", "outputs", "replay")
 
@@ -211,7 +210,7 @@ def _stage_send_images_from_request() -> list[dict[str, str]]:
 
 def _flow_design_section() -> str:
     section = _query_text("section") or str(request.values.get("section") or "").strip()
-    return section if section in FLOW_DESIGN_SECTIONS else "questionnaire"
+    return section if section in FLOW_DESIGN_SECTIONS else "profile-segments"
 
 
 def _run_center_tab() -> str:
@@ -518,15 +517,6 @@ def _build_profile_segment_workspace(*, program_id: int | None = None) -> dict[s
 def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None, program_id: int | None = None) -> dict[str, object]:
     settings_payload = get_settings_payload(program_id=program_id)
     section = _flow_design_section()
-    selected_pool_key = _query_text("pool") or str((page_input or {}).get("pool_key") or "")
-    try:
-        selected_day_index = int(_query_text("day") or str((page_input or {}).get("day_index") or "0") or "0")
-    except ValueError:
-        selected_day_index = 0
-    sop_payload = get_sop_v1_management_payload(
-        selected_pool_key=selected_pool_key,
-        selected_day_index=selected_day_index,
-    )
     input_payload = dict(page_input or {})
     default_channel = {
         **dict(settings_payload.get("default_channel") or {}),
@@ -542,18 +532,12 @@ def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None,
     return {
         "section": section,
         "sections": [
-            {"key": "stage-model", "label": "阶段模型", "href": _flow_href("stage-model", "#flow-stage-model")},
-            {"key": "questionnaire", "label": "入池与问卷规则", "href": _flow_href("questionnaire", "#flow-questionnaire")},
-            {"key": "profile-segments", "label": "画像分层", "href": _flow_href("profile-segments", "#flow-profile-segments")},
-            {"key": "sop", "label": "SOP 剧本", "href": _flow_href("sop", "#flow-sop")},
-            {"key": "global-rules", "label": "全局规则", "href": _flow_href("global-rules", "#flow-global-rules")},
-            {"key": "channel", "label": "方案入口二维码", "href": _flow_href("channel", "#flow-channel")},
-            {"key": "publish", "label": "发布管理", "href": _flow_href("publish", "#flow-publish")},
+            {"key": "profile-segments", "label": "问卷分层", "href": _flow_href("profile-segments", "#flow-profile-segments")},
+            {"key": "channel", "label": "欢迎语 / 标签 / 二维码", "href": _flow_href("channel", "#flow-channel")},
         ],
         "settings": settings_payload,
         "default_channel": default_channel,
         "profile_segment_workspace": _build_profile_segment_workspace(program_id=program_id),
-        "sop": sop_payload,
         "saved": _query_bool("saved", default=False),
         "page_input": input_payload,
     }
@@ -685,7 +669,7 @@ def _automation_program_workspace_tabs(program_id: int, active_key: str) -> list
     normalized_program_id = int(program_id)
     tabs = (
         ("overview", "概览", "api.admin_automation_program_overview"),
-        ("flow_design", "流程设计", "api.admin_automation_program_flow_design"),
+        ("flow_design", "基础配置", "api.admin_automation_program_flow_design"),
         ("member_ops", "成员运营", "api.admin_automation_program_member_ops"),
         ("operations", "运营编排", "api.admin_automation_program_operations"),
         ("executions", "执行记录", "api.admin_automation_program_executions"),
@@ -903,13 +887,13 @@ def _render_flow_design_page(*, page_error: str = "", page_input: dict[str, obje
     return _render_admin_template(
         "automation_conversion_flow_design_workspace.html",
         active_nav="automation_conversion",
-        page_title="流程设计",
-        page_summary="当前方案内维护流程、画像分层、入口二维码和发布配置；共享层只保留智能体与大模型底座。" if program else "兼容旧后台设置入口，当前统一映射到阶段模型、问卷规则、画像分层、SOP 剧本、全局规则、方案入口和发布管理。",
+        page_title="基础配置",
+        page_summary="当前方案内维护问卷分层、欢迎语、扫码标签和入口二维码；共享层只保留智能体与大模型底座。" if program else "兼容旧后台设置入口，当前统一映射到问卷分层、欢迎语、扫码标签和入口二维码配置。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
             ((program or {}).get("program_name") or "自动化转化", url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None),
-            ("流程设计", None),
+            ("基础配置", None),
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "flow_design") if program_id else [],
         program_context=_program_context(program, active_key="flow_design") if program else None,

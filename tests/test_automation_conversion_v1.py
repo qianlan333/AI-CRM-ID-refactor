@@ -5441,18 +5441,21 @@ def test_automation_conversion_flow_design_page_focuses_on_settings_sections(app
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "流程设计" in html
-    assert "阶段模型" in html
-    assert "入池与问卷规则" in html
-    assert "画像分层" in html
+    assert "基础配置" in html
+    assert "方案基础配置" in html
+    assert "问卷分层" in html
     assert "基础画像分层模板" in html
-    assert "SOP 剧本" in html
-    assert "全局规则" in html
+    assert "欢迎语 / 标签 / 二维码" in html
     assert "方案入口二维码" in html
-    assert "发布管理" in html
+    assert "流程设计" not in html
+    assert "阶段模型" not in html
+    assert "入池与问卷规则" not in html
+    assert "SOP 剧本" not in html
+    assert "全局规则" not in html
+    assert "发布管理" not in html
     assert "立即刷新一次" not in html
-    assert "消息活跃同步已迁到运行中心" in html
-    assert "前往运行中心校验" in html
+    assert "消息活跃同步已迁到运行中心" not in html
+    assert "前往运行中心校验" not in html
 
 
 def test_flow_design_page_renders_entry_tag_fields_for_program_channel(app, client):
@@ -5694,7 +5697,7 @@ def test_admin_automation_conversion_save_settings_error_keeps_current_flow_desi
     assert response.status_code == 200
     assert "保存失败" in html
     assert "保留输入" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">欢迎语 / 标签 / 二维码</a>' in html
     assert 'ac-section-link is-active' in html
 
 
@@ -5709,7 +5712,7 @@ def test_admin_automation_conversion_save_settings_requires_action_token_and_kee
     assert response.status_code == 200
     assert "后台动作令牌无效，请刷新页面后重试" in html
     assert "未提交成功" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">欢迎语 / 标签 / 二维码</a>' in html
 
 
 def test_admin_generate_default_channel_error_keeps_channel_section(app, client, monkeypatch):
@@ -5725,7 +5728,7 @@ def test_admin_generate_default_channel_error_keeps_channel_section(app, client,
 
     assert response.status_code == 200
     assert "二维码生成失败" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">欢迎语 / 标签 / 二维码</a>' in html
     assert 'ac-section-link is-active' in html
 
 
@@ -5736,7 +5739,7 @@ def test_admin_generate_default_channel_requires_action_token(app, client):
 
     assert response.status_code == 200
     assert "后台动作令牌无效，请刷新页面后重试" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">方案入口二维码</a>' in html
+    assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design?section=channel#flow-channel">欢迎语 / 标签 / 二维码</a>' in html
 
 
 def test_model_infra_settings_save_and_mask_deepseek_api_key(app, client):
@@ -10386,7 +10389,7 @@ def test_sop_v1_defaults_seed_three_pool_configs_and_day1_only(app):
     assert timezones == ["Asia/Shanghai", "Asia/Shanghai", "Asia/Shanghai"]
 
 
-def test_admin_automation_conversion_sop_page_uses_pool_cards_and_day_tabs_without_legacy_rules(app, client):
+def test_admin_automation_conversion_basic_config_page_omits_sop_publish_placeholders(app, client):
     with app.app_context():
         ensure_sop_v1_defaults()
         db = get_db()
@@ -10421,24 +10424,23 @@ def test_admin_automation_conversion_sop_page_uses_pool_cards_and_day_tabs_witho
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "流程设计" in html
-    assert "SOP 剧本" in html
-    assert "未填问卷人群" in html
-    assert "运营中人群" in html
-    assert "已转化人群" in html
-    assert "池子 / 阶段选择" in html
-    assert "当前 Day 编辑器" in html
-    assert "新增一天" in html
-    assert "day1" in html
-    assert "保存池子配置" in html
-    assert "发布管理" in html
-    assert "成功 5 / 跳过 2 / 失败 1" in html
-    assert "暂无执行记录" in html
+    assert "基础配置" in html
+    assert "问卷分层" in html
+    assert "欢迎语 / 标签 / 二维码" in html
+    assert "方案入口二维码" in html
+    assert "SOP 剧本" not in html
+    assert "池子 / 阶段选择" not in html
+    assert "当前 Day 编辑器" not in html
+    assert "新增一天" not in html
+    assert "保存池子配置" not in html
+    assert "发布管理" not in html
+    assert "成功 5 / 跳过 2 / 失败 1" not in html
+    assert "暂无执行记录" not in html
     assert "重复进同池不重来" not in html
     assert "离池期间错过的 SOP 不补发" not in html
     assert "最近 SOP 执行批次" not in html
     assert "最大 day 数" not in html
-    assert 'name="timezone"' in html
+    assert 'name="timezone"' not in html
 
 
 def test_api_admin_automation_conversion_sop_config_no_timezone_required(app, client):
