@@ -35,6 +35,7 @@ from .service import (
     is_break_glass_login_enabled,
     record_admin_login,
     save_admin_user,
+    sync_admin_wecom_directory_members,
     touch_admin_user_login,
 )
 
@@ -73,5 +74,6 @@ __all__ = [
     "require_admin_roles",
     "resolve_admin_user_from_wecom_identity",
     "save_admin_user",
+    "sync_admin_wecom_directory_members",
     "touch_admin_user_login",
 ]
