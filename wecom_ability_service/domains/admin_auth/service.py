@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from flask import current_app
 
 from ..admin_config import repo as admin_config_repo
 from ...infra.settings import get_setting
+from ...wecom_client import WeComClient
 from . import repo
 
 ROLE_LABELS = {
@@ -36,6 +39,12 @@ ROLE_MODULE_ACCESS = {
 READ_ONLY_ROLES = {"viewer"}
 
 ADMIN_ROLE_OPTIONS = [{"value": code, "label": label} for code, label in ROLE_LABELS.items()]
+WECOM_MEMBER_STATUS_LABELS = {
+    1: "已激活",
+    2: "已禁用",
+    4: "未激活",
+    5: "已退出",
+}
 
 
 def _normalized_text(value: Any) -> str:
@@ -91,6 +100,34 @@ def _setting_or_config(key: str, config: dict[str, Any] | None = None) -> str:
     return _normalized_text(get_setting(key)) or _normalized_text(config.get(key, ""))
 
 
+def _json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if not value:
+        return []
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _normalized_int(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _directory_root_department_id() -> int:
+    raw_value = _setting_or_config("WECOM_DIRECTORY_ROOT_DEPARTMENT_ID") or "1"
+    return max(1, _normalized_int(raw_value, default=1))
+
+
 def is_break_glass_login_enabled() -> bool:
     value = _setting_or_config("ADMIN_BREAK_GLASS_LOGIN_ENABLED")
     return value.lower() in {"1", "true", "yes", "on"}
@@ -122,6 +159,47 @@ def _present_admin_users(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "last_login_at": _normalized_text(row.get("last_login_at")),
                 "created_at": _normalized_text(row.get("created_at")),
                 "updated_at": _normalized_text(row.get("updated_at")),
+            }
+        )
+    return presented
+
+
+def _present_directory_members(
+    rows: list[dict[str, Any]],
+    *,
+    admin_users: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    admin_by_identity = {
+        (_normalized_text(user.get("wecom_corpid")), _normalized_text(user.get("wecom_userid"))): user
+        for user in admin_users
+        if _normalized_text(user.get("wecom_userid"))
+    }
+    presented: list[dict[str, Any]] = []
+    for row in rows:
+        department_ids = [_normalized_text(item) for item in _json_list(row.get("department_ids_json")) if _normalized_text(item)]
+        status_code = _normalized_int(row.get("wecom_status"), default=0)
+        corpid = _normalized_text(row.get("wecom_corpid"))
+        userid = _normalized_text(row.get("wecom_userid"))
+        authorized_user = admin_by_identity.get((corpid, userid)) or admin_by_identity.get(("", userid))
+        is_authorized = bool(authorized_user)
+        presented.append(
+            {
+                "id": int(row.get("id") or 0),
+                "wecom_corpid": corpid,
+                "wecom_userid": userid,
+                "display_name": _normalized_text(row.get("display_name")) or userid,
+                "department_ids": department_ids,
+                "department_ids_display": " / ".join(department_ids),
+                "position": _normalized_text(row.get("position")),
+                "wecom_status": status_code,
+                "status_label": WECOM_MEMBER_STATUS_LABELS.get(status_code, "未知" if status_code else "-"),
+                "is_active": bool(row.get("is_active")),
+                "synced_at": _normalized_text(row.get("synced_at")),
+                "is_authorized": is_authorized,
+                "admin_user_id": int((authorized_user or {}).get("id") or 0),
+                "admin_is_active": bool((authorized_user or {}).get("is_active")),
+                "admin_roles_display": _normalized_text((authorized_user or {}).get("roles_display")) if authorized_user else "",
+                "authorization_label": "已授权" if is_authorized else "未授权",
             }
         )
     return presented
@@ -185,14 +263,26 @@ def admin_role_can_access_module(role_codes: str | Iterable[str], module_key: st
 
 def build_admin_account_page_payload() -> dict[str, Any]:
     rows = _present_admin_users(repo.list_admin_users())
+    corp_id = _setting_or_config("WECOM_CORP_ID")
+    directory_members = _present_directory_members(
+        repo.list_admin_wecom_directory_members(wecom_corpid=corp_id),
+        admin_users=rows,
+    )
     login_audit_rows = repo.list_admin_login_audit(limit=20)
     return {
         "rows": rows,
+        "directory_members": directory_members,
+        "directory_summary": {
+            "count": len(directory_members),
+            "last_synced_at": max([row["synced_at"] for row in directory_members if row.get("synced_at")] or [""]),
+            "active_count": sum(1 for row in directory_members if row.get("is_active")),
+            "authorized_count": sum(1 for row in directory_members if row.get("is_authorized")),
+        },
         "role_options": list(ADMIN_ROLE_OPTIONS),
         "role_labels": dict(ROLE_LABELS),
         "break_glass_enabled": is_break_glass_login_enabled(),
         "auth_mode": _setting_or_config("ADMIN_AUTH_MODE") or "wecom_sso",
-        "corp_id": _setting_or_config("WECOM_CORP_ID"),
+        "corp_id": corp_id,
         "login_audit_rows": [
             {
                 "id": int(row.get("id") or 0),
@@ -210,11 +300,82 @@ def build_admin_account_page_payload() -> dict[str, Any]:
     }
 
 
+def sync_admin_wecom_directory_members(*, operator: str = "crm_console") -> dict[str, Any]:
+    client = WeComClient.from_contact_app()
+    department_id = _directory_root_department_id()
+    payload = client.list_department_users(department_id=department_id, fetch_child=1)
+    userlist = payload.get("userlist") or []
+    if not isinstance(userlist, list):
+        userlist = []
+    synced_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    members: list[dict[str, Any]] = []
+    skipped_count = 0
+    for item in userlist:
+        if not isinstance(item, dict):
+            skipped_count += 1
+            continue
+        userid = _normalized_text(item.get("userid"))
+        if not userid:
+            skipped_count += 1
+            continue
+        status = _normalized_int(item.get("status"), default=1)
+        department_ids = item.get("department") if isinstance(item.get("department"), list) else []
+        members.append(
+            {
+                "wecom_userid": userid,
+                "display_name": _normalized_text(item.get("name")) or userid,
+                "department_ids_json": _json_dumps([_normalized_text(value) for value in department_ids if _normalized_text(value)]),
+                "position": _normalized_text(item.get("position")),
+                "wecom_status": status,
+                "is_active": status in {0, 1},
+                "raw_payload_json": _json_dumps(
+                    {
+                        "userid": userid,
+                        "name": _normalized_text(item.get("name")),
+                        "department": department_ids,
+                        "position": _normalized_text(item.get("position")),
+                        "status": status,
+                    }
+                ),
+            }
+        )
+    synced_count = repo.upsert_admin_wecom_directory_members(
+        wecom_corpid=_normalized_text(client.corp_id),
+        members=members,
+        synced_at=synced_at,
+    )
+    admin_config_repo.insert_admin_operation_log(
+        operator=_normalized_text(operator) or "crm_console",
+        action_type="sync_admin_wecom_directory",
+        target_type="admin_wecom_directory_members",
+        target_id=_normalized_text(client.corp_id),
+        before_json={"department_id": department_id},
+        after_json={
+            "synced_count": synced_count,
+            "skipped_count": skipped_count,
+            "department_id": department_id,
+            "corp_id": _normalized_text(client.corp_id),
+        },
+    )
+    return {
+        "corp_id": _normalized_text(client.corp_id),
+        "department_id": department_id,
+        "synced_count": synced_count,
+        "skipped_count": skipped_count,
+        "synced_at": synced_at,
+    }
+
+
 def save_admin_user(payload: dict[str, Any], *, operator: str = "crm_console") -> dict[str, Any]:
     user_id = int(payload.get("id") or 0) or None
     wecom_userid = _validate_wecom_userid(payload.get("wecom_userid"))
-    display_name = _normalized_text(payload.get("display_name")) or wecom_userid
     wecom_corpid = _normalized_text(payload.get("wecom_corpid")) or _setting_or_config("WECOM_CORP_ID")
+    directory_member = repo.get_admin_wecom_directory_member(wecom_userid, wecom_corpid=wecom_corpid)
+    display_name = (
+        _normalized_text(payload.get("display_name"))
+        or _normalized_text((directory_member or {}).get("display_name"))
+        or wecom_userid
+    )
     is_active = _normalized_bool(payload.get("is_active"), default=True)
     auth_source = _normalized_text(payload.get("auth_source")) or "wecom_sso"
     role_codes = _normalized_role_codes(payload.get("role_codes") or payload.get("role_code"))

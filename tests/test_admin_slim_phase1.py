@@ -111,6 +111,13 @@ def _enable_break_glass(app):
     )
 
 
+def _admin_action_token(client, path: str = "/admin/config/login-access") -> str:
+    response = client.get(path)
+    assert response.status_code == 200
+    with client.session_transaction() as sess:
+        return str(sess["admin_console_action_token"])
+
+
 def test_unauthenticated_admin_request_redirects_to_login(client):
     response = client.get("/admin/automation-conversion", follow_redirects=False)
 
@@ -263,6 +270,80 @@ def test_login_access_page_renders_login_audit(app, client, monkeypatch):
     assert response.status_code == 200
     assert "最近登录审计" in html
     assert "企微 UserId" in html
+
+
+def test_login_access_refreshes_wecom_directory_and_authorizes_cached_member(app, client, monkeypatch):
+    _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"], next_path="/admin/config/login-access")
+
+    class FakeDirectoryClient:
+        corp_id = app.config["WECOM_CORP_ID"]
+
+        def list_department_users(self, department_id: int = 1, fetch_child: int = 1):
+            assert department_id == 1
+            assert fetch_child == 1
+            return {
+                "errcode": 0,
+                "userlist": [
+                    {
+                        "userid": "sales.one",
+                        "name": "销售一号",
+                        "department": [1, 7],
+                        "position": "顾问",
+                        "status": 1,
+                    },
+                    {
+                        "userid": "ops.two",
+                        "name": "运营二号",
+                        "department": [1],
+                        "position": "运营",
+                        "status": 1,
+                    },
+                ],
+            }
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.admin_auth.service.WeComClient.from_contact_app",
+        staticmethod(lambda: FakeDirectoryClient()),
+    )
+    action_token = _admin_action_token(client)
+    refresh_response = client.post(
+        "/admin/config/login-access/directory/refresh",
+        data={"admin_action_token": action_token},
+        follow_redirects=False,
+    )
+    assert refresh_response.status_code == 302
+    assert "directory_synced=2" in refresh_response.headers["Location"]
+
+    page_response = client.get("/admin/config/login-access?wecom_userid=sales.one")
+    html = page_response.get_data(as_text=True)
+
+    assert page_response.status_code == 200
+    assert "企微通讯录成员" in html
+    assert "销售一号" in html
+    assert "从通讯录选择成员" in html
+    assert 'value="sales.one" selected' in html
+
+    save_token = _admin_action_token(client, "/admin/config/login-access?wecom_userid=sales.one")
+    save_response = client.post(
+        "/admin/config/login-access/save",
+        data={
+            "admin_action_token": save_token,
+            "wecom_userid": "sales.one",
+            "wecom_corpid": app.config["WECOM_CORP_ID"],
+            "display_name": "",
+            "is_active": "1",
+            "role_codes": ["viewer"],
+        },
+        follow_redirects=False,
+    )
+
+    assert save_response.status_code == 302
+    with app.app_context():
+        row = get_db().execute(
+            "SELECT display_name FROM admin_users WHERE wecom_userid = ?",
+            ("sales.one",),
+        ).fetchone()
+        assert row["display_name"] == "销售一号"
 
 
 def test_sunset_pages_are_offline_and_logged(app, client, monkeypatch):

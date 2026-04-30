@@ -37,7 +37,7 @@ from ..application.automation_engine.queries import (
     ListAutomationConversionDispatchHistoryQuery,
     PreviewSignupConversionCustomerQuery,
 )
-from ..domains.admin_auth import build_admin_account_page_payload, save_admin_user
+from ..domains.admin_auth import build_admin_account_page_payload, save_admin_user, sync_admin_wecom_directory_members
 from ..domains.admin_config import (
     build_config_home_payload,
     config_tabs,
@@ -58,6 +58,7 @@ from .internal_auth import (
     validate_admin_console_action_token,
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
+from ..wecom_client import WeComClientError
 
 
 TARGET_OWNER_ROLE_MAP = "owner_role_map"
@@ -532,10 +533,32 @@ def admin_config_save_app_settings():
 def _login_access_page(*, page_error: str = ""):
     payload = build_admin_account_page_payload()
     edit_id = _query_text("edit_id")
+    candidate_userid = _query_text("wecom_userid")
+    directory_candidate = next(
+        (row for row in payload["directory_members"] if row["wecom_userid"] == candidate_userid),
+        None,
+    )
+    default_form_row = {
+        "is_active": True,
+        "roles": ["viewer"],
+        "wecom_corpid": payload.get("corp_id", ""),
+    }
+    if directory_candidate:
+        default_form_row.update(
+            {
+                "wecom_userid": directory_candidate["wecom_userid"],
+                "display_name": directory_candidate["display_name"],
+                "wecom_corpid": directory_candidate["wecom_corpid"] or payload.get("corp_id", ""),
+                "auth_source": "wecom_sso",
+            }
+        )
     form_row = next(
         (row for row in payload["rows"] if str(row["id"]) == edit_id),
-        {"is_active": True, "roles": ["viewer"], "wecom_corpid": payload.get("corp_id", "")},
+        default_form_row,
     )
+    page_notice = "保存成功" if _query_bool("saved") else ""
+    if _query_text("directory_synced"):
+        page_notice = f"已刷新企微通讯录：{_query_text('directory_synced')} 位成员"
     return _render_config_template(
         "config_login_access.html",
         active_tab="login_access",
@@ -546,9 +569,11 @@ def _login_access_page(*, page_error: str = ""):
             ("配置中心", url_for("api.admin_config_home")),
             ("登录与权限", None),
         ),
-        page_notice="保存成功" if _query_bool("saved") else "",
+        page_notice=page_notice,
         page_error=page_error,
         rows=payload["rows"],
+        directory_members=payload["directory_members"],
+        directory_summary=payload["directory_summary"],
         role_options=payload["role_options"],
         role_labels=payload["role_labels"],
         login_audit_rows=payload["login_audit_rows"],
@@ -562,6 +587,25 @@ def _login_access_page(*, page_error: str = ""):
 
 def admin_config_login_access():
     return _login_access_page()
+
+
+@require_admin_roles("config_admin")
+def admin_config_refresh_login_access_directory():
+    token_error = validate_admin_console_action_token()
+    if token_error:
+        return _login_access_page(page_error=token_error)
+    try:
+        result = sync_admin_wecom_directory_members(operator=_operator_from_request())
+    except WeComClientError as exc:
+        category = f"（{exc.category}）" if getattr(exc, "category", "") else ""
+        return _login_access_page(page_error=f"企微通讯录刷新失败{category}：{exc}")
+    return redirect(
+        url_for(
+            "api.admin_config_login_access",
+            directory_synced=result.get("synced_count", 0),
+        ),
+        code=302,
+    )
 
 
 @require_admin_roles("config_admin")
@@ -826,6 +870,7 @@ def register_routes(bp):
     bp.route("/admin/config/app-settings", methods=["GET"])(admin_config_app_settings)
     bp.route("/admin/config/app-settings/save", methods=["POST"])(admin_config_save_app_settings)
     bp.route("/admin/config/login-access", methods=["GET"])(admin_config_login_access)
+    bp.route("/admin/config/login-access/directory/refresh", methods=["POST"])(admin_config_refresh_login_access_directory)
     bp.route("/admin/config/login-access/save", methods=["POST"])(admin_config_save_login_access)
     bp.route("/admin/config/mcp-tools", methods=["GET"])(admin_config_mcp_tools)
     bp.route("/admin/config/mcp-tools/save", methods=["POST"])(admin_config_save_mcp_tool)

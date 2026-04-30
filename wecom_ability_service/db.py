@@ -2425,6 +2425,36 @@ def _ensure_sqlite_admin_auth_tables(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS admin_wecom_directory_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wecom_corpid TEXT NOT NULL DEFAULT '',
+            wecom_userid TEXT NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
+            department_ids_json TEXT NOT NULL DEFAULT '[]',
+            position TEXT NOT NULL DEFAULT '',
+            wecom_status INTEGER,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            raw_payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_wecom_directory_identity
+        ON admin_wecom_directory_members (wecom_corpid, wecom_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_wecom_directory_lookup
+        ON admin_wecom_directory_members (is_active, display_name, wecom_userid)
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS admin_user_roles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             admin_user_id INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
@@ -3060,6 +3090,36 @@ def _ensure_postgres_admin_auth_tables(db) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_admin_users_active_identity
         ON admin_users (is_active, display_name, wecom_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_wecom_directory_members (
+            id BIGSERIAL PRIMARY KEY,
+            wecom_corpid TEXT NOT NULL DEFAULT '',
+            wecom_userid TEXT NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
+            department_ids_json TEXT NOT NULL DEFAULT '[]',
+            position TEXT NOT NULL DEFAULT '',
+            wecom_status INTEGER,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            raw_payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_wecom_directory_identity
+        ON admin_wecom_directory_members (wecom_corpid, wecom_userid)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_wecom_directory_lookup
+        ON admin_wecom_directory_members (is_active, display_name, wecom_userid)
         """
     )
     db.execute(

@@ -246,6 +246,12 @@ class WeComClient:
     def list_follow_userids(self) -> dict:
         return self.get("/cgi-bin/externalcontact/get_follow_user_list")
 
+    def list_department_users(self, department_id: int = 1, fetch_child: int = 1) -> dict:
+        return self.get(
+            "/cgi-bin/user/list",
+            {"department_id": int(department_id), "fetch_child": int(fetch_child)},
+        )
+
     def get_contact(self, external_userid: str, cursor: str = "") -> dict:
         params = {"external_userid": external_userid}
         if cursor:

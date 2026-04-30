@@ -45,6 +45,90 @@ def list_admin_users() -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def list_admin_wecom_directory_members(*, wecom_corpid: str = "") -> list[dict[str, Any]]:
+    normalized_corpid = str(wecom_corpid or "").strip()
+    params: tuple[Any, ...] = ()
+    where_sql = ""
+    if normalized_corpid:
+        where_sql = "WHERE wecom_corpid = ?"
+        params = (normalized_corpid,)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            id,
+            wecom_corpid,
+            wecom_userid,
+            display_name,
+            department_ids_json,
+            position,
+            wecom_status,
+            is_active,
+            synced_at,
+            raw_payload_json,
+            created_at,
+            updated_at
+        FROM admin_wecom_directory_members
+        {where_sql}
+        ORDER BY is_active DESC, display_name ASC, wecom_userid ASC, id ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_admin_wecom_directory_member(wecom_userid: str, *, wecom_corpid: str = "") -> dict[str, Any] | None:
+    normalized_userid = str(wecom_userid or "").strip()
+    normalized_corpid = str(wecom_corpid or "").strip()
+    if not normalized_userid:
+        return None
+    if normalized_corpid:
+        row = get_db().execute(
+            """
+            SELECT
+                id,
+                wecom_corpid,
+                wecom_userid,
+                display_name,
+                department_ids_json,
+                position,
+                wecom_status,
+                is_active,
+                synced_at,
+                raw_payload_json,
+                created_at,
+                updated_at
+            FROM admin_wecom_directory_members
+            WHERE wecom_corpid = ? AND wecom_userid = ?
+            """,
+            (normalized_corpid, normalized_userid),
+        ).fetchone()
+        if row:
+            return dict(row)
+    row = get_db().execute(
+        """
+        SELECT
+            id,
+            wecom_corpid,
+            wecom_userid,
+            display_name,
+            department_ids_json,
+            position,
+            wecom_status,
+            is_active,
+            synced_at,
+            raw_payload_json,
+            created_at,
+            updated_at
+        FROM admin_wecom_directory_members
+        WHERE wecom_userid = ?
+        ORDER BY synced_at DESC, id DESC
+        LIMIT 1
+        """,
+        (normalized_userid,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def _admin_user_with_roles_where(sql_where: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
     row = get_db().execute(
         f"""
@@ -105,6 +189,59 @@ def list_admin_user_roles(admin_user_ids: list[int] | None = None) -> list[dict[
         tuple(params),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def upsert_admin_wecom_directory_members(
+    *,
+    wecom_corpid: str,
+    members: list[dict[str, Any]],
+    synced_at: str,
+) -> int:
+    normalized_corpid = str(wecom_corpid or "").strip()
+    if not normalized_corpid or not members:
+        return 0
+    db = get_db()
+    for member in members:
+        db.execute(
+            """
+            INSERT INTO admin_wecom_directory_members (
+                wecom_corpid,
+                wecom_userid,
+                display_name,
+                department_ids_json,
+                position,
+                wecom_status,
+                is_active,
+                synced_at,
+                raw_payload_json,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(wecom_corpid, wecom_userid) DO UPDATE SET
+                display_name = excluded.display_name,
+                department_ids_json = excluded.department_ids_json,
+                position = excluded.position,
+                wecom_status = excluded.wecom_status,
+                is_active = excluded.is_active,
+                synced_at = excluded.synced_at,
+                raw_payload_json = excluded.raw_payload_json,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                normalized_corpid,
+                str(member.get("wecom_userid") or "").strip(),
+                str(member.get("display_name") or "").strip(),
+                str(member.get("department_ids_json") or "[]").strip() or "[]",
+                str(member.get("position") or "").strip(),
+                member.get("wecom_status"),
+                _db_bool(bool(member.get("is_active"))),
+                str(synced_at or "").strip(),
+                str(member.get("raw_payload_json") or "{}").strip() or "{}",
+            ),
+        )
+    db.commit()
+    return len(members)
 
 
 def insert_admin_user(
