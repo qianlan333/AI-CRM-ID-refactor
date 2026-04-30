@@ -5523,6 +5523,15 @@ def test_profile_segment_templates_and_channel_settings_are_scoped_by_program(ap
 
     assert [item["template"]["template_name"] for item in default_list["items"]] == ["默认方案画像"]
     assert [item["template"]["template_name"] for item in other_list["items"]] == ["独立方案画像"]
+    assert default_list["items"][0]["template"]["program_id"] == default_program_id
+    assert other_list["items"][0]["template"]["program_id"] == other_program_id
+
+    default_detail = client.get(
+        f"/api/admin/automation-conversion/profile-segment-templates/{default_seed['template_id']}",
+        query_string={"program_id": default_program_id},
+    )
+    assert default_detail.status_code == 200
+    assert default_detail.get_json()["template"]["program_id"] == default_program_id
 
     cross_detail = client.get(
         f"/api/admin/automation-conversion/profile-segment-templates/{default_seed['template_id']}",

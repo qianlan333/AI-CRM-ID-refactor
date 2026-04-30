@@ -631,6 +631,7 @@ def _serialize_agent_reference(agent: dict[str, Any]) -> dict[str, Any]:
 def _serialize_profile_segment_template(template: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(template.get("id") or 0),
+        "program_id": int(template.get("program_id") or 0) or None,
         "template_code": _normalized_text(template.get("template_code")),
         "template_name": _normalized_text(template.get("template_name")),
         "questionnaire_id": int(template.get("questionnaire_id") or 0) or None,
