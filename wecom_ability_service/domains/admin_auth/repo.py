@@ -34,12 +34,16 @@ def list_admin_users() -> list[dict[str, Any]]:
             wecom_corpid,
             display_name,
             is_active,
+            login_enabled,
+            admin_level,
             auth_source,
             last_login_at,
+            created_by,
+            updated_by,
             created_at,
             updated_at
         FROM admin_users
-        ORDER BY is_active DESC, display_name ASC, wecom_userid ASC, id ASC
+        ORDER BY admin_level DESC, is_active DESC, login_enabled DESC, display_name ASC, wecom_userid ASC, id ASC
         """
     ).fetchall()
     return [dict(row) for row in rows]
@@ -138,8 +142,12 @@ def _admin_user_with_roles_where(sql_where: str, params: tuple[Any, ...]) -> dic
             wecom_corpid,
             display_name,
             is_active,
+            login_enabled,
+            admin_level,
             auth_source,
             last_login_at,
+            created_by,
+            updated_by,
             created_at,
             updated_at
         FROM admin_users
@@ -185,6 +193,39 @@ def list_admin_user_roles(admin_user_ids: list[int] | None = None) -> list[dict[
         FROM admin_user_roles
         {where_sql}
         ORDER BY admin_user_id ASC, role_code ASC, id ASC
+        """,
+        tuple(params),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_active_super_admin_users(*, wecom_corpid: str = "") -> list[dict[str, Any]]:
+    normalized_corpid = str(wecom_corpid or "").strip()
+    params: list[Any] = []
+    where_sql = "WHERE admin_level = 'super_admin' AND is_active = ? AND login_enabled = ?"
+    params.extend([_db_bool(True), _db_bool(True)])
+    if normalized_corpid:
+        where_sql += " AND wecom_corpid = ?"
+        params.append(normalized_corpid)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            id,
+            wecom_userid,
+            wecom_corpid,
+            display_name,
+            is_active,
+            login_enabled,
+            admin_level,
+            auth_source,
+            last_login_at,
+            created_by,
+            updated_by,
+            created_at,
+            updated_at
+        FROM admin_users
+        {where_sql}
+        ORDER BY id ASC
         """,
         tuple(params),
     ).fetchall()
@@ -250,7 +291,11 @@ def insert_admin_user(
     wecom_corpid: str,
     display_name: str,
     is_active: bool,
+    login_enabled: bool,
+    admin_level: str,
     auth_source: str,
+    created_by: str = "",
+    updated_by: str = "",
 ) -> int:
     if get_db_backend() == "postgres":
         cursor = get_db().execute(
@@ -260,11 +305,15 @@ def insert_admin_user(
                 wecom_corpid,
                 display_name,
                 is_active,
+                login_enabled,
+                admin_level,
                 auth_source,
+                created_by,
+                updated_by,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (
@@ -272,7 +321,11 @@ def insert_admin_user(
                 str(wecom_corpid or "").strip(),
                 str(display_name or "").strip(),
                 _db_bool(is_active),
+                _db_bool(login_enabled),
+                str(admin_level or "").strip() or "admin",
                 str(auth_source or "").strip() or "wecom_sso",
+                str(created_by or "").strip(),
+                str(updated_by or "").strip(),
             ),
         )
     else:
@@ -283,18 +336,26 @@ def insert_admin_user(
                 wecom_corpid,
                 display_name,
                 is_active,
+                login_enabled,
+                admin_level,
                 auth_source,
+                created_by,
+                updated_by,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 str(wecom_userid or "").strip(),
                 str(wecom_corpid or "").strip(),
                 str(display_name or "").strip(),
                 _db_bool(is_active),
+                _db_bool(login_enabled),
+                str(admin_level or "").strip() or "admin",
                 str(auth_source or "").strip() or "wecom_sso",
+                str(created_by or "").strip(),
+                str(updated_by or "").strip(),
             ),
         )
     get_db().commit()
@@ -308,7 +369,10 @@ def update_admin_user(
     wecom_corpid: str,
     display_name: str,
     is_active: bool,
+    login_enabled: bool,
+    admin_level: str,
     auth_source: str,
+    updated_by: str = "",
 ) -> None:
     get_db().execute(
         """
@@ -317,7 +381,10 @@ def update_admin_user(
             wecom_corpid = ?,
             display_name = ?,
             is_active = ?,
+            login_enabled = ?,
+            admin_level = ?,
             auth_source = ?,
+            updated_by = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
@@ -326,7 +393,10 @@ def update_admin_user(
             str(wecom_corpid or "").strip(),
             str(display_name or "").strip(),
             _db_bool(is_active),
+            _db_bool(login_enabled),
+            str(admin_level or "").strip() or "admin",
             str(auth_source or "").strip() or "wecom_sso",
+            str(updated_by or "").strip(),
             int(user_id),
         ),
     )

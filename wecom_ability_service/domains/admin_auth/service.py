@@ -37,8 +37,13 @@ ROLE_MODULE_ACCESS = {
 }
 
 READ_ONLY_ROLES = {"viewer"}
+ADMIN_LEVEL_LABELS = {
+    "super_admin": "超级管理员",
+    "admin": "管理员",
+}
 
 ADMIN_ROLE_OPTIONS = [{"value": code, "label": label} for code, label in ROLE_LABELS.items()]
+ADMIN_ASSIGNABLE_ROLE_OPTIONS = [{"value": code, "label": label} for code, label in ROLE_LABELS.items() if code != "super_admin"]
 WECOM_MEMBER_STATUS_LABELS = {
     1: "已激活",
     2: "已禁用",
@@ -79,6 +84,26 @@ def _normalized_role_codes(value: Any) -> list[str]:
     if not deduped:
         raise ValueError("至少选择一个角色")
     return deduped
+
+
+def _normalized_admin_level(value: Any, *, role_codes: list[str] | None = None) -> str:
+    admin_level = _normalized_text(value)
+    if not admin_level and role_codes and "super_admin" in role_codes:
+        return "super_admin"
+    if not admin_level:
+        return "admin"
+    if admin_level not in ADMIN_LEVEL_LABELS:
+        raise ValueError("管理员层级不合法")
+    return admin_level
+
+
+def _role_codes_for_admin_level(admin_level: str, role_codes: list[str]) -> list[str]:
+    if admin_level == "super_admin":
+        return ["super_admin"]
+    filtered = [role_code for role_code in role_codes if role_code != "super_admin"]
+    if not filtered:
+        raise ValueError("普通管理员至少选择一个业务角色")
+    return filtered
 
 
 def _validate_wecom_userid(value: Any) -> str:
@@ -155,8 +180,16 @@ def _present_admin_users(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "role_labels": _role_labels(role_codes),
                 "roles_display": " / ".join(_role_labels(role_codes)) or "-",
                 "is_active": bool(row.get("is_active")),
+                "login_enabled": bool(row.get("login_enabled")),
+                "admin_level": _normalized_text(row.get("admin_level")) or ("super_admin" if "super_admin" in role_codes else "admin"),
+                "admin_level_label": ADMIN_LEVEL_LABELS.get(
+                    _normalized_text(row.get("admin_level")) or ("super_admin" if "super_admin" in role_codes else "admin"),
+                    "管理员",
+                ),
                 "auth_source": _normalized_text(row.get("auth_source")) or "wecom_sso",
                 "last_login_at": _normalized_text(row.get("last_login_at")),
+                "created_by": _normalized_text(row.get("created_by")),
+                "updated_by": _normalized_text(row.get("updated_by")),
                 "created_at": _normalized_text(row.get("created_at")),
                 "updated_at": _normalized_text(row.get("updated_at")),
             }
@@ -198,11 +231,26 @@ def _present_directory_members(
                 "is_authorized": is_authorized,
                 "admin_user_id": int((authorized_user or {}).get("id") or 0),
                 "admin_is_active": bool((authorized_user or {}).get("is_active")),
+                "admin_login_enabled": bool((authorized_user or {}).get("login_enabled")),
+                "admin_level": _normalized_text((authorized_user or {}).get("admin_level")),
+                "admin_level_label": _normalized_text((authorized_user or {}).get("admin_level_label")),
                 "admin_roles_display": _normalized_text((authorized_user or {}).get("roles_display")) if authorized_user else "",
-                "authorization_label": "已授权" if is_authorized else "未授权",
+                "authorization_label": _normalized_text((authorized_user or {}).get("admin_level_label")) if is_authorized else "未授权",
             }
         )
     return presented
+
+
+def _is_super_admin_user(user: dict[str, Any] | None) -> bool:
+    if not user:
+        return False
+    return _normalized_text(user.get("admin_level")) == "super_admin" or "super_admin" in list(user.get("roles") or [])
+
+
+def admin_user_can_login(user: dict[str, Any] | None) -> bool:
+    if not user:
+        return False
+    return bool(user.get("is_active")) and bool(user.get("login_enabled")) and bool(user.get("roles"))
 
 
 def count_admin_users() -> int:
@@ -271,6 +319,8 @@ def build_admin_account_page_payload() -> dict[str, Any]:
     login_audit_rows = repo.list_admin_login_audit(limit=20)
     return {
         "rows": rows,
+        "super_admin_rows": [row for row in rows if row.get("admin_level") == "super_admin"],
+        "admin_rows": [row for row in rows if row.get("admin_level") != "super_admin"],
         "directory_members": directory_members,
         "directory_summary": {
             "count": len(directory_members),
@@ -279,6 +329,8 @@ def build_admin_account_page_payload() -> dict[str, Any]:
             "authorized_count": sum(1 for row in directory_members if row.get("is_authorized")),
         },
         "role_options": list(ADMIN_ROLE_OPTIONS),
+        "assignable_role_options": list(ADMIN_ASSIGNABLE_ROLE_OPTIONS),
+        "admin_level_labels": dict(ADMIN_LEVEL_LABELS),
         "role_labels": dict(ROLE_LABELS),
         "break_glass_enabled": is_break_glass_login_enabled(),
         "auth_mode": _setting_or_config("ADMIN_AUTH_MODE") or "wecom_sso",
@@ -366,7 +418,75 @@ def sync_admin_wecom_directory_members(*, operator: str = "crm_console") -> dict
     }
 
 
-def save_admin_user(payload: dict[str, Any], *, operator: str = "crm_console") -> dict[str, Any]:
+def _validate_admin_management_change(
+    *,
+    existing: dict[str, Any] | None,
+    target_user_id: int | None,
+    wecom_corpid: str,
+    admin_level: str,
+    is_active: bool,
+    login_enabled: bool,
+    actor_user: dict[str, Any] | None,
+    confirm_super_admin_transfer: bool,
+) -> None:
+    actor_is_super_admin = _is_super_admin_user(actor_user) or actor_user is None
+    existing_is_super_admin = _normalized_text((existing or {}).get("admin_level")) == "super_admin"
+    target_is_super_admin = admin_level == "super_admin"
+    if (existing_is_super_admin or target_is_super_admin) and not actor_is_super_admin:
+        raise ValueError("只有超级管理员可以创建、转让或修改超级管理员")
+    if target_is_super_admin and (not is_active or not login_enabled):
+        raise ValueError("超级管理员必须保持启用并允许登录")
+
+    active_super_admins = _present_admin_users(repo.list_active_super_admin_users(wecom_corpid=wecom_corpid))
+    active_super_admin_ids = {int(row.get("id") or 0) for row in active_super_admins}
+    target_id = int(target_user_id or 0)
+
+    removing_current_super_admin = existing_is_super_admin and (
+        not target_is_super_admin or not is_active or not login_enabled
+    )
+    if removing_current_super_admin and active_super_admin_ids == {target_id}:
+        raise ValueError("不能停用或降级唯一超级管理员，请先转让超级管理员身份")
+
+    other_super_admin_ids = {user_id for user_id in active_super_admin_ids if user_id != target_id}
+    if target_is_super_admin and other_super_admin_ids and not confirm_super_admin_transfer:
+        raise ValueError("当前企业已有超级管理员；如需转让，请勾选确认转让超级管理员")
+
+
+def _demote_other_super_admins(
+    *,
+    target_user_id: int,
+    wecom_corpid: str,
+    operator: str,
+) -> list[dict[str, Any]]:
+    demoted: list[dict[str, Any]] = []
+    for row in _present_admin_users(repo.list_active_super_admin_users(wecom_corpid=wecom_corpid)):
+        if int(row.get("id") or 0) == int(target_user_id):
+            continue
+        demoted.append(row)
+        repo.update_admin_user(
+            user_id=int(row["id"]),
+            wecom_userid=_normalized_text(row.get("wecom_userid")),
+            wecom_corpid=_normalized_text(row.get("wecom_corpid")),
+            display_name=_normalized_text(row.get("display_name")),
+            is_active=bool(row.get("is_active")),
+            login_enabled=bool(row.get("login_enabled")),
+            admin_level="admin",
+            auth_source=_normalized_text(row.get("auth_source")) or "wecom_sso",
+            updated_by=operator,
+        )
+        repo.replace_admin_user_roles(
+            admin_user_id=int(row["id"]),
+            role_codes=["automation_admin", "questionnaire_admin", "config_admin"],
+        )
+    return demoted
+
+
+def save_admin_user(
+    payload: dict[str, Any],
+    *,
+    operator: str = "crm_console",
+    actor_user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     user_id = int(payload.get("id") or 0) or None
     wecom_userid = _validate_wecom_userid(payload.get("wecom_userid"))
     wecom_corpid = _normalized_text(payload.get("wecom_corpid")) or _setting_or_config("WECOM_CORP_ID")
@@ -377,33 +497,64 @@ def save_admin_user(payload: dict[str, Any], *, operator: str = "crm_console") -
         or wecom_userid
     )
     is_active = _normalized_bool(payload.get("is_active"), default=True)
+    login_enabled = _normalized_bool(payload.get("login_enabled"), default=True)
     auth_source = _normalized_text(payload.get("auth_source")) or "wecom_sso"
-    role_codes = _normalized_role_codes(payload.get("role_codes") or payload.get("role_code"))
+    raw_role_value = payload.get("role_codes") or payload.get("role_code")
+    admin_level_hint = _normalized_admin_level(payload.get("admin_level"))
+    if admin_level_hint == "super_admin" and not raw_role_value:
+        raw_role_codes = ["super_admin"]
+    else:
+        raw_role_codes = _normalized_role_codes(raw_role_value)
+    admin_level = _normalized_admin_level(payload.get("admin_level"), role_codes=raw_role_codes)
+    role_codes = _role_codes_for_admin_level(admin_level, raw_role_codes)
+    normalized_operator = _normalized_text(operator) or "crm_console"
+    confirm_super_admin_transfer = _normalized_bool(payload.get("confirm_super_admin_transfer"), default=False)
 
     existing_by_userid = repo.get_admin_user_by_wecom_userid(wecom_userid, wecom_corpid=wecom_corpid)
     if existing_by_userid and int(existing_by_userid.get("id") or 0) != int(user_id or 0):
         raise ValueError("该企微成员已经授权")
 
+    existing = get_admin_user_by_id(int(user_id)) if user_id else None
+    _validate_admin_management_change(
+        existing=existing,
+        target_user_id=user_id,
+        wecom_corpid=wecom_corpid,
+        admin_level=admin_level,
+        is_active=is_active,
+        login_enabled=login_enabled,
+        actor_user=actor_user,
+        confirm_super_admin_transfer=confirm_super_admin_transfer,
+    )
+
     if user_id:
-        existing = get_admin_user_by_id(int(user_id))
         if not existing:
             raise ValueError("授权成员不存在")
+        demoted_super_admins = []
+        if admin_level == "super_admin":
+            demoted_super_admins = _demote_other_super_admins(
+                target_user_id=int(user_id),
+                wecom_corpid=wecom_corpid,
+                operator=normalized_operator,
+            )
         repo.update_admin_user(
             user_id=int(user_id),
             wecom_userid=wecom_userid,
             wecom_corpid=wecom_corpid,
             display_name=display_name,
             is_active=is_active,
+            login_enabled=login_enabled,
+            admin_level=admin_level,
             auth_source=auth_source,
+            updated_by=normalized_operator,
         )
         repo.replace_admin_user_roles(admin_user_id=int(user_id), role_codes=role_codes)
         saved = get_admin_user_by_id(int(user_id))
         admin_config_repo.insert_admin_operation_log(
-            operator=_normalized_text(operator) or "crm_console",
+            operator=normalized_operator,
             action_type="update_admin_user",
             target_type="admin_user",
             target_id=wecom_userid,
-            before_json={"user": existing or {}},
+            before_json={"user": existing or {}, "demoted_super_admins": demoted_super_admins},
             after_json={"user": saved or {}},
         )
         if not saved:
@@ -415,16 +566,27 @@ def save_admin_user(payload: dict[str, Any], *, operator: str = "crm_console") -
         wecom_corpid=wecom_corpid,
         display_name=display_name,
         is_active=is_active,
+        login_enabled=login_enabled,
+        admin_level=admin_level,
         auth_source=auth_source,
+        created_by=normalized_operator,
+        updated_by=normalized_operator,
     )
+    demoted_super_admins = []
+    if admin_level == "super_admin":
+        demoted_super_admins = _demote_other_super_admins(
+            target_user_id=created_id,
+            wecom_corpid=wecom_corpid,
+            operator=normalized_operator,
+        )
     repo.replace_admin_user_roles(admin_user_id=created_id, role_codes=role_codes)
     saved = get_admin_user_by_id(created_id)
     admin_config_repo.insert_admin_operation_log(
-        operator=_normalized_text(operator) or "crm_console",
+        operator=normalized_operator,
         action_type="create_admin_user",
         target_type="admin_user",
         target_id=wecom_userid,
-        before_json={},
+        before_json={"demoted_super_admins": demoted_super_admins},
         after_json={"user": saved or {}},
     )
     if not saved:

@@ -26,8 +26,11 @@ from .auth_runtime import (
 )
 from .service import (
     ADMIN_ROLE_OPTIONS,
+    ADMIN_ASSIGNABLE_ROLE_OPTIONS,
+    ADMIN_LEVEL_LABELS,
     ROLE_LABELS,
     admin_role_can_access_module,
+    admin_user_can_login,
     build_admin_account_page_payload,
     count_admin_users,
     get_admin_user_by_id,
@@ -42,6 +45,8 @@ from .service import (
 __all__ = [
     "ADMIN_CONSOLE_ACTION_TOKEN_SESSION_KEY",
     "ADMIN_READ_ONLY_METHODS",
+    "ADMIN_ASSIGNABLE_ROLE_OPTIONS",
+    "ADMIN_LEVEL_LABELS",
     "ADMIN_ROLE_OPTIONS",
     "ADMIN_SESSION_DISPLAY_NAME_KEY",
     "ADMIN_SESSION_LOGIN_TYPE_KEY",
@@ -51,6 +56,7 @@ __all__ = [
     "ROLE_LABELS",
     "admin_login_redirect_uri",
     "admin_role_can_access_module",
+    "admin_user_can_login",
     "admin_user_can_access",
     "authenticate_break_glass_user",
     "build_admin_account_page_payload",

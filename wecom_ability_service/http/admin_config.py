@@ -52,6 +52,7 @@ from ..domains.admin_config import (
 )
 from ..domains.admin_config import repo as admin_config_repo
 from .internal_auth import (
+    current_admin_session_user,
     current_admin_operator,
     require_admin_module_access,
     require_admin_roles,
@@ -540,6 +541,8 @@ def _login_access_page(*, page_error: str = ""):
     )
     default_form_row = {
         "is_active": True,
+        "login_enabled": True,
+        "admin_level": "admin",
         "roles": ["viewer"],
         "wecom_corpid": payload.get("corp_id", ""),
     }
@@ -572,16 +575,27 @@ def _login_access_page(*, page_error: str = ""):
         page_notice=page_notice,
         page_error=page_error,
         rows=payload["rows"],
+        super_admin_rows=payload["super_admin_rows"],
+        admin_rows=payload["admin_rows"],
         directory_members=payload["directory_members"],
         directory_summary=payload["directory_summary"],
-        role_options=payload["role_options"],
+        role_options=payload["assignable_role_options"],
         role_labels=payload["role_labels"],
+        admin_level_labels=payload["admin_level_labels"],
         login_audit_rows=payload["login_audit_rows"],
         break_glass_enabled=payload["break_glass_enabled"],
         auth_mode=payload["auth_mode"],
         corp_id=payload["corp_id"],
         form_row=form_row,
         can_manage_accounts=require_admin_module_access("config", write=True) == "",
+        can_manage_super_admin=(current_admin_session_user() or {}).get("admin_level") == "super_admin",
+        can_manage_form=(
+            require_admin_module_access("config", write=True) == ""
+            and (
+                (form_row or {}).get("admin_level") != "super_admin"
+                or (current_admin_session_user() or {}).get("admin_level") == "super_admin"
+            )
+        ),
     )
 
 
@@ -622,10 +636,13 @@ def admin_config_save_login_access():
         "display_name": request.form.get("display_name"),
         "auth_source": request.form.get("auth_source"),
         "is_active": request.form.get("is_active"),
+        "login_enabled": request.form.get("login_enabled"),
+        "admin_level": request.form.get("admin_level"),
+        "confirm_super_admin_transfer": request.form.get("confirm_super_admin_transfer"),
         "role_codes": request.form.getlist("role_codes"),
     }
     try:
-        saved = save_admin_user(payload, operator=_operator_from_request())
+        saved = save_admin_user(payload, operator=_operator_from_request(), actor_user=current_admin_session_user())
     except ValueError as exc:
         return _login_access_page(page_error=str(exc))
     return redirect(url_for("api.admin_config_login_access", saved=1, edit_id=saved.get("id", "")), code=302)
