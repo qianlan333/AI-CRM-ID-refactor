@@ -8185,14 +8185,14 @@ def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metri
     assert '<div class="admin-card-label">普通跟进</div>' not in html
 
 
-def test_member_ops_page_renders_business_detail_sidebar_with_member_query(app, client):
+def test_member_ops_page_links_members_to_unified_customer_detail(app, client):
     _seed_contact(app, external_userid="wm_member_ops_001", mobile="13800009131", owner_userid="sales_member", customer_name="成员运营客户")
     _seed_automation_member(
         app,
         external_contact_id="wm_member_ops_001",
         phone="13800009131",
         owner_staff_id="sales_member",
-        current_pool="active_normal",
+        current_pool="operating",
         follow_type="normal",
         activation_status="active",
         questionnaire_status="submitted",
@@ -8200,27 +8200,30 @@ def test_member_ops_page_renders_business_detail_sidebar_with_member_query(app, 
         decision_source="system",
     )
 
-    client.post(
-        "/api/admin/automation-conversion/member/set-focus",
-        json={"external_contact_id": "wm_member_ops_001", "operator": "tester-member-ops"},
-    )
-
     program_id = _default_program_id(app)
     response = client.get(
         f"/admin/automation-conversion/programs/{program_id}/member-ops",
-        query_string={"stage": "active-focus", "panel": "members", "member": "wm_member_ops_001"},
+        query_string={"stage": "operating", "panel": "members", "member": "wm_member_ops_001"},
     )
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert "成员列表" in html
-    assert "单客状态" in html
-    assert "问卷状态" in html
+    assert "成员运营客户" in html
+    assert "13800009131" in html
     assert "当前阶段" in html
-    assert "最近人工动作" in html
-    assert "转化为重点跟进" in html
+    assert "查看档案" in html
+    assert "/admin/customers/wm_member_ops_001" in html
+    assert "单客状态" not in html
+    assert "问卷状态" not in html
+    assert "<th>负责人</th>" not in html
+    assert "<th>目标</th>" not in html
+    assert "<th>最近更新</th>" not in html
+    assert "转化为重点跟进" not in html
+    assert "当前目标" not in html
+    assert "最近人工动作" not in html
+    assert "panel=members&amp;member=wm_member_ops_001" not in html
     assert "set_focus" not in html
-    assert ">member=wm_member_ops_001<" not in html
 
 
 def test_automation_conversion_stage_send_page_switches_between_manual_and_focus_modes(app, client):

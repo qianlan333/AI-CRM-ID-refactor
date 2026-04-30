@@ -15,7 +15,7 @@
   .ac-member-grid {
     display: grid;
     gap: 16px;
-    grid-template-columns: minmax(0, 1.45fr) minmax(300px, .85fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ac-member-panel {
@@ -89,7 +89,7 @@
   .ac-member-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 760px;
+    min-width: 640px;
   }
 
   .ac-member-table th,
@@ -148,11 +148,6 @@
 {% set workspace = member_ops_workspace or {} %}
 {% set stage = workspace.detail.stage or {} %}
 {% set pagination = workspace.detail.pagination or {} %}
-{% set member_detail = workspace.member_detail or {} %}
-{% set selected_member = member_detail.member or {} %}
-{% set selected_profile = member_detail.profile or {} %}
-{% set questionnaire = member_detail.questionnaire or {} %}
-{% set latest_action = member_detail.latest_manual_action or {} %}
 {% set is_focus_mode = workspace.stage_key in ['inactive-focus', 'active-focus'] %}
 {% include "admin_console/_automation_program_context.html" %}
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
@@ -173,7 +168,7 @@
       <div>
         <div class="admin-page-hero__eyebrow">成员运营</div>
         <h1>方案成员运营</h1>
-        <p>按当前方案查看进入自动化池子的成员，围绕三类池子做查询、单客状态核对和批量触达。</p>
+        <p>按当前方案查看进入自动化池子的成员，围绕三类池子做查询、统一客户档案查看和批量触达。</p>
       </div>
     </div>
   </section>
@@ -276,10 +271,7 @@
             <tr>
               <th>成员</th>
               <th>手机号</th>
-              <th>负责人</th>
               <th>当前阶段</th>
-              <th>目标</th>
-              <th>最近更新</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -291,17 +283,18 @@
                 <div class="admin-mono">{{ customer.external_userid }}</div>
               </td>
               <td>{{ customer.mobile or '-' }}</td>
-              <td>{{ customer.owner_display_name or customer.owner_userid or '-' }}</td>
               <td>{{ customer.current_stage_label or '-' }}</td>
-              <td>{{ customer.current_target_label or '-' }}</td>
-              <td>{{ customer.last_touch_at or '-' }}</td>
               <td>
-                <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='members', member=customer.external_userid) }}">查看</a>
+                {% if customer.external_userid %}
+                <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_console_customer_detail', external_userid=customer.external_userid) }}">查看档案</a>
+                {% else %}
+                <span class="ac-member-muted">无档案</span>
+                {% endif %}
               </td>
             </tr>
             {% else %}
             <tr>
-              <td colspan="7">
+              <td colspan="4">
                 <div class="admin-state admin-state--inline">当前筛选下暂无成员。</div>
               </td>
             </tr>
@@ -311,67 +304,6 @@
       </div>
       {% endif %}
     </article>
-
-    <aside class="ac-member-panel">
-      <div>
-        <h3>单客状态</h3>
-        <p class="ac-member-muted">从成员列表选择一个成员后，这里展示问卷分层、当前阶段和可操作项。</p>
-      </div>
-      {% if member_detail.member_exists %}
-      <dl class="ac-member-detail-list">
-        <dt>客户</dt>
-        <dd>{{ selected_profile.customer_name or selected_member.external_contact_id or '-' }}</dd>
-        <dt>企微客户 ID</dt>
-        <dd class="admin-mono">{{ selected_member.external_contact_id or '-' }}</dd>
-        <dt>手机号</dt>
-        <dd>{{ selected_profile.phone or selected_member.phone or '-' }}</dd>
-        <dt>负责人</dt>
-        <dd>{{ selected_profile.owner_display_name or selected_profile.owner_staff_id or selected_member.owner_staff_id or '-' }}</dd>
-        <dt>当前池子</dt>
-        <dd>{{ selected_member.current_pool_label or '-' }}</dd>
-        <dt>当前阶段</dt>
-        <dd>{{ selected_member.current_stage_label or '-' }}</dd>
-        <dt>运营目标</dt>
-        <dd>{{ selected_member.current_target_label or '-' }}</dd>
-        <dt>问卷状态</dt>
-        <dd>{{ questionnaire.status_label or selected_member.questionnaire_status_label or '-' }}{% if questionnaire.submitted_at %} · {{ questionnaire.submitted_at }}{% endif %}</dd>
-        <dt>分层来源</dt>
-        <dd>{{ selected_member.decision_source_label or '-' }}</dd>
-        <dt>最近人工动作</dt>
-        <dd>{% if latest_action.action_label %}{{ latest_action.action_label }}{% if latest_action.created_at %} · {{ latest_action.created_at }}{% endif %}{% else %}暂无{% endif %}</dd>
-      </dl>
-      {% if questionnaire.matched_questions %}
-      <div class="ac-member-stack">
-        <strong>命中的问卷问题</strong>
-        <div class="ac-member-chip-list">
-          {% for item in questionnaire.matched_questions %}
-          <span class="admin-chip admin-chip--neutral">{% if item is string %}{{ item }}{% else %}{{ item.label or item.title or item.question_key or item }}{% endif %}</span>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-      <div class="ac-member-stack">
-        <strong>可操作项</strong>
-        {% if workspace.member_action_options %}
-        <div class="ac-member-chip-list">
-          {% for item in workspace.member_action_options %}
-          <span class="admin-chip admin-chip--neutral">{{ item.label }}</span>
-          {% endfor %}
-        </div>
-        {% else %}
-        <p class="ac-member-muted">当前状态暂无可用动作。</p>
-        {% endif %}
-      </div>
-      {% else %}
-      <div class="admin-state admin-state--inline">
-        {% if workspace.member_query %}
-        未找到成员：{{ workspace.member_query }}
-        {% else %}
-        请选择左侧成员查看明细。
-        {% endif %}
-      </div>
-      {% endif %}
-    </aside>
   </section>
 </div>
 {% endblock %}

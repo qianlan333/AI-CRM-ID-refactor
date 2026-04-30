@@ -552,8 +552,6 @@ def _build_member_ops_workspace() -> dict[str, object]:
         limit=_query_int("limit", default=50, minimum=1, maximum=100),
         offset=_query_int("offset", default=0, minimum=0, maximum=1000000),
     )
-    detail_lookup = _query_text("member") or _query_text("external_contact_id")
-    member_detail = get_member_detail(external_contact_id=detail_lookup, phone=_query_text("phone")) if detail_lookup or _query_text("phone") else {}
     focus_batch_id = _query_int("focus_batch_id", default=0, minimum=0, maximum=100000000)
     focus_batch_detail = {}
     if focus_batch_id:
@@ -577,31 +575,11 @@ def _build_member_ops_workspace() -> dict[str, object]:
                 "active": tab_pool == active_pool,
             }
         )
-    member_query = detail_lookup or _query_text("phone")
-    action_labels = {
-        "put_in_pool": "放入自动化转化池",
-        "remove_from_pool": "移出自动化转化池",
-        "set_focus": "转为重点跟进",
-        "set_normal": "转为普通跟进",
-        "mark_won": "确认已转化",
-        "unmark_won": "移出已转化",
-        "push_openclaw": "生成跟进话术",
-        "ai_push": "生成跟进话术",
-    }
-    raw_actions = dict((member_detail.get("actions") or {}) if isinstance(member_detail, dict) else {})
-    member_action_options = [
-        {"key": key, "label": label}
-        for key, label in action_labels.items()
-        if bool((raw_actions.get(key) or {}).get("enabled"))
-    ]
     return {
         "stage_key": stage_key,
         "panel": panel,
         "stage_tabs": stage_tabs,
         "detail": stage_payload,
-        "member_detail": member_detail,
-        "member_query": member_query,
-        "member_action_options": member_action_options,
         "manual_send_notice": _query_text("manual_send_notice"),
         "manual_send_record_id": _query_text("record_id"),
         "focus_batch_notice": _query_text("focus_batch_notice"),
@@ -944,7 +922,7 @@ def _render_member_ops_page(*, page_error: str = "", program: dict[str, object] 
         "automation_conversion_member_ops_workspace.html",
         active_nav="automation_conversion",
         page_title="成员运营",
-        page_summary="按当前方案查看池子成员、单客问卷分层和批量触达入口。" if program else "查看自动化成员池子、单客状态和批量触达入口。",
+        page_summary="按当前方案查看池子成员并进入统一客户档案，或创建批量触达。" if program else "查看自动化成员池子、统一客户档案入口和批量触达入口。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
