@@ -5482,6 +5482,8 @@ def test_flow_design_page_renders_entry_tag_fields_for_program_channel(app, clie
     assert "扫码自动打标签" in html
     assert "选择已有标签" in html
     assert "default-channel-tag-modal-overlay" in html
+    assert "[hidden]" in html
+    assert "display: none !important" in html
     assert "按标签组选择，确认后仅保存 tag_id" in html
 
 
