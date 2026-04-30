@@ -8171,8 +8171,11 @@ def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metri
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
+    assert "方案成员运营" in html
+    assert "automation_conversion_workspace.css" in html
+    assert "池子选择" in html
     assert "成员列表" in html
-    assert '<div class="admin-card-label">总人数</div>' in html
+    assert '<div class="admin-card-label">池内人数</div>' in html
     assert '<div class="admin-card-label">今日新增</div>' in html
     assert '<div class="admin-card-label">重点跟进</div>' not in html
     assert '<div class="admin-card-label">普通跟进</div>' not in html
@@ -8207,12 +8210,13 @@ def test_member_ops_page_renders_business_detail_sidebar_with_member_query(app, 
 
     assert response.status_code == 200
     assert "成员列表" in html
-    assert "问卷与规则信息" in html
-    assert "最近业务事件" in html
-    assert "单客动作" in html
-    assert "当前分层原因 / 说明" in html
-    assert "set_focus" in html
-    assert "member=wm_member_ops_001" in html
+    assert "单客状态" in html
+    assert "问卷状态" in html
+    assert "当前阶段" in html
+    assert "最近人工动作" in html
+    assert "转化为重点跟进" in html
+    assert "set_focus" not in html
+    assert ">member=wm_member_ops_001<" not in html
 
 
 def test_automation_conversion_stage_send_page_switches_between_manual_and_focus_modes(app, client):
@@ -8230,16 +8234,15 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
     focus_html = focus_response.get_data(as_text=True)
 
     assert normal_response.status_code == 200
-    assert "官方群发" in normal_html
-    assert "文本 + 图片" in normal_html
+    assert "批量群发" in normal_html
+    assert "群发内容" in normal_html
     assert 'id="stage-send-image-input"' in normal_html
     assert 'name="images" multiple' in normal_html
     assert 'enctype="multipart/form-data"' in normal_html
     assert 'name="admin_action_token"' in normal_html
-    assert "添加图片" in normal_html
-    assert "发送前预览" in normal_html
-    assert "/manual-send/preview" in normal_html
-    assert "/api/admin/automation-conversion/stage/new-user/manual-send" in normal_html
+    assert "创建群发任务" in normal_html
+    assert "/manual-send/preview" not in normal_html
+    assert "/api/admin/automation-conversion/stage/new-user/manual-send" not in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/focus-send-batches" not in normal_html
     assert f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send" in normal_html
     assert f'action="/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send"' in normal_html
@@ -8248,9 +8251,10 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
 
     assert focus_response.status_code == 200
     assert "AI 批量处理" in focus_html
-    assert "/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches" in focus_html
+    assert "创建 AI 批任务" in focus_html
+    assert "/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches" not in focus_html
     assert "/api/admin/automation-conversion/stage/inactive-focus/manual-send" not in focus_html
-    assert "/api/admin/automation-conversion/focus-send-batches/" in focus_html
+    assert "/api/admin/automation-conversion/focus-send-batches/" not in focus_html
 
 
 def test_member_ops_send_panel_contains_batch_placeholder_actions_for_both_modes(app, client):
@@ -8268,12 +8272,12 @@ def test_member_ops_send_panel_contains_batch_placeholder_actions_for_both_modes
     focus_html = focus_response.get_data(as_text=True)
 
     assert normal_response.status_code == 200
-    assert "批量状态动作" in normal_html
-    assert "官方群发" in normal_html
+    assert "动作只作用于当前池子" in normal_html
+    assert "批量群发" in normal_html
     assert "AI 批量处理" not in normal_html
 
     assert focus_response.status_code == 200
-    assert "批量状态动作" in focus_html
+    assert "动作只作用于当前池子" in focus_html
     assert "AI 批量处理" in focus_html
 
 
@@ -9164,8 +9168,8 @@ def test_admin_stage_send_program_route_requires_action_token(app, client):
 
     assert response.status_code == 200
     assert "后台动作令牌无效，请刷新页面后重试" in html
-    assert "成员运营工作区" in html
-    assert "官方群发" in html
+    assert "方案成员运营" in html
+    assert "批量群发" in html
 
 
 def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatch):
@@ -9213,8 +9217,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "官方群发已创建" in html
-    assert "本次执行结果" in html
+    assert "群发任务已创建" in html
     assert "发送记录 ID" in html
     assert 'id="stage-send-image-input"' in html
     assert len(captured_payloads) == 1
@@ -9258,9 +9261,8 @@ def test_admin_stage_send_page_shows_focus_batch_summary(app, client, monkeypatc
 
     assert response.status_code == 200
     assert "AI 批任务已创建" in html
-    assert "AI 批任务状态" in html
-    assert "总数" in html
-    assert "剩余" in html
+    assert "任务总数" in html
+    assert "剩余数量" in html
 
 
 def test_message_activity_sync_returns_not_configured_without_creating_run(app):

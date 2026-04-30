@@ -1,39 +1,173 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
 <style>
-  .ac-member-shell { display: grid; gap: 14px; }
-  .ac-member-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .9fr); }
-  .ac-member-card {
-    padding: 16px;
-    border-radius: 12px;
-    border: 1px solid rgba(20, 86, 240, 0.10);
-    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,251,255,0.98));
-    box-shadow: none;
+  .ac-member-shell,
+  .ac-member-stack,
+  .ac-member-panel,
+  .ac-member-summary,
+  .ac-member-detail-list,
+  .ac-member-send-form {
     display: grid;
     gap: 14px;
   }
-  .ac-member-stats { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  .admin-card-label { color: #64748b; font-size: 12px; }
-  .ac-member-muted { color: #4e5969; line-height: 1.7; margin: 0; }
-  .ac-member-card h3 { margin: 0; }
-  .ac-send-box { display: grid; gap: 12px; }
-  textarea { width: 100%; min-height: 120px; }
+
+  .ac-member-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 1.45fr) minmax(300px, .85fr);
+  }
+
+  .ac-member-panel {
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 86, 240, 0.10);
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .ac-member-panel__head,
+  .ac-member-toolbar,
+  .ac-member-row-actions,
+  .ac-member-meta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ac-member-muted {
+    margin: 0;
+    color: #4e5969;
+    line-height: 1.7;
+  }
+
+  .ac-member-summary {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .ac-member-stat {
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 86, 240, 0.08);
+    background: #f8fbff;
+  }
+
+  .ac-member-stat strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 24px;
+    line-height: 1;
+    color: #1f2329;
+  }
+
+  .ac-member-pool-tabs {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+
+  .ac-member-pool-tab {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 86, 240, 0.10);
+    background: #fff;
+    color: #1f2329;
+    text-decoration: none;
+  }
+
+  .ac-member-pool-tab.is-active {
+    border-color: rgba(20, 86, 240, 0.25);
+    background: #ebf2ff;
+  }
+
+  .ac-member-pool-tab span,
+  .ac-member-detail-list dt {
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .ac-member-pool-tab strong {
+    font-size: 16px;
+  }
+
+  .ac-member-table-wrap {
+    overflow: auto;
+    border: 1px solid rgba(20, 86, 240, 0.10);
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .ac-member-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+  }
+
+  .ac-member-table th,
+  .ac-member-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(20, 86, 240, 0.08);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .ac-member-table th {
+    background: #f8fbff;
+    color: #4e5969;
+    font-size: 12px;
+  }
+
+  .ac-member-detail-list {
+    grid-template-columns: minmax(88px, max-content) minmax(0, 1fr);
+  }
+
+  .ac-member-detail-list dd {
+    margin: 0;
+    color: #1f2329;
+  }
+
+  .ac-member-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ac-member-send-form textarea {
+    width: 100%;
+    min-height: 120px;
+  }
+
+  @media (max-width: 980px) {
+    .ac-member-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 {% set workspace = member_ops_workspace or {} %}
 {% set stage = workspace.detail.stage or {} %}
+{% set pagination = workspace.detail.pagination or {} %}
+{% set member_detail = workspace.member_detail or {} %}
+{% set selected_member = member_detail.member or {} %}
+{% set selected_profile = member_detail.profile or {} %}
+{% set questionnaire = member_detail.questionnaire or {} %}
+{% set latest_action = member_detail.latest_manual_action or {} %}
 {% set is_focus_mode = workspace.stage_key in ['inactive-focus', 'active-focus'] %}
 {% include "admin_console/_automation_program_context.html" %}
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
+
 <div class="ac-member-shell">
   {% if page_error %}
   <div class="admin-banner admin-banner--error">{{ page_error }}</div>
   {% endif %}
   {% if workspace.manual_send_notice == 'sent' %}
-  <div class="admin-banner admin-banner--success">官方群发已创建</div>
+  <div class="admin-banner admin-banner--success">群发任务已创建{% if workspace.manual_send_record_id %}，发送记录 ID {{ workspace.manual_send_record_id }}{% endif %}</div>
   {% endif %}
   {% if workspace.focus_batch_notice == 'created' %}
   <div class="admin-banner admin-banner--success">AI 批任务已创建</div>
@@ -43,88 +177,219 @@
     <div class="admin-page-hero__head">
       <div>
         <div class="admin-page-hero__eyebrow">成员运营</div>
-        <h1>成员运营工作区</h1>
-        <p>成员运营统一成“成员列表 + 批量动作面板 + 只读上下文”的模式；保留现有群发、AI 批任务与阶段动作接口，不改状态语义。</p>
+        <h1>方案成员运营</h1>
+        <p>按当前方案查看进入自动化池子的成员，围绕三类池子做查询、单客状态核对和批量触达。</p>
       </div>
       <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">按池子查看</span>
-        <span class="admin-chip admin-chip--neutral">批量动作面板</span>
+        <a class="admin-button {% if workspace.panel != 'send' %}admin-button--primary{% else %}admin-button--secondary{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='members') }}">成员列表</a>
+        <a class="admin-button {% if workspace.panel == 'send' %}admin-button--primary{% else %}admin-button--secondary{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='send') }}">批量动作</a>
       </div>
     </div>
     <div class="admin-page-hero__footer">
-      <div class="ac-member-stats">
-        <div class="ac-member-card">
-          <div class="admin-card-label">总人数</div>
+      <div class="ac-member-summary">
+        <div class="ac-member-stat">
+          <div class="admin-card-label">当前池子</div>
+          <strong>{{ stage.label or '-' }}</strong>
+        </div>
+        <div class="ac-member-stat">
+          <div class="admin-card-label">池内人数</div>
           <strong>{{ stage.total_count or 0 }}</strong>
         </div>
-        <div class="ac-member-card">
+        <div class="ac-member-stat">
           <div class="admin-card-label">今日新增</div>
           <strong>{{ stage.today_new_count or 0 }}</strong>
         </div>
       </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">当前池子：{{ stage.label or '-' }}</span>
+    </div>
+  </section>
+
+  <section class="ac-member-panel">
+    <div class="ac-member-panel__head">
+      <div>
+        <h3>池子选择</h3>
+        <p class="ac-member-muted">这三个池子对应当前方案内的成员状态：未填问卷、运营中、已转化。</p>
       </div>
+    </div>
+    <div class="ac-member-pool-tabs">
+      {% for item in workspace.stage_tabs or [] %}
+      <a class="ac-member-pool-tab{% if item.active %} is-active{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='members') }}">
+        <strong>{{ item.label }}</strong>
+        <span>{{ item.description }}</span>
+        <span>{{ item.total_count }} 人{% if item.today_new_count %} · 今日新增 {{ item.today_new_count }}{% endif %}</span>
+      </a>
+      {% endfor %}
     </div>
   </section>
 
   <section class="ac-member-grid">
-    <article class="ac-member-card">
+    <article class="ac-member-panel">
       {% if workspace.panel == 'send' %}
-      <div class="ac-member-muted">批量状态动作</div>
+      <div class="ac-member-panel__head">
+        <div>
+          <h3>{% if is_focus_mode %}AI 批量处理{% else %}批量群发{% endif %}</h3>
+          <p class="ac-member-muted">动作只作用于当前池子：{{ stage.label or '-' }}。提交后回到本页面查看创建结果。</p>
+        </div>
+        <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='members') }}">返回成员列表</a>
+      </div>
       {% if is_focus_mode %}
-      <h3>AI 批量处理</h3>
-      <div>/api/admin/automation-conversion/stage/{{ workspace.stage_key }}/focus-send-batches</div>
-      <div>/api/admin/automation-conversion/focus-send-batches/</div>
-      {% if workspace.focus_batch_detail.batch %}
-      <div>AI 批任务状态</div>
-      <div>总数 {{ workspace.focus_batch_detail.batch.total_count }}</div>
-      <div>剩余 {{ workspace.focus_batch_detail.batch.remaining_count }}</div>
-      {% endif %}
-      {% else %}
-      <h3>官方群发</h3>
-      <div>文本 + 图片</div>
-      <div>发送前预览</div>
-      <div>/api/admin/automation-conversion/stage/{{ workspace.stage_key }}/manual-send/preview</div>
-      <div>/api/admin/automation-conversion/stage/{{ workspace.stage_key }}/manual-send</div>
-      {% if workspace.manual_send_notice == 'sent' %}
-      <div>本次执行结果</div>
-      <div>发送记录 ID {{ workspace.manual_send_record_id }}</div>
-      {% endif %}
       {% if program_context %}
-      <form class="ac-send-box" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}" enctype="multipart/form-data">
+      <form class="ac-member-send-form" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}">
         <input type="hidden" name="program_id" value="{{ program_context.id }}">
         <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
         <input type="hidden" name="stage" value="{{ workspace.stage_key }}">
         <input type="hidden" name="panel" value="send">
-        <textarea name="content"></textarea>
-        <input id="stage-send-image-input" type="file" name="images" multiple>
-        <div>添加图片</div>
-        <button class="admin-button admin-button--primary" type="submit">发送</button>
+        <p class="ac-member-muted">为当前重点跟进池创建一批 AI 跟进任务，后续执行结果在执行记录中查看。</p>
+        <button class="admin-button admin-button--primary" type="submit">创建 AI 批任务</button>
+      </form>
+      {% endif %}
+      {% if workspace.focus_batch_detail.batch %}
+      <dl class="ac-member-detail-list">
+        <dt>任务总数</dt>
+        <dd>{{ workspace.focus_batch_detail.batch.total_count }}</dd>
+        <dt>剩余数量</dt>
+        <dd>{{ workspace.focus_batch_detail.batch.remaining_count }}</dd>
+      </dl>
+      {% endif %}
+      {% else %}
+      {% if program_context %}
+      <form class="ac-member-send-form" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}" enctype="multipart/form-data">
+        <input type="hidden" name="program_id" value="{{ program_context.id }}">
+        <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
+        <input type="hidden" name="stage" value="{{ workspace.stage_key }}">
+        <input type="hidden" name="panel" value="send">
+        <label class="admin-field">
+          <span>群发内容</span>
+          <textarea name="content" placeholder="输入要发送给当前池子成员的内容"></textarea>
+        </label>
+        <label class="admin-field">
+          <span>图片</span>
+          <input id="stage-send-image-input" type="file" name="images" multiple>
+        </label>
+        <div class="admin-form-actions">
+          <button class="admin-button admin-button--primary" type="submit">创建群发任务</button>
+        </div>
       </form>
       {% else %}
       <div class="admin-banner admin-banner--error">当前方案上下文缺失，无法提交群发。</div>
       {% endif %}
       {% endif %}
       {% else %}
-      <h3>成员列表</h3>
-      <div class="ac-member-muted">当前池子：{{ stage.label }}</div>
-      <ul>
-        {% for customer in workspace.detail.customers or [] %}
-        <li>{{ customer.customer_name }} - {{ customer.external_userid }}</li>
-        {% endfor %}
-      </ul>
+      <div class="ac-member-panel__head">
+        <div>
+          <h3>成员列表</h3>
+          <p class="ac-member-muted">当前池子：{{ stage.label or '-' }}，共 {{ pagination.total or 0 }} 人。</p>
+        </div>
+        <form class="ac-member-toolbar" method="get" action="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id) }}">
+          <input type="hidden" name="stage" value="{{ workspace.stage_key }}">
+          <input type="hidden" name="panel" value="members">
+          <label class="admin-field">
+            <span>搜索成员</span>
+            <input type="search" name="keyword" value="{{ workspace.detail.filters.keyword or '' }}" placeholder="姓名、手机号或企微客户 ID">
+          </label>
+          <button class="admin-button admin-button--primary" type="submit">查询</button>
+        </form>
+      </div>
+      <div class="ac-member-table-wrap">
+        <table class="ac-member-table">
+          <thead>
+            <tr>
+              <th>成员</th>
+              <th>手机号</th>
+              <th>负责人</th>
+              <th>当前阶段</th>
+              <th>目标</th>
+              <th>最近更新</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for customer in workspace.detail.customers or [] %}
+            <tr>
+              <td>
+                <strong>{{ customer.customer_name or '未命名客户' }}</strong>
+                <div class="admin-mono">{{ customer.external_userid }}</div>
+              </td>
+              <td>{{ customer.mobile or '-' }}</td>
+              <td>{{ customer.owner_display_name or customer.owner_userid or '-' }}</td>
+              <td>{{ customer.current_stage_label or '-' }}</td>
+              <td>{{ customer.current_target_label or '-' }}</td>
+              <td>{{ customer.last_touch_at or '-' }}</td>
+              <td>
+                <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='members', member=customer.external_userid) }}">查看</a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7">
+                <div class="admin-state admin-state--inline">当前筛选下暂无成员。</div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% endif %}
     </article>
 
-    <aside class="ac-member-card">
-      <h3>问卷与规则信息</h3>
-      <div>最近业务事件</div>
-      <div>单客动作</div>
-      <div>当前分层原因 / 说明</div>
-      <div>{{ workspace.member_query }}</div>
-      <div>member={{ workspace.member_query }}</div>
-      <div>set_focus</div>
+    <aside class="ac-member-panel">
+      <div>
+        <h3>单客状态</h3>
+        <p class="ac-member-muted">从成员列表选择一个成员后，这里展示问卷分层、当前阶段和可操作项。</p>
+      </div>
+      {% if member_detail.member_exists %}
+      <dl class="ac-member-detail-list">
+        <dt>客户</dt>
+        <dd>{{ selected_profile.customer_name or selected_member.external_contact_id or '-' }}</dd>
+        <dt>企微客户 ID</dt>
+        <dd class="admin-mono">{{ selected_member.external_contact_id or '-' }}</dd>
+        <dt>手机号</dt>
+        <dd>{{ selected_profile.phone or selected_member.phone or '-' }}</dd>
+        <dt>负责人</dt>
+        <dd>{{ selected_profile.owner_display_name or selected_profile.owner_staff_id or selected_member.owner_staff_id or '-' }}</dd>
+        <dt>当前池子</dt>
+        <dd>{{ selected_member.current_pool_label or '-' }}</dd>
+        <dt>当前阶段</dt>
+        <dd>{{ selected_member.current_stage_label or '-' }}</dd>
+        <dt>运营目标</dt>
+        <dd>{{ selected_member.current_target_label or '-' }}</dd>
+        <dt>问卷状态</dt>
+        <dd>{{ questionnaire.status_label or selected_member.questionnaire_status_label or '-' }}{% if questionnaire.submitted_at %} · {{ questionnaire.submitted_at }}{% endif %}</dd>
+        <dt>分层来源</dt>
+        <dd>{{ selected_member.decision_source_label or '-' }}</dd>
+        <dt>最近人工动作</dt>
+        <dd>{% if latest_action.action_label %}{{ latest_action.action_label }}{% if latest_action.created_at %} · {{ latest_action.created_at }}{% endif %}{% else %}暂无{% endif %}</dd>
+      </dl>
+      {% if questionnaire.matched_questions %}
+      <div class="ac-member-stack">
+        <strong>命中的问卷问题</strong>
+        <div class="ac-member-chip-list">
+          {% for item in questionnaire.matched_questions %}
+          <span class="admin-chip admin-chip--neutral">{% if item is string %}{{ item }}{% else %}{{ item.label or item.title or item.question_key or item }}{% endif %}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="ac-member-stack">
+        <strong>可操作项</strong>
+        {% if workspace.member_action_options %}
+        <div class="ac-member-chip-list">
+          {% for item in workspace.member_action_options %}
+          <span class="admin-chip admin-chip--neutral">{{ item.label }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="ac-member-muted">当前状态暂无可用动作。</p>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="admin-state admin-state--inline">
+        {% if workspace.member_query %}
+        未找到成员：{{ workspace.member_query }}
+        {% else %}
+        请选择左侧成员查看明细。
+        {% endif %}
+      </div>
+      {% endif %}
     </aside>
   </section>
 </div>
