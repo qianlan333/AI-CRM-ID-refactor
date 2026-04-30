@@ -1842,11 +1842,28 @@ def _build_execution_item_payload(item: dict[str, Any], *, include_send_record_d
     }
 
 
-def _build_execution_payload(execution: dict[str, Any]) -> dict[str, Any]:
+def _execution_count_payload(execution: dict[str, Any], count_summary: dict[str, Any] | None = None) -> dict[str, int]:
+    summary = dict(count_summary or {})
+    total_count = int((summary.get("total_count") if "total_count" in summary else execution.get("total_count")) or 0)
+    success_count = int((summary.get("success_count") if "success_count" in summary else execution.get("success_count")) or 0)
+    failed_count = int((summary.get("failed_count") if "failed_count" in summary else execution.get("failed_count")) or 0)
+    skipped_count = int((summary.get("skipped_count") if "skipped_count" in summary else execution.get("skipped_count")) or 0)
+    return {
+        "total_count": total_count,
+        "hit_count": total_count,
+        "success_count": success_count,
+        "sent_count": success_count,
+        "failed_count": failed_count,
+        "skipped_count": skipped_count,
+    }
+
+
+def _build_execution_payload(execution: dict[str, Any], count_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     workflow = workflow_repo.get_workflow_row(int(execution.get("workflow_id") or 0)) or {}
     node = workflow_repo.get_workflow_node_row(int(execution.get("node_id") or 0)) or {}
     return {
         **execution,
+        **_execution_count_payload(execution, count_summary),
         "workflow": {
             "id": int(workflow.get("id") or 0) or None,
             "workflow_code": _normalized_text(workflow.get("workflow_code")),
@@ -2426,14 +2443,16 @@ def list_conversion_workflow_execution_records(
     program_id: int | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
+    execution_rows = workflow_repo.list_workflow_execution_rows(
+        workflow_id=workflow_id,
+        node_id=node_id,
+        program_id=_effective_program_id(program_id),
+        limit=limit,
+    )
+    item_count_map = workflow_repo.get_workflow_execution_item_count_map([int(item.get("id") or 0) for item in execution_rows])
     items = [
-        _build_execution_payload(item)
-        for item in workflow_repo.list_workflow_execution_rows(
-            workflow_id=workflow_id,
-            node_id=node_id,
-            program_id=_effective_program_id(program_id),
-            limit=limit,
-        )
+        _build_execution_payload(item, item_count_map.get(int(item.get("id") or 0)))
+        for item in execution_rows
     ]
     return {"items": items, "total": len(items)}
 
@@ -2446,13 +2465,21 @@ def get_conversion_workflow_execution_detail(execution_row_id: int) -> dict[str,
         _build_execution_item_payload(item)
         for item in workflow_repo.list_workflow_execution_item_rows(int(execution_row_id))
     ]
+    item_summary = {
+        "total_count": len(items),
+        "success_count": sum(1 for item in items if _normalized_text(item.get("status")) == "sent"),
+        "failed_count": sum(1 for item in items if _normalized_text(item.get("status")) == "failed"),
+        "skipped_count": sum(1 for item in items if _normalized_text(item.get("status")) == "skipped"),
+    }
+    if not items:
+        item_summary = _execution_count_payload(execution)
     return {
-        "execution": _build_execution_payload(execution),
+        "execution": _build_execution_payload(execution, item_summary),
         "summary": {
-            "hit_count": len(items),
-            "success_count": sum(1 for item in items if _normalized_text(item.get("status")) == "sent"),
-            "failed_count": sum(1 for item in items if _normalized_text(item.get("status")) == "failed"),
-            "skipped_count": sum(1 for item in items if _normalized_text(item.get("status")) == "skipped"),
+            "hit_count": int(item_summary.get("total_count") or 0),
+            "success_count": int(item_summary.get("success_count") or 0),
+            "failed_count": int(item_summary.get("failed_count") or 0),
+            "skipped_count": int(item_summary.get("skipped_count") or 0),
         },
         "items": items,
     }

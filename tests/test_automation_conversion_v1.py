@@ -4,7 +4,6 @@ import base64
 import hashlib
 import hmac
 import json
-import re
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -2547,6 +2546,136 @@ def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_she
     assert "复制内容" in executions_html
     assert "自动化发送" in executions_html
     assert "当前页面只承载执行记录骨架。" not in executions_html
+
+
+def test_execution_records_api_exposes_counts_from_execution_items(app, client):
+    workflow_bundle = _create_test_workflow(app, workflow_name="执行统计任务流")
+    workflow = dict((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {})
+    workflow_id = int(workflow.get("id") or 0)
+    program_id = int(workflow.get("program_id") or 0) or _default_program_id(app)
+
+    with app.app_context():
+        node_result = create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "统计节点",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "scheduled",
+                "day_offset": 1,
+                "send_time": "09:00",
+                "standard_content_text": "提醒提交问卷",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+        node_id = int((node_result.get("node") or {}).get("id") or 0)
+
+    for index in range(4):
+        _seed_automation_member(
+            app,
+            external_contact_id=f"wm_exec_count_{index}",
+            phone=f"1380000800{index}",
+            current_pool="inactive_normal",
+            questionnaire_status="pending",
+        )
+
+    with app.app_context():
+        db = get_db()
+        member_rows = db.execute(
+            """
+            SELECT id, external_contact_id
+            FROM automation_member
+            WHERE external_contact_id LIKE 'wm_exec_count_%'
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        inserted = db.execute(
+            """
+            INSERT INTO automation_workflow_execution (
+                execution_id,
+                program_id,
+                workflow_id,
+                node_id,
+                trigger_type,
+                audience_code,
+                scheduled_for,
+                status,
+                total_count,
+                success_count,
+                skipped_count,
+                failed_count,
+                summary_json,
+                created_at,
+                updated_at,
+                finished_at
+            )
+            VALUES (?, ?, ?, ?, 'scheduled_poll', 'pending_questionnaire', ?, 'finished', 0, 0, 0, 0, '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+            RETURNING id
+            """,
+            (
+                "exec-counts-from-items",
+                program_id,
+                workflow_id,
+                node_id,
+                "2026-04-30 09:00:00",
+                "2026-04-30 09:00:10",
+            ),
+        ).fetchone()
+        execution_row_id = int(inserted["id"])
+        statuses = ["sent", "sent", "failed", "skipped"]
+        db.executemany(
+            """
+            INSERT INTO automation_workflow_execution_item (
+                execution_id,
+                workflow_id,
+                node_id,
+                member_id,
+                external_contact_id,
+                rendered_content_text,
+                content_snapshot_json,
+                status,
+                error_message,
+                sent_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, '提醒提交问卷', '{}', ?, '', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            [
+                (
+                    execution_row_id,
+                    workflow_id,
+                    node_id,
+                    int(row["id"]),
+                    row["external_contact_id"],
+                    status,
+                    "2026-04-30 09:00:05" if status == "sent" else "",
+                )
+                for row, status in zip(member_rows, statuses)
+            ],
+        )
+        db.commit()
+
+    response = client.get(f"/api/admin/automation-conversion/executions?program_id={program_id}&limit=10")
+    payload = response.get_json()
+    assert response.status_code == 200
+    row = next(item for item in payload["items"] if item["execution_id"] == "exec-counts-from-items")
+    assert row["total_count"] == 4
+    assert row["hit_count"] == 4
+    assert row["success_count"] == 2
+    assert row["sent_count"] == 2
+    assert row["failed_count"] == 1
+    assert row["skipped_count"] == 1
+
+    detail_response = client.get(f"/api/admin/automation-conversion/executions/{execution_row_id}")
+    detail_payload = detail_response.get_json()
+    assert detail_response.status_code == 200
+    assert detail_payload["summary"] == {
+        "hit_count": 4,
+        "success_count": 2,
+        "failed_count": 1,
+        "skipped_count": 1,
+    }
 
 
 def test_agent_config_page_renders_delete_button_for_agent_rows(app, client):

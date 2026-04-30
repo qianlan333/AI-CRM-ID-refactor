@@ -1493,6 +1493,36 @@ def list_workflow_execution_item_rows(execution_row_id: int) -> list[dict[str, A
     ]
 
 
+def get_workflow_execution_item_count_map(execution_row_ids: list[int]) -> dict[int, dict[str, int]]:
+    normalized_ids = [int(item) for item in execution_row_ids if int(item or 0) > 0]
+    if not normalized_ids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_ids)
+    rows = _fetchall_dicts(
+        f"""
+        SELECT
+            execution_id,
+            COUNT(*) AS total_count,
+            COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS success_count,
+            COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
+            COALESCE(SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END), 0) AS skipped_count
+        FROM automation_workflow_execution_item
+        WHERE execution_id IN ({placeholders})
+        GROUP BY execution_id
+        """,
+        tuple(normalized_ids),
+    )
+    return {
+        int(row.get("execution_id") or 0): {
+            "total_count": int(row.get("total_count") or 0),
+            "success_count": int(row.get("success_count") or 0),
+            "failed_count": int(row.get("failed_count") or 0),
+            "skipped_count": int(row.get("skipped_count") or 0),
+        }
+        for row in rows
+    }
+
+
 def list_workflow_sent_timed_execution_history_rows(
     *,
     workflow_id: int,

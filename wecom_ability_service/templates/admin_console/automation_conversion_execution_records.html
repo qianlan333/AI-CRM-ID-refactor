@@ -279,8 +279,8 @@
               <div class="ac-ops-code">${escapeHtml((item.node || {}).node_name || (item.node || {}).node_code || '-')}</div>
             </td>
             <td>${escapeHtml(statusLabel(item.status))}</td>
-            <td>${escapeHtml(String(item.hit_count || 0))}</td>
-            <td>${escapeHtml(String(item.sent_count || 0))}</td>
+            <td>${escapeHtml(String(item.hit_count || item.total_count || 0))}</td>
+            <td>${escapeHtml(String(item.sent_count || item.success_count || 0))}</td>
             <td>${escapeHtml(String(item.failed_count || 0))}</td>
             <td>${escapeHtml(String(item.skipped_count || 0))}</td>
           </tr>
