@@ -1274,6 +1274,8 @@ def _handle_stage_send_post(stage_key: str, *, program: dict[str, object]):
     program_id = int(program.get("id") or 0)
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": action_token_error}), 400
         return _render_member_ops_page(page_error=action_token_error, program=program)
     try:
         images = _stage_send_images_from_request()
@@ -1284,37 +1286,39 @@ def _handle_stage_send_post(stage_key: str, *, program: dict[str, object]):
                 operator_id=_operator_from_request(),
                 operator_type="user",
             )
-            return redirect(
-                _program_route(
-                    "api.admin_automation_program_member_ops",
-                    program_id=program_id,
-                    **_stage_send_member_ops_params(
-                        route_key,
-                        focus_batch_notice="created",
-                        focus_batch_id=int((result.get("batch") or {}).get("id") or 0),
-                    ),
+            redirect_url = _program_route(
+                "api.admin_automation_program_member_ops",
+                program_id=program_id,
+                **_stage_send_member_ops_params(
+                    route_key,
+                    focus_batch_notice="created",
+                    focus_batch_id=int((result.get("batch") or {}).get("id") or 0),
                 ),
-                code=302,
             )
+            if _wants_json_response():
+                return jsonify({"ok": True, "redirect_url": redirect_url, "result": result})
+            return redirect(redirect_url, code=302)
         result = send_stage_manual_message(
             route_key=route_key,
             content=str(request.form.get("content") or "").strip(),
             images=images,
             operator_id=_operator_from_request(),
         )
-        return redirect(
-            _program_route(
-                "api.admin_automation_program_member_ops",
-                program_id=program_id,
-                **_stage_send_member_ops_params(
-                    route_key,
-                    manual_send_notice="sent",
-                    record_id=int(result.get("record_id") or 0),
-                ),
+        redirect_url = _program_route(
+            "api.admin_automation_program_member_ops",
+            program_id=program_id,
+            **_stage_send_member_ops_params(
+                route_key,
+                manual_send_notice="sent",
+                record_id=int(result.get("record_id") or 0),
             ),
-            code=302,
         )
+        if _wants_json_response():
+            return jsonify({"ok": True, "redirect_url": redirect_url, "result": result})
+        return redirect(redirect_url, code=302)
     except ValueError as exc:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": str(exc)}), 400
         return _render_member_ops_page(page_error=str(exc), program=program)
 
 

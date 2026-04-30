@@ -8173,10 +8173,14 @@ def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metri
     assert response.status_code == 200
     assert "方案成员运营" in html
     assert "automation_conversion_workspace.css" in html
-    assert "池子选择" in html
+    assert "池子概览" in html
+    assert "批量触达" in html
+    assert f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=pending-questionnaire&amp;panel=send" in html
+    assert f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=operating&amp;panel=send" in html
+    assert f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=converted&amp;panel=send" in html
     assert "成员列表" in html
-    assert '<div class="admin-card-label">池内人数</div>' in html
-    assert '<div class="admin-card-label">今日新增</div>' in html
+    assert '<div class="admin-card-label">池内人数</div>' not in html
+    assert '<div class="admin-card-label">今日新增</div>' not in html
     assert '<div class="admin-card-label">重点跟进</div>' not in html
     assert '<div class="admin-card-label">普通跟进</div>' not in html
 
@@ -8240,7 +8244,9 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
     assert 'name="images" multiple' in normal_html
     assert 'enctype="multipart/form-data"' in normal_html
     assert 'name="admin_action_token"' in normal_html
+    assert "data-member-send-form" in normal_html
     assert "创建群发任务" in normal_html
+    assert "已提交，正在创建任务，请勿重复点击。" in normal_html
     assert "/manual-send/preview" not in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/manual-send" not in normal_html
     assert "/api/admin/automation-conversion/stage/new-user/focus-send-batches" not in normal_html
@@ -8251,6 +8257,7 @@ def test_automation_conversion_stage_send_page_switches_between_manual_and_focus
 
     assert focus_response.status_code == 200
     assert "AI 批量处理" in focus_html
+    assert "data-member-send-form" in focus_html
     assert "创建 AI 批任务" in focus_html
     assert "/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches" not in focus_html
     assert "/api/admin/automation-conversion/stage/inactive-focus/manual-send" not in focus_html
@@ -9224,6 +9231,50 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
     assert captured_payloads[0]["sender"] == "HuangYouCan"
     assert "images" in captured_payloads[0]
     assert "image_media_ids" not in captured_payloads[0]
+
+
+def test_admin_stage_send_program_route_returns_json_for_ajax_submit(app, client, monkeypatch):
+    _seed_contact(app, external_userid="wm_manual_ajax_001", mobile="13800009242", owner_userid="sales_page", customer_name="异步页面客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_manual_ajax_001",
+        phone="13800009242",
+        owner_staff_id="sales_page",
+        current_pool="new_user",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+    )
+    captured_payloads: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        lambda task_type, fn_name, payload: captured_payloads.append(dict(payload)) or {"task_id": 706, "wecom_result": {"msgid": "msg-706"}},
+    )
+    program_id = _default_program_id(app)
+    action_token = _admin_action_token(
+        client,
+        f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=new-user&panel=send",
+    )
+    form_data = _build_stage_send_form_data(content="异步页面触达", operator="tester")
+    form_data["admin_action_token"] = action_token
+
+    response = client.post(
+        f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send",
+        data=form_data,
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert f"/admin/automation-conversion/programs/{program_id}/member-ops" in payload["redirect_url"]
+    assert "stage=new-user" in payload["redirect_url"]
+    assert "panel=send" in payload["redirect_url"]
+    assert "manual_send_notice=sent" in payload["redirect_url"]
+    assert "record_id=" in payload["redirect_url"]
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0]["external_userid"] == ["wm_manual_ajax_001"]
 
 
 def test_admin_stage_send_page_shows_focus_batch_summary(app, client, monkeypatch):

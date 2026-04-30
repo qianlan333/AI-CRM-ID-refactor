@@ -6,7 +6,6 @@
   .ac-member-shell,
   .ac-member-stack,
   .ac-member-panel,
-  .ac-member-summary,
   .ac-member-detail-list,
   .ac-member-send-form {
     display: grid;
@@ -43,55 +42,41 @@
     line-height: 1.7;
   }
 
-  .ac-member-summary {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  }
-
-  .ac-member-stat {
-    padding: 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(20, 86, 240, 0.08);
-    background: #f8fbff;
-  }
-
-  .ac-member-stat strong {
-    display: block;
-    margin-top: 8px;
-    font-size: 24px;
-    line-height: 1;
-    color: #1f2329;
-  }
-
   .ac-member-pool-tabs {
     display: grid;
     gap: 10px;
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   }
 
-  .ac-member-pool-tab {
+  .ac-member-pool-card {
     display: grid;
-    gap: 6px;
+    gap: 10px;
     padding: 12px;
     border-radius: 12px;
     border: 1px solid rgba(20, 86, 240, 0.10);
     background: #fff;
     color: #1f2329;
-    text-decoration: none;
   }
 
-  .ac-member-pool-tab.is-active {
+  .ac-member-pool-card.is-active {
     border-color: rgba(20, 86, 240, 0.25);
     background: #ebf2ff;
   }
 
-  .ac-member-pool-tab span,
+  .ac-member-pool-card span,
   .ac-member-detail-list dt {
     color: #64748b;
     font-size: 12px;
   }
 
-  .ac-member-pool-tab strong {
+  .ac-member-pool-card strong {
     font-size: 16px;
+  }
+
+  .ac-member-pool-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .ac-member-table-wrap {
@@ -141,6 +126,16 @@
     min-height: 120px;
   }
 
+  .ac-member-send-status {
+    min-height: 22px;
+    color: #4e5969;
+    font-size: 13px;
+  }
+
+  .ac-member-send-form.is-submitting {
+    opacity: 0.78;
+  }
+
   @media (max-width: 980px) {
     .ac-member-grid {
       grid-template-columns: 1fr;
@@ -180,43 +175,27 @@
         <h1>方案成员运营</h1>
         <p>按当前方案查看进入自动化池子的成员，围绕三类池子做查询、单客状态核对和批量触达。</p>
       </div>
-      <div class="admin-page-hero__meta">
-        <a class="admin-button {% if workspace.panel != 'send' %}admin-button--primary{% else %}admin-button--secondary{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='members') }}">成员列表</a>
-        <a class="admin-button {% if workspace.panel == 'send' %}admin-button--primary{% else %}admin-button--secondary{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='send') }}">批量动作</a>
-      </div>
-    </div>
-    <div class="admin-page-hero__footer">
-      <div class="ac-member-summary">
-        <div class="ac-member-stat">
-          <div class="admin-card-label">当前池子</div>
-          <strong>{{ stage.label or '-' }}</strong>
-        </div>
-        <div class="ac-member-stat">
-          <div class="admin-card-label">池内人数</div>
-          <strong>{{ stage.total_count or 0 }}</strong>
-        </div>
-        <div class="ac-member-stat">
-          <div class="admin-card-label">今日新增</div>
-          <strong>{{ stage.today_new_count or 0 }}</strong>
-        </div>
-      </div>
     </div>
   </section>
 
   <section class="ac-member-panel">
     <div class="ac-member-panel__head">
       <div>
-        <h3>池子选择</h3>
-        <p class="ac-member-muted">这三个池子对应当前方案内的成员状态：未填问卷、运营中、已转化。</p>
+        <h3>池子概览</h3>
+        <p class="ac-member-muted">从这里进入池子成员明细，或直接对某个池子创建一条批量触达。</p>
       </div>
     </div>
     <div class="ac-member-pool-tabs">
       {% for item in workspace.stage_tabs or [] %}
-      <a class="ac-member-pool-tab{% if item.active %} is-active{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='members') }}">
+      <div class="ac-member-pool-card{% if item.active %} is-active{% endif %}">
         <strong>{{ item.label }}</strong>
         <span>{{ item.description }}</span>
-        <span>{{ item.total_count }} 人{% if item.today_new_count %} · 今日新增 {{ item.today_new_count }}{% endif %}</span>
-      </a>
+        <span>{{ item.total_count }} 人</span>
+        <div class="ac-member-pool-actions">
+          <a class="admin-button {% if item.active and workspace.panel != 'send' %}admin-button--primary{% else %}admin-button--secondary{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='members') }}">查看成员</a>
+          <a class="admin-button {% if item.active and workspace.panel == 'send' %}admin-button--primary{% else %}admin-button--ghost{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='send') }}">批量触达</a>
+        </div>
+      </div>
       {% endfor %}
     </div>
   </section>
@@ -233,13 +212,14 @@
       </div>
       {% if is_focus_mode %}
       {% if program_context %}
-      <form class="ac-member-send-form" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}">
+      <form class="ac-member-send-form" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}" data-member-send-form>
         <input type="hidden" name="program_id" value="{{ program_context.id }}">
         <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
         <input type="hidden" name="stage" value="{{ workspace.stage_key }}">
         <input type="hidden" name="panel" value="send">
         <p class="ac-member-muted">为当前重点跟进池创建一批 AI 跟进任务，后续执行结果在执行记录中查看。</p>
-        <button class="admin-button admin-button--primary" type="submit">创建 AI 批任务</button>
+        <div class="ac-member-send-status" data-member-send-status></div>
+        <button class="admin-button admin-button--primary" type="submit" data-loading-label="创建中...">创建 AI 批任务</button>
       </form>
       {% endif %}
       {% if workspace.focus_batch_detail.batch %}
@@ -252,7 +232,7 @@
       {% endif %}
       {% else %}
       {% if program_context %}
-      <form class="ac-member-send-form" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}" enctype="multipart/form-data">
+      <form class="ac-member-send-form" method="post" action="{{ url_for('api.admin_automation_program_member_ops_stage_send', program_id=program_context.id, stage_key=workspace.stage_key) }}" enctype="multipart/form-data" data-member-send-form>
         <input type="hidden" name="program_id" value="{{ program_context.id }}">
         <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">
         <input type="hidden" name="stage" value="{{ workspace.stage_key }}">
@@ -266,8 +246,9 @@
           <input id="stage-send-image-input" type="file" name="images" multiple>
         </label>
         <div class="admin-form-actions">
-          <button class="admin-button admin-button--primary" type="submit">创建群发任务</button>
+          <button class="admin-button admin-button--primary" type="submit" data-loading-label="创建中...">创建群发任务</button>
         </div>
+        <div class="ac-member-send-status" data-member-send-status></div>
       </form>
       {% else %}
       <div class="admin-banner admin-banner--error">当前方案上下文缺失，无法提交群发。</div>
@@ -393,4 +374,66 @@
     </aside>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script>
+(() => {
+  const forms = document.querySelectorAll("[data-member-send-form]");
+  forms.forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      if (form.dataset.submitting === "1") {
+        event.preventDefault();
+        return;
+      }
+      if (!window.fetch) {
+        return;
+      }
+      event.preventDefault();
+      form.dataset.submitting = "1";
+      form.classList.add("is-submitting");
+      const submitButton = form.querySelector('button[type="submit"]');
+      const status = form.querySelector("[data-member-send-status]");
+      if (status) {
+        status.textContent = "已提交，正在创建任务，请勿重复点击。";
+      }
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.dataset.originalLabel = submitButton.textContent || "";
+        submitButton.textContent = submitButton.dataset.loadingLabel || "创建中...";
+      }
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          headers: {
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          credentials: "same-origin",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "任务创建失败，请刷新后重试。");
+        }
+        if (status) {
+          status.textContent = "任务已创建，正在刷新结果。";
+        }
+        window.location.href = payload.redirect_url || window.location.href;
+      } catch (error) {
+        form.dataset.submitting = "0";
+        form.classList.remove("is-submitting");
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = submitButton.dataset.originalLabel || submitButton.textContent || "提交";
+        }
+        if (status) {
+          status.textContent = error && error.message ? error.message : "任务创建失败，请刷新后重试。";
+        }
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}
