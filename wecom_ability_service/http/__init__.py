@@ -34,6 +34,8 @@ from .ops import register_routes as register_ops_routes
 from .public_questionnaires import register_routes as register_public_questionnaire_routes
 from .settings_ops import register_routes as register_settings_routes
 from .sidebar import register_routes as register_sidebar_routes
+from .setup_wizard import register_routes as register_setup_wizard_routes
+from .system_health import register_routes as register_system_health_routes
 from .tags import register_routes as register_tag_routes
 from .tasks import register_routes as register_task_routes
 
@@ -76,6 +78,8 @@ HTTP_ROUTE_MODULES = {
     "admin_class_user": "wecom_ability_service.http.admin_class_user",
     "admin_questionnaires": "wecom_ability_service.http.admin_questionnaires",
     "public_questionnaires": "wecom_ability_service.http.public_questionnaires",
+    "setup_wizard": "wecom_ability_service.http.setup_wizard",
+    "system_health": "wecom_ability_service.http.system_health",
 }
 
 HTTP_ROUTE_PLACEMENT = {
@@ -112,6 +116,8 @@ HTTP_ROUTE_PLACEMENT = {
     "ops_settings": (
         "ops.py for /health, /archive/messages, /api/init-db, /api/ops/status",
         "settings_ops.py for /api/settings",
+        "system_health.py for /api/system/health and /api/system/compensate",
+        "setup_wizard.py for /setup/wizard and /admin/config/checklist",
     ),
 }
 
@@ -147,6 +153,8 @@ HTTP_ROUTE_REGISTRARS = (
     ("callbacks", register_callback_routes),
     ("tasks", register_task_routes),
     ("tags", register_tag_routes),
+    ("system_health", register_system_health_routes),
+    ("setup_wizard", register_setup_wizard_routes),
 )
 
 

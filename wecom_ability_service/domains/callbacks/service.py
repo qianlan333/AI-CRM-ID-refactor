@@ -72,3 +72,19 @@ def finish_external_contact_event_log(
 
 def get_recent_external_contact_event_logs(limit: int = 20) -> list[dict[str, Any]]:
     return [dict(row) for row in repo.get_recent_external_contact_event_logs(limit=limit)]
+
+
+def count_pending_events() -> dict[str, Any]:
+    return repo.count_pending_events()
+
+
+def count_failed_events_since(since_timestamp: str) -> int:
+    return repo.count_failed_events_since(since_timestamp)
+
+
+def list_stale_pending_events(*, age_seconds: int = 120, limit: int = 50) -> list[dict[str, Any]]:
+    return repo.list_stale_pending_events(age_seconds=age_seconds, limit=limit)
+
+
+def mark_event_dead_letter(event_log_id: int, *, error_message: str = "") -> None:
+    repo.mark_event_dead_letter(event_log_id, error_message=error_message)

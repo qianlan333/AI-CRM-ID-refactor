@@ -270,7 +270,7 @@ def test_postgres_schema_includes_required_marketing_automation_tables_and_index
 
 
 def test_postgres_init_adds_program_id_columns_before_schema_indexes():
-    db_path = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "db.py"
+    db_path = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "db" / "migrations" / "postgres_migrations.py"
     source = db_path.read_text(encoding="utf-8")
     init_postgres_source = source[source.index("def _init_postgres") :]
     schema_replay_index = init_postgres_source.index("schema_path = Path(current_app.root_path) / \"schema_postgres.sql\"")

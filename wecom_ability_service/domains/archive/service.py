@@ -102,9 +102,9 @@ def count_archived_messages() -> int:
     return repo.count_archived_messages()
 
 
-def insert_archived_messages(messages: list[dict[str, Any]]) -> int:
+def insert_archived_messages(messages: list[dict[str, Any]], *, commit: bool = True) -> int:
     normalized_messages = [normalize_archived_message(item) for item in messages]
-    inserted_rows = repo.insert_archived_messages_detailed(normalized_messages)
+    inserted_rows = repo.insert_archived_messages_detailed(normalized_messages, commit=commit)
     if inserted_rows:
         should_run_marketing_openclaw = False
         try:
@@ -221,8 +221,8 @@ def get_archive_last_seq() -> int:
     return repo.get_archive_last_seq()
 
 
-def set_archive_last_seq(last_seq: int) -> None:
-    repo.set_archive_last_seq(last_seq)
+def set_archive_last_seq(last_seq: int, *, commit: bool = True) -> None:
+    repo.set_archive_last_seq(last_seq, commit=commit)
 
 
 def get_last_sync_run():

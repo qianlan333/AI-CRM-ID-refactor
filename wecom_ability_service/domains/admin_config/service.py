@@ -633,6 +633,7 @@ def config_tabs(active_key: str) -> list[dict[str, Any]]:
         {"key": "class_term_tags", "label": "班期标签规则", "href": "/admin/config/class-term-tags"},
         {"key": "app_settings", "label": "系统设置", "href": "/admin/config/app-settings"},
         {"key": "login_access", "label": "登录与权限", "href": "/admin/config/login-access"},
+        {"key": "checklist", "label": "配置检查清单", "href": "/admin/config/checklist"},
     ]
     return [{**item, "active": item["key"] == active_key} for item in items]
 

@@ -12,11 +12,11 @@ def count_archived_messages() -> int:
     return int(row["total"]) if row else 0
 
 
-def insert_archived_messages(messages: list[dict[str, Any]]) -> int:
-    return len(insert_archived_messages_detailed(messages))
+def insert_archived_messages(messages: list[dict[str, Any]], *, commit: bool = True) -> int:
+    return len(insert_archived_messages_detailed(messages, commit=commit))
 
 
-def insert_archived_messages_detailed(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def insert_archived_messages_detailed(messages: list[dict[str, Any]], *, commit: bool = True) -> list[dict[str, Any]]:
     db = get_db()
     backend = get_db_backend()
     inserted_rows: list[dict[str, Any]] = []
@@ -49,7 +49,8 @@ def insert_archived_messages_detailed(messages: list[dict[str, Any]]) -> list[di
         )
         if cursor.rowcount:
             inserted_rows.append(dict(normalized))
-    db.commit()
+    if commit:
+        db.commit()
     return inserted_rows
 
 
@@ -158,7 +159,7 @@ def get_archive_last_seq() -> int:
     return int(row["last_seq"]) if row else 0
 
 
-def set_archive_last_seq(last_seq: int) -> None:
+def set_archive_last_seq(last_seq: int, *, commit: bool = True) -> None:
     db = get_db()
     db.execute(
         """
@@ -170,7 +171,8 @@ def set_archive_last_seq(last_seq: int) -> None:
         """,
         (int(last_seq),),
     )
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def get_last_sync_run():

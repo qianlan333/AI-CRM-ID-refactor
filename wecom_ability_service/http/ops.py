@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import abort, current_app, jsonify, request, send_from_directory
 
 from ..db import init_db
-from ..services import list_archived_messages_by_window
+from ..domains.archive.service import list_archived_messages_by_window
 from .ops_runtime import build_ops_status_payload
 
 

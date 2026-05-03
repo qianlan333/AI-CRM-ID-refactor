@@ -1,0 +1,319 @@
+from __future__ import annotations
+
+from typing import Any
+
+CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
+    "wecom_base": {
+        "label": "企业微信基础配置",
+        "required": True,
+        "fields": {
+            "WECOM_CORP_ID": {
+                "type": "string",
+                "required": True,
+                "label": "企业ID",
+                "help": "在企业微信管理后台 → 我的企业中获取",
+            },
+            "WECOM_SECRET": {
+                "type": "secret",
+                "required": True,
+                "label": "自建应用Secret",
+                "help": "在应用管理 → 自建应用中获取",
+            },
+            "WECOM_AGENT_ID": {
+                "type": "string",
+                "required": True,
+                "label": "应用AgentId",
+                "help": "在应用管理 → 自建应用中获取",
+            },
+            "WECOM_CONTACT_SECRET": {
+                "type": "secret",
+                "required": True,
+                "label": "通讯录Secret",
+                "help": "在管理工具 → 通讯录同步中获取",
+            },
+            "WECOM_API_BASE": {
+                "type": "string",
+                "required": False,
+                "label": "API基础地址",
+                "default": "https://qyapi.weixin.qq.com",
+                "help": "默认为官方地址，一般无需修改",
+            },
+            "WECOM_DEFAULT_OWNER_USERID": {
+                "type": "string",
+                "required": True,
+                "label": "默认员工UserID",
+                "help": "系统默认关联的员工企微UserID",
+            },
+        },
+    },
+    "wecom_callback": {
+        "label": "企业微信回调配置",
+        "required": True,
+        "fields": {
+            "WECOM_CALLBACK_TOKEN": {
+                "type": "secret",
+                "required": True,
+                "label": "回调Token",
+                "help": "在应用管理 → 自建应用 → 接收消息中设置",
+            },
+            "WECOM_CALLBACK_AES_KEY": {
+                "type": "secret",
+                "required": True,
+                "label": "回调EncodingAESKey",
+                "help": "43位字符，用于消息加解密",
+            },
+        },
+    },
+    "wecom_archive": {
+        "label": "会话存档配置",
+        "required": False,
+        "fields": {
+            "WECOM_ARCHIVE_SECRET": {
+                "type": "secret",
+                "required": False,
+                "label": "会话存档Secret",
+            },
+            "WECOM_PRIVATE_KEY_PATH": {
+                "type": "string",
+                "required": False,
+                "label": "RSA私钥路径",
+                "default": "/home/ubuntu/wecom_private_key.pem",
+            },
+            "WECOM_SDK_LIB_PATH": {
+                "type": "string",
+                "required": False,
+                "label": "SDK库路径",
+                "default": "/home/ubuntu/wecom-sdk/C_sdk/libWeWorkFinanceSdk_C.so",
+            },
+            "WECOM_ARCHIVE_TIMEOUT": {
+                "type": "integer",
+                "required": False,
+                "label": "存档超时(秒)",
+                "default": "15",
+            },
+        },
+    },
+    "wechat_mp": {
+        "label": "微信公众号配置（问卷OAuth）",
+        "required": False,
+        "fields": {
+            "WECHAT_MP_APP_ID": {
+                "type": "string",
+                "required": False,
+                "label": "公众号AppID",
+            },
+            "WECHAT_MP_APP_SECRET": {
+                "type": "secret",
+                "required": False,
+                "label": "公众号AppSecret",
+            },
+            "WECHAT_MP_OAUTH_SCOPE": {
+                "type": "string",
+                "required": False,
+                "label": "OAuth范围",
+                "default": "snsapi_base",
+            },
+        },
+    },
+    "admin_auth": {
+        "label": "管理后台认证",
+        "required": False,
+        "fields": {
+            "ADMIN_AUTH_MODE": {
+                "type": "string",
+                "required": False,
+                "label": "认证模式",
+                "default": "wecom_sso",
+                "help": "wecom_sso | break_glass | disabled",
+            },
+            "ADMIN_LOGIN_REDIRECT_URI": {
+                "type": "string",
+                "required": False,
+                "label": "SSO回调地址",
+            },
+            "ADMIN_WECHAT_TRUSTED_DOMAIN": {
+                "type": "string",
+                "required": False,
+                "label": "可信域名",
+            },
+            "ADMIN_BREAK_GLASS_LOGIN_ENABLED": {
+                "type": "string",
+                "required": False,
+                "label": "紧急登录开关",
+                "default": "",
+            },
+            "ADMIN_BREAK_GLASS_USERNAME": {
+                "type": "string",
+                "required": False,
+                "label": "紧急登录用户名",
+            },
+            "ADMIN_BREAK_GLASS_PASSWORD_HASH": {
+                "type": "secret",
+                "required": False,
+                "label": "紧急登录密码Hash",
+            },
+        },
+    },
+    "ai_services": {
+        "label": "AI服务配置（DeepSeek）",
+        "required": False,
+        "fields": {
+            "DEEPSEEK_ENABLED": {
+                "type": "string",
+                "required": False,
+                "label": "启用DeepSeek",
+                "default": "",
+                "help": "设为 true 启用",
+            },
+            "DEEPSEEK_API_KEY": {
+                "type": "secret",
+                "required": False,
+                "label": "API Key",
+            },
+            "DEEPSEEK_BASE_URL": {
+                "type": "string",
+                "required": False,
+                "label": "API地址",
+                "default": "https://api.deepseek.com",
+            },
+            "DEEPSEEK_ROUTER_MODEL": {
+                "type": "string",
+                "required": False,
+                "label": "路由模型",
+                "default": "deepseek-chat",
+            },
+            "DEEPSEEK_EXECUTION_MODEL": {
+                "type": "string",
+                "required": False,
+                "label": "执行模型",
+                "default": "deepseek-chat",
+            },
+            "DEEPSEEK_REASONER_MODEL": {
+                "type": "string",
+                "required": False,
+                "label": "推理模型",
+                "default": "deepseek-reasoner",
+            },
+            "DEEPSEEK_TIMEOUT_SECONDS": {
+                "type": "integer",
+                "required": False,
+                "label": "超时(秒)",
+                "default": "30",
+            },
+        },
+    },
+    "webhooks": {
+        "label": "Webhook集成",
+        "required": False,
+        "fields": {
+            "OPENCLAW_WEBHOOK_URL": {
+                "type": "string",
+                "required": False,
+                "label": "OpenClaw Webhook地址",
+                "default": "http://claw.youcangogogo.com/webhook",
+            },
+            "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TOKEN": {
+                "type": "secret",
+                "required": False,
+                "label": "OpenClaw Token",
+            },
+            "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL": {
+                "type": "string",
+                "required": False,
+                "label": "问卷提交Webhook地址",
+            },
+            "QUESTIONNAIRE_SUBMIT_WEBHOOK_TOKEN": {
+                "type": "secret",
+                "required": False,
+                "label": "问卷提交Token",
+            },
+            "AUTOMATION_INTERNAL_API_TOKEN": {
+                "type": "secret",
+                "required": False,
+                "label": "自动化内部API Token",
+            },
+            "AUTOMATION_ACTIVATION_WEBHOOK_TOKEN": {
+                "type": "secret",
+                "required": False,
+                "label": "激活Webhook Token",
+            },
+        },
+    },
+    "infrastructure": {
+        "label": "基础设施",
+        "required": False,
+        "fields": {
+            "REDIS_URL": {
+                "type": "string",
+                "required": False,
+                "label": "Redis连接地址",
+                "help": "如 redis://localhost:6379/0，配置后启用持久化任务队列",
+            },
+            "MCP_BEARER_TOKEN": {
+                "type": "secret",
+                "required": False,
+                "label": "MCP Bearer Token",
+            },
+        },
+    },
+}
+
+
+def validate_config(settings: dict[str, str]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    for group_key, group in CONFIG_SCHEMA.items():
+        for field_key, field in group["fields"].items():
+            value = settings.get(field_key, "").strip()
+            if field.get("required") and not value:
+                errors.append({
+                    "group": group["label"],
+                    "field": field.get("label", field_key),
+                    "key": field_key,
+                    "error": "必填项不能为空",
+                })
+            if value and field.get("type") == "integer":
+                try:
+                    int(value)
+                except ValueError:
+                    errors.append({
+                        "group": group["label"],
+                        "field": field.get("label", field_key),
+                        "key": field_key,
+                        "error": "必须为整数",
+                    })
+    return errors
+
+
+def build_config_checklist(settings: dict[str, str]) -> list[dict[str, Any]]:
+    checklist: list[dict[str, Any]] = []
+    for group_key, group in CONFIG_SCHEMA.items():
+        items: list[dict[str, Any]] = []
+        all_ok = True
+        for field_key, field in group["fields"].items():
+            value = settings.get(field_key, "").strip()
+            configured = bool(value)
+            required = bool(field.get("required"))
+            if required and not configured:
+                all_ok = False
+            items.append({
+                "key": field_key,
+                "label": field.get("label", field_key),
+                "required": required,
+                "configured": configured,
+                "type": field.get("type", "string"),
+            })
+        checklist.append({
+            "group_key": group_key,
+            "group_label": group["label"],
+            "required": bool(group.get("required")),
+            "complete": all_ok,
+            "fields": items,
+        })
+    return checklist
+
+
+def get_all_schema_keys() -> list[str]:
+    keys: list[str] = []
+    for group in CONFIG_SCHEMA.values():
+        keys.extend(group["fields"].keys())
+    return keys

@@ -9,6 +9,7 @@ from flask import Flask, Response
 from .db import close_db, init_app as init_db_app
 from .domains.customer_pulse.access import bind_customer_pulse_request_context
 from .infra.settings import DEFAULT_LAOHUANG_CHAT_WEBHOOK_URL, DEFAULT_OPENCLAW_WEBHOOK_URL
+from .infra.task_queue import init_task_queue
 from .http.internal_auth import register_admin_request_guards
 from .mcp_adapter import mcp_bp
 from .observability import attach_logging_filter, register_request_observability
@@ -136,6 +137,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         MESSAGE_ACTIVITY_DB_NAME=os.getenv("MESSAGE_ACTIVITY_DB_NAME", ""),
         MESSAGE_ACTIVITY_DB_USER=os.getenv("MESSAGE_ACTIVITY_DB_USER", ""),
         MESSAGE_ACTIVITY_DB_PASS=os.getenv("MESSAGE_ACTIVITY_DB_PASS", ""),
+        REDIS_URL=os.getenv("REDIS_URL", ""),
         ENV_FILE_PATH=os.getenv("ENV_FILE_PATH", "/home/ubuntu/.openclaw-wecom.env"),
         CRON_SCRIPT_PATH=os.getenv(
             "CRON_SCRIPT_PATH",
@@ -156,6 +158,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     init_db_app(app)
     app.teardown_appcontext(close_db)
+    init_task_queue(app)
     _configure_logging(app)
     _log_startup_config(app)
     register_request_observability(app)

@@ -9,7 +9,9 @@ from .sync_support import (
     _sync_external_contact_identity_map,
     _sync_group_chats,
 )
-from ..services import create_sync_run, finish_sync_run, normalize_group_chat_record, upsert_group_chats
+from ..domains.archive.service import create_sync_run, finish_sync_run
+from ..domains.group_chats.repo import upsert_group_chats
+from ..domains.group_chats.service import normalize_group_chat_record
 
 
 def run_contacts_sync(*, only_new: bool) -> dict:
