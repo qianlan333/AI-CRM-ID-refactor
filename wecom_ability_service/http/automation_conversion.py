@@ -5,7 +5,7 @@ import json
 
 import requests
 
-from flask import Response, abort, jsonify, redirect, request, url_for
+from flask import Response, abort, current_app, jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion import (
     activate_conversion_workflow,
@@ -1298,6 +1298,12 @@ def _handle_stage_send_post(stage_key: str, *, program: dict[str, object]):
         if _wants_json_response():
             return jsonify({"ok": False, "error": str(exc)}), 400
         return _render_member_ops_page(page_error=str(exc), program=program)
+    except Exception as exc:
+        current_app.logger.exception("stage send failed: stage_key=%s program_id=%s", stage_key, program_id)
+        error_message = f"发送任务异常: {type(exc).__name__}: {exc}"
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": error_message}), 500
+        return _render_member_ops_page(page_error=error_message, program=program)
 
 
 def admin_automation_program_member_ops_stage_send(program_id: int, stage_key: str):
