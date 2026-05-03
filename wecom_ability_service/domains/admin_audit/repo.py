@@ -62,7 +62,7 @@ def list_admin_operation_logs(
     if normalized_q:
         like = f"%{normalized_q}%"
         where.append(
-            "(operator LIKE ? OR action_type LIKE ? OR target_type LIKE ? OR target_id LIKE ? OR before_json LIKE ? OR after_json LIKE ?)"
+            "(operator LIKE ? OR action_type LIKE ? OR target_type LIKE ? OR target_id LIKE ? OR CAST(before_json AS TEXT) LIKE ? OR CAST(after_json AS TEXT) LIKE ?)"
         )
         params.extend([like, like, like, like, like, like])
 
