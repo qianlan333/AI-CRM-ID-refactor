@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PYTHON_TARGETS = [
     "wecom_ability_service/domains/customer_pulse",
     "wecom_ability_service/domains/followup_orchestrator",
-    "wecom_ability_service/db.py",
+    "wecom_ability_service/db",
     "wecom_ability_service/infra/settings.py",
     "wecom_ability_service/domains/admin_config/service.py",
     "wecom_ability_service/domains/admin_dashboard/service.py",
