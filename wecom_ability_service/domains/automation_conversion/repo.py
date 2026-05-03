@@ -2536,7 +2536,7 @@ def has_historical_stage_manual_send_delivery(*, rule_key: str, external_contact
     if not normalized_rule_key or not normalized_external_contact_id:
         return False
     rule_keys = set(_stage_route_lookup_keys(normalized_rule_key))
-    like_clauses = " OR ".join("filter_snapshot_json LIKE ?" for _ in rule_keys)
+    like_clauses = " OR ".join("CAST(filter_snapshot_json AS TEXT) LIKE ?" for _ in rule_keys)
     rows = _fetchall_dicts(
         f"""
         SELECT task_results_json, filter_snapshot_json, status
