@@ -26,7 +26,7 @@ from ..application.user_ops import (
 )
 from ..domains.routing_config import DEFAULT_SALES_ROUTE_OWNER_USERID
 from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
-from ..services import (
+from ..domains.user_ops.page_service import (
     execute_user_ops_batch_send,
     get_user_ops_send_record_detail,
     list_user_ops_send_records,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 
 import wecom_ability_service.domains.automation_conversion as automation_package
-from wecom_ability_service import db as db_module
+from wecom_ability_service.db import migrations as db_migrations_module
 from wecom_ability_service.domains.automation_conversion import __all__ as automation_public_names
 from wecom_ability_service.domains.automation_conversion import service as automation_service
 from wecom_ability_service.domains.questionnaire import service as questionnaire_service
@@ -57,8 +57,8 @@ def test_init_db_bootstrap_keeps_sop_and_prompt_seed_paths(monkeypatch):
     called: list[str] = []
     monkeypatch.setattr(automation_service, "ensure_sop_v1_defaults", lambda: called.append("sop"))
     monkeypatch.setattr(automation_service, "ensure_agent_prompt_defaults", lambda: called.append("prompt"))
-    db_module._ensure_automation_sop_v1_seed_data()
-    db_module._ensure_automation_agent_prompt_defaults()
+    db_migrations_module._ensure_automation_sop_v1_seed_data()
+    db_migrations_module._ensure_automation_agent_prompt_defaults()
     assert called == ["sop", "prompt"]
 
 

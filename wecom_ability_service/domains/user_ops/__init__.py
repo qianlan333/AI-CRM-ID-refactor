@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .service import (
+    ThirdPartyUserSyncError,
     backfill_class_term_for_owner,
     backfill_owner_class_terms_into_lead_pool,
     ensure_class_term_tag_mapping_seed,

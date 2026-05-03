@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from wecom_ability_service import create_app
-from wecom_ability_service.db import _sqlite_table_columns, _sqlite_table_sql, get_db, init_db
+from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db.helpers import _sqlite_table_columns, _sqlite_table_sql
 from wecom_ability_service.domains.automation_conversion import (
     get_conversion_dashboard_payload,
     save_sop_v1_pool_config,

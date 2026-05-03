@@ -22,7 +22,7 @@ from ..application.questionnaire.queries import (
     ResolveQuestionnaireRespondentIdentityQuery,
 )
 from ..infra.wechat_oauth import WeChatOAuthRequestError
-from ..services import QuestionnaireAlreadySubmittedError
+from ..application.questionnaire import QuestionnaireAlreadySubmittedError
 from .questionnaire_support import (
     _is_wechat_browser,
     _mask_identity_value,

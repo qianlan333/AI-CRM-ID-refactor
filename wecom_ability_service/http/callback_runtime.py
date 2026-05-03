@@ -5,7 +5,7 @@ from xml.etree import ElementTree as ET
 from flask import Response, jsonify, request
 
 from ..archive_sdk import WeComArchiveError
-from ..services import log_external_contact_event
+from ..domains.callbacks.service import log_external_contact_event
 from ..wecom_callback import (
     WeComCallbackError,
     build_encrypted_reply,

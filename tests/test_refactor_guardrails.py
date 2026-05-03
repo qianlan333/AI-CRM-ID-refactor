@@ -23,23 +23,7 @@ HTTP_REQUESTS_ALLOWLIST = {
 # Historical direct imports that still exist before the入口收口.
 # This allowlist is intentionally explicit so any new direct dependency on
 # legacy service wrappers fails immediately.
-LEGACY_IMPORT_ALLOWLIST = {
-    ("wecom_ability_service/http/admin_class_user.py", "services"),
-    ("wecom_ability_service/http/admin_user_ops.py", "services"),
-    ("wecom_ability_service/http/callback_runtime.py", "services"),
-    ("wecom_ability_service/http/contacts.py", "services"),
-    ("wecom_ability_service/http/customer_center.py", "customer_center.service"),
-    ("wecom_ability_service/http/customer_timeline.py", "customer_timeline"),
-    ("wecom_ability_service/http/identity.py", "services"),
-    ("wecom_ability_service/http/ops_runtime.py", "services"),
-    ("wecom_ability_service/http/public_questionnaires.py", "services"),
-    ("wecom_ability_service/http/sidebar.py", "services"),
-    ("wecom_ability_service/domains/admin_console/customer_profile_service.py", "customer_center.service"),
-    ("wecom_ability_service/domains/admin_console/customer_profile_service.py", "services"),
-    ("wecom_ability_service/domains/admin_console/service.py", "customer_center.service"),
-    ("wecom_ability_service/domains/admin_console/service.py", "customer_timeline"),
-    ("wecom_ability_service/domains/admin_console/service.py", "services"),
-}
+LEGACY_IMPORT_ALLOWLIST: set[tuple[str, str]] = set()
 
 DIRECT_SQL_PATTERNS = (
     re.compile(r"\bget_db\s*\("),

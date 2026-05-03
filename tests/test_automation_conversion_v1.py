@@ -12,7 +12,8 @@ import pytest
 import requests
 
 from wecom_ability_service import create_app
-from wecom_ability_service.db import _sqlite_table_columns, get_db, init_db
+from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db.helpers import _sqlite_table_columns
 from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
     apply_dashboard_signup_tag,

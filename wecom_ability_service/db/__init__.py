@@ -7,17 +7,6 @@ from .connection import (  # noqa: F401
     get_db,
     get_db_backend,
 )
-from .helpers import (  # noqa: F401
-    _postgres_table_columns,
-    _sqlite_normalized_conversion_pool_sql,
-    _sqlite_table_columns,
-    _sqlite_table_exists,
-    _sqlite_table_sql,
-)
-from .migrations import (  # noqa: F401
-    _ensure_automation_agent_prompt_defaults,
-    _ensure_automation_sop_v1_seed_data,
-)
 
 
 def init_db() -> None:

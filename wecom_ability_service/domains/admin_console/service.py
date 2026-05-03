@@ -30,24 +30,45 @@ from ...application.user_ops import (
     RunDueUserOpsDeferredJobsCommand,
     RunDueUserOpsDeferredJobsCommandDTO,
 )
-from ...services import (
-    count_external_contact_identity_maps,
-    get_group_chat_map,
-    get_latest_questionnaire_submit_debug,
-    get_owner_role,
-    get_routing_config,
-    get_signup_status_definition,
-    list_class_user_management_records,
-    list_class_user_status_history,
-    list_questionnaires,
-    migrate_class_user_status_from_contact_tags,
-    resolve_contact_routing_context,
-    update_questionnaire,
-    disable_questionnaire,
-    get_questionnaire_detail,
-    format_message_row,
-    extract_roomid_from_raw_payload,
+from ...application.class_user.commands import MigrateClassUserStatusFromContactTagsCommand
+from ...application.class_user.dto import (
+    ListClassUserManagementRecordsQueryDTO,
+    ListClassUserStatusHistoryQueryDTO,
 )
+from ...application.class_user.queries import (
+    ListClassUserManagementRecordsQuery,
+    ListClassUserStatusHistoryQuery,
+)
+from ...application.identity_contact.queries import CountExternalContactIdentityMapsQuery
+from ...application.questionnaire.commands import (
+    DisableQuestionnaireCommand,
+    UpdateQuestionnaireCommand,
+)
+from ...application.questionnaire.dto import (
+    DisableQuestionnaireCommandDTO,
+    GetLatestQuestionnaireSubmitDebugQueryDTO,
+    GetQuestionnaireDetailQueryDTO,
+    ListQuestionnairesQueryDTO,
+    UpdateQuestionnaireCommandDTO,
+)
+from ...application.questionnaire.queries import (
+    GetLatestQuestionnaireSubmitDebugQuery,
+    GetQuestionnaireDetailQuery,
+    ListQuestionnairesQuery,
+)
+from ...application.routing_config.dto import (
+    GetOwnerRoleQueryDTO,
+    GetRoutingRuleConfigQueryDTO,
+    ResolveContactRoutingContextQueryDTO,
+)
+from ...application.routing_config.queries import (
+    GetOwnerRoleQuery,
+    GetRoutingRuleConfigQuery,
+    ResolveContactRoutingContextQuery,
+)
+from ...domains.archive.service import extract_roomid_from_raw_payload, format_message_row
+from ...domains.group_chats.repo import get_group_chat_map
+from ...domains.tags.service import get_signup_status_definition, get_signup_tag_rules_config
 from ...infra.settings import get_setting
 from ..admin_config.service import list_mcp_tool_settings, mcp_tool_enabled
 from ..admin_config import repo as admin_config_repo
@@ -59,6 +80,74 @@ from .customer_profile_service import (
     build_customer_detail_payload as build_customer_profile_page_payload,
     build_customer_list_payload as build_customer_search_payload,
 )
+
+def count_external_contact_identity_maps() -> int:
+    return CountExternalContactIdentityMapsQuery()()
+
+
+def get_owner_role(userid: str):
+    return GetOwnerRoleQuery()(GetOwnerRoleQueryDTO(userid=str(userid or "").strip()))
+
+
+def get_routing_config():
+    return GetRoutingRuleConfigQuery()(
+        GetRoutingRuleConfigQueryDTO(active_only=True, signup_tag_rules=get_signup_tag_rules_config())
+    )
+
+
+def resolve_contact_routing_context(owner_userid: str, owner_role: str, signup_status: str):
+    definition = get_signup_status_definition(signup_status)
+    return ResolveContactRoutingContextQuery()(
+        ResolveContactRoutingContextQueryDTO(
+            owner_userid=str(owner_userid or "").strip(),
+            owner_role=str(owner_role or "").strip(),
+            signup_status=str(signup_status or "").strip(),
+            routing_alias=str(definition.get("routing_alias") or "") if definition else "",
+        )
+    )
+
+
+def list_class_user_management_records(signup_status: str = ""):
+    return ListClassUserManagementRecordsQuery()(
+        ListClassUserManagementRecordsQueryDTO(signup_status=str(signup_status or "").strip())
+    )
+
+
+def list_class_user_status_history(limit: int = 100):
+    return ListClassUserStatusHistoryQuery()(ListClassUserStatusHistoryQueryDTO(limit=int(limit)))
+
+
+def migrate_class_user_status_from_contact_tags():
+    return MigrateClassUserStatusFromContactTagsCommand()()
+
+
+def list_questionnaires(*, include_disabled: bool = False, include_stats: bool = True):
+    return ListQuestionnairesQuery()(
+        ListQuestionnairesQueryDTO(include_disabled=bool(include_disabled), include_stats=bool(include_stats))
+    )
+
+
+def get_questionnaire_detail(questionnaire_id: int):
+    return GetQuestionnaireDetailQuery()(GetQuestionnaireDetailQueryDTO(questionnaire_id=int(questionnaire_id)))
+
+
+def get_latest_questionnaire_submit_debug(questionnaire_id: int):
+    return GetLatestQuestionnaireSubmitDebugQuery()(
+        GetLatestQuestionnaireSubmitDebugQueryDTO(questionnaire_id=int(questionnaire_id))
+    )
+
+
+def update_questionnaire(questionnaire_id: int, payload: dict):
+    return UpdateQuestionnaireCommand()(
+        UpdateQuestionnaireCommandDTO(questionnaire_id=int(questionnaire_id), payload=dict(payload or {}))
+    )
+
+
+def disable_questionnaire(questionnaire_id: int, is_disabled: bool = True):
+    return DisableQuestionnaireCommand()(
+        DisableQuestionnaireCommandDTO(questionnaire_id=int(questionnaire_id), is_disabled=bool(is_disabled))
+    )
+
 
 TARGET_CUSTOMER_TAG_ACTION = "customer_tag_action"
 TARGET_CUSTOMER_TASK_ACTION = "customer_task_action"
