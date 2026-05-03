@@ -4995,7 +4995,7 @@ def test_message_activity_sync_updates_activation_follow_type_and_pool(app, monk
         )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "138", "phone_last4": "1231", "phone_match_key": "138_1231", "message_count": 15},
             {"phone_prefix3": "138", "phone_last4": "1232", "phone_match_key": "138_1232", "message_count": 10},
@@ -5096,7 +5096,7 @@ def test_message_activity_sync_preserves_manual_follow_type(app, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "138", "phone_last4": "2221", "phone_match_key": "138_2221", "message_count": 20},
             {"phone_prefix3": "138", "phone_last4": "2222", "phone_match_key": "138_2222", "message_count": 0},
@@ -5169,7 +5169,7 @@ def test_message_activity_sync_uses_follow_type_fallback_for_inactive_members(ap
     )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "138", "phone_last4": "2441", "phone_match_key": "138_2441", "message_count": 1},
             {"phone_prefix3": "138", "phone_last4": "2442", "phone_match_key": "138_2442", "message_count": 0},
@@ -5234,7 +5234,7 @@ def test_message_activity_sync_skips_ambiguous_and_unmatched_members(app, monkey
         )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "138", "phone_last4": "3331", "phone_match_key": "138_3331", "message_count": 9},
             {"phone_prefix3": "138", "phone_last4": "3332", "phone_match_key": "138_3332", "message_count": 3},
@@ -5342,7 +5342,7 @@ def test_message_activity_sync_requires_same_prefix3_and_last4(app, monkeypatch)
     )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "139", "phone_last4": "5555", "phone_match_key": "139_5555", "message_count": 20},
             {"phone_prefix3": "138", "phone_last4": "5555", "phone_match_key": "138_5555", "message_count": 20},
@@ -5386,7 +5386,7 @@ def test_message_activity_sync_same_last4_different_prefix_does_not_match(app, m
     )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "139", "phone_last4": "6666", "phone_match_key": "139_6666", "message_count": 9},
         ],
@@ -5434,7 +5434,7 @@ def test_message_activity_sync_skips_same_phone_match_key_as_ambiguous(app, monk
         )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "138", "phone_last4": "7777", "phone_match_key": "138_7777", "message_count": 6},
         ],
@@ -5485,7 +5485,7 @@ def test_message_activity_sync_skips_invalid_short_phone(app, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [
             {"phone_prefix3": "123", "phone_last4": "3456", "phone_match_key": "123_3456", "message_count": 20},
         ],
@@ -5529,7 +5529,7 @@ def test_message_activity_sync_api_requires_internal_token_and_returns_run(app, 
         decision_source="questionnaire",
     )
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [{"phone_prefix3": "138", "phone_last4": "4441", "phone_match_key": "138_4441", "message_count": 5}],
     )
 
@@ -7512,7 +7512,7 @@ def test_automation_conversion_home_page_renders_message_activity_sync_summary(a
         decision_source="questionnaire",
     )
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [{"phone_prefix3": "138", "phone_last4": "9441", "phone_match_key": "138_9441", "message_count": 6}],
     )
     monkeypatch.setattr(
@@ -7556,7 +7556,7 @@ def test_admin_automation_program_overview_message_activity_sync_returns_json(ap
     )
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.query_message_activity_counts",
+        "wecom_ability_service.domains.automation_conversion.message_activity_service.query_message_activity_counts",
         lambda: [{"phone_prefix3": "138", "phone_last4": "9442", "phone_match_key": "138_9442", "message_count": 8}],
     )
     monkeypatch.setattr(

@@ -10,9 +10,18 @@ import requests
 from flask import current_app
 
 from .domains.tasks.private_message import build_private_message_request_payload
+from .infra.circuit_breaker import CircuitBreaker
+from .infra.error_codes import classify_wecom_errcode, WECOM_CIRCUIT_OPEN, WECOM_NETWORK_ERROR
 from .infra.settings import get_setting, set_settings
 
 wecom_logger = logging.getLogger("wecom_api")
+
+_RETRYABLE_ERRCODES = {-1, 42001, 40014}
+_TOKEN_EXPIRED_ERRCODES = {42001, 40014, 40001}
+_MAX_RETRIES = 2
+_RETRY_BACKOFF_BASE = 1.0
+
+_circuit_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 
 
 class WeComClientError(RuntimeError):
@@ -23,11 +32,13 @@ class WeComClientError(RuntimeError):
         stage: str | None = None,
         category: str | None = None,
         payload: dict | None = None,
+        error_code: str = "",
     ) -> None:
         super().__init__(message)
         self.stage = stage
         self.category = category
         self.payload = payload or {}
+        self.error_code = error_code
 
 
 def _classify_error(errcode: int | None, errmsg: str, stage: str) -> str:
@@ -131,62 +142,108 @@ class WeComClient:
         return self._access_token
 
     def post(self, path: str, payload: dict | None = None) -> dict:
-        access_token = self._get_access_token()
-        try:
+        return self._request_with_retry("POST", path, json_payload=payload)
+
+    def _request_with_retry(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_payload: dict | None = None,
+        query_params: dict | None = None,
+    ) -> dict:
+        if not _circuit_breaker.allow_request():
+            raise WeComClientError(
+                f"WeCom API circuit breaker open, request to {path} rejected",
+                stage=path,
+                category="circuit_breaker",
+                error_code=WECOM_CIRCUIT_OPEN,
+            )
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            access_token = self._get_access_token()
+            try:
+                result = self._do_request(method, path, access_token, json_payload=json_payload, query_params=query_params)
+                errcode = result.get("errcode")
+                if errcode in (0, None):
+                    _circuit_breaker.record_success()
+                    return result
+                if errcode in _TOKEN_EXPIRED_ERRCODES and attempt < _MAX_RETRIES:
+                    wecom_logger.warning("wecom token expired errcode=%s path=%s, refreshing", errcode, path)
+                    self._access_token = None
+                    self._token_expires_at = 0.0
+                    continue
+                if errcode in _RETRYABLE_ERRCODES and attempt < _MAX_RETRIES:
+                    wecom_logger.warning("wecom retryable error errcode=%s path=%s attempt=%d", errcode, path, attempt)
+                    time.sleep(_RETRY_BACKOFF_BASE * (2 ** attempt))
+                    continue
+                _circuit_breaker.record_failure()
+                wecom_logger.error("wecom %s nonzero path=%s payload=%s", method, path, result)
+                raise WeComClientError(
+                    f"WeCom API failed: {result}",
+                    stage=path,
+                    category=_classify_error(errcode, result.get("errmsg", ""), path),
+                    payload=result,
+                    error_code=classify_wecom_errcode(errcode) if errcode else "",
+                )
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                last_exc = exc
+                _circuit_breaker.record_failure()
+                if attempt < _MAX_RETRIES:
+                    wecom_logger.warning("wecom %s network error path=%s attempt=%d: %s", method, path, attempt, exc)
+                    time.sleep(_RETRY_BACKOFF_BASE * (2 ** attempt))
+                    continue
+                wecom_logger.exception("wecom %s failed after retries path=%s", method, path)
+                raise WeComClientError(
+                    f"WeCom request failed: {exc}",
+                    stage=path,
+                    category="wecom_api",
+                    error_code=WECOM_NETWORK_ERROR,
+                ) from exc
+            except requests.RequestException as exc:
+                _circuit_breaker.record_failure()
+                wecom_logger.exception("wecom %s failed path=%s", method, path)
+                raise WeComClientError(
+                    f"WeCom request failed: {exc}",
+                    stage=path,
+                    category="wecom_api",
+                ) from exc
+        raise WeComClientError(
+            f"WeCom request failed after {_MAX_RETRIES + 1} attempts: {last_exc}",
+            stage=path,
+            category="wecom_api",
+        )
+
+    def _do_request(
+        self,
+        method: str,
+        path: str,
+        access_token: str,
+        *,
+        json_payload: dict | None = None,
+        query_params: dict | None = None,
+    ) -> dict:
+        params = {"access_token": access_token}
+        if query_params:
+            params.update(query_params)
+        if method == "POST":
             response = requests.post(
                 f"{self.api_base}{path}",
-                params={"access_token": access_token},
-                json=payload or {},
+                params=params,
+                json=json_payload or {},
                 timeout=self.timeout,
             )
-            response.raise_for_status()
-            result = response.json()
-        except requests.RequestException as exc:
-            wecom_logger.exception("wecom POST failed path=%s", path)
-            raise WeComClientError(
-                f"WeCom request failed: {exc}",
-                stage=path,
-                category="wecom_api",
-            ) from exc
-        if result.get("errcode") not in (0, None):
-            wecom_logger.error("wecom POST nonzero path=%s payload=%s", path, result)
-            raise WeComClientError(
-                f"WeCom API failed: {result}",
-                stage=path,
-                category=_classify_error(result.get("errcode"), result.get("errmsg", ""), path),
-                payload=result,
-            )
-        return result
-
-    def get(self, path: str, params: dict | None = None) -> dict:
-        access_token = self._get_access_token()
-        request_params = {"access_token": access_token}
-        if params:
-            request_params.update(params)
-        try:
+        else:
             response = requests.get(
                 f"{self.api_base}{path}",
-                params=request_params,
+                params=params,
                 timeout=self.timeout,
             )
-            response.raise_for_status()
-            result = response.json()
-        except requests.RequestException as exc:
-            wecom_logger.exception("wecom GET failed path=%s", path)
-            raise WeComClientError(
-                f"WeCom request failed: {exc}",
-                stage=path,
-                category="wecom_api",
-            ) from exc
-        if result.get("errcode") not in (0, None):
-            wecom_logger.error("wecom GET nonzero path=%s payload=%s", path, result)
-            raise WeComClientError(
-                f"WeCom API failed: {result}",
-                stage=path,
-                category=_classify_error(result.get("errcode"), result.get("errmsg", ""), path),
-                payload=result,
-            )
-        return result
+        response.raise_for_status()
+        return response.json()
+
+    def get(self, path: str, params: dict | None = None) -> dict:
+        return self._request_with_retry("GET", path, query_params=params)
 
     def list_tags(self, payload: dict | None = None) -> dict:
         return self.post("/cgi-bin/externalcontact/get_corp_tag_list", payload)

@@ -129,3 +129,62 @@ def get_recent_external_contact_event_logs(limit: int = 20):
         """,
         (safe_limit,),
     ).fetchall()
+
+
+def count_pending_events() -> dict[str, Any]:
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT
+            COUNT(*) AS pending_count,
+            MIN(created_at) AS oldest_created_at
+        FROM wecom_external_contact_event_logs
+        WHERE process_status IN ('pending', 'processing')
+        """,
+    ).fetchone()
+    return dict(row) if row else {"pending_count": 0, "oldest_created_at": None}
+
+
+def count_failed_events_since(since_timestamp: str) -> int:
+    row = get_db().execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM wecom_external_contact_event_logs
+        WHERE process_status = 'failed'
+          AND updated_at >= ?
+        """,
+        (since_timestamp,),
+    ).fetchone()
+    return int(row["cnt"]) if row else 0
+
+
+def list_stale_pending_events(*, age_seconds: int = 120, limit: int = 50) -> list[dict[str, Any]]:
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT id, corp_id, event_type, change_type, external_userid, user_id,
+               process_status, retry_count, created_at, updated_at
+        FROM wecom_external_contact_event_logs
+        WHERE process_status IN ('pending', 'processing')
+          AND created_at <= datetime('now', '-' || ? || ' seconds')
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (int(age_seconds), int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_event_dead_letter(event_log_id: int, *, error_message: str = "") -> None:
+    db = get_db()
+    db.execute(
+        """
+        UPDATE wecom_external_contact_event_logs
+        SET process_status = 'dead_letter',
+            error_message = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (error_message, int(event_log_id)),
+    )
+    db.commit()

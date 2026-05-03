@@ -13,6 +13,7 @@ from .archive_sdk import (
     fetch_chatdata_page,
     get_archive_config,
 )
+from .db import get_db
 from .services import get_archive_last_seq, insert_archived_messages, materialize_message_batches, set_archive_last_seq
 
 archive_logger = logging.getLogger("archive_sync")
@@ -124,8 +125,20 @@ class ArchiveAdapterClient:
                         if roomid:
                             group_chat_ids.add(roomid)
 
-                inserted += insert_archived_messages(accepted_rows)
-                set_archive_last_seq(max_seq)
+                db = get_db()
+                try:
+                    batch_inserted = insert_archived_messages(accepted_rows, commit=False)
+                    set_archive_last_seq(max_seq, commit=False)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    archive_logger.exception(
+                        "archive batch transaction failed seq_from=%s seq_to=%s",
+                        encrypted_records[0].get("seq"),
+                        encrypted_records[-1].get("seq"),
+                    )
+                    raise
+                inserted += batch_inserted
                 archive_logger.info(
                     "archive batch seq_from=%s seq_to=%s fetched=%s accepted=%s inserted_total=%s",
                     encrypted_records[0].get("seq"),

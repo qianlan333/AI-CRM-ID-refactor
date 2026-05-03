@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import current_app, jsonify, redirect, request, url_for
 
+from ..infra.task_queue import _thread_executor as background_executor
 from ..infra.wecom_runtime import ContactWeComRuntimeClient, get_contact_runtime_client
 from ..wecom_client import WeComClientError
-
-background_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wecom-bg")
 callback_logger = logging.getLogger("callback")
 archive_logger = logging.getLogger("archive_sync")
 contacts_logger = logging.getLogger("contacts_sync")
@@ -52,6 +50,8 @@ def _wecom_error_response(exc: WeComClientError):
         chat_id=chat_id,
     )
     payload = {"ok": False, "error": str(exc)}
+    if exc.error_code:
+        payload["error_code"] = exc.error_code
     if exc.category:
         payload["error_category"] = exc.category
     if exc.stage:

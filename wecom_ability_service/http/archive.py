@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from flask import current_app, jsonify, request
 
-from ..services import get_messages_by_user, get_recent_messages_by_user, search_messages
+from ..domains.archive.service import (
+    get_messages_by_user as _get_messages_by_user,
+    get_recent_messages_by_user as _get_recent_messages_by_user,
+    search_messages as _search_messages,
+)
+from ..domains.group_chats.repo import get_group_chat_map
 from .sync_jobs import run_archive_health_check, run_manual_archive_sync
 
 
@@ -35,7 +40,7 @@ def archive_sync():
 def list_messages(external_userid: str):
     chat_type = request.args.get("chat_type", "").strip() or None
     try:
-        messages = get_messages_by_user(external_userid, chat_type=chat_type)
+        messages = _get_messages_by_user(external_userid, chat_type, group_chat_map_loader=get_group_chat_map)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "messages": messages})
@@ -45,7 +50,7 @@ def list_recent_messages(external_userid: str):
     limit = request.args.get("limit", "20").strip() or "20"
     chat_type = request.args.get("chat_type", "").strip() or None
     try:
-        messages = get_recent_messages_by_user(external_userid, int(limit), chat_type=chat_type)
+        messages = _get_recent_messages_by_user(external_userid, limit=int(limit), chat_type=chat_type, group_chat_map_loader=get_group_chat_map)
     except ValueError as exc:
         if "chat_type" in str(exc):
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -58,7 +63,7 @@ def query_messages():
     keyword = request.args.get("keyword", "").strip()
     if not external_userid or not keyword:
         return jsonify({"ok": False, "error": "external_userid and keyword are required"}), 400
-    return jsonify({"ok": True, "messages": search_messages(external_userid, keyword)})
+    return jsonify({"ok": True, "messages": _search_messages(external_userid, keyword, group_chat_map_loader=get_group_chat_map)})
 
 
 

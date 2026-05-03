@@ -48,10 +48,10 @@ from ..observability import (
     get_task_name,
     unbind_background_context,
 )
+from ..infra.task_queue import enqueue_task
 from .common import (
     _contact_sync_retry_limit,
     _default_owner_userid,
-    background_executor,
     callback_logger,
 )
 from .sync_support import _sync_contact_detail_with_description_fix
@@ -209,12 +209,13 @@ def _dispatch_background_task(task_name: str, task_fn, *args, **kwargs) -> None:
     job_id = generate_job_id()
     parent_request_id = get_request_id()
     if current_app.config.get("CALLBACK_ASYNC_ENABLED", True):
-        background_executor.submit(
+        enqueue_task(
             _run_app_task,
             app,
             task_name,
             task_fn,
             *args,
+            task_name=task_name,
             job_id=job_id,
             parent_request_id=parent_request_id,
             **kwargs,
