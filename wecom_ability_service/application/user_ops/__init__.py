@@ -1,5 +1,6 @@
 """User ops application skeleton for Wave 2."""
 
+from ...domains.user_ops.service import ThirdPartyUserSyncError  # noqa: F401
 from .commands import (
     BackfillOwnerClassTermsCommand,
     ImportActivationStatusCommand,

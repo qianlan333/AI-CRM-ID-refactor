@@ -40,12 +40,13 @@ from ..application.user_ops.queries import (
 )
 from ..domains.marketing_automation.presenter import business_marketing_display, business_segment_label
 from ..infra.wecom_runtime import build_jsapi_payload
-from ..services import (
-    ContactBindingConflictError,
-    ThirdPartyUserSyncError,
-    get_contact_by_external_userid,
-    get_class_user_status_current,
+from ..application.class_user.dto import GetClassUserStatusCurrentQueryDTO
+from ..application.class_user.queries import GetClassUserStatusCurrentQuery
+from ..application.identity_contact._legacy_delegate import (
+    _get_contact_by_external_userid as get_contact_by_external_userid,
 )
+from ..domains.identity import ContactBindingConflictError
+from ..application.user_ops import ThirdPartyUserSyncError
 from ..wecom_client import WeComClientError
 from .admin_support import (
     _apply_signup_sidebar_tag,
@@ -54,6 +55,12 @@ from .admin_support import (
     _sidebar_person_detail_url,
 )
 from .common import _corp_id, _wecom_error_response
+
+
+def _get_class_user_status_current(external_userid: str):
+    return GetClassUserStatusCurrentQuery()(
+        GetClassUserStatusCurrentQueryDTO(external_userid=str(external_userid or "").strip())
+    )
 
 
 _SIDEBAR_SWITCHABLE_POOL_STAGE_KEYS = {
@@ -316,7 +323,7 @@ def _sidebar_marketing_target_exists(external_userid: str) -> bool:
         return False
     if get_contact_by_external_userid(normalized_external_userid) is not None:
         return True
-    if get_class_user_status_current(normalized_external_userid):
+    if _get_class_user_status_current(normalized_external_userid):
         return True
     if _get_primary_follow_user_userid_payload(normalized_external_userid):
         return True
@@ -424,7 +431,7 @@ def sidebar_signup_tag_status():
     external_userid = request.args.get("external_userid", "").strip()
     if not external_userid:
         return jsonify({"ok": False, "error": "external_userid is required"}), 400
-    current_status = get_class_user_status_current(external_userid) or {}
+    current_status = _get_class_user_status_current(external_userid) or {}
     configured = _configured_signup_tag_rules_payload()
     return jsonify(
         {

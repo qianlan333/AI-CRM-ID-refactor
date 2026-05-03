@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from flask import jsonify, request
 
-from ..services import resolve_person_identity
+from ..application.identity_contact.dto import ResolvePersonIdentityQueryDTO
+from ..application.identity_contact.queries import ResolvePersonIdentityQuery
 
 
 def api_identity_resolve():
@@ -10,7 +11,9 @@ def api_identity_resolve():
     mobile = request.args.get("mobile", "").strip()
     unionid = request.args.get("unionid", "").strip()
     try:
-        payload = resolve_person_identity(external_userid=external_userid, mobile=mobile, unionid=unionid)
+        payload = ResolvePersonIdentityQuery()(
+            ResolvePersonIdentityQueryDTO(external_userid=external_userid, mobile=mobile, unionid=unionid)
+        )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, **payload})
