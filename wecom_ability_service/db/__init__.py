@@ -21,7 +21,6 @@ from .migrations import (  # noqa: F401
 
 
 def init_db() -> None:
-    from .connection import get_db, get_db_backend
     from .migrations.postgres_migrations import _init_postgres
     from .migrations.sqlite_migrations import _init_sqlite
 
