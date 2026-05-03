@@ -6,6 +6,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from flask import current_app, jsonify, redirect, request, url_for
 
+from ..infra.task_queue import _thread_executor as background_executor
 from ..infra.wecom_runtime import ContactWeComRuntimeClient, get_contact_runtime_client
 from ..wecom_client import WeComClientError
 callback_logger = logging.getLogger("callback")

@@ -82,7 +82,7 @@ def _resolve_customer_name(
         _normalized_text(class_status.get("customer_name_snapshot"))
         or _normalized_text(contact.get("customer_name"))
         or _normalized_text(identity.get("name"))
-        or external_userid
+        or ""
     )
 
 

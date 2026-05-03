@@ -187,8 +187,13 @@
         <span>{{ item.description }}</span>
         <span>{{ item.total_count }} 人</span>
         <div class="ac-member-pool-actions">
-          <a class="admin-button {% if item.active and workspace.panel != 'send' %}admin-button--primary{% else %}admin-button--secondary{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='members') }}">查看成员</a>
-          <a class="admin-button {% if item.active and workspace.panel == 'send' %}admin-button--primary{% else %}admin-button--ghost{% endif %}" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='send') }}">批量触达</a>
+          {% if item.active %}
+          <button type="button" class="admin-button {% if workspace.panel != 'send' %}admin-button--primary{% else %}admin-button--secondary{% endif %}" data-toggle-panel="members">查看成员</button>
+          <button type="button" class="admin-button {% if workspace.panel == 'send' %}admin-button--primary{% else %}admin-button--ghost{% endif %}" data-toggle-panel="send">批量触达</button>
+          {% else %}
+          <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='members') }}">查看成员</a>
+          <a class="admin-button admin-button--ghost" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=item.key, panel='send') }}">批量触达</a>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
@@ -196,14 +201,13 @@
   </section>
 
   <section class="ac-member-grid">
-    <article class="ac-member-panel">
-      {% if workspace.panel == 'send' %}
+    <article class="ac-member-panel" id="panel-send"{% if workspace.panel != 'send' %} hidden{% endif %}>
       <div class="ac-member-panel__head">
         <div>
           <h3>{% if is_focus_mode %}AI 批量处理{% else %}批量群发{% endif %}</h3>
           <p class="ac-member-muted">动作只作用于当前池子：{{ stage.label or '-' }}。提交后回到本页面查看创建结果。</p>
         </div>
-        <a class="admin-button admin-button--secondary" href="{{ url_for('api.admin_automation_program_member_ops', program_id=program_context.id, stage=workspace.stage_key, panel='members') }}">返回成员列表</a>
+        <button type="button" class="admin-button admin-button--secondary" data-toggle-panel="members">返回成员列表</button>
       </div>
       {% if is_focus_mode %}
       {% if program_context %}
@@ -249,7 +253,8 @@
       <div class="admin-banner admin-banner--error">当前方案上下文缺失，无法提交群发。</div>
       {% endif %}
       {% endif %}
-      {% else %}
+    </article>
+    <article class="ac-member-panel" id="panel-members"{% if workspace.panel == 'send' %} hidden{% endif %}>
       <div class="ac-member-panel__head">
         <div>
           <h3>成员列表</h3>
@@ -302,7 +307,6 @@
           </tbody>
         </table>
       </div>
-      {% endif %}
     </article>
   </section>
 </div>
@@ -312,6 +316,26 @@
 {{ super() }}
 <script>
 (() => {
+  const panelSend = document.getElementById("panel-send");
+  const panelMembers = document.getElementById("panel-members");
+  if (panelSend && panelMembers) {
+    document.querySelectorAll("[data-toggle-panel]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.dataset.togglePanel;
+        panelSend.hidden = target !== "send";
+        panelMembers.hidden = target !== "members";
+        document.querySelectorAll("[data-toggle-panel]").forEach((b) => {
+          const isSend = b.dataset.togglePanel === "send";
+          const isActive = b.dataset.togglePanel === target;
+          b.className = b.className.replace(/admin-button--(primary|secondary|ghost)/g, "").trim();
+          b.classList.add(isActive ? "admin-button--primary" : (isSend ? "admin-button--ghost" : "admin-button--secondary"));
+        });
+        const url = new URL(window.location);
+        url.searchParams.set("panel", target);
+        window.history.replaceState(null, "", url);
+      });
+    });
+  }
   const forms = document.querySelectorAll("[data-member-send-form]");
   forms.forEach((form) => {
     form.addEventListener("submit", async (event) => {
