@@ -6,14 +6,9 @@ from flask import current_app
 
 from ..db import get_db_backend
 from ..observability import get_request_id
-from ..services import (
-    count_archived_messages,
-    count_contacts,
-    count_group_chats,
-    get_archive_last_seq,
-    get_last_contacts_sync_time,
-    get_last_sync_run,
-)
+from ..domains.archive.service import count_archived_messages, get_archive_last_seq, get_last_sync_run
+from ..domains.contacts.repo import count_contacts, get_last_contacts_sync_time
+from ..domains.group_chats.repo import count_group_chats
 from ..domains.user_ops.service import get_user_ops_deferred_job_counts
 from ..wecom_callback import get_callback_config
 from .common import APP_STARTED_AT, APP_STARTED_AT_TEXT

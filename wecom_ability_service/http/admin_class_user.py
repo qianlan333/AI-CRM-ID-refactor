@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from flask import Response, jsonify, request
 
-from ..services import (
-    export_class_user_management_records,
-    list_class_user_management_records,
-    list_class_user_status_history,
-    migrate_class_user_status_from_contact_tags,
+from ..application.class_user.commands import MigrateClassUserStatusFromContactTagsCommand
+from ..application.class_user.dto import (
+    ExportClassUserManagementRecordsQueryDTO,
+    ListClassUserManagementRecordsQueryDTO,
+    ListClassUserStatusHistoryQueryDTO,
+)
+from ..application.class_user.queries import (
+    ExportClassUserManagementRecordsQuery,
+    ListClassUserManagementRecordsQuery,
+    ListClassUserStatusHistoryQuery,
 )
 from ..wecom_client import WeComClientError
 from .admin_support import _configured_signup_tag_rules_payload, _signup_tag_bootstrap_payload
@@ -22,14 +27,16 @@ def admin_class_user_management_bootstrap():
 
 
 def admin_class_user_management_migrate():
-    payload = migrate_class_user_status_from_contact_tags()
+    payload = MigrateClassUserStatusFromContactTagsCommand()()
     return jsonify({"ok": True, **payload})
 
 
 def admin_class_user_management_list():
     signup_status = request.args.get("signup_status", "").strip()
     try:
-        payload = list_class_user_management_records(signup_status=signup_status)
+        payload = ListClassUserManagementRecordsQuery()(
+            ListClassUserManagementRecordsQueryDTO(signup_status=str(signup_status or "").strip())
+        )
         payload["tag_initialization"] = _configured_signup_tag_rules_payload()
         payload["live_refresh"] = {}
         return jsonify({"ok": True, **payload})
@@ -43,7 +50,9 @@ def admin_class_user_management_export():
         return jsonify({"ok": False, "error": "signup tags are not initialized"}), 400
     signup_status = request.args.get("signup_status", "").strip()
     try:
-        export_payload = export_class_user_management_records(signup_status=signup_status)
+        export_payload = ExportClassUserManagementRecordsQuery()(
+            ExportClassUserManagementRecordsQueryDTO(signup_status=str(signup_status or "").strip())
+        )
     except WeComClientError as exc:
         return _wecom_error_response(exc)
     content = _build_excel_xml(export_payload["headers"], export_payload["rows"])
@@ -59,7 +68,7 @@ def admin_class_user_management_history():
         limit = int(request.args.get("limit", "100").strip() or "100")
     except ValueError:
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
-    payload = list_class_user_status_history(limit=limit)
+    payload = ListClassUserStatusHistoryQuery()(ListClassUserStatusHistoryQueryDTO(limit=int(limit)))
     return jsonify({"ok": True, **payload})
 
 

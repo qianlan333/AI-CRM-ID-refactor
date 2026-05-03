@@ -1,5 +1,6 @@
 """Questionnaire application skeleton for Wave 3."""
 
+from ...domains.questionnaire.service import QuestionnaireAlreadySubmittedError  # noqa: F401
 from .commands import (
     ApplyQuestionnaireMobileBindingCommand,
     ApplyQuestionnaireResultToScrmCommand,
