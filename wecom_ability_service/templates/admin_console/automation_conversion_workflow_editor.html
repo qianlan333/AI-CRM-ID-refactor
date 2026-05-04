@@ -20,30 +20,14 @@
   <section class="admin-page-hero admin-page-hero--workspace">
     <div class="admin-page-hero__head">
       <div>
-        <div class="admin-page-hero__eyebrow">任务流编辑</div>
         <h1>{{ '新建任务流' if (workspace.page_mode or '') == 'workflow_new' else '编辑任务流' }}</h1>
-        <p>
-          {% if (workspace.page_mode or '') == 'workflow_new' %}
-          当前页面只处理任务流基础信息；新建任务流保存后会自动进入节点配置页。
-          {% else %}
-          当前页面只处理任务流基础信息；已有任务流可直接进入节点配置页，保存不再是进入下一步的唯一前置条件。
-          {% endif %}
-        </p>
+        <p>维护任务流的基础信息，节点配置在下一步完成。</p>
       </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">只维护基础信息</span>
-        <span class="admin-chip admin-chip--neutral">节点独立配置</span>
-      </div>
-    </div>
-    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
-        {% if (workspace.page_mode or '') != 'workflow_new' and ((workspace.action_urls or {}).workflow_nodes) %}
-        <a class="ac-ops-page-link" href="{{ (workspace.action_urls or {}).workflow_nodes }}">进入节点配置</a>
-        {% endif %}
         <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回列表</a>
-      </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">{{ '保存后自动进入节点配置' if (workspace.page_mode or '') == 'workflow_new' else '已有任务流可直接进入节点配置' }}</span>
+        {% if (workspace.page_mode or '') != 'workflow_new' and ((workspace.action_urls or {}).workflow_nodes) %}
+        <a class="admin-button admin-button--primary" href="{{ (workspace.action_urls or {}).workflow_nodes }}">进入节点配置</a>
+        {% endif %}
       </div>
     </div>
   </section>
@@ -54,13 +38,7 @@
     <div class="ac-ops-head">
       <div>
         <h3>{{ '任务流信息' if (workspace.page_mode or '') == 'workflow_new' else '编辑任务流信息' }}</h3>
-        <p class="ac-ops-muted">
-          {% if (workspace.page_mode or '') == 'workflow_new' %}
-          新建任务流时，保存后会自动进入节点配置页。当前页面不会展示节点列表、节点表单、执行记录或批次详情。
-          {% else %}
-          已有任务流可以直接进入节点配置。当前页面只负责维护任务流基础信息，不再混排节点配置和执行记录。
-          {% endif %}
-        </p>
+        <p class="ac-ops-muted">填写任务流的名称、适用人群与触达方式。</p>
       </div>
     </div>
 

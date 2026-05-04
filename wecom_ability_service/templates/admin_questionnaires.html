@@ -532,10 +532,52 @@
       margin-bottom: 12px;
     }
     .config-group.danger-zone {
-      background: #fff7f4;
-      border-color: rgba(165, 79, 56, 0.16);
+      background: transparent;
+      border: 1px dashed rgba(165, 79, 56, 0.24);
+      padding: 12px 14px;
     }
-    .config-group.danger-zone h3 { color: #8c4130; }
+    .config-group.danger-zone h3 { color: #8c4130; font-size: 13px; }
+    .config-group.danger-zone p { font-size: 12px; }
+    details.config-advanced {
+      padding: 0;
+      background: transparent;
+      border: 1px solid var(--line);
+    }
+    details.config-advanced[open] {
+      background: #fffaf3;
+    }
+    details.config-advanced > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    details.config-advanced > summary::-webkit-details-marker { display: none; }
+    details.config-advanced > summary::after {
+      content: "▾";
+      color: var(--muted);
+      transition: transform 0.15s ease;
+    }
+    details.config-advanced[open] > summary::after { transform: rotate(180deg); }
+    details.config-advanced > *:not(summary) {
+      margin-left: 14px;
+      margin-right: 14px;
+    }
+    details.config-advanced > *:last-child {
+      margin-bottom: 14px;
+    }
+    .config-advanced-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .config-advanced-hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
     .config-group h3 {
       margin: 0;
       font-size: 16px;
@@ -582,6 +624,17 @@
       background: #ffffff;
       border: 1px solid var(--line);
       margin-bottom: 12px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    }
+    .option-editor[draggable="true"] {
+      cursor: grab;
+    }
+    .option-editor.is-dragging {
+      opacity: 0.4;
+    }
+    .option-editor.is-drop-target {
+      border-color: rgba(157, 99, 48, 0.5);
+      box-shadow: 0 0 0 3px rgba(157, 99, 48, 0.12);
     }
     .rule-nav-list {
       display: grid;
@@ -980,31 +1033,31 @@
         <section class="card section-card">
           <div class="section-head">
             <div>
-              <h3>题型 / 组件区</h3>
-              <p class="section-subtitle">向当前问卷添加题目和分数规则。</p>
+              <h3>添加题目</h3>
+              <p class="section-subtitle">点击添加到当前问卷。</p>
             </div>
           </div>
           <div id="tag-catalog-message" class="inline-alert hidden" style="margin-bottom:12px;">企微标签加载失败，可稍后重试或手工填写 tag_id</div>
           <div class="tool-grid">
             <button id="add-single" type="button" class="tool-card">
               <span class="tool-mark">单</span>
-              <span><strong>添加单选题</strong><span>适合唯一选择，支持分值和标签。</span></span>
+              <span><strong>单选题</strong><span>只能选一个。</span></span>
             </button>
             <button id="add-multi" type="button" class="tool-card">
               <span class="tool-mark">多</span>
-              <span><strong>添加多选题</strong><span>适合多项选择，支持累积分值与标签。</span></span>
+              <span><strong>多选题</strong><span>可以选多个。</span></span>
             </button>
             <button id="add-textarea" type="button" class="tool-card">
               <span class="tool-mark">文</span>
-              <span><strong>添加文本题</strong><span>只保存文本内容，不参与评分。</span></span>
+              <span><strong>文本题</strong><span>开放回答。</span></span>
             </button>
             <button id="add-mobile" type="button" class="tool-card">
               <span class="tool-mark">号</span>
-              <span><strong>添加手机号题</strong><span>单行手机号输入，提交后可自动绑定侧边栏手机号。</span></span>
+              <span><strong>手机号题</strong><span>收集联系方式。</span></span>
             </button>
             <button id="add-rule" type="button" class="tool-card">
               <span class="tool-mark">规</span>
-              <span><strong>添加分数规则</strong><span>按总分区间追加标签，用于 SCRM 写回。</span></span>
+              <span><strong>分数规则</strong><span>按总分区间打标签。</span></span>
             </button>
           </div>
         </section>
@@ -1029,8 +1082,8 @@
           <div class="section-head">
             <div>
               <div class="eyebrow">配置区</div>
-              <h2 id="inspector-title" style="margin:12px 0 0;font-size:24px;">问卷基础设置</h2>
-              <p id="inspector-subtitle" class="section-subtitle">右侧只编辑当前选中项。</p>
+              <h2 id="inspector-title" style="margin:8px 0 0;font-size:18px;font-weight:700;">问卷设置</h2>
+              <p id="inspector-subtitle" class="section-subtitle">编辑当前选中项的属性。</p>
             </div>
           </div>
           <div id="inspector-body"></div>
@@ -1872,14 +1925,13 @@
           const card = document.createElement('article');
           card.className = `preview-question${state.selection.kind === 'question' && state.selection.key === question.local_key ? ' active' : ''}`;
           const optionPreview = question.type === 'textarea'
-            ? `<div class="option-pill">多行文本输入框${question.placeholder_text ? ` · 提示词：${escapeHtml(question.placeholder_text)}` : ''}</div>`
+            ? `<div class="option-pill">多行文本输入框${question.placeholder_text ? ` · ${escapeHtml(question.placeholder_text)}` : ''}</div>`
             : question.type === 'mobile'
-              ? `<div class="option-pill">手机号单行输入框 · 提示词：${escapeHtml(question.placeholder_text || '请输入手机号')}</div>`
-              : (question.options || []).map((option) => `<div class="option-pill">${escapeHtml(option.option_text || '未填写选项')} · ${escapeHtml(String(option.score ?? 0))} 分</div>`).join('');
+              ? `<div class="option-pill">手机号单行输入框</div>`
+              : (question.options || []).map((option) => `<div class="option-pill">${escapeHtml(option.option_text || '未填写选项')}</div>`).join('');
           card.innerHTML = `
             <span class="question-type">${escapeHtml(formatQuestionType(question.type))}${question.required ? ' · 必填' : ''}</span>
             <h4>${escapeHtml(question.title || '未填写题目标题')}</h4>
-            <div class="muted">排序：${escapeHtml(String(question.sort_order ?? ''))}</div>
             <div class="preview-options">${optionPreview}</div>
           `;
           card.addEventListener('click', () => selectQuestion(question.local_key));
@@ -1949,29 +2001,19 @@
         : '<div class="empty-state">暂未配置自定义顶层参数</div>';
       const deleteSection = state.currentId ? `
         <section class="config-group danger-zone">
-          <div class="config-head">
-            <div>
-              <h3>危险操作</h3>
-            </div>
-          </div>
           <button
             id="delete-questionnaire-btn"
             type="button"
-            class="btn danger"
+            class="link-btn danger"
             ${deleteDisabled ? 'disabled title="请先停用后删除"' : ''}
           >
-            删除问卷
+            删除此问卷
           </button>
           ${deleteDisabled ? '<p>请先停用问卷后再删除。</p>' : ''}
         </section>
       ` : '';
       inspectorBodyEl.innerHTML = `
         <section class="config-group">
-          <div class="config-head">
-            <div>
-              <h3>基础信息</h3>
-            </div>
-          </div>
           <label class="field">问卷名称
             <input id="field-name" type="text" value="${escapeHtml(state.questionnaire.name)}">
           </label>
@@ -1982,43 +2024,8 @@
             <textarea id="field-description">${escapeHtml(state.questionnaire.description)}</textarea>
           </label>
           <label class="field">提交后跳转地址
-            <input id="field-redirect-url" type="text" value="${escapeHtml(state.questionnaire.redirect_url)}">
+            <input id="field-redirect-url" type="text" value="${escapeHtml(state.questionnaire.redirect_url)}" placeholder="可选，提交后跳转的地址">
           </label>
-          <section class="config-group" style="margin:12px 0 0;">
-            <div class="config-head">
-              <div>
-                <h3>外部申请推送</h3>
-                <p>提交成功并落库后，按固定 JSON 向指定地址发送一次 POST。失败不会影响用户提交成功。</p>
-              </div>
-            </div>
-            <label class="field" style="margin-bottom:12px;font-weight:600;">
-              <input id="field-external-push-enabled" type="checkbox" ${state.questionnaire.external_push_enabled ? 'checked' : ''}> 开启问卷外部推送
-            </label>
-            <label class="field">外部推送地址
-              <input id="field-external-push-url" type="text" value="${escapeHtml(state.questionnaire.external_push_url)}" placeholder="https://hooks.example.com/questionnaire/apply">
-            </label>
-            <div class="field-grid compact">
-              <label class="field">day（数字）
-                <input id="field-external-push-day" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_day ?? ''))}" placeholder="20">
-              </label>
-              <label class="field">frequency（数字）
-                <input id="field-external-push-frequency" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_frequency ?? ''))}" placeholder="20">
-              </label>
-            </div>
-            <label class="field">remark（文本）
-              <input id="field-external-push-remark" type="text" value="${escapeHtml(state.questionnaire.external_push_remark || '')}" placeholder="例如：黄小璨 499 用户激活">
-            </label>
-            <section class="config-group" style="margin:12px 0 0;">
-              <div class="config-head">
-                <div>
-                  <h3>自定义顶层参数</h3>
-                  <p>提交时按参数名平铺到 webhook 顶层 JSON，参数值全部手动输入。</p>
-                </div>
-                <button id="add-external-push-custom-param-btn" type="button" class="btn secondary">新增参数</button>
-              </div>
-              ${customParamsHtml}
-            </section>
-          </section>
           <div class="field-grid compact">
             <label class="field">分享标识
               <input id="field-slug" type="text" value="${escapeHtml(state.questionnaire.slug)}">
@@ -2030,6 +2037,34 @@
             </label>
           </div>
         </section>
+        <details class="config-group config-advanced" ${state.questionnaire.external_push_enabled ? 'open' : ''}>
+          <summary>
+            <span class="config-advanced-label">外部推送</span>
+            <span class="config-advanced-hint">提交后向指定 webhook 发送 POST</span>
+          </summary>
+          <label class="field" style="margin:12px 0;font-weight:600;">
+            <input id="field-external-push-enabled" type="checkbox" ${state.questionnaire.external_push_enabled ? 'checked' : ''}> 开启外部推送
+          </label>
+          <label class="field">推送地址
+            <input id="field-external-push-url" type="text" value="${escapeHtml(state.questionnaire.external_push_url)}" placeholder="https://hooks.example.com/...">
+          </label>
+          <div class="field-grid compact">
+            <label class="field">day
+              <input id="field-external-push-day" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_day ?? ''))}" placeholder="20">
+            </label>
+            <label class="field">frequency
+              <input id="field-external-push-frequency" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_frequency ?? ''))}" placeholder="20">
+            </label>
+          </div>
+          <label class="field">remark
+            <input id="field-external-push-remark" type="text" value="${escapeHtml(state.questionnaire.external_push_remark || '')}" placeholder="备注文本">
+          </label>
+          <div class="config-head" style="margin-top:8px;">
+            <div><h4 style="margin:0;font-size:13px;">自定义参数</h4></div>
+            <button id="add-external-push-custom-param-btn" type="button" class="btn secondary">新增</button>
+          </div>
+          ${customParamsHtml}
+        </details>
         ${deleteSection}
       `;
       inspectorBodyEl.querySelector('#field-name').addEventListener('input', (event) => {
@@ -2121,24 +2156,21 @@
 
     function renderQuestionInspector(question) {
       inspectorTitleEl.textContent = formatQuestionType(question.type);
-      inspectorSubtitleEl.textContent = '当前选中的是题目。这里维护题目标题、题型、必填、选项文案、分值和标签。';
+      inspectorSubtitleEl.textContent = '编辑题目内容、选项与分值。';
       const optionsHtml = ['textarea', 'mobile'].includes(question.type)
         ? ''
         : (question.options || []).map((option, index) => `
-            <div class="option-editor" data-option-key="${escapeHtml(option.local_key)}">
+            <div class="option-editor" data-option-key="${escapeHtml(option.local_key)}" draggable="true">
               <div class="option-editor-head">
-                <span class="mini-label">选项 ${index + 1}</span>
+                <span class="mini-label" title="拖拽调整顺序">⋮⋮ 选项 ${index + 1}</span>
                 <button type="button" class="link-btn danger remove-option-btn" data-option-key="${escapeHtml(option.local_key)}">删除</button>
               </div>
-              <div class="field-grid triple">
+              <div class="field-grid compact">
                 <label class="field">选项文案
                   <input data-option-field="option_text" data-option-key="${escapeHtml(option.local_key)}" type="text" value="${escapeHtml(option.option_text)}">
                 </label>
                 <label class="field">分值
                   <input data-option-field="score" data-option-key="${escapeHtml(option.local_key)}" type="text" value="${escapeHtml(String(option.score ?? 0))}">
-                </label>
-                <label class="field">排序
-                  <input data-option-field="sort_order" data-option-key="${escapeHtml(option.local_key)}" type="text" value="${escapeHtml(String(option.sort_order ?? index + 1))}">
                 </label>
               </div>
               <div class="tag-picker-host" data-option-tag-host="${escapeHtml(option.local_key)}"></div>
@@ -2147,53 +2179,39 @@
       inspectorBodyEl.innerHTML = `
         <section class="config-group">
           <div class="config-head">
-            <div>
-              <h3>题目设置</h3>
-              <p>点击中间预览区任意题目，右侧都会切换到这里。</p>
-            </div>
-            <button id="remove-question-btn" type="button" class="btn danger">删除题目</button>
+            <div><h3>题目</h3></div>
+            <button id="remove-question-btn" type="button" class="link-btn danger">删除</button>
           </div>
-          <div class="field-grid compact">
-            <label class="field">题型
-              <select id="question-type">
-                <option value="single_choice">单选题</option>
-                <option value="multi_choice">多选题</option>
-                <option value="textarea">文本题</option>
-                <option value="mobile">手机号题</option>
-              </select>
-            </label>
-            <label class="field">排序
-              <input id="question-sort-order" type="text" value="${escapeHtml(String(question.sort_order ?? ''))}">
-            </label>
-          </div>
+          <label class="field">题型
+            <select id="question-type">
+              <option value="single_choice">单选题</option>
+              <option value="multi_choice">多选题</option>
+              <option value="textarea">文本题</option>
+              <option value="mobile">手机号题</option>
+            </select>
+          </label>
           <label class="field">题目标题
             <input id="question-title" type="text" value="${escapeHtml(question.title)}">
           </label>
-          <label class="field${['textarea', 'mobile'].includes(question.type) ? '' : ' hidden'}" id="question-placeholder-field">填写提示词
+          <label class="field${['textarea', 'mobile'].includes(question.type) ? '' : ' hidden'}" id="question-placeholder-field">提示文字
             <input
               id="question-placeholder-text"
               type="text"
               value="${escapeHtml(question.placeholder_text || '')}"
-              placeholder="${escapeHtml(question.type === 'mobile' ? '例如：请输入手机号，便于老师联系你' : '例如：可填写你的学习目标、当前难点等')}"
+              placeholder="${escapeHtml(question.type === 'mobile' ? '例如：请输入手机号' : '例如：写下你的目标')}"
             >
           </label>
-          <div class="helper-note${['textarea', 'mobile'].includes(question.type) ? '' : ' hidden'}" id="question-placeholder-note">用户未输入时显示灰色提示文案，有输入后会自动消失。</div>
           <label class="field" style="margin-bottom:0;">
             <input id="question-required" type="checkbox" ${question.required ? 'checked' : ''}> 必填
           </label>
         </section>
         <section class="config-group${['textarea', 'mobile'].includes(question.type) ? ' hidden' : ''}" id="question-options-group">
           <div class="config-head">
-            <div>
-              <h3>选项列表</h3>
-              <p>单选题和多选题在这里维护选项文案、分值和标签。</p>
-            </div>
+            <div><h3>选项</h3></div>
             <button id="add-option-btn" type="button" class="btn secondary">添加选项</button>
           </div>
-          ${optionsHtml || '<div class="empty-state">当前没有选项，点击“添加选项”开始配置。</div>'}
+          ${optionsHtml || '<div class="empty-state">点击"添加选项"开始配置</div>'}
         </section>
-        <div class="helper-note${question.type === 'textarea' ? '' : ' hidden'}" id="textarea-note">文本题只保存文本，不显示多余配置，也不会参与评分或自动打标签。</div>
-        <div class="helper-note${question.type === 'mobile' ? '' : ' hidden'}" id="mobile-note">手机号题使用单行手机号输入，提交后会单独写入 submission 主记录，并在识别到客户时尝试复用侧边栏绑定逻辑。</div>
       `;
       inspectorBodyEl.querySelector('#question-type').value = question.type;
 
@@ -2208,10 +2226,6 @@
           renderPreview();
         });
       }
-      inspectorBodyEl.querySelector('#question-sort-order').addEventListener('input', (event) => {
-        question.sort_order = event.target.value;
-        renderPreview();
-      });
       inspectorBodyEl.querySelector('#question-required').addEventListener('change', (event) => {
         question.required = event.target.checked;
         renderPreview();
@@ -2269,11 +2283,51 @@
           optionKey: option.local_key,
         });
       });
+
+      let dragKey = null;
+      inspectorBodyEl.querySelectorAll('.option-editor[draggable="true"]').forEach((node) => {
+        node.addEventListener('dragstart', (event) => {
+          dragKey = node.dataset.optionKey;
+          node.classList.add('is-dragging');
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', dragKey || '');
+          }
+        });
+        node.addEventListener('dragend', () => {
+          dragKey = null;
+          node.classList.remove('is-dragging');
+        });
+        node.addEventListener('dragover', (event) => {
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+          node.classList.add('is-drop-target');
+        });
+        node.addEventListener('dragleave', () => {
+          node.classList.remove('is-drop-target');
+        });
+        node.addEventListener('drop', (event) => {
+          event.preventDefault();
+          node.classList.remove('is-drop-target');
+          const sourceKey = dragKey || (event.dataTransfer && event.dataTransfer.getData('text/plain'));
+          const targetKey = node.dataset.optionKey;
+          if (!sourceKey || !targetKey || sourceKey === targetKey) return;
+          const items = [...question.options];
+          const fromIdx = items.findIndex((item) => item.local_key === sourceKey);
+          const toIdx = items.findIndex((item) => item.local_key === targetKey);
+          if (fromIdx < 0 || toIdx < 0) return;
+          const [moved] = items.splice(fromIdx, 1);
+          items.splice(toIdx, 0, moved);
+          question.options = items;
+          renderWorkspace();
+          updateDraftIndicator();
+        });
+      });
     }
 
     function renderRuleInspector(rule) {
       inspectorTitleEl.textContent = '分数规则';
-      inspectorSubtitleEl.textContent = '当前处于分数规则配置模式。左侧按钮只负责进入这里，真正新增规则请使用右侧入口。';
+      inspectorSubtitleEl.textContent = '按总分区间给提交者打标签。';
       const ruleListHtml = state.questionnaire.score_rules.length
         ? `
           <div class="rule-nav-list">
@@ -2296,44 +2350,30 @@
       const editorHtml = rule ? `
         <section class="config-group">
           <div class="config-head">
-            <div>
-              <h3>规则设置</h3>
-              <p>保存到数据库里的仍然是 tag_id 数组。</p>
-            </div>
-            <button id="remove-rule-btn" type="button" class="btn danger">删除规则</button>
+            <div><h3>规则设置</h3></div>
+            <button id="remove-rule-btn" type="button" class="link-btn danger">删除</button>
           </div>
-          <div class="field-grid triple">
+          <div class="field-grid compact">
             <label class="field">最低分
               <input id="rule-min-score" type="text" value="${escapeHtml(String(rule.min_score ?? ''))}">
             </label>
             <label class="field">最高分
               <input id="rule-max-score" type="text" value="${escapeHtml(String(rule.max_score ?? ''))}">
             </label>
-            <label class="field">排序
-              <input id="rule-sort-order" type="text" value="${escapeHtml(String(rule.sort_order ?? ''))}">
-            </label>
           </div>
           <div id="rule-tag-host"></div>
         </section>
       ` : `
         <section class="config-group">
-          <div class="config-head">
-            <div>
-              <h3>规则设置</h3>
-              <p>先从上面的规则列表里选择一条，或直接新增规则。</p>
-            </div>
-          </div>
-          <div class="helper-note">右侧规则配置区会一直保留在这里，你可以连续新增、删除和切换分数规则。</div>
+          <div class="config-head"><div><h3>规则设置</h3></div></div>
+          <div class="helper-note">从上方选择一条规则，或新增规则。</div>
         </section>
       `;
       inspectorBodyEl.innerHTML = `
         <section class="config-group">
           <div class="config-head">
-            <div>
-              <h3>规则列表</h3>
-              <p>这里集中管理所有分数规则；新增后会继续往下累积，不会覆盖之前的规则。</p>
-            </div>
-            <button id="rule-list-add-btn" type="button" class="btn secondary">新增规则</button>
+            <div><h3>规则列表</h3></div>
+            <button id="rule-list-add-btn" type="button" class="btn secondary">新增</button>
           </div>
           ${ruleListHtml}
         </section>
@@ -2356,10 +2396,6 @@
       });
       inspectorBodyEl.querySelector('#rule-max-score').addEventListener('input', (event) => {
         rule.max_score = event.target.value;
-        renderPreview();
-      });
-      inspectorBodyEl.querySelector('#rule-sort-order').addEventListener('input', (event) => {
-        rule.sort_order = event.target.value;
         renderPreview();
       });
       inspectorBodyEl.querySelector('#remove-rule-btn').addEventListener('click', () => {

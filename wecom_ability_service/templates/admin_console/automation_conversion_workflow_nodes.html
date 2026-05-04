@@ -22,24 +22,14 @@
   <section class="admin-page-hero admin-page-hero--workspace">
     <div class="admin-page-hero__head">
       <div>
-        <div class="admin-page-hero__eyebrow">节点配置</div>
         <h1>节点配置</h1>
-        <p>节点页只维护目标人群、触发方式与节点内容；任务流基础信息和执行记录拆到独立页面，提升编排清晰度。</p>
+        <p>维护任务流的节点：目标人群、触发方式和节点内容。</p>
       </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">按节点维护</span>
-        <span class="admin-chip admin-chip--neutral">触发规则清晰</span>
-      </div>
-    </div>
-    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
         {% if (workspace.action_urls or {}).workflow_edit %}
-        <a class="ac-ops-page-link" href="{{ (workspace.action_urls or {}).workflow_edit }}">返回任务流编辑</a>
+        <a class="ac-ops-page-link" href="{{ (workspace.action_urls or {}).workflow_edit }}">返回任务流</a>
         {% endif %}
-        <button class="ac-ops-page-link" id="node-create-button" type="button">新增节点</button>
-      </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">旧版混排已拆开，当前只保留节点配置上下文</span>
+        <button class="admin-button admin-button--primary" id="node-create-button" type="button">新增节点</button>
       </div>
     </div>
     <div class="ac-ops-feedback" id="nodes-page-feedback" hidden></div>

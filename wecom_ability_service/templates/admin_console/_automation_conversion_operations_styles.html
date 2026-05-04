@@ -245,11 +245,30 @@
 
   .ac-ops-table-cell-stack {
     display: grid;
-    gap: 6px;
+    gap: 4px;
   }
 
   .ac-ops-table-cell-stack strong {
     color: #1f2329;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .ac-ops-subline {
+    color: var(--muted, #7a6a52);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .ac-ops-th-actions,
+  .ac-ops-td-actions {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .ac-ops-danger:hover {
+    color: #ad5037;
+    border-color: rgba(173, 80, 55, 0.32);
   }
 
   .ac-ops-inline-metric {
