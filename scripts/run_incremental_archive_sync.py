@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.request
+import uuid
 
 
 def main() -> None:
@@ -15,12 +17,14 @@ def main() -> None:
         "owner_userid": owner_userid,
         "cursor": "",
     }
+    request_id = "cron-archive-" + uuid.uuid4().hex[:16]
     request = urllib.request.Request(
         f"http://{host}:{port}/api/archive/sync",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "X-Request-Id": request_id},
         method="POST",
     )
+    print(f"[run_incremental_archive_sync] request_id={request_id}", file=sys.stderr)
     with urllib.request.urlopen(request, timeout=120) as response:
         print(response.read().decode("utf-8"))
 

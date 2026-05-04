@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 
 DEFAULT_OPERATOR = "automation_conversion_due_runner"
@@ -19,10 +21,12 @@ JOB_DEFINITIONS = {
 }
 
 
-def build_request(*, host: str, port: str, token: str, operator: str, path: str, payload: dict[str, object] | None = None) -> urllib.request.Request:
+def build_request(*, host: str, port: str, token: str, operator: str, path: str, payload: dict[str, object] | None = None, request_id: str = "") -> urllib.request.Request:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if request_id:
+        headers["X-Request-Id"] = request_id
     return urllib.request.Request(
         f"http://{host}:{port}{path}",
         data=json.dumps({"operator": operator, **dict(payload or {})}).encode("utf-8"),
@@ -41,8 +45,9 @@ def _post_json(
     payload: dict[str, object] | None,
     retry_count: int,
     retry_interval_seconds: int,
+    request_id: str = "",
 ) -> dict[str, object]:
-    request = build_request(host=host, port=port, token=token, operator=operator, path=path, payload=payload)
+    request = build_request(host=host, port=port, token=token, operator=operator, path=path, payload=payload, request_id=request_id)
     attempts = max(1, int(retry_count))
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
@@ -83,6 +88,8 @@ def run(*, jobs: list[str] | None = None) -> str:
     total_failed_count = 0
     batch_ids: list[int] = []
 
+    run_id = "cron-conversion-" + uuid.uuid4().hex[:16]
+    print(f"[run_automation_conversion_due_jobs] run_id={run_id} jobs={selected_jobs}", file=sys.stderr)
     for job_code in selected_jobs:
         definition = JOB_DEFINITIONS[job_code]
         try:
@@ -95,6 +102,7 @@ def run(*, jobs: list[str] | None = None) -> str:
                 payload=dict(definition.get("payload") or {}),
                 retry_count=retry_count,
                 retry_interval_seconds=retry_interval_seconds,
+                request_id=f"{run_id}-{job_code}",
             )
             executed_job_count += 1
             total_success_count += int(payload.get("total_success_count") or 0)
