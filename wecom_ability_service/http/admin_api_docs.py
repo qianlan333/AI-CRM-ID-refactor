@@ -1188,6 +1188,149 @@ def _build_quick_reference(groups: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Markdown export — make every endpoint copy-pasteable for AI consumption
+# ---------------------------------------------------------------------------
+
+_AUTH_LABEL_MD = {
+    "session": "登录态 (Session Cookie)",
+    "bearer": "Bearer Token",
+    "public": "公开 (无需认证)",
+}
+
+
+def _params_to_markdown(params: list[dict]) -> str:
+    if not params:
+        return ""
+    lines = ["**请求参数**", "", "| 参数名 | 类型 | 必填 | 说明 |", "|--------|------|------|------|"]
+    for p in params:
+        req = "是" if p.get("required") else "否"
+        desc = (p.get("description") or "").replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| `{p['name']}` | {p.get('type', '')} | {req} | {desc} |")
+    return "\n".join(lines)
+
+
+def _endpoint_to_markdown(ep: dict) -> str:
+    auth = ep.get("auth")
+    if auth is None:
+        # Error code rows — render as a simpler block
+        return f"### {ep['path']} — {ep['summary']}\n\n{ep.get('description', '')}\n\n响应示例：`{ep.get('response_example', '')}`"
+
+    auth_label = _AUTH_LABEL_MD.get(auth, "—")
+    lines = [
+        f"### `{ep['method']} {ep['path']}` — {ep['summary']}",
+        "",
+    ]
+    if ep.get("description"):
+        lines.append(ep["description"])
+        lines.append("")
+    lines.append(f"- **认证**: {auth_label}")
+    lines.append("")
+
+    if ep.get("params"):
+        lines.append(_params_to_markdown(ep["params"]))
+        lines.append("")
+
+    if ep.get("request_example"):
+        lines.append("**请求示例**")
+        lines.append("")
+        lines.append("```")
+        lines.append(ep["request_example"])
+        lines.append("```")
+        lines.append("")
+
+    if ep.get("response_example"):
+        lines.append("**响应示例**")
+        lines.append("")
+        lines.append("```json")
+        lines.append(ep["response_example"])
+        lines.append("```")
+        lines.append("")
+
+    if ep.get("curl_example"):
+        lines.append("**curl**")
+        lines.append("")
+        lines.append("```bash")
+        lines.append(ep["curl_example"])
+        lines.append("```")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _group_to_markdown(group: dict) -> str:
+    parts = [
+        f"## {group['title']}",
+        "",
+    ]
+    if group.get("description"):
+        parts.append(group["description"])
+        parts.append("")
+
+    for ep in group.get("endpoints") or []:
+        parts.append(_endpoint_to_markdown(ep))
+        parts.append("")
+
+    for sub in group.get("subsections") or []:
+        parts.append(f"### 【{sub['title']}】")
+        parts.append("")
+        for ep in sub.get("endpoints") or []:
+            parts.append(_endpoint_to_markdown(ep))
+            parts.append("")
+
+    return "\n".join(parts).rstrip() + "\n"
+
+
+_AGENT_GUIDE_MD = """# CRM 系统 API 文档
+
+> 本文档供 AI Agent（如 Claude Code）和开发者集成使用。Agent 可直接阅读本文档并调用所有 API。
+
+## Agent 接入指南
+
+### Base URL
+
+`https://<YOUR_DOMAIN>` — 所有路径均相对于此域名，使用前请替换为实际部署域名。
+
+### 认证方式
+
+- **登录态 (Session Cookie)**: 大部分接口使用。先通过 `GET /login` 或 `POST /login` 获取 session，后续请求携带 Cookie 即可。
+- **公开**: 问卷前台提交、企微回调等不需要认证。
+- 写操作需在请求参数中传 `admin_action_token`（从 session 获取）或 `confirm=true` 防止误触发。
+
+### 请求约定
+
+- 请求体使用 `Content-Type: application/json`
+- 所有响应格式统一：`{"ok": true, ...payload}` 或 `{"ok": false, "error": "..."}`
+- 分页使用 `limit` + `cursor` 或 `limit` + `offset`
+- 路径参数用尖括号标记，如 `/api/customers/<external_userid>`
+
+### 错误码
+
+- `400` 参数校验失败
+- `401` 未认证
+- `403` 权限不足
+- `404` 资源不存在
+- `503` 服务未就绪
+"""
+
+
+def _full_doc_markdown(groups: list[dict]) -> str:
+    parts = [_AGENT_GUIDE_MD, ""]
+    for g in groups:
+        parts.append(_group_to_markdown(g))
+        parts.append("")
+    return "\n".join(parts).rstrip() + "\n"
+
+
+def _build_markdown_data(groups: list[dict]) -> dict:
+    data = {"endpoints": {}, "groups": {}, "full": _full_doc_markdown(groups)}
+    for g in groups:
+        data["groups"][g["id"]] = _group_to_markdown(g)
+        for ep in _flat_endpoints(g):
+            data["endpoints"][ep["id"]] = _endpoint_to_markdown(ep)
+    return data
+
+
+# ---------------------------------------------------------------------------
 # View function
 # ---------------------------------------------------------------------------
 
@@ -1201,6 +1344,7 @@ def admin_console_api_docs():
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("API 文档", None)),
         endpoint_groups=groups,
         quick_reference=_build_quick_reference(groups),
+        markdown_data=_build_markdown_data(groups),
     )
 
 
