@@ -1071,7 +1071,7 @@
               <div id="preview-head" class="preview-head"></div>
               <div id="preview-questions" class="preview-stack"></div>
               <div id="preview-rules-wrap" class="preview-stack"></div>
-              <div class="preview-footer-note">这是实时预览区。点击任一题目或分数规则，右侧会切换到对应配置；点击问卷头部，则编辑问卷基础设置。</div>
+              <div class="preview-footer-note">点击预览中的题目或分数规则即可在右侧编辑。</div>
             </div>
           </div>
         </section>
@@ -1912,26 +1912,26 @@
       previewHeadEl.className = `preview-head${isQuestionnaireSelected ? ' active' : ''}`;
       previewHeadEl.innerHTML = `
         <div class="question-type">问卷设置</div>
-        <h2>${escapeHtml(questionnaire.title || '未填写问卷标题')}</h2>
-        <p>${escapeHtml(questionnaire.description || '可在右侧维护标题、说明、分享标识和停用状态。')}</p>
+        <h2>${escapeHtml(questionnaire.title || '问卷标题')}</h2>
+        <p>${escapeHtml(questionnaire.description || '在右侧编辑问卷信息')}</p>
       `;
       previewHeadEl.onclick = () => selectQuestionnaire();
 
       previewQuestionsEl.innerHTML = '';
       if (!questionnaire.questions.length) {
-        previewQuestionsEl.innerHTML = '<div class="empty-state">左侧添加题目后，这里会实时生成手机端问卷预览。</div>';
+        previewQuestionsEl.innerHTML = '<div class="empty-state">从左侧添加题目</div>';
       } else {
         questionnaire.questions.forEach((question) => {
           const card = document.createElement('article');
           card.className = `preview-question${state.selection.kind === 'question' && state.selection.key === question.local_key ? ' active' : ''}`;
           const optionPreview = question.type === 'textarea'
-            ? `<div class="option-pill">多行文本输入框${question.placeholder_text ? ` · ${escapeHtml(question.placeholder_text)}` : ''}</div>`
+            ? `<div class="option-pill">${escapeHtml(question.placeholder_text || '多行文本输入')}</div>`
             : question.type === 'mobile'
-              ? `<div class="option-pill">手机号单行输入框</div>`
-              : (question.options || []).map((option) => `<div class="option-pill">${escapeHtml(option.option_text || '未填写选项')}</div>`).join('');
+              ? `<div class="option-pill">${escapeHtml(question.placeholder_text || '请输入手机号')}</div>`
+              : (question.options || []).map((option) => `<div class="option-pill">${escapeHtml(option.option_text || '选项')}</div>`).join('');
           card.innerHTML = `
             <span class="question-type">${escapeHtml(formatQuestionType(question.type))}${question.required ? ' · 必填' : ''}</span>
-            <h4>${escapeHtml(question.title || '未填写题目标题')}</h4>
+            <h4>${escapeHtml(question.title || '题目标题')}</h4>
             <div class="preview-options">${optionPreview}</div>
           `;
           card.addEventListener('click', () => selectQuestion(question.local_key));
