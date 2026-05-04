@@ -1358,7 +1358,7 @@ def get_stage_detail_payload(*, route_key: str, keyword: str = "", limit: int = 
             {
                 "member_id": serialized["id"],
                 "external_userid": serialized["external_contact_id"],
-                "customer_name": _normalized_text(profile.get("customer_name")) or serialized["external_contact_id"],
+                "customer_name": _normalized_text(profile.get("customer_name")) or "",
                 "owner_display_name": _normalized_text(profile.get("owner_display_name"))
                 or _normalized_text(profile.get("owner_staff_id"))
                 or serialized["owner_staff_id"],
