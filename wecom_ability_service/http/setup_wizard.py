@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import current_app, redirect, render_template, request
+from flask import current_app, redirect, render_template, request, url_for
 
 from ..infra.config_schema import CONFIG_SCHEMA, build_config_checklist, validate_config
 from ..infra.settings import get_setting, mask_value, set_settings, SENSITIVE_KEYS
@@ -91,13 +91,21 @@ def setup_wizard_save():
 
 
 def config_checklist_page():
-    from ..domains.admin_config.service import config_tabs
+    from .admin_config import _render_config_template
+
     settings = _current_setting_values()
     checklist = build_config_checklist(settings)
-    return render_template(
-        "admin_console/config_checklist.html",
+    return _render_config_template(
+        "config_checklist.html",
+        active_tab="checklist",
+        page_title="配置检查清单",
+        page_summary="新客户接入时按照此清单逐项配置，必填项标红星，绿色表示已配置。",
+        breadcrumbs=[
+            {"label": "客户管理后台", "href": url_for("api.admin_console_home")},
+            {"label": "配置中心", "href": url_for("api.admin_config_home")},
+            {"label": "配置检查清单", "href": ""},
+        ],
         checklist=checklist,
-        config_tabs=config_tabs("checklist"),
     )
 
 
