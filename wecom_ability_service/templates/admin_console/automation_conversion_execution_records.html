@@ -22,21 +22,11 @@
   <section class="admin-page-hero admin-page-hero--workspace">
     <div class="admin-page-hero__head">
       <div>
-        <div class="admin-page-hero__eyebrow">执行记录</div>
         <h1>执行记录</h1>
-        <p>批次结果和批次内发送明细统一收进单页查看，不再混在任务流列表页；保留原有执行和补发语义，只重做阅读体验。</p>
+        <p>查看任务流的执行批次结果和发送明细。</p>
       </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">批次汇总</span>
-        <span class="admin-chip admin-chip--neutral">明细查看</span>
-      </div>
-    </div>
-    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
-        <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回自动化运营</a>
-      </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">执行记录独立成页，降低运营列表负担</span>
+        <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).list or '#' }}">返回任务流</a>
       </div>
     </div>
   </section>
@@ -239,7 +229,7 @@
 
     function memberLabel(item) {
       const member = (item || {}).member || {};
-      return member.external_contact_id || member.phone || member.id || '-';
+      return member.name || member.nickname || member.phone || member.id || '-';
     }
 
     function executionQueryUrl() {

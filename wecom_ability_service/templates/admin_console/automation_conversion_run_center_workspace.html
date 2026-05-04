@@ -64,13 +64,8 @@
   <section class="admin-page-hero admin-page-hero--workspace">
     <div class="admin-page-hero__head">
       <div>
-        <div class="admin-page-hero__eyebrow">运行中心</div>
-        <h1>自动化转化运行中心</h1>
-        <p>运行概况、数据同步、日志、模型基础设施、智能体编排和调试统一收口到同一视觉壳层；保持原有入口、标签页语义和配置字段不变。</p>
-      </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">模块级运行时</span>
-        <span class="admin-chip admin-chip--neutral">共享基础设施</span>
+        <h1>运行中心</h1>
+        <p>运行概况、数据同步、日志、模型与智能体编排。</p>
       </div>
     </div>
     <div class="admin-page-hero__footer">
@@ -78,9 +73,6 @@
       {% for tab in workspace.tabs or [] %}
       <a class="ac-run-link{% if tab.key == workspace.tab %} is-active{% endif %}" href="{{ tab.href }}">{{ tab.label }}</a>
       {% endfor %}
-      </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">当前标签：{{ workspace.tab_label or '运行概况' }}</span>
       </div>
     </div>
   </section>

@@ -19,22 +19,12 @@
   <section class="admin-page-hero admin-page-hero--workspace">
     <div class="admin-page-hero__head">
       <div>
-        <div class="admin-page-hero__eyebrow">运营编排</div>
-        <h1>任务流工作台</h1>
-        <p>集中管理当前方案的任务流。任务流编辑、节点配置和执行记录已拆成独立页面，避免在一个页面里混排。</p>
+        <h1>任务流</h1>
+        <p>管理当前方案的任务流，新建、编辑、启用、停用都在这里。</p>
       </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">当前方案内</span>
-        <span class="admin-chip admin-chip--neutral">只改界面层</span>
-      </div>
-    </div>
-    <div class="admin-page-hero__footer">
       <div class="ac-ops-page-links">
         <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).executions or '#' }}">执行记录</a>
-        <a class="ac-ops-page-link" href="{{ (workspace.entry_urls or {}).workflow_new or '#' }}">新建任务流</a>
-      </div>
-      <div class="admin-page-hero__meta">
-        <span class="admin-chip admin-chip--neutral">方案信息与返回入口固定展示在页面顶部</span>
+        <a class="admin-button admin-button--primary" href="{{ (workspace.entry_urls or {}).workflow_new or '#' }}">新建任务流</a>
       </div>
     </div>
   </section>
@@ -88,15 +78,11 @@
       <table class="ac-ops-table">
         <thead>
           <tr>
-            <th>任务流名称</th>
-            <th>适用人群</th>
-            <th>发给谁</th>
-            <th>怎么发</th>
-            <th>生成方式</th>
-            <th>智能体绑定情况</th>
-            <th>节点数量</th>
+            <th>任务流</th>
+            <th>触达方式</th>
+            <th>节点</th>
             <th>状态</th>
-            <th>操作</th>
+            <th class="ac-ops-th-actions">操作</th>
           </tr>
         </thead>
         <tbody id="workflow-table-body"></tbody>
@@ -276,31 +262,39 @@
       elements.tableBody.innerHTML = items.map((item) => {
         const workflow = item.workflow || {};
         const workflowId = Number(workflow.id || 0);
+        const audienceLabels = (item.audiences || [])
+          .map((row) => audienceLabel(row.audience_code))
+          .filter(Boolean);
+        const audienceText = audienceLabels.length ? audienceLabels.join(' · ') : '未指定人群';
+        const recipientText = workflowRecipientSummary(workflow);
+        const contentText = workflowContentSummary(workflow, item);
+        const generationText = generationLabel(workflow.generation_mode);
+        const bindingsText = workflowBindingsSummary(item);
+        const reachParts = [recipientText, contentText, generationText].filter((t) => t && t !== '-');
+        const reachSummary = reachParts.join(' · ') || '-';
+        const bindingsTooltip = bindingsText && bindingsText !== '-' ? `智能体：${bindingsText}` : '';
+        const isActive = workflow.status === 'active';
         return `
-          <tr>
+          <tr data-workflow-id="${escapeHtml(workflowId)}">
             <td>
               <div class="ac-ops-table-cell-stack">
                 <strong>${escapeHtml(workflow.workflow_name || workflow.workflow_code || '-')}</strong>
-                <div class="ac-ops-code">${escapeHtml(workflow.workflow_code || '')}</div>
+                <div class="ac-ops-subline">${escapeHtml(audienceText)}</div>
               </div>
             </td>
-            <td>${(item.audiences || []).map((row) => `<span class="admin-chip admin-chip--neutral">${escapeHtml(audienceLabel(row.audience_code))}</span>`).join(' ') || '-'}</td>
-            <td>${escapeHtml(workflowRecipientSummary(workflow))}</td>
-            <td>${escapeHtml(workflowContentSummary(workflow, item))}</td>
-            <td>${escapeHtml(generationLabel(workflow.generation_mode))}</td>
-            <td>
+            <td title="${escapeHtml(bindingsTooltip)}">
               <div class="ac-ops-table-cell-stack">
-                <span>${escapeHtml(workflowBindingsSummary(item))}</span>
-                <span class="ac-ops-inline-metric">节点 ${(item.nodes || []).length}</span>
+                <span>${escapeHtml(reachSummary)}</span>
+                ${bindingsText && bindingsText !== '-' ? `<span class="ac-ops-subline">${escapeHtml(bindingsText)}</span>` : ''}
               </div>
             </td>
             <td>${escapeHtml((item.nodes || []).length)}</td>
-            <td><span class="admin-chip admin-chip--neutral">${escapeHtml(statusLabel(workflow.status))}</span></td>
-            <td>
+            <td><span class="admin-chip admin-chip--${isActive ? 'healthy' : 'neutral'}">${escapeHtml(statusLabel(workflow.status))}</span></td>
+            <td class="ac-ops-td-actions">
               <div class="ac-ops-inline-actions">
                 <a class="admin-button admin-button--secondary" href="${escapeHtml(workflowEditUrl(workflowId))}">编辑</a>
-                <button class="admin-button admin-button--secondary" type="button" data-action="${workflow.status === 'active' ? 'pause' : 'activate'}" data-workflow-id="${escapeHtml(workflowId)}">${workflow.status === 'active' ? '停用' : '启用'}</button>
-                <button class="admin-button admin-button--ghost" type="button" data-action="delete" data-workflow-id="${escapeHtml(workflowId)}">删除</button>
+                <button class="admin-button admin-button--ghost" type="button" data-action="${isActive ? 'pause' : 'activate'}" data-workflow-id="${escapeHtml(workflowId)}">${isActive ? '停用' : '启用'}</button>
+                <button class="admin-button admin-button--ghost ac-ops-danger" type="button" data-action="delete" data-workflow-id="${escapeHtml(workflowId)}">删除</button>
               </div>
             </td>
           </tr>

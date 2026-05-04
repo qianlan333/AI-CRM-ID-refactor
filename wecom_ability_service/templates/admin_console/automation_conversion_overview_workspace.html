@@ -259,13 +259,11 @@
     <article class="ac-overview-card">
       <div class="ac-overview-head">
         <div>
-          <div class="ac-eyebrow">数据概览</div>
-          <h2>自动化转化当前运行状态</h2>
-          <p class="ac-overview-muted">只保留自动化转化概览首屏核心信息，先看三类大人群规模、池子用户列表、启用中任务流和任务流执行情况。</p>
+          <h2>运行概况</h2>
+          <p class="ac-overview-muted">人群规模、运营进度与任务流执行一览。</p>
         </div>
         <div class="ac-overview-status-row">
           <span class="admin-chip admin-chip--neutral" id="overview-last-updated">最近刷新：加载中</span>
-          <span class="admin-chip admin-chip--neutral" id="overview-active-workflow-chip">启用任务流 0</span>
         </div>
       </div>
       <div class="ac-overview-feedback" id="overview-feedback" hidden></div>
@@ -284,15 +282,15 @@
           <strong id="overview-converted">0</strong>
         </article>
         <article class="ac-overview-stat">
-          <span>当前启用中的任务流</span>
+          <span>问卷提交人数</span>
+          <strong id="overview-questionnaire-submitted">0</strong>
+        </article>
+        <article class="ac-overview-stat">
+          <span>启用中的任务流</span>
           <strong id="overview-active-workflow-count">0</strong>
         </article>
       </div>
       <div class="ac-overview-summary-grid ac-overview-additional-stats" id="overview-additional-stats" hidden>
-        <article class="ac-overview-stat">
-          <span>问卷提交人数</span>
-          <strong id="overview-questionnaire-submitted">0</strong>
-        </article>
         <div class="ac-overview-segmentation-stats" id="overview-segmentation-stats" hidden></div>
       </div>
     </article>
@@ -300,20 +298,20 @@
     <article class="ac-overview-card">
       <div class="ac-overview-head">
         <div>
-          <h3>运行动作</h3>
-          <p class="ac-overview-muted">只保留和当前模块直接相关的状态刷新动作。</p>
+          <h3>快速动作</h3>
+          <p class="ac-overview-muted">同步消息活跃数据并放行自动应答。</p>
         </div>
       </div>
       <button class="admin-button admin-button--primary" type="button" id="overview-refresh-button">刷新模块状态</button>
-      <div class="ac-overview-muted" id="overview-refresh-status">顺序执行消息活跃同步、自动接话扫描、自动接话放行。</div>
+      <div class="ac-overview-muted" id="overview-refresh-status"></div>
     </article>
   </section>
 
   <section class="ac-overview-section">
     <div class="ac-overview-head">
       <div>
-        <h3>池子用户明细</h3>
-        <p class="ac-overview-muted">按当前三类池子展示全部在池用户，直接查看用户 ID、手机号、自然画像分层、行为画像分层、对话次数以及当前状态。</p>
+        <h3>池子用户</h3>
+        <p class="ac-overview-muted">按池子查看在池用户的画像与对话状态。</p>
       </div>
       <div class="ac-overview-subtle" id="overview-profile-template-note">自然画像模板：加载中</div>
     </div>
@@ -323,8 +321,8 @@
   <section class="ac-overview-section">
     <div class="ac-overview-head">
       <div>
-        <h3>任务流执行摘要</h3>
-        <p class="ac-overview-muted">按任务流统计当前执行次数，保持概览页只做经营摘要，不展开节点明细。</p>
+        <h3>任务流执行</h3>
+        <p class="ac-overview-muted">最近执行次数与时间。</p>
       </div>
     </div>
     <div class="ac-overview-table-wrap">

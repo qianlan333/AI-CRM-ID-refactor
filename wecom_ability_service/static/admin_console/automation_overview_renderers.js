@@ -28,17 +28,21 @@
     }
     memberGroups.innerHTML = groups.map((group) => {
       const rows = (group.items || []).length
-        ? group.items.map((item) => `
-            <tr>
-              <td>${escapeHtml(item.external_contact_id || "-")}</td>
-              <td>${escapeHtml(item.phone || "-")}</td>
+        ? group.items.map((item) => {
+            const phone = String(item.phone || "").trim();
+            const phoneDisplay = phone || "-";
+            const dataId = escapeHtml(item.external_contact_id || "");
+            return `
+            <tr data-external-contact-id="${dataId}">
+              <td>${escapeHtml(phoneDisplay)}</td>
               <td>${escapeHtml(item.questionnaire_status_label || "-")}</td>
               <td>${escapeHtml(item.profile_segment_label || "-")}</td>
               <td>${escapeHtml(item.behavior_segment_label || "-")}</td>
               <td>${escapeHtml(item.conversation_count || 0)}</td>
             </tr>
-          `).join("")
-        : "<tr><td colspan=\"6\">当前池子还没有用户。</td></tr>";
+          `;
+          }).join("")
+        : "<tr><td colspan=\"5\">当前池子还没有用户。</td></tr>";
       return `
           <article class="ac-overview-group-card">
             <div class="ac-overview-group-head">
@@ -52,7 +56,6 @@
               <table class="ac-overview-table">
                 <thead>
                   <tr>
-                    <th>用户 ID</th>
                     <th>手机号</th>
                     <th>问卷状态</th>
                     <th>自然画像分层</th>
@@ -141,16 +144,24 @@
     if (converted) converted.textContent = String(audience.converted_count || 0);
     if (activeWorkflowCount) activeWorkflowCount.textContent = String(dashboard.active_workflow_count || 0);
     if (activeWorkflowChip) activeWorkflowChip.textContent = "启用任务流 " + String(dashboard.active_workflow_count || 0);
-    if (lastUpdated) lastUpdated.textContent = "最近刷新：" + new Date().toLocaleString();
+    const fmt = (window.AdminFmt || {});
+    if (lastUpdated) {
+      const localized = fmt.localTime ? fmt.localTime(new Date()) : new Date().toLocaleString();
+      lastUpdated.textContent = "最近刷新：" + localized;
+    }
     if (executionBody && executionBody.id === overviewExecutionBodyId) {
       executionBody.innerHTML = taskExecutionSummary.length
-        ? taskExecutionSummary.map((item) => `
+        ? taskExecutionSummary.map((item) => {
+            const at = item.latest_execution_at;
+            const atDisplay = at ? (fmt.relativeTime ? fmt.relativeTime(at) : at) : "-";
+            return `
           <tr>
             <td>${escapeHtml(item.workflow_name || "-")}</td>
             <td>${escapeHtml(item.execution_count || 0)}</td>
-            <td>${escapeHtml(item.latest_execution_at || "-")}</td>
+            <td>${escapeHtml(atDisplay)}</td>
           </tr>
-        `).join("")
+        `;
+          }).join("")
         : "<tr><td colspan=\"3\">当前还没有任务流执行摘要。</td></tr>";
     }
     renderMemberGroups(dashboard);

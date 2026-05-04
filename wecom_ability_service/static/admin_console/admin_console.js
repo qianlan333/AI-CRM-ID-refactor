@@ -5,23 +5,18 @@ function updateShellStatus(payload) {
 
   const shellStatus = payload.shell_status;
   const envNode = document.querySelector("[data-shell-env]");
-  const releaseNode = document.querySelector("[data-shell-release]");
   const healthNode = document.querySelector("[data-shell-health]");
-  const healthDetailNode = document.querySelector("[data-shell-health-detail]");
 
   if (envNode && shellStatus.environment) {
     envNode.textContent = shellStatus.environment.label || "UNKNOWN";
     envNode.className = `admin-chip admin-chip--${shellStatus.environment.tone || "unknown"}`;
   }
-  if (releaseNode) {
-    releaseNode.textContent = `当前版本 ${shellStatus.release_sha || "local"}`;
-  }
   if (healthNode && shellStatus.health) {
     healthNode.textContent = shellStatus.health.label || "UNKNOWN";
     healthNode.className = `admin-chip admin-chip--${shellStatus.health.state || "unknown"}`;
-  }
-  if (healthDetailNode && shellStatus.health) {
-    healthDetailNode.textContent = shellStatus.health.detail || "status unavailable";
+    if (shellStatus.health.detail) {
+      healthNode.title = shellStatus.health.detail;
+    }
   }
 }
 
@@ -150,6 +145,67 @@ function bootOutputReviewForms() {
     });
   });
 }
+
+function formatRelativeTime(input) {
+  if (input === null || input === undefined || input === "") {
+    return "";
+  }
+  const date = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return String(input);
+  }
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  const diffMin = Math.round(diffSec / 60);
+  const sameDay =
+    now.getFullYear() === date.getFullYear() &&
+    now.getMonth() === date.getMonth() &&
+    now.getDate() === date.getDate();
+
+  if (Math.abs(diffSec) < 45) return "刚刚";
+  if (Math.abs(diffMin) < 60) {
+    return diffMin >= 0 ? `${diffMin} 分钟前` : `${-diffMin} 分钟后`;
+  }
+  if (sameDay) {
+    return `今天 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (
+    yesterday.getFullYear() === date.getFullYear() &&
+    yesterday.getMonth() === date.getMonth() &&
+    yesterday.getDate() === date.getDate()
+  ) {
+    return `昨天 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  if (now.getFullYear() === date.getFullYear()) {
+    return `${date.getMonth() + 1}月${date.getDate()}日`;
+  }
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatLocalTime(input) {
+  if (input === null || input === undefined || input === "") {
+    return "";
+  }
+  const date = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return String(input);
+  }
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+window.AdminFmt = Object.assign(window.AdminFmt || {}, {
+  relativeTime: formatRelativeTime,
+  localTime: formatLocalTime,
+});
 
 document.addEventListener("DOMContentLoaded", () => {
   bootShellStatusPolling();
