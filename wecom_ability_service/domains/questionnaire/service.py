@@ -1638,12 +1638,22 @@ def _execute_questionnaire_external_push_request(
             "response_body": "",
             "failure_reason": "external push url is empty",
         }
+    from ...infra.http_client import OutboundHttpError, get_outbound_client
+
+    # Questionnaire pushes are user-driven and admin-retriable from the
+    # console; we want the breaker (so a stuck upstream doesn't pile up new
+    # requests) but not in-call retries (which would hide the original
+    # failure response from the persisted log).
+    client = get_outbound_client(
+        "questionnaire_external_push",
+        timeout=_questionnaire_external_push_timeout_seconds(),
+        retry_max=0,
+    )
     try:
-        response = requests.post(
+        response = client.post(
             normalized_target_url,
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=_questionnaire_external_push_timeout_seconds(),
         )
         response_body = (response.text or "")[:5000]
         if int(response.status_code) == 200:
@@ -1661,21 +1671,26 @@ def _execute_questionnaire_external_push_request(
             "response_body": response_body,
             "failure_reason": f"HTTP {int(response.status_code)}",
         }
-    except requests.Timeout:
+    except OutboundHttpError as exc:
+        # The shared client already retried & breaker-counted. Translate to
+        # the legacy result shape so callers' downstream logging keeps
+        # working unchanged. Preserve the upstream body for ``http_status``
+        # so the persisted log row still contains the original error text.
+        category = exc.category
+        if category == "timeout":
+            failure_reason = "request timeout"
+        elif category == "circuit_open":
+            failure_reason = f"circuit_open: {exc}"
+        elif category == "http_status":
+            failure_reason = f"HTTP {exc.status_code}"
+        else:
+            failure_reason = f"network error: {exc}"
         return {
             "ok": False,
             "attempted": True,
-            "response_status_code": None,
-            "response_body": "",
-            "failure_reason": "request timeout",
-        }
-    except requests.RequestException as exc:
-        return {
-            "ok": False,
-            "attempted": True,
-            "response_status_code": None,
-            "response_body": "",
-            "failure_reason": f"network error: {str(exc).strip() or exc.__class__.__name__}",
+            "response_status_code": exc.status_code,
+            "response_body": (exc.response_text or "")[:5000],
+            "failure_reason": failure_reason,
         }
     except Exception as exc:
         questionnaire_logger.exception("questionnaire external push internal failure")

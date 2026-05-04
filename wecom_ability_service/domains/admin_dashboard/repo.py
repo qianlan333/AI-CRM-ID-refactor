@@ -6,6 +6,7 @@ from typing import Any
 
 from ...customer_center.repo import list_scope_external_userids
 from ...db import get_db, get_db_backend
+from ...infra.cache import cached
 from ...infra.settings import get_setting
 from ...wecom_callback import get_callback_config
 from ..archive.service import count_archived_messages, get_last_sync_run, list_message_batches
@@ -113,15 +114,20 @@ def get_system_snapshot(config: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+@cached(ttl=60)
 def count_customers() -> int:
+    # The scope CTE walks 7 tables; cache for a minute since dashboard COUNT
+    # is not a transactional consistency surface.
     return len(list_scope_external_userids())
 
 
+@cached(ttl=60)
 def count_class_users_current() -> int:
     row = get_db().execute("SELECT COUNT(*) AS total FROM class_user_status_current").fetchone()
     return int(row["total"] or 0) if row else 0
 
 
+@cached(ttl=60)
 def get_questionnaire_overview() -> dict[str, Any]:
     questionnaires = list_questionnaires()
     latest_submission = max(

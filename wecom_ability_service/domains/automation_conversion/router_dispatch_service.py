@@ -309,23 +309,23 @@ def run_agent_router_shadow_decision(
     retry_count = max(0, int(router_config.get("retry_count") or 1))
     response_text = ""
 
+    from ...infra.http_client import OutboundHttpError, get_outbound_client
+
     try:
-        response = None
-        for attempt in range(retry_count + 1):
-            try:
-                response = _legacy.requests.post(
-                    _legacy._normalized_text(router_config.get("webhook_url")),
-                    data=body_text.encode("utf-8"),
-                    headers=headers,
-                    timeout=timeout_seconds,
-                )
-                break
-            except _legacy.requests.Timeout:
-                if attempt >= retry_count:
-                    raise
-            except _legacy.requests.RequestException:
-                if attempt >= retry_count:
-                    raise
+        client = get_outbound_client(
+            "automation_router_webhook",
+            timeout=float(timeout_seconds),
+            retry_max=retry_count,
+        )
+        try:
+            response = client.post(
+                _legacy._normalized_text(router_config.get("webhook_url")),
+                data=body_text.encode("utf-8"),
+                headers=headers,
+            )
+        except OutboundHttpError as exc:
+            original_message = str(exc.cause) if exc.cause else str(exc)
+            raise _legacy.requests.RequestException(original_message) from exc
         latency_ms = int((_legacy.time.perf_counter() - started_at) * 1000)
         if response is None:
             raise _legacy.requests.RequestException("router webhook request_error")

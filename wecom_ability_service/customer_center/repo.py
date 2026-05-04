@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..db import get_db, get_db_backend
+from ..db import cast_text, get_db, get_db_backend, is_postgres
 
 _OWNER_ROLE_MAP_QUERY_BATCH_SIZE = 5000
 
@@ -53,14 +53,9 @@ def _normalize_bool_filter(value: Any) -> bool | None:
 
 
 def _customer_list_scope_sql() -> str:
-    if get_db_backend() == "postgres":
-        class_status_updated_at = "class_status.updated_at::text"
-        contact_updated_at = "contact.updated_at::text"
-        binding_updated_at = "binding.updated_at::text"
-    else:
-        class_status_updated_at = "class_status.updated_at"
-        contact_updated_at = "contact.updated_at"
-        binding_updated_at = "binding.updated_at"
+    class_status_updated_at = cast_text("class_status.updated_at")
+    contact_updated_at = cast_text("contact.updated_at")
+    binding_updated_at = cast_text("binding.updated_at")
 
     return f"""
     WITH scope AS (
@@ -650,25 +645,47 @@ def fetch_customer_last_dispatch_at(external_userid: str) -> str:
     normalized_external_userid = str(external_userid or "").strip()
     if not normalized_external_userid:
         return ""
-    if get_db_backend() == "postgres":
-        row = get_db().execute(
-            """
-            SELECT COALESCE(MAX(dispatched_at)::text, '') AS last_dispatch_at
-            FROM conversion_dispatch_log
-            WHERE external_userid = ?
-              AND dispatched_at IS NOT NULL
-            """,
-            (normalized_external_userid,),
-        ).fetchone()
-    else:
-        row = get_db().execute(
-            """
-            SELECT MAX(dispatched_at) AS last_dispatch_at
-            FROM conversion_dispatch_log
-            WHERE external_userid = ?
-              AND dispatched_at IS NOT NULL
-              AND dispatched_at <> ''
-            """,
-            (normalized_external_userid,),
-        ).fetchone()
+    # SQLite stores dispatched_at as TEXT (may be ''); Postgres uses TIMESTAMPTZ
+    # (where '' would be an invalid literal), so the empty-string guard is
+    # only emitted in the SQLite branch.
+    extra_filter = "" if is_postgres() else " AND dispatched_at <> ''"
+    row = get_db().execute(
+        f"""
+        SELECT COALESCE({cast_text("MAX(dispatched_at)")}, '') AS last_dispatch_at
+        FROM conversion_dispatch_log
+        WHERE external_userid = ?
+          AND dispatched_at IS NOT NULL{extra_filter}
+        """,
+        (normalized_external_userid,),
+    ).fetchone()
     return str((row or {}).get("last_dispatch_at") or "").strip()
+
+
+def fetch_customer_last_dispatch_at_map(external_userids: list[str]) -> dict[str, str]:
+    """Batch variant of ``fetch_customer_last_dispatch_at`` to remove an N+1.
+
+    Returns a mapping ``external_userid -> last_dispatch_at`` (empty string if
+    no dispatch row exists for that customer).
+    """
+    normalized = [str(item or "").strip() for item in external_userids if str(item or "").strip()]
+    if not normalized:
+        return {}
+    placeholders = ",".join(["?"] * len(normalized))
+    extra_filter = "" if is_postgres() else " AND dispatched_at <> ''"
+    rows = get_db().execute(
+        f"""
+        SELECT external_userid,
+               COALESCE({cast_text("MAX(dispatched_at)")}, '') AS last_dispatch_at
+        FROM conversion_dispatch_log
+        WHERE external_userid IN ({placeholders})
+          AND dispatched_at IS NOT NULL{extra_filter}
+        GROUP BY external_userid
+        """,
+        tuple(normalized),
+    ).fetchall()
+    result: dict[str, str] = {}
+    for row in rows:
+        external_userid = str(row.get("external_userid") or "").strip()
+        if external_userid:
+            result[external_userid] = str(row.get("last_dispatch_at") or "").strip()
+    return result

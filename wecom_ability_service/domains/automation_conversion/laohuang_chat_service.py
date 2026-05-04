@@ -373,15 +373,28 @@ def dispatch_reply_monitor_queue_item(
         return {"ok": False, "status": "failed", "error": "automation_member_not_found", "summary": summary}
 
     send_channel = _laohuang_send_channel()
+    from ...infra.http_client import OutboundHttpError, get_outbound_client
+
     try:
         request_payload, messages_payload = _build_request_payload(queue_item=queue_item, member=dict(member))
         job = _create_or_refresh_job(request_payload=request_payload, send_channel=send_channel)
         started = time.perf_counter()
-        response = requests.post(
-            _laohuang_webhook_url(),
-            json=request_payload,
-            timeout=_laohuang_timeout_seconds(),
+        client = get_outbound_client(
+            "laohuang_chat",
+            timeout=float(_laohuang_timeout_seconds()),
+            retry_max=2,
         )
+        try:
+            response = client.post(
+                _laohuang_webhook_url(),
+                json=request_payload,
+            )
+        except OutboundHttpError as exc:
+            # Surface as the existing RequestException so the outer handler
+            # below keeps doing its bookkeeping unchanged. Preserve the
+            # upstream message verbatim.
+            original_message = str(exc.cause) if exc.cause else str(exc)
+            raise requests.RequestException(original_message) from exc
         latency_ms = int((time.perf_counter() - started) * 1000)
         response_text = response.text or ""
         try:

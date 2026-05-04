@@ -1627,15 +1627,19 @@ def _resolve_third_party_user_id_by_mobile(mobile: str) -> str:
         headers = {"Content-Type": "application/json"}
         if api_token:
             headers["Authorization"] = f"Bearer {api_token}"
+        from ...infra.http_client import OutboundHttpError, get_outbound_client
+
+        client = get_outbound_client("sidebar_third_party_sync", timeout=float(timeout), retry_max=2)
         try:
-            response = requests.post(
+            response = client.post(
                 api_url,
                 json={"mobile": mobile},
                 headers=headers,
-                timeout=timeout,
             )
             response.raise_for_status()
             payload = response.json()
+        except OutboundHttpError as exc:
+            raise ThirdPartyUserSyncError(f"third-party sync request failed: {exc}") from exc
         except requests.RequestException as exc:
             raise ThirdPartyUserSyncError(f"third-party sync request failed: {exc}") from exc
         except ValueError as exc:

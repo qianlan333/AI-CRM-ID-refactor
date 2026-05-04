@@ -2552,12 +2552,22 @@ def _send_text_via_bazhuayu(
     if specified_bot:
         payload["SpecifiedBot"] = specified_bot
 
-    response = requests.post(
-        webhook_url,
-        json=payload,
-        headers={"Content-Type": "application/json"},
-        timeout=timeout_seconds,
+    from ...infra.http_client import OutboundHttpError, get_outbound_client
+
+    bazhuayu_client = get_outbound_client(
+        "bazhuayu_webhook",
+        timeout=float(timeout_seconds),
+        retry_max=2,
     )
+    try:
+        response = bazhuayu_client.post(
+            webhook_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        )
+    except OutboundHttpError as exc:
+        original_message = str(exc.cause) if exc.cause else str(exc)
+        raise requests.RequestException(original_message) from exc
     raw_body = response.text or ""
     try:
         response_payload = response.json() if raw_body else {}

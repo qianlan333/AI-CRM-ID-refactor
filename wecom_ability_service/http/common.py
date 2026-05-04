@@ -6,6 +6,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from flask import current_app, jsonify, redirect, request, url_for
 
+from ..infra.error_codes import CRMError, ERROR_REGISTRY
 from ..infra.wecom_runtime import ContactWeComRuntimeClient, get_contact_runtime_client
 from ..wecom_client import WeComClientError
 callback_logger = logging.getLogger("callback")
@@ -34,6 +35,61 @@ def _log_wecom_client_error(
         owner_userid,
         external_userid,
         chat_id,
+    )
+
+
+def error_response(
+    code: str,
+    *,
+    message: str = "",
+    detail: str = "",
+    http_status: int = 500,
+    extra: dict | None = None,
+):
+    """Standardized JSON error envelope for HTTP controllers.
+
+    Replaces the long tail of ``except Exception: return jsonify({...}), 500``
+    blocks scattered across the http/ layer. Format is stable so the admin
+    UI / sidebar can render error codes + ``troubleshoot`` text consistently:
+
+        {
+            "ok": false,
+            "error": {
+                "code": "E1003",
+                "message": "...",
+                "category": "...",
+                "retryable": true,
+                "detail": "...",     # optional
+                "troubleshoot": "..."  # optional, from ERROR_REGISTRY
+            }
+        }
+    """
+    info = ERROR_REGISTRY.get(code, {})
+    body = {
+        "ok": False,
+        "error": {
+            "code": code,
+            "message": message or info.get("message", code),
+            "category": info.get("category", "unknown"),
+            "retryable": bool(info.get("retryable", False)),
+        },
+    }
+    if detail:
+        body["error"]["detail"] = detail
+    if info.get("troubleshoot"):
+        body["error"]["troubleshoot"] = info["troubleshoot"]
+    if extra:
+        body["error"].update(extra)
+    return jsonify(body), int(http_status)
+
+
+def crm_error_response(exc: CRMError, *, http_status: int = 500):
+    """Render a ``CRMError`` raised by the domain layer into ``error_response``."""
+    return error_response(
+        exc.code,
+        message=exc.message,
+        detail=exc.detail or "",
+        http_status=http_status,
     )
 
 

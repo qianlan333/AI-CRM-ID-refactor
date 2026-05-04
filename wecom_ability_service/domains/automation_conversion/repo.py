@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...db import get_db, get_db_backend
+from ...db import cast_text, get_db, get_db_backend, is_postgres
 
 _AUTOMATION_SOP_POOL_LOCK_NAMESPACE = 41017
 
@@ -177,56 +177,33 @@ def find_latest_external_contact_id_by_phone(phone: str) -> str:
     normalized_phone = _normalized_text(phone)
     if not normalized_phone:
         return ""
-    if get_db_backend() == "postgres":
-        sql = """
-        SELECT external_userid
-        FROM (
-            SELECT b.external_userid, COALESCE(b.updated_at::text, b.created_at::text, '') AS ordering_value
-            FROM external_contact_bindings b
-            INNER JOIN people p ON p.id = b.person_id
-            WHERE p.mobile = ?
+    binding_ordering = f"COALESCE({cast_text('b.updated_at')}, {cast_text('b.created_at')}, '')"
+    class_status_ordering = f"COALESCE({cast_text('updated_at')}, {cast_text('created_at')}, '')"
+    submission_ordering = f"COALESCE({cast_text('submitted_at')}, '')"
+    sql = f"""
+    SELECT external_userid
+    FROM (
+        SELECT b.external_userid, {binding_ordering} AS ordering_value
+        FROM external_contact_bindings b
+        INNER JOIN people p ON p.id = b.person_id
+        WHERE p.mobile = ?
 
-            UNION ALL
+        UNION ALL
 
-            SELECT external_userid, COALESCE(updated_at::text, created_at::text, '') AS ordering_value
-            FROM class_user_status_current
-            WHERE mobile_snapshot = ?
+        SELECT external_userid, {class_status_ordering} AS ordering_value
+        FROM class_user_status_current
+        WHERE mobile_snapshot = ?
 
-            UNION ALL
+        UNION ALL
 
-            SELECT external_userid, COALESCE(submitted_at::text, '') AS ordering_value
-            FROM questionnaire_submissions
-            WHERE mobile_snapshot = ? AND external_userid IS NOT NULL AND external_userid <> ''
-        ) candidates
-        WHERE external_userid IS NOT NULL AND external_userid <> ''
-        ORDER BY ordering_value DESC, external_userid ASC
-        LIMIT 1
-        """
-    else:
-        sql = """
-        SELECT external_userid
-        FROM (
-            SELECT b.external_userid, COALESCE(b.updated_at, b.created_at, '') AS ordering_value
-            FROM external_contact_bindings b
-            INNER JOIN people p ON p.id = b.person_id
-            WHERE p.mobile = ?
-
-            UNION ALL
-
-            SELECT external_userid, COALESCE(updated_at, created_at, '') AS ordering_value
-            FROM class_user_status_current
-            WHERE mobile_snapshot = ?
-
-            UNION ALL
-
-            SELECT external_userid, COALESCE(submitted_at, '') AS ordering_value
-            FROM questionnaire_submissions
-            WHERE mobile_snapshot = ? AND external_userid IS NOT NULL AND external_userid <> ''
-        ) candidates
-        WHERE external_userid IS NOT NULL AND external_userid <> ''
-        ORDER BY ordering_value DESC, external_userid ASC
-        LIMIT 1
-        """
+        SELECT external_userid, {submission_ordering} AS ordering_value
+        FROM questionnaire_submissions
+        WHERE mobile_snapshot = ? AND external_userid IS NOT NULL AND external_userid <> ''
+    ) candidates
+    WHERE external_userid IS NOT NULL AND external_userid <> ''
+    ORDER BY ordering_value DESC, external_userid ASC
+    LIMIT 1
+    """
     row = _fetchone_dict(sql, (normalized_phone, normalized_phone, normalized_phone))
     return _normalized_text((row or {}).get("external_userid"))
 

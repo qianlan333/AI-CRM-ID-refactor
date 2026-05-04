@@ -581,13 +581,17 @@ def _audit_log(
     before: dict[str, Any] | None,
     after: dict[str, Any] | None,
 ) -> None:
-    repo.insert_admin_operation_log(
+    # Delegates to the unified entry in admin_audit so all three legacy
+    # ``_audit_log`` shims share one row format + structured-log emission.
+    from ..admin_audit import record_audit
+
+    record_audit(
         operator=_operator(operator),
         action_type=action_type,
         target_type=target_type,
         target_id=_normalized_text(target_id),
-        before_json=before or {},
-        after_json=after or {},
+        before=before or {},
+        after=after or {},
     )
 
 

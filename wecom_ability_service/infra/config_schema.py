@@ -256,6 +256,81 @@ CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "reliability": {
+        "label": "可靠性 / 出站调用",
+        "required": False,
+        "fields": {
+            "HTTP_DEFAULT_TIMEOUT": {
+                "type": "integer",
+                "required": False,
+                "label": "出站HTTP默认超时(秒)",
+                "default": "10",
+                "help": "OutboundHttpClient 默认超时，单 webhook 场景调用方可覆盖",
+                "min": 1,
+                "max": 120,
+            },
+            "HTTP_RETRY_MAX": {
+                "type": "integer",
+                "required": False,
+                "label": "出站HTTP最大重试次数",
+                "default": "2",
+                "help": "网络/5xx 失败时的额外尝试次数，0 表示不重试",
+                "min": 0,
+                "max": 10,
+            },
+            "HTTP_RETRY_BACKOFF_BASE": {
+                "type": "integer",
+                "required": False,
+                "label": "重试退避基准(秒)",
+                "default": "1",
+                "help": "退避按 base * 2^attempt 增长",
+                "min": 0,
+                "max": 60,
+            },
+            "CIRCUIT_FAILURE_THRESHOLD": {
+                "type": "integer",
+                "required": False,
+                "label": "熔断器失败阈值",
+                "default": "5",
+                "help": "连续失败达到该次数后开路",
+                "min": 1,
+                "max": 100,
+            },
+            "CIRCUIT_RECOVERY_SECONDS": {
+                "type": "integer",
+                "required": False,
+                "label": "熔断器半开恢复(秒)",
+                "default": "60",
+                "min": 1,
+                "max": 3600,
+            },
+            "RQ_DEFAULT_TIMEOUT": {
+                "type": "integer",
+                "required": False,
+                "label": "RQ任务默认超时(秒)",
+                "default": "300",
+                "min": 10,
+                "max": 3600,
+            },
+            "OUTBOX_MAX_ATTEMPTS": {
+                "type": "integer",
+                "required": False,
+                "label": "outbox 最大投递次数",
+                "default": "5",
+                "help": "超过即终态 failed，需要人工介入",
+                "min": 1,
+                "max": 50,
+            },
+            "OUTBOX_BACKOFF_BASE_SECONDS": {
+                "type": "integer",
+                "required": False,
+                "label": "outbox 退避基准(秒)",
+                "default": "30",
+                "min": 1,
+                "max": 600,
+            },
+        },
+    },
 }
 
 
@@ -273,13 +348,34 @@ def validate_config(settings: dict[str, str]) -> list[dict[str, str]]:
                 })
             if value and field.get("type") == "integer":
                 try:
-                    int(value)
+                    int_value = int(value)
                 except ValueError:
                     errors.append({
                         "group": group["label"],
                         "field": field.get("label", field_key),
                         "key": field_key,
                         "error": "必须为整数",
+                    })
+                    continue
+                # Range validation when ``min``/``max`` declared on the field.
+                # Catches "fat-fingered" reliability knobs like a timeout of
+                # 0 or a retry count in the millions before they reach
+                # production.
+                min_value = field.get("min")
+                max_value = field.get("max")
+                if min_value is not None and int_value < int(min_value):
+                    errors.append({
+                        "group": group["label"],
+                        "field": field.get("label", field_key),
+                        "key": field_key,
+                        "error": f"不能小于 {min_value}",
+                    })
+                if max_value is not None and int_value > int(max_value):
+                    errors.append({
+                        "group": group["label"],
+                        "field": field.get("label", field_key),
+                        "key": field_key,
+                        "error": f"不能大于 {max_value}",
                     })
     return errors
 
