@@ -445,6 +445,107 @@
     border-color: #16a34a;
   }
 
+  /* ── Markdown Copy Buttons (for AI consumption) ── */
+  .apidoc-md-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .apidoc-md-btn:hover {
+    border-color: var(--brand-strong);
+    color: var(--brand-strong);
+    background: rgba(157, 99, 48, 0.04);
+  }
+
+  .apidoc-md-btn--copied {
+    color: #16a34a !important;
+    border-color: #16a34a !important;
+    background: #f0fdf4 !important;
+  }
+
+  .apidoc-md-btn svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+  }
+
+  /* Endpoint header copy-md button — small text */
+  .apidoc-md-btn--inline {
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+
+  /* Group header copy-md button */
+  .apidoc-group-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+
+  .apidoc-group-header h2 {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Hero copy-all banner */
+  .apidoc-copyall-banner {
+    margin: 16px 0 0;
+    padding: 14px 18px;
+    border: 1px dashed var(--brand-strong);
+    border-radius: 12px;
+    background: rgba(157, 99, 48, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .apidoc-copyall-banner-text {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .apidoc-copyall-banner-text strong {
+    color: var(--brand-strong);
+  }
+
+  .apidoc-md-btn--primary {
+    padding: 8px 16px;
+    font-size: 13px;
+    background: var(--brand-strong);
+    color: #fff;
+    border-color: var(--brand-strong);
+  }
+
+  .apidoc-md-btn--primary:hover {
+    background: #7a4f24;
+    border-color: #7a4f24;
+    color: #fff;
+  }
+
+  .apidoc-md-btn--primary.apidoc-md-btn--copied {
+    background: #16a34a !important;
+    border-color: #16a34a !important;
+    color: #fff !important;
+  }
+
   /* ── Responsive ── */
   @media (max-width: 900px) {
     .apidoc-shell { grid-template-columns: 1fr; }
@@ -466,6 +567,9 @@
 
 {% block content %}
 
+{# ── Markdown data for AI-friendly copy buttons ── #}
+<script type="application/json" id="apidoc-md-data">{{ markdown_data | tojson }}</script>
+
 {# ── Endpoint Card Macro (must be defined before use) ── #}
 {% macro _render_endpoint(ep) %}
 <details class="apidoc-endpoint" id="{{ ep.id }}" data-search="{{ ep.method }} {{ ep.path }} {{ ep.summary }}">
@@ -479,6 +583,10 @@
     <span class="apidoc-auth-badge apidoc-auth-badge--{{ ep.auth }}">
       {% if ep.auth == "session" %}登录态{% elif ep.auth == "bearer" %}Token{% else %}公开{% endif %}
     </span>
+    <button type="button" class="apidoc-md-btn apidoc-md-btn--inline" data-md-id="ep:{{ ep.id }}" onclick="apidocCopyMd(event, this)" title="复制此接口的 Markdown 文档（给 AI 看）">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5"/></svg>
+      复制 MD
+    </button>
     {% endif %}
     <svg class="apidoc-endpoint-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
   </summary>
@@ -611,6 +719,23 @@
         <li>点击展开接口卡片查看参数和 curl 示例</li>
         <li>每个接口的 curl 示例可直接复制执行</li>
       </ul>
+
+      <h3>把文档发给 AI</h3>
+      <ul>
+        <li>每个接口卡片右侧的「复制 MD」按钮 — 复制单个接口的 Markdown 给 AI</li>
+        <li>每个分组标题旁的「复制此分组」按钮 — 复制整组接口</li>
+        <li>下方「复制全部 API 文档」按钮 — 复制全部 219 个接口的完整 Markdown，粘贴到 AI 对话即可</li>
+      </ul>
+
+      <div class="apidoc-copyall-banner">
+        <div class="apidoc-copyall-banner-text">
+          <strong>📋 复制全部 API 文档</strong> — 一键复制所有接口的 Markdown 格式文档（约 100 KB），粘贴给 Claude / ChatGPT 等 AI 即可调用。
+        </div>
+        <button type="button" class="apidoc-md-btn apidoc-md-btn--primary" data-md-id="full" onclick="apidocCopyMd(event, this)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5"/></svg>
+          复制全部 API 文档
+        </button>
+      </div>
     </section>
 
     {# ── Quick Reference ── #}
@@ -649,7 +774,15 @@
     {# ── Endpoint Groups ── #}
     {% for group in endpoint_groups %}
     <section class="apidoc-group" id="group-{{ group.id }}">
-      <h2 class="apidoc-group-title">{{ group.title }}</h2>
+      <div class="apidoc-group-header">
+        <h2 class="apidoc-group-title">{{ group.title }}</h2>
+        {% if group.id != 'errors' %}
+        <button type="button" class="apidoc-md-btn" data-md-id="group:{{ group.id }}" onclick="apidocCopyMd(event, this)" title="复制本分组所有接口的 Markdown 文档">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5"/></svg>
+          复制此分组（MD）
+        </button>
+        {% endif %}
+      </div>
       <p class="apidoc-group-desc">{{ group.description }}</p>
 
       {# Groups with subsections #}
@@ -724,7 +857,7 @@
   });
 })();
 
-// Copy to clipboard
+// Copy to clipboard (single code block)
 function apidocCopy(btn) {
   var code = btn.parentElement.querySelector('code');
   if (!code) return;
@@ -733,6 +866,67 @@ function apidocCopy(btn) {
     setTimeout(function() { btn.classList.remove('apidoc-copy-btn--copied'); }, 1200);
   });
 }
+
+// Copy markdown documentation (for AI consumption)
+// data-md-id format: "ep:<endpoint_id>" | "group:<group_id>" | "full"
+(function() {
+  var _mdData = null;
+  function getMdData() {
+    if (_mdData) return _mdData;
+    var el = document.getElementById('apidoc-md-data');
+    if (!el) return null;
+    try {
+      _mdData = JSON.parse(el.textContent);
+    } catch (e) {
+      console.error('Failed to parse apidoc-md-data:', e);
+      return null;
+    }
+    return _mdData;
+  }
+
+  window.apidocCopyMd = function(event, btn) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    var data = getMdData();
+    if (!data) return;
+    var id = btn.getAttribute('data-md-id') || '';
+    var md = null;
+    if (id === 'full') {
+      md = data.full;
+    } else if (id.indexOf('ep:') === 0) {
+      md = (data.endpoints || {})[id.slice(3)];
+    } else if (id.indexOf('group:') === 0) {
+      md = (data.groups || {})[id.slice(6)];
+    }
+    if (!md) {
+      console.warn('No markdown found for', id);
+      return;
+    }
+
+    // Cache original innerHTML for reliable restoration
+    if (!btn.dataset.origHtml) {
+      btn.dataset.origHtml = btn.innerHTML;
+    }
+    var doneLabel = '已复制';
+    if (id === 'full') doneLabel = '✓ 已复制全部文档';
+    else if (id.indexOf('group:') === 0) doneLabel = '✓ 已复制此分组';
+    else doneLabel = '✓ 已复制';
+
+    navigator.clipboard.writeText(md).then(function() {
+      btn.classList.add('apidoc-md-btn--copied');
+      btn.textContent = doneLabel;
+      setTimeout(function() {
+        btn.classList.remove('apidoc-md-btn--copied');
+        btn.innerHTML = btn.dataset.origHtml;
+      }, 1500);
+    }).catch(function(err) {
+      console.error('Copy failed:', err);
+      alert('复制失败：' + err.message);
+    });
+  };
+})();
 
 // Open card when navigating via anchor
 (function() {
