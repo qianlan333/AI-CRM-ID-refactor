@@ -110,8 +110,8 @@ def _customer_pulse_tenant_key(tenant_context: dict[str, Any] | None = None) -> 
         return ""
 
 
-def _message_items(external_userid: str) -> list[TimelineItemDTO]:
-    rows = fetch_archived_messages(external_userid)
+def _message_items(external_userid: str, *, limit: int | None = None) -> list[TimelineItemDTO]:
+    rows = fetch_archived_messages(external_userid, limit=limit)
     group_map = get_group_chat_map([extract_roomid_from_raw_payload(row.get("raw_payload")) for row in rows])
     items: list[TimelineItemDTO] = []
     for row in rows:
@@ -136,8 +136,8 @@ def _message_items(external_userid: str) -> list[TimelineItemDTO]:
     return items
 
 
-def _status_change_items(external_userid: str) -> list[TimelineItemDTO]:
-    rows = fetch_status_changes(external_userid)
+def _status_change_items(external_userid: str, *, limit: int | None = None) -> list[TimelineItemDTO]:
+    rows = fetch_status_changes(external_userid, limit=limit)
     items: list[TimelineItemDTO] = []
     for row in rows:
         event_time = _stringify(row.get("set_at")) or _stringify(row.get("created_at"))
@@ -160,8 +160,8 @@ def _status_change_items(external_userid: str) -> list[TimelineItemDTO]:
     return items
 
 
-def _questionnaire_items(external_userid: str) -> list[TimelineItemDTO]:
-    rows = fetch_questionnaire_submissions(external_userid)
+def _questionnaire_items(external_userid: str, *, limit: int | None = None) -> list[TimelineItemDTO]:
+    rows = fetch_questionnaire_submissions(external_userid, limit=limit)
     items: list[TimelineItemDTO] = []
     for row in rows:
         title_suffix = _stringify(row.get("questionnaire_title")) or _stringify(row.get("questionnaire_name"))
@@ -188,8 +188,8 @@ def _questionnaire_items(external_userid: str) -> list[TimelineItemDTO]:
     return items
 
 
-def _wecom_event_items(external_userid: str) -> list[TimelineItemDTO]:
-    rows = fetch_wecom_events(external_userid)
+def _wecom_event_items(external_userid: str, *, limit: int | None = None) -> list[TimelineItemDTO]:
+    rows = fetch_wecom_events(external_userid, limit=limit)
     items: list[TimelineItemDTO] = []
     for row in rows:
         event_time = _format_unix_timestamp(row.get("event_time")) or _stringify(row.get("created_at")) or _stringify(
@@ -340,8 +340,8 @@ def _value_segment_change_items(
     return items
 
 
-def _openclaw_dispatch_items(external_userid: str) -> list[TimelineItemDTO]:
-    rows = fetch_conversion_dispatch_logs(external_userid)
+def _openclaw_dispatch_items(external_userid: str, *, limit: int | None = None) -> list[TimelineItemDTO]:
+    rows = fetch_conversion_dispatch_logs(external_userid, limit=limit)
     items: list[TimelineItemDTO] = []
     for row in rows:
         dispatch_payload = _json_loads(row.get("dispatch_payload_json"), default={})
@@ -373,10 +373,15 @@ def _openclaw_dispatch_items(external_userid: str) -> list[TimelineItemDTO]:
     return items
 
 
-def _customer_pulse_activity_items(external_userid: str, *, tenant_key: str) -> list[TimelineItemDTO]:
+def _customer_pulse_activity_items(
+    external_userid: str,
+    *,
+    tenant_key: str,
+    limit: int | None = None,
+) -> list[TimelineItemDTO]:
     if not _stringify(tenant_key):
         return []
-    rows = fetch_customer_pulse_activity_logs(external_userid, tenant_key=tenant_key)
+    rows = fetch_customer_pulse_activity_logs(external_userid, tenant_key=tenant_key, limit=limit)
     items: list[TimelineItemDTO] = []
     for row in rows:
         payload_json = _json_loads(row.get("payload_json"), default={})
@@ -423,18 +428,29 @@ def _get_customer_timeline_impl(
     if not has_customer_timeline_scope(normalized_external_userid, customer_pulse_tenant_key=pulse_tenant_key):
         return None
 
-    marketing_state_rows = fetch_marketing_state_changes(normalized_external_userid)
-    value_segment_rows = fetch_value_segment_changes(normalized_external_userid)
+    limit = int(filters["normalized_limit"])
+    offset = int(filters["normalized_offset"])
+    # Each source needs to return at least ``offset + limit`` rows to guarantee
+    # the global top-N after sort is correct. Cap with a small headroom in case
+    # one source dominates the ordering.
+    per_source_limit = max(offset + limit, 50) * 2
+
+    marketing_state_rows = fetch_marketing_state_changes(normalized_external_userid, limit=per_source_limit)
+    value_segment_rows = fetch_value_segment_changes(normalized_external_userid, limit=per_source_limit)
     items = (
-        _message_items(normalized_external_userid)
-        + _status_change_items(normalized_external_userid)
-        + _questionnaire_items(normalized_external_userid)
-        + _wecom_event_items(normalized_external_userid)
+        _message_items(normalized_external_userid, limit=per_source_limit)
+        + _status_change_items(normalized_external_userid, limit=per_source_limit)
+        + _questionnaire_items(normalized_external_userid, limit=per_source_limit)
+        + _wecom_event_items(normalized_external_userid, limit=per_source_limit)
         + _marketing_state_change_items(normalized_external_userid, marketing_state_rows)
         + _conversion_marked_items(normalized_external_userid, marketing_state_rows)
         + _value_segment_change_items(normalized_external_userid, value_segment_rows)
-        + _openclaw_dispatch_items(normalized_external_userid)
-        + _customer_pulse_activity_items(normalized_external_userid, tenant_key=pulse_tenant_key)
+        + _openclaw_dispatch_items(normalized_external_userid, limit=per_source_limit)
+        + _customer_pulse_activity_items(
+            normalized_external_userid,
+            tenant_key=pulse_tenant_key,
+            limit=per_source_limit,
+        )
     )
 
     event_type = _stringify(filters.get("event_type"))
@@ -443,8 +459,6 @@ def _get_customer_timeline_impl(
 
     items.sort(key=lambda item: (item.event_time, item.source_table, item.source_id), reverse=True)
 
-    limit = int(filters["normalized_limit"])
-    offset = int(filters["normalized_offset"])
     page_items = items[offset : offset + limit]
 
     payload = TimelineDTO(

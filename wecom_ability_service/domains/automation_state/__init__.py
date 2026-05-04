@@ -9,6 +9,11 @@ from .calculator import (
     should_enter_silent_pool,
 )
 from .evaluator import evaluate_marketing_eligibility
+from .execution_trace import (
+    list_execution_trace_for_external,
+    list_execution_trace_for_workflow,
+    record_execution_trace,
+)
 from .renderer import (
     business_eligibility_label,
     business_ineligible_reason,
@@ -48,6 +53,9 @@ __all__ = [
     "POOL_SILENT",
     "calculate_marketing_state",
     "evaluate_marketing_eligibility",
+    "list_execution_trace_for_external",
+    "list_execution_trace_for_workflow",
+    "record_execution_trace",
     "business_eligibility_label",
     "business_ineligible_reason",
     "business_marketing_display",

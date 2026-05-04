@@ -979,11 +979,21 @@ def _post_json_webhook(
     payload: dict[str, Any],
     timeout: int = 10,
 ) -> requests.Response:
-    return requests.post(
+    # Routes through the shared retry/breaker client so any single misbehaving
+    # marketing webhook can't hammer the upstream and trip cascades; raises
+    # OutboundHttpError instead of requests.RequestException, which existing
+    # callers already catch as the bare ``Exception`` superclass.
+    from ...infra.http_client import get_outbound_client
+
+    client = get_outbound_client(
+        "marketing_automation_webhook",
+        timeout=float(max(int(timeout), 1)),
+        retry_max=2,
+    )
+    return client.post(
         url,
         json=payload,
         headers=_bearer_headers(token),
-        timeout=max(int(timeout), 1),
     )
 
 

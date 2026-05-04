@@ -33,13 +33,28 @@ def _attempt_delivery(delivery: dict[str, Any]) -> dict[str, Any]:
         }
 
     next_attempt = int(snapshot["attempt_count"]) + 1
+    # NOTE: this dispatcher already has its own DB-driven retry scheduler
+    # (``next_retry_at`` / ``max_attempts``), so we wrap with retry_max=0 —
+    # we want the circuit breaker only, not double retries.
+    from ...infra.http_client import OutboundHttpError, get_outbound_client
+
+    webhook_client = get_outbound_client(
+        "outbound_webhook_delivery",
+        timeout=float(timeout),
+        retry_max=0,
+    )
     try:
-        response = _legacy.requests.post(
-            webhook_url,
-            json=snapshot["payload"],
-            headers=_legacy._request_headers(webhook_token),
-            timeout=timeout,
-        )
+        try:
+            response = webhook_client.post(
+                webhook_url,
+                json=snapshot["payload"],
+                headers=_legacy._request_headers(webhook_token),
+            )
+        except OutboundHttpError as exc:
+            # Pass the upstream message through unchanged — callers / tests
+            # match against the original error string.
+            original_message = str(exc.cause) if exc.cause else str(exc)
+            raise _legacy.requests.RequestException(original_message) from exc
         status_code = int(response.status_code)
         response_summary = _legacy._response_body_summary(response)
         if 200 <= status_code < 300:

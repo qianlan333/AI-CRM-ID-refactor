@@ -7,6 +7,14 @@ from .connection import (  # noqa: F401
     get_db,
     get_db_backend,
 )
+from .dialect import (  # noqa: F401
+    cast_text,
+    coalesce_text,
+    is_postgres,
+    is_sqlite,
+    nonempty,
+    upsert_clause,
+)
 
 
 def init_db() -> None:

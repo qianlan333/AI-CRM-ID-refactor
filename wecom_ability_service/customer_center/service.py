@@ -21,6 +21,7 @@ from .repo import (
     fetch_class_status_map,
     fetch_contact_map,
     fetch_customer_last_dispatch_at,
+    fetch_customer_last_dispatch_at_map,
     fetch_customer_marketing_state_current,
     fetch_customer_marketing_state_current_map,
     fetch_customer_value_segment_current,
@@ -138,6 +139,7 @@ def _build_context(external_userids: list[str]) -> dict[str, Any]:
     last_message_map = fetch_last_message_map(external_userids)
     marketing_state_map = fetch_customer_marketing_state_current_map(external_userids)
     marketing_value_segment_map = fetch_customer_value_segment_current_map(external_userids)
+    last_dispatch_at_map = fetch_customer_last_dispatch_at_map(external_userids)
 
     owner_candidates: list[str] = []
     for external_userid in external_userids:
@@ -168,6 +170,7 @@ def _build_context(external_userids: list[str]) -> dict[str, Any]:
         "last_messages": last_message_map,
         "marketing_states": marketing_state_map,
         "marketing_value_segments": marketing_value_segment_map,
+        "last_dispatch_ats": last_dispatch_at_map,
         "owner_roles": owner_role_map,
     }
 
@@ -222,6 +225,7 @@ def _build_marketing_summary(external_userid: str) -> CustomerMarketingSummaryDT
         state_row=state_row,
         value_segment_row=value_segment_row,
         marketing_profile=marketing_profile,
+        last_dispatch_at=fetch_customer_last_dispatch_at(external_userid),
     )
 
 
@@ -240,6 +244,7 @@ def _build_marketing_summary_from_profile(
     state_row: dict[str, Any],
     value_segment_row: dict[str, Any],
     marketing_profile: dict[str, Any],
+    last_dispatch_at: str = "",
 ) -> CustomerMarketingSummaryDTO:
     profile_summary = dict((marketing_profile or {}).get("summary") or {})
     main_stage, sub_stage = _split_stage_key(profile_summary.get("current_stage"))
@@ -251,19 +256,21 @@ def _build_marketing_summary_from_profile(
         eligible_for_conversion=bool(profile_summary.get("eligible_for_conversion")),
         last_activation_at=str(state_row.get("last_activation_at") or "").strip(),
         last_conversion_marked_at=str(state_row.get("last_conversion_marked_at") or "").strip(),
-        last_dispatch_at=fetch_customer_last_dispatch_at(external_userid),
+        last_dispatch_at=str(last_dispatch_at or "").strip(),
     )
 
 
 def _build_marketing_summary_from_context(external_userid: str, context: dict[str, Any]) -> CustomerMarketingSummaryDTO:
     state_row = context["marketing_states"].get(external_userid, {})
     value_segment_row = context["marketing_value_segments"].get(external_userid, {})
+    last_dispatch_at = context.get("last_dispatch_ats", {}).get(external_userid, "")
     marketing_profile = get_customer_marketing_profile(external_userid)
     return _build_marketing_summary_from_profile(
         external_userid=external_userid,
         state_row=state_row,
         value_segment_row=value_segment_row,
         marketing_profile=marketing_profile,
+        last_dispatch_at=last_dispatch_at,
     )
 
 
@@ -465,6 +472,12 @@ def _get_customer_detail_impl(external_userid: str, *, refresh_tags: bool = Fals
     if normalized_external_userid not in set(external_userids):
         return None
     if refresh_tags:
+        # NOTE: Stays synchronous because callers (MCP tools, admin UI)
+        # contractually expect the returned payload to reflect the freshest
+        # WeCom-side tags. A queued/async variant would require an additive
+        # parameter (e.g. ``async_refresh=True``) plus a coordinated UI
+        # change; tracked as a follow-up rather than silently changing the
+        # legacy contract here.
         refresh_contact_tags_for_external_userid(external_userid=normalized_external_userid)
 
     context = _build_context([normalized_external_userid])

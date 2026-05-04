@@ -314,13 +314,26 @@ def call_deepseek_agent(
     if json_output:
         request_payload["response_format"] = {"type": "json_object"}
 
+    from ....infra.http_client import OutboundHttpError, get_outbound_client
+
+    llm_client = get_outbound_client(
+        "deepseek_llm",
+        timeout=float(config["timeout_seconds"]),
+        retry_max=2,
+    )
     try:
-        response = requests.post(
-            f"{_normalized_text(config['base_url']).rstrip('/')}/chat/completions",
-            headers=_request_headers(_normalized_text(config["api_key"])),
-            json=request_payload,
-            timeout=int(config["timeout_seconds"]),
-        )
+        try:
+            response = llm_client.post(
+                f"{_normalized_text(config['base_url']).rstrip('/')}/chat/completions",
+                headers=_request_headers(_normalized_text(config["api_key"])),
+                json=request_payload,
+            )
+        except OutboundHttpError as exc:
+            # Preserve the original cause's message so existing error logs /
+            # tests continue to assert against the upstream-provided text
+            # rather than the wrapper's prefix.
+            original_message = str(exc.cause) if exc.cause else str(exc)
+            raise requests.RequestException(original_message) from exc
         latency_ms = int((time.perf_counter() - started_at) * 1000)
     except requests.RequestException as exc:
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
