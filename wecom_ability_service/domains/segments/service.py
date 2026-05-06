@@ -426,13 +426,26 @@ _SYSTEM_SEED_SEGMENTS = (
 
 
 def seed_default_segments() -> int:
-    """启动期把 9 个系统默认分层写库（已存在则不覆盖）。返回新增条数。"""
+    """启动期把 9 个系统默认分层写库（已存在则不覆盖）。返回新增条数。
+
+    自带 rollback 防护：PG 上如果调用前事务已 abort（比如调用方刚跑完一段
+    失败的 DDL），任何 SELECT 都会被忽略 → seed 会全 fail。这里在 seed
+    开始前主动 rollback 一次，保证从干净事务开始；每条 segment seed 失败
+    后也 rollback 让下一条还能跑。
+    """
+    db = get_db()
+    try:
+        if hasattr(db, "rollback"):
+            db.rollback()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("pre-seed rollback noop: %s", exc)
+
     written = 0
     for spec in _SYSTEM_SEED_SEGMENTS:
-        existing = get_segment(segment_code=spec["segment_code"])
-        if existing:
-            continue
         try:
+            existing = get_segment(segment_code=spec["segment_code"])
+            if existing:
+                continue
             create_segment(
                 segment_code=spec["segment_code"],
                 display_name=spec["display_name"],
@@ -446,6 +459,12 @@ def seed_default_segments() -> int:
             written += 1
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("seed segment failed code=%s err=%s", spec["segment_code"], exc)
+            # 单条失败 rollback，让下一条还能跑（PG 事务级隔离）
+            try:
+                if hasattr(db, "rollback"):
+                    db.rollback()
+            except Exception:
+                pass
     return written
 
 
