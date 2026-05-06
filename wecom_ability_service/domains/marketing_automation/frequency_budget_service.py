@@ -78,32 +78,49 @@ _DEFAULT_BUDGETS = (
 
 
 def ensure_default_budgets() -> None:
-    """启动期把默认预算写进库（已存在则不覆盖运营修改的值）。"""
+    """启动期把默认预算写进库（已存在则不覆盖运营修改的值）。
+
+    自带 rollback 防护：调用前如果事务已 abort（PG），先 rollback 清干净。
+    """
     db = get_db()
+    try:
+        if hasattr(db, "rollback"):
+            db.rollback()
+    except Exception:  # pragma: no cover - defensive
+        pass
     cursor = db.cursor()
     for spec in _DEFAULT_BUDGETS:
-        cursor.execute(
-            "SELECT id FROM automation_frequency_budget WHERE budget_code = ?",
-            (spec["budget_code"],),
-        )
-        if cursor.fetchone():
-            continue
-        cursor.execute(
-            """
-            INSERT INTO automation_frequency_budget
-                (budget_code, scope, scope_key, window_seconds, max_count,
-                 description, enabled)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
-            """,
-            (
-                spec["budget_code"],
-                spec["scope"],
-                spec["scope_key"],
-                spec["window_seconds"],
-                spec["max_count"],
-                spec["description"],
-            ),
-        )
+        try:
+            cursor.execute(
+                "SELECT id FROM automation_frequency_budget WHERE budget_code = ?",
+                (spec["budget_code"],),
+            )
+            if cursor.fetchone():
+                continue
+            cursor.execute(
+                """
+                INSERT INTO automation_frequency_budget
+                    (budget_code, scope, scope_key, window_seconds, max_count,
+                     description, enabled)
+                VALUES (?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    spec["budget_code"],
+                    spec["scope"],
+                    spec["scope_key"],
+                    spec["window_seconds"],
+                    spec["max_count"],
+                    spec["description"],
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("ensure_budget failed code=%s err=%s", spec["budget_code"], exc)
+            try:
+                if hasattr(db, "rollback"):
+                    db.rollback()
+            except Exception:
+                pass
+            cursor = db.cursor()  # rollback 后重建 cursor
     db.commit()
 
 
