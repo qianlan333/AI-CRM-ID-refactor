@@ -99,6 +99,10 @@ def _audience_label_map() -> dict[str, str]:
 
 def get_dimension_metadata(*, program_id: int | None = None) -> dict[str, Any]:
     """Return chip options + counts per dimension for the filter UI."""
+    try:
+        workflow_service._build_dashboard_audience_member_details(program_id=program_id)
+    except Exception:
+        pass
     audience_labels = _audience_label_map()
     profile_labels = _profile_segment_label_map(program_id=program_id)
     behavior_labels = _behavior_tier_label_map()
