@@ -2546,6 +2546,44 @@ def _init_sqlite(db) -> None:
             db.execute("ALTER TABLE automation_agent_config ADD COLUMN submitted_at TEXT NOT NULL DEFAULT ''")
         if "submitted_by" not in agent_config_columns:
             db.execute("ALTER TABLE automation_agent_config ADD COLUMN submitted_by TEXT NOT NULL DEFAULT ''")
+        # 0005 — Cloud Agent 场景化分层
+        if "scenario_code" not in agent_config_columns:
+            db.execute("ALTER TABLE automation_agent_config ADD COLUMN scenario_code TEXT NOT NULL DEFAULT 'one_to_one'")
+
+    # ----- 0004 / 0005 迁移兼容补丁（init-db 走 schema 路径时也升级老库）-----
+    agent_run_columns = _sqlite_table_columns(db, "automation_agent_run")
+    if agent_run_columns and "trace_id" not in agent_run_columns:
+        db.execute("ALTER TABLE automation_agent_run ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''")
+    outbound_task_columns = _sqlite_table_columns(db, "outbound_tasks")
+    if outbound_task_columns and "trace_id" not in outbound_task_columns:
+        db.execute("ALTER TABLE outbound_tasks ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''")
+    touch_log_columns = _sqlite_table_columns(db, "automation_touch_delivery_log")
+    if touch_log_columns and "trace_id" not in touch_log_columns:
+        db.execute("ALTER TABLE automation_touch_delivery_log ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''")
+    workflow_columns = _sqlite_table_columns(db, "automation_workflow")
+    if workflow_columns:
+        if "review_status" not in workflow_columns:
+            db.execute("ALTER TABLE automation_workflow ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved'")
+        if "created_by_agent" not in workflow_columns:
+            db.execute("ALTER TABLE automation_workflow ADD COLUMN created_by_agent TEXT NOT NULL DEFAULT ''")
+    item_columns = _sqlite_table_columns(db, "automation_workflow_execution_item")
+    if item_columns:
+        for col, ddl in (
+            ("last_error_text", "ALTER TABLE automation_workflow_execution_item ADD COLUMN last_error_text TEXT NOT NULL DEFAULT ''"),
+            ("last_error_at", "ALTER TABLE automation_workflow_execution_item ADD COLUMN last_error_at TEXT NOT NULL DEFAULT ''"),
+            ("retry_count", "ALTER TABLE automation_workflow_execution_item ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"),
+            ("trace_id", "ALTER TABLE automation_workflow_execution_item ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''"),
+            ("next_node_id", "ALTER TABLE automation_workflow_execution_item ADD COLUMN next_node_id INTEGER"),
+        ):
+            if col not in item_columns:
+                db.execute(ddl)
+    plan_columns = _sqlite_table_columns(db, "cloud_broadcast_plans")
+    if plan_columns:
+        if "segment_id" not in plan_columns:
+            db.execute("ALTER TABLE cloud_broadcast_plans ADD COLUMN segment_id INTEGER")
+        if "campaign_id" not in plan_columns:
+            db.execute("ALTER TABLE cloud_broadcast_plans ADD COLUMN campaign_id INTEGER")
+
     db.commit()
 
 
