@@ -1484,4 +1484,36 @@ def _init_postgres(db) -> None:
         ON automation_agent_output (outcome_status, created_at DESC, id DESC)
         """
     )
+    # ----- 0004 / 0005 迁移的字段 ALTER（兼容 init-db 走 schema 路径） -------
+    # 让既有 PG 库通过 init-db 升级时也能拿到 trace_id / scenario_code / review_status
+    # 等新字段；schema_postgres.sql 的 CREATE TABLE IF NOT EXISTS 不会改老表。
+    for stmt in (
+        "ALTER TABLE IF EXISTS automation_agent_config "
+        "ADD COLUMN IF NOT EXISTS scenario_code TEXT NOT NULL DEFAULT 'one_to_one'",
+        "ALTER TABLE IF EXISTS automation_agent_run "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS outbound_tasks "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_touch_delivery_log "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow "
+        "ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved'",
+        "ALTER TABLE IF EXISTS automation_workflow "
+        "ADD COLUMN IF NOT EXISTS created_by_agent TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS last_error_text TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS last_error_at TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS next_node_id BIGINT",
+        "ALTER TABLE IF EXISTS cloud_broadcast_plans "
+        "ADD COLUMN IF NOT EXISTS segment_id BIGINT",
+        "ALTER TABLE IF EXISTS cloud_broadcast_plans "
+        "ADD COLUMN IF NOT EXISTS campaign_id BIGINT",
+    ):
+        db.execute(stmt)
     db.commit()

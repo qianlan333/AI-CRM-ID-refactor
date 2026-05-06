@@ -27,6 +27,26 @@ def init_db() -> None:
     else:
         _init_sqlite(db)
 
+    # 启动期幂等 seed —— 系统默认分层 + 频次预算（已存在不覆盖）
+    try:
+        from ..domains.segments.service import seed_default_segments
+
+        seed_default_segments()
+    except Exception as exc:  # pragma: no cover - defensive: 不阻塞主流程
+        import logging
+
+        logging.getLogger(__name__).warning("seed_default_segments skipped: %s", exc)
+    try:
+        from ..domains.marketing_automation.frequency_budget_service import (
+            ensure_default_budgets,
+        )
+
+        ensure_default_budgets()
+    except Exception as exc:  # pragma: no cover - defensive
+        import logging
+
+        logging.getLogger(__name__).warning("ensure_default_budgets skipped: %s", exc)
+
 
 def migrate_db() -> None:
     init_db()
