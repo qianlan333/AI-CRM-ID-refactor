@@ -164,6 +164,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     register_request_observability(app)
     register_admin_request_guards(app)
 
+    _schema_migrated = [False]
+
+    @app.before_request
+    def _auto_migrate_schema() -> None:
+        if not _schema_migrated[0]:
+            _schema_migrated[0] = True
+            from .db import init_db as _do_init_db
+            try:
+                _do_init_db()
+            except Exception:
+                app.logger.warning("auto schema migration failed", exc_info=True)
+
     @app.before_request
     def _bind_customer_pulse_access() -> None:
         bind_customer_pulse_request_context()
