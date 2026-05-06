@@ -213,6 +213,152 @@ def send_stage_manual_message(
     }
 
 
+def _segment_broadcast_targets(
+    *,
+    pool_keys: list[str] | None,
+    profile_keys: list[str] | None,
+    behavior_keys: list[str] | None,
+    keyword: str,
+    program_id: int | None,
+) -> list[dict[str, Any]]:
+    from . import member_segment_search_service
+
+    rows = member_segment_search_service.list_broadcast_targets(
+        pool_keys=pool_keys,
+        profile_keys=profile_keys,
+        behavior_keys=behavior_keys,
+        keyword=keyword,
+        program_id=program_id,
+    )
+    targets: list[dict[str, Any]] = []
+    for row in rows:
+        external_userid = _normalized_text(row.get("external_contact_id"))
+        if not external_userid:
+            continue
+        targets.append(
+            {
+                "member_id": int(row.get("member_id") or 0) or None,
+                "external_userid": external_userid,
+                "owner_userid": _normalized_text(row.get("owner_staff_id")) or DEFAULT_OWNER_STAFF_ID,
+                "owner_display_name": DEFAULT_OWNER_STAFF_ID,
+                "mobile": _normalized_text(row.get("phone")),
+            }
+        )
+    return targets
+
+
+def preview_segment_broadcast(
+    *,
+    pool_keys: list[str] | None = None,
+    profile_keys: list[str] | None = None,
+    behavior_keys: list[str] | None = None,
+    keyword: str = "",
+    content: str = "",
+    image_media_ids: list[str] | None = None,
+    images: list[dict[str, Any]] | None = None,
+    program_id: int | None = None,
+) -> dict[str, Any]:
+    targets = _segment_broadcast_targets(
+        pool_keys=pool_keys,
+        profile_keys=profile_keys,
+        behavior_keys=behavior_keys,
+        keyword=keyword,
+        program_id=program_id,
+    )
+    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(
+        {
+            "content": _normalized_text(content),
+            "image_media_ids": list(image_media_ids or []),
+            "images": list(images or []),
+        }
+    )
+    return {
+        "ok": True,
+        "selected_count": len(targets),
+        "eligible_count": len(targets),
+        "task_payload": task_payload,
+        "content_preview": content_preview,
+        "image_count": image_count,
+    }
+
+
+def send_segment_broadcast_message(
+    *,
+    pool_keys: list[str] | None = None,
+    profile_keys: list[str] | None = None,
+    behavior_keys: list[str] | None = None,
+    keyword: str = "",
+    content: str = "",
+    image_media_ids: list[str] | None = None,
+    images: list[dict[str, Any]] | None = None,
+    operator_id: str = "",
+    program_id: int | None = None,
+) -> dict[str, Any]:
+    """Broadcast to the multi-dim filtered audience.
+
+    Unlike stage manual send, this path bypasses ``automation_touch_delivery``
+    dedup so the operator can re-broadcast different content to the same group
+    (e.g. a daily reminder to the same multi-dim cohort).
+    """
+    from . import member_segment_search_service
+
+    user_ops_page_service._build_private_message_payload(
+        {
+            "content": _normalized_text(content),
+            "image_media_ids": list(image_media_ids or []),
+            "images": list(images or []),
+        }
+    )
+    targets = _segment_broadcast_targets(
+        pool_keys=pool_keys,
+        profile_keys=profile_keys,
+        behavior_keys=behavior_keys,
+        keyword=keyword,
+        program_id=program_id,
+    )
+    snapshot = member_segment_search_service.filter_snapshot(
+        pool_keys=pool_keys,
+        profile_keys=profile_keys,
+        behavior_keys=behavior_keys,
+        keyword=keyword,
+    )
+    if not targets:
+        return {
+            "ok": True,
+            "selected_count": 0,
+            "eligible_count": 0,
+            "sent_count": 0,
+            "record_id": 0,
+            "task_ids": [],
+            "task_results": [],
+            "content_preview": _normalized_text(content),
+            "image_count": len(list(image_media_ids or [])) + len(list(images or [])),
+            "filter_snapshot": snapshot,
+            "error": "",
+        }
+    dispatch_result = _dispatch_private_message_batch(
+        target_items=targets,
+        content=_normalized_text(content),
+        image_media_ids=list(image_media_ids or []),
+        images=list(images or []),
+        operator_id=_normalized_text(operator_id) or "crm_console",
+        filter_snapshot=snapshot,
+    )
+    return {
+        "ok": bool(dispatch_result.get("ok")),
+        "selected_count": len(targets),
+        "eligible_count": len(targets),
+        "sent_count": int(dispatch_result.get("sent_count") or 0),
+        "record_id": int(dispatch_result.get("record_id") or 0),
+        "task_ids": list(dispatch_result.get("task_ids") or []),
+        "task_results": list(dispatch_result.get("task_results") or []),
+        "content_preview": _normalized_text(dispatch_result.get("content_preview")),
+        "image_count": int(dispatch_result.get("image_count") or 0),
+        "filter_snapshot": snapshot,
+        "error": _normalized_text(dispatch_result.get("error")),
+    }
+
+
 def _finalize_stage_manual_touch_deliveries(target_items: list[dict[str, Any]], dispatch_result: dict[str, Any]) -> None:
     if not target_items:
         return
