@@ -26,9 +26,88 @@ def _translate_sql(sql: str) -> str:
     return sql.replace("?", "%s")
 
 
+class PostgresCursor:
+    """SQLite-cursor-shaped adapter so code written with ``cur = db.cursor()``
+    + ``cur.execute(? params)`` + ``cur.fetchone() / fetchall() / lastrowid``
+    works against psycopg without rewriting.
+
+    - ``?`` → ``%s`` 自动翻译
+    - ``lastrowid`` 通过 ``SELECT lastval()`` 兜底（INSERT 之后自增列）
+    - ``rowcount`` 直接转发
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._cursor = conn.cursor(row_factory=dict_row)
+        self._last_was_insert = False
+        self.lastrowid = None
+
+    def execute(self, sql, params=None):
+        sql_text = sql if isinstance(sql, str) else str(sql)
+        translated = _translate_sql(sql_text)
+        # 兼容 dict 参数（命名占位符），但我们的代码 99% 用位置 tuple
+        if isinstance(params, dict):
+            self._cursor.execute(translated, params)
+        else:
+            self._cursor.execute(translated, tuple(params or ()))
+        upper_head = translated.lstrip().upper()[:6]
+        self._last_was_insert = upper_head == "INSERT"
+        self.lastrowid = None
+        if self._last_was_insert:
+            try:
+                lv_cursor = self._conn.cursor()
+                lv_cursor.execute("SELECT lastval()")
+                row = lv_cursor.fetchone()
+                lv_cursor.close()
+                if row:
+                    # row 是 tuple（plain cursor）
+                    self.lastrowid = int(row[0])
+            except Exception:
+                self.lastrowid = None
+        return self
+
+    def executemany(self, sql, seq):
+        translated = _translate_sql(sql if isinstance(sql, str) else str(sql))
+        self._cursor.executemany(translated, list(seq))
+        return self
+
+    def executescript(self, script: str) -> None:
+        statements = [s.strip() for s in script.split(";") if s.strip()]
+        for s in statements:
+            self._cursor.execute(s)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchmany(self, n=None):
+        if n is None:
+            return self._cursor.fetchmany()
+        return self._cursor.fetchmany(int(n))
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    @property
+    def description(self):
+        return self._cursor.description
+
+    def close(self):
+        try:
+            self._cursor.close()
+        except Exception:
+            pass
+
+
 class PostgresConnection:
     def __init__(self, conn):
         self._conn = conn
+
+    def cursor(self):
+        return PostgresCursor(self._conn)
 
     def execute(self, sql: str, params: tuple | list | None = None):
         cursor = self._conn.cursor(row_factory=dict_row)

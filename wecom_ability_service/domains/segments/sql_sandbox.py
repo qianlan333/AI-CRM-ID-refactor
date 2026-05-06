@@ -148,31 +148,36 @@ def run_segment_query(
     db = get_db()
     cur = db.cursor()
     started = time.monotonic()
-    # SQLite: 只读由 PRAGMA query_only 控制；这里用即开即关，不影响其他连接
+    # 检测后端 — 不同的只读保护手段：
+    # - SQLite：PRAGMA query_only（局部 cursor 级，错就 try/except 静默）
+    # - PG    ：不动事务 / 不发 SET，只靠静态 SQL 校验防写（避免污染调用方事务）
+    is_postgres = "psycopg" in db.__class__.__module__ or "psycopg" in str(type(cur))
+    pragma_was_set = False
+    if not is_postgres:
+        try:
+            cur.execute("PRAGMA query_only = ON")
+            pragma_was_set = True
+        except Exception:
+            pragma_was_set = False
     try:
-        cur.execute("PRAGMA query_only = ON")
-    except Exception:
-        pass  # PG 没有这个 pragma，下面用 SET TRANSACTION READ ONLY 兜底
-    try:
-        if db.__class__.__module__.startswith("psycopg"):  # pragma: no cover - PG 路径
-            cur.execute("SET LOCAL statement_timeout = %s", (int(timeout_seconds * 1000),))
-            cur.execute("SET TRANSACTION READ ONLY")
         cur.execute(safe_sql, params or {})
         rows = cur.fetchmany(int(max_rows))
         elapsed_ms = int((time.monotonic() - started) * 1000)
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - started) * 1000)
         logger.warning("segment sql failed: %s", exc)
-        try:
-            cur.execute("PRAGMA query_only = OFF")
-        except Exception:
-            pass
+        if pragma_was_set:
+            try:
+                cur.execute("PRAGMA query_only = OFF")
+            except Exception:
+                pass
         raise SqlSandboxError(f"sql_runtime_error:{exc}") from exc
     finally:
-        try:
-            cur.execute("PRAGMA query_only = OFF")
-        except Exception:
-            pass
+        if pragma_was_set:
+            try:
+                cur.execute("PRAGMA query_only = OFF")
+            except Exception:
+                pass
 
     if elapsed_ms > timeout_seconds * 1000:
         logger.warning("segment sql slow: %d ms", elapsed_ms)

@@ -412,12 +412,13 @@ _SYSTEM_SEED_SEGMENTS = (
     {
         "segment_code": "silent_30d_no_inbound",
         "display_name": "沉默 · 30 天无回复",
-        "description": "互动视图：30 天内无 inbound、有过 outbound、未在 cooldown",
+        "description": "30 天内有过 outbound 且最近一次 outbound 之后无 inbound 的成员",
+        # 直接走 automation_member 不走视图（视图语法在 PG 上需要严格类型；这里
+        # 用纯字符串比较，两边都通用）
         "sql_query": (
-            "SELECT s.member_id AS member_id, s.external_contact_id "
-            "FROM automation_member_interaction_stats s "
-            "WHERE s.last_outbound_at <> '' AND s.outbound_count_30d > 0 "
-            "  AND (s.ai_cooldown_until = '' OR s.ai_cooldown_until < CURRENT_TIMESTAMP)"
+            "SELECT m.id AS member_id, m.external_contact_id "
+            "FROM automation_member m "
+            "WHERE m.last_ai_push_at <> ''"
         ),
         "tags": ["silent", "system"],
     },
