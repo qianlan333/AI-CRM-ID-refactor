@@ -1702,6 +1702,11 @@ def api_admin_automation_program_member_segment_search(program_id: int):
     page = int(request.values.get("page") or 1)
     page_size = int(request.values.get("page_size") or 50)
     try:
+        from ..domains.automation_conversion import workflow_service as _ws
+        _ws._build_dashboard_audience_member_details(program_id=int(program_id or 0) or None)
+    except Exception:
+        pass
+    try:
         result = member_segment_search_service.search_members(
             pool_keys=pool_keys,
             profile_keys=profile_keys,
