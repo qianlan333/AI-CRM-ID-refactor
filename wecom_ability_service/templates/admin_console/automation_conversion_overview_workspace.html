@@ -236,6 +236,57 @@
       grid-template-columns: 1fr;
     }
   }
+
+  .ac-overview-segment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .ac-overview-segment-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 12px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ac-overview-segment-card .seg-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1d1d1f;
+  }
+  .ac-overview-segment-card .seg-count {
+    font-size: 22px;
+    font-weight: 600;
+    color: #2c5cdb;
+  }
+  .ac-overview-segment-card .seg-meta {
+    font-size: 11px;
+    color: #888;
+    display: flex;
+    gap: 8px;
+  }
+  .ac-overview-segment-card .seg-source-system {
+    background: #eef0f4;
+    color: #5b626f;
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+  .ac-overview-segment-card .seg-source-ai {
+    background: #e6f4ff;
+    color: #1f5fb6;
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+  .ac-overview-arrow { display: inline-block; transition: transform 160ms ease; }
+  .ac-overview-arrow.is-open { transform: rotate(180deg); }
+  .ac-overview-segment-drawer {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px dashed #e5e7eb;
+  }
 </style>
 {% endblock %}
 
@@ -307,15 +358,23 @@
     </article>
   </section>
 
-  <section class="ac-overview-section">
+  <section class="ac-overview-section ac-overview-segments">
     <div class="ac-overview-head">
       <div>
-        <h3>池子用户</h3>
-        <p class="ac-overview-muted">按池子查看在池用户的画像与对话状态。</p>
+        <h3>画像分层</h3>
+        <p class="ac-overview-muted">系统预设主分层（池子 / 自然画像 / 行为画像）+ AI 创建的子分层。</p>
       </div>
-      <div class="ac-overview-subtle" id="overview-profile-template-note">自然画像模板：加载中</div>
+      <button class="admin-button admin-button--ghost" type="button" id="overview-toggle-more-segments">
+        更多画像 <span class="ac-overview-arrow" id="overview-more-segments-arrow">▾</span>
+      </button>
     </div>
-    <div class="ac-overview-group-grid" id="overview-member-groups"></div>
+    <div class="ac-overview-segment-grid" id="overview-system-segments"></div>
+    <div class="ac-overview-segment-drawer" id="overview-more-segments" hidden>
+      <div class="ac-overview-muted" style="margin-bottom:8px;">
+        AI 创建的命名分层（在 Claude Code 里通过 propose_segment 创建；CRM 不开放新建入口）。
+      </div>
+      <div class="ac-overview-segment-grid" id="overview-ai-segments"></div>
+    </div>
   </section>
 
   <section class="ac-overview-section">
@@ -347,4 +406,49 @@
 <script defer src="{{ url_for('static', filename='admin_console/automation_overview_renderers.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/automation_overview_actions.js') }}"></script>
 <script defer src="{{ url_for('static', filename='admin_console/automation_overview.js') }}"></script>
+<script>
+(function () {
+  function fmt(s) { return s == null ? '' : String(s); }
+  function escape(s) { return fmt(s).replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+  function renderCard(seg) {
+    const sourceClass = seg.source_type === 'system_default' ? 'seg-source-system' : 'seg-source-ai';
+    const sourceLabel = seg.source_type === 'system_default' ? '系统' : 'AI';
+    return `<article class="ac-overview-segment-card">
+      <span class="seg-name">${escape(seg.display_name || seg.segment_code)}</span>
+      <span class="seg-count">${seg.cached_headcount || 0}</span>
+      <span class="seg-meta">
+        <span class="${sourceClass}">${sourceLabel}</span>
+        <span>引用 ${seg.usage_count || 0} 次</span>
+      </span>
+    </article>`;
+  }
+  async function loadSegments() {
+    const sysHost = document.getElementById('overview-system-segments');
+    const aiHost = document.getElementById('overview-ai-segments');
+    if (!sysHost || !aiHost) return;
+    try {
+      const resp = await fetch('/api/admin/cloud-orchestrator/segments?status=active&limit=200');
+      const data = await resp.json();
+      if (!data.ok) return;
+      const sys = (data.segments || []).filter(s => s.source_type === 'system_default');
+      const ai = (data.segments || []).filter(s => s.source_type !== 'system_default');
+      sysHost.innerHTML = sys.length ? sys.map(renderCard).join('') : '<div class="ac-overview-muted">暂无系统预设分层（可跑迁移并 seed 默认分层）</div>';
+      aiHost.innerHTML = ai.length ? ai.map(renderCard).join('') : '<div class="ac-overview-muted">暂无 AI 创建的子分层（在 Claude Code 里调 propose_segment 创建）</div>';
+    } catch (e) { /* 容错：不影响概览主流程 */ }
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    loadSegments();
+    const btn = document.getElementById('overview-toggle-more-segments');
+    const arrow = document.getElementById('overview-more-segments-arrow');
+    const drawer = document.getElementById('overview-more-segments');
+    if (btn && drawer) {
+      btn.addEventListener('click', () => {
+        const opening = drawer.hasAttribute('hidden');
+        if (opening) drawer.removeAttribute('hidden'); else drawer.setAttribute('hidden', '');
+        if (arrow) arrow.classList.toggle('is-open', opening);
+      });
+    }
+  });
+})();
+</script>
 {% endblock %}
