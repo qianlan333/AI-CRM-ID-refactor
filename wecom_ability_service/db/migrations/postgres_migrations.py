@@ -931,6 +931,24 @@ def _init_postgres(db) -> None:
     db.execute(
         """
         ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS profile_segment_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS behavior_tier_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS segment_refreshed_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
         DROP COLUMN IF EXISTS """
         + _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN
     )
