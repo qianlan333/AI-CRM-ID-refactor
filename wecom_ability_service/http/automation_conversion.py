@@ -25,9 +25,7 @@ from ..domains.automation_conversion.laohuang_chat_service import (
     send_laohuang_review_output_via_wecom,
 )
 from ..domains.automation_conversion.manual_send_service import (
-    preview_segment_broadcast,
     preview_stage_manual_send,
-    send_segment_broadcast_message,
     send_stage_manual_message,
 )
 from ..domains.automation_conversion import member_segment_search_service
@@ -1725,7 +1723,7 @@ def api_admin_automation_program_member_segment_search(program_id: int):
 
 
 def api_admin_automation_program_member_segment_broadcast(program_id: int):
-    """Broadcast to the multi-dim filtered audience."""
+    """Broadcast to the multi-dim filtered audience via the unified send pipeline."""
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         return jsonify({"ok": False, "error": action_token_error}), 400
@@ -1737,33 +1735,29 @@ def api_admin_automation_program_member_segment_broadcast(program_id: int):
     behavior_keys = _request_segment_broadcast_keys("behavior_keys")
     keyword = _request_segment_broadcast_keyword()
     content = str(payload.get("content") or request.values.get("content") or "").strip()
-    image_media_ids = list(payload.get("image_media_ids") or [])
     images = list(payload.get("images") or [])
-    dry_run = bool(payload.get("dry_run") or False)
     try:
-        if dry_run:
-            result = preview_segment_broadcast(
-                pool_keys=pool_keys,
-                profile_keys=profile_keys,
-                behavior_keys=behavior_keys,
-                keyword=keyword,
-                content=content,
-                image_media_ids=image_media_ids,
-                images=images,
-                program_id=program_id,
-            )
-        else:
-            result = send_segment_broadcast_message(
-                pool_keys=pool_keys,
-                profile_keys=profile_keys,
-                behavior_keys=behavior_keys,
-                keyword=keyword,
-                content=content,
-                image_media_ids=image_media_ids,
-                images=images,
-                operator_id=_operator_from_request(),
-                program_id=program_id,
-            )
+        broadcast_targets = member_segment_search_service.list_broadcast_targets(
+            pool_keys=pool_keys,
+            profile_keys=profile_keys,
+            behavior_keys=behavior_keys,
+            keyword=keyword,
+            program_id=program_id,
+        )
+        snapshot = member_segment_search_service.filter_snapshot(
+            pool_keys=pool_keys,
+            profile_keys=profile_keys,
+            behavior_keys=behavior_keys,
+            keyword=keyword,
+        )
+        result = send_stage_manual_message(
+            members=broadcast_targets,
+            filter_snapshot=snapshot,
+            skip_delivery_tracking=True,
+            content=content,
+            images=images,
+            operator_id=_operator_from_request(),
+        )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
