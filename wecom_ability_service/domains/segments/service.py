@@ -459,17 +459,69 @@ _KNOWN_VALUE_LABELS: dict[str, dict[str, str]] = {
         "inactive_focus": "不活跃-重点",
         "inactive_normal": "不活跃-普通",
         "silent": "静默",
+        "human_reply": "需人工回复",
+        "no_reply": "未回复",
+        "removed": "已移除",
     },
     "behavior_tier_key": {
         "msg_lt_2": "消息 < 2 条",
         "msg_2_to_9": "消息 2~9 条",
         "msg_gte_10": "消息 ≥ 10 条",
         "lt_2": "消息 < 2 条",
+        "between_2_9": "消息 2~9 条",
         "2_to_9": "消息 2~9 条",
         "gte_10": "消息 ≥ 10 条",
     },
     # profile_segment_key 通常已经是中文（职场人/创业者/老板），无需映射
 }
+
+# 人群特征描述 — 给运营 / Agent 看，回答"这群人是什么、为什么这么分"
+# Agent 调用 list_segments 时拿到这段描述就能正确选人 / 判断方案
+_KNOWN_VALUE_DESCRIPTIONS: dict[str, dict[str, str]] = {
+    "current_audience_code": {
+        "pending_questionnaire": "等待用户填问卷的阶段；运营触达的目标是引导填问卷、完成首次画像登记。",
+        "operating": "已填问卷、运营进行中的成员；自动化节奏和销售跟进的主战场。",
+        "converted": "已成功转化（付费 / 报名 / 完成核心动作）的成员，通常进入维护态。",
+    },
+    "current_pool": {
+        "new_user": "新进池的成员（进入运营前几天），优先做欢迎 + 引导，节奏不宜密。",
+        "active_focus": "最近有对话活跃 + 被运营标为重点跟进的成员，转化优先级最高，可主动加密触达。",
+        "active_normal": "最近有对话活跃但不是重点的成员（普通跟进），常规节奏。",
+        "inactive_focus": "近期沉默但被标为重点的成员，需要定向唤醒（提供新价值、限时活动等）。",
+        "inactive_normal": "近期沉默且非重点的普通成员，触达频次应低，避免骚扰。",
+        "silent": "完全沉默 / 退出活跃池的成员，建议先观察不主动打扰，必要时定向激活。",
+        "human_reply": "需要人工跟进、不走自动化触达的成员（敏感问题、复杂咨询）。",
+        "no_reply": "AI 推送过但用户未回复的成员，已用过自动化机会，建议人工或暂停。",
+        "removed": "已被移除运营的成员（主动屏蔽 / 清退 / 完成生命周期），不再触达。",
+    },
+    "behavior_tier_key": {
+        "msg_lt_2": "对话条数 < 2 条的低活跃成员；可能刚加上、还未建立信任。",
+        "lt_2": "对话条数 < 2 条的低活跃成员；可能刚加上、还未建立信任。",
+        "msg_2_to_9": "对话条数 2~9 条的中等活跃成员；有交流但未深度互动。",
+        "2_to_9": "对话条数 2~9 条的中等活跃成员；有交流但未深度互动。",
+        "between_2_9": "对话条数 2~9 条的中等活跃成员；有交流但未深度互动。",
+        "msg_gte_10": "对话条数 ≥ 10 条的高活跃成员；强意向，转化优先级最高。",
+        "gte_10": "对话条数 ≥ 10 条的高活跃成员；强意向，转化优先级最高。",
+    },
+    "profile_segment_key": {
+        # 项目里的自然画像值通常是中文且因业务而异，这里不预设
+        # 但留个映射点，运营可以扩展
+    },
+}
+
+# v1 hardcode 旧 segment_code（部署 #168 时建过）
+# 现在动态发现版用的是真实字段值，这些 hardcode 命中字段值不对会 headcount=0
+# seed 时如果发现这些 zombie，自动归档清理（display_name 跟新 segment 重复的根源）
+_LEGACY_V1_HARDCODE_CODES = (
+    "pool_pending_questionnaire",
+    "pool_operating",
+    "pool_converted",
+    "pool_active_focus",
+    "pool_inactive_focus",
+    "behavior_msg_lt_2",
+    "behavior_msg_2_to_9",
+    "behavior_msg_gte_10",
+)
 
 
 def _safe_code_suffix(value: str) -> str:
@@ -524,12 +576,17 @@ def _discover_segments_from_member_table() -> list[dict[str, Any]]:
                 continue
             # 友好显示名 — 已知英文枚举值映射成中文，未知就用原值
             label_value = (_KNOWN_VALUE_LABELS.get(column) or {}).get(value, value)
+            # 人群特征描述 — 给运营 / Agent 看的"这群人是什么"
+            description = (_KNOWN_VALUE_DESCRIPTIONS.get(column) or {}).get(
+                value,
+                f"automation_member.{column} = {value} 的成员（业务方未提供详细描述）",
+            )
             # SQL 字面值用单引号转义
             value_escaped = value.replace("'", "''")
             out.append({
                 "segment_code": f"{code_prefix}_{suffix}",
                 "display_name": f"{label_prefix} · {label_value}",
-                "description": f"automation_member.{column} = {value}",
+                "description": description,
                 "sql_query": (
                     f"SELECT id AS member_id, external_contact_id "
                     f"FROM automation_member WHERE {column} = '{value_escaped}'"
@@ -538,6 +595,37 @@ def _discover_segments_from_member_table() -> list[dict[str, Any]]:
             })
     out.append(_SILENT_SEED_SPEC)
     return out
+
+
+def _archive_legacy_hardcode_segments() -> int:
+    """归档 v1 hardcode 旧 segment（headcount=0 的 zombie），消除"看着像重复"的展示。
+
+    具体场景：#168 部署时建过 8 个 hardcode 字面值的 segment（如
+    ``behavior_msg_gte_10``）；#170 改为动态发现后，会用真实字段值再建一个
+    （如 ``behavior_gte_10``）。两个 segment_code 不同但 display_name 都
+    映射成"行为画像 · 消息 ≥ 10 条" → 看板上看着重复。
+
+    本函数只对：
+    - source_type='system_default'
+    - status='active'（未归档的）
+    - cached_headcount=0（确认是 zombie，避免误删合法的）
+    - segment_code IN 已知 v1 hardcode 列表（精准定位，不波及别的）
+    """
+    db = get_db()
+    cur = db.cursor()
+    placeholders = ",".join(["?"] * len(_LEGACY_V1_HARDCODE_CODES))
+    cur.execute(
+        f"UPDATE segments SET status = 'archived', updated_at = ? "
+        f"WHERE source_type = 'system_default' AND status = 'active' "
+        f"AND cached_headcount = 0 "
+        f"AND segment_code IN ({placeholders})",
+        (_now_iso(), *_LEGACY_V1_HARDCODE_CODES),
+    )
+    affected = int(cur.rowcount or 0)
+    db.commit()
+    if affected:
+        logger.info("archived %d legacy v1 hardcode segments", affected)
+    return affected
 
 
 def _trigger_dashboard_backfill_quiet() -> None:
@@ -562,13 +650,18 @@ def seed_default_segments() -> int:
     """从 automation_member 字段动态发现 distinct 值并建 segment。
 
     流程：
-    1. 先触发一次 dashboard backfill — 让 automation_member 的 behavior_tier_key /
-       profile_segment_key 字段跟 dashboard 实时算的口径对齐（解决"上面对、下面错"
-       的根因）
-    2. 从 automation_member distinct 4 个字段值，每个建一个 segment
-    3. 已存在的 segment 跳过；任何一条失败都 rollback，不影响下一条
+    1. 归档 v1 hardcode 的 zombie segment（避免"看着重复"）
+    2. 触发 dashboard backfill — 让字段值跟 dashboard 口径对齐
+    3. 从 automation_member distinct 4 个字段值，每个建一个 segment（带描述）
+    4. 已存在的 segment 跳过；任何一条失败都 rollback，不影响下一条
     """
-    # ① 主动 backfill member 字段（让 dashboard 显示和 segment 查询用同一口径）
+    # ① 归档 v1 hardcode 的旧 segment（headcount=0 的 zombie）
+    try:
+        _archive_legacy_hardcode_segments()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("archive legacy segments failed: %s", exc)
+
+    # ② 主动 backfill member 字段（让 dashboard 显示和 segment 查询用同一口径）
     _trigger_dashboard_backfill_quiet()
 
     db = get_db()
@@ -578,7 +671,7 @@ def seed_default_segments() -> int:
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("pre-seed rollback noop: %s", exc)
 
-    # ② 字段已经 backfill 过了，distinct 出来的值就是 dashboard 用的值
+    # ③ 字段已经 backfill 过了，distinct 出来的值就是 dashboard 用的值
     specs = _discover_segments_from_member_table()
     written = 0
     for spec in specs:
