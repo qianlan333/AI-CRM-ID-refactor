@@ -25,9 +25,12 @@ from ..domains.automation_conversion.laohuang_chat_service import (
     send_laohuang_review_output_via_wecom,
 )
 from ..domains.automation_conversion.manual_send_service import (
+    preview_segment_broadcast,
     preview_stage_manual_send,
+    send_segment_broadcast_message,
     send_stage_manual_message,
 )
+from ..domains.automation_conversion import member_segment_search_service
 from ..domains.automation_conversion.message_activity_service import run_message_activity_sync
 from ..domains.automation_conversion.model_infra_service import (
     get_model_infra_payload,
@@ -1669,6 +1672,108 @@ def api_admin_automation_conversion_stage_manual_send(stage_key: str):
     return jsonify(result)
 
 
+def _request_segment_broadcast_keys(field: str) -> list[str]:
+    """Read multi-select keys from JSON body (preferred) or form/query."""
+    payload = request.get_json(silent=True) if request.is_json else None
+    if isinstance(payload, dict):
+        raw = payload.get(field) or payload.get(f"{field}[]")
+        if isinstance(raw, list):
+            return [str(item).strip() for item in raw if str(item).strip()]
+        if isinstance(raw, str) and raw.strip():
+            return [raw.strip()]
+    raw_list = (
+        request.values.getlist(field)
+        or request.values.getlist(f"{field}[]")
+    )
+    return [str(item).strip() for item in raw_list if str(item).strip()]
+
+
+def _request_segment_broadcast_keyword() -> str:
+    payload = request.get_json(silent=True) if request.is_json else None
+    if isinstance(payload, dict) and payload.get("keyword") is not None:
+        return str(payload.get("keyword") or "").strip()
+    return str(request.values.get("keyword") or "").strip()
+
+
+def api_admin_automation_program_member_segment_search(program_id: int):
+    """List members by multi-dim segment filter + return chip metadata."""
+    pool_keys = _request_segment_broadcast_keys("pool_keys")
+    profile_keys = _request_segment_broadcast_keys("profile_keys")
+    behavior_keys = _request_segment_broadcast_keys("behavior_keys")
+    keyword = _request_segment_broadcast_keyword()
+    page = int(request.values.get("page") or 1)
+    page_size = int(request.values.get("page_size") or 50)
+    try:
+        result = member_segment_search_service.search_members(
+            pool_keys=pool_keys,
+            profile_keys=profile_keys,
+            behavior_keys=behavior_keys,
+            keyword=keyword,
+            page=page,
+            page_size=page_size,
+            program_id=program_id,
+        )
+        metadata = member_segment_search_service.get_dimension_metadata(
+            program_id=program_id,
+        )
+    except Exception as exc:
+        current_app.logger.exception(
+            "segment search failed: program_id=%s", program_id
+        )
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, "metadata": metadata, **result})
+
+
+def api_admin_automation_program_member_segment_broadcast(program_id: int):
+    """Broadcast to the multi-dim filtered audience."""
+    action_token_error = validate_admin_console_action_token()
+    if action_token_error:
+        return jsonify({"ok": False, "error": action_token_error}), 400
+    payload = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(payload, dict):
+        payload = {}
+    pool_keys = _request_segment_broadcast_keys("pool_keys")
+    profile_keys = _request_segment_broadcast_keys("profile_keys")
+    behavior_keys = _request_segment_broadcast_keys("behavior_keys")
+    keyword = _request_segment_broadcast_keyword()
+    content = str(payload.get("content") or request.values.get("content") or "").strip()
+    image_media_ids = list(payload.get("image_media_ids") or [])
+    images = list(payload.get("images") or [])
+    dry_run = bool(payload.get("dry_run") or False)
+    try:
+        if dry_run:
+            result = preview_segment_broadcast(
+                pool_keys=pool_keys,
+                profile_keys=profile_keys,
+                behavior_keys=behavior_keys,
+                keyword=keyword,
+                content=content,
+                image_media_ids=image_media_ids,
+                images=images,
+                program_id=program_id,
+            )
+        else:
+            result = send_segment_broadcast_message(
+                pool_keys=pool_keys,
+                profile_keys=profile_keys,
+                behavior_keys=behavior_keys,
+                keyword=keyword,
+                content=content,
+                image_media_ids=image_media_ids,
+                images=images,
+                operator_id=_operator_from_request(),
+                program_id=program_id,
+            )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception(
+            "segment broadcast failed: program_id=%s", program_id
+        )
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify(result)
+
+
 def api_admin_automation_conversion_focus_send_batch_create(stage_key: str):
     try:
         result = create_focus_send_batch(
@@ -2537,6 +2642,14 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/programs/<int:program_id>/flow-design", methods=["GET"])(admin_automation_program_flow_design)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/member-ops", methods=["GET"])(admin_automation_program_member_ops)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send", methods=["POST"])(admin_automation_program_member_ops_stage_send)
+    bp.route(
+        "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",
+        methods=["GET", "POST"],
+    )(api_admin_automation_program_member_segment_search)
+    bp.route(
+        "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-broadcast",
+        methods=["POST"],
+    )(api_admin_automation_program_member_segment_broadcast)
     bp.route("/admin/automation-conversion/shared/agents", methods=["GET"])(admin_automation_conversion_shared_agents)
     bp.route("/admin/automation-conversion/shared/profile-segments", methods=["GET"])(admin_automation_conversion_shared_profile_segments)
     bp.route("/admin/automation-conversion/shared/model-infra", methods=["GET"])(admin_automation_conversion_shared_model_infra)

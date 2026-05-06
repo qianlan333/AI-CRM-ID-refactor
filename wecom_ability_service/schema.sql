@@ -1548,6 +1548,9 @@ CREATE TABLE IF NOT EXISTS automation_member (
     joined_at TEXT NOT NULL DEFAULT '',
     last_ai_push_at TEXT NOT NULL DEFAULT '',
     ai_cooldown_until TEXT NOT NULL DEFAULT '',
+    profile_segment_key TEXT NOT NULL DEFAULT '',
+    behavior_tier_key TEXT NOT NULL DEFAULT '',
+    segment_refreshed_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -1570,6 +1573,9 @@ ON automation_member (source_channel_id);
 
 CREATE INDEX IF NOT EXISTS idx_automation_member_audience
 ON automation_member (current_audience_code, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_member_segments
+ON automation_member (current_audience_code, profile_segment_key, behavior_tier_key);
 
 CREATE TABLE IF NOT EXISTS automation_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
