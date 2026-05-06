@@ -1402,6 +1402,30 @@ def _init_postgres(db) -> None:
     )
     db.execute(
         """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS profile_segment_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS behavior_tier_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_member
+        ADD COLUMN IF NOT EXISTS segment_refreshed_at TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_member_segments
+        ON automation_member (current_audience_code, profile_segment_key, behavior_tier_key)
+        """
+    )
+    db.execute(
+        """
         ALTER TABLE IF EXISTS automation_agent_output
         ADD COLUMN IF NOT EXISTS adopted_by TEXT NOT NULL DEFAULT ''
         """
