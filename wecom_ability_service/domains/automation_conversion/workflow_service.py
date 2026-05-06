@@ -2253,6 +2253,10 @@ def _build_dashboard_audience_member_details(*, program_id: int | None = None) -
                 "items": items,
             }
         )
+    try:
+        get_db().commit()
+    except Exception:
+        pass
     template = dict(profile_segment_template_bundle.get("template") or {})
     validity = dict(profile_segment_template_bundle.get("validity") or {})
     selection = dict(profile_segment_template_bundle.get("selection") or {})
