@@ -151,7 +151,15 @@ def run_segment_query(
     # 检测后端 — 不同的只读保护手段：
     # - SQLite：PRAGMA query_only（局部 cursor 级，错就 try/except 静默）
     # - PG    ：不动事务 / 不发 SET，只靠静态 SQL 校验防写（避免污染调用方事务）
-    is_postgres = "psycopg" in db.__class__.__module__ or "psycopg" in str(type(cur))
+    #
+    # ★ 用 get_db_backend() 直接拿配置，不要靠 instance/module 名字判断 ——
+    # PostgresConnection 是我们的包装类，__module__ 不含 "psycopg"。之前用
+    # "psycopg" in db.__class__.__module__ 永远是 False，导致 PG 上也走
+    # PRAGMA query_only ON 路径，PG 报 syntax error → 事务被 abort →
+    # 后续所有 SQL 全部 "transaction aborted, commands ignored"。
+    from ...db import get_db_backend
+
+    is_postgres = get_db_backend() == "postgres"
     pragma_was_set = False
     if not is_postgres:
         try:
