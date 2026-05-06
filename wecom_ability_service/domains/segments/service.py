@@ -327,111 +327,139 @@ def increment_usage(*, segment_id: int) -> None:
 
 
 # ---------- 系统默认分层 ----------------------------------------------------
+#
+# 设计原则：**不 hardcode 字面值**。从 ``automation_member`` 三个字段
+# (current_audience_code / current_pool / profile_segment_key /
+#  behavior_tier_key) 动态发现 distinct 值，每个值建一个 segment。
+# 这样：
+# - 不同部署的字段值差异（甚至中文 vs 拼音）都能自动覆盖
+# - 字段值未来加新枚举时 seed 自动跟上
+# - 概览页显示什么数，segment 就是什么数（口径完全一致）
 
-_SYSTEM_SEED_SEGMENTS = (
-    {
-        "segment_code": "pool_pending_questionnaire",
-        "display_name": "池子 · 待填问卷",
-        "description": "automation_member.current_audience_code = pending_questionnaire",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE current_audience_code = 'pending_questionnaire'"
-        ),
-        "tags": ["pool", "system"],
-    },
-    {
-        "segment_code": "pool_operating",
-        "display_name": "池子 · 运营中",
-        "description": "automation_member.current_audience_code = operating",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE current_audience_code = 'operating'"
-        ),
-        "tags": ["pool", "system"],
-    },
-    {
-        "segment_code": "pool_converted",
-        "display_name": "池子 · 已转化",
-        "description": "automation_member.current_audience_code = converted",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE current_audience_code = 'converted'"
-        ),
-        "tags": ["pool", "system"],
-    },
-    {
-        "segment_code": "pool_active_focus",
-        "display_name": "池子 · 活跃-重点",
-        "description": "automation_member.current_pool = active_focus",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE current_pool = 'active_focus'"
-        ),
-        "tags": ["pool", "system"],
-    },
-    {
-        "segment_code": "pool_inactive_focus",
-        "display_name": "池子 · 不活跃-重点",
-        "description": "automation_member.current_pool = inactive_focus",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE current_pool = 'inactive_focus'"
-        ),
-        "tags": ["pool", "system"],
-    },
-    {
-        "segment_code": "behavior_msg_lt_2",
-        "display_name": "行为画像 · 消息 < 2 条",
-        "description": "automation_member.behavior_tier_key = msg_lt_2",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE behavior_tier_key = 'msg_lt_2'"
-        ),
-        "tags": ["behavior", "system"],
-    },
-    {
-        "segment_code": "behavior_msg_2_to_9",
-        "display_name": "行为画像 · 消息 2~9 条",
-        "description": "automation_member.behavior_tier_key = msg_2_to_9",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE behavior_tier_key = 'msg_2_to_9'"
-        ),
-        "tags": ["behavior", "system"],
-    },
-    {
-        "segment_code": "behavior_msg_gte_10",
-        "display_name": "行为画像 · 消息 ≥ 10 条",
-        "description": "automation_member.behavior_tier_key = msg_gte_10",
-        "sql_query": (
-            "SELECT id AS member_id, external_contact_id "
-            "FROM automation_member WHERE behavior_tier_key = 'msg_gte_10'"
-        ),
-        "tags": ["behavior", "system"],
-    },
-    {
-        "segment_code": "silent_30d_no_inbound",
-        "display_name": "沉默 · 30 天无回复",
-        "description": "30 天内有过 outbound 且最近一次 outbound 之后无 inbound 的成员",
-        # 直接走 automation_member 不走视图（视图语法在 PG 上需要严格类型；这里
-        # 用纯字符串比较，两边都通用）
-        "sql_query": (
-            "SELECT m.id AS member_id, m.external_contact_id "
-            "FROM automation_member m "
-            "WHERE m.last_ai_push_at <> ''"
-        ),
-        "tags": ["silent", "system"],
-    },
+_SILENT_SEED_SPEC = {
+    "segment_code": "silent_30d_no_inbound",
+    "display_name": "沉默 · 30 天无回复",
+    "description": "30 天内有过 outbound 且最近一次 outbound 之后无 inbound 的成员",
+    "sql_query": (
+        "SELECT m.id AS member_id, m.external_contact_id "
+        "FROM automation_member m "
+        "WHERE m.last_ai_push_at <> ''"
+    ),
+    "tags": ["silent", "system"],
+}
+
+
+# 维度元数据 — (字段名, segment_code 前缀, display_name 前缀, tag)
+_DIM_DISCOVERIES = (
+    ("current_audience_code", "audience", "生命周期", "audience"),
+    ("current_pool", "pool", "池子", "pool"),
+    ("profile_segment_key", "profile", "自然画像", "profile"),
+    ("behavior_tier_key", "behavior", "行为画像", "behavior"),
 )
+
+# 已知英文枚举值的中文友好显示名（display_name 用，code 仍用原值/hash）
+# 字段值未在表中也照常 seed，只是 display_name 显示原值
+_KNOWN_VALUE_LABELS: dict[str, dict[str, str]] = {
+    "current_audience_code": {
+        "pending_questionnaire": "待填问卷",
+        "operating": "运营中",
+        "converted": "已转化",
+    },
+    "current_pool": {
+        "new_user": "新用户",
+        "active_focus": "活跃-重点",
+        "active_normal": "活跃-普通",
+        "inactive_focus": "不活跃-重点",
+        "inactive_normal": "不活跃-普通",
+        "silent": "静默",
+    },
+    "behavior_tier_key": {
+        "msg_lt_2": "消息 < 2 条",
+        "msg_2_to_9": "消息 2~9 条",
+        "msg_gte_10": "消息 ≥ 10 条",
+        "lt_2": "消息 < 2 条",
+        "2_to_9": "消息 2~9 条",
+        "gte_10": "消息 ≥ 10 条",
+    },
+    # profile_segment_key 通常已经是中文（职场人/创业者/老板），无需映射
+}
+
+
+def _safe_code_suffix(value: str) -> str:
+    """把 distinct 值转成 segment_code 后缀。
+
+    - ASCII 值（如 ``active_focus``、``msg_lt_2``）直接 normalize 后用
+    - 非 ASCII 值（如中文「职场人」）用 md5 短 hash 兜底，display_name 仍显示原值
+    """
+    text = (value or "").strip()
+    if not text:
+        return ""
+    # 尝试直接用字面值
+    ascii_safe = re.sub(r"[^a-z0-9_]+", "_", text.lower()).strip("_")
+    if ascii_safe and ascii_safe == re.sub(r"[^\x20-\x7e]", "", text).lower().replace(" ", "_").strip("_"):
+        return ascii_safe
+    # 退回 hash
+    import hashlib
+
+    return f"v{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}"
+
+
+def _discover_segments_from_member_table() -> list[dict[str, Any]]:
+    """从 automation_member 字段动态发现所有 distinct 值，每个建一个 segment。"""
+    db = get_db()
+    cur = db.cursor()
+    out: list[dict[str, Any]] = []
+    for column, code_prefix, label_prefix, tag in _DIM_DISCOVERIES:
+        try:
+            cur.execute(
+                f"SELECT DISTINCT {column} AS v FROM automation_member "
+                f"WHERE {column} IS NOT NULL AND {column} <> ''"
+            )
+            rows = cur.fetchall() or []
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("discover %s failed: %s", column, exc)
+            try:
+                if hasattr(db, "rollback"):
+                    db.rollback()
+            except Exception:
+                pass
+            continue
+        for row in rows:
+            value = ""
+            if hasattr(row, "keys"):
+                value = str(row.get("v", "") or "").strip() if hasattr(row, "get") else str(row["v"] or "").strip()
+            else:
+                value = str(row[0] or "").strip() if row else ""
+            if not value:
+                continue
+            suffix = _safe_code_suffix(value)
+            if not suffix:
+                continue
+            # 友好显示名 — 已知英文枚举值映射成中文，未知就用原值
+            label_value = (_KNOWN_VALUE_LABELS.get(column) or {}).get(value, value)
+            # SQL 字面值用单引号转义
+            value_escaped = value.replace("'", "''")
+            out.append({
+                "segment_code": f"{code_prefix}_{suffix}",
+                "display_name": f"{label_prefix} · {label_value}",
+                "description": f"automation_member.{column} = {value}",
+                "sql_query": (
+                    f"SELECT id AS member_id, external_contact_id "
+                    f"FROM automation_member WHERE {column} = '{value_escaped}'"
+                ),
+                "tags": [tag, "system"],
+            })
+    out.append(_SILENT_SEED_SPEC)
+    return out
 
 
 def seed_default_segments() -> int:
-    """启动期把 9 个系统默认分层写库（已存在则不覆盖）。返回新增条数。
+    """从 automation_member 字段动态发现 distinct 值并建 segment。
 
-    自带 rollback 防护：PG 上如果调用前事务已 abort（比如调用方刚跑完一段
-    失败的 DDL），任何 SELECT 都会被忽略 → seed 会全 fail。这里在 seed
-    开始前主动 rollback 一次，保证从干净事务开始；每条 segment seed 失败
-    后也 rollback 让下一条还能跑。
+    每次启动幂等：
+    - 已存在的 segment 不覆盖
+    - 字段新增 distinct 值时下次 seed 会自动补 segment
+    - 任何一条失败都 rollback，不影响下一条
     """
     db = get_db()
     try:
@@ -440,8 +468,9 @@ def seed_default_segments() -> int:
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("pre-seed rollback noop: %s", exc)
 
+    specs = _discover_segments_from_member_table()
     written = 0
-    for spec in _SYSTEM_SEED_SEGMENTS:
+    for spec in specs:
         try:
             existing = get_segment(segment_code=spec["segment_code"])
             if existing:
