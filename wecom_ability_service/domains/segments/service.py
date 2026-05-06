@@ -46,8 +46,20 @@ def list_segments(
     source_type: str = "",
     keyword: str = "",
     limit: int = 200,
+    recompute: bool = True,
 ) -> list[dict[str, Any]]:
-    """列出 Segment（默认只返回 active；归档的要主动指定 status='archived'）。"""
+    """列出 Segment。
+
+    Args:
+        recompute: **默认 True** — 对每个返回的 segment 实时跑一次 SQL 算
+            headcount，并顺手回写 cached_headcount。这是默认行为，保证统计
+            永远正确（不依赖某个 cron 或 hook 来刷新缓存）。
+
+            性能场景：单条 segment SQL 都是简单 WHERE，毫秒级；50 个 segment
+            一次 list 也只是几十毫秒，可控。
+
+            只在批量调用（如 Agent 一秒内多次 list）才传 False 走缓存。
+    """
     db = get_db()
     cur = db.cursor()
     where = ["1=1"]
@@ -66,7 +78,8 @@ def list_segments(
     cur.execute(
         f"""
         SELECT id, segment_code, display_name, description, source_type, status,
-               version, cached_headcount, last_refreshed_at, last_refresh_error,
+               version, sql_query, sql_params_json,
+               cached_headcount, last_refreshed_at, last_refresh_error,
                usage_count, created_by_agent, created_at, updated_at, tags_json
         FROM segments
         WHERE {' AND '.join(where)}
@@ -83,11 +96,55 @@ def list_segments(
             d["tags"] = json.loads(d.pop("tags_json") or "[]")
         except (TypeError, ValueError):
             d["tags"] = []
+        # 实时重算 headcount（解决 cached_headcount 永远是创建时旧值的问题）
+        if recompute:
+            sql_query = str(d.pop("sql_query", "") or "")
+            try:
+                params = json.loads(d.pop("sql_params_json", "") or "{}")
+            except (TypeError, ValueError):
+                params = {}
+            if sql_query:
+                try:
+                    res = run_segment_query(sql=sql_query, params=params)
+                    new_count = int(res.get("row_count", 0))
+                    if new_count != int(d.get("cached_headcount", 0)):
+                        # 顺手回写缓存，下次走缓存也能拿到准确值
+                        try:
+                            cur2 = db.cursor()
+                            cur2.execute(
+                                "UPDATE segments SET cached_headcount = ?, last_refreshed_at = ? WHERE id = ?",
+                                (new_count, _now_iso(), int(d["id"])),
+                            )
+                            db.commit()
+                        except Exception:  # pragma: no cover
+                            try:
+                                if hasattr(db, "rollback"):
+                                    db.rollback()
+                            except Exception:
+                                pass
+                    d["cached_headcount"] = new_count
+                    d["last_refreshed_at"] = _now_iso()
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("recompute headcount failed for %s: %s", d.get("segment_code"), exc)
+                    try:
+                        if hasattr(db, "rollback"):
+                            db.rollback()
+                    except Exception:
+                        pass
+        else:
+            d.pop("sql_query", None)
+            d.pop("sql_params_json", None)
         out.append(d)
     return out
 
 
-def get_segment(*, segment_code: str = "", segment_id: int | None = None) -> dict[str, Any] | None:
+def get_segment(
+    *,
+    segment_code: str = "",
+    segment_id: int | None = None,
+    recompute: bool = True,
+) -> dict[str, Any] | None:
+    """拿单个 Segment。recompute=True（默认）会顺手实时算 headcount。"""
     db = get_db()
     cur = db.cursor()
     if segment_id is not None:
@@ -112,6 +169,36 @@ def get_segment(*, segment_code: str = "", segment_id: int | None = None) -> dic
         d["tags"] = json.loads(d.get("tags_json") or "[]")
     except (TypeError, ValueError):
         d["tags"] = []
+    # 实时重算 — 默认行为，保证返回的 cached_headcount 永远准
+    if recompute:
+        sql_query = str(d.get("sql_query") or "")
+        if sql_query:
+            try:
+                res = run_segment_query(sql=sql_query, params=d.get("sql_params") or {})
+                new_count = int(res.get("row_count", 0))
+                if new_count != int(d.get("cached_headcount") or 0):
+                    try:
+                        cur2 = db.cursor()
+                        cur2.execute(
+                            "UPDATE segments SET cached_headcount = ?, last_refreshed_at = ? WHERE id = ?",
+                            (new_count, _now_iso(), int(d["id"])),
+                        )
+                        db.commit()
+                    except Exception:  # pragma: no cover
+                        try:
+                            if hasattr(db, "rollback"):
+                                db.rollback()
+                        except Exception:
+                            pass
+                d["cached_headcount"] = new_count
+                d["last_refreshed_at"] = _now_iso()
+            except Exception as exc:  # pragma: no cover
+                logger.debug("get_segment recompute failed for %s: %s", d.get("segment_code"), exc)
+                try:
+                    if hasattr(db, "rollback"):
+                        db.rollback()
+                except Exception:
+                    pass
     return d
 
 
@@ -453,14 +540,37 @@ def _discover_segments_from_member_table() -> list[dict[str, Any]]:
     return out
 
 
+def _trigger_dashboard_backfill_quiet() -> None:
+    """触发一次 dashboard 计算，让 automation_member.behavior_tier_key /
+    profile_segment_key 字段被 backfill 成跟 dashboard 一致的口径。
+
+    Dashboard 是从 message_activity_count_map 实时算 behavior_tier，然后
+    通过 ``_maybe_persist_member_segment_keys`` 静默写回 automation_member。
+    Segment seed 之后查的就是这个字段。
+
+    如果 dashboard 调用失败也不影响 seed 主流程 (best-effort)。
+    """
+    try:
+        from ..automation_conversion.workflow_service import get_conversion_dashboard_payload
+
+        get_conversion_dashboard_payload(program_id=None)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("dashboard backfill skipped: %s", exc)
+
+
 def seed_default_segments() -> int:
     """从 automation_member 字段动态发现 distinct 值并建 segment。
 
-    每次启动幂等：
-    - 已存在的 segment 不覆盖
-    - 字段新增 distinct 值时下次 seed 会自动补 segment
-    - 任何一条失败都 rollback，不影响下一条
+    流程：
+    1. 先触发一次 dashboard backfill — 让 automation_member 的 behavior_tier_key /
+       profile_segment_key 字段跟 dashboard 实时算的口径对齐（解决"上面对、下面错"
+       的根因）
+    2. 从 automation_member distinct 4 个字段值，每个建一个 segment
+    3. 已存在的 segment 跳过；任何一条失败都 rollback，不影响下一条
     """
+    # ① 主动 backfill member 字段（让 dashboard 显示和 segment 查询用同一口径）
+    _trigger_dashboard_backfill_quiet()
+
     db = get_db()
     try:
         if hasattr(db, "rollback"):
@@ -468,6 +578,7 @@ def seed_default_segments() -> int:
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("pre-seed rollback noop: %s", exc)
 
+    # ② 字段已经 backfill 过了，distinct 出来的值就是 dashboard 用的值
     specs = _discover_segments_from_member_table()
     written = 0
     for spec in specs:

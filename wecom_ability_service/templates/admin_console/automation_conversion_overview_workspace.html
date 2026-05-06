@@ -448,6 +448,17 @@
         if (arrow) arrow.classList.toggle('is-open', opening);
       });
     }
+    // 让"刷新模块状态"按钮也覆盖到画像分层模块 — 旧 dashboard 刷完会触发
+    // automation_member 字段 backfill，再刷一次 segments 就能拿到新数据
+    const refreshBtn = document.getElementById('overview-refresh-button');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        // 给旧 loadDashboard 让出主线程 + backfill 完成的时间
+        setTimeout(loadSegments, 1500);
+        // 兜底再刷一次（某些慢链路）
+        setTimeout(loadSegments, 5000);
+      });
+    }
   });
 })();
 </script>
