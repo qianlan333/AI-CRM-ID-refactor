@@ -134,7 +134,12 @@ def cloud_orchestrator_audit() -> Response:
 
 def cloud_orchestrator_observability() -> Response:
     """监控数据汇总：plan 漏斗 / 审计错误 / Cloud 调用延迟分位。"""
+    from datetime import datetime, timedelta
+
     from ..db import get_db
+
+    cutoff_7d = (datetime.utcnow() - timedelta(days=7)).isoformat()
+    cutoff_1d = (datetime.utcnow() - timedelta(days=1)).isoformat()
 
     db = get_db()
     cur = db.cursor()
@@ -142,18 +147,20 @@ def cloud_orchestrator_observability() -> Response:
     cur.execute(
         """
         SELECT status, COUNT(*) AS c FROM cloud_broadcast_plans
-        WHERE created_at >= datetime('now', '-7 days')
+        WHERE created_at >= ?
         GROUP BY status
-        """
+        """,
+        (cutoff_7d,),
     )
     for row in cur.fetchall() or []:
         funnel[str(row["status"] or "unknown")] = int(row["c"] or 0)
     cur.execute(
         """
         SELECT status, COUNT(*) AS c FROM cloud_agent_audit_log
-        WHERE created_at >= datetime('now', '-1 days')
+        WHERE created_at >= ?
         GROUP BY status
-        """
+        """,
+        (cutoff_1d,),
     )
     audit_status: dict[str, int] = {}
     for row in cur.fetchall() or []:
@@ -163,10 +170,11 @@ def cloud_orchestrator_observability() -> Response:
         SELECT tool_name, COUNT(*) AS c, AVG(latency_ms) AS avg_ms,
                SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS err_count
         FROM cloud_agent_audit_log
-        WHERE created_at >= datetime('now', '-1 days')
+        WHERE created_at >= ?
         GROUP BY tool_name
         ORDER BY c DESC LIMIT 20
-        """
+        """,
+        (cutoff_1d,),
     )
     tool_stats = []
     for row in cur.fetchall() or []:

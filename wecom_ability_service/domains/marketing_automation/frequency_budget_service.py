@@ -157,15 +157,19 @@ def _count_consumption(
 ) -> int:
     db = get_db()
     cur = db.cursor()
+    # 跨 SQLite/PG 通用做法：Python 算时间戳，SQL 只做字符串比较
+    from datetime import datetime, timedelta
+
+    cutoff_iso = (datetime.utcnow() - timedelta(seconds=int(window_seconds))).isoformat()
     if member_id and int(member_id) > 0:
         cur.execute(
             """
             SELECT COUNT(*) AS c FROM automation_frequency_consumption
             WHERE budget_id = ?
               AND member_id = ?
-              AND consumed_at >= datetime('now', ?)
+              AND consumed_at >= ?
             """,
-            (int(budget_id), int(member_id), f"-{int(window_seconds)} seconds"),
+            (int(budget_id), int(member_id), cutoff_iso),
         )
         row = cur.fetchone()
         if row:
@@ -176,13 +180,9 @@ def _count_consumption(
             SELECT COUNT(*) AS c FROM automation_frequency_consumption
             WHERE budget_id = ?
               AND external_contact_id = ?
-              AND consumed_at >= datetime('now', ?)
+              AND consumed_at >= ?
             """,
-            (
-                int(budget_id),
-                external_contact_id,
-                f"-{int(window_seconds)} seconds",
-            ),
+            (int(budget_id), external_contact_id, cutoff_iso),
         )
         row = cur.fetchone()
         if row:
@@ -288,6 +288,9 @@ def cleanup_expired_consumption(*, batch_size: int = 5000) -> int:
     一条记录对哪个 budget 还有效，取决于该 budget 的 window_seconds；只要超过
     所有 enabled budget 中最大的 window，就可以删。这里取一个保守的 90 天硬上限。
     """
+    from datetime import datetime, timedelta
+
+    cutoff_iso = (datetime.utcnow() - timedelta(days=90)).isoformat()
     db = get_db()
     cur = db.cursor()
     cur.execute(
@@ -295,12 +298,12 @@ def cleanup_expired_consumption(*, batch_size: int = 5000) -> int:
         DELETE FROM automation_frequency_consumption
         WHERE id IN (
             SELECT id FROM automation_frequency_consumption
-            WHERE consumed_at < datetime('now', '-90 days')
+            WHERE consumed_at < ?
             ORDER BY id ASC
             LIMIT ?
         )
         """,
-        (int(batch_size),),
+        (cutoff_iso, int(batch_size)),
     )
     deleted = cur.rowcount or 0
     db.commit()
