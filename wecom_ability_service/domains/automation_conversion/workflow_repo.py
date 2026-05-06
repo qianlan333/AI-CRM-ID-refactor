@@ -120,6 +120,10 @@ def _serialize_automation_member_row(row: dict[str, Any]) -> dict[str, Any]:
         "id": int(row.get("id") or 0),
         "master_customer_id": int(row.get("master_customer_id") or 0) or None,
         "in_pool": _row_bool(row.get("in_pool")),
+        "customer_name": _normalized_text(row.get("customer_name")),
+        "profile_segment_key": _normalized_text(row.get("profile_segment_key")),
+        "behavior_tier_key": _normalized_text(row.get("behavior_tier_key")),
+        "segment_refreshed_at": _normalized_text(row.get("segment_refreshed_at")),
     }
 
 
@@ -1034,10 +1038,15 @@ def list_current_member_audience_rows(audience_code: str) -> list[dict[str, Any]
             m.ai_cooldown_until AS member_ai_cooldown_until,
             m.current_audience_code AS member_current_audience_code,
             m.current_audience_entered_at AS member_current_audience_entered_at,
+            m.profile_segment_key AS member_profile_segment_key,
+            m.behavior_tier_key AS member_behavior_tier_key,
+            m.segment_refreshed_at AS member_segment_refreshed_at,
             m.created_at AS member_created_at,
-            m.updated_at AS member_updated_at
+            m.updated_at AS member_updated_at,
+            c.customer_name AS member_customer_name
         FROM automation_member_audience_entry e
         INNER JOIN automation_member m ON m.id = e.member_id
+        LEFT JOIN contacts c ON c.external_userid = m.external_contact_id AND m.external_contact_id <> ''
         WHERE e.audience_code = ?
           AND e.is_current = ?
         ORDER BY e.entered_at ASC, e.id ASC
@@ -1067,8 +1076,12 @@ def list_current_member_audience_rows(audience_code: str) -> list[dict[str, Any]
                         "ai_cooldown_until": row.get("member_ai_cooldown_until"),
                         "current_audience_code": row.get("member_current_audience_code"),
                         "current_audience_entered_at": row.get("member_current_audience_entered_at"),
+                        "profile_segment_key": row.get("member_profile_segment_key"),
+                        "behavior_tier_key": row.get("member_behavior_tier_key"),
+                        "segment_refreshed_at": row.get("member_segment_refreshed_at"),
                         "created_at": row.get("member_created_at"),
                         "updated_at": row.get("member_updated_at"),
+                        "customer_name": row.get("member_customer_name"),
                     }
                 ),
             }
@@ -1157,6 +1170,33 @@ def update_member_current_audience_row(member_id: int, *, audience_code: str, en
         (
             _normalized_text(audience_code),
             _normalized_text(entered_at),
+            int(member_id),
+        ),
+    )
+
+
+def update_member_segment_keys(
+    member_id: int,
+    *,
+    profile_segment_key: str,
+    behavior_tier_key: str,
+    refreshed_at: str,
+) -> None:
+    """Materialize profile/behavior segmentation onto automation_member."""
+    if not int(member_id or 0):
+        return
+    get_db().execute(
+        """
+        UPDATE automation_member
+        SET profile_segment_key = ?,
+            behavior_tier_key = ?,
+            segment_refreshed_at = ?
+        WHERE id = ?
+        """,
+        (
+            _normalized_text(profile_segment_key),
+            _normalized_text(behavior_tier_key),
+            _normalized_text(refreshed_at),
             int(member_id),
         ),
     )

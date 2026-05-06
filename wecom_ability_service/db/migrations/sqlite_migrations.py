@@ -370,6 +370,9 @@ def _rebuild_sqlite_automation_member_table(db) -> None:
             joined_at TEXT NOT NULL DEFAULT '',
             last_ai_push_at TEXT NOT NULL DEFAULT '',
             ai_cooldown_until TEXT NOT NULL DEFAULT '',
+            profile_segment_key TEXT NOT NULL DEFAULT '',
+            behavior_tier_key TEXT NOT NULL DEFAULT '',
+            segment_refreshed_at TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -396,6 +399,9 @@ def _rebuild_sqlite_automation_member_table(db) -> None:
             joined_at,
             last_ai_push_at,
             ai_cooldown_until,
+            profile_segment_key,
+            behavior_tier_key,
+            segment_refreshed_at,
             created_at,
             updated_at
         )
@@ -435,6 +441,9 @@ def _rebuild_sqlite_automation_member_table(db) -> None:
             COALESCE(joined_at, ''),
             COALESCE(last_ai_push_at, ''),
             COALESCE(ai_cooldown_until, ''),
+            COALESCE({"profile_segment_key" if "profile_segment_key" in member_columns else "''"}, ''),
+            COALESCE({"behavior_tier_key" if "behavior_tier_key" in member_columns else "''"}, ''),
+            COALESCE({"segment_refreshed_at" if "segment_refreshed_at" in member_columns else "''"}, ''),
             COALESCE(created_at, CURRENT_TIMESTAMP),
             COALESCE(updated_at, CURRENT_TIMESTAMP)
         FROM automation_member
@@ -842,6 +851,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
             joined_at TEXT NOT NULL DEFAULT '',
             last_ai_push_at TEXT NOT NULL DEFAULT '',
             ai_cooldown_until TEXT NOT NULL DEFAULT '',
+            profile_segment_key TEXT NOT NULL DEFAULT '',
+            behavior_tier_key TEXT NOT NULL DEFAULT '',
+            segment_refreshed_at TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -864,6 +876,12 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
         )
     if "current_audience_entered_at" not in member_columns:
         db.execute("ALTER TABLE automation_member ADD COLUMN current_audience_entered_at TEXT NOT NULL DEFAULT ''")
+    if "profile_segment_key" not in member_columns:
+        db.execute("ALTER TABLE automation_member ADD COLUMN profile_segment_key TEXT NOT NULL DEFAULT ''")
+    if "behavior_tier_key" not in member_columns:
+        db.execute("ALTER TABLE automation_member ADD COLUMN behavior_tier_key TEXT NOT NULL DEFAULT ''")
+    if "segment_refreshed_at" not in member_columns:
+        db.execute("ALTER TABLE automation_member ADD COLUMN segment_refreshed_at TEXT NOT NULL DEFAULT ''")
     sop_pool_config_sql = _sqlite_table_sql(db, "automation_sop_pool_config")
     if "'new_user'" in sop_pool_config_sql or "'inactive_normal'" in sop_pool_config_sql or "'active_normal'" in sop_pool_config_sql:
         _rebuild_sqlite_automation_sop_tables(db)
@@ -1174,6 +1192,9 @@ def _ensure_sqlite_automation_conversion_tables(db) -> None:
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_member_channel ON automation_member (source_channel_id)")
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_automation_member_audience ON automation_member (current_audience_code, updated_at DESC, id DESC)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_automation_member_segments ON automation_member (current_audience_code, profile_segment_key, behavior_tier_key)"
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_event_member_created ON automation_event (member_id, created_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_automation_event_action_created ON automation_event (action, created_at DESC, id DESC)")

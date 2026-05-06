@@ -3541,6 +3541,161 @@ def list_stage_members_for_manual_send(*, current_pool: str) -> list[dict[str, A
     )
 
 
+_VALID_AUDIENCE_CODES = ("pending_questionnaire", "operating", "converted")
+
+
+def _normalize_segment_keys(values: list[str] | None) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values or []:
+        text = _normalized_text(value)
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out
+
+
+def _build_segment_filter_sql(
+    *,
+    pool_keys: list[str],
+    profile_keys: list[str],
+    behavior_keys: list[str],
+    keyword: str,
+    select_clause: str,
+    order_by: str = "",
+    limit: int | None = None,
+    offset: int | None = None,
+) -> tuple[str, tuple[Any, ...]]:
+    pools = [p for p in _normalize_segment_keys(pool_keys) if p in _VALID_AUDIENCE_CODES]
+    profiles = _normalize_segment_keys(profile_keys)
+    behaviors = _normalize_segment_keys(behavior_keys)
+    normalized_keyword = _normalized_text(keyword)
+    where_parts: list[str] = []
+    params: list[Any] = []
+    if pools:
+        placeholders = ",".join(["?"] * len(pools))
+        where_parts.append(f"m.current_audience_code IN ({placeholders})")
+        params.extend(pools)
+    else:
+        placeholders = ",".join(["?"] * len(_VALID_AUDIENCE_CODES))
+        where_parts.append(f"m.current_audience_code IN ({placeholders})")
+        params.extend(_VALID_AUDIENCE_CODES)
+    if profiles:
+        placeholders = ",".join(["?"] * len(profiles))
+        where_parts.append(f"m.profile_segment_key IN ({placeholders})")
+        params.extend(profiles)
+    if behaviors:
+        placeholders = ",".join(["?"] * len(behaviors))
+        where_parts.append(f"m.behavior_tier_key IN ({placeholders})")
+        params.extend(behaviors)
+    if normalized_keyword:
+        like_value = f"%{normalized_keyword}%"
+        where_parts.append(
+            "(m.phone LIKE ? OR m.external_contact_id LIKE ? OR COALESCE(c.customer_name, '') LIKE ?)"
+        )
+        params.extend([like_value, like_value, like_value])
+    where_sql = " AND ".join(where_parts)
+    sql = f"""
+        {select_clause}
+        FROM automation_member m
+        LEFT JOIN contacts c
+          ON c.external_userid = m.external_contact_id
+         AND m.external_contact_id <> ''
+        WHERE {where_sql}
+    """
+    if order_by:
+        sql += f" ORDER BY {order_by}"
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(int(limit))
+    if offset is not None:
+        sql += " OFFSET ?"
+        params.append(int(offset))
+    return sql, tuple(params)
+
+
+def list_members_by_segment_filter(
+    *,
+    pool_keys: list[str] | None = None,
+    profile_keys: list[str] | None = None,
+    behavior_keys: list[str] | None = None,
+    keyword: str = "",
+    offset: int = 0,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    sql, params = _build_segment_filter_sql(
+        pool_keys=list(pool_keys or []),
+        profile_keys=list(profile_keys or []),
+        behavior_keys=list(behavior_keys or []),
+        keyword=keyword,
+        select_clause="SELECT m.*, c.customer_name AS customer_name",
+        order_by="m.updated_at DESC, m.id DESC",
+        limit=limit,
+        offset=offset,
+    )
+    return _fetchall_dicts(sql, params)
+
+
+def count_members_by_segment_filter(
+    *,
+    pool_keys: list[str] | None = None,
+    profile_keys: list[str] | None = None,
+    behavior_keys: list[str] | None = None,
+    keyword: str = "",
+) -> int:
+    sql, params = _build_segment_filter_sql(
+        pool_keys=list(pool_keys or []),
+        profile_keys=list(profile_keys or []),
+        behavior_keys=list(behavior_keys or []),
+        keyword=keyword,
+        select_clause="SELECT COUNT(*) AS total",
+    )
+    row = _fetchone_dict(sql, params) or {}
+    return int(row.get("total") or 0)
+
+
+def aggregate_member_segment_dimensions() -> dict[str, list[dict[str, Any]]]:
+    """Counts per pool / profile / behavior, used by the chip filter UI."""
+    pool_rows = _fetchall_dicts(
+        """
+        SELECT current_audience_code AS key, COUNT(*) AS total
+        FROM automation_member
+        WHERE current_audience_code IN ('pending_questionnaire', 'operating', 'converted')
+        GROUP BY current_audience_code
+        """
+    )
+    profile_rows = _fetchall_dicts(
+        """
+        SELECT profile_segment_key AS key, COUNT(*) AS total
+        FROM automation_member
+        WHERE current_audience_code IN ('pending_questionnaire', 'operating', 'converted')
+        GROUP BY profile_segment_key
+        ORDER BY total DESC
+        """
+    )
+    behavior_rows = _fetchall_dicts(
+        """
+        SELECT behavior_tier_key AS key, COUNT(*) AS total
+        FROM automation_member
+        WHERE current_audience_code IN ('pending_questionnaire', 'operating', 'converted')
+        GROUP BY behavior_tier_key
+        ORDER BY total DESC
+        """
+    )
+
+    def _normalize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {"key": _normalized_text(row.get("key")), "total": int(row.get("total") or 0)}
+            for row in rows
+        ]
+
+    return {
+        "pools": _normalize(pool_rows),
+        "profiles": _normalize(profile_rows),
+        "behaviors": _normalize(behavior_rows),
+    }
+
+
 def count_stage_members(*, current_pool: str, keyword: str = "") -> int:
     normalized_keyword = _normalized_text(keyword)
     normalized_pool = _normalized_text(current_pool)
