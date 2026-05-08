@@ -11,6 +11,7 @@ from typing import Any
 from flask import Response, jsonify, render_template, request
 
 from ..domains import miniprogram_library
+from ..domains.admin_dashboard.service import build_admin_shell_status, list_admin_navigation
 
 
 logger = logging.getLogger(__name__)
@@ -25,10 +26,23 @@ def _serialize_for_api(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def admin_miniprogram_library_workspace() -> Response:
+    try:
+        shell_status = build_admin_shell_status()
+    except Exception:  # pragma: no cover - defensive
+        shell_status = None
     return render_template(
         "admin_console/miniprogram_library.html",
         page_title="小程序素材库",
         page_summary="集中维护可被群发引用的小程序卡片：appid、跳转路径、标题、缩略图。",
+        nav_items=list_admin_navigation("miniprogram_library"),
+        shell_status=shell_status,
+        show_shell_meta=False,
+        show_page_header=True,
+        breadcrumbs=[
+            {"label": "客户管理后台", "href": "/admin"},
+            {"label": "素材库"},
+        ],
+        page_actions=[],
     )
 
 

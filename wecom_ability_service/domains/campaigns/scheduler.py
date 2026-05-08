@@ -154,12 +154,24 @@ def _send_step_to_member(
         except (TypeError, ValueError):
             step_payload = {}
     image_media_ids = [str(x).strip() for x in (step_payload.get("image_media_ids") or []) if str(x).strip()]
+    miniprogram_library_ids: list[int] = []
+    for raw_lid in (step_payload.get("miniprogram_library_ids") or []):
+        try:
+            miniprogram_library_ids.append(int(raw_lid))
+        except (TypeError, ValueError):
+            continue
+    attachments: list[dict[str, Any]] = []
+    if miniprogram_library_ids:
+        from .. import miniprogram_library as _miniprogram_library
+
+        for lid in miniprogram_library_ids:
+            attachments.append(_miniprogram_library.materialize_miniprogram_attachment(lid))
     request_payload = {
         "sender": owner_userid,
         "external_userid": [external],
         "text": {"content": str(step.get("content_text") or "")},
         "image_media_ids": image_media_ids,
-        "attachments": [],
+        "attachments": attachments,
     }
     try:
         wecom_result = dispatch_wecom_task(

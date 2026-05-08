@@ -431,6 +431,7 @@ def cloud_orchestrator_update_campaign_step(campaign_code: str, step_index: str)
             day_offset=body.get("day_offset"),
             stop_on_reply=body.get("stop_on_reply"),
             image_media_ids=body.get("image_media_ids"),
+            miniprogram_library_ids=body.get("miniprogram_library_ids"),
         )
         return jsonify({"ok": True, **result})
     except (LookupError, PermissionError, ValueError) as exc:
