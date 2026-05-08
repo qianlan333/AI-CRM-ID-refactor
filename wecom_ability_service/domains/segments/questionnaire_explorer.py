@@ -57,13 +57,15 @@ def list_questionnaires(
         where.append("q.title LIKE ?")
         args.append(f"%{kw}%")
     args.append(int(limit))
+    # PG 上 submitted_at 是 TIMESTAMPTZ，SQLite 是 TEXT —— 用 CAST AS TEXT 跨库通用
+    # 先 CAST 再 COALESCE，避免 timestamp 和 '' 类型不匹配
     cur.execute(
         f"""
         SELECT q.id AS questionnaire_id,
                q.title,
                q.is_disabled,
                COALESCE(s.submission_count, 0) AS submission_count,
-               COALESCE(s.last_submitted_at, '') AS last_submitted_at
+               COALESCE(CAST(s.last_submitted_at AS TEXT), '') AS last_submitted_at
         FROM questionnaires q
         LEFT JOIN (
             SELECT questionnaire_id,
@@ -176,9 +178,16 @@ def inspect_questionnaire(
         ans_rows = cur.fetchall() or []
         counts: dict[int, int] = {}
         for ar in ans_rows:
-            try:
-                ids = json.loads(ar["selected_option_ids"] or "[]")
-            except (TypeError, ValueError):
+            raw = ar["selected_option_ids"]
+            # PG JSONB 字段 psycopg3 自动反序列化成 Python list；SQLite 是 TEXT
+            if isinstance(raw, list):
+                ids = raw
+            elif isinstance(raw, str):
+                try:
+                    ids = json.loads(raw or "[]")
+                except (TypeError, ValueError):
+                    ids = []
+            else:
                 ids = []
             for oid in ids:
                 try:
@@ -258,7 +267,7 @@ def preview_questionnaire_population(
             )
         # 拼一个 EXISTS 子句：该用户在该问题上选了 option_ids 中任意一个
         # 注意 selected_option_ids 是 JSON 数组（TEXT 存的）— 用 LIKE 匹配
-        ored = " OR ".join(["qa.selected_option_ids LIKE ?" for _ in option_ids])
+        ored = " OR ".join(["CAST(qa.selected_option_ids AS TEXT) LIKE ?" for _ in option_ids])
         where_parts.append(
             f"EXISTS (SELECT 1 FROM questionnaire_submission_answers qa "
             f"JOIN questionnaire_submissions qs ON qs.id = qa.submission_id "
@@ -367,7 +376,7 @@ def compose_segment_sql_from_questionnaire(
                 f"filter on question_id={question_id} resolved to 0 options"
             )
         ored = " OR ".join([
-            f"qa.selected_option_ids LIKE '%{int(oid)}%'" for oid in option_ids
+            f"CAST(qa.selected_option_ids AS TEXT) LIKE '%{int(oid)}%'" for oid in option_ids
         ])
         where_parts.append(
             f"EXISTS (SELECT 1 FROM questionnaire_submission_answers qa "
