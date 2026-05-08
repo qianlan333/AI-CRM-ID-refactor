@@ -18,6 +18,7 @@ ADMIN_NAV_ITEMS = (
     {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},
     {"key": "customers", "label": "客户", "endpoint": "api.admin_console_customers"},
     {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
+    {"key": "miniprogram_library", "label": "素材库", "endpoint": "api.admin_miniprogram_library_workspace"},
     {"key": "config", "label": "配置", "endpoint": "api.admin_config_home"},
     {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_console_api_docs"},
 )

@@ -535,6 +535,7 @@ def update_campaign_step(
     day_offset: int | None = None,
     stop_on_reply: bool | None = None,
     image_media_ids: list[str] | None = None,
+    miniprogram_library_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """编辑单个 step。只有 review_status in (draft, pending_review) 且 run_status in (draft, paused) 时才允许，
     避免运行中改文案造成混乱。``image_media_ids`` 存进 content_payload_json，scheduler 发送时读出来。"""
@@ -583,9 +584,21 @@ def update_campaign_step(
     if stop_on_reply is not None:
         sets.append("stop_on_reply = ?")
         args.append(bool(stop_on_reply))
+    payload_dirty = False
     if image_media_ids is not None:
         cleaned = [str(x).strip() for x in image_media_ids if str(x).strip()]
         payload["image_media_ids"] = cleaned[:9]  # 企微单消息最多 9 张图
+        payload_dirty = True
+    if miniprogram_library_ids is not None:
+        cleaned_ids: list[int] = []
+        for raw in miniprogram_library_ids:
+            try:
+                cleaned_ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        payload["miniprogram_library_ids"] = cleaned_ids
+        payload_dirty = True
+    if payload_dirty:
         sets.append("content_payload_json = ?")
         args.append(json.dumps(payload, ensure_ascii=False))
 

@@ -1146,6 +1146,10 @@ def _process_execution_item(
         )
     raw_node_miniprograms = node.get("miniprogram_library_ids") or []
     if not raw_node_miniprograms:
+        scp = node.get("standard_content_payload")
+        if isinstance(scp, dict):
+            raw_node_miniprograms = scp.get("miniprogram_library_ids") or []
+    if not raw_node_miniprograms:
         raw_node_miniprograms = workflow_bundle.get("miniprogram_library_ids") or []
     miniprogram_library_ids: list[int] = []
     for value in raw_node_miniprograms:
