@@ -99,10 +99,22 @@ def _send_step_to_member(
         return {"ok": False, "reason": verdict.skip_reason}
 
     owner_userid = str(campaign.get("owner_userid") or "") or DEFAULT_AUTOMATION_OWNER_USERID
+    # 从 step.content_payload_json 读编辑界面填的图片 media_id（PG jsonb 自动反序列化为 dict，
+    # SQLite 是字符串）
+    raw_payload = step.get("content_payload_json") or "{}"
+    if isinstance(raw_payload, dict):
+        step_payload = raw_payload
+    else:
+        try:
+            step_payload = json.loads(str(raw_payload) or "{}")
+        except (TypeError, ValueError):
+            step_payload = {}
+    image_media_ids = [str(x).strip() for x in (step_payload.get("image_media_ids") or []) if str(x).strip()]
     request_payload = {
         "sender": owner_userid,
         "external_userid": [external],
         "text": {"content": str(step.get("content_text") or "")},
+        "image_media_ids": image_media_ids,
         "attachments": [],
     }
     try:
