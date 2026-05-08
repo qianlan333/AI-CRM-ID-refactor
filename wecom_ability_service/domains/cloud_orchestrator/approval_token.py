@@ -41,7 +41,10 @@ def issue_token(
         raise ValueError("operator is required")
     plain = secrets.token_urlsafe(32)
     token_hash = _hash_token(plain)
-    expires_at = (datetime.utcnow() + timedelta(seconds=int(ttl_seconds))).isoformat()
+    # 用 timezone-aware ISO 字符串写入。PG TIMESTAMPTZ 对 naive 字符串会按 server timezone
+    # 解读（中国 server 默认 Asia/Shanghai），把 ``utcnow()+5min`` 倒推 8 小时存为"6 小时前"，
+    # token 一签发就立刻过期。带 ``+00:00`` 后 PG 按 UTC 写入；SQLite 字符串比较也不受影响。
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(ttl_seconds))).isoformat()
     db = get_db()
     cur = db.cursor()
     import json as _json
