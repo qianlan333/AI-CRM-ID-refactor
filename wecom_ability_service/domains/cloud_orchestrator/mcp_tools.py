@@ -175,8 +175,51 @@ _TOOL_SPECS: list[dict[str, Any]] = [
                 "content_template": {"type": "string"},
                 "max_recipients": {"type": "integer", "minimum": 1, "maximum": 1000},
                 "scenario_code": {"type": "string"},
+                "attachments": {
+                    "type": "array",
+                    "description": (
+                        "可选附件：仅支持 miniprogram(library_id) 与 file(media_id)。"
+                        "miniprogram 必须从素材库选 library_id，不允许 AI 自由拼 appid。"
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "msgtype": {"type": "string", "enum": ["miniprogram", "file"]},
+                            "miniprogram": {
+                                "type": "object",
+                                "properties": {
+                                    "library_id": {"type": "integer"},
+                                    "pagepath": {"type": "string"},
+                                    "title": {"type": "string"},
+                                },
+                                "required": ["library_id"],
+                            },
+                            "file": {
+                                "type": "object",
+                                "properties": {"media_id": {"type": "string"}},
+                                "required": ["media_id"],
+                            },
+                        },
+                        "required": ["msgtype"],
+                    },
+                },
             },
             "required": ["intent", "selection"],
+        },
+    },
+    {
+        "name": "list_miniprogram_library",
+        "side_effect": "read",
+        "description": (
+            "列出当前租户已配置的小程序素材库（appid / pagepath / 标题 / 缩略图状态）。"
+            "AI 在 draft_broadcast_plan 用 attachments=[{msgtype:'miniprogram', miniprogram:{library_id:N}}] "
+            "前必须先调本工具确认 library_id。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "enabled_only": {"type": "boolean"},
+            },
         },
     },
     {
@@ -667,6 +710,7 @@ def dispatch_cloud_tool(
                 content_strategy=str(args.get("content_strategy") or "profile_layered"),
                 content_template=str(args.get("content_template") or ""),
                 personalization=list(args.get("personalization") or []),
+                attachments=list(args.get("attachments") or []),
                 max_recipients=int(args.get("max_recipients") or 0),
                 operator=operator,
                 session_id=session_id,
@@ -676,6 +720,17 @@ def dispatch_cloud_tool(
                 ),
                 auto_copy_workorder=bool(args.get("auto_copy_workorder", True)),
             )
+            return ctx["result"]
+
+        if tool_name == "list_miniprogram_library":
+            from .. import miniprogram_library
+
+            enabled_only = args.get("enabled_only")
+            ctx["result"] = {
+                "items": miniprogram_library.list_miniprograms(
+                    enabled_only=bool(enabled_only) if enabled_only is not None else True
+                ),
+            }
             return ctx["result"]
 
         if tool_name == "simulate_broadcast":

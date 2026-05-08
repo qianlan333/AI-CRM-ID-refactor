@@ -81,6 +81,7 @@ def _empty_sop_template(pool_key: str, day_index: int) -> dict[str, Any]:
         "day_index": int(day_index),
         "content": "",
         "images_json": [],
+        "miniprograms_json": [],
         "enabled": True,
     }
 
@@ -112,6 +113,7 @@ def _serialize_sop_template(row: dict[str, Any] | None) -> dict[str, Any]:
         "day_index": int(deserialized.get("day_index") or 0),
         "content": _normalized_text(deserialized.get("content")),
         "images_json": list(deserialized.get("images_json") or []),
+        "miniprograms_json": list(deserialized.get("miniprograms_json") or []),
         "enabled": _normalize_bool(deserialized.get("enabled")),
         "created_at": _normalized_text(deserialized.get("created_at")),
         "updated_at": _normalized_text(deserialized.get("updated_at")),
@@ -404,17 +406,33 @@ def save_sop_v1_template(
     day_index: int,
     content: str = "",
     images_json: list[dict[str, Any]] | None = None,
+    miniprograms_json: list[dict[str, Any]] | None = None,
     enabled: bool = True,
 ) -> dict[str, Any]:
     normalized_pool_key = _validate_sop_pool_key(pool_key)
     normalized_day_index = max(1, int(day_index or 1))
     ensure_sop_v1_defaults()
+    normalized_miniprograms: list[dict[str, Any]] = []
+    for item in (miniprograms_json or []):
+        if isinstance(item, int):
+            normalized_miniprograms.append({"library_id": int(item)})
+            continue
+        if not isinstance(item, dict):
+            continue
+        library_id = item.get("library_id")
+        if not library_id:
+            continue
+        try:
+            normalized_miniprograms.append({"library_id": int(library_id)})
+        except (TypeError, ValueError):
+            continue
     saved = repo.save_sop_template(
         {
             "pool_key": normalized_pool_key,
             "day_index": normalized_day_index,
             "content": _normalized_text(content),
             "images_json": list(images_json or []),
+            "miniprograms_json": normalized_miniprograms,
             "enabled": _normalize_bool(enabled),
         }
     )
@@ -897,11 +915,26 @@ def run_due_sop(
             dispatch_result = None
             if sendable_targets:
                 image_media_ids, images = _normalize_sop_template_images(template)
+                miniprogram_library_ids: list[int] = []
+                for mp_item in list(template.get("miniprograms_json") or []):
+                    if isinstance(mp_item, int):
+                        miniprogram_library_ids.append(int(mp_item))
+                        continue
+                    if not isinstance(mp_item, dict):
+                        continue
+                    raw_lid = mp_item.get("library_id")
+                    if not raw_lid:
+                        continue
+                    try:
+                        miniprogram_library_ids.append(int(raw_lid))
+                    except (TypeError, ValueError):
+                        continue
                 dispatch_result = _dispatch_private_message_batch(
                     target_items=sendable_targets,
                     content=_normalized_text(template.get("content")),
                     image_media_ids=image_media_ids,
                     images=images,
+                    miniprogram_library_ids=miniprogram_library_ids,
                     operator_id=_normalized_text(operator_id) or "sop_runner",
                     filter_snapshot={
                         "selection_mode": "automation_conversion_sop",

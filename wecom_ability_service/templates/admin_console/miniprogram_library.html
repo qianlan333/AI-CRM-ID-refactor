@@ -1,0 +1,153 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .mp-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #fff; }
+  .mp-card h3 { margin: 0 0 4px; font-size: 16px; }
+  .mp-meta { color: #6b7280; font-size: 12px; margin-bottom: 8px; }
+  .mp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mp-form { background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .mp-form label { display: block; margin: 8px 0 4px; font-size: 13px; }
+  .mp-form input, .mp-form textarea { width: 100%; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 4px; }
+  .mp-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mp-form button { margin-top: 12px; }
+  .badge-on { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+  .badge-off { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section>
+  <h1>{{ page_title }}</h1>
+  <p class="subtle">{{ page_summary }}</p>
+
+  <div class="mp-form" id="mp-create-form">
+    <h3>新增小程序</h3>
+    <div class="row">
+      <div>
+        <label>素材名（内部备注）</label>
+        <input id="mp-name" type="text" placeholder="如：1v1 体验课卡片">
+      </div>
+      <div>
+        <label>appid</label>
+        <input id="mp-appid" type="text" placeholder="wxXXXXXXXXXXXXXXXX">
+      </div>
+    </div>
+    <label>页面路径 pagepath</label>
+    <input id="mp-pagepath" type="text" placeholder="pages/index?from=crm">
+    <label>卡片标题 title</label>
+    <input id="mp-title" type="text" placeholder="点这里预约 1v1 体验课">
+    <div class="row">
+      <div>
+        <label>缩略图 URL（二选一）</label>
+        <input id="mp-thumb-url" type="text" placeholder="https://...">
+      </div>
+      <div>
+        <label>缩略图 base64（二选一，data:image/png;base64,XXX 也可）</label>
+        <input id="mp-thumb-base64" type="text">
+      </div>
+    </div>
+    <button class="btn primary" type="button" id="mp-create-btn">新增</button>
+    <span id="mp-create-status" class="subtle" style="margin-left:12px;"></span>
+  </div>
+
+  <div id="mp-list">
+    <p class="subtle">加载中...</p>
+  </div>
+</section>
+
+<script>
+async function loadList() {
+  const wrap = document.getElementById('mp-list');
+  wrap.innerHTML = '<p class="subtle">加载中...</p>';
+  const resp = await fetch('/api/admin/miniprogram-library?enabled_only=false', { credentials: 'same-origin' });
+  const data = await resp.json();
+  if (!data.ok) {
+    wrap.innerHTML = '<p>加载失败：' + (data.error || '未知') + '</p>';
+    return;
+  }
+  if (!data.items.length) {
+    wrap.innerHTML = '<p class="subtle">还没有小程序素材，使用上方表单添加一条。</p>';
+    return;
+  }
+  wrap.innerHTML = data.items.map(function (it) {
+    const badge = it.enabled ? '<span class="badge-on">启用</span>' : '<span class="badge-off">停用</span>';
+    return '<div class="mp-card" data-id="' + it.id + '">'
+      + '<h3>' + escapeHtml(it.title || it.name) + ' ' + badge + '</h3>'
+      + '<div class="mp-meta">id=' + it.id + ' · appid=' + escapeHtml(it.appid)
+      + ' · pagepath=' + escapeHtml(it.pagepath)
+      + (it.thumb_media_id ? ' · thumb_media_id 已缓存（' + escapeHtml(it.thumb_media_id_expires_at) + ' 过期）' : ' · 缩略图未上传')
+      + '</div>'
+      + '<div class="mp-actions">'
+      + '<button class="btn soft" data-action="toggle">' + (it.enabled ? '停用' : '启用') + '</button>'
+      + '<button class="btn soft" data-action="resolve">手动刷新缩略图</button>'
+      + '<button class="btn soft" data-action="delete" style="color:#b91c1c;">删除</button>'
+      + '</div></div>';
+  }).join('');
+  wrap.querySelectorAll('.mp-card').forEach(function (card) {
+    const id = Number(card.dataset.id);
+    card.querySelector('[data-action="toggle"]').addEventListener('click', async function () {
+      const item = data.items.find(function (i) { return i.id === id; });
+      await fetch('/api/admin/miniprogram-library/' + id, {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !item.enabled }),
+      });
+      loadList();
+    });
+    card.querySelector('[data-action="resolve"]').addEventListener('click', async function () {
+      const r = await fetch('/api/admin/miniprogram-library/' + id + '/test-resolve', {
+        method: 'POST', credentials: 'same-origin',
+      });
+      const d = await r.json();
+      alert(d.ok ? ('已刷新，thumb_media_id=' + d.thumb_media_id) : ('刷新失败：' + d.error));
+      loadList();
+    });
+    card.querySelector('[data-action="delete"]').addEventListener('click', async function () {
+      if (!confirm('确认删除这条素材？引用了它的群发将无法发送。')) return;
+      await fetch('/api/admin/miniprogram-library/' + id, {
+        method: 'DELETE', credentials: 'same-origin',
+      });
+      loadList();
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+document.getElementById('mp-create-btn').addEventListener('click', async function () {
+  const status = document.getElementById('mp-create-status');
+  status.textContent = '提交中...';
+  const body = {
+    name: document.getElementById('mp-name').value,
+    appid: document.getElementById('mp-appid').value,
+    pagepath: document.getElementById('mp-pagepath').value,
+    title: document.getElementById('mp-title').value,
+    thumb_image_url: document.getElementById('mp-thumb-url').value,
+    thumb_image_base64: document.getElementById('mp-thumb-base64').value,
+  };
+  const r = await fetch('/api/admin/miniprogram-library', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    status.textContent = '已新增 #' + d.item.id;
+    document.getElementById('mp-name').value = '';
+    document.getElementById('mp-appid').value = '';
+    document.getElementById('mp-pagepath').value = '';
+    document.getElementById('mp-title').value = '';
+    document.getElementById('mp-thumb-url').value = '';
+    document.getElementById('mp-thumb-base64').value = '';
+    loadList();
+  } else {
+    status.textContent = '失败：' + d.error;
+  }
+});
+
+loadList();
+</script>
+{% endblock %}

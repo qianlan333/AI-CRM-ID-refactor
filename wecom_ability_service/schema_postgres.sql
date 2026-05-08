@@ -2410,6 +2410,7 @@ CREATE TABLE IF NOT EXISTS automation_sop_template (
     day_index INTEGER NOT NULL DEFAULT 1,
     content TEXT NOT NULL DEFAULT '',
     images_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    miniprograms_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2629,6 +2630,7 @@ CREATE TABLE IF NOT EXISTS cloud_broadcast_plans (
     variants_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     copy_workorder_run_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     requires_manual_copy BOOLEAN NOT NULL DEFAULT FALSE,
+    attachments_json JSONB NOT NULL DEFAULT '[]'::jsonb,
     simulate_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     commit_batch_id TEXT NOT NULL DEFAULT '',
     commit_send_record_id BIGINT,
@@ -2888,6 +2890,27 @@ ON campaign_members (campaign_segment_id, status, id ASC);
 
 CREATE INDEX IF NOT EXISTS idx_campaign_members_external
 ON campaign_members (external_contact_id, campaign_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS miniprogram_library (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    appid TEXT NOT NULL,
+    pagepath TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    thumb_image_url TEXT NOT NULL DEFAULT '',
+    thumb_image_base64 TEXT NOT NULL DEFAULT '',
+    thumb_media_id TEXT NOT NULL DEFAULT '',
+    thumb_media_id_expires_at TIMESTAMPTZ,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_miniprogram_library_enabled
+ON miniprogram_library (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_miniprogram_library_appid
+ON miniprogram_library (appid, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_campaign_members_trace
 ON campaign_members (trace_id, id DESC);

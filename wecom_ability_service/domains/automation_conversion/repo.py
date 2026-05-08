@@ -2808,6 +2808,7 @@ def save_sop_template(payload: dict[str, Any]) -> dict[str, Any]:
             UPDATE automation_sop_template
             SET content = ?,
                 images_json = ?,
+                miniprograms_json = ?,
                 enabled = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -2816,6 +2817,7 @@ def save_sop_template(payload: dict[str, Any]) -> dict[str, Any]:
             (
                 _normalized_text(payload.get("content")),
                 _json_dumps(payload.get("images_json") or []),
+                _json_dumps(payload.get("miniprograms_json") or []),
                 _db_bool(bool(payload.get("enabled"))),
                 int(existing["id"]),
             ),
@@ -2828,11 +2830,12 @@ def save_sop_template(payload: dict[str, Any]) -> dict[str, Any]:
             day_index,
             content,
             images_json,
+            miniprograms_json,
             enabled,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         (
@@ -2840,6 +2843,7 @@ def save_sop_template(payload: dict[str, Any]) -> dict[str, Any]:
             int(payload.get("day_index") or 0),
             _normalized_text(payload.get("content")),
             _json_dumps(payload.get("images_json") or []),
+            _json_dumps(payload.get("miniprograms_json") or []),
             _db_bool(bool(payload.get("enabled"))),
         ),
     ).fetchone()
@@ -3900,6 +3904,7 @@ def deserialize_sop_template_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
         "images_json": _json_loads(row.get("images_json"), default=[]),
+        "miniprograms_json": _json_loads(row.get("miniprograms_json"), default=[]),
         "enabled": _row_bool(row.get("enabled")),
     }
 

@@ -39,6 +39,7 @@ def cloud_orchestrator_create_plan() -> Response:
             content_strategy=str(body.get("content_strategy") or "profile_layered"),
             content_template=str(body.get("content_template") or ""),
             personalization=list(body.get("personalization") or []),
+            attachments=list(body.get("attachments") or []),
             max_recipients=int(body.get("max_recipients") or 0),
             operator=str(body.get("operator") or "ui_user"),
             scenario_code=str(body.get("scenario_code") or "bulk_activation"),
