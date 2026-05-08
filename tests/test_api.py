@@ -4537,7 +4537,7 @@ def test_questionnaire_external_push_failed_logs_can_be_retried_in_batch_with_su
 
 def test_questionnaire_submit_success_sends_identity_webhook(client, app, monkeypatch):
     monkeypatch.setattr(
-        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
         lambda mobile: f"tp_{mobile}",
     )
 
@@ -4635,7 +4635,7 @@ def test_questionnaire_submit_success_sends_identity_webhook(client, app, monkey
 
 def test_questionnaire_submit_webhook_failure_does_not_break_submit(client, app, monkeypatch):
     monkeypatch.setattr(
-        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
         lambda mobile: f"tp_{mobile}",
     )
 
@@ -4728,7 +4728,7 @@ def test_questionnaire_submit_webhook_failure_does_not_break_submit(client, app,
 
 def test_questionnaire_submit_webhook_retry_due_succeeds(client, app, monkeypatch):
     monkeypatch.setattr(
-        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
         lambda mobile: f"tp_{mobile}",
     )
 
@@ -4839,7 +4839,7 @@ def test_questionnaire_submit_webhook_retry_due_rejects_invalid_internal_token(c
 
 def test_questionnaire_submit_webhook_without_url_records_unconfigured_delivery(client, app, monkeypatch):
     monkeypatch.setattr(
-        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
         lambda mobile: f"tp_{mobile}",
     )
 
@@ -4905,7 +4905,7 @@ def test_questionnaire_without_mobile_question_does_not_fill_mobile_snapshot(cli
 
 def test_questionnaire_mobile_submission_binds_contact_and_overwrites_old_mobile(client, app, monkeypatch):
     monkeypatch.setattr(
-        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
         lambda mobile: f"tp_{mobile}",
     )
 
@@ -5277,7 +5277,7 @@ def test_sidebar_bind_mobile_succeeds_when_third_party_sync_fails(client, app, m
         raise ThirdPartyUserSyncError("third-party resolver is not configured")
 
     monkeypatch.setattr(
-        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
         fail_sync,
     )
 
@@ -5325,7 +5325,7 @@ def test_sidebar_bind_mobile_force_rebind_updates_binding(client, app, monkeypat
         raise ThirdPartyUserSyncError("third-party resolver is not configured")
 
     monkeypatch.setattr(
-        "wecom_ability_service.application.identity_contact._legacy_delegate.user_ops_domain_service._resolve_third_party_user_id_by_mobile",
+        "wecom_ability_service.domains.user_ops.service._resolve_third_party_user_id_by_mobile",
         fail_sync,
     )
 
