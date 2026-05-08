@@ -173,7 +173,7 @@ def add_step_to_campaign(
             (timezone or "Asia/Shanghai"),
             (content_text or "")[:4000],
             json.dumps(content_payload or {}, ensure_ascii=False),
-            1 if stop_on_reply else 0,
+            bool(stop_on_reply),
             int(skip_if_recently_touched_days or 0),
             (agent_run_id or "")[:100],
             _now_iso(),

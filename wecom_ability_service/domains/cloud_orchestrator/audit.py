@@ -88,8 +88,8 @@ def write_audit(
             int(latency_ms),
             str(status or "success"),
             str(error_message or "")[:500],
-            1 if requires_token else 0,
-            1 if token_verified else 0,
+            bool(requires_token),
+            bool(token_verified),
             (
                 json.dumps(full_payload, ensure_ascii=False)[:32000]
                 if isinstance(full_payload, dict)
