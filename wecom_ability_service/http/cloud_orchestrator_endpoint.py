@@ -343,6 +343,27 @@ def cloud_orchestrator_pause_campaign(campaign_code: str) -> Response:
     return jsonify({"ok": True, "campaign": result})
 
 
+def cloud_orchestrator_update_campaign_step(campaign_code: str, step_index: str) -> Response:
+    """编辑单个 step 的话术 / 时间 / 图片 / day_offset / 回复后停止开关。仅 draft 态可改。"""
+    camp = campaign_service.get_campaign(campaign_code=campaign_code)
+    if not camp:
+        return jsonify({"ok": False, "error": "campaign_not_found"}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        result = campaign_service.update_campaign_step(
+            campaign_id=int(camp["id"]),
+            step_index=int(step_index),
+            content_text=body.get("content_text"),
+            send_time=body.get("send_time"),
+            day_offset=body.get("day_offset"),
+            stop_on_reply=body.get("stop_on_reply"),
+            image_media_ids=body.get("image_media_ids"),
+        )
+        return jsonify({"ok": True, **result})
+    except (LookupError, PermissionError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 def cloud_orchestrator_list_campaign_members(campaign_code: str) -> Response:
     """Campaign 命中成员清单。每条带 external_contact_id，前端再链到 /admin/customers/<external_userid>。"""
     camp = campaign_service.get_campaign(campaign_code=campaign_code)
@@ -515,6 +536,10 @@ def register_routes(bp):
         "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/members",
         methods=["GET"],
     )(cloud_orchestrator_list_campaign_members)
+    bp.route(
+        "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/steps/<step_index>",
+        methods=["PATCH", "POST"],
+    )(cloud_orchestrator_update_campaign_step)
 
 
 __all__ = ["register_routes"]

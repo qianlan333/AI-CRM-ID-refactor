@@ -85,7 +85,8 @@
 .cloud-camp-page { display:flex; flex-direction:column; gap:24px; padding-bottom:48px; }
 .cloud-camp-toolbar { display:flex; gap:8px; margin-top:8px; }
 .cloud-camp-toolbar select { max-width:160px; }
-.cloud-camp-table th, .cloud-camp-table td { padding:8px 12px; }
+.cloud-camp-table th, .cloud-camp-table td { padding:8px 12px; vertical-align:top; }
+.cloud-camp-intent-cell { max-width:520px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.45; color:#3a3a3c; font-size:13px; }
 .cloud-orch-status-chip { display:inline-block; padding:2px 8px; border-radius:10px; background:#eef0f4; font-size:12px; color:#5b626f; margin-left:8px; }
 .cloud-orch-status-chip.pending_review, .cloud-orch-status-chip.draft { background:#fff7e6; color:#a06400; }
 .cloud-orch-status-chip.approved, .cloud-orch-status-chip.active { background:#e9f7ee; color:#287a3c; }
@@ -121,6 +122,17 @@
 .cloud-camp-step-row .step-text { font-size:13px; line-height:1.6; color:#1d1d1f; white-space:pre-wrap; word-break:break-word; }
 .cloud-camp-step-row .step-image { margin-top:8px; font-size:12px; color:#aaa; }
 .cloud-camp-step-empty { color:#a02929; font-size:13px; padding:8px 0; }
+.cloud-camp-step-edit { margin-left:auto; padding:2px 10px; border:1px solid #d3dcf2; background:#fff; color:#2c5cdb; font-size:12px; border-radius:4px; cursor:pointer; }
+.cloud-camp-step-edit:hover { background:#eef3fb; }
+.cloud-camp-step-edit-form { display:flex; flex-direction:column; gap:10px; }
+.cloud-camp-step-edit-form .edit-grid { display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:13px; color:#5b626f; }
+.cloud-camp-step-edit-form .edit-grid label { display:flex; align-items:center; gap:6px; }
+.cloud-camp-step-edit-form .edit-grid input[type=number] { width:80px; }
+.cloud-camp-step-edit-form .edit-grid input[type=time] { width:120px; }
+.cloud-camp-step-edit-form .edit-stop-on-reply-label { display:inline-flex; align-items:center; gap:6px; }
+.cloud-camp-step-edit-form .edit-block { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#5b626f; }
+.cloud-camp-step-edit-form textarea { width:100%; font-family:inherit; resize:vertical; padding:8px 10px; border:1px solid #d6dae0; border-radius:4px; box-sizing:border-box; }
+.cloud-camp-step-edit-form .edit-actions { display:flex; gap:8px; justify-content:flex-end; }
 
 .cloud-camp-members-summary { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .cloud-camp-members-total { font-size:18px; font-weight:600; color:#1d1d1f; }
@@ -194,7 +206,7 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><code>${escapeHtml(c.campaign_code).slice(0, 18)}</code><br>${escapeHtml(c.display_name)}</td>
-        <td>${escapeHtml(c.intent).slice(0, 60)}</td>
+        <td><div class="cloud-camp-intent-cell" title="${escapeHtml(c.intent)}">${escapeHtml(c.intent)}</div></td>
         <td>${fmt(c.segment_count || 0)}</td>
         <td>${fmt(c.member_count || 0)}</td>
         <td><span class="cloud-orch-status-chip ${escapeHtml(c.review_status)}">${escapeHtml(c.review_status)}</span></td>
@@ -231,6 +243,8 @@
       </div>
     `);
 
+    const editable = ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
+
     let segHtml = '';
     for (const seg of (overview.segments || [])) {
       let stepsHtml = '';
@@ -241,15 +255,30 @@
         for (const step of steps) {
           const dayLabel = step.day_offset === 0 ? 'D+0（首日）' : `D+${step.day_offset}`;
           const stopChip = step.stop_on_reply ? '<span class="step-stop">回复后停止</span>' : '';
+          // step.content_payload_json 可能是 dict（PG）或 string（SQLite），后端 assemble_campaign_overview 没解
+          let payload = {};
+          try {
+            const raw = step.content_payload_json;
+            if (raw && typeof raw === 'object') payload = raw;
+            else if (typeof raw === 'string' && raw) payload = JSON.parse(raw);
+          } catch { payload = {}; }
+          const imageMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
+          const imageLine = imageMediaIds.length
+            ? `图片：${imageMediaIds.length} 张（${imageMediaIds.map(m => escapeHtml(String(m).slice(0,8))+'…').join(', ')}）`
+            : '图片：未配置';
+          const editBtn = editable
+            ? `<button class="cloud-camp-step-edit" data-step-index="${fmt(step.step_index)}">编辑</button>`
+            : '';
           stepsHtml += `
-            <div class="cloud-camp-step-row">
+            <div class="cloud-camp-step-row" data-step-row="${fmt(step.step_index)}">
               <div class="step-head">
                 <span class="step-day">${escapeHtml(dayLabel)}</span>
                 <span class="step-time">${escapeHtml(step.send_time || '10:00')}</span>
                 ${stopChip}
+                ${editBtn}
               </div>
               <div class="step-text">${escapeHtml(step.content_text || '')}</div>
-              <div class="step-image">图片：暂未配置</div>
+              <div class="step-image">${imageLine}</div>
             </div>
           `;
         }
@@ -288,6 +317,17 @@
 
     detailBody.innerHTML = sections.join('');
     detailBody.querySelector('#cloud-camp-view-members')?.addEventListener('click', () => openMembersDrawer(camp.display_name || camp.campaign_code));
+    // 给每个 step 卡片的「编辑」按钮挂事件
+    detailBody.querySelectorAll('.cloud-camp-step-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const stepIndex = btn.dataset.stepIndex;
+        const seg = (overview.segments || []).find(s => (s.steps || []).some(st => String(st.step_index) === String(stepIndex)));
+        if (!seg) return;
+        const step = seg.steps.find(st => String(st.step_index) === String(stepIndex));
+        if (!step) return;
+        openStepEditor(step, btn.closest('.cloud-camp-step-row'));
+      });
+    });
 
     const startable = ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
     const hasSteps = (overview.segments || []).some(s => (s.steps || []).length > 0);
@@ -369,6 +409,69 @@
     currentCode = '';
     loadList();
   });
+
+  // ----- step editor (inline) -----
+  function openStepEditor(step, rowEl) {
+    if (!rowEl) return;
+    if (rowEl.dataset.editing === '1') return;
+    rowEl.dataset.editing = '1';
+    let payload = {};
+    try {
+      const raw = step.content_payload_json;
+      if (raw && typeof raw === 'object') payload = raw;
+      else if (typeof raw === 'string' && raw) payload = JSON.parse(raw);
+    } catch { payload = {}; }
+    const imageMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
+    const originalHtml = rowEl.innerHTML;
+    rowEl.innerHTML = `
+      <div class="cloud-camp-step-edit-form">
+        <div class="edit-grid">
+          <label>D+
+            <input type="number" min="0" max="365" class="admin-input edit-day-offset" value="${fmt(step.day_offset || 0)}">
+          </label>
+          <label>发送时间
+            <input type="time" class="admin-input edit-send-time" value="${escapeHtml(step.send_time || '10:00')}">
+          </label>
+          <label class="edit-stop-on-reply-label">
+            <input type="checkbox" class="edit-stop-on-reply" ${step.stop_on_reply ? 'checked' : ''}> 收到回复后停止后续节奏
+          </label>
+        </div>
+        <label class="edit-block">话术
+          <textarea class="admin-input edit-content-text" rows="6">${escapeHtml(step.content_text || '')}</textarea>
+        </label>
+        <label class="edit-block">图片 media_id（每行一个，最多 9 张；需先在企微素材库上传拿到 media_id）
+          <textarea class="admin-input edit-image-media-ids" rows="3" placeholder="例：3a4b5c6d-...">${imageMediaIds.map(m => escapeHtml(m)).join('\n')}</textarea>
+        </label>
+        <div class="edit-actions">
+          <button class="admin-button admin-button--primary edit-save">保存</button>
+          <button class="admin-button admin-button--ghost edit-cancel">取消</button>
+        </div>
+      </div>
+    `;
+    rowEl.querySelector('.edit-cancel').addEventListener('click', () => {
+      rowEl.innerHTML = originalHtml;
+      rowEl.dataset.editing = '0';
+      // 重新挂编辑按钮事件
+      rowEl.querySelector('.cloud-camp-step-edit')?.addEventListener('click', () => loadDetail(currentCode));
+    });
+    rowEl.querySelector('.edit-save').addEventListener('click', async () => {
+      const body = {
+        content_text: rowEl.querySelector('.edit-content-text').value,
+        send_time: rowEl.querySelector('.edit-send-time').value || '10:00',
+        day_offset: parseInt(rowEl.querySelector('.edit-day-offset').value || '0', 10),
+        stop_on_reply: rowEl.querySelector('.edit-stop-on-reply').checked,
+        image_media_ids: rowEl.querySelector('.edit-image-media-ids').value
+          .split('\n').map(s => s.trim()).filter(Boolean),
+      };
+      const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps/${encodeURIComponent(step.step_index)}`, {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      if (!data.ok) { alert('保存失败：' + (data.error || '')); return; }
+      loadDetail(currentCode);
+    });
+  }
 
   // ----- members drawer -----
   let drawerCampCode = '';
