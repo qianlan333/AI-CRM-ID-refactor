@@ -468,6 +468,27 @@ def cloud_orchestrator_reject_campaign(campaign_code: str) -> Response:
     return jsonify({"ok": ok})
 
 
+def cloud_orchestrator_run_due_campaigns() -> Response:
+    """供 cron 调用：扫一批 due 的 campaign_member 各推一步。
+
+    与 ``automation-conversion/reply-monitor/run-due`` 同一类外部触发入口。
+    服务器配 ``*/1 * * * * curl -fsS -X POST http://127.0.0.1:5001/api/admin/cloud-orchestrator/campaigns/run-due``
+    或 systemd timer 每分钟 / 5 分钟跑一次即可。
+
+    没有 active campaign 或 due 都未到时，返回 processed=0；调用是幂等的。
+    """
+    from ..domains.campaigns.scheduler import process_due_campaign_members
+
+    body = request.get_json(silent=True) or {}
+    batch_size = int(body.get("batch_size") or request.args.get("batch_size") or 200)
+    try:
+        result = process_due_campaign_members(batch_size=max(1, min(batch_size, 1000)))
+        return jsonify({"ok": True, **result})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("cloud_orchestrator_run_due_campaigns failed")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 def admin_cloud_orchestrator_campaigns_workspace() -> Response:
     """Campaign 待审 / 审阅工作台。"""
     try:
@@ -607,6 +628,10 @@ def register_routes(bp):
         "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/reject",
         methods=["POST"],
     )(cloud_orchestrator_reject_campaign)
+    bp.route(
+        "/api/admin/cloud-orchestrator/campaigns/run-due",
+        methods=["POST"],
+    )(cloud_orchestrator_run_due_campaigns)
     bp.route(
         "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/members",
         methods=["GET"],
