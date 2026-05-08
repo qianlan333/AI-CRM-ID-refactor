@@ -198,6 +198,79 @@
   const fmt = s => (s == null ? '' : String(s));
   const escapeHtml = s => fmt(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+  let _miniprogramLibraryCache = null;
+  async function loadMiniprogramLibrary() {
+    if (_miniprogramLibraryCache) return _miniprogramLibraryCache;
+    try {
+      const resp = await fetch('/api/admin/miniprogram-library', { credentials: 'same-origin' });
+      const data = await resp.json();
+      _miniprogramLibraryCache = data.ok ? (data.items || []) : [];
+    } catch { _miniprogramLibraryCache = []; }
+    return _miniprogramLibraryCache;
+  }
+  function attachMiniprogramPicker(rowEl) {
+    const idsInput = rowEl.querySelector('.edit-miniprogram-ids');
+    const listEl = rowEl.querySelector('.edit-miniprogram-list');
+    const summaryEl = rowEl.querySelector('.edit-miniprogram-summary');
+    const pickBtn = rowEl.querySelector('.edit-pick-miniprogram');
+    if (!idsInput || !pickBtn) return;
+    function getIds() { try { return JSON.parse(idsInput.value || '[]'); } catch { return []; } }
+    async function render() {
+      const ids = getIds();
+      const items = await loadMiniprogramLibrary();
+      summaryEl.textContent = '已选 ' + ids.length + ' 个';
+      if (!ids.length) { listEl.innerHTML = '<div style="font-size:12px;color:#aaa;">暂未选择小程序</div>'; return; }
+      listEl.innerHTML = ids.map(function (id, idx) {
+        const it = items.find(function (x) { return x.id === id; }) || { appid: '(未知)', title: '#' + id };
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:12px;">'
+          + '<span><strong>' + escapeHtml(it.title || it.name || ('#' + id)) + '</strong> <span style="color:#888;">' + escapeHtml(it.appid) + ' · ' + escapeHtml(it.pagepath || '') + '</span></span>'
+          + '<button type="button" class="admin-button admin-button--ghost" data-mp-remove="' + idx + '" style="font-size:11px;">移除</button>'
+          + '</div>';
+      }).join('');
+      listEl.querySelectorAll('[data-mp-remove]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          const cur = getIds();
+          cur.splice(Number(b.getAttribute('data-mp-remove')), 1);
+          idsInput.value = JSON.stringify(cur);
+          render();
+        });
+      });
+    }
+    pickBtn.addEventListener('click', async function () {
+      const items = await loadMiniprogramLibrary();
+      if (!items.length) { alert('小程序素材库还是空的，先到 /admin/miniprogram-library 配置一条。'); return; }
+      const existing = new Set(getIds());
+      const choices = items.map(function (it) {
+        const checked = existing.has(it.id) ? 'checked' : '';
+        return '<label style="display:flex;gap:8px;align-items:center;padding:8px;border:1px solid #ddd;border-radius:6px;margin-bottom:6px;">'
+          + '<input type="checkbox" data-mp-pick="' + it.id + '" ' + checked + '>'
+          + '<span><strong>' + escapeHtml(it.title || it.name) + '</strong>'
+          + '<br><small>' + escapeHtml(it.appid) + ' · ' + escapeHtml(it.pagepath) + '</small></span>'
+          + '</label>';
+      }).join('');
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      wrap.innerHTML = '<div style="background:#fff;padding:16px;border-radius:8px;max-width:480px;width:90%;max-height:80vh;overflow:auto;">'
+        + '<h3 style="margin:0 0 12px;">选择小程序卡片</h3>' + choices
+        + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
+        + '<button class="admin-button admin-button--ghost" type="button" data-mp-cancel>取消</button>'
+        + '<button class="admin-button admin-button--primary" type="button" data-mp-confirm>确定</button>'
+        + '</div></div>';
+      document.body.appendChild(wrap);
+      wrap.querySelector('[data-mp-cancel]').addEventListener('click', function () { wrap.remove(); });
+      wrap.querySelector('[data-mp-confirm]').addEventListener('click', function () {
+        const picked = [];
+        wrap.querySelectorAll('[data-mp-pick]:checked').forEach(function (cb) {
+          picked.push(Number(cb.getAttribute('data-mp-pick')));
+        });
+        idsInput.value = JSON.stringify(picked);
+        wrap.remove();
+        render();
+      });
+    });
+    render();
+  }
+
   async function loadList() {
     const params = new URLSearchParams();
     if (reviewSel.value) params.set('review_status', reviewSel.value);
@@ -477,6 +550,7 @@
       else if (typeof raw === 'string' && raw) payload = JSON.parse(raw);
     } catch { payload = {}; }
     const imageMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
+    const miniprogramLibraryIds = Array.isArray(payload.miniprogram_library_ids) ? payload.miniprogram_library_ids : [];
     const originalHtml = rowEl.innerHTML;
     rowEl.innerHTML = `
       <div class="cloud-camp-step-edit-form">
@@ -501,6 +575,15 @@
           </div>
           <textarea class="admin-input edit-image-media-ids" rows="3" placeholder="或者手动粘贴已有 media_id（每行一个）">${imageMediaIds.map(m => escapeHtml(m)).join('\n')}</textarea>
         </label>
+        <div class="edit-block">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span>小程序卡片（从素材库选；发送前自动换 media_id）</span>
+            <button type="button" class="admin-button admin-button--ghost edit-pick-miniprogram" style="font-size:12px;">选择小程序</button>
+            <span class="edit-miniprogram-summary" style="font-size:12px;color:#888;">已选 ${miniprogramLibraryIds.length} 个</span>
+          </div>
+          <div class="edit-miniprogram-list" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;"></div>
+          <input type="hidden" class="edit-miniprogram-ids" value='${JSON.stringify(miniprogramLibraryIds)}'>
+        </div>
         <div class="edit-actions">
           <button class="admin-button admin-button--primary edit-save">保存</button>
           <button class="admin-button admin-button--ghost edit-cancel">取消</button>
@@ -544,6 +627,7 @@
       fileInput.value = '';
     });
 
+    attachMiniprogramPicker(rowEl);
     rowEl.querySelector('.edit-cancel').addEventListener('click', () => {
       rowEl.innerHTML = originalHtml;
       rowEl.dataset.editing = '0';
@@ -551,6 +635,8 @@
       rowEl.querySelector('.cloud-camp-step-edit')?.addEventListener('click', () => loadDetail(currentCode));
     });
     rowEl.querySelector('.edit-save').addEventListener('click', async () => {
+      let miniprogramIds = [];
+      try { miniprogramIds = JSON.parse(rowEl.querySelector('.edit-miniprogram-ids').value || '[]'); } catch {}
       const body = {
         content_text: rowEl.querySelector('.edit-content-text').value,
         send_time: rowEl.querySelector('.edit-send-time').value || '10:00',
@@ -558,6 +644,7 @@
         stop_on_reply: rowEl.querySelector('.edit-stop-on-reply').checked,
         image_media_ids: rowEl.querySelector('.edit-image-media-ids').value
           .split('\n').map(s => s.trim()).filter(Boolean),
+        miniprogram_library_ids: miniprogramIds,
       };
       const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps/${encodeURIComponent(step.step_index)}`, {
         method: 'PATCH', headers: {'Content-Type': 'application/json'},
