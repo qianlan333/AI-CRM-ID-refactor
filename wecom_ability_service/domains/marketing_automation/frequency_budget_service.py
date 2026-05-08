@@ -142,7 +142,7 @@ def list_active_budgets(
         """
         SELECT id, budget_code, scope, scope_key, window_seconds, max_count, description
         FROM automation_frequency_budget
-        WHERE enabled = 1
+        WHERE enabled
         ORDER BY id ASC
         """
     )

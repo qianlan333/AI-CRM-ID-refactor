@@ -70,7 +70,7 @@ def _load_transitions_for_node(node_id: int) -> list[dict[str, Any]]:
         SELECT id, from_node_id, to_node_id, condition_kind,
                condition_payload_json, action, priority
         FROM automation_workflow_node_transition
-        WHERE from_node_id = ? AND enabled = 1
+        WHERE from_node_id = ? AND enabled
         ORDER BY priority DESC, id ASC
         """,
         (int(node_id),),
