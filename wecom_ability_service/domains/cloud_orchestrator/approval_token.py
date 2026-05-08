@@ -13,7 +13,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ...db import get_db
+from ...db import get_db, get_db_backend
 
 
 logger = logging.getLogger(__name__)
@@ -122,14 +122,26 @@ def consume_token(
                 exp = exp.replace(tzinfo=timezone.utc)
             if datetime.now(timezone.utc) > exp:
                 return {"ok": False, "reason": "expired", "operator": str(row["operator"] or "")}
-    cur.execute(
-        """
-        UPDATE cloud_approval_tokens
-        SET consumed_at = CURRENT_TIMESTAMP, consumed_by = ?
-        WHERE id = ? AND consumed_at = ''
-        """,
-        (str(consumer or ""), int(row["id"])),
-    )
+    # PG 的 consumed_at 是 TIMESTAMPTZ（默认 NULL），SQLite 是 TEXT NOT NULL DEFAULT ''。
+    # 直接 ``WHERE consumed_at = ''`` 在 PG 上会报 InvalidDatetimeFormat，必须分支处理。
+    if get_db_backend() == "postgres":
+        cur.execute(
+            """
+            UPDATE cloud_approval_tokens
+            SET consumed_at = CURRENT_TIMESTAMP, consumed_by = ?
+            WHERE id = ? AND consumed_at IS NULL
+            """,
+            (str(consumer or ""), int(row["id"])),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE cloud_approval_tokens
+            SET consumed_at = CURRENT_TIMESTAMP, consumed_by = ?
+            WHERE id = ? AND consumed_at = ''
+            """,
+            (str(consumer or ""), int(row["id"])),
+        )
     db.commit()
     if cur.rowcount and cur.rowcount > 0:
         return {"ok": True, "reason": "consumed", "operator": str(row["operator"] or "")}
