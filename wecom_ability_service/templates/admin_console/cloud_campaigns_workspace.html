@@ -133,6 +133,9 @@
 .cloud-camp-step-edit-form .edit-block { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#5b626f; }
 .cloud-camp-step-edit-form textarea { width:100%; font-family:inherit; resize:vertical; padding:8px 10px; border:1px solid #d6dae0; border-radius:4px; box-sizing:border-box; }
 .cloud-camp-step-edit-form .edit-actions { display:flex; gap:8px; justify-content:flex-end; }
+.cloud-camp-step-edit-form .edit-image-upload { display:flex; align-items:center; gap:10px; padding:6px 0; font-size:12px; color:#5b626f; }
+.cloud-camp-step-edit-form .edit-image-upload input[type=file] { font-size:12px; }
+.cloud-camp-step-edit-form .edit-image-upload-status { color:#287a3c; }
 
 .cloud-camp-members-summary { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .cloud-camp-members-total { font-size:18px; font-weight:600; color:#1d1d1f; }
@@ -439,8 +442,12 @@
         <label class="edit-block">话术
           <textarea class="admin-input edit-content-text" rows="6">${escapeHtml(step.content_text || '')}</textarea>
         </label>
-        <label class="edit-block">图片 media_id（每行一个，最多 9 张；需先在企微素材库上传拿到 media_id）
-          <textarea class="admin-input edit-image-media-ids" rows="3" placeholder="例：3a4b5c6d-...">${imageMediaIds.map(m => escapeHtml(m)).join('\n')}</textarea>
+        <label class="edit-block">图片（最多 9 张，自动上传到企微）
+          <div class="edit-image-upload">
+            <input type="file" accept="image/*" class="edit-image-file" multiple>
+            <span class="edit-image-upload-status"></span>
+          </div>
+          <textarea class="admin-input edit-image-media-ids" rows="3" placeholder="或者手动粘贴已有 media_id（每行一个）">${imageMediaIds.map(m => escapeHtml(m)).join('\n')}</textarea>
         </label>
         <div class="edit-actions">
           <button class="admin-button admin-button--primary edit-save">保存</button>
@@ -448,6 +455,43 @@
         </div>
       </div>
     `;
+    // 选文件 → 自动上传到企微 → 把 media_id 追加到 textarea
+    const fileInput = rowEl.querySelector('.edit-image-file');
+    const statusEl = rowEl.querySelector('.edit-image-upload-status');
+    const mediaTextarea = rowEl.querySelector('.edit-image-media-ids');
+    fileInput.addEventListener('change', async () => {
+      const files = Array.from(fileInput.files || []);
+      if (!files.length) return;
+      fileInput.disabled = true;
+      const existing = mediaTextarea.value.split('\n').map(s => s.trim()).filter(Boolean);
+      let added = 0, failed = 0;
+      for (const f of files) {
+        statusEl.textContent = `上传中 ${added + failed + 1}/${files.length}：${f.name}…`;
+        const fd = new FormData();
+        fd.append('image', f);
+        try {
+          const resp = await fetch('/api/admin/cloud-orchestrator/media/upload', { method: 'POST', body: fd });
+          const data = await resp.json();
+          if (data.ok && data.media_id) {
+            existing.push(data.media_id);
+            added++;
+          } else {
+            failed++;
+            console.warn('upload failed', f.name, data);
+          }
+        } catch (err) {
+          failed++;
+          console.warn('upload error', f.name, err);
+        }
+      }
+      mediaTextarea.value = existing.join('\n');
+      statusEl.textContent = failed === 0
+        ? `已上传 ${added} 张`
+        : `已上传 ${added} 张，失败 ${failed} 张（看 console）`;
+      fileInput.disabled = false;
+      fileInput.value = '';
+    });
+
     rowEl.querySelector('.edit-cancel').addEventListener('click', () => {
       rowEl.innerHTML = originalHtml;
       rowEl.dataset.editing = '0';

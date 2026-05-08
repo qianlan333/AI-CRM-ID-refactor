@@ -41,6 +41,50 @@ def _due_at_for_step(*, anchor_date: str, day_offset: int, send_time: str) -> st
     return (base + timedelta(days=int(day_offset))).isoformat()
 
 
+def _has_inbound_since(*, external_userid: str, since_iso: str) -> bool:
+    """看 archived_messages 里 since_iso 之后这个 external_userid 有没有真实回复。
+
+    判定与 reply_monitor._reply_monitor_candidate_message 一致：private 单聊 +
+    sender == external_userid（用户作为发送方就是 inbound）+ msgtype 不在系统消息列表。
+    用复合索引 (external_userid, send_time)，扫描代价 O(log N)。
+    """
+    if not external_userid or not since_iso:
+        return False
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT 1 FROM archived_messages
+        WHERE external_userid = ?
+          AND chat_type = 'private'
+          AND sender = ?
+          AND send_time > ?
+          AND msgtype NOT IN ('event', 'revoke', 'calendar', 'vote')
+        LIMIT 1
+        """,
+        (str(external_userid), str(external_userid), str(since_iso)),
+    )
+    return cur.fetchone() is not None
+
+
+def _mark_member_replied_inline(*, member_row_id: int) -> None:
+    """同步路径：发前现查命中时，立刻把 member 标 replied。reply_monitor 异步路径也会做这件事，互为兜底。"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE campaign_members SET
+            status = 'replied',
+            stop_reason = 'user_replied_inline',
+            next_due_at = '',
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (_now_iso(), int(member_row_id)),
+    )
+    db.commit()
+
+
 def _claim_due_member(*, member_row_id: int) -> bool:
     db = get_db()
     cur = db.cursor()
@@ -268,7 +312,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         """
         SELECT cm.id AS cm_id, cm.member_id, cm.external_contact_id,
                cm.campaign_id, cm.campaign_segment_id, cm.current_step_index,
-               cm.anchor_date, cm.trace_id,
+               cm.anchor_date, cm.trace_id, cm.last_step_sent_at,
                c.campaign_code, c.run_status, c.owner_userid
         FROM campaign_members cm
         JOIN campaigns c ON c.id = cm.campaign_id
@@ -303,6 +347,14 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
                 (_now_iso(), cm_id),
             )
             db.commit()
+            continue
+        # 同步路径：第二条及之后的 step 发送前，先现查会话存档看用户有没有回复。命中
+        # 直接停，不再发，也不走频次预算扣减。第一条 step 不查（last_step_sent_at 为空）。
+        last_sent = str(r["last_step_sent_at"] or "").strip()
+        external = str(r["external_contact_id"] or "")
+        if last_sent and external and _has_inbound_since(external_userid=external, since_iso=last_sent):
+            _mark_member_replied_inline(member_row_id=cm_id)
+            skipped += 1
             continue
         member_dict = {
             "member_id": int(r["member_id"] or 0),
