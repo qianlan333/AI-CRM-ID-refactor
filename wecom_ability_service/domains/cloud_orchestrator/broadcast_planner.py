@@ -173,7 +173,7 @@ def _record_plan(
             json.dumps(explanation, ensure_ascii=False)[:8000],
             json.dumps(variants, ensure_ascii=False)[:8000],
             json.dumps(copy_run_ids, ensure_ascii=False),
-            1 if requires_manual_copy else 0,
+            bool(requires_manual_copy),
             status,
             expires_at,
         ),
