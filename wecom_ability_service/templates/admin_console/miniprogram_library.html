@@ -1,6 +1,7 @@
 {% extends "admin_console/base.html" %}
 
 {% block head_extra %}
+<script src="{{ url_for('static', filename='admin_console/image_picker.js') }}"></script>
 <style>
   .mp-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #fff; }
   .mp-card h3 { margin: 0 0 4px; font-size: 16px; }
@@ -37,17 +38,9 @@
     <input id="mp-pagepath" type="text" placeholder="pages/index?from=crm">
     <label>卡片标题 title</label>
     <input id="mp-title" type="text" placeholder="点这里预约 1v1 体验课">
-    <div class="row">
-      <div>
-        <label>缩略图 URL（二选一）</label>
-        <input id="mp-thumb-url" type="text" placeholder="https://...">
-      </div>
-      <div>
-        <label>缩略图 base64（二选一，data:image/png;base64,XXX 也可）</label>
-        <input id="mp-thumb-base64" type="text">
-      </div>
-    </div>
-    <button class="btn primary" type="button" id="mp-create-btn">新增</button>
+    <label>缩略图（从图片素材库选 / 上传 / 外链都进同一个库）</label>
+    <div id="mp-thumb-picker"></div>
+    <button class="btn primary" type="button" id="mp-create-btn" style="margin-top:12px;">新增</button>
     <span id="mp-create-status" class="subtle" style="margin-left:12px;"></span>
   </div>
 
@@ -117,16 +110,24 @@ function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// 缩略图改用通用 image picker，single 模式
+const thumbPicker = window.mountImagePicker(document.getElementById('mp-thumb-picker'), {
+  mode: 'single',
+  value: 0,
+  onChange: function () { /* no-op */ },
+});
+
 document.getElementById('mp-create-btn').addEventListener('click', async function () {
   const status = document.getElementById('mp-create-status');
+  const thumbId = thumbPicker.getValue();
+  if (!thumbId) { status.textContent = '请先选择或上传缩略图'; return; }
   status.textContent = '提交中...';
   const body = {
     name: document.getElementById('mp-name').value,
     appid: document.getElementById('mp-appid').value,
     pagepath: document.getElementById('mp-pagepath').value,
     title: document.getElementById('mp-title').value,
-    thumb_image_url: document.getElementById('mp-thumb-url').value,
-    thumb_image_base64: document.getElementById('mp-thumb-base64').value,
+    thumb_image_id: thumbId,
   };
   const r = await fetch('/api/admin/miniprogram-library', {
     method: 'POST', credentials: 'same-origin',
@@ -140,8 +141,7 @@ document.getElementById('mp-create-btn').addEventListener('click', async functio
     document.getElementById('mp-appid').value = '';
     document.getElementById('mp-pagepath').value = '';
     document.getElementById('mp-title').value = '';
-    document.getElementById('mp-thumb-url').value = '';
-    document.getElementById('mp-thumb-base64').value = '';
+    thumbPicker.setValue(0);
     loadList();
   } else {
     status.textContent = '失败：' + d.error;

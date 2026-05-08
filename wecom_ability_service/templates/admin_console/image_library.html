@@ -1,0 +1,181 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  .il-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-top:14px; }
+  .il-card { border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#fff; }
+  .il-thumb { width:100%; aspect-ratio:1; background:#f5f6f8; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#bbb; overflow:hidden; margin-bottom:8px; }
+  .il-thumb img { width:100%; height:100%; object-fit:cover; }
+  .il-meta { font-size:11px; color:#888; line-height:1.5; }
+  .il-actions { display:flex; gap:6px; margin-top:8px; }
+  .il-actions button { font-size:11px; padding:3px 8px; border-radius:4px; border:1px solid #d1d5db; background:#fff; cursor:pointer; }
+  .il-actions .danger { color:#a02929; border-color:#f3c7c7; }
+  .il-form { background:#f9fafb; padding:16px; border-radius:8px; margin-top:14px; }
+  .il-form-tabs { display:flex; gap:8px; margin-bottom:10px; }
+  .il-form-tabs button { background:transparent; border:1px solid #d1d5db; border-radius:4px; padding:4px 12px; cursor:pointer; font-size:12px; }
+  .il-form-tabs button.active { background:#2c5cdb; color:#fff; border-color:#2c5cdb; }
+  .il-form-pane { display:none; }
+  .il-form-pane.active { display:block; }
+  .il-form input[type=text], .il-form input[type=url] { width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; box-sizing:border-box; }
+  .il-form label { display:block; font-size:12px; color:#5b626f; margin:8px 0 4px; }
+  .badge-on { background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:12px; font-size:11px; }
+  .badge-off { background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:11px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section>
+  <h1>{{ page_title }}</h1>
+  <p class="subtle">{{ page_summary }}</p>
+
+  <div class="il-form">
+    <h3 style="margin:0 0 8px;font-size:14px;">新增图片素材</h3>
+    <div class="il-form-tabs">
+      <button data-tab="upload" class="active">上传文件</button>
+      <button data-tab="url">外链 URL</button>
+    </div>
+    <div class="il-form-pane active" data-pane="upload">
+      <label>选择图片（image/*，最大 5MB）</label>
+      <input type="file" id="il-upload-file" accept="image/*">
+      <label>素材名（可选，留空用文件名）</label>
+      <input type="text" id="il-upload-name" placeholder="如：5月活动主图">
+      <button class="btn primary" id="il-upload-btn" type="button" style="margin-top:10px;">上传</button>
+    </div>
+    <div class="il-form-pane" data-pane="url">
+      <label>图片 URL</label>
+      <input type="url" id="il-url-input" placeholder="https://...">
+      <label>素材名（可选）</label>
+      <input type="text" id="il-url-name">
+      <button class="btn primary" id="il-url-btn" type="button" style="margin-top:10px;">添加</button>
+    </div>
+    <div id="il-form-status" class="subtle" style="margin-top:8px;font-size:12px;"></div>
+  </div>
+
+  <div id="il-list-wrap" class="il-grid">
+    <p class="subtle">加载中…</p>
+  </div>
+</section>
+
+<script>
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+async function thumbnailUrl(item) {
+  if (item._thumb) return item._thumb;
+  if (item.source === 'url' && item.source_url) { item._thumb = item.source_url; return item._thumb; }
+  try {
+    const r = await fetch('/api/admin/image-library/' + item.id, { credentials: 'same-origin' });
+    const d = await r.json();
+    if (d.ok && d.item.data_base64) {
+      item._thumb = 'data:' + (d.item.mime_type || 'image/png') + ';base64,' + d.item.data_base64;
+    }
+  } catch (e) {}
+  return item._thumb || '';
+}
+
+async function loadList() {
+  const wrap = document.getElementById('il-list-wrap');
+  wrap.innerHTML = '<p class="subtle">加载中…</p>';
+  const r = await fetch('/api/admin/image-library?enabled_only=false&limit=300', { credentials: 'same-origin' });
+  const d = await r.json();
+  if (!d.ok) { wrap.innerHTML = '<p>加载失败：' + (d.error || '') + '</p>'; return; }
+  if (!d.items.length) { wrap.innerHTML = '<p class="subtle">还没有图片素材，使用上方表单添加一条。</p>'; return; }
+  wrap.innerHTML = d.items.map(function (it) {
+    const badge = it.enabled ? '<span class="badge-on">启用</span>' : '<span class="badge-off">停用</span>';
+    return '<div class="il-card" data-id="' + it.id + '">'
+      + '<div class="il-thumb">…</div>'
+      + '<div style="font-size:13px;font-weight:500;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.name || it.file_name || '#' + it.id) + ' ' + badge + '</div>'
+      + '<div class="il-meta">id=' + it.id + ' · ' + escapeHtml(it.source) + (it.file_size ? ' · ' + Math.round(it.file_size/1024) + ' KB' : '')
+      + (it.thumb_media_id ? ' · 企微缓存' : '') + '</div>'
+      + '<div class="il-actions">'
+      + '<button data-action="toggle">' + (it.enabled ? '停用' : '启用') + '</button>'
+      + '<button data-action="rename">改名</button>'
+      + '<button data-action="delete" class="danger">删除</button>'
+      + '</div></div>';
+  }).join('');
+  // 异步填缩略图
+  d.items.forEach(async function (it) {
+    const url = await thumbnailUrl(it);
+    const cell = wrap.querySelector('.il-card[data-id="' + it.id + '"] .il-thumb');
+    if (cell && url) cell.innerHTML = '<img src="' + url + '">';
+    else if (cell) cell.textContent = '(无图)';
+  });
+  wrap.querySelectorAll('.il-card').forEach(function (card) {
+    const id = Number(card.dataset.id);
+    const item = d.items.find(function (x) { return x.id === id; });
+    card.querySelector('[data-action="toggle"]').addEventListener('click', async function () {
+      await fetch('/api/admin/image-library/' + id, {
+        method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !item.enabled }),
+      });
+      loadList();
+    });
+    card.querySelector('[data-action="rename"]').addEventListener('click', async function () {
+      const name = prompt('新备注名：', item.name || '');
+      if (name == null) return;
+      await fetch('/api/admin/image-library/' + id, {
+        method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name }),
+      });
+      loadList();
+    });
+    card.querySelector('[data-action="delete"]').addEventListener('click', async function () {
+      if (!confirm('确认删除（停用）这张图？已经引用了它的群发将无法发送。')) return;
+      await fetch('/api/admin/image-library/' + id, { method: 'DELETE', credentials: 'same-origin' });
+      loadList();
+    });
+  });
+}
+
+// tab 切换
+document.querySelectorAll('.il-form-tabs button').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.il-form-tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.il-form-pane').forEach(p => p.classList.remove('active'));
+    document.querySelector('.il-form-pane[data-pane="' + btn.dataset.tab + '"]').classList.add('active');
+  });
+});
+
+document.getElementById('il-upload-btn').addEventListener('click', async function () {
+  const status = document.getElementById('il-form-status');
+  const f = document.getElementById('il-upload-file').files[0];
+  if (!f) { status.textContent = '请先选择文件'; return; }
+  status.textContent = '上传中…';
+  const fd = new FormData();
+  fd.append('image', f);
+  fd.append('name', document.getElementById('il-upload-name').value);
+  const r = await fetch('/api/admin/image-library/upload', { method: 'POST', credentials: 'same-origin', body: fd });
+  const d = await r.json();
+  if (d.ok) {
+    status.textContent = '已新增 #' + d.item.id;
+    document.getElementById('il-upload-file').value = '';
+    document.getElementById('il-upload-name').value = '';
+    loadList();
+  } else {
+    status.textContent = '失败：' + d.error;
+  }
+});
+
+document.getElementById('il-url-btn').addEventListener('click', async function () {
+  const status = document.getElementById('il-form-status');
+  const url = document.getElementById('il-url-input').value;
+  if (!url) { status.textContent = '请输入 URL'; return; }
+  status.textContent = '提交中…';
+  const r = await fetch('/api/admin/image-library/from-url', {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: url, name: document.getElementById('il-url-name').value }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    status.textContent = '已新增 #' + d.item.id;
+    document.getElementById('il-url-input').value = '';
+    document.getElementById('il-url-name').value = '';
+    loadList();
+  } else {
+    status.textContent = '失败：' + d.error;
+  }
+});
+
+loadList();
+</script>
+{% endblock %}
