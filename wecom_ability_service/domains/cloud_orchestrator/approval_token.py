@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ...db import get_db
@@ -103,14 +103,22 @@ def consume_token(
         return {"ok": False, "reason": "scope_mismatch", "operator": str(row["operator"] or "")}
     if row["consumed_at"]:
         return {"ok": False, "reason": "already_consumed", "operator": str(row["operator"] or "")}
-    expires_at = str(row["expires_at"] or "")
-    if expires_at:
-        try:
-            exp = datetime.fromisoformat(expires_at)
-            if datetime.utcnow() > exp:
+    raw_expires = row["expires_at"]
+    if raw_expires:
+        # PG 返回 datetime（可能 aware 也可能 naive），SQLite 返回字符串
+        if isinstance(raw_expires, datetime):
+            exp = raw_expires
+        else:
+            try:
+                exp = datetime.fromisoformat(str(raw_expires))
+            except ValueError:
+                exp = None
+        if exp is not None:
+            # 统一 utc-aware 后比较，避免 PG TIMESTAMPTZ vs naive utcnow 抛 TypeError
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp:
                 return {"ok": False, "reason": "expired", "operator": str(row["operator"] or "")}
-        except ValueError:
-            pass
     cur.execute(
         """
         UPDATE cloud_approval_tokens

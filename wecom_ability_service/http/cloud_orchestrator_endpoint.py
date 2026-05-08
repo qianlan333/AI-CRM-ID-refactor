@@ -342,6 +342,43 @@ def cloud_orchestrator_pause_campaign(campaign_code: str) -> Response:
     return jsonify({"ok": True, "campaign": result})
 
 
+def cloud_orchestrator_delete_campaign_step(campaign_code: str, step_index: str) -> Response:
+    camp = campaign_service.get_campaign(campaign_code=campaign_code)
+    if not camp:
+        return jsonify({"ok": False, "error": "campaign_not_found"}), 404
+    try:
+        result = campaign_service.delete_campaign_step(
+            campaign_id=int(camp["id"]),
+            step_index=int(step_index),
+        )
+        return jsonify({"ok": True, **result})
+    except (LookupError, PermissionError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def cloud_orchestrator_add_campaign_step(campaign_code: str) -> Response:
+    """在指定 segment 末尾追加一个 step。需要前端传 ``campaign_segment_id``。"""
+    camp = campaign_service.get_campaign(campaign_code=campaign_code)
+    if not camp:
+        return jsonify({"ok": False, "error": "campaign_not_found"}), 404
+    body = request.get_json(silent=True) or {}
+    seg_id = int(body.get("campaign_segment_id") or 0)
+    if not seg_id:
+        return jsonify({"ok": False, "error": "campaign_segment_id required"}), 400
+    try:
+        result = campaign_service.append_campaign_step(
+            campaign_id=int(camp["id"]),
+            campaign_segment_id=seg_id,
+            day_offset=int(body.get("day_offset") or 0),
+            send_time=str(body.get("send_time") or "10:00"),
+            content_text=str(body.get("content_text") or ""),
+            stop_on_reply=bool(body.get("stop_on_reply", True)),
+        )
+        return jsonify({"ok": True, **result})
+    except (LookupError, PermissionError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 def cloud_orchestrator_upload_image() -> Response:
     """运营本地选图 → 上传到企微素材库 → 返回 media_id 给前端写进 step。
 
@@ -575,6 +612,14 @@ def register_routes(bp):
         "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/steps/<step_index>",
         methods=["PATCH", "POST"],
     )(cloud_orchestrator_update_campaign_step)
+    bp.route(
+        "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/steps/<step_index>",
+        methods=["DELETE"],
+    )(cloud_orchestrator_delete_campaign_step)
+    bp.route(
+        "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/steps",
+        methods=["POST"],
+    )(cloud_orchestrator_add_campaign_step)
     bp.route(
         "/api/admin/cloud-orchestrator/media/upload",
         methods=["POST"],

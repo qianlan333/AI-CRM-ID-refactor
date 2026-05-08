@@ -124,6 +124,11 @@
 .cloud-camp-step-empty { color:#a02929; font-size:13px; padding:8px 0; }
 .cloud-camp-step-edit { margin-left:auto; padding:2px 10px; border:1px solid #d3dcf2; background:#fff; color:#2c5cdb; font-size:12px; border-radius:4px; cursor:pointer; }
 .cloud-camp-step-edit:hover { background:#eef3fb; }
+.cloud-camp-step-delete { padding:2px 10px; border:1px solid #f3c7c7; background:#fff; color:#a02929; font-size:12px; border-radius:4px; cursor:pointer; margin-left:6px; }
+.cloud-camp-step-delete:hover { background:#fdecec; }
+.cloud-camp-step-add-row { margin-top:10px; padding-top:8px; border-top:1px dashed #ececec; text-align:center; }
+.cloud-camp-step-add { padding:6px 14px; border:1px dashed #c7d3f0; background:transparent; color:#2c5cdb; font-size:12px; border-radius:4px; cursor:pointer; }
+.cloud-camp-step-add:hover { background:#eef3fb; border-style:solid; }
 .cloud-camp-step-edit-form { display:flex; flex-direction:column; gap:10px; }
 .cloud-camp-step-edit-form .edit-grid { display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:13px; color:#5b626f; }
 .cloud-camp-step-edit-form .edit-grid label { display:flex; align-items:center; gap:6px; }
@@ -269,8 +274,9 @@
           const imageLine = imageMediaIds.length
             ? `图片：${imageMediaIds.length} 张（${imageMediaIds.map(m => escapeHtml(String(m).slice(0,8))+'…').join(', ')}）`
             : '图片：未配置';
-          const editBtn = editable
-            ? `<button class="cloud-camp-step-edit" data-step-index="${fmt(step.step_index)}">编辑</button>`
+          const editBtns = editable
+            ? `<button class="cloud-camp-step-edit" data-step-index="${fmt(step.step_index)}">编辑</button>
+               <button class="cloud-camp-step-delete" data-step-index="${fmt(step.step_index)}">删除</button>`
             : '';
           stepsHtml += `
             <div class="cloud-camp-step-row" data-step-row="${fmt(step.step_index)}">
@@ -278,7 +284,7 @@
                 <span class="step-day">${escapeHtml(dayLabel)}</span>
                 <span class="step-time">${escapeHtml(step.send_time || '10:00')}</span>
                 ${stopChip}
-                ${editBtn}
+                ${editBtns}
               </div>
               <div class="step-text">${escapeHtml(step.content_text || '')}</div>
               <div class="step-image">${imageLine}</div>
@@ -286,6 +292,9 @@
           `;
         }
       }
+      const addStepBtn = editable
+        ? `<button class="cloud-camp-step-add" data-segment-id="${fmt(seg.campaign_segment_id)}">+ 新增节奏</button>`
+        : '';
       segHtml += `
         <div class="cloud-camp-segment-card">
           <div class="seg-head">
@@ -293,6 +302,7 @@
             <span class="seg-meta">priority ${fmt(seg.priority)} · ${fmt(seg.allocated_count || 0)} 人 · code=${escapeHtml(seg.segment_code)}</span>
           </div>
           ${stepsHtml}
+          ${addStepBtn ? `<div class="cloud-camp-step-add-row">${addStepBtn}</div>` : ''}
         </div>
       `;
     }
@@ -331,6 +341,33 @@
         openStepEditor(step, btn.closest('.cloud-camp-step-row'));
       });
     });
+    // 「删除」节奏
+    detailBody.querySelectorAll('.cloud-camp-step-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const stepIndex = btn.dataset.stepIndex;
+        if (!confirm(`确认删除 step ${stepIndex}？此操作不可撤销。`)) return;
+        const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps/${encodeURIComponent(stepIndex)}`, {
+          method: 'DELETE',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) { alert('删除失败：' + (data.error || `HTTP ${resp.status}`)); return; }
+        loadDetail(currentCode);
+      });
+    });
+    // 「+ 新增节奏」
+    detailBody.querySelectorAll('.cloud-camp-step-add').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const segId = parseInt(btn.dataset.segmentId, 10);
+        if (!segId) return;
+        const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ campaign_segment_id: segId, day_offset: 0, send_time: '10:00', content_text: '', stop_on_reply: true }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) { alert('新增失败：' + (data.error || `HTTP ${resp.status}`)); return; }
+        loadDetail(currentCode);
+      });
+    });
 
     const startable = ['draft', 'pending_review'].includes(camp.review_status) && ['draft', 'paused'].includes(camp.run_status);
     const hasSteps = (overview.segments || []).some(s => (s.steps || []).length > 0);
@@ -346,23 +383,38 @@
     if (!confirm(`确认启动这个 Campaign 吗？启动后会按节奏自动推送，且不可撤回。`)) return;
     const operator = (window.prompt('确认人（仅做审计标记，可填昵称或工号）', 'ui_user') || '').trim();
     if (!operator) return;
-    const resp1 = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/approve`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ operator }),
-    });
-    const d1 = await resp1.json();
-    if (!d1.ok) { alert('启动失败（签发授权环节）：' + (d1.error || '')); return; }
-    const token = d1.approval && d1.approval.token;
-    if (!token) { alert('未拿到授权 token'); return; }
-    const resp2 = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/start`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ approval_token: token, human_approver: operator }),
-    });
-    const d2 = await resp2.json();
-    if (!d2.ok) { alert('启动失败：' + (d2.error || '')); return; }
-    alert('已启动，按节奏开始推送');
-    loadDetail(currentCode);
-    loadList();
+    startBtn.disabled = true;
+    const oldText = startBtn.textContent;
+    startBtn.textContent = '启动中…';
+    try {
+      const resp1 = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/approve`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ operator }),
+      });
+      // 即使 500 也尝试解析 body 拿 error；之前只看 d.ok 在 500 时直接被忽略，用户什么都看不到
+      const d1 = await resp1.json().catch(() => ({}));
+      if (!resp1.ok || !d1.ok) {
+        alert(`启动失败（签发授权环节）：${d1.error || `HTTP ${resp1.status}`}`);
+        return;
+      }
+      const token = d1.approval && d1.approval.token;
+      if (!token) { alert('未拿到授权 token'); return; }
+      const resp2 = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/start`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ approval_token: token, human_approver: operator }),
+      });
+      const d2 = await resp2.json().catch(() => ({}));
+      if (!resp2.ok || !d2.ok) {
+        alert(`启动失败：${d2.error || `HTTP ${resp2.status}（看 server log / journalctl 或 query_recent_audit_logs 查 traceback）`}`);
+        return;
+      }
+      alert(`已启动 ✓\n运行状态：${d2.campaign?.run_status || 'active'}\n下一次 cron 扫描时（约 1 分钟内）开始推送 D+0`);
+      loadDetail(currentCode);
+      loadList();
+    } finally {
+      startBtn.disabled = false;
+      startBtn.textContent = oldText;
+    }
   });
 
   rejectBtn.addEventListener('click', async () => {

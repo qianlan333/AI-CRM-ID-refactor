@@ -604,6 +604,62 @@ def update_campaign_step(
     return {"updated": True, "rowcount": int(cur.rowcount or 0)}
 
 
+def delete_campaign_step(*, campaign_id: int, step_index: int) -> dict[str, Any]:
+    """删除单个 step。仅 draft 态可删，且不能删完最后一条（campaign 没节奏无法启动）。"""
+    camp = get_campaign(campaign_id=campaign_id)
+    if not camp:
+        raise LookupError("campaign not found")
+    if camp.get("review_status") not in ("draft", "pending_review"):
+        raise PermissionError(f"campaign review_status={camp.get('review_status')} not editable")
+    if camp.get("run_status") not in ("draft", "paused"):
+        raise PermissionError(f"campaign run_status={camp.get('run_status')} not editable")
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "DELETE FROM campaign_steps WHERE campaign_id = ? AND step_index = ?",
+        (int(campaign_id), int(step_index)),
+    )
+    db.commit()
+    return {"deleted": True, "rowcount": int(cur.rowcount or 0)}
+
+
+def append_campaign_step(
+    *,
+    campaign_id: int,
+    campaign_segment_id: int,
+    day_offset: int = 0,
+    send_time: str = _DEFAULT_SEND_TIME,
+    content_text: str = "",
+    stop_on_reply: bool = True,
+) -> dict[str, Any]:
+    """在某 segment 末尾追加一个新 step；自动算下一个 step_index。仅 draft 态可加。"""
+    camp = get_campaign(campaign_id=campaign_id)
+    if not camp:
+        raise LookupError("campaign not found")
+    if camp.get("review_status") not in ("draft", "pending_review"):
+        raise PermissionError(f"campaign review_status={camp.get('review_status')} not editable")
+    if camp.get("run_status") not in ("draft", "paused"):
+        raise PermissionError(f"campaign run_status={camp.get('run_status')} not editable")
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT COALESCE(MAX(step_index), -1) AS max_idx FROM campaign_steps "
+        "WHERE campaign_segment_id = ?",
+        (int(campaign_segment_id),),
+    )
+    row = cur.fetchone() or {}
+    next_idx = int(row.get("max_idx") if isinstance(row, dict) else (row[0] if row else -1)) + 1
+    return add_step_to_campaign(
+        campaign_id=campaign_id,
+        campaign_segment_id=campaign_segment_id,
+        step_index=next_idx,
+        day_offset=int(day_offset),
+        send_time=send_time,
+        content_text=content_text,
+        stop_on_reply=stop_on_reply,
+    )
+
+
 def list_campaign_members(
     *,
     campaign_id: int,
@@ -787,6 +843,8 @@ __all__ = [
     "create_campaign_draft",
     "finish_campaign",
     "get_campaign",
+    "append_campaign_step",
+    "delete_campaign_step",
     "list_campaign_members",
     "list_campaigns",
     "update_campaign_step",
