@@ -102,7 +102,7 @@ def ensure_default_budgets() -> None:
                 INSERT INTO automation_frequency_budget
                     (budget_code, scope, scope_key, window_seconds, max_count,
                      description, enabled)
-                VALUES (?, ?, ?, ?, ?, ?, 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     spec["budget_code"],
@@ -111,6 +111,7 @@ def ensure_default_budgets() -> None:
                     spec["window_seconds"],
                     spec["max_count"],
                     spec["description"],
+                    True,  # PG: BOOLEAN; SQLite: 1（自动当 truthy）
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive

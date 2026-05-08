@@ -26,13 +26,14 @@ def _insert_segment_with_known_member(app, *, segment_code: str, member_id: int,
     db = get_db()
     cur = db.cursor()
     # 造一个 automation_member（campaign_members.member_id 必须能对上）
+    # in_pool 在 PG 是 BOOLEAN，传 True 跨库都吃；不能传 1
     cur.execute(
         """
         INSERT INTO automation_member (id, external_contact_id, phone, current_audience_code, in_pool)
-        VALUES (?, ?, '', 'operating', 1)
+        VALUES (?, ?, '', 'operating', ?)
         ON CONFLICT (id) DO UPDATE SET external_contact_id = excluded.external_contact_id
         """,
-        (member_id, external_id),
+        (member_id, external_id, True),
     )
     cur.execute(
         """
