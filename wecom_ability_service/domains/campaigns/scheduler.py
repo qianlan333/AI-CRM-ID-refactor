@@ -125,35 +125,18 @@ def _next_step(
     return dict(row) if row else None
 
 
-def _send_step_to_member(
-    *,
-    campaign: dict[str, Any],
-    member: dict[str, Any],
-    step: dict[str, Any],
-) -> dict[str, Any]:
-    """实际把这一步推给一个 member。复用 dispatch_wecom_task + 频次预算。"""
-    from ..marketing_automation import frequency_budget_service
+def _resolve_step_payload(*, campaign: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
+    """把一个 step 解析成"准备好发送的素材"：text + image_media_ids + miniprogram attachments。
+
+    与 member 无关，所以可以一次解析后批量复用给 N 个 member —— 这是聚合发送的前提。
+    返回的 dict 含 ``base_request``（缺 external_userid）+ ``trace_id`` + ``error``。
+    error 非空表示解析失败（图片/小程序素材库 resolve 失败之类），整批不应发送。
+    """
     from ..marketing_automation.service import DEFAULT_AUTOMATION_OWNER_USERID
-    from ..marketing_automation.service import dispatch_wecom_task
-
-    external = str(member.get("external_contact_id") or "")
-    member_id = int(member.get("member_id") or 0)
-    if not external:
-        return {"ok": False, "reason": "missing_external_contact_id"}
-
-    # 频次预算
-    verdict = frequency_budget_service.check_member_budget(
-        member_id=member_id,
-        external_contact_id=external,
-        channels=("wecom_private", "ai_initiated"),
-        program_codes=("campaign",),
-    )
-    if not verdict.allowed:
-        return {"ok": False, "reason": verdict.skip_reason}
 
     owner_userid = str(campaign.get("owner_userid") or "") or DEFAULT_AUTOMATION_OWNER_USERID
-    # 从 step.content_payload_json 读编辑界面填的图片 media_id（PG jsonb 自动反序列化为 dict，
-    # SQLite 是字符串）
+
+    # PG jsonb 自动反序列化为 dict；SQLite 是字符串
     raw_payload = step.get("content_payload_json") or "{}"
     if isinstance(raw_payload, dict):
         step_payload = raw_payload
@@ -162,6 +145,7 @@ def _send_step_to_member(
             step_payload = json.loads(str(raw_payload) or "{}")
         except (TypeError, ValueError):
             step_payload = {}
+
     # 老格式：image_media_ids 直接是企微 media_id（兼容老 step）
     image_media_ids = [str(x).strip() for x in (step_payload.get("image_media_ids") or []) if str(x).strip()]
     # 新格式：image_library_ids 引用图片素材库；发送前 resolve 成有效 media_id
@@ -179,10 +163,11 @@ def _send_step_to_member(
                 resolved = _image_library.resolve_image_media_id(iid)
             except Exception as exc:
                 logger.exception("resolve image_library_id=%s failed: %s", iid, exc)
-                return {"ok": False, "reason": f"image_library_resolve_failed:id={iid}:{exc}"}
+                return {"error": f"image_library_resolve_failed:id={iid}:{exc}"}
             if resolved:
                 image_media_ids.append(resolved)
     image_media_ids = image_media_ids[:9]  # 企微单消息最多 9 张
+
     miniprogram_library_ids: list[int] = []
     for raw_lid in (step_payload.get("miniprogram_library_ids") or []):
         try:
@@ -194,14 +179,52 @@ def _send_step_to_member(
         from .. import miniprogram_library as _miniprogram_library
 
         for lid in miniprogram_library_ids:
-            attachments.append(_miniprogram_library.materialize_miniprogram_attachment(lid))
-    request_payload = {
-        "sender": owner_userid,
-        "external_userid": [external],
-        "text": {"content": str(step.get("content_text") or "")},
-        "image_media_ids": image_media_ids,
-        "attachments": attachments,
+            try:
+                attachments.append(_miniprogram_library.materialize_miniprogram_attachment(lid))
+            except Exception as exc:
+                logger.exception("resolve miniprogram_library_id=%s failed: %s", lid, exc)
+                return {"error": f"miniprogram_resolve_failed:id={lid}:{exc}"}
+
+    return {
+        "base_request": {
+            "sender": owner_userid,
+            "text": {"content": str(step.get("content_text") or "")},
+            "image_media_ids": image_media_ids,
+            "attachments": attachments,
+        },
     }
+
+
+def _dispatch_step_batch(
+    *,
+    campaign: dict[str, Any],
+    members: list[dict[str, Any]],
+    step: dict[str, Any],
+) -> dict[str, Any]:
+    """**一次** dispatch 把同一 step 的素材发给 N 个 external_userid。
+
+    企微的 ``add_msg_template`` 原生支持 ``external_userid`` 数组 — 一次调用就在
+    每个员工的"客户群发"列表里产生 1 个 task（包含 N 个客户），运营点 1 次确认即可。
+    之前每个 member 单独调一次，导致运营要点 N 次确认 — 严重的产品体验 bug。
+
+    所有 ``members`` 必须是同一 ``(campaign_id, campaign_segment_id, step_index)``，
+    调用方负责分组。"""
+    from ..marketing_automation.service import dispatch_wecom_task
+
+    if not members:
+        return {"ok": False, "reason": "empty_batch"}
+
+    resolved = _resolve_step_payload(campaign=campaign, step=step)
+    if resolved.get("error"):
+        return {"ok": False, "reason": resolved["error"]}
+
+    externals = [m["external_contact_id"] for m in members if m.get("external_contact_id")]
+    if not externals:
+        return {"ok": False, "reason": "no_external_userid"}
+
+    request_payload = dict(resolved["base_request"])
+    request_payload["external_userid"] = externals
+
     try:
         wecom_result = dispatch_wecom_task(
             "private_message",
@@ -209,14 +232,34 @@ def _send_step_to_member(
             request_payload,
         )
         task_id = int(wecom_result.get("task_id") or 0)
+        return {"ok": True, "task_id": task_id, "recipient_count": len(externals)}
     except Exception as exc:
-        logger.exception("campaign send failed: %s", exc)
+        logger.exception("campaign batch dispatch failed (%d recipients): %s", len(externals), exc)
         return {"ok": False, "reason": f"dispatch_error:{exc}"}
 
+
+def _record_member_after_dispatch(
+    *,
+    campaign: dict[str, Any],
+    member: dict[str, Any],
+    step: dict[str, Any],
+    send_result: dict[str, Any],
+) -> None:
+    """成功 dispatch 后，per-member 写 ``automation_touch_delivery_log`` + 频次预算消耗。
+
+    跟 dispatch 解耦，所以同一 task_id 的 N 个 member 可以分别记账，每条独立带 trace_id。
+    """
+    from ..marketing_automation import frequency_budget_service
+
+    if not send_result.get("ok"):
+        return  # 没真发出去就不记
+    task_id = int(send_result.get("task_id") or 0)
+    external = str(member.get("external_contact_id") or "")
+    member_id = int(member.get("member_id") or 0)
     trace_id = str(member.get("trace_id") or campaign.get("trace_id") or "")
+
     db = get_db()
     cur = db.cursor()
-    # 写 touch delivery log（沿用 program_code='campaign'）
     cur.execute(
         """
         INSERT INTO automation_touch_delivery_log
@@ -237,6 +280,7 @@ def _send_step_to_member(
                     "campaign_segment_id": member.get("campaign_segment_id"),
                     "step_index": step.get("step_index"),
                     "wecom_task_id": task_id,
+                    "batch_recipient_count": send_result.get("recipient_count") or 1,
                 },
                 ensure_ascii=False,
             ),
@@ -245,7 +289,6 @@ def _send_step_to_member(
         ),
     )
     db.commit()
-    # 写频次预算消耗
     try:
         frequency_budget_service.record_consumption(
             member_id=member_id or None,
@@ -258,7 +301,6 @@ def _send_step_to_member(
         )
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("record_consumption failed: %s", exc)
-    return {"ok": True, "task_id": task_id}
 
 
 def progress_member_after_send(
@@ -347,7 +389,18 @@ def progress_member_after_send(
 
 
 def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
-    """Cron 入口：扫一批 due 的 member、各推一步。"""
+    """Cron 入口：扫一批 due 的 member、按 (segment, step) 聚合后批量推送。
+
+    两阶段：
+    1. **per-member 决策** — claim 乐观锁、stop_on_reply 同步检查、频次预算检查；
+       通过的 member 加入分组 buffer ``(campaign_segment_id, step_index) → [members]``
+    2. **per-group 批量 dispatch** — 每组**一次** ``dispatch_wecom_task``，企微侧
+       产生 1 个含 N 个客户的群发任务。运营点 1 次确认 = N 个客户都收到。
+
+    之前每 member 一个 dispatch 让运营要点 N 次确认（用户实测：64 人 = 64 个待确认任务）。
+    """
+    from ..marketing_automation import frequency_budget_service
+
     db = get_db()
     cur = db.cursor()
     # PG: ``next_due_at IS NOT NULL``；SQLite: ``next_due_at <> ''``。``_empty_ts()`` 决定占位语义
@@ -370,15 +423,17 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         (_now_iso(), int(batch_size)),
     )
     due = cur.fetchall() or []
-    processed = 0
-    sent_ok = 0
-    sent_failed = 0
-    skipped = 0
+
+    # group key = (campaign_segment_id, step_index) → step + campaign_dict + members[]
+    groups: dict[tuple[int, int], dict[str, Any]] = {}
+    skipped_budget = 0
+    skipped_inline_reply = 0
+    completed_no_step = 0
+
     for r in due:
         cm_id = int(r["cm_id"])
         if not _claim_due_member(member_row_id=cm_id):
             continue
-        processed += 1
         # 取下一个待发的 step（current_step_index 之后的第一个）
         step = _next_step(
             campaign_segment_id=int(r["campaign_segment_id"]),
@@ -391,6 +446,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
                 (_empty_ts(), _now_iso(), cm_id),
             )
             db.commit()
+            completed_no_step += 1
             continue
         # 同步路径：第二条及之后的 step 发送前，先现查会话存档看用户有没有回复。命中
         # 直接停，不再发，也不走频次预算扣减。第一条 step 不查（last_step_sent_at 为空）。
@@ -398,11 +454,42 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         external = str(r["external_contact_id"] or "")
         if last_sent and external and _has_inbound_since(external_userid=external, since_iso=last_sent):
             _mark_member_replied_inline(member_row_id=cm_id)
-            skipped += 1
+            skipped_inline_reply += 1
             continue
+        if not external:
+            # 没 external_userid 的 member 直接标失败，避免整批 dispatch 时被拒绝
+            cur.execute(
+                "UPDATE campaign_members SET status = 'failed', last_error_text = ?, updated_at = ? "
+                "WHERE id = ?",
+                ("missing_external_contact_id", _now_iso(), cm_id),
+            )
+            db.commit()
+            continue
+        # 频次预算 per-member（如果该 member 跨方案累计触达超预算就跳过）
+        member_id = int(r["member_id"] or 0)
+        verdict = frequency_budget_service.check_member_budget(
+            member_id=member_id,
+            external_contact_id=external,
+            channels=("wecom_private", "ai_initiated"),
+            program_codes=("campaign",),
+        )
+        if not verdict.allowed:
+            # 把 status 改回 pending，next_due_at 推后 1 小时避免下次 cron 立刻重试
+            retry_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+            cur.execute(
+                "UPDATE campaign_members SET status = 'pending', next_due_at = ?, "
+                "last_error_text = ?, updated_at = ? WHERE id = ?",
+                (retry_at, str(verdict.skip_reason or "")[:300], _now_iso(), cm_id),
+            )
+            db.commit()
+            skipped_budget += 1
+            continue
+
+        # 加入分组 buffer
         member_dict = {
-            "member_id": int(r["member_id"] or 0),
-            "external_contact_id": str(r["external_contact_id"] or ""),
+            "cm_id": cm_id,
+            "member_id": member_id,
+            "external_contact_id": external,
             "trace_id": str(r["trace_id"] or ""),
             "campaign_segment_id": int(r["campaign_segment_id"]),
         }
@@ -412,31 +499,53 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
             "owner_userid": str(r["owner_userid"] or ""),
             "trace_id": str(r["trace_id"] or ""),
         }
+        key = (int(r["campaign_segment_id"]), int(step.get("step_index") or 0))
+        if key not in groups:
+            groups[key] = {"campaign": campaign_dict, "step": step, "members": []}
+        groups[key]["members"].append(member_dict)
+
+    # 阶段 2：per-group 一次 dispatch
+    sent_ok = 0
+    sent_failed = 0
+    batches_dispatched = 0
+    for key, group in groups.items():
+        members = group["members"]
         try:
-            send_res = _send_step_to_member(
-                campaign=campaign_dict,
-                member=member_dict,
-                step=step,
+            send_res = _dispatch_step_batch(
+                campaign=group["campaign"],
+                members=members,
+                step=group["step"],
             )
         except Exception as exc:
-            logger.exception("send step crashed: %s", exc)
+            logger.exception("dispatch_step_batch crashed: %s", exc)
             send_res = {"ok": False, "reason": f"crash:{exc}"}
-        if send_res.get("ok"):
-            sent_ok += 1
-        elif (send_res.get("reason") or "").startswith("budget_exceeded"):
-            skipped += 1
-        else:
-            sent_failed += 1
-        progress_member_after_send(
-            member_row_id=cm_id,
-            step=step,
-            send_result=send_res,
-        )
+
+        batches_dispatched += 1
+        for m in members:
+            if send_res.get("ok"):
+                sent_ok += 1
+                _record_member_after_dispatch(
+                    campaign=group["campaign"],
+                    member=m,
+                    step=group["step"],
+                    send_result=send_res,
+                )
+            else:
+                sent_failed += 1
+            progress_member_after_send(
+                member_row_id=int(m["cm_id"]),
+                step=group["step"],
+                send_result=send_res,
+            )
+
     return {
-        "processed": processed,
+        "processed": sent_ok + sent_failed + skipped_budget + skipped_inline_reply + completed_no_step,
         "sent_ok": sent_ok,
         "sent_failed": sent_failed,
-        "skipped_budget": skipped,
+        "skipped_budget": skipped_budget,
+        "skipped_inline_reply": skipped_inline_reply,
+        "completed_no_step": completed_no_step,
+        "batches_dispatched": batches_dispatched,
         "scanned_at": _now_iso(),
     }
 
