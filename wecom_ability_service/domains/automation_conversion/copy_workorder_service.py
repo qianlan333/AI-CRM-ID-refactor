@@ -70,7 +70,7 @@ def _resolve_agent_code_by_scenario(scenario_code: str) -> tuple[str, str, str]:
         SELECT agent_code, published_role_prompt, draft_role_prompt,
                published_task_prompt, draft_task_prompt, published_version
         FROM automation_agent_config
-        WHERE scenario_code = ? AND enabled = 1
+        WHERE scenario_code = ? AND enabled
         ORDER BY published_version DESC, updated_at DESC
         LIMIT 1
         """,
