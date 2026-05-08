@@ -557,6 +557,38 @@ _TOOL_SPECS: list[dict[str, Any]] = [
             "required": ["campaign_id"],
         },
     },
+    {
+        "name": "query_recent_audit_logs",
+        "side_effect": "read",
+        "description": (
+            "查最近的 MCP tool 调用审计日志（cloud_agent_audit_log 表）。"
+            "按 status='error' 可拿到所有报错及完整 error_message + arguments_json。"
+            "Agent 调用别的 tool 失败后第一时间 call 这个就能定位 SQL/参数错误，不用回 UI 截图。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "description": "success / error，不填则全部"},
+                "tool_name": {"type": "string", "description": "只看某个 tool 的日志"},
+                "trace_id": {"type": "string"},
+                "session_id": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+            },
+        },
+    },
+    {
+        "name": "query_table_schema",
+        "side_effect": "read",
+        "description": (
+            "查一张表的列定义（PG/SQLite 都支持），便于 Agent 写 SQL 前确认列名/类型。"
+            "比让用户截图 schema 文件高效得多。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"table_name": {"type": "string"}},
+            "required": ["table_name"],
+        },
+    },
 ]
 
 
@@ -885,6 +917,63 @@ def dispatch_cloud_tool(
             ctx["result"] = campaign_service.resume_campaign(
                 campaign_id=int(args.get("campaign_id") or 0),
             )
+            return ctx["result"]
+
+        if tool_name == "query_recent_audit_logs":
+            from . import audit as _audit
+            from ...db import get_db
+            db = get_db()
+            cur = db.cursor()
+            where = ["1=1"]
+            params: list[Any] = []
+            if args.get("status"):
+                where.append("status = ?")
+                params.append(str(args["status"]))
+            if args.get("tool_name"):
+                where.append("tool_name = ?")
+                params.append(str(args["tool_name"]))
+            if args.get("trace_id"):
+                where.append("trace_id = ?")
+                params.append(str(args["trace_id"]))
+            if args.get("session_id"):
+                where.append("session_id = ?")
+                params.append(str(args["session_id"]))
+            params.append(int(args.get("limit") or 10))
+            cur.execute(
+                f"""
+                SELECT id, session_id, trace_id, operator, tool_name, status,
+                       latency_ms, error_message, arguments_json, result_summary,
+                       created_at
+                FROM cloud_agent_audit_log
+                WHERE {' AND '.join(where)}
+                ORDER BY id DESC LIMIT ?
+                """,
+                tuple(params),
+            )
+            ctx["result"] = {"rows": [dict(r) for r in (cur.fetchall() or [])]}
+            return ctx["result"]
+
+        if tool_name == "query_table_schema":
+            from ...db import get_db, get_db_backend
+            table_name = str(args.get("table_name") or "").strip()
+            if not table_name or not table_name.replace("_", "").isalnum():
+                raise ValueError("invalid table_name")
+            db = get_db()
+            cur = db.cursor()
+            if get_db_backend() == "postgres":
+                cur.execute(
+                    """
+                    SELECT column_name, data_type, is_nullable, column_default
+                    FROM information_schema.columns
+                    WHERE table_name = ?
+                    ORDER BY ordinal_position
+                    """,
+                    (table_name,),
+                )
+            else:
+                cur.execute(f"PRAGMA table_info({table_name})")
+            rows = [dict(r) for r in (cur.fetchall() or [])]
+            ctx["result"] = {"table_name": table_name, "columns": rows}
             return ctx["result"]
 
         raise ValueError(f"unknown cloud tool: {tool_name}")
