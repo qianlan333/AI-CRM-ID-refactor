@@ -54,10 +54,18 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
 
         app = create_app(test_config={"TESTING": True, "DATABASE_URL": database_url})
         with app.app_context():
-            # 确保 schema 存在 + truncate 关键表保证 test 隔离
+            # 全新空数据库下，``init_db -> _init_postgres`` 开头有 ALTER / CREATE INDEX
+            # 引用 ``automation_channel`` 等基础表，但 schema_postgres.sql 在该函数 **末尾**
+            # 才执行。生产环境老库基础表早就存在，所以没问题；CI 全新 PG 必须先手动跑 schema
+            # 文件建表才行。
+            from pathlib import Path
+            db = get_db()
+            schema_path = Path(app.root_path) / "schema_postgres.sql"
+            if schema_path.exists():
+                db.executescript(schema_path.read_text(encoding="utf-8"))
+                db.commit()
             from wecom_ability_service.db import init_db as _init
             _init()
-            db = get_db()
             cur = db.cursor()
             for table in _PG_TABLES_TO_TRUNCATE:
                 try:
