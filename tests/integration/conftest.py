@@ -23,6 +23,38 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
+def _run_schema_with_retries(db: Any, script: str, *, max_passes: int = 3) -> None:
+    """跑 schema_postgres.sql，对前向 FK 引用容错。
+
+    schema_postgres.sql 里有 ``customer_value_segment_current`` / ``...history`` 引用
+    ``questionnaire_submissions(id)``，但前者出现在表本体之前。生产是从老库长起来
+    的 — 表全在，schema 重跑时只是 ``IF NOT EXISTS`` noop。但 CI 全新空 PG 顺序
+    跑会撞 ``UndefinedTable``。
+
+    策略：每 pass 跑所有 statements，失败的 (UndefinedTable / DuplicateTable 之类)
+    收集起来，下一 pass 重试。一般 2-3 pass 收敛。
+    """
+    statements = [s.strip() for s in script.split(";") if s.strip()]
+    pending = statements
+    for pass_idx in range(max_passes):
+        if not pending:
+            return
+        cursor = db._conn.cursor()  # 避开 PostgresCursor 的 placeholder 翻译
+        next_pending: list[str] = []
+        for stmt in pending:
+            try:
+                cursor.execute(stmt)
+                db._conn.commit()
+            except Exception:
+                db._conn.rollback()
+                next_pending.append(stmt)
+        cursor.close()
+        if len(next_pending) == len(pending):
+            # 没进展 — 残留的就是真坏掉的，让后续 init_db 跑出真实错误
+            return
+        pending = next_pending
+
+
 # 测试时希望被 truncate 的表（仅 PG 模式生效；SQLite 整库重建）
 # 顺序按 FK 依赖反向：子表先清
 _PG_TABLES_TO_TRUNCATE = [
@@ -56,13 +88,14 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
         with app.app_context():
             # 全新空数据库下，``init_db -> _init_postgres`` 开头有 ALTER / CREATE INDEX
             # 引用 ``automation_channel`` 等基础表，但 schema_postgres.sql 在该函数 **末尾**
-            # 才执行。生产环境老库基础表早就存在，所以没问题；CI 全新 PG 必须先手动跑 schema
-            # 文件建表才行。
+            # 才执行。生产环境老库基础表早已存在所以没踩雷；CI 全新 PG 必须先手动跑 schema
+            # 建表，且 schema 内有少量前向 FK 引用（如 customer_value_segment_current
+            # 引用 questionnaire_submissions），所以容错重试。
             from pathlib import Path
             db = get_db()
             schema_path = Path(app.root_path) / "schema_postgres.sql"
             if schema_path.exists():
-                db.executescript(schema_path.read_text(encoding="utf-8"))
+                _run_schema_with_retries(db, schema_path.read_text(encoding="utf-8"))
                 db.commit()
             from wecom_ability_service.db import init_db as _init
             _init()
