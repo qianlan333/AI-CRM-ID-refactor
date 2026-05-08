@@ -526,6 +526,84 @@ def list_campaigns(
     return [dict(r) for r in (cur.fetchall() or [])]
 
 
+def update_campaign_step(
+    *,
+    campaign_id: int,
+    step_index: int,
+    content_text: str | None = None,
+    send_time: str | None = None,
+    day_offset: int | None = None,
+    stop_on_reply: bool | None = None,
+    image_media_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """编辑单个 step。只有 review_status in (draft, pending_review) 且 run_status in (draft, paused) 时才允许，
+    避免运行中改文案造成混乱。``image_media_ids`` 存进 content_payload_json，scheduler 发送时读出来。"""
+    camp = get_campaign(campaign_id=campaign_id)
+    if not camp:
+        raise LookupError("campaign not found")
+    if camp.get("review_status") not in ("draft", "pending_review"):
+        raise PermissionError(f"campaign review_status={camp.get('review_status')} not editable")
+    if camp.get("run_status") not in ("draft", "paused"):
+        raise PermissionError(f"campaign run_status={camp.get('run_status')} not editable")
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id, content_payload_json FROM campaign_steps "
+        "WHERE campaign_id = ? AND step_index = ?",
+        (int(campaign_id), int(step_index)),
+    )
+    existing = cur.fetchone()
+    if not existing:
+        raise LookupError(f"step {step_index} not found in campaign {campaign_id}")
+
+    # PG: jsonb 自动反序列化为 dict；SQLite: 是字符串。统一处理
+    raw_payload = existing.get("content_payload_json") if isinstance(existing, dict) else None
+    if isinstance(raw_payload, dict):
+        payload = dict(raw_payload)
+    elif isinstance(raw_payload, str):
+        try:
+            payload = json.loads(raw_payload or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+    else:
+        payload = {}
+
+    sets: list[str] = []
+    args: list[Any] = []
+    if content_text is not None:
+        sets.append("content_text = ?")
+        args.append(str(content_text)[:4000])
+    if send_time is not None:
+        sets.append("send_time = ?")
+        args.append(str(send_time) or _DEFAULT_SEND_TIME)
+    if day_offset is not None:
+        sets.append("day_offset = ?")
+        args.append(int(day_offset))
+    if stop_on_reply is not None:
+        sets.append("stop_on_reply = ?")
+        args.append(bool(stop_on_reply))
+    if image_media_ids is not None:
+        cleaned = [str(x).strip() for x in image_media_ids if str(x).strip()]
+        payload["image_media_ids"] = cleaned[:9]  # 企微单消息最多 9 张图
+        sets.append("content_payload_json = ?")
+        args.append(json.dumps(payload, ensure_ascii=False))
+
+    if not sets:
+        return {"updated": False, "reason": "no_fields"}
+
+    sets.append("updated_at = ?")
+    args.append(_now_iso())
+    args.extend([int(campaign_id), int(step_index)])
+    cur.execute(
+        f"UPDATE campaign_steps SET {', '.join(sets)} "
+        "WHERE campaign_id = ? AND step_index = ?",
+        tuple(args),
+    )
+    db.commit()
+    return {"updated": True, "rowcount": int(cur.rowcount or 0)}
+
+
 def list_campaign_members(
     *,
     campaign_id: int,
@@ -711,6 +789,7 @@ __all__ = [
     "get_campaign",
     "list_campaign_members",
     "list_campaigns",
+    "update_campaign_step",
     "pause_campaign",
     "propose_campaign",
     "reject_campaign",
