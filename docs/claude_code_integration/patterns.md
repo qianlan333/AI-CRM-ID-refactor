@@ -130,7 +130,82 @@
 
 ---
 
-## 打法 9 · 出错排查（系统报错或效果异常）
+## 打法 9 · 按问卷答案建分层（5 月新版本激活实例）
+
+**场景**：运营说「给百万以下 + 有私教需求的用户发新版本激活通知」。
+
+这类需求的核心是「**用问卷答案做精准分层**」，CRM 提供了 4 个 read-only 工具组合完成 — **任何问卷字段、任何组合，都用同一组工具，绝不写一次性脚本**。
+
+### 4 步标准流
+
+#### Step 1: 找目标问卷
+```
+list_questionnaires(keyword="激活")
+```
+返回所有标题含"激活"的问卷 + 每个的提交数。从中拿到 `questionnaire_id`。
+
+#### Step 2: 看题目结构 + 选项分布
+```
+inspect_questionnaire(questionnaire_id=N)
+```
+返回完整树：每个 question 的 title / type / 全部 options 的 text 和 `selected_count`（被选过几次）。Agent 能看清「这道题有什么选项、各被多少人选了」，再决定 mapping：
+- 「百万以下」 → 选项 ids `[1, 2]`（"50 万以下"、"50-100 万"）
+- 「需要私教」 → 选项 id `[4]`（"需要"，注意别误选含"需要"二字的"不需要"）
+
+#### Step 3: 验证人数
+```
+preview_questionnaire_population(filters=[
+  {"question_id": 1, "option_ids": [1, 2]},          # 年收入 < 100万
+  {"question_id": 2, "option_ids": [4]}               # 需要私教
+])
+```
+返回 headcount + 样本 + filters_resolved（确认每个 filter 解析后命中了哪些 option）。如果数字明显不合理（比如 0 或 1 万）就回去调 filters。
+
+#### Step 4: 拼 SQL → 落地分层
+```
+compose_segment_sql_from_questionnaire(filters=[...同上])
+```
+返回完整可用的 segment SQL + 试跑 headcount。把 sql_query 直接塞进 `propose_segment`：
+
+```
+propose_segment(
+  segment_code="income_lt_100w_with_coach_intent",
+  display_name="百万以下 + 需私教 · 5月激活目标",
+  description="默认转化方案下、运营中的成员，问卷答过年收入 < 100 万 + 需要私教",
+  sql_query=<上一步返回的 sql_query>,
+  activate=true
+)
+```
+
+#### Step 5: 用这个 segment 出 Campaign
+```
+propose_campaign(
+  display_name="5 月新版本激活 · 百万以下需私教",
+  intent="向百万以下 + 需私教用户介绍 5 月新版本（成长地图 + 功课 + 私教模式）",
+  anchor_mode="member_joined_at",
+  segments=[{
+    "segment_code": "income_lt_100w_with_coach_intent",
+    "priority": 999,
+    "label": "目标人群",
+    "steps": [
+      {"step_index": 0, "day_offset": 0, "send_time": "10:00", "content_text": "..."},
+      {"step_index": 1, "day_offset": 3, "send_time": "10:00", "content_text": "..."},
+      {"step_index": 2, "day_offset": 7, "send_time": "10:00", "content_text": "..."}
+    ]
+  }]
+)
+```
+
+### 关键规则
+
+1. **不要写脚本**。每个新需求都是上面 4 步 + propose_segment + propose_campaign。脚本只是同样动作的硬编码版本，不可持续。
+2. **option_text_keywords vs option_ids**：keyword 用 LIKE 模糊匹配，方便但可能误中（如 `'需要'` 也匹配 `'不需要'`）。**inspect 看到完整选项后，优先用 option_ids 精确指定**。
+3. **多题 AND，每题内 OR**：filters 之间是 AND 关系（"既……又……"），filter 内的 option_ids 是 OR 关系（"……或者……"）。
+4. **试跑 headcount 不合理就停下来问运营**。例如 0 个、或者 1 万这种数字，大概率 filter 不对，别贸然 propose 出去。
+
+---
+
+## 打法 10 · 出错排查（系统报错或效果异常）
 
 **场景**：发完了但 sent_count 远低于 candidate_count；或者 propose_campaign 时分配失败。
 

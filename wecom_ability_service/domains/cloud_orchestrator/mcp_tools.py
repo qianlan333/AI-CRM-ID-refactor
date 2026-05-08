@@ -339,6 +339,101 @@ _TOOL_SPECS: list[dict[str, Any]] = [
             "required": ["segment_code"],
         },
     },
+    # ---- 问卷数据探索 — 让 Agent 自助按问卷答案建分层 ------------------
+    {
+        "name": "list_questionnaires",
+        "side_effect": "read",
+        "description": (
+            "列出所有问卷（带提交数）。Agent 在做'按问卷答案分层'时第一步用，"
+            "找到目标问卷的 id 之后再调 inspect_questionnaire 看题目结构。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keyword": {"type": "string", "description": "问卷标题模糊匹配"},
+                "only_with_submissions": {"type": "boolean", "description": "默认 true，过滤掉空问卷"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+        },
+    },
+    {
+        "name": "inspect_questionnaire",
+        "side_effect": "read",
+        "description": (
+            "看单个问卷的题目结构 + 每题每选项的命中人数。Agent 用这个判断"
+            "'某选项是否符合预期人群'。返回 questions[].options[].selected_count "
+            "对应该选项被多少人选过。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "questionnaire_id": {"type": "integer"},
+                "title_keyword": {"type": "string", "description": "也可用标题关键词，取第一个匹配的问卷"},
+            },
+        },
+    },
+    {
+        "name": "preview_questionnaire_population",
+        "side_effect": "read",
+        "description": (
+            "验证一组 question/option 组合命中多少人。filters 之间是 AND 关系，"
+            "每个 filter 内部 option_ids OR option_text_keywords 是 OR 关系。"
+            "Agent 用这个在 propose_segment 之前确认人群规模合理。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question_id": {"type": "integer"},
+                            "option_ids": {"type": "array", "items": {"type": "integer"}},
+                            "option_text_keywords": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["question_id"],
+                    },
+                },
+                "audience_code": {"type": "string", "description": "默认 operating，空字符串 = 不限"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+            "required": ["filters"],
+        },
+    },
+    {
+        "name": "compose_segment_sql_from_questionnaire",
+        "side_effect": "read",
+        "description": (
+            "把 filters 拼成 propose_segment 直接可用的 SQL 字符串 + 试跑拿人数。"
+            "Agent 拿到 sql_query 后调 propose_segment(sql_query=<这里>) 即可"
+            "落地命名分层。这是'问卷探索 → 分层落地'的最后一步。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question_id": {"type": "integer"},
+                            "option_ids": {"type": "array", "items": {"type": "integer"}},
+                            "option_text_keywords": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["question_id"],
+                    },
+                },
+                "audience_code": {"type": "string"},
+                "extra_member_constraints": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "可选的额外 WHERE 子句（如 m.current_pool='active_focus'），AND 拼接",
+                },
+            },
+            "required": ["filters"],
+        },
+    },
     # ---- Campaigns（多分层多步骤运营计划） ----------------------------
     {
         "name": "propose_campaign",
@@ -686,6 +781,48 @@ def dispatch_cloud_tool(
                 segment_code=str(args.get("segment_code") or "")
             )
             ctx["result"] = {"ok": ok}
+            return ctx["result"]
+
+        # ---- 问卷探索 ------------------------------------------------
+        if tool_name == "list_questionnaires":
+            from ..segments.questionnaire_explorer import list_questionnaires as _lq
+
+            ctx["result"] = {
+                "questionnaires": _lq(
+                    keyword=str(args.get("keyword") or ""),
+                    only_with_submissions=bool(args.get("only_with_submissions", True)),
+                    limit=int(args.get("limit") or 50),
+                )
+            }
+            return ctx["result"]
+
+        if tool_name == "inspect_questionnaire":
+            from ..segments.questionnaire_explorer import inspect_questionnaire as _iq
+
+            ctx["result"] = _iq(
+                questionnaire_id=int(args.get("questionnaire_id") or 0),
+                title_keyword=str(args.get("title_keyword") or ""),
+            )
+            return ctx["result"]
+
+        if tool_name == "preview_questionnaire_population":
+            from ..segments.questionnaire_explorer import preview_questionnaire_population as _pp
+
+            ctx["result"] = _pp(
+                filters=list(args.get("filters") or []),
+                audience_code=str(args.get("audience_code", "operating")),
+                limit=int(args.get("limit") or 50),
+            )
+            return ctx["result"]
+
+        if tool_name == "compose_segment_sql_from_questionnaire":
+            from ..segments.questionnaire_explorer import compose_segment_sql_from_questionnaire as _cs
+
+            ctx["result"] = _cs(
+                filters=list(args.get("filters") or []),
+                audience_code=str(args.get("audience_code", "operating")),
+                extra_member_constraints=list(args.get("extra_member_constraints") or []),
+            )
             return ctx["result"]
 
         # ---- Campaigns -----------------------------------------------

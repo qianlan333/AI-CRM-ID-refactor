@@ -45,6 +45,12 @@ ALLOWED_TABLES = frozenset(
         "automation_value_segment_current",
         "marketing_value_segment_current",
         "automation_member_segment_assignment",
+        # 问卷数据 — 让 Agent 按问题/选项文本筛人（年收入、需求强度等场景）
+        "questionnaire_submissions",
+        "questionnaire_submission_answers",
+        "questionnaires",
+        "questionnaire_questions",
+        "questionnaire_options",
     }
 )
 
