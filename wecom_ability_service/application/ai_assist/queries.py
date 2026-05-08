@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from . import _legacy_delegate
+from typing import Any, Mapping
+
+from ...customer_center.pulse_service import build_customer_pulse
+from ...domains.customer_pulse import service as customer_pulse_domain_service
+from ...domains.customer_pulse.access import (
+    assert_customer_pulse_evidence_view,
+    assert_customer_pulse_inbox_view,
+    assert_customer_pulse_page_visible,
+    assert_customer_pulse_request_context,
+    assert_customer_pulse_widget_view,
+    customer_pulse_permission_summary,
+    customer_pulse_template_access_payload,
+    resolve_customer_pulse_read_scope,
+)
+from ...domains.followup_orchestrator import service as followup_orchestrator_domain_service
 from .dto import (
     CustomerPulseCardEvidenceQueryDTO,
     CustomerPulseCardEvidenceResultDTO,
@@ -37,161 +51,271 @@ from .dto import (
 )
 
 
-class GetCustomerPulseFeatureGateQuery:
-    """Wave 5 AI Assist skeleton that delegates to customer-pulse feature/access resolution via ``_legacy_delegate`` for admin shell, customer profile, and pulse page callers that will cut over in PR 2."""
+def _t(value: Any) -> str:
+    return str(value or "").strip()
 
+
+def _d(value: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    return dict(value or {})
+
+
+class GetCustomerPulseFeatureGateQuery:
     def __call__(
         self,
         dto: CustomerPulseFeatureGateQueryDTO | None = None,
     ) -> CustomerPulseFeatureGateResultDTO:
-        return _legacy_delegate.get_customer_pulse_feature_gate_legacy(dto or CustomerPulseFeatureGateQueryDTO())
+        dto = dto or CustomerPulseFeatureGateQueryDTO()
+        access_context = _d(dto.access_context)
+        assert_customer_pulse_request_context(access_context)
+        return {
+            "enabled": customer_pulse_domain_service.is_customer_pulse_inbox_enabled(access_context=access_context),
+            "feature_gate": customer_pulse_domain_service.customer_pulse_feature_gate_summary(access_context=access_context),
+            "permissions": customer_pulse_permission_summary(access_context),
+            "template_access": customer_pulse_template_access_payload(access_context),
+        }
 
     execute = __call__
 
 
-class ListCustomerPulseInboxQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.customer_pulse.build_customer_pulse_inbox_payload`` via ``_legacy_delegate`` for pulse inbox readers and future mission-source bridges."""
+def _list_customer_pulse_inbox(dto: CustomerPulseInboxQueryDTO) -> CustomerPulseInboxResultDTO:
+    access_context = assert_customer_pulse_inbox_view(_d(dto.access_context))
+    filters = _d(dto.filters)
+    filters.setdefault("limit", 50)
+    return customer_pulse_domain_service.build_customer_pulse_inbox_payload(
+        **filters,
+        tenant_context=access_context,
+        metric_source=_t(dto.metric_source) or "admin_customer_pulse_api",
+    )
 
+
+class ListCustomerPulseInboxQuery:
     def __call__(self, dto: CustomerPulseInboxQueryDTO) -> CustomerPulseInboxResultDTO:
-        return _legacy_delegate.list_customer_pulse_inbox_legacy(dto)
+        return _list_customer_pulse_inbox(dto)
 
     execute = __call__
 
 
 class GetCustomerPulseInboxQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.customer_pulse.build_customer_pulse_inbox_payload`` via ``_legacy_delegate`` for admin pulse inbox callers that will cut over in PR 2."""
-
     def __call__(self, dto: CustomerPulseInboxQueryDTO) -> CustomerPulseInboxResultDTO:
-        return _legacy_delegate.list_customer_pulse_inbox_legacy(dto)
+        return _list_customer_pulse_inbox(dto)
 
     execute = __call__
 
 
-class GetCustomerPulseStatsQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.customer_pulse.build_customer_pulse_ops_dashboard_payload`` via ``_legacy_delegate`` for pulse stats readers that will cut over in PR 2."""
+def _get_customer_pulse_stats(dto) -> dict[str, Any]:
+    access_context = assert_customer_pulse_page_visible(_d(dto.access_context))
+    return customer_pulse_domain_service.build_customer_pulse_ops_dashboard_payload(
+        days=int(dto.days or 7),
+        tenant_context=access_context,
+        owner_userids=list(dto.owner_userids or []),
+    )
 
+
+class GetCustomerPulseStatsQuery:
     def __call__(self, dto: CustomerPulseStatsQueryDTO) -> CustomerPulseStatsResultDTO:
-        return _legacy_delegate.get_customer_pulse_stats_legacy(dto)
+        return _get_customer_pulse_stats(dto)
 
     execute = __call__
 
 
 class GetCustomerPulseMetricsQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.customer_pulse.build_customer_pulse_ops_dashboard_payload`` via ``_legacy_delegate`` for metrics/dashboard callers that will cut over in PR 2."""
-
     def __call__(self, dto: CustomerPulseMetricsQueryDTO) -> CustomerPulseMetricsResultDTO:
-        return _legacy_delegate.get_customer_pulse_stats_legacy(dto)
+        return _get_customer_pulse_stats(dto)
 
     execute = __call__
 
 
 class GetCustomerPulseDetailQuery:
-    """Wave 5 AI Assist skeleton that delegates to customer-pulse detail/widget adapters via ``_legacy_delegate`` for admin customer profile callers that will cut over in PR 2."""
-
     def __call__(self, dto: CustomerPulseDetailQueryDTO) -> CustomerPulseDetailResultDTO:
-        return _legacy_delegate.get_customer_pulse_detail_legacy(dto)
+        external_userid = _t(dto.external_userid)
+        if not external_userid:
+            raise LookupError("customer not found")
+
+        access_context = _d(dto.access_context)
+        assert_customer_pulse_request_context(access_context)
+
+        if not customer_pulse_domain_service.is_customer_pulse_inbox_enabled(access_context=access_context):
+            return {
+                "external_userid": external_userid,
+                "pulse": build_customer_pulse(external_userid),
+                "customer_pulse": customer_pulse_domain_service.build_customer_pulse_customer_detail_payload(
+                    external_userid,
+                    tenant_context=access_context,
+                ),
+            }
+
+        assert_customer_pulse_widget_view(access_context)
+        read_scope = resolve_customer_pulse_read_scope(access_context=access_context)
+        customer_pulse = customer_pulse_domain_service.build_customer_pulse_customer_detail_payload(
+            external_userid,
+            track_metrics=True,
+            metric_source="customer_profile_widget_api",
+            tenant_context=read_scope.get("tenant_context"),
+            tenant_key=_t(read_scope.get("tenant_key")),
+            allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+        )
+        if customer_pulse.get("enabled") and not customer_pulse.get("card"):
+            customer_pulse_domain_service.refresh_customer_pulse_cards(
+                limit=1,
+                operator=_t(read_scope.get("operator")) or "customer_profile_page",
+                external_userids=[external_userid],
+                tenant_context=read_scope.get("tenant_context"),
+                tenant_key=_t(read_scope.get("tenant_key")),
+                allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+            )
+            customer_pulse = customer_pulse_domain_service.build_customer_pulse_customer_detail_payload(
+                external_userid,
+                track_metrics=True,
+                metric_source="customer_profile_widget_api",
+                tenant_context=read_scope.get("tenant_context"),
+                tenant_key=_t(read_scope.get("tenant_key")),
+                allowed_owner_userids=read_scope.get("allowed_owner_userids") or [],
+            )
+
+        return {
+            "external_userid": external_userid,
+            "pulse": build_customer_pulse(external_userid),
+            "customer_pulse": customer_pulse,
+        }
 
     execute = __call__
 
 
 class GetCustomerPulseCustomerDetailQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.customer_pulse.build_customer_pulse_customer_detail_payload`` via ``_legacy_delegate`` for internal pulse detail readers that will cut over in PR 2."""
-
     def __call__(self, dto: CustomerPulseCustomerDetailQueryDTO) -> CustomerPulseCustomerDetailResultDTO:
-        return _legacy_delegate.get_customer_pulse_customer_detail_legacy(dto)
+        access_context = assert_customer_pulse_request_context(_d(dto.access_context))
+        return customer_pulse_domain_service.build_customer_pulse_customer_detail_payload(
+            _t(dto.external_userid),
+            track_metrics=bool(dto.track_metrics),
+            tenant_context=access_context,
+            tenant_key=_t(dto.tenant_key),
+            allowed_owner_userids=list(dto.allowed_owner_userids or []),
+        )
 
     execute = __call__
 
 
 class GetCustomerPulseCardQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.customer_pulse.get_customer_pulse_card_payload`` via ``_legacy_delegate`` for pulse card-detail readers that will cut over in PR 2."""
-
     def __call__(self, dto: CustomerPulseCardQueryDTO) -> CustomerPulseCardResultDTO:
-        return _legacy_delegate.get_customer_pulse_card_legacy(dto)
+        access_context = assert_customer_pulse_request_context(_d(dto.access_context))
+        return customer_pulse_domain_service.get_customer_pulse_card_payload(
+            int(dto.card_id),
+            tenant_context=access_context,
+        )
 
     execute = __call__
 
 
 class GetCustomerPulseCardEvidenceQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.customer_pulse.get_customer_pulse_card_evidence_payload`` via ``_legacy_delegate`` for pulse evidence readers that will cut over in PR 2."""
-
     def __call__(self, dto: CustomerPulseCardEvidenceQueryDTO) -> CustomerPulseCardEvidenceResultDTO:
-        return _legacy_delegate.get_customer_pulse_card_evidence_legacy(dto)
+        access_context = assert_customer_pulse_evidence_view(_d(dto.access_context))
+        return customer_pulse_domain_service.get_customer_pulse_card_evidence_payload(
+            int(dto.card_id),
+            tenant_context=access_context,
+        )
 
     execute = __call__
 
 
 class GetFollowupOrchestratorFeatureGateQuery:
-    """Wave 5 AI Assist skeleton that delegates to followup feature/access resolution via ``_legacy_delegate`` for admin shell and orchestrator callers that will cut over in PR 3."""
-
     def __call__(
         self,
         dto: FollowupFeatureGateQueryDTO | None = None,
     ) -> FollowupFeatureGateResultDTO:
-        return _legacy_delegate.get_followup_feature_gate_legacy(dto or FollowupFeatureGateQueryDTO())
+        dto = dto or FollowupFeatureGateQueryDTO()
+        access_context = _d(dto.access_context)
+        assert_customer_pulse_request_context(access_context)
+        return {
+            "enabled": followup_orchestrator_domain_service.is_followup_orchestrator_enabled(access_context=access_context),
+            "feature_gate": followup_orchestrator_domain_service.followup_orchestrator_feature_gate_summary(access_context=access_context),
+            "permissions": customer_pulse_permission_summary(access_context),
+            "template_access": customer_pulse_template_access_payload(access_context),
+        }
 
     execute = __call__
 
 
-class GetFollowupOrchestratorOverviewQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.followup_orchestrator.build_followup_orchestrator_overview_payload`` via ``_legacy_delegate`` for followup overview callers that will cut over in PR 3."""
+def _get_followup_overview(dto) -> dict[str, Any]:
+    access_context = assert_customer_pulse_inbox_view(_d(dto.access_context))
+    return followup_orchestrator_domain_service.build_followup_orchestrator_overview_payload(
+        scope=_t(dto.scope) or "team",
+        owner_userid=_t(dto.owner_userid),
+        external_userid=_t(dto.external_userid),
+        limit=int(dto.limit or 50),
+        auto_sync=bool(dto.auto_sync),
+        access_context=access_context,
+    )
 
+
+class GetFollowupOrchestratorOverviewQuery:
     def __call__(self, dto: FollowupOverviewQueryDTO) -> FollowupOverviewResultDTO:
-        return _legacy_delegate.get_followup_overview_legacy(dto)
+        return _get_followup_overview(dto)
 
     execute = __call__
 
 
 class ListFollowupCandidatesQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.followup_orchestrator.build_followup_orchestrator_overview_payload`` via ``_legacy_delegate`` for candidate-list callers that will cut over in PR 3."""
-
     def __call__(self, dto: FollowupCandidatesQueryDTO) -> FollowupCandidatesResultDTO:
-        return _legacy_delegate.get_followup_overview_legacy(dto)
+        return _get_followup_overview(dto)
 
     execute = __call__
 
 
 class GetFollowupOrchestratorCustomerQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.followup_orchestrator.build_followup_orchestrator_customer_payload`` via ``_legacy_delegate`` for customer-level mission readers that will cut over in PR 3."""
-
     def __call__(self, dto: FollowupCustomerQueryDTO) -> FollowupCustomerResultDTO:
-        return _legacy_delegate.get_followup_customer_legacy(dto)
+        access_context = assert_customer_pulse_inbox_view(_d(dto.access_context))
+        return followup_orchestrator_domain_service.build_followup_orchestrator_customer_payload(
+            external_userid=_t(dto.external_userid),
+            access_context=access_context,
+        )
 
     execute = __call__
 
 
 class ListFollowupMyMissionsQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.followup_orchestrator.build_followup_orchestrator_my_missions_payload`` via ``_legacy_delegate`` for actor mission readers that will cut over in PR 3."""
-
     def __call__(self, dto: FollowupMyMissionsQueryDTO) -> FollowupMyMissionsResultDTO:
-        return _legacy_delegate.list_followup_my_missions_legacy(dto)
+        access_context = assert_customer_pulse_inbox_view(_d(dto.access_context))
+        return followup_orchestrator_domain_service.build_followup_orchestrator_my_missions_payload(
+            actor_userid=_t(dto.actor_userid),
+            limit=int(dto.limit or 50),
+            auto_sync=bool(dto.auto_sync),
+            access_context=access_context,
+        )
 
     execute = __call__
 
 
-class GetFollowupTeamBoardQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.followup_orchestrator.build_followup_orchestrator_team_board_payload`` via ``_legacy_delegate`` for team-board readers that will cut over in PR 3."""
+def _get_followup_team_board(dto) -> dict[str, Any]:
+    access_context = assert_customer_pulse_inbox_view(_d(dto.access_context))
+    return followup_orchestrator_domain_service.build_followup_orchestrator_team_board_payload(
+        limit=int(dto.limit or 50),
+        auto_sync=bool(dto.auto_sync),
+        access_context=access_context,
+    )
 
+
+class GetFollowupTeamBoardQuery:
     def __call__(self, dto: FollowupTeamBoardQueryDTO) -> FollowupTeamBoardResultDTO:
-        return _legacy_delegate.get_followup_team_board_legacy(dto)
+        return _get_followup_team_board(dto)
 
     execute = __call__
 
 
 class GetFollowupMissionBoardQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.followup_orchestrator.build_followup_orchestrator_team_board_payload`` via ``_legacy_delegate`` for mission-board callers that will cut over in PR 3."""
-
     def __call__(self, dto: FollowupMissionBoardQueryDTO) -> FollowupMissionBoardResultDTO:
-        return _legacy_delegate.get_followup_team_board_legacy(dto)
+        return _get_followup_team_board(dto)
 
     execute = __call__
 
 
 class GetFollowupMissionDetailQuery:
-    """Wave 5 AI Assist skeleton that delegates to ``domains.followup_orchestrator.get_followup_orchestrator_mission_detail_payload`` via ``_legacy_delegate`` for mission-detail readers that will cut over in PR 3."""
-
     def __call__(self, dto: FollowupMissionDetailQueryDTO) -> FollowupMissionDetailResultDTO:
-        return _legacy_delegate.get_followup_mission_detail_legacy(dto)
+        access_context = assert_customer_pulse_inbox_view(_d(dto.access_context))
+        return followup_orchestrator_domain_service.get_followup_orchestrator_mission_detail_payload(
+            mission_key=_t(dto.mission_key),
+            access_context=access_context,
+            tenant_key=_t(dto.tenant_key),
+        )
 
     execute = __call__
 
