@@ -18,7 +18,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from ...db import get_db
+from ...db import get_db, get_db_backend
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 
 def _now_iso() -> str:
     return datetime.utcnow().isoformat()
+
+
+def _empty_ts() -> str | None:
+    """``campaign_members.next_due_at / last_step_sent_at`` 的"未设置"占位值。
+
+    PG 上是 ``TIMESTAMPTZ``（nullable），写入空字符串会抛 InvalidDatetimeFormat —
+    必须用 NULL；SQLite 上是 ``TEXT NOT NULL DEFAULT ''``，沿用空字符串。
+    """
+    return None if get_db_backend() == "postgres" else ""
 
 
 def _due_at_for_step(*, anchor_date: str, day_offset: int, send_time: str) -> str:
@@ -76,11 +85,11 @@ def _mark_member_replied_inline(*, member_row_id: int) -> None:
         UPDATE campaign_members SET
             status = 'replied',
             stop_reason = 'user_replied_inline',
-            next_due_at = '',
+            next_due_at = ?,
             updated_at = ?
         WHERE id = ?
         """,
-        (_now_iso(), int(member_row_id)),
+        (_empty_ts(), _now_iso(), int(member_row_id)),
     )
     db.commit()
 
@@ -293,13 +302,14 @@ def progress_member_after_send(
                 status = 'completed',
                 current_step_index = ?,
                 last_step_sent_at = ?,
-                next_due_at = '',
+                next_due_at = ?,
                 updated_at = ?
             WHERE id = ?
             """,
             (
                 int(step.get("step_index") or 0),
-                _now_iso() if send_result.get("ok") else "",
+                _now_iso() if send_result.get("ok") else _empty_ts(),
+                _empty_ts(),
                 _now_iso(),
                 int(member_row_id),
             ),
@@ -325,7 +335,7 @@ def progress_member_after_send(
             """,
             (
                 int(step.get("step_index") or 0),
-                _now_iso() if send_result.get("ok") else "",
+                _now_iso() if send_result.get("ok") else _empty_ts(),
                 next_due,
                 "" if send_result.get("ok") else str(send_result.get("reason") or "")[:300],
                 0 if send_result.get("ok") else 1,
@@ -340,8 +350,10 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
     """Cron 入口：扫一批 due 的 member、各推一步。"""
     db = get_db()
     cur = db.cursor()
+    # PG: ``next_due_at IS NOT NULL``；SQLite: ``next_due_at <> ''``。``_empty_ts()`` 决定占位语义
+    not_empty_clause = "cm.next_due_at IS NOT NULL" if get_db_backend() == "postgres" else "cm.next_due_at <> ''"
     cur.execute(
-        """
+        f"""
         SELECT cm.id AS cm_id, cm.member_id, cm.external_contact_id,
                cm.campaign_id, cm.campaign_segment_id, cm.current_step_index,
                cm.anchor_date, cm.trace_id, cm.last_step_sent_at,
@@ -349,7 +361,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         FROM campaign_members cm
         JOIN campaigns c ON c.id = cm.campaign_id
         WHERE cm.status = 'pending'
-          AND cm.next_due_at <> ''
+          AND {not_empty_clause}
           AND cm.next_due_at <= ?
           AND c.run_status = 'active'
         ORDER BY cm.next_due_at ASC, cm.id ASC
@@ -374,9 +386,9 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         )
         if not step:
             cur.execute(
-                "UPDATE campaign_members SET status = 'completed', next_due_at = '', updated_at = ? "
+                "UPDATE campaign_members SET status = 'completed', next_due_at = ?, updated_at = ? "
                 "WHERE id = ?",
-                (_now_iso(), cm_id),
+                (_empty_ts(), _now_iso(), cm_id),
             )
             db.commit()
             continue
@@ -448,11 +460,11 @@ def register_member_reply(
             UPDATE campaign_members SET
                 status = 'replied',
                 stop_reason = 'user_replied',
-                next_due_at = '',
+                next_due_at = ?,
                 updated_at = ?
             WHERE member_id = ? AND status IN ('pending','running')
             """,
-            (_now_iso(), int(member_id)),
+            (_empty_ts(), _now_iso(), int(member_id)),
         )
     else:
         cur.execute(
@@ -460,11 +472,11 @@ def register_member_reply(
             UPDATE campaign_members SET
                 status = 'replied',
                 stop_reason = 'user_replied',
-                next_due_at = '',
+                next_due_at = ?,
                 updated_at = ?
             WHERE external_contact_id = ? AND status IN ('pending','running')
             """,
-            (_now_iso(), str(external_contact_id)),
+            (_empty_ts(), _now_iso(), str(external_contact_id)),
         )
     db.commit()
     return int(cur.rowcount or 0)
