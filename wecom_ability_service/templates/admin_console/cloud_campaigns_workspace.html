@@ -1,5 +1,9 @@
 {% extends "admin_console/base.html" %}
 
+{% block head_extra %}
+<script src="{{ url_for('static', filename='admin_console/image_picker.js') }}"></script>
+{% endblock %}
+
 {% block content %}
 <div class="cloud-camp-page" data-cloud-camp-root>
   <section class="admin-card">
@@ -343,9 +347,11 @@
             if (raw && typeof raw === 'object') payload = raw;
             else if (typeof raw === 'string' && raw) payload = JSON.parse(raw);
           } catch { payload = {}; }
-          const imageMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
-          const imageLine = imageMediaIds.length
-            ? `图片：${imageMediaIds.length} 张（${imageMediaIds.map(m => escapeHtml(String(m).slice(0,8))+'…').join(', ')}）`
+          const imageLibraryIds = Array.isArray(payload.image_library_ids) ? payload.image_library_ids : [];
+          const legacyMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
+          const totalImages = imageLibraryIds.length + legacyMediaIds.length;
+          const imageLine = totalImages
+            ? `图片：${totalImages} 张${legacyMediaIds.length ? `（其中 ${legacyMediaIds.length} 张为老版直传 media_id）` : '（来自图片素材库）'}`
             : '图片：未配置';
           const editBtns = editable
             ? `<button class="cloud-camp-step-edit" data-step-index="${fmt(step.step_index)}">编辑</button>
@@ -549,7 +555,9 @@
       if (raw && typeof raw === 'object') payload = raw;
       else if (typeof raw === 'string' && raw) payload = JSON.parse(raw);
     } catch { payload = {}; }
-    const imageMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
+    // 兼容老数据：旧 step 用 image_media_ids（直接是企微 media_id）；新版用 image_library_ids（图片素材库 id）
+    const imageLibraryIds = Array.isArray(payload.image_library_ids) ? payload.image_library_ids : [];
+    const legacyMediaIds = Array.isArray(payload.image_media_ids) ? payload.image_media_ids : [];
     const miniprogramLibraryIds = Array.isArray(payload.miniprogram_library_ids) ? payload.miniprogram_library_ids : [];
     const originalHtml = rowEl.innerHTML;
     rowEl.innerHTML = `
@@ -568,13 +576,11 @@
         <label class="edit-block">话术
           <textarea class="admin-input edit-content-text" rows="6">${escapeHtml(step.content_text || '')}</textarea>
         </label>
-        <label class="edit-block">图片（最多 9 张，自动上传到企微）
-          <div class="edit-image-upload">
-            <input type="file" accept="image/*" class="edit-image-file" multiple>
-            <span class="edit-image-upload-status"></span>
-          </div>
-          <textarea class="admin-input edit-image-media-ids" rows="3" placeholder="或者手动粘贴已有 media_id（每行一个）">${imageMediaIds.map(m => escapeHtml(m)).join('\n')}</textarea>
-        </label>
+        <div class="edit-block">
+          <div style="font-size:13px;color:#5b626f;margin-bottom:6px;">图片（最多 9 张，从图片素材库选；发送前自动换企微 media_id）</div>
+          <div class="edit-image-picker"></div>
+          ${legacyMediaIds.length ? `<div style="font-size:11px;color:#a06400;margin-top:6px;">⚠️ 老数据带 ${legacyMediaIds.length} 个直接 media_id（${legacyMediaIds.map(m => escapeHtml(String(m).slice(0,8))+'…').join(', ')}），保存时会被覆盖。</div>` : ''}
+        </div>
         <div class="edit-block">
           <div style="display:flex;align-items:center;gap:8px;">
             <span>小程序卡片（从素材库选；发送前自动换 media_id）</span>
@@ -590,41 +596,11 @@
         </div>
       </div>
     `;
-    // 选文件 → 自动上传到企微 → 把 media_id 追加到 textarea
-    const fileInput = rowEl.querySelector('.edit-image-file');
-    const statusEl = rowEl.querySelector('.edit-image-upload-status');
-    const mediaTextarea = rowEl.querySelector('.edit-image-media-ids');
-    fileInput.addEventListener('change', async () => {
-      const files = Array.from(fileInput.files || []);
-      if (!files.length) return;
-      fileInput.disabled = true;
-      const existing = mediaTextarea.value.split('\n').map(s => s.trim()).filter(Boolean);
-      let added = 0, failed = 0;
-      for (const f of files) {
-        statusEl.textContent = `上传中 ${added + failed + 1}/${files.length}：${f.name}…`;
-        const fd = new FormData();
-        fd.append('image', f);
-        try {
-          const resp = await fetch('/api/admin/cloud-orchestrator/media/upload', { method: 'POST', body: fd });
-          const data = await resp.json();
-          if (data.ok && data.media_id) {
-            existing.push(data.media_id);
-            added++;
-          } else {
-            failed++;
-            console.warn('upload failed', f.name, data);
-          }
-        } catch (err) {
-          failed++;
-          console.warn('upload error', f.name, err);
-        }
-      }
-      mediaTextarea.value = existing.join('\n');
-      statusEl.textContent = failed === 0
-        ? `已上传 ${added} 张`
-        : `已上传 ${added} 张，失败 ${failed} 张（看 console）`;
-      fileInput.disabled = false;
-      fileInput.value = '';
+    // 图片：用通用 image picker（multi 模式，最多 9 张）
+    const imagePicker = window.mountImagePicker(rowEl.querySelector('.edit-image-picker'), {
+      mode: 'multiple',
+      max: 9,
+      value: imageLibraryIds,
     });
 
     attachMiniprogramPicker(rowEl);
@@ -642,8 +618,9 @@
         send_time: rowEl.querySelector('.edit-send-time').value || '10:00',
         day_offset: parseInt(rowEl.querySelector('.edit-day-offset').value || '0', 10),
         stop_on_reply: rowEl.querySelector('.edit-stop-on-reply').checked,
-        image_media_ids: rowEl.querySelector('.edit-image-media-ids').value
-          .split('\n').map(s => s.trim()).filter(Boolean),
+        image_library_ids: imagePicker.getValue(),
+        // 显式清空老 image_media_ids，避免新老数据并存导致重复发图
+        image_media_ids: [],
         miniprogram_library_ids: miniprogramIds,
       };
       const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/steps/${encodeURIComponent(step.step_index)}`, {

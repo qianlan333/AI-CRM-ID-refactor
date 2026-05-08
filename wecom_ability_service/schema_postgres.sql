@@ -2899,6 +2899,7 @@ CREATE TABLE IF NOT EXISTS miniprogram_library (
     title TEXT NOT NULL DEFAULT '',
     thumb_image_url TEXT NOT NULL DEFAULT '',
     thumb_image_base64 TEXT NOT NULL DEFAULT '',
+    thumb_image_id BIGINT,
     thumb_media_id TEXT NOT NULL DEFAULT '',
     thumb_media_id_expires_at TIMESTAMPTZ,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -2911,6 +2912,25 @@ ON miniprogram_library (enabled, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_miniprogram_library_appid
 ON miniprogram_library (appid, id DESC);
+
+CREATE TABLE IF NOT EXISTS image_library (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    file_name TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'upload',
+    source_url TEXT NOT NULL DEFAULT '',
+    data_base64 TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'image/png',
+    file_size INTEGER NOT NULL DEFAULT 0,
+    thumb_media_id TEXT NOT NULL DEFAULT '',
+    thumb_media_id_expires_at TIMESTAMPTZ,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_library_enabled
+ON image_library (enabled, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_campaign_members_trace
 ON campaign_members (trace_id, id DESC);

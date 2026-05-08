@@ -75,6 +75,11 @@ def _serialize(row: dict[str, Any]) -> dict[str, Any]:
             enabled = bool(int(enabled_raw or 0))
         except (TypeError, ValueError):
             enabled = bool(enabled_raw)
+    thumb_image_id_raw = row.get("thumb_image_id")
+    try:
+        thumb_image_id = int(thumb_image_id_raw) if thumb_image_id_raw else 0
+    except (TypeError, ValueError):
+        thumb_image_id = 0
     return {
         "id": int(row.get("id") or 0),
         "name": str(row.get("name") or ""),
@@ -83,6 +88,7 @@ def _serialize(row: dict[str, Any]) -> dict[str, Any]:
         "title": str(row.get("title") or ""),
         "thumb_image_url": str(row.get("thumb_image_url") or ""),
         "thumb_image_base64": str(row.get("thumb_image_base64") or ""),
+        "thumb_image_id": thumb_image_id,
         "thumb_media_id": str(row.get("thumb_media_id") or ""),
         "thumb_media_id_expires_at": str(row.get("thumb_media_id_expires_at") or ""),
         "enabled": enabled,
@@ -126,8 +132,13 @@ def _validate_create_payload(payload: dict[str, Any]) -> dict[str, Any]:
     name = str(payload.get("name") or title).strip() or appid
     thumb_image_url = str(payload.get("thumb_image_url") or "").strip()
     thumb_image_base64 = str(payload.get("thumb_image_base64") or "").strip()
-    if not thumb_image_url and not thumb_image_base64:
-        raise ValueError("缩略图必须提供 thumb_image_url 或 thumb_image_base64")
+    thumb_image_id_raw = payload.get("thumb_image_id")
+    try:
+        thumb_image_id = int(thumb_image_id_raw) if thumb_image_id_raw else 0
+    except (TypeError, ValueError) as exc:
+        raise ValueError("thumb_image_id 必须是整数") from exc
+    if not thumb_image_id and not thumb_image_url and not thumb_image_base64:
+        raise ValueError("缩略图必须提供 thumb_image_id（推荐）/ thumb_image_url / thumb_image_base64 之一")
     return {
         "name": name,
         "appid": appid,
@@ -135,6 +146,7 @@ def _validate_create_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "thumb_image_url": thumb_image_url,
         "thumb_image_base64": thumb_image_base64,
+        "thumb_image_id": thumb_image_id,
     }
 
 
@@ -147,8 +159,8 @@ def create_miniprogram(payload: dict[str, Any]) -> dict[str, Any]:
         """
         INSERT INTO miniprogram_library
             (name, appid, pagepath, title, thumb_image_url, thumb_image_base64,
-             thumb_media_id, thumb_media_id_expires_at, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, '', '', ?)
+             thumb_image_id, thumb_media_id, thumb_media_id_expires_at, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?)
         """,
         (
             fields["name"],
@@ -157,6 +169,7 @@ def create_miniprogram(payload: dict[str, Any]) -> dict[str, Any]:
             fields["title"],
             fields["thumb_image_url"],
             fields["thumb_image_base64"],
+            fields["thumb_image_id"] or None,
             1 if enabled else 0,
         ),
     )
@@ -172,9 +185,10 @@ _UPDATABLE_FIELDS = (
     "title",
     "thumb_image_url",
     "thumb_image_base64",
+    "thumb_image_id",
     "enabled",
 )
-_THUMB_FIELDS = {"thumb_image_url", "thumb_image_base64"}
+_THUMB_FIELDS = {"thumb_image_url", "thumb_image_base64", "thumb_image_id"}
 
 
 def update_miniprogram(library_id: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +205,16 @@ def update_miniprogram(library_id: int, payload: dict[str, Any]) -> dict[str, An
         if key == "enabled":
             set_clauses.append("enabled = ?")
             params.append(1 if bool(value) else 0)
+            continue
+        if key == "thumb_image_id":
+            try:
+                int_value = int(value) if value else 0
+            except (TypeError, ValueError) as exc:
+                raise ValueError("thumb_image_id 必须是整数") from exc
+            set_clauses.append("thumb_image_id = ?")
+            params.append(int_value or None)
+            if int_value != (existing.get("thumb_image_id") or 0):
+                invalidate_thumb_cache = True
             continue
         text = str(value or "").strip()
         if key in {"appid", "pagepath", "title"} and not text:
@@ -289,6 +313,14 @@ def resolve_thumb_media_id(
     if not record.get("enabled", False):
         raise ValueError(f"miniprogram_library id={library_id} 已停用")
 
+    # 新通道：thumb_image_id 关联 image_library 时，直接复用图片素材库的缓存机制，
+    # 不再各自维护 media_id（避免双层缓存不一致）
+    thumb_image_id = int(record.get("thumb_image_id") or 0)
+    if thumb_image_id:
+        from .. import image_library as _img_lib  # 局部 import 避免循环依赖
+        return _img_lib.resolve_image_media_id(thumb_image_id, upload_image=upload_image, now=now)
+
+    # 老通道：thumb_image_url / thumb_image_base64 直接存在 miniprogram_library 表里
     current = now or _now_utc()
     cached_id = (record.get("thumb_media_id") or "").strip()
     expires_at = _parse_iso(record.get("thumb_media_id_expires_at"))

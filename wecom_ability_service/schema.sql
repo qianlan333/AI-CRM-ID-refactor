@@ -2900,6 +2900,7 @@ CREATE TABLE IF NOT EXISTS miniprogram_library (
     title TEXT NOT NULL DEFAULT '',
     thumb_image_url TEXT NOT NULL DEFAULT '',
     thumb_image_base64 TEXT NOT NULL DEFAULT '',
+    thumb_image_id INTEGER,
     thumb_media_id TEXT NOT NULL DEFAULT '',
     thumb_media_id_expires_at TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -2912,3 +2913,22 @@ ON miniprogram_library (enabled, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_miniprogram_library_appid
 ON miniprogram_library (appid, id DESC);
+
+CREATE TABLE IF NOT EXISTS image_library (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    file_name TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'upload',
+    source_url TEXT NOT NULL DEFAULT '',
+    data_base64 TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'image/png',
+    file_size INTEGER NOT NULL DEFAULT 0,
+    thumb_media_id TEXT NOT NULL DEFAULT '',
+    thumb_media_id_expires_at TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_library_enabled
+ON image_library (enabled, updated_at DESC, id DESC);

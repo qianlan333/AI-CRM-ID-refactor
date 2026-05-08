@@ -153,7 +153,27 @@ def _send_step_to_member(
             step_payload = json.loads(str(raw_payload) or "{}")
         except (TypeError, ValueError):
             step_payload = {}
+    # 老格式：image_media_ids 直接是企微 media_id（兼容老 step）
     image_media_ids = [str(x).strip() for x in (step_payload.get("image_media_ids") or []) if str(x).strip()]
+    # 新格式：image_library_ids 引用图片素材库；发送前 resolve 成有效 media_id
+    image_library_ids: list[int] = []
+    for raw_iid in (step_payload.get("image_library_ids") or []):
+        try:
+            image_library_ids.append(int(raw_iid))
+        except (TypeError, ValueError):
+            continue
+    if image_library_ids:
+        from .. import image_library as _image_library
+
+        for iid in image_library_ids:
+            try:
+                resolved = _image_library.resolve_image_media_id(iid)
+            except Exception as exc:
+                logger.exception("resolve image_library_id=%s failed: %s", iid, exc)
+                return {"ok": False, "reason": f"image_library_resolve_failed:id={iid}:{exc}"}
+            if resolved:
+                image_media_ids.append(resolved)
+    image_media_ids = image_media_ids[:9]  # 企微单消息最多 9 张
     miniprogram_library_ids: list[int] = []
     for raw_lid in (step_payload.get("miniprogram_library_ids") or []):
         try:

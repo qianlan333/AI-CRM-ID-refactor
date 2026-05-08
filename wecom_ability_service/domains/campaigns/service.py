@@ -534,11 +534,20 @@ def update_campaign_step(
     send_time: str | None = None,
     day_offset: int | None = None,
     stop_on_reply: bool | None = None,
+    image_library_ids: list[int] | None = None,
     image_media_ids: list[str] | None = None,
     miniprogram_library_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """编辑单个 step。只有 review_status in (draft, pending_review) 且 run_status in (draft, paused) 时才允许，
-    避免运行中改文案造成混乱。``image_media_ids`` 存进 content_payload_json，scheduler 发送时读出来。"""
+    避免运行中改文案造成混乱。
+
+    图片配置存进 ``content_payload_json``：
+    - ``image_library_ids``（推荐）：图片素材库 id 列表，scheduler 发送时调
+      ``image_library.resolve_image_media_id`` 自动换出有效 media_id
+    - ``image_media_ids``（老格式）：直接是企微 media_id 列表，仅兼容老数据。
+      新版 UI 不再产生此字段。
+
+    两种格式可共存，scheduler 顺序拼接。"""
     camp = get_campaign(campaign_id=campaign_id)
     if not camp:
         raise LookupError("campaign not found")
@@ -585,9 +594,18 @@ def update_campaign_step(
         sets.append("stop_on_reply = ?")
         args.append(bool(stop_on_reply))
     payload_dirty = False
+    if image_library_ids is not None:
+        cleaned_lib_ids: list[int] = []
+        for raw in image_library_ids:
+            try:
+                cleaned_lib_ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        payload["image_library_ids"] = cleaned_lib_ids[:9]
+        payload_dirty = True
     if image_media_ids is not None:
         cleaned = [str(x).strip() for x in image_media_ids if str(x).strip()]
-        payload["image_media_ids"] = cleaned[:9]  # 企微单消息最多 9 张图
+        payload["image_media_ids"] = cleaned[:9]  # 老格式兼容
         payload_dirty = True
     if miniprogram_library_ids is not None:
         cleaned_ids: list[int] = []
