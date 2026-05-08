@@ -45,11 +45,15 @@ class PostgresCursor:
     def execute(self, sql, params=None):
         sql_text = sql if isinstance(sql, str) else str(sql)
         translated = _translate_sql(sql_text)
-        # 兼容 dict 参数（命名占位符），但我们的代码 99% 用位置 tuple
-        if isinstance(params, dict):
+        # ★ params 为空时**不要**传给 psycopg —— 否则它会做 placeholder
+        # 解析，把 SQL 里的字面 %（如 LIKE '%abc%'）误认成 placeholder
+        # 触发 "got '%3'" 之类错误。
+        if params is None or (hasattr(params, "__len__") and len(params) == 0):
+            self._cursor.execute(translated)
+        elif isinstance(params, dict):
             self._cursor.execute(translated, params)
         else:
-            self._cursor.execute(translated, tuple(params or ()))
+            self._cursor.execute(translated, tuple(params))
         upper_head = translated.lstrip().upper()[:6]
         self._last_was_insert = upper_head == "INSERT"
         self.lastrowid = None
@@ -111,7 +115,13 @@ class PostgresConnection:
 
     def execute(self, sql: str, params: tuple | list | None = None):
         cursor = self._conn.cursor(row_factory=dict_row)
-        cursor.execute(_translate_sql(sql), tuple(params or ()))
+        translated = _translate_sql(sql)
+        # 同 PostgresCursor.execute — params 为空时不传，避免 LIKE '%X%' 中
+        # 的字面 % 被 psycopg 当 placeholder 解析失败。
+        if params is None or (hasattr(params, "__len__") and len(params) == 0):
+            cursor.execute(translated)
+        else:
+            cursor.execute(translated, tuple(params))
         return cursor
 
     def executemany(self, sql: str, seq_of_params: list[tuple] | list[list]):
