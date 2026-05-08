@@ -242,7 +242,7 @@ def update_image(image_id: int, *, name: str | None = None, enabled: bool | None
         params.append(str(name).strip()[:200])
     if enabled is not None:
         sets.append("enabled = ?")
-        params.append(1 if bool(enabled) else 0)
+        params.append(bool(enabled))  # PG BOOLEAN / SQLite truthy
     if not sets:
         return existing
     sets.append("updated_at = CURRENT_TIMESTAMP")
@@ -260,7 +260,7 @@ def delete_image(image_id: int) -> bool:
     cur = db.cursor()
     cur.execute(
         "UPDATE image_library SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (0, int(image_id)),
+        (False, int(image_id)),  # PG BOOLEAN / SQLite truthy
     )
     db.commit()
     return (cur.rowcount or 0) > 0

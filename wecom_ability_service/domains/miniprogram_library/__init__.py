@@ -170,7 +170,7 @@ def create_miniprogram(payload: dict[str, Any]) -> dict[str, Any]:
             fields["thumb_image_url"],
             fields["thumb_image_base64"],
             fields["thumb_image_id"] or None,
-            1 if enabled else 0,
+            bool(enabled),  # PG BOOLEAN / SQLite truthy
         ),
     )
     db.commit()
@@ -204,7 +204,7 @@ def update_miniprogram(library_id: int, payload: dict[str, Any]) -> dict[str, An
         value = payload[key]
         if key == "enabled":
             set_clauses.append("enabled = ?")
-            params.append(1 if bool(value) else 0)
+            params.append(bool(value))  # PG BOOLEAN / SQLite truthy
             continue
         if key == "thumb_image_id":
             try:
