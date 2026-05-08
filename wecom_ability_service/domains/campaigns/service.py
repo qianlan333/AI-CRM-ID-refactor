@@ -28,7 +28,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-from ...db import get_db
+from ...db import get_db, get_db_backend
 from ..segments.service import get_segment, increment_usage
 from ..segments.sql_sandbox import fetch_member_ids
 
@@ -372,12 +372,23 @@ def start_campaign(
             (anchor_date, started_at, int(campaign_id)),
         )
     else:
-        # member_joined_at — 已经在 allocate 时设置 joined_at；anchor_date = joined_at 当天
-        cur.execute(
-            "UPDATE campaign_members SET anchor_date = substr(joined_at, 1, 10) "
-            "WHERE campaign_id = ?",
-            (int(campaign_id),),
-        )
+        # member_joined_at — 已经在 allocate 时设置 joined_at；anchor_date = joined_at 当天。
+        # campaign_members.joined_at 在 PG 是 TIMESTAMPTZ，SQLite 是 TEXT。SQLite 的
+        # substr 直接吃 TEXT 取前 10 字符即 'YYYY-MM-DD'；PG 不允许对 TIMESTAMPTZ 直接
+        # substr，必须先按 UTC 取日期。两端都对齐到 UTC 日期，避免跨时区错位。
+        if get_db_backend() == "postgres":
+            cur.execute(
+                "UPDATE campaign_members SET anchor_date = "
+                "TO_CHAR(joined_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') "
+                "WHERE campaign_id = ?",
+                (int(campaign_id),),
+            )
+        else:
+            cur.execute(
+                "UPDATE campaign_members SET anchor_date = substr(joined_at, 1, 10) "
+                "WHERE campaign_id = ?",
+                (int(campaign_id),),
+            )
     # 第一步 due 时间 = anchor_date + day_offset @ send_time
     cur.execute(
         """
