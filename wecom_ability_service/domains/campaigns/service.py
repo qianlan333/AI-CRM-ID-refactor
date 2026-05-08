@@ -156,13 +156,25 @@ def add_step_to_campaign(
 ) -> dict[str, Any]:
     db = get_db()
     cur = db.cursor()
+    # 用 ON CONFLICT 兼容 PG/SQLite（SQLite 3.24+），代替 SQLite-only 的 INSERT OR REPLACE
     cur.execute(
         """
-        INSERT OR REPLACE INTO campaign_steps
+        INSERT INTO campaign_steps
             (campaign_id, campaign_segment_id, step_index, day_offset, send_time,
              timezone, content_text, content_payload_json, stop_on_reply,
              skip_if_recently_touched_days, agent_run_id, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (campaign_segment_id, step_index) DO UPDATE SET
+            campaign_id = excluded.campaign_id,
+            day_offset = excluded.day_offset,
+            send_time = excluded.send_time,
+            timezone = excluded.timezone,
+            content_text = excluded.content_text,
+            content_payload_json = excluded.content_payload_json,
+            stop_on_reply = excluded.stop_on_reply,
+            skip_if_recently_touched_days = excluded.skip_if_recently_touched_days,
+            agent_run_id = excluded.agent_run_id,
+            updated_at = excluded.updated_at
         """,
         (
             int(campaign_id),
@@ -501,15 +513,61 @@ def list_campaigns(
     args.append(int(limit))
     cur.execute(
         f"""
-        SELECT id, campaign_code, display_name, intent, anchor_mode, anchor_date,
-               review_status, run_status, created_by_agent, started_at, finished_at,
-               created_at, updated_at
-        FROM campaigns WHERE {' AND '.join(where)}
-        ORDER BY id DESC LIMIT ?
+        SELECT c.id, c.campaign_code, c.display_name, c.intent, c.anchor_mode, c.anchor_date,
+               c.review_status, c.run_status, c.created_by_agent, c.started_at, c.finished_at,
+               c.created_at, c.updated_at,
+               (SELECT COUNT(*) FROM campaign_segments cs WHERE cs.campaign_id = c.id) AS segment_count,
+               (SELECT COUNT(*) FROM campaign_members cm WHERE cm.campaign_id = c.id) AS member_count
+        FROM campaigns c WHERE {' AND '.join(where)}
+        ORDER BY c.id DESC LIMIT ?
         """,
         tuple(args),
     )
     return [dict(r) for r in (cur.fetchall() or [])]
+
+
+def list_campaign_members(
+    *,
+    campaign_id: int,
+    status: str = "",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """返回 Campaign 命中的成员列表 + 状态分布。每条带 external_userid，前端可链到 ``/admin/customers/<external_userid>``。"""
+    db = get_db()
+    cur = db.cursor()
+    where = ["cm.campaign_id = ?"]
+    args: list[Any] = [int(campaign_id)]
+    if status:
+        where.append("cm.status = ?")
+        args.append(str(status))
+    cur.execute(
+        f"SELECT COUNT(*) AS c FROM campaign_members cm WHERE {' AND '.join(where)}",
+        tuple(args),
+    )
+    total_row = cur.fetchone() or {}
+    total = int(total_row.get("c") if isinstance(total_row, dict) else (total_row[0] if total_row else 0))
+    args2 = list(args) + [int(limit), int(offset)]
+    cur.execute(
+        f"""
+        SELECT cm.id, cm.member_id, cm.external_contact_id, cm.status, cm.stop_reason,
+               cm.current_step_index, cm.next_due_at, cm.last_step_sent_at,
+               cm.last_error_text, cm.retry_count, cm.anchor_date, cm.joined_at,
+               cs.label AS segment_label, cs.priority AS segment_priority,
+               s.display_name AS segment_name, s.segment_code,
+               am.phone, am.current_pool, am.current_audience_code,
+               am.profile_segment_key, am.behavior_tier_key
+        FROM campaign_members cm
+        JOIN campaign_segments cs ON cs.id = cm.campaign_segment_id
+        JOIN segments s ON s.id = cs.segment_id
+        LEFT JOIN automation_member am ON am.id = cm.member_id
+        WHERE {' AND '.join(where)}
+        ORDER BY cm.id DESC LIMIT ? OFFSET ?
+        """,
+        tuple(args2),
+    )
+    rows = [dict(r) for r in (cur.fetchall() or [])]
+    return {"total": total, "rows": rows, "limit": int(limit), "offset": int(offset)}
 
 
 def assemble_campaign_overview(*, campaign_id: int) -> dict[str, Any]:
@@ -651,6 +709,7 @@ __all__ = [
     "create_campaign_draft",
     "finish_campaign",
     "get_campaign",
+    "list_campaign_members",
     "list_campaigns",
     "pause_campaign",
     "propose_campaign",

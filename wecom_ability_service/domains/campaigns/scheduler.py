@@ -122,10 +122,11 @@ def _send_step_to_member(
     # 写 touch delivery log（沿用 program_code='campaign'）
     cur.execute(
         """
-        INSERT OR IGNORE INTO automation_touch_delivery_log
+        INSERT INTO automation_touch_delivery_log
             (program_code, touch_surface, rule_key, member_id,
              external_contact_id, status, detail, metadata_json, trace_id, sent_at)
         VALUES (?, 'campaign_step', ?, ?, ?, 'sent', ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING
         """,
         (
             f"campaign:{campaign.get('campaign_code')}",
