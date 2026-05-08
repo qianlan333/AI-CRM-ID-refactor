@@ -131,6 +131,7 @@
 .cloud-camp-reject { margin-left:auto; }
 
 .cloud-camp-drawer { position:fixed; inset:0; z-index:50; display:flex; }
+.cloud-camp-drawer[hidden] { display:none; }  /* class 的 display:flex 优先级高于 [hidden] 默认样式，必须显式覆盖否则抽屉一直显示 */
 .cloud-camp-drawer-mask { flex:1; background:rgba(0,0,0,0.3); }
 .cloud-camp-drawer-panel { width:520px; max-width:96vw; background:#fff; height:100%; display:flex; flex-direction:column; box-shadow:-2px 0 16px rgba(0,0,0,0.08); }
 .cloud-camp-drawer-panel header { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid #f0f0f0; }
