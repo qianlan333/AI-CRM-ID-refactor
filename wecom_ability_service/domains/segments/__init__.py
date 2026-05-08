@@ -26,6 +26,12 @@ from .service import (
     seed_default_segments,
     update_segment,
 )
+from .questionnaire_explorer import (
+    compose_segment_sql_from_questionnaire,
+    inspect_questionnaire,
+    list_questionnaires,
+    preview_questionnaire_population,
+)
 
 
 __all__ = [
@@ -40,4 +46,8 @@ __all__ = [
     "refresh_segment_cache",
     "seed_default_segments",
     "update_segment",
+    "compose_segment_sql_from_questionnaire",
+    "inspect_questionnaire",
+    "list_questionnaires",
+    "preview_questionnaire_population",
 ]
