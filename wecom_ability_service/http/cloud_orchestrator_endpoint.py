@@ -342,6 +342,23 @@ def cloud_orchestrator_pause_campaign(campaign_code: str) -> Response:
     return jsonify({"ok": True, "campaign": result})
 
 
+def cloud_orchestrator_list_campaign_members(campaign_code: str) -> Response:
+    """Campaign 命中成员清单。每条带 external_contact_id，前端再链到 /admin/customers/<external_userid>。"""
+    camp = campaign_service.get_campaign(campaign_code=campaign_code)
+    if not camp:
+        return jsonify({"ok": False, "error": "campaign_not_found"}), 404
+    status = (request.args.get("status") or "").strip()
+    limit = int(request.args.get("limit") or 100)
+    offset = int(request.args.get("offset") or 0)
+    result = campaign_service.list_campaign_members(
+        campaign_id=int(camp["id"]),
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return jsonify({"ok": True, **result})
+
+
 def cloud_orchestrator_reject_campaign(campaign_code: str) -> Response:
     body = request.get_json(silent=True) or {}
     camp = campaign_service.get_campaign(campaign_code=campaign_code)
@@ -493,6 +510,10 @@ def register_routes(bp):
         "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/reject",
         methods=["POST"],
     )(cloud_orchestrator_reject_campaign)
+    bp.route(
+        "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/members",
+        methods=["GET"],
+    )(cloud_orchestrator_list_campaign_members)
 
 
 __all__ = ["register_routes"]
