@@ -935,10 +935,17 @@ def _send_private_message_to_member(
     content_text: str,
     operator_id: str,
     filter_snapshot: dict[str, Any],
+    miniprogram_library_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     owner_staff_id = _normalized_text(member.get("owner_staff_id"))
     sender_userid = owner_staff_id or DEFAULT_AUTOMATION_SENDER
-    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload({"content": _normalized_text(content_text)})
+    payload_for_build: dict[str, Any] = {"content": _normalized_text(content_text)}
+    library_ids = [int(i) for i in (miniprogram_library_ids or []) if i]
+    if library_ids:
+        payload_for_build["attachments"] = [
+            {"msgtype": "miniprogram", "miniprogram": {"library_id": lid}} for lid in library_ids
+        ]
+    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(payload_for_build)
     request_payload = {
         "sender": sender_userid,
         "external_userid": [_normalized_text(member.get("external_contact_id"))],
@@ -1137,6 +1144,15 @@ def _process_execution_item(
                 "sent_at": "",
             },
         )
+    raw_node_miniprograms = node.get("miniprogram_library_ids") or []
+    if not raw_node_miniprograms:
+        raw_node_miniprograms = workflow_bundle.get("miniprogram_library_ids") or []
+    miniprogram_library_ids: list[int] = []
+    for value in raw_node_miniprograms:
+        try:
+            miniprogram_library_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
     send_result = _send_private_message_to_member(
         member=member,
         content_text=final_content,
@@ -1147,7 +1163,9 @@ def _process_execution_item(
             "node_id": int(execution.get("node_id") or 0),
             "execution_id": _normalized_text(execution.get("execution_id")),
             "audience_entry_id": int(audience_entry.get("id") or 0),
+            "miniprogram_library_ids": miniprogram_library_ids,
         },
+        miniprogram_library_ids=miniprogram_library_ids,
     )
     return workflow_repo.update_workflow_execution_item_row(
         int(execution_item["id"]),

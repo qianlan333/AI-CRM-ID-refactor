@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any, Iterable
 
 from ...db import get_db
+from .. import miniprogram_library
 from ..automation_conversion import (
     copy_workorder_service,
     interaction_stats_service,
@@ -142,6 +143,7 @@ def _record_plan(
     variants: list[dict[str, Any]],
     copy_run_ids: list[str],
     requires_manual_copy: bool,
+    attachments: list[dict[str, Any]],
     expires_at: str,
     status: str = "draft",
 ) -> None:
@@ -154,8 +156,8 @@ def _record_plan(
              content_strategy, content_template, personalization_json,
              max_recipients, candidate_count, skipped_count, explanation_json,
              variants_json, copy_workorder_run_ids, requires_manual_copy,
-             status, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             attachments_json, status, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             plan_id,
@@ -174,6 +176,7 @@ def _record_plan(
             json.dumps(variants, ensure_ascii=False)[:8000],
             json.dumps(copy_run_ids, ensure_ascii=False),
             bool(requires_manual_copy),
+            json.dumps(attachments, ensure_ascii=False),
             status,
             expires_at,
         ),
@@ -208,6 +211,52 @@ def _update_plan(plan_id: str, fields: dict[str, Any]) -> bool:
     return (cur.rowcount or 0) > 0
 
 
+def _normalize_draft_attachments(
+    attachments: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """draft 阶段只允许 miniprogram(library_id) / file(media_id)，不接 AI 自由 appid。"""
+    if not attachments:
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in attachments:
+        if not isinstance(item, dict):
+            raise ValueError("attachments entries must be objects")
+        msgtype = str(item.get("msgtype") or "").strip().lower()
+        if msgtype == "miniprogram":
+            mp = item.get("miniprogram") or {}
+            if not isinstance(mp, dict):
+                raise ValueError("miniprogram payload must be object")
+            library_id = mp.get("library_id")
+            if not library_id:
+                raise ValueError(
+                    "draft 阶段 miniprogram 必须通过 library_id 引用素材库，不接受裸 appid"
+                )
+            try:
+                lib_id_int = int(library_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("miniprogram library_id 必须是整数") from exc
+            entry: dict[str, Any] = {
+                "msgtype": "miniprogram",
+                "miniprogram": {"library_id": lib_id_int},
+            }
+            override_pagepath = str(mp.get("pagepath") or "").strip()
+            override_title = str(mp.get("title") or "").strip()
+            if override_pagepath:
+                entry["miniprogram"]["pagepath"] = override_pagepath
+            if override_title:
+                entry["miniprogram"]["title"] = override_title
+            normalized.append(entry)
+        elif msgtype == "file":
+            file_payload = item.get("file") or {}
+            media_id = str((file_payload or {}).get("media_id") or "").strip()
+            if not media_id:
+                raise ValueError("file attachments must include media_id")
+            normalized.append({"msgtype": "file", "file": {"media_id": media_id}})
+        else:
+            raise ValueError(f"unsupported attachment msgtype: {msgtype!r}")
+    return normalized
+
+
 def draft_broadcast_plan(
     *,
     intent: str,
@@ -215,6 +264,7 @@ def draft_broadcast_plan(
     content_strategy: str = "profile_layered",
     content_template: str = "",
     personalization: list[dict[str, Any]] | None = None,
+    attachments: list[dict[str, Any]] | None = None,
     max_recipients: int = 0,
     operator: str = "",
     session_id: str = "",
@@ -225,6 +275,7 @@ def draft_broadcast_plan(
     """生成一份群发计划草稿，写 cloud_broadcast_plans，并触发话术工单（默认）。"""
     if not selection:
         raise ValueError("selection is required")
+    normalized_attachments = _normalize_draft_attachments(attachments)
     cap = _enforce_max_recipients(int(max_recipients or 0))
     plan_id = _new_plan_id()
     effective_trace = trace_id or audit.new_trace_id("plan")
@@ -297,6 +348,7 @@ def draft_broadcast_plan(
         variants=variants,
         copy_run_ids=copy_run_ids,
         requires_manual_copy=requires_manual_copy,
+        attachments=normalized_attachments,
         expires_at=expires_at,
         status="draft",
     )
@@ -315,6 +367,7 @@ def draft_broadcast_plan(
         "copy_workorder_run_ids": copy_run_ids,
         "expires_at": expires_at,
         "explanation": explanation,
+        "attachments": normalized_attachments,
     }
 
 
@@ -434,7 +487,11 @@ def commit_broadcast_plan(
         )
         if primary_variant:
             content_template = str(primary_variant["content_text"])
-    if not content_template:
+    raw_attachments = json.loads(plan.get("attachments_json") or "[]")
+    if not isinstance(raw_attachments, list):
+        raw_attachments = []
+    expanded_attachments = miniprogram_library.expand_attachments_with_library(raw_attachments)
+    if not content_template and not expanded_attachments:
         raise RuntimeError("no content_template or variants available; commit refused")
 
     trace_id = str(plan["trace_id"] or "")
@@ -443,6 +500,7 @@ def commit_broadcast_plan(
         owner_userid=owner_userid,
         pool_key=primary_pool,
         content=content_template,
+        attachments=expanded_attachments or None,
         confirm=True,
         operator=f"cloud:{human_approver}",
         trace_id=trace_id,
@@ -523,6 +581,7 @@ def get_plan(plan_id: str) -> dict[str, Any] | None:
     plan["copy_workorder_run_ids"] = json.loads(plan.get("copy_workorder_run_ids") or "[]")
     plan["personalization_json"] = json.loads(plan.get("personalization_json") or "[]")
     plan["simulate_summary_json"] = json.loads(plan.get("simulate_summary_json") or "{}")
+    plan["attachments_json"] = json.loads(plan.get("attachments_json") or "[]")
     return plan
 
 

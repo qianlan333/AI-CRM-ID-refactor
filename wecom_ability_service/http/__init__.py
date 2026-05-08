@@ -23,6 +23,7 @@ from .admin_questionnaires import register_routes as register_admin_questionnair
 from .admin_user_ops import register_routes as register_admin_user_ops_routes
 from .automation_conversion import register_routes as register_automation_conversion_routes
 from .cloud_orchestrator_endpoint import register_routes as register_cloud_orchestrator_routes
+from .miniprogram_library_endpoint import register_routes as register_miniprogram_library_routes
 from .archive import register_routes as register_archive_routes
 from .callbacks import register_routes as register_callback_routes
 from .contacts import register_routes as register_contacts_routes
@@ -145,6 +146,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_questionnaires", register_admin_questionnaires_routes),
     ("automation_conversion", register_automation_conversion_routes),
     ("cloud_orchestrator", register_cloud_orchestrator_routes),
+    ("miniprogram_library", register_miniprogram_library_routes),
     ("customer_center", register_customer_center_routes),
     ("customer_automation", register_customer_automation_routes),
     ("customer_timeline", register_customer_timeline_routes),

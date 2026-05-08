@@ -2407,6 +2407,7 @@ CREATE TABLE IF NOT EXISTS automation_sop_template (
     day_index INTEGER NOT NULL DEFAULT 1,
     content TEXT NOT NULL DEFAULT '',
     images_json TEXT NOT NULL DEFAULT '[]',
+    miniprograms_json TEXT NOT NULL DEFAULT '[]',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2626,6 +2627,7 @@ CREATE TABLE IF NOT EXISTS cloud_broadcast_plans (
     variants_json TEXT NOT NULL DEFAULT '[]',
     copy_workorder_run_ids TEXT NOT NULL DEFAULT '[]',
     requires_manual_copy INTEGER NOT NULL DEFAULT 0,
+    attachments_json TEXT NOT NULL DEFAULT '[]',
     simulate_summary_json TEXT NOT NULL DEFAULT '{}',
     commit_batch_id TEXT NOT NULL DEFAULT '',
     commit_send_record_id INTEGER,
@@ -2889,3 +2891,24 @@ SELECT
           AND p.pushed_at >= datetime('now', '-30 days')
     ) AS ai_push_count_30d
 FROM automation_member m;
+
+CREATE TABLE IF NOT EXISTS miniprogram_library (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    appid TEXT NOT NULL,
+    pagepath TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    thumb_image_url TEXT NOT NULL DEFAULT '',
+    thumb_image_base64 TEXT NOT NULL DEFAULT '',
+    thumb_media_id TEXT NOT NULL DEFAULT '',
+    thumb_media_id_expires_at TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_miniprogram_library_enabled
+ON miniprogram_library (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_miniprogram_library_appid
+ON miniprogram_library (appid, id DESC);
