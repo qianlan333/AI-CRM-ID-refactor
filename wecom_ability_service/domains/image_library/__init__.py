@@ -102,7 +102,7 @@ def list_images(*, enabled_only: bool = True, limit: int = 200) -> list[dict[str
         cur.execute(
             "SELECT id, name, file_name, source, source_url, mime_type, file_size, "
             "thumb_media_id, thumb_media_id_expires_at, enabled, created_at, updated_at "
-            "FROM image_library WHERE enabled IN (1, TRUE) "
+            "FROM image_library WHERE enabled "
             "ORDER BY updated_at DESC, id DESC LIMIT ?",
             (int(limit),),
         )

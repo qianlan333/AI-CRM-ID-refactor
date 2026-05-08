@@ -102,7 +102,7 @@ def list_miniprograms(*, enabled_only: bool = True) -> list[dict[str, Any]]:
     cur = db.cursor()
     if enabled_only:
         cur.execute(
-            "SELECT * FROM miniprogram_library WHERE enabled IN (1, TRUE) ORDER BY updated_at DESC, id DESC"
+            "SELECT * FROM miniprogram_library WHERE enabled ORDER BY updated_at DESC, id DESC"
         )
     else:
         cur.execute("SELECT * FROM miniprogram_library ORDER BY updated_at DESC, id DESC")
