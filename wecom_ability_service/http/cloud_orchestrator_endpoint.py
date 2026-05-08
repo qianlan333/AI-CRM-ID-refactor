@@ -342,6 +342,42 @@ def cloud_orchestrator_pause_campaign(campaign_code: str) -> Response:
     return jsonify({"ok": True, "campaign": result})
 
 
+def cloud_orchestrator_upload_image() -> Response:
+    """运营本地选图 → 上传到企微素材库 → 返回 media_id 给前端写进 step。
+
+    复用已有 ``WeComClient._upload_private_message_image``，避免重写一遍企微 API。
+    限制 5MB / 仅图片类型，防止滥用接口。
+    """
+    from ..wecom_client import WeComClient, WeComClientError
+
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "missing image"}), 400
+    content_type = (file.mimetype or "").lower()
+    if not content_type.startswith("image/"):
+        return jsonify({"ok": False, "error": f"only image/* allowed, got {content_type}"}), 400
+    file_bytes = file.read()
+    if not file_bytes:
+        return jsonify({"ok": False, "error": "empty file"}), 400
+    if len(file_bytes) > 5 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "file too large (max 5MB)"}), 400
+    try:
+        client = WeComClient.from_app()
+        media_id = client._upload_private_message_image(
+            file.filename, file_bytes, content_type,
+        )
+    except WeComClientError as exc:
+        logger.exception("cloud_orchestrator_upload_image wecom error")
+        return jsonify({"ok": False, "error": f"wecom upload failed: {exc}"}), 502
+    return jsonify({
+        "ok": True,
+        "media_id": media_id,
+        "file_name": file.filename,
+        "content_type": content_type,
+        "size": len(file_bytes),
+    })
+
+
 def cloud_orchestrator_update_campaign_step(campaign_code: str, step_index: str) -> Response:
     """编辑单个 step 的话术 / 时间 / 图片 / day_offset / 回复后停止开关。仅 draft 态可改。"""
     camp = campaign_service.get_campaign(campaign_code=campaign_code)
@@ -539,6 +575,10 @@ def register_routes(bp):
         "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/steps/<step_index>",
         methods=["PATCH", "POST"],
     )(cloud_orchestrator_update_campaign_step)
+    bp.route(
+        "/api/admin/cloud-orchestrator/media/upload",
+        methods=["POST"],
+    )(cloud_orchestrator_upload_image)
 
 
 __all__ = ["register_routes"]
