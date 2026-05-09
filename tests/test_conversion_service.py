@@ -419,7 +419,7 @@ def test_mark_enrolled_cancels_pending_candidate_and_unmark_recomputes_to_activa
             (batch_id, "wm_conv_task05"),
         ).fetchone()
         assert dispatch_row["dispatch_status"] == "converted_before_dispatch"
-        dispatch_payload = json.loads(dispatch_row["dispatch_payload_json"])
+        dispatch_payload = (dispatch_row["dispatch_payload_json"] if isinstance(dispatch_row["dispatch_payload_json"], (dict, list)) else json.loads(dispatch_row["dispatch_payload_json"]))
         assert dispatch_payload["source"] == "sidebar_manual"
         assert dispatch_payload["action"] == "mark_enrolled"
 

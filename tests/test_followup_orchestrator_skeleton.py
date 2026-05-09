@@ -252,7 +252,7 @@ def _seed_previous_unresolved_item(db, *, external_userid: str, tenant_key: str 
             tenant_key, mission_key, mission_type, mission_status, owner_userid, team_scope_key,
             source_type, summary, priority_score, item_count, requires_manager_approval, payload_json, created_by
         )
-        VALUES (?, ?, 'priority_wave', 'suggested', '', 'history', 'customer_pulse_rule_engine', 'history', 10, 1, 0, '{}', 'pytest')
+        VALUES (?, ?, 'priority_wave', 'suggested', '', 'history', 'customer_pulse_rule_engine', 'history', 10, 1, false, '{}', 'pytest')
         """,
         (tenant_key, f"history-{external_userid}-{datetime.now().timestamp()}"),
     )

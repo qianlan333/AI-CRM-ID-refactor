@@ -1821,7 +1821,7 @@ def test_sidebar_manual_followup_switch_updates_pool_and_preserves_trace(
 
         assert current_row["main_stage"] == "pool"
         assert current_row["sub_stage"] == expected_sub_stage
-        current_payload = json.loads(current_row["state_payload_json"])
+        current_payload = (current_row["state_payload_json"] if isinstance(current_row["state_payload_json"], (dict, list)) else json.loads(current_row["state_payload_json"]))
         assert current_payload["manual_followup_segment"] == target_segment
         assert current_payload["manual_followup_segment_source"] == "sidebar_manual"
         assert current_payload["manual_followup_segment_operator"] == "sales_24"
@@ -1829,7 +1829,7 @@ def test_sidebar_manual_followup_switch_updates_pool_and_preserves_trace(
 
         assert history_row["sub_stage"] == expected_sub_stage
         assert history_row["change_reason"] == "manual_followup_segment_changed"
-        history_payload = json.loads(history_row["state_payload_json"])
+        history_payload = (history_row["state_payload_json"] if isinstance(history_row["state_payload_json"], (dict, list)) else json.loads(history_row["state_payload_json"]))
         assert history_payload["manual_followup_segment"] == target_segment
         assert history_payload["questionnaire_segment"] == ("top" if hit_question_count >= 4 else "normal")
 
@@ -2018,7 +2018,7 @@ def test_admin_marketing_automation_preview_returns_current_state_and_hits(app, 
         assert bool(state_row["eligible_for_conversion"]) is True
         assert segment_row["segment"] == "core"
         assert int(segment_row["score"]) == payload["summary"]["hit_count"]
-        assert json.loads(segment_row["matched_question_ids_json"]) == payload["summary"]["matched_question_ids"]
+        assert (segment_row["matched_question_ids_json"] if isinstance(segment_row["matched_question_ids_json"], (dict, list)) else json.loads(segment_row["matched_question_ids_json"])) == payload["summary"]["matched_question_ids"]
 
 
 def test_admin_marketing_automation_preview_supports_mobile_only_person(app, client):

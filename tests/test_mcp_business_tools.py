@@ -382,7 +382,7 @@ def test_create_private_message_task_resolves_mobile_then_executes(client, app, 
         row = get_db().execute(
             "SELECT request_payload FROM outbound_tasks WHERE task_type = 'private_message' ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        request_payload = json.loads(row["request_payload"])
+        request_payload = (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))
         assert request_payload["chat_type"] == "single"
         assert request_payload["external_userid"] == ["wm_private_001"]
         assert request_payload["sender"] == "sales_01"
@@ -427,7 +427,7 @@ def test_create_group_message_task_supports_customer_ref_list(client, app, monke
         row = get_db().execute(
             "SELECT request_payload FROM outbound_tasks WHERE task_type = 'group_message' ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        request_payload = json.loads(row["request_payload"])
+        request_payload = (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))
         assert request_payload["chat_type"] == "group"
         assert request_payload["external_userid"] == ["wm_group_001", "wm_group_002"]
         assert request_payload["sender"] == ["sales_01"]
@@ -473,7 +473,7 @@ def test_create_moment_task_supports_customer_ref_list(client, app, monkeypatch)
         row = get_db().execute(
             "SELECT request_payload FROM outbound_tasks WHERE task_type = 'moment' ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        request_payload = json.loads(row["request_payload"])
+        request_payload = (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))
         assert request_payload["visible_range"]["sender_list"]["userid"] == ["sales_01", "sales_02"]
         assert request_payload["text"]["content"] == "今天有新活动说明"
 
@@ -940,7 +940,7 @@ def test_crm_automation_create_workflow_supports_split_recipient_and_content_fie
     assert workflow["content_profile_segment_template_id"] == template_seed["template_id"]
     assert workflow["segmentation_basis"] == "profile"
     assert workflow["profile_segment_template_id"] == template_seed["template_id"]
-    assert json.loads(workflow["behavior_tier_scheme"]) == {
+    assert (workflow["behavior_tier_scheme"] if isinstance(workflow["behavior_tier_scheme"], (dict, list)) else json.loads(workflow["behavior_tier_scheme"])) == {
         "recipient_filter_basis": "behavior",
         "recipient_behavior_tier_keys": ["lt_2"],
     }

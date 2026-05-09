@@ -1086,7 +1086,7 @@ def test_customer_pulse_reply_draft_execution_writes_draft_timeline_and_supports
             (external_userid,),
         ).fetchall()
 
-    saved_request_payload = json.loads(outbound_row["request_payload"])
+    saved_request_payload = (outbound_row["request_payload"] if isinstance(outbound_row["request_payload"], (dict, list)) else json.loads(outbound_row["request_payload"]))
     assert outbound_row["status"] == "draft"
     assert saved_request_payload["external_userid"] == [external_userid]
     assert saved_request_payload["text"]["content"] == "这是 AI 草稿，请人工确认后发送。"
@@ -1135,7 +1135,7 @@ def test_customer_pulse_reply_draft_execution_writes_draft_timeline_and_supports
             (external_userid,),
         ).fetchall()
 
-    cancelled_response_payload = json.loads(cancelled_task["response_payload"])
+    cancelled_response_payload = (cancelled_task["response_payload"] if isinstance(cancelled_task["response_payload"], (dict, list)) else json.loads(cancelled_task["response_payload"]))
     assert cancelled_task["status"] == "cancelled"
     assert cancelled_response_payload["cancel_source"] == "customer_pulse_undo"
     assert [(row["activity_type"], row["activity_status"]) for row in activity_rows] == [
@@ -1667,10 +1667,10 @@ def test_customer_pulse_ai_recommendation_accepts_structured_output_and_persists
     assert output_row["output_type"] == "next_action_suggestion"
     assert round(float(output_row["confidence"]), 2) == 0.91
     assert evidence_audit_row["action_type"] == "view_card_evidence"
-    assert json.loads(evidence_audit_row["before_json"])["tenant_context"]["tenant_key"] == "aicrm"
-    assert json.loads(evidence_audit_row["after_json"])["result"] == "ok"
+    assert (evidence_audit_row["before_json"] if isinstance(evidence_audit_row["before_json"], (dict, list)) else json.loads(evidence_audit_row["before_json"]))["tenant_context"]["tenant_key"] == "aicrm"
+    assert (evidence_audit_row["after_json"] if isinstance(evidence_audit_row["after_json"], (dict, list)) else json.loads(evidence_audit_row["after_json"]))["result"] == "ok"
     assert ai_success_metric["event_type"] == "ai_success"
-    assert json.loads(ai_success_metric["payload_json"])["model_name"] == "deepseek-chat"
+    assert (ai_success_metric["payload_json"] if isinstance(ai_success_metric["payload_json"], (dict, list)) else json.loads(ai_success_metric["payload_json"]))["model_name"] == "deepseek-chat"
 
 
 def test_customer_pulse_ai_recommendation_falls_back_when_provider_unavailable(app, client):
@@ -1713,7 +1713,7 @@ def test_customer_pulse_ai_recommendation_falls_back_when_provider_unavailable(a
         ).fetchone()
 
     assert fallback_metric["event_type"] == "fallback_count"
-    assert json.loads(fallback_metric["payload_json"])["fallback_reason"] == "provider_error"
+    assert (fallback_metric["payload_json"] if isinstance(fallback_metric["payload_json"], (dict, list)) else json.loads(fallback_metric["payload_json"]))["fallback_reason"] == "provider_error"
 
 
 def test_customer_pulse_ai_recommendation_falls_back_on_invalid_json_output(app, client, monkeypatch):
@@ -3210,8 +3210,8 @@ def test_customer_pulse_card_view_without_evidence_permission_cannot_expand_evid
                 (tenant_key,),
             ).fetchone()["total_count"]
         )
-    audit_before = json.loads(audit_row["before_json"])
-    audit_after = json.loads(audit_row["after_json"])
+    audit_before = (audit_row["before_json"] if isinstance(audit_row["before_json"], (dict, list)) else json.loads(audit_row["before_json"]))
+    audit_after = (audit_row["after_json"] if isinstance(audit_row["after_json"], (dict, list)) else json.loads(audit_row["after_json"]))
     assert audit_row["action_type"] == "deny_card_evidence"
     assert audit_before["tenant_context"]["tenant_key"] == tenant_key
     assert audit_before["actor"]["actor_userid"] == "owner-a"
@@ -3261,8 +3261,8 @@ def test_customer_pulse_manual_draft_guardrail_block_records_failure_and_metric(
             (card["id"],),
         ).fetchone()
 
-    failure_payload = json.loads(execution_row["result_payload_json"])
-    metric_payload = json.loads(guardrail_metric_row["payload_json"])
+    failure_payload = (execution_row["result_payload_json"] if isinstance(execution_row["result_payload_json"], (dict, list)) else json.loads(execution_row["result_payload_json"]))
+    metric_payload = (guardrail_metric_row["payload_json"] if isinstance(guardrail_metric_row["payload_json"], (dict, list)) else json.loads(guardrail_metric_row["payload_json"]))
     assert execution_row["execution_status"] == "failed"
     assert "unauthorized_pricing_promise" in failure_payload["guardrails"]["text_guardrail_hits"]
     assert "pii_leak" in failure_payload["guardrails"]["text_guardrail_hits"]

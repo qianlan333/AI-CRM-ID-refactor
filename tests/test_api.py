@@ -978,7 +978,7 @@ def test_create_private_message_task_keeps_emoji_and_image_attachment(client, ap
 
     with app.app_context():
         row = get_db().execute("SELECT request_payload FROM outbound_tasks ORDER BY id DESC LIMIT 1").fetchone()
-        saved_payload = json.loads(row["request_payload"])
+        saved_payload = (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))
         assert saved_payload["text"]["content"] == "今天统一跟进🙂"
         assert saved_payload["attachments"] == [{"msgtype": "image", "image": {"media_id": "media-emoji-proof.png"}}]
 
@@ -3948,13 +3948,13 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         assert int(row["response_status_code"]) == 200
         assert row["status"] == "success"
         assert row["failure_reason"] == ""
-        assert json.loads(row["request_payload"])["phone_number"] == "13800138012"
-        assert json.loads(row["request_payload"])["day"] == 20
-        assert json.loads(row["request_payload"])["frequency"] == 20
-        assert json.loads(row["request_payload"])["remark"] == "黄小璨 499 用户激活"
-        assert json.loads(row["request_payload"])["source_name"] == "黄小璨激活"
-        assert json.loads(row["request_payload"])["answers"][1]["answer"] == ["效果"]
-        assert json.loads(row["request_payload"])["answers"][2]["answer"] == ""
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["phone_number"] == "13800138012"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["day"] == 20
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["frequency"] == 20
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["remark"] == "黄小璨 499 用户激活"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["source_name"] == "黄小璨激活"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["answers"][1]["answer"] == ["效果"]
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["answers"][2]["answer"] == ""
         assert '"success": false' in row["response_body"]
 
 
@@ -4006,7 +4006,7 @@ def test_questionnaire_submit_external_push_without_mobile_question_sends_null_p
             LIMIT 1
             """
         ).fetchone()
-        assert json.loads(row["request_payload"])["phone_number"] == "NULL"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["phone_number"] == "NULL"
 
 
 def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_custom_param_name(client):
@@ -4100,7 +4100,7 @@ def test_questionnaire_submit_external_push_global_switch_off_skips_without_brea
         assert row["failure_reason"] == "skipped by global external push switch"
         assert row["target_url"] == "https://hooks.example.com/questionnaire/apply"
         assert row["response_status_code"] is None
-        assert json.loads(row["request_payload"])["user_id"] == "union-external-push-global-off-001"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["user_id"] == "union-external-push-global-off-001"
 
 
 def test_questionnaire_submit_external_push_non_200_records_failed_without_breaking_submit(client, app, monkeypatch):
@@ -4300,7 +4300,7 @@ def test_questionnaire_external_push_failed_log_can_be_retried_and_reuses_origin
             """
         ).fetchone()
         original_id = int(original["id"])
-        original_payload = json.loads(original["request_payload"])
+        original_payload = (original["request_payload"] if isinstance(original["request_payload"], (dict, list)) else json.loads(original["request_payload"]))
         assert original["status"] == "failed"
         assert original["retry_from_log_id"] is None
         assert int(original["retry_attempt"] or 0) == 0

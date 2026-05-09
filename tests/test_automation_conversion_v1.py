@@ -157,7 +157,7 @@ def test_create_workflow_supports_split_recipient_filter_and_content_segmentatio
     assert workflow["content_profile_segment_template_id"] == template_seed["template_id"]
     assert workflow["segmentation_basis"] == "profile"
     assert workflow["profile_segment_template_id"] == template_seed["template_id"]
-    assert json.loads(workflow["behavior_tier_scheme"]) == {
+    assert (workflow["behavior_tier_scheme"] if isinstance(workflow["behavior_tier_scheme"], (dict, list)) else json.loads(workflow["behavior_tier_scheme"])) == {
         "recipient_filter_basis": "behavior",
         "recipient_behavior_tier_keys": ["lt_2"],
     }
@@ -615,7 +615,7 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
         "第4天使用场景激活",
         "第5天结果预期激活",
     ]
-    summaries = [json.loads(row["summary_json"]) for row in execution_rows]
+    summaries = [(row["summary_json"] if isinstance(row["summary_json"], (dict, list)) else json.loads(row["summary_json"])) for row in execution_rows]
     assert [summary["result"]["success_count"] for summary in summaries] == [1, 1, 1]
     assert summaries[0]["diagnostics"]["day_offset_miss_count"] == 5
     assert summaries[2]["diagnostics"]["recipient_filter_behavior_tier_miss_count"] == 1
@@ -688,7 +688,7 @@ def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_u
             """
         ).fetchone()
 
-    summary = json.loads(execution_row["summary_json"])
+    summary = (execution_row["summary_json"] if isinstance(execution_row["summary_json"], (dict, list)) else json.loads(execution_row["summary_json"]))
     assert result["total_success_count"] == 1
     assert len(dispatched) == 1
     assert dispatched[0]["text"]["content"] == "第3天激活提醒"
@@ -765,7 +765,7 @@ def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_
             """
         ).fetchone()
 
-    snapshot = json.loads(item_row["content_snapshot_json"])
+    snapshot = (item_row["content_snapshot_json"] if isinstance(item_row["content_snapshot_json"], (dict, list)) else json.loads(item_row["content_snapshot_json"]))
     assert result["total_success_count"] == 1
     assert len(dispatched) == 1
     assert dict(item_row)["rendered_content_text"] == "低行为脏配置仍可发送"
@@ -844,7 +844,7 @@ def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_t
             """
         ).fetchone()
 
-    snapshot = json.loads(item_row["content_snapshot_json"])
+    snapshot = (item_row["content_snapshot_json"] if isinstance(item_row["content_snapshot_json"], (dict, list)) else json.loads(item_row["content_snapshot_json"]))
     assert result["total_success_count"] == 1
     assert len(dispatched) == 1
     assert dict(item_row)["rendered_content_text"] == "没有命中画像时走标准 fallback"
@@ -2831,7 +2831,7 @@ def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standa
             """
         ).fetchone()
 
-    snapshot = json.loads(item_row["content_snapshot_json"])
+    snapshot = (item_row["content_snapshot_json"] if isinstance(item_row["content_snapshot_json"], (dict, list)) else json.loads(item_row["content_snapshot_json"]))
 
     assert result["ok"] is True
     assert dispatched == []
@@ -3788,8 +3788,8 @@ def test_sync_member_activation_recomputes_pool_from_pending_questionnaire_to_op
     assert event["action"] == "member_refresh"
     assert event["operator_type"] == "system"
     assert event["operator_id"] == "activation_webhook"
-    assert json.loads(event["before_snapshot"])["current_pool"] == "pending_questionnaire"
-    assert json.loads(event["after_snapshot"])["current_pool"] == "operating"
+    assert (event["before_snapshot"] if isinstance(event["before_snapshot"], (dict, list)) else json.loads(event["before_snapshot"]))["current_pool"] == "pending_questionnaire"
+    assert (event["after_snapshot"] if isinstance(event["after_snapshot"], (dict, list)) else json.loads(event["after_snapshot"]))["current_pool"] == "operating"
 
 
 def test_get_member_detail_view_sync_updates_questionnaire_pool(app, monkeypatch):
@@ -5494,9 +5494,9 @@ def test_save_agent_router_settings_persists_callback_policy_and_cleans_legacy_s
             """
         ).fetchone()
 
-    fallback_strategy = json.loads(row["fallback_strategy_json"])
-    request_sample = json.loads(row["request_sample_json"])
-    response_sample = json.loads(row["response_sample_json"])
+    fallback_strategy = (row["fallback_strategy_json"] if isinstance(row["fallback_strategy_json"], (dict, list)) else json.loads(row["fallback_strategy_json"]))
+    request_sample = (row["request_sample_json"] if isinstance(row["request_sample_json"], (dict, list)) else json.loads(row["request_sample_json"]))
+    response_sample = (row["response_sample_json"] if isinstance(row["response_sample_json"], (dict, list)) else json.loads(row["response_sample_json"]))
 
     assert fallback_strategy["min_confidence"] == pytest.approx(0.93)
     assert fallback_strategy["human_review_target_pool"] == "human_reply"
@@ -6184,7 +6184,7 @@ def test_router_callback_stores_reply_draft_output_when_payload_contains_reply_t
     assert reply_output is not None
     assert dict(reply_output)["agent_code"] == "pricing_agent"
     assert dict(reply_output)["rendered_output_text"] == "我先把课程方案和价格区间给你拆开说明，你可以先看下更关注哪一档。"
-    assert json.loads(reply_output["normalized_output_json"])["draft_reply"] == "我先把课程方案和价格区间给你拆开说明，你可以先看下更关注哪一档。"
+    assert (reply_output["normalized_output_json"] if isinstance(reply_output["normalized_output_json"], (dict, list)) else json.loads(reply_output["normalized_output_json"]))["draft_reply"] == "我先把课程方案和价格区间给你拆开说明，你可以先看下更关注哪一档。"
 
 
 def test_router_callback_generates_child_reply_draft_when_callback_only_routes(app, client, monkeypatch):
@@ -6616,14 +6616,14 @@ def test_router_callback_uses_optional_metadata_and_configurable_review_pool(app
 
     assert response.status_code == 200
     assert dict(member_row)["current_pool"] == "human_reply"
-    assert json.loads(run_row["variables_snapshot_json"])["callback_meta"] == {
+    assert (run_row["variables_snapshot_json"] if isinstance(run_row["variables_snapshot_json"], (dict, list)) else json.loads(run_row["variables_snapshot_json"]))["callback_meta"] == {
         "trace_id": "trace-meta-001",
         "processing_latency_ms": 1820,
         "prompt_version_used": "pricing_agent@draft_v3",
         "mcp_tools_used": ["crm.get_member_basic", "get_all_agent_prompts"],
         "completed_at": "2026-04-09 14:05:00",
     }
-    structured_result = json.loads(output_row["normalized_output_json"])["structured_result"]
+    structured_result = (output_row["normalized_output_json"] if isinstance(output_row["normalized_output_json"], (dict, list)) else json.loads(output_row["normalized_output_json"]))["structured_result"]
     assert structured_result["trace_id"] == "trace-meta-001"
     assert structured_result["processing_latency_ms"] == 1820
     assert structured_result["prompt_version_used"] == "pricing_agent@draft_v3"
@@ -8130,12 +8130,12 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
             LIMIT 1
             """
         ).fetchone()
-        filter_snapshot = json.loads(row["filter_snapshot_json"])
+        filter_snapshot = (row["filter_snapshot_json"] if isinstance(row["filter_snapshot_json"], (dict, list)) else json.loads(row["filter_snapshot_json"]))
         assert filter_snapshot["selection_mode"] == "automation_conversion_stage"
         assert filter_snapshot["stage_key"] == "new-user"
         assert filter_snapshot["pool_key"] == "pending_questionnaire"
         assert "owner_userid" not in filter_snapshot
-        assert json.loads(row["sender_userids_json"]) == ["HuangYouCan"]
+        assert (row["sender_userids_json"] if isinstance(row["sender_userids_json"], (dict, list)) else json.loads(row["sender_userids_json"])) == ["HuangYouCan"]
         assert row["selected_count"] == 2
         assert row["eligible_count"] == 2
         assert row["sent_count"] == 2
@@ -9657,7 +9657,7 @@ def test_save_agent_prompt_draft_rejects_stale_expected_version_and_writes_skill
     assert payload["error"]["message"].startswith("draft_version_conflict:")
     assert dict(audit_row)["status"] == "error"
     assert dict(audit_row)["error_code"] == "draft_version_conflict"
-    detail = json.loads(audit_row["response_payload_json"])["detail"]
+    detail = (audit_row["response_payload_json"] if isinstance(audit_row["response_payload_json"], (dict, list)) else json.loads(audit_row["response_payload_json"]))["detail"]
     assert detail["expected_draft_version"] == stale_version
     assert detail["current_draft_version"] == stale_version + 1
 
@@ -9703,7 +9703,7 @@ def test_submit_agent_prompt_for_publish_rejects_stale_expected_version_and_writ
     assert payload["error"]["message"].startswith("draft_version_conflict:")
     assert dict(audit_row)["status"] == "error"
     assert dict(audit_row)["error_code"] == "draft_version_conflict"
-    detail = json.loads(audit_row["response_payload_json"])["detail"]
+    detail = (audit_row["response_payload_json"] if isinstance(audit_row["response_payload_json"], (dict, list)) else json.loads(audit_row["response_payload_json"]))["detail"]
     assert detail["expected_draft_version"] == stale_version
     assert detail["current_draft_version"] == stale_version + 1
 
