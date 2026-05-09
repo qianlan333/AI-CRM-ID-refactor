@@ -14,38 +14,6 @@ from . import (
 _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN = "questionnaire" "_result"
 
 
-def _run_schema_with_forward_fk_retries(db, script: str, *, max_passes: int = 4) -> None:
-    """跑 schema_postgres.sql，对前向 FK 引用容错。
-
-    schema 里有少数 ``CREATE TABLE`` 的 FK 引用了下方才定义的表（例如
-    ``customer_value_segment_current.submission_id REFERENCES questionnaire_submissions``
-    出现在 line 759，但 ``questionnaire_submissions`` 直到 line 1414 才建）。
-
-    单次顺跑 ``executescript`` 会在第一条前向 FK 上 ``UndefinedTable`` 死掉，让
-    fresh PG 上的 ``init_db`` 整个崩。多 pass 重试容错：每轮跑通能跑通的，把
-    ``UndefinedTable`` 失败的留到下一轮 —— 等被引用表建好后再补。
-    """
-    statements = [s.strip() for s in script.split(";") if s.strip()]
-    pending = statements
-    for _ in range(max_passes):
-        if not pending:
-            return
-        next_pending: list[str] = []
-        for stmt in pending:
-            try:
-                db.execute(stmt)
-                db.commit()
-            except Exception:
-                db.rollback()
-                next_pending.append(stmt)
-        if len(next_pending) == len(pending):
-            # 没进展：剩下的就是真坏掉的，让最后一条原样抛出来便于 debug。
-            for stmt in next_pending:
-                db.execute(stmt)
-            return
-        pending = next_pending
-
-
 def _ensure_postgres_user_ops_page_tables(db) -> None:
     db.execute(
         """
@@ -838,9 +806,12 @@ def _init_postgres(db) -> None:
         ADD COLUMN IF NOT EXISTS entry_tag_group_name TEXT NOT NULL DEFAULT ''
         """
     )
-    # idx_automation_channel_program 由 schema_postgres.sql 建（line 1533）。
-    # 这里**不要**再 CREATE INDEX —— fresh PG 上 automation_channel 表还没建，
-    # CREATE INDEX 没有 IF EXISTS 的表存在性 guard，会让整个 init_db 挂掉。
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_channel_program
+        ON automation_channel (program_id, updated_at DESC, id DESC)
+        """
+    )
     db.execute(
         """
         ALTER TABLE IF EXISTS automation_profile_segment_template
