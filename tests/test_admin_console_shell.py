@@ -108,8 +108,8 @@ def _seed_dashboard_data(app):
                 huangxiaocan_activation_state, class_term_no, class_term_label
             )
             VALUES
-                ('13800000001', 'ext-1', '客户一', 'owner-a', 1, 1, 'activated', 1, '一班'),
-                ('13800000002', 'ext-4', '客户四', 'owner-d', 0, 0, 'not_activated', 2, '二班')
+                ('13800000001', 'ext-1', '客户一', 'owner-a', true, true, 'activated', 1, '一班'),
+                ('13800000002', 'ext-4', '客户四', 'owner-d', false, false, 'not_activated', 2, '二班')
             """
         )
         db.execute(
