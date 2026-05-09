@@ -617,7 +617,7 @@ def upsert_customer_pulse_card(
         _json_storage(suggested_action_candidates, default="[]"),
         _json_storage(score_breakdown, default="[]"),
         str(draft_message or ""),
-        1 if need_human_confirmation else 0,
+        bool(need_human_confirmation),
         _normalized_text(due_at),
         _normalized_text(snooze_until),
         _normalized_text(resolved_at),
@@ -757,7 +757,7 @@ def update_customer_pulse_card(card_id: int, *, tenant_key: str, **fields: Any) 
             default = "{}" if key == "suggested_action_payload_json" else "[]"
             value = _json_storage(value, default=default)
         if key == "need_human_confirmation":
-            value = 1 if bool(value) else 0
+            value = bool(value)
         if key == "priority_score":
             value = float(value or 0)
         assignments.append(f"{key} = ?")

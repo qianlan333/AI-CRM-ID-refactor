@@ -103,6 +103,9 @@ _TABLES_TO_TRUNCATE = [
     "user_ops_pool_current",
     "user_ops_huangxiaocan_activation_source",
     "user_ops_activation_status_source",
+    "signup_tag_rules",
+    "marketing_automation_question_rules",
+    "marketing_automation_configs",
     "user_ops_send_records",
     "user_ops_deferred_jobs",
     # — message batches
