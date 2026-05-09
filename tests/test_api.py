@@ -2568,7 +2568,7 @@ def test_external_contact_full_sync_and_identity_bind(client, app, monkeypatch):
         assert len(follow_users) == 2
         assert follow_users[0]["user_id"] == "sales_01"
         assert follow_users[0]["relation_status"] == "active"
-        assert int(follow_users[0]["is_primary"]) == 1
+        assert bool(follow_users[0]["is_primary"]) is True
         rebound = bind_openid_to_external_contact("ww-test", "wm_ext_001", "openid-001", unionid="union-001")
         assert rebound["openid"] == "openid-001"
         assert rebound["unionid"] == "union-001"
