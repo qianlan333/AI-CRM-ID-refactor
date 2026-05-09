@@ -806,12 +806,9 @@ def _init_postgres(db) -> None:
         ADD COLUMN IF NOT EXISTS entry_tag_group_name TEXT NOT NULL DEFAULT ''
         """
     )
-    db.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_automation_channel_program
-        ON automation_channel (program_id, updated_at DESC, id DESC)
-        """
-    )
+    # idx_automation_channel_program 由 schema_postgres.sql 建（line 1533）。
+    # 这里**不要**再 CREATE INDEX —— fresh PG 上 automation_channel 表还没建，
+    # CREATE INDEX 没有 IF EXISTS 的表存在性 guard，会让整个 init_db 挂掉。
     db.execute(
         """
         ALTER TABLE IF EXISTS automation_profile_segment_template
