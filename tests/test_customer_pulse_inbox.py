@@ -2278,11 +2278,12 @@ def test_customer_pulse_high_priority_threshold_is_configurable(app, client):
     threshold = int(baseline_card["priority_score"]) - 5
     with app.app_context():
         set_settings({"CUSTOMER_PULSE_HIGH_PRIORITY_THRESHOLD": str(threshold)})
-        # build_pg_test_app keeps one app context alive for all client requests,
-        # so the per-request config cache in g leaks across requests. Clear it
-        # so the next request picks up the new threshold from the DB.
-        from flask import g as _g
-        _g.pop("customer_pulse_config_cache", None)
+    # build_pg_test_app keeps one app context alive for all client requests,
+    # so the per-request config cache in g leaks across requests. Clear it
+    # on the OUTER app context (not the nested one above) so the next
+    # request picks up the new threshold from the DB.
+    from flask import g as _g
+    _g.pop("customer_pulse_config_cache", None)
 
     _force_sync_customer_pulse(client, [external_userid])
     detail = client.get(
