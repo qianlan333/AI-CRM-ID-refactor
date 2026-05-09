@@ -172,7 +172,7 @@ def _seed_phase4_data(app) -> None:
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (1, 'q-1', 'q-1', '客户问卷', '问卷描述', 0, '', '2026-04-02 09:00:00', '2026-04-02 09:20:00')
+            VALUES (1, 'q-1', 'q-1', '客户问卷', '问卷描述', false, '', '2026-04-02 09:00:00', '2026-04-02 09:20:00')
             """
         )
         db.execute(
@@ -458,7 +458,7 @@ def test_admin_questionnaire_global_external_push_logs_page_supports_filters(app
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (2, 'q-2', 'q-2', '另一份问卷', '第二份问卷', 0, '', '2026-04-03 09:00:00', '2026-04-03 09:20:00')
+            VALUES (2, 'q-2', 'q-2', '另一份问卷', '第二份问卷', false, '', '2026-04-03 09:00:00', '2026-04-03 09:20:00')
             """
         )
         db.execute(

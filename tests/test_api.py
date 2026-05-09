@@ -119,7 +119,7 @@ def _seed_profile_segment_questionnaire(app, *, questionnaire_id: int = 901) -> 
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, '', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 questionnaire_id,

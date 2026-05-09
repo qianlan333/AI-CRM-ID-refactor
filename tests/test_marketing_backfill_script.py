@@ -24,7 +24,7 @@ def _seed_questionnaire(app, *, questionnaire_id: int = 61) -> dict[str, object]
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, '', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 questionnaire_id,
