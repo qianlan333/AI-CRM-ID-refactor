@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ...db import get_db, get_db_backend
@@ -25,7 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    # 必须输出 timezone-aware ISO（含 +00:00 后缀），否则 PG TIMESTAMPTZ 字段会按
+    # server timezone（Asia/Shanghai）解读 naive 字符串 → 倒推 8 小时，cron
+    # ``WHERE next_due_at <= ?`` 永远不命中下一步 due。
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _empty_ts() -> str | None:
