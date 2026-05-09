@@ -8288,7 +8288,7 @@ def test_manual_send_operating_stage_uses_current_audience_not_pool_status(app, 
                 questionnaire_status, decision_source, source_type, last_active_pool,
                 current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
             )
-            VALUES ('wm_manual_pool_002', '13800009205', 'sales_01', 1, 'active_normal', 'normal',
+            VALUES ('wm_manual_pool_002', '13800009205', 'sales_01', True, 'active_normal', 'normal',
                     'pending', 'legacy', 'manual', '', 'pending_questionnaire',
                     '2026-04-06 10:00:00', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
@@ -8329,7 +8329,7 @@ def test_manual_send_operating_stage_includes_legacy_pool_aliases(app, client, m
                     questionnaire_status, decision_source, source_type, last_active_pool,
                     current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
                 )
-                VALUES (?, ?, 'sales_01', 1, ?, ?, 'submitted', 'legacy', 'manual', '', 'operating',
+                VALUES (?, ?, 'sales_01', True, ?, ?, 'submitted', 'legacy', 'manual', '', 'operating',
                         '2026-04-06 10:00:00', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (external_contact_id, phone, current_pool, follow_type),
@@ -8369,7 +8369,7 @@ def test_manual_send_operating_stage_treats_legacy_terminal_pool_as_audience_met
                     questionnaire_status, decision_source, source_type, last_active_pool,
                     current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
                 )
-                VALUES (?, ?, 'sales_01', 1, ?, '', 'submitted', 'legacy', 'manual', '', 'operating',
+                VALUES (?, ?, 'sales_01', True, ?, '', 'submitted', 'legacy', 'manual', '', 'operating',
                         '2026-04-06 10:00:00', '2026-04-06 10:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (external_contact_id, phone, current_pool),

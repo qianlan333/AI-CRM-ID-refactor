@@ -79,7 +79,7 @@ def _seed_member(
                 questionnaire_status, decision_source, source_type, last_active_pool,
                 current_audience_code, current_audience_entered_at, joined_at, created_at, updated_at
             )
-            VALUES (?, ?, 'sales_01', 1, ?, ?, ?, 'system', 'manual', '', ?, '2026-04-08 08:00:00', '2026-04-08 08:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'sales_01', true, ?, ?, ?, 'system', 'manual', '', ?, '2026-04-08 08:00:00', '2026-04-08 08:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (external_contact_id, phone, current_pool, follow_type, questionnaire_status, audience_code),
@@ -90,7 +90,7 @@ def _seed_member(
                 member_id, audience_code, entered_at, exited_at, is_current,
                 entry_source, entry_reason, source_snapshot_json, created_at, updated_at
             )
-            VALUES (?, ?, '2026-04-08 08:00:00', '', 1, 'test', 'seed', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, '2026-04-08 08:00:00', '', true, 'test', 'seed', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (row["id"], audience_code),
         )

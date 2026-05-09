@@ -328,7 +328,7 @@ def _seed_automation_member(
             (
                 external_contact_id,
                 phone,
-                in_pool,
+                bool(in_pool),
                 current_pool,
                 follow_type,
                 activation_status,
