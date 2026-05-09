@@ -286,6 +286,104 @@ def test_pg_bug_200_register_member_reply_clears_next_due(app):
     assert (nda is None) or (str(nda).strip() == ""), f"next_due_at not cleared: {nda!r}"
 
 
+def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
+    """同 campaign 续推不被 global_per_member_daily 挡住。
+
+    场景：campaign 有 2 个 step（day_offset=0, 1），step 0 发完记了 consumption，
+    step 1 调度时应该排除同 campaign 的消耗记录，不触发 budget_exceeded。
+    """
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+    from wecom_ability_service.domains.campaigns import scheduler
+    from wecom_ability_service.domains.marketing_automation import frequency_budget_service
+
+    seg_id = _insert_segment_with_known_member(
+        app, segment_code="seg-multi-step", member_id=950, external_id="ext-950",
+    )
+    db = get_db()
+    cur = db.cursor()
+
+    overview = campaign_service.propose_campaign(
+        display_name="multi-step budget test",
+        intent="验证续推不被 daily 挡",
+        segments=[{
+            "segment_code": "seg-multi-step",
+            "priority": 100,
+            "steps": [
+                {"step_index": 0, "day_offset": 0, "send_time": "10:00", "content_text": "step 0", "stop_on_reply": False},
+                {"step_index": 1, "day_offset": 1, "send_time": "10:00", "content_text": "step 1", "stop_on_reply": False},
+            ],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    camp_id = int(overview["campaign"]["id"])
+
+    from wecom_ability_service.domains.cloud_orchestrator import approval_token
+    issued = approval_token.issue_token(
+        plan_id=overview["campaign"]["campaign_code"],
+        operator="alice",
+        scope="start_campaign",
+    )
+    campaign_service.start_campaign(
+        campaign_id=camp_id,
+        human_approver="bob",
+        approval_token_value=issued["token"],
+    )
+
+    # step 0 已经 due
+    cur.execute(
+        "UPDATE campaign_members SET next_due_at = ? WHERE campaign_id = ?",
+        ("2020-01-01 00:00:00+00:00", int(camp_id)),
+    )
+    db.commit()
+
+    dispatched: list[dict[str, Any]] = []
+
+    def _fake_dispatch(task_type, fn_name, payload):
+        dispatched.append(payload)
+        return {"task_id": 100}
+
+    with patch(
+        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        side_effect=_fake_dispatch,
+    ):
+        r1 = scheduler.process_due_campaign_members(batch_size=10)
+
+    assert r1["sent_ok"] == 1, f"step 0 failed: {r1}"
+
+    # step 0 写了 consumption → daily budget 已扣 1 次
+    cur.execute(
+        "SELECT COUNT(*) AS c FROM automation_frequency_consumption "
+        "WHERE external_contact_id = 'ext-950' AND source_kind = 'campaign_step'",
+    )
+    assert int(cur.fetchone()["c"]) > 0, "consumption not recorded after step 0"
+
+    # 把 step 1 的 next_due_at 也拉到过去
+    cur.execute(
+        "UPDATE campaign_members SET next_due_at = ? WHERE campaign_id = ? AND status = 'pending'",
+        ("2020-01-01 00:00:00+00:00", int(camp_id)),
+    )
+    db.commit()
+
+    dispatched.clear()
+    with patch(
+        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        side_effect=_fake_dispatch,
+    ):
+        r2 = scheduler.process_due_campaign_members(batch_size=10)
+
+    assert r2["sent_ok"] == 1, f"step 1 blocked by budget: {r2}"
+    assert r2["skipped_budget"] == 0, f"step 1 was skipped by budget: {r2}"
+    assert dispatched[0]["text"]["content"] == "step 1", f"wrong step dispatched: {dispatched}"
+
+    cur.execute(
+        "SELECT status, current_step_index FROM campaign_members WHERE campaign_id = ?",
+        (int(camp_id),),
+    )
+    row = cur.fetchone()
+    assert row["status"] == "completed", f"member not completed: {dict(row)}"
+
+
 # ----------------------------------------------------------------------------
 # image_library / miniprogram_library — PG/SQLite 跨库
 # ----------------------------------------------------------------------------
