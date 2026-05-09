@@ -199,7 +199,7 @@ def _seed_customer_profile_fixture(app) -> None:
                 last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
             )
             VALUES (
-                1, 'ext-1', 'signup_conversion_v1', 'pool', 'active_focus', 1, 0, 1, 'pool',
+                1, 'ext-1', 'signup_conversion_v1', 'pool', 'active_focus', true, false, true, 'pool',
                 ?, '', ?, NULL, '', '', '',
                 ?, ?, '', '',
                 ?,
