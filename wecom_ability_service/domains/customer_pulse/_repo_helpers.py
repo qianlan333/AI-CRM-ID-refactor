@@ -28,7 +28,10 @@ def _json_storage(value: Any, *, default: str) -> str:
     if isinstance(value, str):
         text = value.strip()
         return text or default
-    return json.dumps(value, ensure_ascii=False)
+    # PG JSONB 列读出来已是 dict/list，里面可能塞着 datetime（来自 TIMESTAMPTZ
+    # 列 join 进 JSON 聚合后回写的场景）。``json.dumps`` 默认不认 datetime —
+    # 用 ``default=str`` 兜底，输出 ISO 8601 字符串。
+    return json.dumps(value, ensure_ascii=False, default=str)
 
 
 def _fetchall_dict(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
