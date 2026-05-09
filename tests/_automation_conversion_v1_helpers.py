@@ -602,7 +602,7 @@ def _assign_member_to_current_audience(
                 member_id, audience_code, entered_at, exited_at, is_current,
                 entry_source, entry_reason, source_snapshot_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, '', 1, 'test', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, '', true, 'test', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (member_id, audience_code, entered_at),
         )

@@ -37,6 +37,7 @@ _TABLES_TO_TRUNCATE = [
     "automation_frequency_budget",
     "automation_workflow_execution_item",
     "automation_workflow_execution",
+    "automation_member_audience_entry",
     "automation_workflow_node_content_variant",
     "automation_workflow_node_content",
     "automation_workflow_node_transition",
@@ -100,6 +101,7 @@ _TABLES_TO_TRUNCATE = [
     "user_ops_pool_history",
     "user_ops_pool_current",
     "user_ops_huangxiaocan_activation_source",
+    "user_ops_activation_status_source",
     "user_ops_send_records",
     "user_ops_deferred_jobs",
     # — message batches
