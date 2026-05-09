@@ -7,3 +7,4 @@ lark-oapi==1.4.22
 PyMySQL==1.1.1
 alembic==1.18.4
 anthropic>=0.40.0
+pytest-timeout==2.3.1
