@@ -5910,7 +5910,7 @@ def test_customer_center_detail_customer_pulse_falls_back_to_rule_suggestion_whe
                 "active_focus",
                 0.42,
                 "客户询价",
-                1,
+                True,
                 "generated",
                 "2026-04-11 09:36:00",
             ),
