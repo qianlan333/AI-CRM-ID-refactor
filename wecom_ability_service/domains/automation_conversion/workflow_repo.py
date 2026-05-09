@@ -4,40 +4,13 @@ import json
 from typing import Any
 
 from ...db import get_db
-
-
-def _normalized_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _json_loads(value: Any, *, default: Any) -> Any:
-    if isinstance(value, (dict, list)):
-        return value
-    text = _normalized_text(value)
-    if not text:
-        return default
-    try:
-        return json.loads(text)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
-
-
-def _row_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return _normalized_text(value).lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
-    row = get_db().execute(sql, params).fetchone()
-    return dict(row) if row else None
-
-
-def _fetchall_dicts(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    rows = get_db().execute(sql, params).fetchall()
-    return [dict(row) for row in rows]
+from ._repo_helpers import (  # noqa: F401  shared helpers
+    _fetchall_dicts,
+    _fetchone_dict,
+    _json_loads,
+    _normalized_text,
+    _row_bool,
+)
 
 
 def _serialize_profile_segment_template_row(row: dict[str, Any]) -> dict[str, Any]:
