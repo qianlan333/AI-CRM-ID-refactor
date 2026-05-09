@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime as real_datetime
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.automation_conversion.service import (
     get_member_detail,
     put_in_pool,
@@ -18,29 +17,17 @@ from wecom_ability_service.domains.marketing_automation.service import (
 
 
 def _make_app(tmp_path):
-    db_path = tmp_path / "automation-state-contract.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-        }
+    from tests.conftest import build_pg_test_app
+
+    ctx = build_pg_test_app(
+        tmp_path,
+        WECOM_CALLBACK_TOKEN="callback-token",
+        WECOM_CALLBACK_AES_KEY="abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
     )
-    with app.app_context():
-        init_db()
+    app = ctx.__enter__()
+    # Store the context manager on app for cleanup (tests don't clean up, but
+    # the scope is short-lived per test invocation so this is acceptable).
+    app._pg_ctx = ctx
     return app
 
 

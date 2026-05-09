@@ -8,8 +8,7 @@ from typing import Any, Callable, Iterator
 
 import pytest
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.customer_pulse.access import (
     CUSTOMER_PULSE_ACTION_PERMISSION_MAP,
     CUSTOMER_PULSE_PERMISSION_PAGE_VISIBLE,
@@ -27,35 +26,17 @@ from wecom_ability_service.domains.customer_pulse.service import (
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "customer-pulse-quality.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
+    from tests.conftest import build_pg_test_app
 
-    app = create_app(
-        {
-            "TESTING": True,
-            "ai_customer_pulse": True,
-            "DATABASE_PATH": str(db_path),
-            "RELEASE_SHA": "quality-gates",
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-            "MCP_BEARER_TOKEN": "mcp-token",
-            "AUTOMATION_INTERNAL_API_TOKEN": "internal-token",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    with build_pg_test_app(
+        tmp_path,
+        ai_customer_pulse=True,
+        WECOM_CALLBACK_TOKEN="callback-token",
+        WECOM_CALLBACK_AES_KEY="abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+        MCP_BEARER_TOKEN="mcp-token",
+        AUTOMATION_INTERNAL_API_TOKEN="internal-token",
+    ) as app:
+        yield app
 
 
 def _all_permissions() -> list[str]:

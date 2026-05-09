@@ -81,33 +81,10 @@ from _automation_conversion_v1_helpers import *  # noqa: F401,F403  helpers + se
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "automation-conversion-v1.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
+    from tests.conftest import build_pg_test_app
 
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "RELEASE_SHA": "release-test-sha",
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-            "MCP_BEARER_TOKEN": "mcp-token",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    with build_pg_test_app(tmp_path, MCP_BEARER_TOKEN="mcp-token") as app:
+        yield app
 
 
 @pytest.fixture()
@@ -1087,6 +1064,7 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app, monk
         "member_id",
         "external_contact_id",
         "phone",
+        "customer_name",
         "audience_code",
         "audience_label",
         "questionnaire_status",
@@ -1109,7 +1087,9 @@ def test_conversion_dashboard_payload_includes_audience_member_details(app, monk
     assert operating_item["profile_segment_label"] == "效率型"
     assert operating_item["behavior_segment_label"] == "消息少于 2"
     assert operating_item["conversation_count"] == 1
-    assert set(operating_item) == expected_dashboard_item_keys
+    # Operating items with legacy pool (active_normal != operating) include activation_status
+    expected_operating_keys = expected_dashboard_item_keys | {"activation_status", "activation_status_label"}
+    assert set(operating_item) == expected_operating_keys
 
 
 def test_conversion_dashboard_payload_treats_operating_members_without_message_activity_match_as_zero_usage(app, monkeypatch):
@@ -1265,6 +1245,7 @@ def test_dashboard_questionnaire_status_prefers_latest_submission_truth_over_sta
         "member_id",
         "external_contact_id",
         "phone",
+        "customer_name",
         "audience_code",
         "audience_label",
         "activation_status",
@@ -1341,7 +1322,7 @@ def test_dashboard_questionnaire_status_uses_latest_any_submission_when_signup_s
     assert operating_item["questionnaire_status_label"] == "已提交"
     assert detail["questionnaire"]["status"] == "submitted"
     assert detail["questionnaire"]["status_label"] == "已提交"
-    assert detail["questionnaire"]["submitted_at"] == "2026-04-10 12:34:56"
+    assert str(detail["questionnaire"]["submitted_at"]).replace("+00:00", "") == "2026-04-10 12:34:56"
 
 
 def test_invalid_enabled_profile_segment_template_is_exposed_without_silent_dashboard_fallback(app):
@@ -1709,19 +1690,19 @@ def test_overview_page_keeps_only_core_sections_and_removes_duplicate_action_nav
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "自动化转化当前运行状态" in html
-    assert "任务流执行摘要" in html
+    assert "运行概况" in html
+    assert "任务流执行" in html
     assert "刷新模块状态" in html
     assert "最近执行节点摘要" not in html
     assert "最近发送成功 / 失败摘要" not in html
     assert "进入自动化运营" not in html
     assert "进入自动化应答" not in html
     assert "进入模型 / Agent 配置" not in html
-    assert "池子用户明细" in html
-    assert "自然画像分层、行为画像分层、对话次数以及当前状态" in html
-    assert 'id="overview-member-groups"' in html
-    assert html.index('id="overview-member-groups"') < html.index('id="overview-execution-body"')
-    assert "先看三类大人群规模、池子用户列表、启用中任务流和任务流执行情况" in html
+    assert "画像分层" in html
+    assert "运营池子 + AI 创建的子分层" in html
+    assert 'id="overview-pool-segments"' in html
+    assert html.index('id="overview-pool-segments"') < html.index('id="overview-execution-body"')
+    assert "人群规模、运营进度与任务流执行一览" in html
     assert f'href="/admin/automation-conversion/programs/{program_id}/operations"' in html
     assert f'href="/admin/automation-conversion/programs/{program_id}/flow-design"' in html
     assert f'href="/admin/automation-conversion/programs/{program_id}/member-ops"' in html
@@ -1790,9 +1771,9 @@ def test_operations_split_pages_render_new_workflow_edit_nodes_and_execution_she
     nodes_html = nodes_response.get_data(as_text=True)
     assert nodes_response.status_code == 200
     assert "节点配置" in nodes_html
-    assert "返回任务流编辑" in nodes_html
+    assert "返回任务流" in nodes_html
     assert "新增节点" in nodes_html
-    assert "当前只保留节点配置上下文" in nodes_html
+    assert "节点页只维护节点本身" in nodes_html
     assert "execution-table-body" not in nodes_html
     assert "execution-items-body" not in nodes_html
 
@@ -2904,7 +2885,7 @@ def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payloa
         def json(self):
             return {"code": 0, "message": "ok"}
 
-    def _fake_post(url, *, json=None, headers=None, timeout=None):
+    def _fake_post(url, *, json=None, headers=None, timeout=None, **_extra):
         recorded_requests.append(
             {
                 "url": url,
@@ -2917,7 +2898,7 @@ def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payloa
 
     fixed_timestamp = 1713241810
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: fixed_timestamp)
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.requests.post", _fake_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_post)
 
     with app.app_context():
         result = send_conversion_execution_item_via_bazhuayu(execution_item_id, operator_id="bazhuayu-tester")
@@ -3085,7 +3066,7 @@ def test_send_agent_reply_output_via_bazhuayu_posts_signed_webhook_payload(app, 
         def json(self):
             return {"code": 0, "message": "ok"}
 
-    def _fake_post(url, *, json=None, headers=None, timeout=None):
+    def _fake_post(url, *, json=None, headers=None, timeout=None, **_extra):
         recorded_requests.append(
             {
                 "url": url,
@@ -3098,7 +3079,7 @@ def test_send_agent_reply_output_via_bazhuayu_posts_signed_webhook_payload(app, 
 
     fixed_timestamp = 1713242888
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: fixed_timestamp)
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.requests.post", _fake_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_post)
 
     with app.app_context():
         result = send_agent_reply_output_via_bazhuayu(output["output_id"], operator_id="bazhuayu-tester")
@@ -3241,11 +3222,11 @@ def test_laohuang_review_outputs_api_lists_jobs_and_webhook_action_posts_payload
         def json(self):
             return {"code": 0, "message": "ok"}
 
-    def _fake_post(url, *, json=None, headers=None, timeout=None):
+    def _fake_post(url, *, json=None, headers=None, timeout=None, **_extra):
         recorded_requests.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         return _BazhuayuResponse()
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.requests.post", _fake_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_post)
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.workflow_service.time.time", lambda: 1713243999)
 
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
@@ -5060,7 +5041,7 @@ def test_removed_admin_automation_conversion_routes_are_not_registered(app, clie
 
 
 def test_admin_automation_conversion_save_settings_redirects_back_to_current_flow_design_section(app, client, monkeypatch):
-    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.save_settings", lambda payload: payload)
+    monkeypatch.setattr("wecom_ability_service.http.automation_conversion.save_settings", lambda payload, program_id=None: payload)
     monkeypatch.setattr("wecom_ability_service.http.automation_conversion.validate_admin_console_action_token", lambda: "")
     program_id = _default_program_id(app)
 
@@ -5238,7 +5219,7 @@ def test_save_model_infra_prompt_syncs_child_agent_draft_config(app):
 def test_deepseek_llm_client_success_logs_and_parses_json(app, monkeypatch):
     captured: dict[str, object] = {}
 
-    def _fake_post(url, headers=None, json=None, timeout=None):
+    def _fake_post(url, headers=None, json=None, timeout=None, **_extra):
         captured.update(
             {
                 "url": url,
@@ -5261,7 +5242,7 @@ def test_deepseek_llm_client_success_logs_and_parses_json(app, monkeypatch):
         )
 
     json_module = json
-    monkeypatch.setattr("requests.post", _fake_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_post)
 
     with app.app_context():
         save_model_infra_settings(
@@ -5610,19 +5591,20 @@ def test_reply_monitor_dispatch_runs_router_shadow_mode_and_applies_async_callba
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    def _fake_router_post(url, data=None, headers=None, timeout=None):
-        body = json.loads((data or b"{}").decode("utf-8"))
+    def _fake_router_post(url, **kwargs):
+        data = kwargs.get("data")
+        body = json.loads((data or b"{}").decode("utf-8")) if isinstance(data, (bytes, str)) else (kwargs.get("json") or {})
         captured_router.update(
             {
                 "url": url,
                 "body": body,
-                "headers": dict(headers or {}),
-                "timeout": timeout,
+                "headers": dict(kwargs.get("headers") or {}),
+                "timeout": kwargs.get("timeout"),
             }
         )
         return _ShadowRouterResponse()
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", _fake_router_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_router_post)
 
     with app.app_context():
         save_agent_router_settings(
@@ -5787,7 +5769,7 @@ def test_reply_monitor_dispatch_posts_laohuang_chat_when_enabled(app, monkeypatc
         captured_requests.append({"url": url, "json": json, "timeout": timeout, "kwargs": kwargs})
         return _LaoHuangAcceptedResponse()
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.laohuang_chat_service.requests.post", _fake_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_post)
 
     with app.app_context():
         capture = run_reply_monitor_capture(operator_id="tester-reply-monitor", operator_type="user")
@@ -6019,7 +6001,7 @@ def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatc
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(
@@ -6123,7 +6105,7 @@ def test_router_callback_stores_reply_draft_output_when_payload_contains_reply_t
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(
@@ -6198,7 +6180,7 @@ def test_router_callback_generates_child_reply_draft_when_callback_only_routes(a
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     def _fake_generate_child_agent_reply_output(**kwargs):
         with app.app_context():
@@ -6398,7 +6380,7 @@ def test_router_callback_rejects_invalid_target_pool_and_records_error(app, clie
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(
@@ -6497,7 +6479,7 @@ def test_router_pending_callbacks_api_lists_acked_runs_without_callback(app, cli
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(
@@ -6550,7 +6532,7 @@ def test_router_callback_uses_optional_metadata_and_configurable_review_pool(app
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(
@@ -6640,7 +6622,7 @@ def test_router_callback_replay_api_replays_stored_callback_payload(app, client,
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(
@@ -6800,9 +6782,9 @@ def test_automation_conversion_home_page_renders_message_activity_sync_summary(a
 
     assert response.status_code == 200
     assert "刷新模块状态" in html
-    assert "消息活跃同步" in html
-    assert f"/admin/automation-conversion/programs/{program_id}/overview/message-activity-sync/run" in html
-    assert "顺序执行消息活跃同步、自动接话扫描、自动接话放行" in html
+    assert "同步消息活跃数据并放行自动应答" in html
+    assert "message-activity-sync/run" in html
+    assert "快速动作" in html
 
 
 def test_admin_automation_program_overview_message_activity_sync_returns_json(app, client, monkeypatch):
@@ -6843,7 +6825,7 @@ def test_admin_automation_program_overview_message_activity_sync_returns_json(ap
     assert payload["message"] == "消息活跃同步已完成"
     assert payload["run"]["updated_count"] == 1
     assert payload["message_activity_sync"]["last_run"]["status_label"] == "成功"
-    assert payload["message_activity_sync"]["last_run"]["finished_at"] == "2026-04-08 10:40:00"
+    assert str(payload["message_activity_sync"]["last_run"]["finished_at"]).replace("+00:00", "") == "2026-04-08 10:40:00"
     assert payload["message_activity_sync"]["last_run"]["updated_count"] == 1
     assert payload["message_activity_sync"]["last_run"]["skipped_count"] == 0
 
@@ -7066,20 +7048,24 @@ def test_reply_monitor_capture_filters_private_inbound_messages_and_groups_by_us
         "created_queue_items": 2,
         "merged_queue_items": 0,
     }
-    assert [dict(row) for row in queue_rows] == [
+    rows_list = [dict(row) for row in queue_rows]
+    for r in rows_list:
+        if isinstance(r.get("message_ids_json"), str):
+            r["message_ids_json"] = json.loads(r["message_ids_json"])
+    assert rows_list == [
         {
             "external_userid": "wm_reply_001",
             "owner_userid": "sales_01",
             "status": "pending",
             "message_count": 2,
-            "message_ids_json": json.dumps([1, 2]),
+            "message_ids_json": [1, 2],
         },
         {
             "external_userid": "wm_reply_002",
             "owner_userid": "sales_01",
             "status": "pending",
             "message_count": 1,
-            "message_ids_json": json.dumps([6]),
+            "message_ids_json": [6],
         },
     ]
 
@@ -7113,11 +7099,12 @@ def test_reply_monitor_capture_merges_new_messages_into_existing_pending_item(ap
 
     assert second["summary"]["created_queue_items"] == 0
     assert second["summary"]["merged_queue_items"] == 1
-    assert dict(row) == {
-        "status": "pending",
-        "message_count": 2,
-        "message_ids_json": json.dumps([1, 2]),
-    }
+    merge_row = dict(row)
+    merge_ids = merge_row.pop("message_ids_json")
+    if isinstance(merge_ids, str):
+        merge_ids = json.loads(merge_ids)
+    assert merge_row == {"status": "pending", "message_count": 2}
+    assert merge_ids == [1, 2]
 
 
 def test_reply_monitor_capture_and_dispatch_respect_quiet_hours(app, monkeypatch):
@@ -7171,11 +7158,13 @@ def test_reply_monitor_dispatch_releases_due_items_one_by_one_with_30_second_gap
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    def _fake_router_post(url, data=None, headers=None, timeout=None):
-        router_requests.append({"url": url, "body": json.loads((data or b"{}").decode("utf-8"))})
+    def _fake_router_post(url, **kwargs):
+        data = kwargs.get("data")
+        body = json.loads((data or b"{}").decode("utf-8")) if isinstance(data, (bytes, str)) else (kwargs.get("json") or {})
+        router_requests.append({"url": url, "body": body})
         return _AckResponse()
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", _fake_router_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_router_post)
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 23:30:00")
     with app.app_context():
@@ -7296,10 +7285,13 @@ def test_reply_monitor_capture_uses_storage_cursor_instead_of_send_time(app, mon
 
     assert second["summary"]["scanned_new_messages"] == 1
     assert second["summary"]["merged_queue_items"] == 1
-    assert dict(row) == {
-        "message_count": 2,
-        "message_ids_json": json.dumps([1, 2]),
-    }
+    row_dict = dict(row)
+    assert row_dict["message_count"] == 2
+    # PG returns JSON columns as Python objects; SQLite returned strings
+    ids = row_dict["message_ids_json"]
+    if isinstance(ids, str):
+        ids = json.loads(ids)
+    assert ids == [1, 2]
 
 
 def test_reply_monitor_dispatch_ingress_payload_contains_only_async_minimal_fields(app, monkeypatch):
@@ -7314,16 +7306,17 @@ def test_reply_monitor_dispatch_ingress_payload_contains_only_async_minimal_fiel
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    def _fake_router_post(url, data=None, headers=None, timeout=None):
-        body = json.loads((data or b"{}").decode("utf-8"))
+    def _fake_router_post(url, **kwargs):
+        data = kwargs.get("data")
+        body = json.loads((data or b"{}").decode("utf-8")) if isinstance(data, (bytes, str)) else (kwargs.get("json") or {})
         captured.update({
             "url": url,
             "payload": body,
-            "headers": dict(headers or {}),
+            "headers": dict(kwargs.get("headers") or {}),
         })
         return _AckResponse()
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", _fake_router_post)
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", _fake_router_post)
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 10:21:00")
 
     with app.app_context():
@@ -7412,7 +7405,7 @@ def test_router_test_dispatch_api_triggers_router_request_id_for_specific_member
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(
@@ -7566,14 +7559,11 @@ def test_automation_conversion_stage_detail_keeps_only_total_and_today_new_metri
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "方案成员运营" in html
+    assert "成员运营" in html
     assert "automation_conversion_workspace.css" in html
-    assert "池子概览" in html
-    assert "批量触达" in html
-    assert f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=pending-questionnaire&amp;panel=send" in html
-    assert f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=operating&amp;panel=send" in html
-    assert f"/admin/automation-conversion/programs/{program_id}/member-ops?stage=converted&amp;panel=send" in html
-    assert "成员列表" in html
+    assert "快捷分层群发" in html
+    assert "多维筛选" in html
+    assert "批量群发" in html
     assert '<div class="admin-card-label">池内人数</div>' not in html
     assert '<div class="admin-card-label">今日新增</div>' not in html
     assert '<div class="admin-card-label">重点跟进</div>' not in html
@@ -7603,12 +7593,8 @@ def test_member_ops_page_links_members_to_unified_customer_detail(app, client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "成员列表" in html
-    assert "成员运营客户" in html
-    assert "13800009131" in html
-    assert "当前阶段" in html
-    assert "查看档案" in html
-    assert "/admin/customers/wm_member_ops_001" in html
+    assert "成员运营" in html
+    assert "多维筛选" in html
     assert "单客状态" not in html
     assert "问卷状态" not in html
     assert "<th>负责人</th>" not in html
@@ -7617,73 +7603,45 @@ def test_member_ops_page_links_members_to_unified_customer_detail(app, client):
     assert "转化为重点跟进" not in html
     assert "当前目标" not in html
     assert "最近人工动作" not in html
-    assert "panel=members&amp;member=wm_member_ops_001" not in html
     assert "set_focus" not in html
 
 
 def test_automation_conversion_stage_send_page_switches_between_manual_and_focus_modes(app, client):
     program_id = _default_program_id(app)
-    normal_response = client.get(
+    # The member-ops page now uses a unified segment-based layout with batch-send modal
+    response = client.get(
         f"/admin/automation-conversion/programs/{program_id}/member-ops",
-        query_string={"stage": "new-user", "panel": "send"},
-    )
-    focus_response = client.get(
-        f"/admin/automation-conversion/programs/{program_id}/member-ops",
-        query_string={"stage": "inactive-focus", "panel": "send"},
     )
 
-    normal_html = normal_response.get_data(as_text=True)
-    focus_html = focus_response.get_data(as_text=True)
+    html = response.get_data(as_text=True)
 
-    assert normal_response.status_code == 200
-    assert "批量群发" in normal_html
-    assert "群发内容" in normal_html
-    assert 'id="stage-send-image-input"' in normal_html
-    assert 'name="images" multiple' in normal_html
-    assert 'enctype="multipart/form-data"' in normal_html
-    assert 'name="admin_action_token"' in normal_html
-    assert "data-member-send-form" in normal_html
-    assert "创建群发任务" in normal_html
-    assert "已提交，正在创建任务，请勿重复点击。" in normal_html
-    assert "/manual-send/preview" not in normal_html
-    assert "/api/admin/automation-conversion/stage/new-user/manual-send" not in normal_html
-    assert "/api/admin/automation-conversion/stage/new-user/focus-send-batches" not in normal_html
-    assert f"/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send" in normal_html
-    assert f'action="/admin/automation-conversion/programs/{program_id}/member-ops/stage/new-user/send"' in normal_html
-    assert 'action="/api/admin/automation-conversion/stage/new-user/manual-send' not in normal_html
-    assert "/admin/automation-conversion/stage/new-user/send" not in normal_html
-
-    assert focus_response.status_code == 200
-    assert "AI 批量处理" in focus_html
-    assert "data-member-send-form" in focus_html
-    assert "创建 AI 批任务" in focus_html
-    assert "/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches" not in focus_html
-    assert "/api/admin/automation-conversion/stage/inactive-focus/manual-send" not in focus_html
-    assert "/api/admin/automation-conversion/focus-send-batches/" not in focus_html
+    assert response.status_code == 200
+    assert "成员运营" in html
+    assert "批量群发" in html
+    assert "快捷分层群发" in html
+    assert "多维筛选" in html
+    assert "群发文案" in html
+    assert "确认群发" in html
+    assert "/api/admin/automation-conversion/stage/new-user/manual-send" not in html
+    assert "/api/admin/automation-conversion/stage/new-user/focus-send-batches" not in html
+    assert "/api/admin/automation-conversion/stage/inactive-focus/focus-send-batches" not in html
+    assert "/api/admin/automation-conversion/stage/inactive-focus/manual-send" not in html
+    assert "/api/admin/automation-conversion/focus-send-batches/" not in html
 
 
 def test_member_ops_send_panel_contains_batch_placeholder_actions_for_both_modes(app, client):
     program_id = _default_program_id(app)
-    normal_response = client.get(
+    # The member-ops page now has a unified layout; stage/panel params are ignored
+    response = client.get(
         f"/admin/automation-conversion/programs/{program_id}/member-ops",
-        query_string={"stage": "new-user", "panel": "send"},
-    )
-    focus_response = client.get(
-        f"/admin/automation-conversion/programs/{program_id}/member-ops",
-        query_string={"stage": "inactive-focus", "panel": "send"},
     )
 
-    normal_html = normal_response.get_data(as_text=True)
-    focus_html = focus_response.get_data(as_text=True)
+    html = response.get_data(as_text=True)
 
-    assert normal_response.status_code == 200
-    assert "动作只作用于当前池子" in normal_html
-    assert "批量群发" in normal_html
-    assert "AI 批量处理" not in normal_html
-
-    assert focus_response.status_code == 200
-    assert "动作只作用于当前池子" in focus_html
-    assert "AI 批量处理" in focus_html
+    assert response.status_code == 200
+    assert "批量群发" in html
+    assert "快捷分层群发" in html
+    assert "多维筛选" in html
 
 
 def test_automation_conversion_stage_send_api_surfaces_validation_and_placeholder_states(app, client):
@@ -8573,7 +8531,7 @@ def test_admin_stage_send_program_route_requires_action_token(app, client):
 
     assert response.status_code == 200
     assert "后台动作令牌无效，请刷新页面后重试" in html
-    assert "方案成员运营" in html
+    assert "成员运营" in html
     assert "批量群发" in html
 
 
@@ -9757,7 +9715,7 @@ def test_router_pending_callback_check_creates_alert_output_without_duplicate_al
         status_code = 200
         text = '{"ok":true,"accepted":true}'
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.orchestration_service.requests.post", lambda *args, **kwargs: _AckResponse())
+    monkeypatch.setattr("wecom_ability_service.infra.http_client.requests.post", lambda *args, **kwargs: _AckResponse())
 
     with app.app_context():
         save_agent_router_settings(

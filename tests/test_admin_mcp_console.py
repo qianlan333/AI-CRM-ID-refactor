@@ -4,8 +4,6 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import init_db
 from wecom_ability_service.domains.admin_auth import save_admin_user
 
 

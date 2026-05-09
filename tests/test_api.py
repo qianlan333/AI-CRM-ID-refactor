@@ -662,7 +662,7 @@ def test_ops_status(client, app):
     assert data["user_ops_deferred_jobs"]["total_count"] == 2
     assert data["user_ops_deferred_jobs"]["pending_count"] == 1
     assert data["user_ops_deferred_jobs"]["success_count"] == 1
-    assert data["sqlite_path"]
+    assert data["database_url_configured"] is True
 
 
 def test_ops_status_v2_returns_extended_diagnostics(client, app):
@@ -3911,7 +3911,11 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
             {"title": "手机号", "answer": "13800138012"},
         ],
     }
-    assert push_calls[0]["json"]["submitted_at"].endswith("+08:00")
+    # PG TIMESTAMPTZ returns UTC (+00:00); _format_iso_datetime preserves
+    # existing timezone so the suffix depends on the database backend.
+    import re as _re
+    assert _re.search(r"[+-]\d{2}:\d{2}$", push_calls[0]["json"]["submitted_at"]), \
+        f"submitted_at should end with a timezone offset, got: {push_calls[0]['json']['submitted_at']}"
 
     with app.app_context():
         row = get_db().execute(

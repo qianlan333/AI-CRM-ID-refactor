@@ -737,9 +737,8 @@ def test_admin_automation_conversion_page_renders_saved_config_and_preview_panel
     assert "默认自动化转化方案" in visible_text
     assert f"/admin/automation-conversion/programs/{default_program_id}/overview" in html
     assert overview_response.status_code == 200
-    assert "数据概览" in overview_text
-    assert "池子用户明细" in overview_text
-    assert "任务流执行摘要" in overview_text
+    assert "运行概况" in overview_text
+    assert "任务流执行" in overview_text
     assert "未填问卷人群" in overview_text
     assert "运营中人群" in overview_text
     assert "已转化人群" in overview_text

@@ -19,9 +19,17 @@ def app(tmp_path):
         yield app
 
 
-@pytest.fixture()
+@pytest.fixture
 def client(app):
-    return app.test_client()
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["admin_session_user_id"] = 0
+        sess["admin_session_wecom_userid"] = ""
+        sess["admin_session_role_list"] = ["super_admin"]
+        sess["admin_session_login_type"] = "break_glass"
+        sess["admin_session_display_name"] = "test-admin"
+        sess["admin_session_break_glass_username"] = "test-admin"
+    return client
 
 
 def _internal_headers() -> dict[str, str]:
