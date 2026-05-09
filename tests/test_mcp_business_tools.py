@@ -90,10 +90,11 @@ def _insert_customer(
         db = get_db()
         db.execute(
             """
-            INSERT OR IGNORE INTO owner_role_map (userid, display_name, role, active)
+            INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
             """,
-            (owner_userid, owner_userid, "sales", 1),
+            (owner_userid, owner_userid, "sales", True),
         )
         db.execute(
             """

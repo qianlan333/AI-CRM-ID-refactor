@@ -304,10 +304,11 @@ def test_contract_openclaw_conversion_mcp_reads(client, app, monkeypatch):
         db = get_db()
         db.execute(
             """
-            INSERT OR IGNORE INTO owner_role_map (userid, display_name, role, active)
+            INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
             """,
-            ("sales_01", "销售一", "sales", 1),
+            ("sales_01", "销售一", "sales", True),
         )
         db.execute(
             """

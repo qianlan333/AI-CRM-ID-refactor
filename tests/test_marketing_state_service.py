@@ -116,8 +116,9 @@ def _seed_bound_external(
         )
         db.execute(
             """
-            INSERT OR IGNORE INTO owner_role_map (userid, display_name, role, active, updated_at)
-            VALUES (?, ?, 'sales', 1, CURRENT_TIMESTAMP)
+            INSERT INTO owner_role_map (userid, display_name, role, active, updated_at)
+            VALUES (?, ?, 'sales', true, CURRENT_TIMESTAMP)
+            ON CONFLICT DO NOTHING
             """,
             (owner_userid, owner_userid),
         )

@@ -79,10 +79,11 @@ def _seed_customer(
         db = get_db()
         db.execute(
             """
-            INSERT OR IGNORE INTO owner_role_map (userid, display_name, role, active)
+            INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
             """,
-            (owner_userid, owner_userid, "sales", 1),
+            (owner_userid, owner_userid, "sales", True),
         )
         db.execute(
             """
@@ -121,8 +122,9 @@ def _seed_customer(
         if add_questionnaire:
             db.execute(
                 """
-                INSERT OR IGNORE INTO questionnaires (id, slug, name, title, description, is_disabled, redirect_url)
-                VALUES (1, 'marketing-auto', '自动化问卷', '自动化问卷', '', 0, '')
+                INSERT INTO questionnaires (id, slug, name, title, description, is_disabled, redirect_url)
+                VALUES (1, 'marketing-auto', '自动化问卷', '自动化问卷', '', false, '')
+                ON CONFLICT DO NOTHING
                 """
             )
             db.execute(
@@ -768,10 +770,11 @@ def test_send_pool_private_message_mcp_tool_supports_multiple_owners_and_writes_
     with app.app_context():
         get_db().execute(
             """
-            INSERT OR IGNORE INTO owner_role_map (userid, display_name, role, active, updated_at)
+            INSERT INTO owner_role_map (userid, display_name, role, active, updated_at)
             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT DO NOTHING
             """,
-            ("sales_empty", "sales_empty", "sales", 1),
+            ("sales_empty", "sales_empty", "sales", True),
         )
         get_db().commit()
 

@@ -500,7 +500,7 @@ def _seed_questionnaire_with_apply_failure(
     db.execute(
         """
         INSERT INTO questionnaires (id, slug, name, title, description, is_disabled, redirect_url, external_push_enabled, external_push_url, created_at, updated_at)
-        VALUES (?, ?, ?, ?, '', 0, '', 0, '', ?, ?)
+        VALUES (?, ?, ?, ?, '', false, '', false, '', ?, ?)
         """,
         (
             questionnaire_id,

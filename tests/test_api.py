@@ -766,9 +766,10 @@ def test_archive_sync_and_query(client, app, monkeypatch):
                 db = get_db()
                 db.execute(
                     """
-                    INSERT OR IGNORE INTO archived_messages
+                    INSERT INTO archived_messages
                     (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT DO NOTHING
                     """,
                     (
                         11,
@@ -786,9 +787,10 @@ def test_archive_sync_and_query(client, app, monkeypatch):
                 )
                 db.execute(
                     """
-                    INSERT OR IGNORE INTO archived_messages
+                    INSERT INTO archived_messages
                     (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT DO NOTHING
                     """,
                     (
                         12,
@@ -875,9 +877,10 @@ def test_archive_sync_deduplicates_messages(client, app, monkeypatch):
                 db = get_db()
                 inserted = db.execute(
                     """
-                    INSERT OR IGNORE INTO archived_messages
+                    INSERT INTO archived_messages
                     (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT DO NOTHING
                     """,
                     (
                         11,
@@ -2437,9 +2440,10 @@ def test_group_chats_full_sync_and_message_enrichment(client, app, monkeypatch):
         db = get_db()
         db.execute(
             """
-            INSERT OR IGNORE INTO archived_messages
+            INSERT INTO archived_messages
             (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
             """,
             (
                 21,
