@@ -102,7 +102,7 @@ def list_images(*, enabled_only: bool = True, limit: int = 200) -> list[dict[str
         cur.execute(
             "SELECT id, name, file_name, source, source_url, mime_type, file_size, "
             "thumb_media_id, thumb_media_id_expires_at, enabled, created_at, updated_at "
-            "FROM image_library WHERE enabled IN (1, TRUE) "
+            "FROM image_library WHERE enabled "
             "ORDER BY updated_at DESC, id DESC LIMIT ?",
             (int(limit),),
         )
@@ -130,14 +130,20 @@ def _insert_image(*, name: str, file_name: str, source: str, source_url: str,
                   data_base64: str, mime_type: str, file_size: int) -> int:
     if source not in _VALID_SOURCES:
         raise ValueError(f"invalid source: {source}")
+    from ...db import get_db_backend
+
+    is_pg = get_db_backend() == "postgres"
     db = get_db()
     cur = db.cursor()
+    # PG: thumb_media_id_expires_at 是 TIMESTAMPTZ nullable，写入 '' 抛 InvalidDatetimeFormat
+    # 必须用 NULL；SQLite: 是 TEXT NOT NULL DEFAULT ''，沿用空字符串
+    expires_placeholder = None if is_pg else ""
     cur.execute(
         """
         INSERT INTO image_library
             (name, file_name, source, source_url, data_base64, mime_type, file_size,
              thumb_media_id, thumb_media_id_expires_at, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?)
         """,
         (
             (name or "").strip()[:200],
@@ -147,7 +153,8 @@ def _insert_image(*, name: str, file_name: str, source: str, source_url: str,
             data_base64 or "",
             (mime_type or "image/png").strip()[:80],
             int(file_size or 0),
-            1,
+            expires_placeholder,
+            True if is_pg else 1,  # enabled: PG BOOLEAN / SQLite INTEGER
         ),
     )
     db.commit()
@@ -235,7 +242,7 @@ def update_image(image_id: int, *, name: str | None = None, enabled: bool | None
         params.append(str(name).strip()[:200])
     if enabled is not None:
         sets.append("enabled = ?")
-        params.append(1 if bool(enabled) else 0)
+        params.append(bool(enabled))  # PG BOOLEAN / SQLite truthy
     if not sets:
         return existing
     sets.append("updated_at = CURRENT_TIMESTAMP")
@@ -253,7 +260,7 @@ def delete_image(image_id: int) -> bool:
     cur = db.cursor()
     cur.execute(
         "UPDATE image_library SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (0, int(image_id)),
+        (False, int(image_id)),  # PG BOOLEAN / SQLite truthy
     )
     db.commit()
     return (cur.rowcount or 0) > 0
