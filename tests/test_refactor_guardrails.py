@@ -18,6 +18,9 @@ CLASS_USER_CALLER_CUTOVER_FILES = [
 # The guardrail here is "no new controller requests dependency".
 HTTP_REQUESTS_ALLOWLIST = {
     "wecom_ability_service/http/automation_conversion.py",
+    # 阶段 7.1 #221 抽出来的 helpers 模块；它是 automation_conversion.py 的私有
+    # _helpers，整体复制了主文件的 import header（含 requests）。允许同等待遇。
+    "wecom_ability_service/http/_routes_helpers.py",
 }
 
 # Historical direct imports that still exist before the入口收口.
