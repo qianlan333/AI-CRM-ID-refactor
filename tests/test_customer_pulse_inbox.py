@@ -302,7 +302,7 @@ def _seed_marketing_state(
     updated_at: datetime | None = None,
     followup_segment: str = "normal",
     extra_state: dict | None = None,
-    eligible_for_conversion: int = 1,
+    eligible_for_conversion: bool | int = True,
 ) -> None:
     payload = {"followup_segment": followup_segment}
     payload.update(extra_state or {})
@@ -319,7 +319,7 @@ def _seed_marketing_state(
             external_userid,
             main_stage,
             sub_stage,
-            eligible_for_conversion,
+            bool(eligible_for_conversion),
             _fmt(last_message_at or now),
             _fmt(entered_at or now),
             json.dumps(payload, ensure_ascii=False),
