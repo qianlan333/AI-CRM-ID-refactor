@@ -89,6 +89,8 @@ _TABLES_TO_TRUNCATE = [
     "contacts",
     "external_contact_bindings",
     "wecom_external_contact_identity_map",
+    "wecom_external_contact_follow_users",
+    "wecom_external_contact_event_logs",
     "people",
     "class_user_status_current",
     "class_user_status_history",
