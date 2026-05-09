@@ -1943,14 +1943,14 @@ def test_contacts_normalize_description(client, app, monkeypatch):
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-999", "已报名999", "signed_999", 1),
+            ("tag-999", "已报名999", "signed_999", True),
         )
         db.execute(
             """
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-3999", "已报名3999", "signed_3999", 1),
+            ("tag-3999", "已报名3999", "signed_3999", True),
         )
         db.execute(
             """
@@ -2044,14 +2044,14 @@ def test_mcp_tools_and_message_batches(client, app, monkeypatch):
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-999", "已报名999", "signed_999", 1),
+            ("tag-999", "已报名999", "signed_999", True),
         )
         db.execute(
             """
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-3999", "已报名3999", "signed_3999", 1),
+            ("tag-3999", "已报名3999", "signed_3999", True),
         )
         db.execute(
             """
@@ -2646,7 +2646,7 @@ def test_external_contact_callback_uses_official_welcome_msg_when_welcome_code_p
             INSERT INTO automation_channel (
                 channel_code, channel_name, scene_value, owner_staff_id, status, welcome_message, auto_accept_friend, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         get_db().commit()
@@ -5372,7 +5372,7 @@ def test_identity_resolve_supports_external_userid_and_mobile(client, app):
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-sign-999", "已购999", "signed_999", 1),
+            ("tag-sign-999", "已购999", "signed_999", True),
         )
         db.execute(
             """
