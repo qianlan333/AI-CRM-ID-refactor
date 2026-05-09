@@ -106,15 +106,11 @@ class PostgresConnection:
         return PostgresCursor(self._conn)
 
     def execute(self, sql: str, params: tuple | list | None = None):
-        cursor = self._conn.cursor(row_factory=dict_row)
-        translated = _translate_sql(sql)
-        # 同 PostgresCursor.execute — params 为空时不传，避免 LIKE '%X%' 中
-        # 的字面 % 被 psycopg 当 placeholder 解析失败。
-        if params is None or (hasattr(params, "__len__") and len(params) == 0):
-            cursor.execute(translated)
-        else:
-            cursor.execute(translated, tuple(params))
-        return cursor
+        # 走 PostgresCursor wrapper 让 INSERT 后 ``cursor.lastrowid`` 能拿到自增 id
+        # （raw psycopg cursor 没有 lastrowid 属性，老 sqlite-shaped 代码会 AttributeError）。
+        wrapper = PostgresCursor(self._conn)
+        wrapper.execute(sql, params)
+        return wrapper
 
     def executemany(self, sql: str, seq_of_params: list[tuple] | list[list]):
         cursor = self._conn.cursor(row_factory=dict_row)
