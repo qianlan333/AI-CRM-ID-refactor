@@ -160,7 +160,7 @@ def create_miniprogram(payload: dict[str, Any]) -> dict[str, Any]:
         INSERT INTO miniprogram_library
             (name, appid, pagepath, title, thumb_image_url, thumb_image_base64,
              thumb_image_id, thumb_media_id, thumb_media_id_expires_at, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, '', NULL, ?)
         """,
         (
             fields["name"],
@@ -228,8 +228,7 @@ def update_miniprogram(library_id: int, payload: dict[str, Any]) -> dict[str, An
     if invalidate_thumb_cache:
         set_clauses.append("thumb_media_id = ?")
         params.append("")
-        set_clauses.append("thumb_media_id_expires_at = ?")
-        params.append("")
+        set_clauses.append("thumb_media_id_expires_at = NULL")
     set_clauses.append("updated_at = CURRENT_TIMESTAMP")
     params.append(int(library_id))
     db = get_db()
