@@ -64,44 +64,44 @@ def list_customer_pulse_candidate_external_userids(*, limit: int = 100) -> list[
         FROM (
             SELECT external_userid, MAX(last_seen_at) AS last_seen_at
             FROM (
-                SELECT external_userid, COALESCE(send_time, created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(send_time::text, created_at::text, '') AS last_seen_at
                 FROM archived_messages
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(updated_at, created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(updated_at::text, created_at::text, '') AS last_seen_at
                 FROM automation_reply_monitor_queue
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_contact_id AS external_userid, COALESCE(created_at, '') AS last_seen_at
+                SELECT external_contact_id AS external_userid, COALESCE(created_at::text, '') AS last_seen_at
                 FROM automation_agent_output
                 WHERE external_contact_id <> ''
                   AND output_type IN ('next_action_suggestion', 'agent_reply_draft', 'agent_reply_final')
                 UNION ALL
-                SELECT external_userid, COALESCE(updated_at, entered_at, created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(updated_at::text, entered_at::text, created_at::text, '') AS last_seen_at
                 FROM customer_marketing_state_current
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(updated_at, computed_at, evaluated_at, created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(updated_at::text, computed_at::text, evaluated_at::text, created_at::text, '') AS last_seen_at
                 FROM customer_value_segment_current
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(created_at::text, '') AS last_seen_at
                 FROM contact_tags
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(submitted_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(submitted_at::text, '') AS last_seen_at
                 FROM questionnaire_submissions
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(created_at::text, '') AS last_seen_at
                 FROM questionnaire_scrm_apply_logs
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(dispatched_at, acked_at, updated_at, created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(dispatched_at::text, acked_at::text, updated_at::text, created_at::text, '') AS last_seen_at
                 FROM conversion_dispatch_log
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(updated_at, created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(updated_at::text, created_at::text, '') AS last_seen_at
                 FROM wecom_external_contact_follow_users
                 WHERE external_userid <> ''
             ) candidates

@@ -335,10 +335,14 @@ def resolve_followup_orchestrator_policy(access_context: Mapping[str, Any] | Non
 
 
 def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
     text = _normalized_text(value)
     if not text:
         return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+    import re as _re
+    text = _re.sub(r"[+-]\d{2}(:\d{2})?$", "", text).rstrip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M"):
         try:
             return datetime.strptime(text, fmt)
         except ValueError:

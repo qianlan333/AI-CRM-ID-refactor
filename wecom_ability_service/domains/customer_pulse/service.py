@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from importlib import import_module
 import json
+import re
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -297,12 +298,19 @@ def _json_loads(value: Any, *, default: Any) -> Any:
 
 
 def _parse_datetime(value: Any) -> datetime | None:
+    # PG (psycopg) returns datetime objects directly — handle them first.
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
     text = _normalized_text(value)
     if not text:
         return None
+    # Strip PG-style timezone suffix (+00:00 / +00) before parsing.
+    text = re.sub(r"[+-]\d{2}(:\d{2})?$", "", text).rstrip()
     for pattern in (
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%f",
         "%Y-%m-%d %H:%M",
         "%Y-%m-%d",
     ):

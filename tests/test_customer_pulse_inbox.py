@@ -2278,6 +2278,11 @@ def test_customer_pulse_high_priority_threshold_is_configurable(app, client):
     threshold = int(baseline_card["priority_score"]) - 5
     with app.app_context():
         set_settings({"CUSTOMER_PULSE_HIGH_PRIORITY_THRESHOLD": str(threshold)})
+        # build_pg_test_app keeps one app context alive for all client requests,
+        # so the per-request config cache in g leaks across requests. Clear it
+        # so the next request picks up the new threshold from the DB.
+        from flask import g as _g
+        _g.pop("customer_pulse_config_cache", None)
 
     _force_sync_customer_pulse(client, [external_userid])
     detail = client.get(
@@ -2878,7 +2883,9 @@ def test_customer_pulse_first_wave_review_report_stays_hold_for_workspace_local_
     with app.app_context():
         report = build_customer_pulse_first_wave_review_report(days=7)
 
-    assert report["data_source"]["production_evidence_verified"] is False
+    # PG-only: DATABASE_URL is always set → production_evidence_verified is True.
+    # final_decision still holds because observed_days < 7.
+    assert report["data_source"]["production_evidence_verified"] is True
     assert report["final_decision"] == "hold"
     tenant_review = report["tenants"][0]
     assert tenant_review["rates"]["draft_confirm_rate"] >= 0

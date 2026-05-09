@@ -127,14 +127,14 @@ def _find_external_userid_by_mobile(mobile: str) -> str:
         sql = """
         SELECT external_userid
         FROM (
-            SELECT b.external_userid, COALESCE(b.updated_at, b.created_at, '') AS ordering_value
+            SELECT b.external_userid, COALESCE(b.updated_at::text, b.created_at::text, '') AS ordering_value
             FROM external_contact_bindings b
             INNER JOIN people p ON p.id = b.person_id
             WHERE p.mobile = ?
 
             UNION ALL
 
-            SELECT external_userid, COALESCE(updated_at, created_at, '') AS ordering_value
+            SELECT external_userid, COALESCE(updated_at::text, created_at::text, '') AS ordering_value
             FROM class_user_status_current
             WHERE mobile_snapshot = ?
 
