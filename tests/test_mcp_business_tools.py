@@ -291,11 +291,11 @@ def _seed_test_agent_config(app, *, agent_code: str, display_name: str = "") -> 
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, '[]', 1, '', '', '[]', '[]', '', '', '[]', '[]', 1, 1, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, '[]', true, '', '', '[]', '[]', '', '', '[]', '[]', 1, 1, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT(agent_code) DO UPDATE SET
                 display_name = excluded.display_name,
-                enabled = 1,
-                published_version = MAX(automation_agent_config.published_version, 1),
+                enabled = true,
+                published_version = GREATEST(automation_agent_config.published_version, 1),
                 updated_at = CURRENT_TIMESTAMP
             """,
             (agent_code, display_name or agent_code),
