@@ -830,7 +830,7 @@ def list_customer_pulse_cards(
                 WHEN 'snoozed' THEN 2
                 ELSE 9
             END ASC,
-            COALESCE(NULLIF(card.due_at, ''), NULLIF(card.source_updated_at, ''), card.updated_at) ASC,
+            COALESCE(NULLIF(card.due_at, ''), NULLIF(card.source_updated_at, ''), card.updated_at::text) ASC,
             card.id DESC
         LIMIT ?
         """,
