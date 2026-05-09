@@ -276,7 +276,7 @@ def _seed_customer_base(
         INSERT INTO wecom_external_contact_follow_users (
             corp_id, external_userid, user_id, relation_status, is_primary, remark, description, raw_follow_user, created_at, updated_at
         )
-        VALUES (?, ?, ?, 'active', 1, '主跟进', ?, '{}', ?, ?)
+        VALUES (?, ?, ?, 'active', true, '主跟进', ?, '{}', ?, ?)
         """,
         (
             "ww-test",
@@ -312,7 +312,7 @@ def _seed_marketing_state(
             person_id, external_userid, automation_key, main_stage, sub_stage, activated, converted,
             eligible_for_conversion, lifecycle_status, last_message_at, entered_at, state_payload_json, created_at, updated_at
         )
-        VALUES (?, ?, 'signup_conversion_v1', ?, ?, 1, 0, ?, 'pool', ?, ?, ?, ?, ?)
+        VALUES (?, ?, 'signup_conversion_v1', ?, ?, true, false, ?, 'pool', ?, ?, ?, ?, ?)
         """,
         (
             person_id,
@@ -471,7 +471,7 @@ def _seed_ai_output(
             raw_output_text, normalized_output_json, rendered_output_text, target_pool, confidence,
             reason, need_human_review, applied_status, created_at
         )
-        VALUES (?, ?, ?, ?, ?, 'sales_pulse', 'agent_reply_draft', ?, ?, ?, 'active_focus', 0.91, ?, 1, 'pending', ?)
+        VALUES (?, ?, ?, ?, ?, 'sales_pulse', 'agent_reply_draft', ?, ?, ?, 'active_focus', 0.91, ?, true, 'pending', ?)
         """,
         (
             f"output-{external_userid}",
