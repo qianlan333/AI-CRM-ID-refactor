@@ -93,6 +93,8 @@ _TABLES_TO_TRUNCATE = [
     "wecom_external_contact_follow_users",
     "wecom_external_contact_event_logs",
     "contact_tags",
+    "group_chats",
+    "group_chat_members",
     "people",
     "class_user_status_current",
     "class_user_status_history",
