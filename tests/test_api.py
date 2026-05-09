@@ -133,7 +133,7 @@ def _seed_profile_segment_questionnaire(app, *, questionnaire_id: int = 901) -> 
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'single_choice', '你最关心什么？', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'single_choice', '你最关心什么？', true, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (choice_question_id, questionnaire_id),
         )

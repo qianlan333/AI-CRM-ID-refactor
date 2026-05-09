@@ -367,7 +367,7 @@ def _seed_signup_conversion_questionnaire_without_required_mobile(app, *, questi
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'single_choice', '关键问题1', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'single_choice', '关键问题1', true, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (question_id, questionnaire_id),
         )

@@ -180,7 +180,7 @@ def _seed_phase4_data(app) -> None:
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (1, 1, 'single_choice', '当前阶段', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (1, 1, 'single_choice', '当前阶段', true, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.execute(

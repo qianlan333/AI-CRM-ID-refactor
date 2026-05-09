@@ -205,7 +205,7 @@ def _seed_settings_questionnaire(app, *, questionnaire_id: int = 901) -> dict[st
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'single_choice', '你当前更关注什么？', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'single_choice', '你当前更关注什么？', true, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (choice_question_id, questionnaire_id),
         )
@@ -226,7 +226,7 @@ def _seed_settings_questionnaire(app, *, questionnaire_id: int = 901) -> dict[st
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'mobile', '请填写手机号', 1, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'mobile', '请填写手机号', true, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (mobile_question_id, questionnaire_id),
         )
