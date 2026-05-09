@@ -1363,7 +1363,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("ww-test", "wm_ext_class_101", "sales_01", "active", 1, "", "", "{}"),
+            ("ww-test", "wm_ext_class_101", "sales_01", "active", True, "", "", "{}"),
         )
         db.execute(
             """
@@ -1372,7 +1372,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("ww-test", "wm_ext_class_102", "sales_01", "active", 1, "", "", "{}"),
+            ("ww-test", "wm_ext_class_102", "sales_01", "active", True, "", "", "{}"),
         )
         db.execute(
             """
@@ -5701,7 +5701,7 @@ def test_customer_center_detail_aggregates_sidebar_related_data(client, app):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("ww-test", "wm_customer_detail_001", "sales_09", "active", 1, "详情备注", "wm_customer_detail_001", "{}"),
+            ("ww-test", "wm_customer_detail_001", "sales_09", "active", True, "详情备注", "wm_customer_detail_001", "{}"),
         )
         db.execute(
             """
