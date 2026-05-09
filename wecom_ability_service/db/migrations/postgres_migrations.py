@@ -988,7 +988,7 @@ def _init_postgres(db) -> None:
         db.execute(stmt)
 
     schema_path = Path(current_app.root_path) / "schema_postgres.sql"
-    _run_schema_with_forward_fk_retries(db, schema_path.read_text(encoding="utf-8"))
+    db.executescript(schema_path.read_text(encoding="utf-8"))
     db.execute(
         """
         ALTER TABLE IF EXISTS user_ops_deferred_jobs
