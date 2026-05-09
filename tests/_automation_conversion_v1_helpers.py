@@ -148,14 +148,28 @@ def _mcp_call(client, name: str, arguments: dict[str, object]):
 
 
 def _sqlite_object_names(db, object_type: str) -> set[str]:
-    rows = db.execute(
-        """
-        SELECT name
-        FROM sqlite_master
-        WHERE type = ?
-        """,
-        (object_type,),
-    ).fetchall()
+    """PG-only：用 information_schema 替代 SQLite 的 sqlite_master。
+
+    object_type 仅支持 ``'table'`` / ``'index'``（测试里只用到这两种）。
+    """
+    if object_type == "table":
+        rows = db.execute(
+            """
+            SELECT table_name AS name
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+            """
+        ).fetchall()
+    elif object_type == "index":
+        rows = db.execute(
+            """
+            SELECT indexname AS name
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+            """
+        ).fetchall()
+    else:
+        rows = []
     return {str(row["name"]) for row in rows}
 
 
