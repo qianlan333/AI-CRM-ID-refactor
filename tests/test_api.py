@@ -3168,7 +3168,7 @@ def test_questionnaire_submit_matches_identity_and_marks_tags(client, app, monke
         assert submission["campaign_id"] == "cmp-001"
         assert submission["staff_id"] == "staff-007"
         assert float(submission["total_score"]) == 6.0
-        assert set(json.loads(submission["final_tags"])) == {
+        assert set(submission["final_tags"] if isinstance(submission["final_tags"], list) else json.loads(submission["final_tags"])) == {
             "budget_mid",
             "focus_result",
             "focus_service",

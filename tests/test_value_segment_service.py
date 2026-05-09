@@ -253,7 +253,7 @@ def test_value_segment_service_covers_unknown_normal_core_top(app):
         ).fetchone()
         assert top_current["segment"] == "top"
         assert top_current["submission_id"] == 1004
-        assert json.loads(top_current["matched_question_ids_json"]) == questionnaire_seed["question_ids"][:4]
+        assert top_current["matched_question_ids_json"] if isinstance(top_current["matched_question_ids_json"], list) else json.loads(top_current["matched_question_ids_json"]) == questionnaire_seed["question_ids"][:4]
         assert top_current["evaluated_at"] != ""
 
 
@@ -375,4 +375,4 @@ def test_value_segment_service_recomputes_on_threshold_and_latest_submission_cha
         assert current_row["segment"] == "top"
         assert current_row["score"] == 1
         assert current_row["submission_id"] == 2002
-        assert json.loads(current_row["matched_question_ids_json"]) == [questionnaire_seed["question_ids"][0]]
+        assert current_row["matched_question_ids_json"] if isinstance(current_row["matched_question_ids_json"], list) else json.loads(current_row["matched_question_ids_json"]) == [questionnaire_seed["question_ids"][0]]

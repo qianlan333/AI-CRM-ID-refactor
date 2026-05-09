@@ -9955,7 +9955,7 @@ def test_api_admin_automation_conversion_sop_template_save_reads_back_structured
             "SELECT images_json FROM automation_sop_template WHERE pool_key = ? AND day_index = ?",
             (_canonical_automation_pool("new_user"), 1),
         ).fetchone()
-    assert json.loads(raw_row["images_json"]) == [local_image]
+    assert (raw_row["images_json"] if isinstance(raw_row["images_json"], list) else json.loads(raw_row["images_json"])) == [local_image]
 
 
 def test_api_admin_automation_conversion_sop_delete_day_reorders_following_templates(app, client):
