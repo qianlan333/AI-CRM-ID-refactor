@@ -291,7 +291,7 @@ def _seed_activation_source(app, *, mobile: str, updated_at: str):
             INSERT INTO user_ops_huangxiaocan_activation_source (
                 mobile, activation_state, import_batch_id, created_by, is_active, created_at, updated_at
             )
-            VALUES (?, 'activated', '', 'test_seed', 1, ?, ?)
+            VALUES (?, 'activated', '', 'test_seed', true, ?, ?)
             """,
             (mobile, updated_at, updated_at),
         )
@@ -320,10 +320,10 @@ def _seed_automation_member(
             """
             INSERT INTO automation_member (
                 external_contact_id, phone, owner_staff_id, in_pool, current_pool, follow_type,
-                activation_status, questionnaire_status, decision_source,
+                questionnaire_status, decision_source,
                 source_type, last_active_pool, joined_at, created_at, updated_at
             )
-            VALUES (?, ?, 'sales_01', ?, ?, ?, ?, ?, ?, 'manual', ?, '2026-04-04 09:20:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'sales_01', ?, ?, ?, ?, ?, 'manual', ?, '2026-04-04 09:20:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 external_contact_id,
@@ -331,7 +331,6 @@ def _seed_automation_member(
                 bool(in_pool),
                 current_pool,
                 follow_type,
-                activation_status,
                 questionnaire_status,
                 decision_source,
                 last_active_pool,

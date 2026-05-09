@@ -10156,15 +10156,19 @@ def test_record_sop_pool_entry_reentry_preserves_anchor_date(app):
         second = record_sop_pool_entry(member_id=member_id, pool_key="new_user", entered_at="2026-04-10 08:30:00")
         row = get_db().execute(
             """
-            SELECT COUNT(*) AS total, sop_anchor_date, first_effective_in_pool_at, last_in_pool_at
+            SELECT sop_anchor_date, first_effective_in_pool_at, last_in_pool_at
             FROM automation_sop_progress
             WHERE member_id = ? AND pool_key = ?
             """,
             (member_id, _canonical_automation_pool("new_user")),
         ).fetchone()
+        total = get_db().execute(
+            "SELECT COUNT(*) AS total FROM automation_sop_progress WHERE member_id = ? AND pool_key = ?",
+            (member_id, _canonical_automation_pool("new_user")),
+        ).fetchone()["total"]
 
     assert first["id"] == second["id"]
-    assert row["total"] == 1
+    assert total == 1
     assert row["sop_anchor_date"] == "2026-04-08"
     assert row["first_effective_in_pool_at"] == "2026-04-08 08:00:00"
     assert row["last_in_pool_at"] == "2026-04-10 08:30:00"
