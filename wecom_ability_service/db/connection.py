@@ -49,17 +49,31 @@ class PostgresCursor:
         upper_head = translated.lstrip().upper()[:6]
         self._last_was_insert = upper_head == "INSERT"
         self.lastrowid = None
-        if self._last_was_insert:
+        # 只有在真插入了行（rowcount > 0）时才尝试拿 lastval()。``INSERT ...
+        # SELECT WHERE NOT EXISTS`` 这种 conditional INSERT 可能 insert 0 行，
+        # 那 ``SELECT lastval()`` 会抛 ``object "..." is not yet defined``，
+        # 把 cursor 状态打 abort，后续 SQL 全炸。用 SAVEPOINT 保护以防万一。
+        if self._last_was_insert and self._cursor.rowcount and self._cursor.rowcount > 0:
+            sp_cursor = self._conn.cursor()
             try:
-                lv_cursor = self._conn.cursor()
-                lv_cursor.execute("SELECT lastval()")
-                row = lv_cursor.fetchone()
-                lv_cursor.close()
-                if row:
-                    # row 是 tuple（plain cursor）
-                    self.lastrowid = int(row[0])
+                sp_cursor.execute("SAVEPOINT _pg_lastval_probe")
+                try:
+                    sp_cursor.execute("SELECT lastval()")
+                    row = sp_cursor.fetchone()
+                    if row:
+                        self.lastrowid = int(row[0])
+                    sp_cursor.execute("RELEASE SAVEPOINT _pg_lastval_probe")
+                except Exception:
+                    self.lastrowid = None
+                    try:
+                        sp_cursor.execute("ROLLBACK TO SAVEPOINT _pg_lastval_probe")
+                        sp_cursor.execute("RELEASE SAVEPOINT _pg_lastval_probe")
+                    except Exception:
+                        pass
             except Exception:
                 self.lastrowid = None
+            finally:
+                sp_cursor.close()
         return self
 
     def executemany(self, sql, seq):
