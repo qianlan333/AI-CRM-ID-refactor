@@ -128,10 +128,10 @@ def _seed_jobs_data(app) -> None:
                 response_body_summary, last_error, last_attempted_at, next_retry_at, created_at, updated_at
             )
             VALUES
-                (1, 'openclaw_focus_message', 'external_userid', 'ext-1', 'https://openclaw.local/focus', '{"external_userid":"ext-1"}', '{"external_userid":"ext-1"}', 1, 'success', 1, 3, 202, '{"ok":true}', '', '2026-04-02 12:00:00', '', '2026-04-02 12:00:00', '2026-04-02 12:00:00'),
-                (2, 'questionnaire_submit', 'submission_id', 'sub-2', '', '{"mobile":"13800138000"}', '{"mobile":"13800138000"}', 0, 'failed', 0, 3, NULL, '', 'webhook_not_configured', '2026-04-02 12:10:00', '', '2026-04-02 12:10:00', '2026-04-02 12:10:00'),
-                (3, 'openclaw_focus_message', 'external_userid', 'ext-3', 'https://openclaw.local/focus', '{"external_userid":"ext-3"}', '{"external_userid":"ext-3"}', 1, 'retry_scheduled', 1, 3, 500, 'server error', 'http_status_500', '2026-04-02 12:20:00', '2026-04-02 12:25:00', '2026-04-02 12:20:00', '2026-04-02 12:20:00'),
-                (4, 'questionnaire_submit', 'submission_id', 'sub-4', 'https://hooks.local/q', '{"mobile":"13800138001"}', '{"mobile":"13800138001"}', 1, 'exhausted', 3, 3, 500, 'server error', 'http_status_500', '2026-04-02 12:30:00', '', '2026-04-02 12:30:00', '2026-04-02 12:30:00')
+                (1, 'openclaw_focus_message', 'external_userid', 'ext-1', 'https://openclaw.local/focus', '{"external_userid":"ext-1"}', '{"external_userid":"ext-1"}', true, 'success', 1, 3, 202, '{"ok":true}', '', '2026-04-02 12:00:00', '', '2026-04-02 12:00:00', '2026-04-02 12:00:00'),
+                (2, 'questionnaire_submit', 'submission_id', 'sub-2', '', '{"mobile":"13800138000"}', '{"mobile":"13800138000"}', false, 'failed', 0, 3, NULL, '', 'webhook_not_configured', '2026-04-02 12:10:00', '', '2026-04-02 12:10:00', '2026-04-02 12:10:00'),
+                (3, 'openclaw_focus_message', 'external_userid', 'ext-3', 'https://openclaw.local/focus', '{"external_userid":"ext-3"}', '{"external_userid":"ext-3"}', true, 'retry_scheduled', 1, 3, 500, 'server error', 'http_status_500', '2026-04-02 12:20:00', '2026-04-02 12:25:00', '2026-04-02 12:20:00', '2026-04-02 12:20:00'),
+                (4, 'questionnaire_submit', 'submission_id', 'sub-4', 'https://hooks.local/q', '{"mobile":"13800138001"}', '{"mobile":"13800138001"}', true, 'exhausted', 3, 3, 500, 'server error', 'http_status_500', '2026-04-02 12:30:00', '', '2026-04-02 12:30:00', '2026-04-02 12:30:00')
             """
         )
         db.commit()

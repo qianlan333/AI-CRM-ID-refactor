@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...db import cast_text, get_db, is_postgres
+from ...db import cast_text, get_db, get_db_backend, is_postgres
 from ._repo_helpers import (
     _AUTOMATION_SOP_POOL_LOCK_NAMESPACE,
     _db_bool,
