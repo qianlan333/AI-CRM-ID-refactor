@@ -1009,7 +1009,7 @@ def test_send_pool_private_message_mcp_tool_supports_images_and_keeps_records(ap
             """
             SELECT filter_snapshot_json, content_preview, image_count, selected_count, eligible_count, sent_count
             FROM user_ops_send_records
-            WHERE filter_snapshot_json LIKE '%marketing_pool%'
+            WHERE CAST(filter_snapshot_json AS TEXT) LIKE '%%marketing_pool%%'
             ORDER BY id DESC
             LIMIT 2
             """
@@ -1117,7 +1117,7 @@ def test_send_pool_private_message_mcp_tool_supports_attachments_and_keeps_recor
             """
             SELECT filter_snapshot_json, content_preview, image_count, selected_count, eligible_count, sent_count
             FROM user_ops_send_records
-            WHERE filter_snapshot_json LIKE '%marketing_pool%'
+            WHERE CAST(filter_snapshot_json AS TEXT) LIKE '%%marketing_pool%%'
             ORDER BY id DESC
             LIMIT 2
             """
