@@ -109,6 +109,16 @@ def _claim_due_member(*, member_row_id: int) -> bool:
     return (cur.rowcount or 0) > 0
 
 
+def _all_step_ids_for_campaign(campaign_id: int) -> list[str]:
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id FROM campaign_steps WHERE campaign_id = ?",
+        (int(campaign_id),),
+    )
+    return [str(row["id"]) for row in (cur.fetchall() or [])]
+
+
 def _next_step(
     *, campaign_segment_id: int, after_step_index: int
 ) -> dict[str, Any] | None:
@@ -432,6 +442,8 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
     skipped_budget = 0
     skipped_inline_reply = 0
     completed_no_step = 0
+    # 同 campaign 续推不重复消耗 daily budget — 缓存 campaign_id → step_ids
+    _step_ids_cache: dict[int, list[str]] = {}
 
     for r in due:
         cm_id = int(r["cm_id"])
@@ -440,7 +452,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         # 取下一个待发的 step（current_step_index 之后的第一个）
         step = _next_step(
             campaign_segment_id=int(r["campaign_segment_id"]),
-            after_step_index=int(r["current_step_index"] or -1),
+            after_step_index=int(r["current_step_index"]) if r["current_step_index"] is not None else -1,
         )
         if not step:
             cur.execute(
@@ -469,12 +481,18 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
             db.commit()
             continue
         # 频次预算 per-member（如果该 member 跨方案累计触达超预算就跳过）
+        # 同 campaign 续推排除：同一 campaign 先前 step 的消耗不计入 daily 限额
+        campaign_id = int(r["campaign_id"])
         member_id = int(r["member_id"] or 0)
+        if campaign_id not in _step_ids_cache:
+            _step_ids_cache[campaign_id] = _all_step_ids_for_campaign(campaign_id)
         verdict = frequency_budget_service.check_member_budget(
             member_id=member_id,
             external_contact_id=external,
             channels=("wecom_private", "ai_initiated"),
             program_codes=("campaign",),
+            exclude_source_kind="campaign_step",
+            exclude_source_ids=_step_ids_cache[campaign_id],
         )
         if not verdict.allowed:
             # 把 status 改回 pending，next_due_at 推后 1 小时避免下次 cron 立刻重试

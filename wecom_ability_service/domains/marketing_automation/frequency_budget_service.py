@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from ...db import get_db
 
@@ -172,35 +172,45 @@ def _count_consumption(
     member_id: int | None,
     external_contact_id: str,
     window_seconds: int,
+    exclude_source_kind: str = "",
+    exclude_source_ids: Sequence[str] = (),
 ) -> int:
     db = get_db()
     cur = db.cursor()
-    # 跨 SQLite/PG 通用做法：Python 算时间戳，SQL 只做字符串比较
     from datetime import datetime, timedelta
 
     cutoff_iso = (datetime.utcnow() - timedelta(seconds=int(window_seconds))).isoformat()
+
+    # 同 campaign 续推排除：不计入同来源的历史消耗
+    exclude_clause = ""
+    exclude_params: tuple = ()
+    if exclude_source_kind and exclude_source_ids:
+        placeholders = ", ".join("?" for _ in exclude_source_ids)
+        exclude_clause = f" AND NOT (source_kind = ? AND source_id IN ({placeholders}))"
+        exclude_params = (exclude_source_kind, *exclude_source_ids)
+
     if member_id and int(member_id) > 0:
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*) AS c FROM automation_frequency_consumption
             WHERE budget_id = ?
               AND member_id = ?
-              AND consumed_at >= ?
+              AND consumed_at >= ?{exclude_clause}
             """,
-            (int(budget_id), int(member_id), cutoff_iso),
+            (int(budget_id), int(member_id), cutoff_iso, *exclude_params),
         )
         row = cur.fetchone()
         if row:
             return int(row["c"] or 0)
     if external_contact_id:
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*) AS c FROM automation_frequency_consumption
             WHERE budget_id = ?
               AND external_contact_id = ?
-              AND consumed_at >= ?
+              AND consumed_at >= ?{exclude_clause}
             """,
-            (int(budget_id), external_contact_id, cutoff_iso),
+            (int(budget_id), external_contact_id, cutoff_iso, *exclude_params),
         )
         row = cur.fetchone()
         if row:
@@ -215,10 +225,15 @@ def check_member_budget(
     channels: Iterable[str] = ("wecom_private",),
     program_codes: Iterable[str] = (),
     pool_keys: Iterable[str] = (),
+    exclude_source_kind: str = "",
+    exclude_source_ids: Sequence[str] = (),
 ) -> MemberBudgetCheck:
     """合并检查一个 member 是否被任何相关 budget 拒绝。
 
     返回结构里带每条 budget 的明细，便于 UI 展示"为什么被跳过"。
+
+    ``exclude_source_kind`` / ``exclude_source_ids`` — 排除特定来源的消耗记录，
+    用于同一 campaign 续推时不重复消耗 daily budget。
     """
     budgets = list_active_budgets(
         channels=channels,
@@ -233,6 +248,8 @@ def check_member_budget(
             member_id=member_id,
             external_contact_id=external_contact_id,
             window_seconds=int(b["window_seconds"]),
+            exclude_source_kind=exclude_source_kind,
+            exclude_source_ids=exclude_source_ids,
         )
         cap = int(b["max_count"])
         allowed = used < cap
