@@ -29,33 +29,111 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
-# 测试间需要清理的关键表（FK 反向顺序：子表先清，自动级联）
+# 测试间需要清理的关键表（FK 反向顺序：子表先清，autouse 用 CASCADE 兜底剩余 FK）
 _TABLES_TO_TRUNCATE = [
+    # — automation / campaign domain
     "automation_touch_delivery_log",
     "automation_frequency_consumption",
     "automation_frequency_budget",
+    "automation_workflow_execution_item",
+    "automation_workflow_execution",
+    "automation_workflow_node_content_variant",
+    "automation_workflow_node_content",
+    "automation_workflow_node_transition",
+    "automation_workflow_node",
+    "automation_workflow_goal",
+    "automation_workflow",
+    "automation_member",
+    "automation_program",
+    "automation_channel",
+    "automation_sop_progress",
+    "automation_sop_pool_config",
+    "automation_sop_batch_item",
+    "automation_sop_batch",
+    "automation_agent_run",
+    "automation_agent_output",
+    # — campaigns
     "campaign_members",
     "campaign_steps",
     "campaign_segments",
     "campaigns",
+    # — cloud orchestrator
     "cloud_approval_tokens",
     "cloud_broadcast_plans",
     "cloud_agent_audit_log",
-    "automation_member",
+    # — segments + value
     "segments",
+    "customer_value_segment_history",
+    "customer_value_segment_current",
+    "customer_marketing_state_history",
+    "customer_marketing_state_current",
+    "signup_conversion_question_rules",
+    "signup_conversion_config",
+    # — libraries
     "image_library",
     "miniprogram_library",
+    # — questionnaire
+    "questionnaire_external_push_logs",
     "questionnaire_submission_answers",
     "questionnaire_submissions",
     "questionnaire_options",
     "questionnaire_questions",
+    "questionnaire_score_rules",
     "questionnaires",
+    # — admin / auth
     "admin_users",
+    "admin_wecom_directory_member",
+    "owner_role_map",
+    "routing_rule_config",
+    # — contacts / identity
     "contacts",
-    "people",
     "external_contact_bindings",
+    "wecom_external_contact_identity_map",
+    "people",
+    "class_user_status_current",
+    "class_user_status_history",
+    # — user_ops
+    "user_ops_lead_pool_history",
+    "user_ops_lead_pool_current",
+    "user_ops_huangxiaocan_activation_source",
+    "user_ops_send_records",
+    "user_ops_deferred_jobs",
+    # — archive / system
     "archived_messages",
+    "outbound_tasks",
+    "outbound_webhook_deliveries",
+    # — customer pulse / followup
+    "customer_pulse_signal_events",
+    "customer_pulse_snapshots",
+    "customer_pulse_cards",
+    "customer_pulse_feedback_logs",
+    "customer_pulse_execution_logs",
+    "followup_orchestrator_missions",
+    "followup_orchestrator_mission_items",
+    "followup_orchestrator_assignment_decisions",
 ]
+
+
+def _truncate_all(db_or_conn) -> None:
+    """对每张已知表跑 TRUNCATE … RESTART IDENTITY CASCADE。
+
+    单条失败（表不存在 / 约束冲突）就 rollback 跳过，不让一个表连累整个 reset。
+    """
+    if hasattr(db_or_conn, "cursor"):
+        cur = db_or_conn.cursor()
+    else:
+        cur = db_or_conn  # 已经是 cursor
+    for table in _TABLES_TO_TRUNCATE:
+        try:
+            cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+        except Exception:
+            try:
+                if hasattr(db_or_conn, "rollback"):
+                    db_or_conn.rollback()
+            except Exception:
+                pass
+    if hasattr(db_or_conn, "commit"):
+        db_or_conn.commit()
 
 
 def _ensure_pg_url() -> str:
@@ -168,6 +246,76 @@ class _AppContextManager:
 
 def _build_app_context(tmp_path, extra_config):
     return _AppContextManager(tmp_path, extra_config)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_schema_once():
+    """Session 起点：用 raw psycopg 跑一遍 schema_postgres.sql（带前向 FK 重试）。
+
+    任何 test 不管用哪个 app fixture，都能假定 schema 已就位。``_init_postgres``
+    自带 ALTER 也能在已有 schema 上幂等运行。
+    """
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        yield
+        return
+    try:
+        import psycopg
+    except ImportError:  # pragma: no cover
+        yield
+        return
+    schema_path = _ROOT / "wecom_ability_service" / "schema_postgres.sql"
+    if schema_path.exists():
+        conn = psycopg.connect(url)
+        statements = [s.strip() for s in schema_path.read_text(encoding="utf-8").split(";") if s.strip()]
+        pending = statements
+        for _ in range(4):
+            if not pending:
+                break
+            cursor = conn.cursor()
+            next_pending: list[str] = []
+            for stmt in pending:
+                try:
+                    cursor.execute(stmt)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    next_pending.append(stmt)
+            cursor.close()
+            if len(next_pending) == len(pending):
+                break
+            pending = next_pending
+        conn.close()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _truncate_before_each_test():
+    """每个 test 起点 truncate 关键表。
+
+    覆盖**所有** test —— 不管它用顶层 ``app`` fixture 还是自己的 ``app`` fixture
+    （即未迁 PG 的老 test 也受益）。truncate 用 raw psycopg 在 Flask 上下文之外
+    跑，避免和待迁 fixture 的 init_db 顺序冲突。
+    """
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        yield
+        return
+    try:
+        import psycopg
+    except ImportError:  # pragma: no cover
+        yield
+        return
+    conn = psycopg.connect(url, autocommit=True)
+    cur = conn.cursor()
+    for table in _TABLES_TO_TRUNCATE:
+        try:
+            cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+        except Exception:
+            pass
+    cur.close()
+    conn.close()
+    yield
 
 
 @pytest.fixture
