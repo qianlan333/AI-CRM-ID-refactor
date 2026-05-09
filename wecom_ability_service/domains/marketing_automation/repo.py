@@ -1759,7 +1759,7 @@ def get_customer_inbound_message_signal(external_userid: str) -> dict[str, Any]:
             """
             SELECT
                 COALESCE(MAX(send_time), '') AS last_customer_text_at,
-                SUM(CASE WHEN send_time >= datetime('now', '-72 hours') THEN 1 ELSE 0 END) AS customer_text_72h_count
+                SUM(CASE WHEN send_time >= (NOW() - INTERVAL '72 hours')::text THEN 1 ELSE 0 END) AS customer_text_72h_count
             FROM archived_messages
             WHERE external_userid = ? AND sender = ? AND msgtype = 'text'
             """,
