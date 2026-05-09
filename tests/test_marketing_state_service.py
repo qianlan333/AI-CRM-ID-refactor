@@ -196,7 +196,7 @@ def _seed_signup_conversion_questionnaire(
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'mobile', '手机号', 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'mobile', '手机号', true, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (mobile_question_id, questionnaire_id, question_count + 1),
         )
