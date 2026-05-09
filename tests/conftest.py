@@ -92,6 +92,84 @@ def _run_schema_with_retries(db: Any, script: str, *, max_passes: int = 3) -> No
         pending = next_pending
 
 
+def build_pg_test_app(tmp_path, **extra_config: Any):
+    """老测试兼容 helper：起 PG 模式 app，允许传 extra_config 覆盖默认。
+
+    用法（替换老 SQLite fixture）：
+
+        @pytest.fixture
+        def app(tmp_path):
+            from tests.conftest import build_pg_test_app
+            with build_pg_test_app(tmp_path, MCP_BEARER_TOKEN="mcp-token") as app:
+                yield app
+    """
+    return _build_app_context(tmp_path, extra_config)
+
+
+class _AppContextManager:
+    """支持 with-statement，自动 truncate 隔离。"""
+
+    def __init__(self, tmp_path, extra_config):
+        self.tmp_path = tmp_path
+        self.extra_config = extra_config
+        self._app = None
+        self._ctx = None
+
+    def __enter__(self):
+        database_url = _ensure_pg_url()
+        private_key = self.tmp_path / "wecom_private_key.pem"
+        sdk_lib = self.tmp_path / "libWeWorkFinanceSdk_C.so"
+        private_key.write_text("fake-key", encoding="utf-8")
+        sdk_lib.write_text("fake-so", encoding="utf-8")
+
+        from wecom_ability_service import create_app
+        from wecom_ability_service.db import get_db, init_db
+
+        config = {
+            "TESTING": True,
+            "DATABASE_URL": database_url,
+            "RELEASE_SHA": "release-test-sha",
+            "WECOM_CORP_ID": "ww-test",
+            "WECOM_CONTACT_SECRET": "contact-secret-test",
+            "WECOM_SECRET": "secret-test",
+            "WECOM_AGENT_ID": "1000002",
+            "WECOM_ARCHIVE_SECRET": "archive-secret",
+            "WECOM_API_BASE": "http://fake-wecom.local",
+            "WECOM_PRIVATE_KEY_PATH": str(private_key),
+            "WECOM_SDK_LIB_PATH": str(sdk_lib),
+            "WECOM_CALLBACK_TOKEN": "callback-token",
+            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+        }
+        config.update(self.extra_config)
+
+        self._app = create_app(test_config=config)
+        self._ctx = self._app.app_context()
+        self._ctx.push()
+
+        db = get_db()
+        schema_path = Path(self._app.root_path) / "schema_postgres.sql"
+        if schema_path.exists():
+            _run_schema_with_retries(db, schema_path.read_text(encoding="utf-8"))
+            db.commit()
+        init_db()
+        cur = db.cursor()
+        for table in _TABLES_TO_TRUNCATE:
+            try:
+                cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+            except Exception:
+                db.rollback()
+        db.commit()
+        return self._app
+
+    def __exit__(self, *args):
+        if self._ctx is not None:
+            self._ctx.pop()
+
+
+def _build_app_context(tmp_path, extra_config):
+    return _AppContextManager(tmp_path, extra_config)
+
+
 @pytest.fixture
 def app(tmp_path) -> Iterator[Any]:
     """干净 Flask app + 真 PG，每个 test 隔离。"""
