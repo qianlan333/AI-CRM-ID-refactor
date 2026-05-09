@@ -14,6 +14,38 @@ from . import (
 _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN = "questionnaire" "_result"
 
 
+def _run_schema_with_forward_fk_retries(db, script: str, *, max_passes: int = 4) -> None:
+    """跑 schema_postgres.sql，对前向 FK 引用容错。
+
+    schema 里有少数 ``CREATE TABLE`` 的 FK 引用了下方才定义的表（例如
+    ``customer_value_segment_current.submission_id REFERENCES questionnaire_submissions``
+    出现在 line 759，但 ``questionnaire_submissions`` 直到 line 1414 才建）。
+
+    单次顺跑 ``executescript`` 会在第一条前向 FK 上 ``UndefinedTable`` 死掉，让
+    fresh PG 上的 ``init_db`` 整个崩。多 pass 重试容错：每轮跑通能跑通的，把
+    ``UndefinedTable`` 失败的留到下一轮 —— 等被引用表建好后再补。
+    """
+    statements = [s.strip() for s in script.split(";") if s.strip()]
+    pending = statements
+    for _ in range(max_passes):
+        if not pending:
+            return
+        next_pending: list[str] = []
+        for stmt in pending:
+            try:
+                db.execute(stmt)
+                db.commit()
+            except Exception:
+                db.rollback()
+                next_pending.append(stmt)
+        if len(next_pending) == len(pending):
+            # 没进展：剩下的就是真坏掉的，让最后一条原样抛出来便于 debug。
+            for stmt in next_pending:
+                db.execute(stmt)
+            return
+        pending = next_pending
+
+
 def _ensure_postgres_user_ops_page_tables(db) -> None:
     db.execute(
         """
