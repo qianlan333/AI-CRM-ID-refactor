@@ -530,7 +530,7 @@ def _seed_questionnaire_with_apply_failure(
             _fmt(submitted_at),
         ),
     )
-    submission_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    submission_id = int(db.execute("SELECT lastval() AS id").fetchone()["id"])
     db.execute(
         """
         INSERT INTO questionnaire_scrm_apply_logs (
@@ -568,7 +568,7 @@ def _seed_dispatch_log(
             _fmt(created_at),
         ),
     )
-    batch_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    batch_id = int(db.execute("SELECT lastval() AS id").fetchone()["id"])
     db.execute(
         """
         INSERT INTO conversion_dispatch_log (

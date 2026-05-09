@@ -8008,7 +8008,7 @@ def test_focus_send_batch_respects_historical_sent_items_before_touch_log(app, c
             VALUES ('active-focus', 'operating', 'system', 'legacy', 'finished', 1, 1, 0, 0, 0, '', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
-        batch_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+        batch_id = int(db.execute("SELECT lastval() AS id").fetchone()["id"])
         db.execute(
             """
             INSERT INTO automation_focus_send_batch_item (
