@@ -237,9 +237,15 @@ def _parse_datetime_text(value: Any) -> datetime | None:
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(text)
+        parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
+    # PG TIMESTAMPTZ ISO 字符串带时区（``+00:00``），fromisoformat 返回 aware
+    # datetime。上层比对老代码用 ``datetime.now()`` 是 naive，``aware - naive``
+    # 抛 TypeError。统一脱时区让所有比对在 naive 域。
+    if parsed.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=None)
+    return parsed
 
 
 def _display_datetime_text(value: Any) -> str:

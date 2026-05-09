@@ -353,8 +353,8 @@ def insert_admin_operation_log(
             str(action_type or "").strip(),
             str(target_type or "").strip(),
             str(target_id or "").strip(),
-            json.dumps(before_json or {}, ensure_ascii=False, sort_keys=True),
-            json.dumps(after_json or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(before_json or {}, ensure_ascii=False, sort_keys=True, default=str),
+            json.dumps(after_json or {}, ensure_ascii=False, sort_keys=True, default=str),
         ),
     )
     get_db().commit()

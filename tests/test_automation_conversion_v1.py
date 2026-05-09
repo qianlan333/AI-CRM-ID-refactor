@@ -2118,7 +2118,7 @@ def test_create_workflow_node_supports_immediate_personalized_single_with_one_ag
         }
     ]
     assert dict(content_row)["standard_content_text"] == ""
-    assert json.loads(dict(content_row)["standard_content_payload_json"])["_automation_conversion_node_meta"] == {
+    assert (dict(content_row)["standard_content_payload_json"] if isinstance(dict(content_row)["standard_content_payload_json"], (dict, list)) else json.loads(dict(content_row)["standard_content_payload_json"]))["_automation_conversion_node_meta"] == {
         "content_mode": "personalized_single",
         "segmentation_basis": "none",
     }
@@ -3273,7 +3273,7 @@ def test_laohuang_review_outputs_api_lists_jobs_and_webhook_action_posts_payload
             (job_id,),
         ).fetchone()
     assert dict(job_row)["status"] == "callback_success"
-    assert json.loads(dict(job_row)["send_result_json"])["webhook"]["request"]["text"] == "推 webhook 的话术"
+    assert (dict(job_row)["send_result_json"] if isinstance(dict(job_row)["send_result_json"], (dict, list)) else json.loads(dict(job_row)["send_result_json"]))["webhook"]["request"]["text"] == "推 webhook 的话术"
 
 
 def _test_png_data_url() -> str:
@@ -5830,7 +5830,7 @@ def test_reply_monitor_dispatch_posts_laohuang_chat_when_enabled(app, monkeypatc
     assert request_body["meta"]["external_contact_id"] == "wm_lh_dispatch_001"
     assert request_body["meta"]["owner_userid"] == "sales_01"
     assert dict(queue_row)["status"] == "dispatched"
-    queue_snapshot = json.loads(dict(queue_row)["payload_snapshot_json"])
+    queue_snapshot = (dict(queue_row)["payload_snapshot_json"] if isinstance(dict(queue_row)["payload_snapshot_json"], (dict, list)) else json.loads(dict(queue_row)["payload_snapshot_json"]))
     assert queue_snapshot["bridge"] == "laohuang_chat"
     assert dict(job_row)["phone"] == "13900009201"
     assert dict(job_row)["external_message_id"] == f"ai-crm:reply-monitor:1:{last_message_id}"
@@ -5838,8 +5838,8 @@ def test_reply_monitor_dispatch_posts_laohuang_chat_when_enabled(app, monkeypatc
     assert dict(job_row)["laohuang_task_id"] == "lh-task-001"
     assert dict(job_row)["status"] == "accepted"
     assert dict(job_row)["send_channel"] == "private_message"
-    assert json.loads(dict(job_row)["request_payload_json"]) == request_body
-    assert json.loads(dict(job_row)["accepted_payload_json"])["task_id"] == "lh-task-001"
+    assert (dict(job_row)["request_payload_json"] if isinstance(dict(job_row)["request_payload_json"], (dict, list)) else json.loads(dict(job_row)["request_payload_json"])) == request_body
+    assert (dict(job_row)["accepted_payload_json"] if isinstance(dict(job_row)["accepted_payload_json"], (dict, list)) else json.loads(dict(job_row)["accepted_payload_json"]))["task_id"] == "lh-task-001"
 
 
 def test_laohuang_chat_callback_stores_reply_without_auto_wecom_send(app, client, monkeypatch):
@@ -5914,8 +5914,8 @@ def test_laohuang_chat_callback_stores_reply_without_auto_wecom_send(app, client
     assert dict(job_row)["error_code"] == ""
     assert dict(job_row)["error_message"] == ""
     assert dict(job_row)["finished_at"]
-    assert json.loads(dict(job_row)["callback_payload_json"])["task_id"] == "lh-task-callback-001"
-    assert json.loads(dict(job_row)["send_result_json"]) == {}
+    assert (dict(job_row)["callback_payload_json"] if isinstance(dict(job_row)["callback_payload_json"], (dict, list)) else json.loads(dict(job_row)["callback_payload_json"]))["task_id"] == "lh-task-callback-001"
+    assert (dict(job_row)["send_result_json"] if isinstance(dict(job_row)["send_result_json"], (dict, list)) else json.loads(dict(job_row)["send_result_json"])) == {}
     assert dict(job_row)["send_record_id"] is None
     assert send_record_total == 0
 
@@ -5998,14 +5998,14 @@ def test_laohuang_review_output_wecom_send_api_records_send_result(app, client, 
     ]
     assert dict(job_row)["status"] == "send_success"
     assert int(dict(job_row)["send_record_id"]) == int(dict(send_record)["id"])
-    assert json.loads(dict(job_row)["send_result_json"])["send_record_id"] == int(dict(send_record)["id"])
+    assert (dict(job_row)["send_result_json"] if isinstance(dict(job_row)["send_result_json"], (dict, list)) else json.loads(dict(job_row)["send_result_json"]))["send_record_id"] == int(dict(send_record)["id"])
     assert dict(send_record)["content_preview"] == "手动推企微的话术"
     assert dict(send_record)["selected_count"] == 1
     assert dict(send_record)["eligible_count"] == 1
     assert dict(send_record)["sent_count"] == 1
     assert dict(send_record)["status"] == "sent"
     assert dict(send_record)["operator"] == "console-user"
-    assert json.loads(dict(send_record)["filter_snapshot_json"])["source"] == "laohuang_chat_manual_wecom"
+    assert (dict(send_record)["filter_snapshot_json"] if isinstance(dict(send_record)["filter_snapshot_json"], (dict, list)) else json.loads(dict(send_record)["filter_snapshot_json"]))["source"] == "laohuang_chat_manual_wecom"
 
 
 def test_router_callback_is_idempotent_after_first_apply(app, client, monkeypatch):
