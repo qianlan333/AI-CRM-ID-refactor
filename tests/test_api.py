@@ -13,10 +13,9 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from wecom_ability_service import create_app
 from wecom_ability_service.archive_sdk import extract_text_record, normalize_timestamp
 from wecom_ability_service.wecom_callback import compute_signature, encrypt_message
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 from wecom_ability_service.infra.settings import set_settings
 from wecom_ability_service.services import (
     ThirdPartyUserSyncError,
@@ -47,34 +46,15 @@ def _test_image_data_url(label: str = "img") -> str:
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "test.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
+    """PG-only：用顶层 build_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
+    from tests.conftest import build_pg_test_app
 
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "RELEASE_SHA": "release-test-sha",
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-            "SIDEBAR_PERSON_DETAIL_URL_TEMPLATE": "https://www.youcangogogo.com/person/{person_id}",
-            "MCP_BEARER_TOKEN": "mcp-token",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    with build_pg_test_app(
+        tmp_path,
+        SIDEBAR_PERSON_DETAIL_URL_TEMPLATE="https://www.youcangogogo.com/person/{person_id}",
+        MCP_BEARER_TOKEN="mcp-token",
+    ) as app:
+        yield app
 
 
 @pytest.fixture()

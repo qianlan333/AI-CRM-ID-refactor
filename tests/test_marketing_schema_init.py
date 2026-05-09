@@ -118,6 +118,7 @@ def test_init_db_backfills_missing_marketing_automation_tables_on_existing_sqlit
         assert REQUIRED_TABLES.issubset(table_names)
 
 
+@pytest.mark.skip(reason="2026-05 砍 SQLite 后此 test 测的 SQLite migration 路径不再适用（AUTOINCREMENT / DROP TABLE 等 SQLite-only 语法）")
 def test_init_db_adds_program_id_before_schema_indexes_on_existing_sqlite_db(app):
     with app.app_context():
         db = get_db()
@@ -190,6 +191,7 @@ def test_init_db_adds_program_id_before_schema_indexes_on_existing_sqlite_db(app
         assert "idx_automation_workflow_execution_program" in index_names
 
 
+@pytest.mark.skip(reason="2026-05 砍 SQLite 后此 test 测的 SQLite migration 路径不再适用（DROP TABLE 等 SQLite-only 语法）")
 def test_init_db_rebuilds_legacy_marketing_state_current_without_fake_external_userid(app):
     with app.app_context():
         init_db()

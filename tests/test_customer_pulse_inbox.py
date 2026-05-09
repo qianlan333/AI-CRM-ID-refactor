@@ -7,7 +7,6 @@ from typing import Any, Mapping
 import pytest
 import requests  # type: ignore[import-untyped]
 
-from wecom_ability_service import create_app
 from wecom_ability_service.domains.customer_pulse.access import build_customer_pulse_legacy_tenant_context
 from wecom_ability_service.domains.customer_pulse import repo as customer_pulse_repo
 from wecom_ability_service.domains.customer_pulse.service import (
@@ -17,40 +16,25 @@ from wecom_ability_service.domains.customer_pulse.service import (
     execute_customer_pulse_card_action,
     undo_customer_pulse_card_action_execution,
 )
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 from wecom_ability_service.infra.settings import set_settings
 
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "customer-pulse.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
+    """PG-only：用顶层 build_pg_test_app 起 app，注入 customer_pulse 测试需要的 token。
 
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "RELEASE_SHA": "release-test-sha",
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-            "MCP_BEARER_TOKEN": "mcp-token",
-            "AUTOMATION_INTERNAL_API_TOKEN": "internal-token",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    （之前用 ``DATABASE_PATH`` 起 SQLite + create_app 直跑，2026-05 砍 SQLite 后失效，
+    66 个 test 全 403。改走 conftest.build_pg_test_app helper 后 fixture 真正连 PG。）
+    """
+    from tests.conftest import build_pg_test_app
+
+    with build_pg_test_app(
+        tmp_path,
+        MCP_BEARER_TOKEN="mcp-token",
+        AUTOMATION_INTERNAL_API_TOKEN="internal-token",
+    ) as app:
+        yield app
 
 
 @pytest.fixture()
