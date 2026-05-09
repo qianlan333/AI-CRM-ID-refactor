@@ -517,7 +517,7 @@ def test_customer_marketing_state_current_keeps_single_pool_row(app, monkeypatch
                 last_message_at, last_batch_id, last_batch_status, last_batch_window_start, last_batch_window_end,
                 last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
             )
-            VALUES (NULL, ?, 'signup_conversion_v1', 'pool', 'new_user', 0, 0, 1, 'pool', '', '', '', NULL, '', '', '', '', '2026-04-04 09:00:00', '', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (NULL, ?, 'signup_conversion_v1', 'pool', 'new_user', false, false, true, 'pool', '', '', '', NULL, '', '', '', '', '2026-04-04 09:00:00', NULL, '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             ("wm_pool_single",),
         )
