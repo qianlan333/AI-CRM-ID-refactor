@@ -49,7 +49,7 @@ def list_customer_pulse_candidate_external_userids(*, limit: int = 100) -> list[
                 FROM automation_reply_monitor_queue
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_contact_id AS external_userid, COALESCE(created_at, '') AS last_seen_at
+                SELECT external_contact_id AS external_userid, COALESCE(created_at::text, \'\') AS last_seen_at
                 FROM automation_agent_output
                 WHERE external_contact_id <> ''
                   AND output_type IN ('next_action_suggestion', 'agent_reply_draft', 'agent_reply_final')
@@ -62,15 +62,15 @@ def list_customer_pulse_candidate_external_userids(*, limit: int = 100) -> list[
                 FROM customer_value_segment_current
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(created_at::text, \'\') AS last_seen_at
                 FROM contact_tags
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(submitted_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(submitted_at::text, \'\') AS last_seen_at
                 FROM questionnaire_submissions
                 WHERE external_userid <> ''
                 UNION ALL
-                SELECT external_userid, COALESCE(created_at, '') AS last_seen_at
+                SELECT external_userid, COALESCE(created_at::text, \'\') AS last_seen_at
                 FROM questionnaire_scrm_apply_logs
                 WHERE external_userid <> ''
                 UNION ALL
@@ -105,10 +105,10 @@ def get_customer_pulse_customer_summary(external_userid: str) -> dict[str, Any]:
             COALESCE(NULLIF(contacts.owner_userid, ''), NULLIF(follow_user.user_id, ''), NULLIF(identity_map.follow_user_userid, ''), '') AS owner_userid,
             COALESCE(NULLIF(owner_role.display_name, ''), COALESCE(NULLIF(contacts.owner_userid, ''), NULLIF(follow_user.user_id, ''), NULLIF(identity_map.follow_user_userid, ''), '')) AS owner_display_name,
             COALESCE(people.mobile, '') AS mobile,
-            COALESCE(contacts.updated_at, '') AS contact_updated_at,
+            COALESCE(contacts.updated_at::text, '') AS contact_updated_at,
             COALESCE(bindings.first_owner_userid, '') AS first_owner_userid,
             COALESCE(bindings.last_owner_userid, '') AS last_owner_userid,
-            COALESCE(bindings.updated_at, '') AS binding_updated_at
+            COALESCE(bindings.updated_at::text, '') AS binding_updated_at
         FROM (SELECT 1 AS anchor) seed
         LEFT JOIN contacts ON contacts.external_userid = ?
         LEFT JOIN external_contact_bindings bindings ON bindings.external_userid = ?

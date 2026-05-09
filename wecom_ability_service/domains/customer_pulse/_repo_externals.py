@@ -77,7 +77,7 @@ def get_customer_owner_binding(external_userid: str) -> dict[str, Any] | None:
             external_userid,
             COALESCE(first_owner_userid, '') AS first_owner_userid,
             COALESCE(last_owner_userid, '') AS last_owner_userid,
-            COALESCE(updated_at, '') AS updated_at
+            COALESCE(updated_at::text, \'\') AS updated_at
         FROM external_contact_bindings
         WHERE external_userid = ?
         LIMIT 1
@@ -128,7 +128,7 @@ def list_recent_questionnaire_rows(external_userid: str, *, limit: int = 5) -> l
             COALESCE(q.title, '') AS questionnaire_title,
             COALESCE(apply_logs.status, '') AS scrm_apply_status,
             COALESCE(apply_logs.error_message, '') AS scrm_apply_error,
-            COALESCE(apply_logs.created_at, '') AS scrm_apply_at
+            COALESCE(apply_logs.created_at::text, \'\') AS scrm_apply_at
         FROM questionnaire_submissions qs
         LEFT JOIN questionnaires q ON q.id = qs.questionnaire_id
         LEFT JOIN questionnaire_scrm_apply_logs apply_logs

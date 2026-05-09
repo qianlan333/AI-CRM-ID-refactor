@@ -140,7 +140,7 @@ def _find_external_userid_by_mobile(mobile: str) -> str:
 
             UNION ALL
 
-            SELECT external_userid, COALESCE(submitted_at, '') AS ordering_value
+            SELECT external_userid, COALESCE(submitted_at::text, \'\') AS ordering_value
             FROM questionnaire_submissions
             WHERE mobile_snapshot = ? AND external_userid IS NOT NULL AND external_userid <> ''
         ) candidates

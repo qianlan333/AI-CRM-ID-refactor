@@ -803,7 +803,7 @@ def list_pool_batch_send_candidates(pool_key: str) -> list[dict[str, Any]]:
             current.id AS marketing_state_id,
             current.person_id,
             COALESCE(current.external_userid, '') AS external_userid,
-            COALESCE(current.entered_at, '') AS entered_at,
+            COALESCE(current.entered_at::text, \'\') AS entered_at,
             COALESCE(current.last_activation_at, '') AS last_activation_at,
             COALESCE(current.state_payload_json, '{}') AS state_payload_json,
             COALESCE(contact.customer_name, '') AS customer_name,
