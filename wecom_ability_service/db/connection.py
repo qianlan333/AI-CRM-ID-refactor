@@ -1,9 +1,36 @@
 from __future__ import annotations
 
+from datetime import datetime, date, time
+
 from flask import current_app, g
 
 import psycopg
 from psycopg.rows import dict_row
+
+
+def _strip_tz(value):
+    """Strip timezone info from PG datetime values.
+
+    psycopg 3 returns ``datetime`` with ``tzinfo=UTC`` for TIMESTAMPTZ columns.
+    Old SQLite code (and all existing ``_normalized_text / str()`` call-sites)
+    expect naive datetimes or plain ``'YYYY-MM-DD HH:MM:SS'`` strings.
+    Normalising at the cursor level avoids touching 35+ ``_normalized_text``
+    copies across the codebase.
+    """
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    return value
+
+
+def _dict_row_strip_tz(cursor):
+    """Row factory: ``dict_row`` + strip timezone from all datetime values."""
+    base_factory = dict_row(cursor)
+
+    def row_maker(values):
+        row = base_factory(values)
+        return {k: _strip_tz(v) for k, v in row.items()}
+
+    return row_maker
 
 
 def get_db_backend() -> str:
@@ -30,7 +57,7 @@ class PostgresCursor:
 
     def __init__(self, conn):
         self._conn = conn
-        self._cursor = conn.cursor(row_factory=dict_row)
+        self._cursor = conn.cursor(row_factory=_dict_row_strip_tz)
         self._last_was_insert = False
         self.lastrowid = None
 
@@ -127,7 +154,7 @@ class PostgresConnection:
         return wrapper
 
     def executemany(self, sql: str, seq_of_params: list[tuple] | list[list]):
-        cursor = self._conn.cursor(row_factory=dict_row)
+        cursor = self._conn.cursor(row_factory=_dict_row_strip_tz)
         cursor.executemany(_translate_sql(sql), seq_of_params)
         return cursor
 

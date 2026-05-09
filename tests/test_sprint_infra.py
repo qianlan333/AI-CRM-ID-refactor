@@ -7,8 +7,7 @@ from __future__ import annotations
 import pytest
 import requests
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 from wecom_ability_service.db import dialect as db_dialect
 from wecom_ability_service.infra import cache as infra_cache
 from wecom_ability_service.infra import http_client
@@ -17,17 +16,10 @@ from wecom_ability_service.infra import outbox
 
 @pytest.fixture()
 def app(tmp_path):
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(tmp_path / "infra.sqlite3"),
-            "WECOM_CORP_ID": "test_corp",
-            "WECOM_SECRET": "test_secret",
-        }
-    )
-    with app.app_context():
-        init_db()
-    return app
+    from tests.conftest import build_pg_test_app
+
+    with build_pg_test_app(tmp_path) as app:
+        yield app
 
 
 # -------- dialect ----------------------------------------------------------
