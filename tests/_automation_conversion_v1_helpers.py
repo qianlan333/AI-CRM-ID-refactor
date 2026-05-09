@@ -509,7 +509,7 @@ def _configure_reply_monitor(
             VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
-                1 if enabled else 0,
+                bool(enabled),
                 last_capture_cursor,
                 last_capture_at,
                 last_capture_status,
