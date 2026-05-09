@@ -163,7 +163,7 @@ def _seed_customer_profile_fixture(app) -> None:
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (1, 'q-1', '客户问卷', '客户问卷', '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (1, 'q-1', '客户问卷', '客户问卷', '', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.execute(

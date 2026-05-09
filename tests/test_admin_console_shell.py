@@ -81,7 +81,7 @@ def _seed_dashboard_data(app):
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (1, 'q-1', '问卷一', '问卷一标题', 'desc', 0, '', '2026-04-01 09:00:00', '2026-04-02 09:00:00')
+            VALUES (1, 'q-1', '问卷一', '问卷一标题', 'desc', false, '', '2026-04-01 09:00:00', '2026-04-02 09:00:00')
             """
         )
         db.execute(
