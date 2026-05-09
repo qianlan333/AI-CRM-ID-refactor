@@ -575,7 +575,7 @@ def _seed_dispatch_log(
             automation_key, batch_id, external_userid, dispatch_status, dispatch_channel, dispatch_payload_json,
             dispatch_note, dispatched_at, acked_at, created_at, updated_at
         )
-        VALUES ('signup_conversion_v1', ?, ?, ?, 'text_message', '{}', 'seed dispatch', ?, '', ?, ?)
+        VALUES ('signup_conversion_v1', ?, ?, ?, 'text_message', '{}', 'seed dispatch', ?, NULL, ?, ?)
         """,
         (
             batch_id,
