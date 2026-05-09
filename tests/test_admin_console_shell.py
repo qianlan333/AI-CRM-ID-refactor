@@ -188,7 +188,7 @@ def test_admin_dashboard_apis_return_aggregated_metrics_and_todos(app, client):
 
     assert system_response.status_code == 200
     assert system_payload["ok"] is True
-    assert system_payload["system_status"]["database_backend"] == "sqlite"
+    assert system_payload["system_status"]["database_backend"] == "postgres"
     assert system_payload["system_status"]["release_sha"] == "release-test"
     assert system_payload["system_status"]["callback_enabled"] is True
     assert system_payload["system_status"]["last_archive_sync"]["status"] == "success"

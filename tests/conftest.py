@@ -108,6 +108,7 @@ _TABLES_TO_TRUNCATE = [
     "signup_tag_rules",
     "marketing_automation_question_rules",
     "marketing_automation_configs",
+    "class_term_tag_mapping",
     "user_ops_send_records",
     "user_ops_deferred_jobs",
     # — message batches

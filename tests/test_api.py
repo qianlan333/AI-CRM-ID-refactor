@@ -669,7 +669,7 @@ def test_ops_status(client, app):
     assert data["archived_messages_count"] == 1
     assert data["contacts_count"] == 1
     assert data["group_chats_count"] == 1
-    assert data["database_backend"] == "sqlite"
+    assert data["database_backend"] == "postgres"
     assert data["last_seq"] == 99
     assert data["last_archive_sync_run_id"] == 1
     assert data["last_archive_sync_status"] == "success"
