@@ -382,7 +382,7 @@ def test_automation_conversion_removed_projection_freezes_buttons_and_stage_targ
         external_contact_id="wm_contract_removed",
         phone="13800138304",
         current_pool="removed",
-        in_pool=0,
+        in_pool=False,
         follow_type="focus",
         activation_status="active",
         questionnaire_status="submitted",
