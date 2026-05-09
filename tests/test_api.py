@@ -1096,8 +1096,8 @@ def test_create_private_message_task_supports_pure_attachment_and_text_with_atta
             "SELECT request_payload FROM outbound_tasks ORDER BY id DESC LIMIT 2"
         ).fetchall()
         latest_rows = list(reversed(rows))
-        pure_saved_payload = json.loads(latest_rows[0]["request_payload"])
-        text_saved_payload = json.loads(latest_rows[1]["request_payload"])
+        pure_saved_payload = (latest_rows[0]["request_payload"] if isinstance(latest_rows[0]["request_payload"], (dict, list)) else json.loads(latest_rows[0]["request_payload"]))
+        text_saved_payload = (latest_rows[1]["request_payload"] if isinstance(latest_rows[1]["request_payload"], (dict, list)) else json.loads(latest_rows[1]["request_payload"]))
         assert pure_saved_payload["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-001"}}]
         assert "text" not in pure_saved_payload
         assert text_saved_payload["text"]["content"] == "文本 + 附件"
@@ -3186,9 +3186,9 @@ def test_questionnaire_submit_matches_identity_and_marks_tags(client, app, monke
             """
         ).fetchall()
         assert len(answers) == 3
-        assert json.loads(answers[0]["selected_option_texts_snapshot"]) == ["10-30万"]
+        assert (answers[0]["selected_option_texts_snapshot"] if isinstance(answers[0]["selected_option_texts_snapshot"], (dict, list)) else json.loads(answers[0]["selected_option_texts_snapshot"])) == ["10-30万"]
         assert answers[1]["question_type"] == "multi_choice"
-        assert json.loads(answers[1]["selected_option_texts_snapshot"]) == ["效果", "服务"]
+        assert (answers[1]["selected_option_texts_snapshot"] if isinstance(answers[1]["selected_option_texts_snapshot"], (dict, list)) else json.loads(answers[1]["selected_option_texts_snapshot"])) == ["效果", "服务"]
         assert answers[2]["text_value"] == "客户希望尽快沟通报价。"
 
         tag_rows = db.execute(
@@ -4332,7 +4332,7 @@ def test_questionnaire_external_push_failed_log_can_be_retried_and_reuses_origin
         assert rows[1]["status"] == "success"
         assert int(rows[1]["response_status_code"]) == 200
         assert rows[1]["target_url"] == rows[0]["target_url"]
-        assert json.loads(rows[1]["request_payload"]) == original_payload
+        assert (rows[1]["request_payload"] if isinstance(rows[1]["request_payload"], (dict, list)) else json.loads(rows[1]["request_payload"])) == original_payload
 
 
 def test_questionnaire_external_push_failed_log_retry_can_fail_again(client, app, monkeypatch):

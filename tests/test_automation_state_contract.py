@@ -276,7 +276,7 @@ def _seed_trial_opening_fact(app, *, external_userid: str, mobile: str, opened_a
                 mobile, external_userid, customer_name, owner_userid, current_status, is_wecom_bound,
                 activation_status, activation_remark, class_term_label, source_type, created_at, updated_at
             )
-            VALUES (?, ?, ?, 'sales_01', 'lead_trial', 1, 'not_activated', '', '', 'test_seed', ?, ?)
+            VALUES (?, ?, ?, 'sales_01', 'lead_trial', true, 'not_activated', '', '', 'test_seed', ?, ?)
             """,
             (mobile, external_userid, external_userid, opened_at, opened_at),
         )

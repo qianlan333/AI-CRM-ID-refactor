@@ -260,7 +260,7 @@ def seed_marketing_timeline_fixture(app) -> None:
                 json.dumps({"operator": "openclaw", "source": "openclaw"}, ensure_ascii=False),
                 "dispatched to openclaw",
                 "2026-03-24 10:00:00",
-                "",
+                None,
                 "2026-03-24 10:00:00",
                 "2026-03-24 10:00:01",
             ),

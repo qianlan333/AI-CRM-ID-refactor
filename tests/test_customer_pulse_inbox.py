@@ -2112,10 +2112,10 @@ def test_customer_pulse_execution_records_learning_feedback_and_writeback_metric
     assert metric_map["draft_confirmed"] == 2
     assert metric_map["writeback_success"] == 2
     assert metric_map["action_executed"] == 2
-    latest_labels = json.loads(execution_rows[0]["audit_labels_json"])
-    first_labels = json.loads(execution_rows[1]["audit_labels_json"])
-    latest_result = json.loads(execution_rows[0]["result_payload_json"])
-    first_result = json.loads(execution_rows[1]["result_payload_json"])
+    latest_labels = (execution_rows[0]["audit_labels_json"] if isinstance(execution_rows[0]["audit_labels_json"], (dict, list)) else json.loads(execution_rows[0]["audit_labels_json"]))
+    first_labels = (execution_rows[1]["audit_labels_json"] if isinstance(execution_rows[1]["audit_labels_json"], (dict, list)) else json.loads(execution_rows[1]["audit_labels_json"]))
+    latest_result = (execution_rows[0]["result_payload_json"] if isinstance(execution_rows[0]["result_payload_json"], (dict, list)) else json.loads(execution_rows[0]["result_payload_json"]))
+    first_result = (execution_rows[1]["result_payload_json"] if isinstance(execution_rows[1]["result_payload_json"], (dict, list)) else json.loads(execution_rows[1]["result_payload_json"]))
     assert "human_edited" in latest_labels
     assert latest_result["draft_review_status"] == "human_edited"
     assert "human_confirmed" in first_labels

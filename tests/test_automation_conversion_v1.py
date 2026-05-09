@@ -476,7 +476,7 @@ def test_run_due_conversion_workflows_does_not_backfill_missed_scheduled_day(app
 
     assert result["total_success_count"] == 0
     assert dispatched == []
-    summary = json.loads(execution_rows[0]["summary_json"])
+    summary = (execution_rows[0]["summary_json"] if isinstance(execution_rows[0]["summary_json"], (dict, list)) else json.loads(execution_rows[0]["summary_json"]))
     assert summary["result"]["success_count"] == 0
     assert summary["diagnostics"]["day_offset_miss_count"] == 1
     assert "day_offset_not_due" in summary["zero_hit_reasons"]
@@ -2301,7 +2301,7 @@ def test_workflow_node_detail_masks_manual_layered_dirty_standard_content_and_re
         get_db().execute(
             """
             UPDATE automation_workflow_node_content
-            SET standard_content_text = ?, fallback_to_standard_content = 1
+            SET standard_content_text = ?, fallback_to_standard_content = true
             WHERE node_id = ?
             """,
             ("历史脏标准内容", node_id),
@@ -2796,7 +2796,7 @@ def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standa
         get_db().execute(
             """
             UPDATE automation_workflow_node_content
-            SET standard_content_text = ?, fallback_to_standard_content = 1
+            SET standard_content_text = ?, fallback_to_standard_content = true
             WHERE node_id = ?
             """,
             ("历史回退内容", node_id),
@@ -3605,7 +3605,7 @@ def test_openclaw_push_accepts_and_enforces_cooldown(app, client, monkeypatch):
             "SELECT status, request_payload FROM automation_ai_push_log ORDER BY id ASC"
         ).fetchall()
         assert [row["status"] for row in logs] == ["accepted", "cooldown_blocked"]
-        accepted_payload = json.loads(logs[0]["request_payload"])
+        accepted_payload = (logs[0]["request_payload"] if isinstance(logs[0]["request_payload"], (dict, list)) else json.loads(logs[0]["request_payload"]))
         assert accepted_payload["externalContactId"] == "wm_ai_001"
         assert accepted_payload["currentPool"] == captured["payload"]["currentPool"]
         assert accepted_payload["currentStage"] == captured["payload"]["currentStage"]
@@ -9804,7 +9804,7 @@ def test_router_pending_callback_check_creates_alert_output_without_duplicate_al
     assert rerun_result["existing_alert_count"] >= 1
     assert len(rows) == 1
     assert dict(rows[0])["applied_status"] == "alerted"
-    assert json.loads(rows[0]["normalized_output_json"])["threshold_minutes"] == 1
+    assert (rows[0]["normalized_output_json"] if isinstance(rows[0]["normalized_output_json"], (dict, list)) else json.loads(rows[0]["normalized_output_json"]))["threshold_minutes"] == 1
 
     response = client.post(
         "/api/admin/automation-conversion/router-pending-callback-check",

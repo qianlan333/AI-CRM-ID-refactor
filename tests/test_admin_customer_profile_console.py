@@ -357,7 +357,7 @@ def _seed_customer_pulse_output(
                 "active_focus",
                 confidence,
                 reason,
-                1,
+                True,
                 "generated",
                 created_at,
             ),

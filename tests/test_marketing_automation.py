@@ -902,15 +902,15 @@ def test_send_pool_private_message_mcp_tool_supports_multiple_owners_and_writes_
             """
         ).fetchall()
         assert len(rows) == 5
-        assert json.loads(rows[0]["filter_snapshot_json"])["pool_key"] == "new_user"
-        assert json.loads(rows[0]["filter_snapshot_json"])["owner_userid"] == "QianLan"
-        assert json.loads(rows[1]["filter_snapshot_json"])["pool_key"] == "new_user"
-        assert json.loads(rows[1]["filter_snapshot_json"])["owner_userid"] == "sales_02"
-        assert json.loads(rows[2]["filter_snapshot_json"])["pool_key"] == "inactive_normal"
-        assert json.loads(rows[3]["filter_snapshot_json"])["pool_key"] == "active_focus"
-        assert json.loads(rows[3]["filter_snapshot_json"])["owner_userid"] == "QianLan"
-        assert json.loads(rows[4]["filter_snapshot_json"])["pool_key"] == "active_focus"
-        assert json.loads(rows[4]["filter_snapshot_json"])["owner_userid"] == "sales_02"
+        assert (rows[0]["filter_snapshot_json"] if isinstance(rows[0]["filter_snapshot_json"], (dict, list)) else json.loads(rows[0]["filter_snapshot_json"]))["pool_key"] == "new_user"
+        assert (rows[0]["filter_snapshot_json"] if isinstance(rows[0]["filter_snapshot_json"], (dict, list)) else json.loads(rows[0]["filter_snapshot_json"]))["owner_userid"] == "QianLan"
+        assert (rows[1]["filter_snapshot_json"] if isinstance(rows[1]["filter_snapshot_json"], (dict, list)) else json.loads(rows[1]["filter_snapshot_json"]))["pool_key"] == "new_user"
+        assert (rows[1]["filter_snapshot_json"] if isinstance(rows[1]["filter_snapshot_json"], (dict, list)) else json.loads(rows[1]["filter_snapshot_json"]))["owner_userid"] == "sales_02"
+        assert (rows[2]["filter_snapshot_json"] if isinstance(rows[2]["filter_snapshot_json"], (dict, list)) else json.loads(rows[2]["filter_snapshot_json"]))["pool_key"] == "inactive_normal"
+        assert (rows[3]["filter_snapshot_json"] if isinstance(rows[3]["filter_snapshot_json"], (dict, list)) else json.loads(rows[3]["filter_snapshot_json"]))["pool_key"] == "active_focus"
+        assert (rows[3]["filter_snapshot_json"] if isinstance(rows[3]["filter_snapshot_json"], (dict, list)) else json.loads(rows[3]["filter_snapshot_json"]))["owner_userid"] == "QianLan"
+        assert (rows[4]["filter_snapshot_json"] if isinstance(rows[4]["filter_snapshot_json"], (dict, list)) else json.loads(rows[4]["filter_snapshot_json"]))["pool_key"] == "active_focus"
+        assert (rows[4]["filter_snapshot_json"] if isinstance(rows[4]["filter_snapshot_json"], (dict, list)) else json.loads(rows[4]["filter_snapshot_json"]))["owner_userid"] == "sales_02"
         assert [(row["selected_count"], row["eligible_count"], row["sent_count"]) for row in rows] == [
             (1, 1, 1),
             (1, 1, 1),
@@ -1016,11 +1016,11 @@ def test_send_pool_private_message_mcp_tool_supports_images_and_keeps_records(ap
         ).fetchall()
         latest_rows = list(reversed(rows))
         assert len(latest_rows) == 2
-        assert json.loads(latest_rows[0]["filter_snapshot_json"])["owner_userid"] == "QianLan"
+        assert (latest_rows[0]["filter_snapshot_json"] if isinstance(latest_rows[0]["filter_snapshot_json"], (dict, list)) else json.loads(latest_rows[0]["filter_snapshot_json"]))["owner_userid"] == "QianLan"
         assert latest_rows[0]["content_preview"] == ""
         assert int(latest_rows[0]["image_count"]) == 1
         assert (latest_rows[0]["selected_count"], latest_rows[0]["eligible_count"], latest_rows[0]["sent_count"]) == (1, 1, 1)
-        assert json.loads(latest_rows[1]["filter_snapshot_json"])["owner_userid"] == "sales_02"
+        assert (latest_rows[1]["filter_snapshot_json"] if isinstance(latest_rows[1]["filter_snapshot_json"], (dict, list)) else json.loads(latest_rows[1]["filter_snapshot_json"]))["owner_userid"] == "sales_02"
         assert latest_rows[1]["content_preview"] == "图片和文本一起发"
         assert int(latest_rows[1]["image_count"]) == 1
         assert (latest_rows[1]["selected_count"], latest_rows[1]["eligible_count"], latest_rows[1]["sent_count"]) == (1, 1, 1)
@@ -1124,11 +1124,11 @@ def test_send_pool_private_message_mcp_tool_supports_attachments_and_keeps_recor
         ).fetchall()
         latest_rows = list(reversed(rows))
         assert len(latest_rows) == 2
-        assert json.loads(latest_rows[0]["filter_snapshot_json"])["owner_userid"] == "QianLan"
+        assert (latest_rows[0]["filter_snapshot_json"] if isinstance(latest_rows[0]["filter_snapshot_json"], (dict, list)) else json.loads(latest_rows[0]["filter_snapshot_json"]))["owner_userid"] == "QianLan"
         assert latest_rows[0]["content_preview"] == ""
         assert int(latest_rows[0]["image_count"]) == 0
         assert (latest_rows[0]["selected_count"], latest_rows[0]["eligible_count"], latest_rows[0]["sent_count"]) == (1, 1, 1)
-        assert json.loads(latest_rows[1]["filter_snapshot_json"])["owner_userid"] == "sales_02"
+        assert (latest_rows[1]["filter_snapshot_json"] if isinstance(latest_rows[1]["filter_snapshot_json"], (dict, list)) else json.loads(latest_rows[1]["filter_snapshot_json"]))["owner_userid"] == "sales_02"
         assert latest_rows[1]["content_preview"] == "文本 + 图片 + 附件一起发"
         assert int(latest_rows[1]["image_count"]) == 1
         assert (latest_rows[1]["selected_count"], latest_rows[1]["eligible_count"], latest_rows[1]["sent_count"]) == (1, 1, 1)
