@@ -252,7 +252,7 @@ def _seed_phase4_data(app) -> None:
                 huangxiaocan_activation_state, class_term_no, class_term_label, first_entry_source, last_entry_source, created_at, updated_at
             )
             VALUES (
-                '13800138000', 'ext-1', '客户一', 'owner-a', 1, 1,
+                '13800138000', 'ext-1', '客户一', 'owner-a', true, true,
                 'activated', 1, '1期', 'student_import', 'student_import', '2026-04-02 09:40:00', '2026-04-02 09:45:00'
             )
             """

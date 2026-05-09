@@ -280,7 +280,7 @@ def _seed_bulk_cards(
                 resolution_note,
                 source_updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pool', 'active_focus', 'focus', ?, 'open', 'high', ?, 'followup', ?, ?, 'generate_reply_draft', ?, ?, ?, ?, ?, ?, '', 1, '', '', '', '', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pool', 'active_focus', 'focus', ?, 'open', 'high', ?, 'followup', ?, ?, 'generate_reply_draft', ?, ?, ?, ?, ?, ?, '', true, '', '', '', '', ?)
             """,
             (
                 f"{tenant_key}:card:{external_userid}",

@@ -215,7 +215,7 @@ def _insert_snapshot_and_card(
             score_breakdown_json, marketing_main_stage, marketing_sub_stage, value_segment,
             due_at, source_updated_at, need_human_confirmation, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'followup', 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, 'focus', ?, ?, 1, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'followup', 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, 'focus', ?, ?, true, CURRENT_TIMESTAMP)
         """,
         (
             snapshot_id,
