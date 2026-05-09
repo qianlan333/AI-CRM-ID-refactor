@@ -297,6 +297,9 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
     from wecom_ability_service.domains.campaigns import scheduler
     from wecom_ability_service.domains.marketing_automation import frequency_budget_service
 
+    # PG 模式下 conftest TRUNCATE 了 automation_frequency_budget，重新 seed
+    frequency_budget_service.ensure_default_budgets()
+
     seg_id = _insert_segment_with_known_member(
         app, segment_code="seg-multi-step", member_id=950, external_id="ext-950",
     )
