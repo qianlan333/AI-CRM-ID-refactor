@@ -42,7 +42,7 @@ def _seed_questionnaire(app, *, questionnaire_id: int = 61) -> dict[str, object]
                 INSERT INTO questionnaire_questions (
                     id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
                 )
-                VALUES (?, ?, 'single_choice', ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, 'single_choice', ?, true, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (question_id, questionnaire_id, f"关键问题{index}", index),
             )

@@ -336,7 +336,7 @@ def test_contract_openclaw_conversion_mcp_reads(client, app, monkeypatch):
                 INSERT INTO questionnaire_questions (
                     id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
                 )
-                VALUES (?, ?, 'single_choice', ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, 'single_choice', ?, true, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (question_id, 901, f"关键题 {index + 1}", index + 1),
             )
