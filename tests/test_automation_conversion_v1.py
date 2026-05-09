@@ -1653,8 +1653,8 @@ def test_apply_dashboard_signup_tag_marks_current_audience_members(app, monkeypa
             """
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active, updated_at)
             VALUES
-                ('tag-lead', '报名引流品', 'lead', 1, CURRENT_TIMESTAMP),
-                ('tag-paid', '已报名999', 'paid_999', 1, CURRENT_TIMESTAMP)
+                ('tag-lead', '报名引流品', 'lead', true, CURRENT_TIMESTAMP),
+                ('tag-paid', '已报名999', 'paid_999', true, CURRENT_TIMESTAMP)
             """
         )
         db.commit()
