@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from ...db import get_db, get_db_backend
@@ -41,7 +41,8 @@ _DEFAULT_SEND_TIME = "09:00"
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    # 同 scheduler._now_iso —— 必须 timezone-aware，否则 PG TIMESTAMPTZ 解读错位
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _new_campaign_code() -> str:
