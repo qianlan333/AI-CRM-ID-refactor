@@ -1603,7 +1603,7 @@ def test_customer_timeline_aggregates_events_with_desc_paging_and_messages_compa
                 "线索摸底",
                 "线索摸底问卷",
                 "",
-                0,
+                False,
                 "https://example.com/next",
                 "2026-03-19 10:00:00",
                 "2026-03-19 10:00:00",

@@ -8221,7 +8221,7 @@ def test_manual_send_respects_historical_send_records_before_touch_log(app, clie
                 sent_count, skipped_count, skipped_reasons_json, include_do_not_disturb, content_preview,
                 image_count, sender_userids_json, filter_snapshot_json, operator, status, created_at
             )
-            VALUES ('private_message', '[708]', ?, 1, 1, 1, 0, '{}', 0, '历史触达', 0, '["HuangYouCan"]', ?, 'legacy', 'sent', CURRENT_TIMESTAMP)
+            VALUES ('private_message', '[708]', ?, 1, 1, 1, 0, '{}', false, '历史触达', 0, '["HuangYouCan"]', ?, 'legacy', 'sent', CURRENT_TIMESTAMP)
             """,
             (
                 json.dumps(
