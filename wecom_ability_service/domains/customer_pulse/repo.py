@@ -1,13 +1,35 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ...db import get_db
-from .access import customer_pulse_default_tenant_key
-from ._repo_helpers import *  # noqa: F401,F403  shared helpers — 阶段 5.1
-from ._repo_externals import *  # noqa: F401,F403  cross-domain glue — 阶段 5.1
-from ._repo_segments import *  # noqa: F401,F403  customer_value_segment — 阶段 5.1
+from ._repo_helpers import (  # noqa: F401  shared helpers — 阶段 5.1
+    CUSTOMER_PULSE_DEFAULT_TENANT_KEY,
+    _fetchall_dict,
+    _fetchone_dict,
+    _json_storage,
+    _normalized_text,
+    _required_tenant_key,
+)
+from ._repo_externals import (  # noqa: F401  cross-domain glue (re-exported) — 阶段 5.1
+    get_class_user_status_current,
+    get_conversion_dispatch_ref_row,
+    get_customer_marketing_state_current,
+    get_customer_marketing_state_ref_row,
+    get_customer_owner_binding,
+    get_external_contact_binding_ref_row,
+    get_latest_ai_output_row,
+    get_latest_reply_monitor_row,
+    get_questionnaire_submission_ref_row,
+    get_reply_monitor_row_by_id,
+    list_contact_tag_rows,
+    list_recent_archived_message_rows,
+    list_recent_conversion_dispatch_rows,
+    list_recent_questionnaire_rows,
+)
+from ._repo_segments import (  # noqa: F401  customer_value_segment (re-exported) — 阶段 5.1
+    get_customer_value_segment_current,
+)
 
 
 
