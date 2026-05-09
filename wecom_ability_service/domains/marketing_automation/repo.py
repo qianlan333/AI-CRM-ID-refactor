@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Any
 
@@ -15,34 +14,14 @@ from ...customer_center.repo import (
     fetch_tag_map,
 )
 from ...db import get_db, get_db_backend
-
-
-def _db_bool(value: bool) -> bool | int:
-    return value if get_db_backend() == "postgres" else (1 if value else 0)
-
-
-def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
-    row = get_db().execute(sql, params).fetchone()
-    return dict(row) if row else None
-
-
-def _fetchall_dicts(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    rows = get_db().execute(sql, params).fetchall()
-    return [dict(row) for row in rows]
-
-
-def _normalized_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _nullable_timestamp_text(value: Any) -> str | None:
-    normalized = _normalized_text(value)
-    return normalized or None
-
-
-def _json_dumps(value: Any) -> str:
-    return json.dumps({} if value is None else value, ensure_ascii=False)
-
+from ._repo_helpers import (  # noqa: F401  shared helpers — 阶段 5.2
+    _db_bool,
+    _fetchall_dicts,
+    _fetchone_dict,
+    _json_dumps,
+    _normalized_text,
+    _nullable_timestamp_text,
+)
 
 def get_owner_role_item(userid: str) -> dict[str, Any]:
     normalized_userid = _normalized_text(userid)
