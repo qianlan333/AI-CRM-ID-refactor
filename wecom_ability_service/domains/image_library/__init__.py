@@ -130,14 +130,8 @@ def _insert_image(*, name: str, file_name: str, source: str, source_url: str,
                   data_base64: str, mime_type: str, file_size: int) -> int:
     if source not in _VALID_SOURCES:
         raise ValueError(f"invalid source: {source}")
-    from ...db import get_db_backend
-
-    is_pg = get_db_backend() == "postgres"
     db = get_db()
     cur = db.cursor()
-    # PG: thumb_media_id_expires_at 是 TIMESTAMPTZ nullable，写入 '' 抛 InvalidDatetimeFormat
-    # 必须用 NULL；SQLite: 是 TEXT NOT NULL DEFAULT ''，沿用空字符串
-    expires_placeholder = None if is_pg else ""
     cur.execute(
         """
         INSERT INTO image_library
@@ -153,8 +147,8 @@ def _insert_image(*, name: str, file_name: str, source: str, source_url: str,
             data_base64 or "",
             (mime_type or "image/png").strip()[:80],
             int(file_size or 0),
-            expires_placeholder,
-            True if is_pg else 1,  # enabled: PG BOOLEAN / SQLite INTEGER
+            None,  # thumb_media_id_expires_at TIMESTAMPTZ：未设置写 NULL
+            True,  # enabled BOOLEAN
         ),
     )
     db.commit()

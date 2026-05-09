@@ -1,25 +1,17 @@
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
-
 from flask import current_app, g
 
-try:
-    import psycopg
-    from psycopg.rows import dict_row
-except ImportError:  # pragma: no cover - sqlite mode does not require psycopg locally
-    psycopg = None
-    dict_row = None
-
-
-def dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
-    return {column[0]: row[idx] for idx, column in enumerate(cursor.description)}
+import psycopg
+from psycopg.rows import dict_row
 
 
 def get_db_backend() -> str:
-    database_url = str(current_app.config.get("DATABASE_URL", "") or "").strip()
-    return "postgres" if database_url else "sqlite"
+    """历史接口，2026-05 砍 SQLite 后总返回 ``"postgres"``。
+
+    保留函数为了不动 50+ 处 caller。新代码不需要再调用。
+    """
+    return "postgres"
 
 
 def _translate_sql(sql: str) -> str:
@@ -147,30 +139,20 @@ class PostgresConnection:
 
 
 def _connect_postgres():
-    if psycopg is None:
-        raise RuntimeError("psycopg is required for PostgreSQL mode. Install requirements first.")
-    conn = psycopg.connect(current_app.config["DATABASE_URL"], autocommit=False)
+    database_url = str(current_app.config.get("DATABASE_URL", "") or "").strip()
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is required. SQLite has been removed (2026-05). "
+            "Run a local Postgres (e.g. `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=test postgres:16`) "
+            "and set DATABASE_URL=postgresql://...."
+        )
+    conn = psycopg.connect(database_url, autocommit=False)
     return PostgresConnection(conn)
-
-
-def _connect_sqlite():
-    db_path = Path(current_app.config["DATABASE_PATH"])
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    busy_timeout_ms = int(current_app.config.get("SQLITE_BUSY_TIMEOUT_MS", 5000))
-    conn = sqlite3.connect(db_path, timeout=max(busy_timeout_ms / 1000, 1))
-    conn.row_factory = dict_factory
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
 
 
 def get_db():
     if "db" not in g:
-        if get_db_backend() == "postgres":
-            g.db = _connect_postgres()
-        else:
-            g.db = _connect_sqlite()
+        g.db = _connect_postgres()
     return g.db
 
 

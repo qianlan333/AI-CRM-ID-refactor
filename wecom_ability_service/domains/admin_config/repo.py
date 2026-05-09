@@ -6,15 +6,14 @@ from typing import Any
 from ...db import get_db, get_db_backend
 
 
-def _db_bool(value: bool) -> bool | int:
-    return value if get_db_backend() == "postgres" else (1 if value else 0)
+def _db_bool(value: bool) -> bool:
+    return bool(value)
 
 
 def _fetch_inserted_id(cursor) -> int:
-    if get_db_backend() == "postgres":
-        row = cursor.fetchone() or {}
-        return int((row or {}).get("id") or 0)
-    return int(cursor.lastrowid)
+    """PG INSERT ... RETURNING id 后从 cursor.fetchone() 拿。"""
+    row = cursor.fetchone() or {}
+    return int((row or {}).get("id") or 0)
 
 
 def _json_loads(value: Any, *, default: Any) -> Any:
@@ -176,7 +175,7 @@ def upsert_class_term_tag_mapping(
             updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """ + (" RETURNING id" if get_db_backend() == "postgres" else "") + """
+        RETURNING id
         """,
         (
             strategy_id,
@@ -347,7 +346,7 @@ def insert_admin_operation_log(
             created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """ + (" RETURNING id" if get_db_backend() == "postgres" else "") + """
+        RETURNING id
         """,
         (
             str(operator or "").strip(),
