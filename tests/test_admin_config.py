@@ -264,7 +264,7 @@ def _seed_marketing_dispatch_history(app) -> None:
                     last_message_at, last_batch_id, last_batch_status, last_batch_window_start, last_batch_window_end,
                     last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
                 )
-                VALUES (?, 'signup_conversion_v1', ?, ?, false, ?, false, ?, '', '', '', ?, ?, '', '', '', ?, '', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, 'signup_conversion_v1', ?, ?, false, ?, false, ?, '', '', '', ?, ?, '', '', '', ?, NULL, '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (
                     item["external_userid"],

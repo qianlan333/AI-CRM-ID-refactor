@@ -201,7 +201,7 @@ def _seed_customer_profile_fixture(app) -> None:
             VALUES (
                 1, 'ext-1', 'signup_conversion_v1', 'pool', 'active_focus', true, false, true, 'pool',
                 ?, '', ?, NULL, '', '', '',
-                ?, ?, '', '',
+                ?, ?, NULL, '',
                 ?,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
