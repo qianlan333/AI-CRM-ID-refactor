@@ -194,7 +194,7 @@ def test_wecom_member_without_roles_cannot_login(app, client, monkeypatch):
                 wecom_userid, wecom_corpid, display_name, is_active, login_enabled, admin_level,
                 auth_source, created_at, updated_at
             )
-            VALUES (?, ?, ?, 1, 1, 'admin', 'wecom_sso', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, true, true, 'admin', 'wecom_sso', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             ("no.roles", app.config["WECOM_CORP_ID"], "无角色成员"),
         )

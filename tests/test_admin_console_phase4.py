@@ -97,7 +97,7 @@ def _seed_phase4_data(app) -> None:
             INSERT INTO wecom_external_contact_follow_users (
                 corp_id, external_userid, user_id, relation_status, is_primary, remark, description, raw_follow_user
             )
-            VALUES ('ww-test', 'ext-1', 'owner-a', 'active', 1, '主跟进', '一线顾问', '{}')
+            VALUES ('ww-test', 'ext-1', 'owner-a', 'active', true, '主跟进', '一线顾问', '{}')
             """
         )
         db.execute(
