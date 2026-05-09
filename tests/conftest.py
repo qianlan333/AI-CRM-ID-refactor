@@ -95,9 +95,14 @@ _TABLES_TO_TRUNCATE = [
     # — user_ops
     "user_ops_lead_pool_history",
     "user_ops_lead_pool_current",
+    "user_ops_pool_history",
+    "user_ops_pool_current",
     "user_ops_huangxiaocan_activation_source",
     "user_ops_send_records",
     "user_ops_deferred_jobs",
+    # — message batches
+    "message_batch_items",
+    "message_batches",
     # — archive / system
     "archived_messages",
     "outbound_tasks",
