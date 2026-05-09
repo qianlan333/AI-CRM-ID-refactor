@@ -1323,7 +1323,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "顾问一号", "sales", 1),
+            ("sales_01", "顾问一号", "sales", True),
         )
         db.execute(
             """
@@ -1936,7 +1936,7 @@ def test_contacts_normalize_description(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "销售一号", "sales", 1),
+            ("sales_01", "销售一号", "sales", True),
         )
         db.execute(
             """
@@ -2037,7 +2037,7 @@ def test_mcp_tools_and_message_batches(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "销售一号", "sales", 1),
+            ("sales_01", "销售一号", "sales", True),
         )
         db.execute(
             """
@@ -2304,7 +2304,7 @@ def test_mcp_resolve_customer_and_customer_ref_mobile(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "销售一号", "sales", 1),
+            ("sales_01", "销售一号", "sales", True),
         )
         db.execute(
             """
@@ -5472,7 +5472,7 @@ def test_identity_resolve_supports_unionid(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "顾问一号", "sales", 1),
+            ("sales_01", "顾问一号", "sales", True),
         )
         db.execute(
             """
@@ -5535,7 +5535,7 @@ def test_customer_center_list_supports_filters(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "顾问一号", "sales", 1),
+            ("sales_01", "顾问一号", "sales", True),
         )
         db.execute(
             """
@@ -5630,7 +5630,7 @@ def test_customers_detail_regression_endpoint_still_works(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_regression", "回归顾问", "sales", 1),
+            ("sales_regression", "回归顾问", "sales", True),
         )
         db.execute(
             """
@@ -5659,7 +5659,7 @@ def test_customer_center_detail_aggregates_sidebar_related_data(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_09", "顾问九号", "sales", 1),
+            ("sales_09", "顾问九号", "sales", True),
         )
         db.execute(
             """
@@ -5751,7 +5751,7 @@ def test_customer_center_detail_customer_pulse_falls_back_to_rule_suggestion_whe
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_pulse", "顾问脉搏", "sales", 1),
+            ("sales_pulse", "顾问脉搏", "sales", True),
         )
         db.execute(
             """

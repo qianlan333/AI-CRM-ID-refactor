@@ -104,7 +104,7 @@ def _seed_customer_profile_fixture(app) -> None:
         db.execute(
             """
             INSERT INTO owner_role_map (userid, display_name, role, active)
-            VALUES ('owner-a', '顾问甲', 'sales', 1)
+            VALUES ('owner-a', '顾问甲', 'sales', true)
             """
         )
         db.execute(

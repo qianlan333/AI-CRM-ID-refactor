@@ -50,7 +50,7 @@ def seed_customer_fixture(app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?), (?, ?, ?, ?)
             """,
-            ("sales_01", "顾问一号", "sales", 1, "sales_02", "顾问二号", "sales", 1),
+            ("sales_01", "顾问一号", "sales", True, "sales_02", "顾问二号", "sales", True),
         )
         db.execute(
             """

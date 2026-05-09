@@ -94,7 +94,7 @@ def _seed_owner_role(db, *, userid: str, display_name: str, role: str = "sales")
     db.execute(
         """
         INSERT INTO owner_role_map (userid, display_name, role, active, updated_at)
-        VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, true, CURRENT_TIMESTAMP)
         """,
         (userid, display_name, role),
     )

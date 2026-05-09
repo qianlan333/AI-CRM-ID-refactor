@@ -108,14 +108,14 @@ def _seed_owner_role(
     userid: str,
     role: str,
     display_name: str | None = None,
-    active: int = 1,
+    active: bool = True,
 ) -> None:
     db.execute(
         """
         INSERT INTO owner_role_map (userid, display_name, role, active, updated_at)
         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
-        (userid, display_name or userid, role, active),
+        (userid, display_name or userid, role, bool(active)),
     )
 
 
