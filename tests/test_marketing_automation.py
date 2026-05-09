@@ -476,7 +476,7 @@ def _seed_activation_source(app, *, mobile: str, updated_at: str):
             INSERT INTO user_ops_huangxiaocan_activation_source (
                 mobile, activation_state, import_batch_id, created_by, is_active, created_at, updated_at
             )
-            VALUES (?, 'activated', 'batch-seed', 'seed', 1, ?, ?)
+            VALUES (?, 'activated', 'batch-seed', 'seed', true, ?, ?)
             """,
             (mobile, updated_at, updated_at),
         )

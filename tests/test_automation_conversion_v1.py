@@ -820,7 +820,7 @@ def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_t
         get_db().execute(
             """
             UPDATE automation_workflow_node_content
-            SET standard_content_text = ?, fallback_to_standard_content = 1, updated_at = CURRENT_TIMESTAMP
+            SET standard_content_text = ?, fallback_to_standard_content = true, updated_at = CURRENT_TIMESTAMP
             WHERE node_id = ?
             """,
             ("没有命中画像时走标准 fallback", node_id),

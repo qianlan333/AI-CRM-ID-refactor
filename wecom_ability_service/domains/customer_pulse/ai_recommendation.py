@@ -145,8 +145,8 @@ def customer_pulse_text_guardrail_hits(value: Any) -> list[str]:
     return violations
 
 
-def _db_bool(value: bool) -> int:
-    return 1 if value else 0
+def _db_bool(value: bool) -> bool:
+    return bool(value)
 
 
 class PulseRecommendationProvider(Protocol):
