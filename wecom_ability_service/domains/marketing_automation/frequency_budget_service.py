@@ -59,14 +59,6 @@ _DEFAULT_BUDGETS = (
         "description": "全局每周每人 ≤ 3 次（防反复骚扰兜底）",
     },
     {
-        "budget_code": "ai_initiated_per_member_weekly",
-        "scope": "channel",
-        "scope_key": "ai_initiated",
-        "window_seconds": 7 * 24 * 3600,
-        "max_count": 2,
-        "description": "AI 触发的每周每人 ≤ 2 次",
-    },
-    {
         "budget_code": "global_per_member_daily",
         "scope": "global",
         "scope_key": "",
@@ -77,8 +69,19 @@ _DEFAULT_BUDGETS = (
 )
 
 
+# 历史曾经默认开启、现在退役的预算 code。
+# 启动时自动把这些行 disable（保留行 + 历史 consumption 引用完整性，不删除），
+# 这样生产 DB 已经 INSERT 过的旧记录不需要运营手工 UPDATE 也能立刻失效。
+_RETIRED_BUDGET_CODES: tuple[str, ...] = (
+    "ai_initiated_per_member_weekly",
+)
+
+
 def ensure_default_budgets() -> None:
     """启动期把默认预算写进库（已存在则不覆盖运营修改的值）。
+
+    同时把 ``_RETIRED_BUDGET_CODES`` 里的历史预算自动 disable —— 仅当 DB 里
+    现存且 enabled 时才 UPDATE，避免覆盖运营手动重新开启的状态。
 
     自带 rollback 防护：调用前如果事务已 abort（PG），先 rollback 清干净。
     """
@@ -122,6 +125,21 @@ def ensure_default_budgets() -> None:
             except Exception:
                 pass
             cursor = db.cursor()  # rollback 后重建 cursor
+    for retired_code in _RETIRED_BUDGET_CODES:
+        try:
+            cursor.execute(
+                "UPDATE automation_frequency_budget SET enabled = ? "
+                "WHERE budget_code = ? AND enabled",
+                (False, retired_code),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("retire_budget failed code=%s err=%s", retired_code, exc)
+            try:
+                if hasattr(db, "rollback"):
+                    db.rollback()
+            except Exception:
+                pass
+            cursor = db.cursor()
     db.commit()
 
 

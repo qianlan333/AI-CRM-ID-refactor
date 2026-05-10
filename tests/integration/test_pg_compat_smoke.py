@@ -10,8 +10,7 @@
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
@@ -99,7 +98,7 @@ def test_pg_bug_184_185_token_timezone_aware_storage(app):
     from wecom_ability_service.db import get_db
     from wecom_ability_service.domains.cloud_orchestrator import approval_token
 
-    issued = approval_token.issue_token(plan_id="test-tz", operator="alice", ttl_seconds=300)
+    approval_token.issue_token(plan_id="test-tz", operator="alice", ttl_seconds=300)
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT expires_at FROM cloud_approval_tokens WHERE plan_id = 'test-tz'")
@@ -142,6 +141,58 @@ def test_pg_bug_202_frequency_budget_select_with_bool(app):
     assert verdict.allowed is True
 
 
+def test_retired_budget_codes_are_disabled_on_init(app):
+    """``_RETIRED_BUDGET_CODES`` 里的旧预算在启动期被自动 disable。
+
+    回归退役 ``ai_initiated_per_member_weekly`` 的迁移路径——生产 DB 老行
+    必须无需运营手工 UPDATE 也能立刻失效，避免每周限 2 次拦死所有
+    AI 主动触发的 campaign。
+    """
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.marketing_automation import frequency_budget_service
+
+    db = get_db()
+    cursor = db.cursor()
+    # 模拟老 DB：手动 INSERT 一条 enabled=true 的 ai_initiated_per_member_weekly
+    cursor.execute(
+        """
+        INSERT INTO automation_frequency_budget
+            (budget_code, scope, scope_key, window_seconds, max_count,
+             description, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "ai_initiated_per_member_weekly",
+            "channel",
+            "ai_initiated",
+            7 * 24 * 3600,
+            2,
+            "legacy row",
+            True,
+        ),
+    )
+    db.commit()
+
+    # 模拟下次应用启动
+    frequency_budget_service.ensure_default_budgets()
+
+    cursor.execute(
+        "SELECT enabled FROM automation_frequency_budget WHERE budget_code = ?",
+        ("ai_initiated_per_member_weekly",),
+    )
+    row = cursor.fetchone()
+    assert row is not None, "保留行（仅 disable 不删除，维持 consumption 引用完整性）"
+    assert not row["enabled"], f"expected enabled=false, got {row['enabled']!r}"
+
+    # 退役预算不再出现在 list_active_budgets 结果里
+    active = frequency_budget_service.list_active_budgets(
+        channels=("wecom_private", "ai_initiated"),
+        program_codes=("campaign",),
+    )
+    codes = [b["budget_code"] for b in active]
+    assert "ai_initiated_per_member_weekly" not in codes
+
+
 # ----------------------------------------------------------------------------
 # Bug 4 + 5 (PR #192/#200): scheduler 的 substr / next_due_at 处理
 # ----------------------------------------------------------------------------
@@ -160,7 +211,7 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
     from wecom_ability_service.domains.campaigns import scheduler
 
     # 造数据：3 个 member 同 segment
-    seg_id = _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=901, external_id="ext-901")
+    _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=901, external_id="ext-901")
     _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=902, external_id="ext-902")
     _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=903, external_id="ext-903")
     db = get_db()

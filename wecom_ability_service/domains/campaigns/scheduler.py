@@ -477,8 +477,11 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
             program_codes=("campaign",),
         )
         if not verdict.allowed:
-            # 把 status 改回 pending，next_due_at 推后 1 小时避免下次 cron 立刻重试
-            retry_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+            # 把 status 改回 pending，next_due_at 推后 1 小时避免下次 cron 立刻重试。
+            # 必须输出 timezone-aware ISO（带 +00:00 后缀），否则 PG TIMESTAMPTZ
+            # 字段会按 server timezone（Asia/Shanghai）解读 naive 字符串 → 倒推
+            # 8 小时变成已过期，下次 cron 立刻又扫到，每 15 分钟死循环。
+            retry_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
             cur.execute(
                 "UPDATE campaign_members SET status = 'pending', next_due_at = ?, "
                 "last_error_text = ?, updated_at = ? WHERE id = ?",
