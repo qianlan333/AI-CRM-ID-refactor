@@ -2310,6 +2310,30 @@ def _init_sqlite(db) -> None:
     # 0004 / 0005 字段已经在 _prepare_sqlite_schema_columns_for_executescript
     # 中、schema 加载之前就 ALTER 完成了，这里不再重复。
 
+    # 0009：image_library 增加 description / tags / category / ai_metadata
+    image_library_columns = _sqlite_table_columns(db, "image_library")
+    if image_library_columns:
+        if "description" not in image_library_columns:
+            db.execute(
+                "ALTER TABLE image_library ADD COLUMN description TEXT NOT NULL DEFAULT ''"
+            )
+        if "tags" not in image_library_columns:
+            db.execute(
+                "ALTER TABLE image_library ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "category" not in image_library_columns:
+            db.execute(
+                "ALTER TABLE image_library ADD COLUMN category TEXT NOT NULL DEFAULT ''"
+            )
+        if "ai_metadata" not in image_library_columns:
+            db.execute(
+                "ALTER TABLE image_library ADD COLUMN ai_metadata TEXT NOT NULL DEFAULT '{}'"
+            )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_image_library_category "
+            "ON image_library (category)"
+        )
+
     db.commit()
 
 

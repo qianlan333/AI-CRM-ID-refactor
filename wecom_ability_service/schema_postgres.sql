@@ -2555,12 +2555,22 @@ CREATE TABLE IF NOT EXISTS image_library (
     thumb_media_id TEXT NOT NULL DEFAULT '',
     thumb_media_id_expires_at TIMESTAMPTZ,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    description TEXT NOT NULL DEFAULT '',
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    category TEXT NOT NULL DEFAULT '',
+    ai_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_image_library_enabled
 ON image_library (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_image_library_category
+ON image_library (category) WHERE category <> '';
+
+CREATE INDEX IF NOT EXISTS idx_image_library_tags_gin
+ON image_library USING GIN (tags);
 
 CREATE INDEX IF NOT EXISTS idx_campaign_members_trace
 ON campaign_members (trace_id, id DESC);
