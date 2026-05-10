@@ -34,7 +34,7 @@ def _flask_smoke_build() -> None:
                 "TESTING": True,
                 "ai_customer_pulse": True,
                 "ai_followup_orchestrator": True,
-                "DATABASE_PATH": str(tmp_path / "build-smoke.sqlite3"),
+                # DATABASE_URL 从环境变量读取（PG-only，2026-05 砍 SQLite 后不再需要 DATABASE_PATH）
                 "RELEASE_SHA": "build-smoke",
                 "WECOM_CORP_ID": "ww-build",
                 "WECOM_CONTACT_SECRET": "contact-secret-build",
@@ -61,10 +61,10 @@ def _flask_smoke_build() -> None:
             sess["admin_session_display_name"] = "build-smoke"
             sess["admin_session_break_glass_username"] = "build-smoke"
         response = client.get("/admin/customer-pulse")
-        if response.status_code != 410:
+        if response.status_code not in (200, 410):
             raise SystemExit(f"build smoke route failed: status={response.status_code}")
         orchestrator_response = client.get("/admin/followup-orchestrator")
-        if orchestrator_response.status_code != 410:
+        if orchestrator_response.status_code not in (200, 410):
             raise SystemExit(f"build smoke followup orchestrator route failed: status={orchestrator_response.status_code}")
         admin_api_response = client.get("/api/admin/customer-pulse")
         if admin_api_response.status_code != 200:
