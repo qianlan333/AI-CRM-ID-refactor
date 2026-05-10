@@ -175,9 +175,10 @@ def test_edit_modal_shows_large_image(source: str):
     assert "object-fit:contain" in source or "object-fit: contain" in source
 
 
-def test_edit_modal_has_readonly_metadata_section(source: str):
-    """大图 + 表单之外，必须展示只读元信息（id / 文件名 / 大小 / 时间等）。"""
-    assert 'id="il-edit-readonly"' in source
+def test_edit_modal_no_readonly_metadata_block(source: str):
+    """编辑 modal 里不应再展示 id / 文件名 / 来源 / MIME / 时间 等只读元信息区。
+    标题下方 il-edit-subtitle 一行精简信息已足够。"""
+    assert "il-edit-readonly" not in source
 
 
 def test_edit_modal_has_toggle_button(source: str):
