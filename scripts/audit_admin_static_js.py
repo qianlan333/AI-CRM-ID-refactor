@@ -22,7 +22,6 @@ ADMIN_TEMPLATES = ROOT / "wecom_ability_service" / "templates" / "admin_console"
 
 PROTECTED_TEMPLATES = [
     ADMIN_TEMPLATES / "customer_detail.html",
-    ADMIN_TEMPLATES / "customer_pulse_inbox.html",
     ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html",
     ADMIN_TEMPLATES / "automation_conversion_overview_workspace.html",
     ADMIN_TEMPLATES / "automation_conversion_agent_config_workspace.html",
@@ -46,17 +45,8 @@ SCRIPT_ORDER_CONTRACTS = {
     ADMIN_TEMPLATES / "customer_detail.html": [
         "customer_profile_core.js",
         "customer_profile_sections.js",
-        "customer_profile_pulse.js",
-        "customer_profile_followup.js",
         "customer_profile_automation.js",
         "customer_profile.js",
-    ],
-    ADMIN_TEMPLATES / "customer_pulse_inbox.html": [
-        "customer_pulse_inbox_core.js",
-        "customer_pulse_inbox_renderers.js",
-        "customer_pulse_inbox_actions.js",
-        "customer_pulse_inbox_boot.js",
-        "customer_pulse_inbox.js",
     ],
     ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html": [
         "automation_auto_reply_core.js",
@@ -84,7 +74,6 @@ SCRIPT_ORDER_CONTRACTS = {
 
 NAMESPACE_RULES = [
     ("customer_profile", "CustomerProfile"),
-    ("customer_pulse_inbox", "CustomerPulseInbox"),
     ("automation_auto_reply", "AutomationAutoReply"),
     ("automation_overview", "AutomationOverview"),
     ("automation_agent_config", "AutomationAgentConfig"),
@@ -106,7 +95,6 @@ def protected_js_files() -> list[Path]:
     ]
     for pattern in [
         "customer_profile*.js",
-        "customer_pulse_inbox*.js",
         "automation_auto_reply*.js",
         "automation_overview*.js",
         "automation_agent_config*.js",
@@ -263,8 +251,6 @@ def check_script_order_contract() -> dict[str, object]:
 
 def check_action_token_contract() -> dict[str, object]:
     expectations = [
-        (ADMIN_STATIC / "customer_profile_pulse.js", ["admin_action_token", "adminActionToken"]),
-        (ADMIN_STATIC / "customer_pulse_inbox_actions.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_STATIC / "automation_auto_reply_actions.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_STATIC / "automation_auto_reply_outputs.js", ["admin_action_token", "adminActionToken"]),
         (ADMIN_TEMPLATES / "automation_conversion_auto_reply_workspace.html", ["data-admin-action-token"]),

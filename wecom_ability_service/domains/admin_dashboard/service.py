@@ -6,11 +6,6 @@ from flask import current_app
 
 from ..admin_auth import admin_role_can_access_module
 from ..admin_jobs import build_jobs_dashboard_groups, build_jobs_runtime_snapshot
-from ..customer_pulse import build_customer_pulse_dashboard_group, is_customer_pulse_inbox_enabled
-from ..customer_pulse.access import (
-    build_customer_pulse_legacy_tenant_context,
-    current_customer_pulse_request_access_context,
-)
 from . import repo
 
 ADMIN_NAV_ITEMS = (
@@ -363,19 +358,6 @@ def build_dashboard_todos() -> dict[str, Any]:
         _build_questionnaire_preflight_group(),
         _build_mcp_runtime_group(),
     ]
-    if is_customer_pulse_inbox_enabled(access_context=current_customer_pulse_request_access_context()):
-        pulse_context: dict[str, Any] = dict(current_customer_pulse_request_access_context())
-        groups.append(
-            build_customer_pulse_dashboard_group(
-                tenant_context=pulse_context
-                or dict(
-                    build_customer_pulse_legacy_tenant_context(
-                    operator="admin_dashboard",
-                    source="legacy_internal_dashboard",
-                    )
-                )
-            )
-        )
     return {
         "groups": groups,
         "total_pending": sum(int(group["count"]) for group in groups),
