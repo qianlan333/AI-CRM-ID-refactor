@@ -1604,48 +1604,38 @@ def _run_due_node(
         },
     )
     execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
-    for item in execution_items:
-        if _normalized_text(item.get("status")) != "pending":
-            continue
-        audience_entry = audience_map.get(int(item.get("audience_entry_id") or 0)) or {}
-        _process_execution_item(
-            execution=execution,
-            execution_item=item,
-            workflow_bundle=workflow_bundle,
-            node=node,
-            audience_entry=audience_entry,
-            operator_id=operator_id,
+    pending_externals = [
+        _normalized_text(item.get("external_contact_id"))
+        for item in execution_items
+        if _normalized_text(item.get("status")) == "pending" and _normalized_text(item.get("external_contact_id"))
+    ]
+    if pending_externals:
+        from ..broadcast_jobs import service as queue_service
+
+        queue_service.enqueue_job(
+            source_type="workflow",
+            source_id=str(execution.get("execution_id") or ""),
+            source_table="automation_workflow_executions",
+            scheduled_for=datetime.now(),
+            target_external_userids=pending_externals,
+            target_summary=f"workflow node={int(node.get('id') or 0)} — {len(pending_externals)} 人",
+            content_type="private_message",
+            content_payload={
+                "execution_id": _normalized_text(execution.get("execution_id")),
+                "workflow_id": int(execution.get("workflow_id") or 0),
+                "node_id": int(node.get("id") or 0),
+                "operator_id": operator_id,
+            },
+            content_summary=_normalized_text(node.get("standard_content_text"))[:200],
         )
-    refreshed_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
-    final_status, counters = _execution_summary_from_items(refreshed_items)
-    summary_json = _execution_summary_json(
-        workflow_bundle=workflow_bundle,
-        node=node,
-        diagnostics=diagnostics,
-        counters=counters,
-    )
-    final_execution = workflow_repo.update_workflow_execution_row(
-        int(execution["id"]),
-        {
-            **execution,
-            "status": final_status,
-            "scheduled_for": scheduled_for,
-            "total_count": counters["total_count"],
-            "success_count": counters["success_count"],
-            "skipped_count": counters["skipped_count"],
-            "failed_count": counters["failed_count"],
-            "summary_json": summary_json,
-            "finished_at": _iso_now() if final_status in _FINAL_EXECUTION_STATUSES else "",
-        },
-    )
     result = {
         "ok": True,
-        "status": final_status,
-        "execution": final_execution,
-        "items": workflow_repo.list_workflow_execution_item_rows(int(final_execution["id"])),
-        "summary": summary_json,
+        "status": "enqueued",
+        "execution_id": _normalized_text(execution.get("execution_id")),
+        "node_id": int(node.get("id") or 0),
+        "pending_count": len(pending_externals),
     }
-    _log_runtime_event("scheduled_node_finished", result["summary"])
+    _log_runtime_event("scheduled_node_enqueued", result)
     return result
 
 
@@ -1751,43 +1741,27 @@ def _run_immediate_node(
             }
         )
         diagnostics["inserted_pending_count"] += 1
-        execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
-        for item in execution_items:
-            if _normalized_text(item.get("status")) != "pending":
-                continue
-            _process_execution_item(
-                execution=execution,
-                execution_item=item,
-                workflow_bundle=workflow_bundle,
-                node=node,
-                audience_entry=audience_entry,
-                operator_id=operator_id,
-            )
-        refreshed_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
-        final_status, counters = _execution_summary_from_items(refreshed_items)
-        final_execution = workflow_repo.update_workflow_execution_row(
-            int(execution["id"]),
-            {
-                **execution,
-                "status": final_status,
-                "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now(),
-                "total_count": counters["total_count"],
-                "success_count": counters["success_count"],
-                "skipped_count": counters["skipped_count"],
-                "failed_count": counters["failed_count"],
-                "summary_json": {
-                    **_execution_summary_json(
-                        workflow_bundle=workflow_bundle,
-                        node=node,
-                        diagnostics={**diagnostics, "scheduled_for": _normalized_text(audience_entry.get("entered_at")) or _iso_now()},
-                        counters=counters,
-                    ),
-                    "audience_entry_id": audience_entry_id,
+        external_userid = _normalized_text((audience_entry.get("member") or {}).get("external_contact_id"))
+        if external_userid:
+            from ..broadcast_jobs import service as queue_service
+
+            queue_service.enqueue_job(
+                source_type="workflow",
+                source_id=execution_key,
+                source_table="automation_workflow_executions",
+                scheduled_for=datetime.now(),
+                target_external_userids=[external_userid],
+                target_summary=f"workflow immediate node={int(node.get('id') or 0)}",
+                content_type="private_message",
+                content_payload={
+                    "execution_id": execution_key,
+                    "workflow_id": int(execution.get("workflow_id") or 0),
+                    "node_id": int(node.get("id") or 0),
+                    "operator_id": operator_id,
                 },
-                "finished_at": _iso_now() if final_status in _FINAL_EXECUTION_STATUSES else "",
-            },
-        )
-        processed_executions.append(final_execution)
+                content_summary=_normalized_text(node.get("standard_content_text"))[:200],
+            )
+        processed_executions.append(execution)
     result = {
         "ok": True,
         "status": "finished" if processed_executions else "no_candidates",
@@ -1808,6 +1782,82 @@ def _run_immediate_node(
     }
     _log_runtime_event("immediate_node_finished", result["summary"])
     return result
+
+
+def run_workflow_execution(*, execution_data: dict[str, Any]) -> dict[str, Any]:
+    """broadcast_jobs handler 调用 — 执行一个 workflow execution 的 pending items。"""
+    execution_id_str = _normalized_text(execution_data.get("execution_id"))
+    workflow_id = int(execution_data.get("workflow_id") or 0)
+    node_id = int(execution_data.get("node_id") or 0)
+    operator_id = _normalized_text(execution_data.get("operator_id")) or "automation_conversion_workflow_runner"
+
+    if not execution_id_str or not workflow_id or not node_id:
+        return {"ok": False, "error": "missing execution_id, workflow_id, or node_id"}
+
+    execution = workflow_repo.get_workflow_execution_row_by_execution_id(execution_id_str)
+    if not execution:
+        return {"ok": False, "error": f"execution not found: {execution_id_str}"}
+    if _normalized_text(execution.get("status")) in _FINAL_EXECUTION_STATUSES:
+        return {"ok": True, "sent_count": 0, "failed_count": 0, "status": "already_finished"}
+
+    workflow_bundle = get_conversion_workflow_model_bundle(workflow_id)
+    node = None
+    for n in (workflow_bundle.get("nodes") or []):
+        if int(n.get("id") or 0) == node_id:
+            node = dict(n)
+            break
+    if not node:
+        return {"ok": False, "error": f"node {node_id} not found in workflow {workflow_id}"}
+
+    audience_map: dict[int, dict[str, Any]] = {}
+    execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
+    sent_count = 0
+    failed_count = 0
+    for item in execution_items:
+        if _normalized_text(item.get("status")) != "pending":
+            continue
+        audience_entry = audience_map.get(int(item.get("audience_entry_id") or 0)) or {}
+        result_item = _process_execution_item(
+            execution=execution,
+            execution_item=item,
+            workflow_bundle=workflow_bundle,
+            node=node,
+            audience_entry=audience_entry,
+            operator_id=operator_id,
+        )
+        if _normalized_text((result_item or {}).get("status")) == "sent":
+            sent_count += 1
+        else:
+            failed_count += 1
+
+    refreshed_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
+    final_status, counters = _execution_summary_from_items(refreshed_items)
+    diagnostics = {"workflow_id": workflow_id, "node_id": node_id}
+    summary_json = _execution_summary_json(
+        workflow_bundle=workflow_bundle,
+        node=node,
+        diagnostics=diagnostics,
+        counters=counters,
+    )
+    workflow_repo.update_workflow_execution_row(
+        int(execution["id"]),
+        {
+            **execution,
+            "status": final_status,
+            "total_count": counters["total_count"],
+            "success_count": counters["success_count"],
+            "skipped_count": counters["skipped_count"],
+            "failed_count": counters["failed_count"],
+            "summary_json": summary_json,
+            "finished_at": _iso_now() if final_status in _FINAL_EXECUTION_STATUSES else "",
+        },
+    )
+    get_db().commit()
+    return {
+        "ok": True,
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+    }
 
 
 def run_due_conversion_workflows(*, operator_id: str = "", operator_type: str = "system") -> dict[str, Any]:

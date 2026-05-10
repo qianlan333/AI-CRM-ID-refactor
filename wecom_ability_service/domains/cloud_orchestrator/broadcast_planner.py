@@ -353,6 +353,28 @@ def draft_broadcast_plan(
         status="draft",
     )
 
+    from ..broadcast_jobs import service as queue_service
+
+    target_userids = [
+        str(c.get("external_contact_id") or "")
+        for c in allowed if c.get("external_contact_id")
+    ]
+    if target_userids:
+        queue_service.enqueue_job(
+            source_type="cloud_plan",
+            source_id=plan_id,
+            source_table="cloud_broadcast_plans",
+            scheduled_for=expires_at,
+            target_external_userids=target_userids,
+            target_summary=f"{intent[:30]} — {len(target_userids)} 人",
+            content_type="cloud_plan",
+            content_payload={"plan_id": plan_id},
+            content_summary=intent[:200],
+            requires_approval=True,
+            trace_id=effective_trace,
+            created_by=operator,
+        )
+
     return {
         "plan_id": plan_id,
         "trace_id": effective_trace,
@@ -467,34 +489,67 @@ def commit_broadcast_plan(
             "reason": token_check.get("reason"),
         }
 
+    from ..broadcast_jobs import service as queue_service
+
+    _update_plan(
+        plan_id,
+        {
+            "status": "committed",
+            "committed_at": datetime.utcnow().isoformat(),
+            "committed_by": str(human_approver),
+            "approval_token_hash": "consumed",
+        },
+    )
+    approved = queue_service.approve_job_by_source(
+        source_table="cloud_broadcast_plans",
+        source_id=plan_id,
+        approved_by=human_approver,
+    )
+    return {
+        "plan_id": plan_id,
+        "trace_id": plan["trace_id"],
+        "status": "committed",
+        "broadcast_job_approved": approved,
+    }
+
+
+def execute_committed_plan(*, plan_id: str) -> dict[str, Any]:
+    """Handler 从 broadcast_jobs worker 调用 — 执行已 committed 的 plan 真发。"""
+    plan = _load_plan(plan_id)
+    if not plan:
+        return {"ok": False, "error": f"plan not found: {plan_id}"}
+    if plan["status"] != "committed":
+        return {"ok": False, "error": f"plan status not committed: {plan['status']}"}
+
     selection = json.loads(plan["selection_json"] or "{}")
     pool_keys = list(selection.get("pool_keys") or [])
     if not pool_keys:
-        raise ValueError("plan selection must include at least one pool_key for commit")
+        return {"ok": False, "error": "plan selection missing pool_keys"}
     primary_pool = pool_keys[0]
     owner_userid = str(selection.get("owner_userid") or "")
     if not owner_userid:
         from ..marketing_automation.service import DEFAULT_AUTOMATION_OWNER_USERID
-
         owner_userid = DEFAULT_AUTOMATION_OWNER_USERID
 
     variants = json.loads(plan["variants_json"] or "[]")
     content_template = str(plan["content_template"] or "")
     if not content_template and variants:
         primary_variant = next(
-            (v for v in variants if v.get("content_text")),
-            None,
+            (v for v in variants if v.get("content_text")), None
         )
         if primary_variant:
             content_template = str(primary_variant["content_text"])
+
     raw_attachments = json.loads(plan.get("attachments_json") or "[]")
     if not isinstance(raw_attachments, list):
         raw_attachments = []
     expanded_attachments = miniprogram_library.expand_attachments_with_library(raw_attachments)
+
     if not content_template and not expanded_attachments:
-        raise RuntimeError("no content_template or variants available; commit refused")
+        return {"ok": False, "error": "no content_template or variants available"}
 
     trace_id = str(plan["trace_id"] or "")
+    committed_by = str(plan.get("committed_by") or "cloud_agent")
 
     send_result = message_dispatch_service.send_pool_private_message(
         owner_userid=owner_userid,
@@ -502,7 +557,7 @@ def commit_broadcast_plan(
         content=content_template,
         attachments=expanded_attachments or None,
         confirm=True,
-        operator=f"cloud:{human_approver}",
+        operator=f"cloud:{committed_by}",
         trace_id=trace_id,
         source_kind="cloud_broadcast_plan_commit",
         source_id=plan_id,
@@ -512,23 +567,15 @@ def commit_broadcast_plan(
     _update_plan(
         plan_id,
         {
-            "status": "committed",
             "commit_batch_id": str(record_id or ""),
             "commit_send_record_id": int(record_id) if record_id else None,
-            "committed_at": datetime.utcnow().isoformat(),
-            "committed_by": str(human_approver),
-            "approval_token_hash": "consumed",
         },
     )
     return {
-        "plan_id": plan_id,
-        "trace_id": trace_id,
-        "status": "committed",
-        "commit_send_record_id": record_id,
-        "sent_count": send_result.get("sent_count", 0),
-        "skipped_count": send_result.get("skipped_count", 0),
-        "executed": send_result.get("executed", False),
-        "send_status": send_result.get("status", ""),
+        "ok": True,
+        "sent_count": int(send_result.get("sent_count") or 0),
+        "failed_count": int(send_result.get("skipped_count") or 0),
+        "outbound_task_id": None,
     }
 
 

@@ -2934,3 +2934,60 @@ ON image_library (enabled, updated_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_campaign_members_trace
 ON campaign_members (trace_id, id DESC);
+
+-- ============================================================================
+-- broadcast_jobs — 统一群发任务队列（revision 0008）
+-- 把 6 条链路的"未来该发的批次"统一到一个队列，单一 worker 轮询消费
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS broadcast_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    source_type TEXT NOT NULL DEFAULT ''
+        CHECK (source_type IN ('campaign', 'sop', 'workflow', 'cloud_plan', 'focus_send', 'deferred', 'manual')),
+    source_id TEXT NOT NULL DEFAULT '',
+    source_table TEXT NOT NULL DEFAULT '',
+    scheduled_for TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    priority INTEGER NOT NULL DEFAULT 100,
+    batch_key TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('waiting_approval', 'queued', 'claimed', 'sent', 'failed', 'cancelled')),
+    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    approved_by TEXT NOT NULL DEFAULT '',
+    approved_at TIMESTAMPTZ,
+    cancelled_by TEXT NOT NULL DEFAULT '',
+    cancelled_at TIMESTAMPTZ,
+    cancel_reason TEXT NOT NULL DEFAULT '',
+    target_external_userids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    target_count INTEGER NOT NULL DEFAULT 0,
+    target_summary TEXT NOT NULL DEFAULT '',
+    content_type TEXT NOT NULL DEFAULT 'text',
+    content_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    content_summary TEXT NOT NULL DEFAULT '',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    outbound_task_id BIGINT,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    trace_id TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    claimed_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_due
+ON broadcast_jobs (status, scheduled_for, priority, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_timeline
+ON broadcast_jobs (scheduled_for DESC, status, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_source
+ON broadcast_jobs (source_type, source_id, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_trace
+ON broadcast_jobs (trace_id, id DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_jobs_source_scheduled
+ON broadcast_jobs (source_table, source_id, scheduled_for)
+WHERE source_id <> '';
