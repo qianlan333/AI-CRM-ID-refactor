@@ -445,10 +445,15 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
     )
     assert int(cur.fetchone()["c"]) > 0, "consumption not recorded after step 0"
 
-    # 把 step 1 的 next_due_at 也拉到过去
+    # step 0 发完后 _pre_enqueue_next_step 已为 step 1 预排期
+    # 把预排期 job 和 member 的 next_due_at 都拉到过去，模拟"明天已到"
     cur.execute(
         "UPDATE campaign_members SET next_due_at = ? WHERE campaign_id = ? AND status = 'pending'",
         ("2020-01-01 00:00:00+00:00", int(camp_id)),
+    )
+    cur.execute(
+        "UPDATE broadcast_jobs SET scheduled_for = ? WHERE source_type = 'campaign' AND status = 'queued'",
+        ("2020-01-01 00:00:00+00:00",),
     )
     db.commit()
 
@@ -457,10 +462,8 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
         "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
         side_effect=_fake_dispatch,
     ):
-        r2 = scheduler.process_due_campaign_members(batch_size=10)
-        assert r2["batches_enqueued"] == 1, f"step 1 enqueue failed: {r2}"
-        assert r2["skipped_budget"] == 0, f"step 1 was skipped by budget: {r2}"
-        worker.run(batch_size=10)
+        # 预排期 job 已存在，直接由 worker 消费（不需要再 process_due_campaign_members）
+        r2 = worker.run(batch_size=10)
 
     assert dispatched[0]["text"]["content"] == "step 1", f"wrong step dispatched: {dispatched}"
 

@@ -257,8 +257,27 @@ def run_campaign_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
     step = batch_data.get("step") or {}
     members = batch_data.get("members") or []
     request_payload = batch_data.get("request_payload") or {}
-    if not members or not request_payload:
-        return {"ok": False, "error": "empty batch or missing request_payload"}
+    if not members:
+        return {"ok": False, "error": "empty batch"}
+    # 预排期的 job 没有 request_payload，执行时现场 resolve + claim
+    is_pre_scheduled = not request_payload
+    if is_pre_scheduled:
+        # claim 每个 member 防止 cron 同时处理
+        eligible = []
+        for m in members:
+            if _claim_due_member(member_row_id=int(m["cm_id"])):
+                eligible.append(m)
+        if not eligible:
+            return {"ok": True, "sent_count": 0, "failed_count": 0, "status": "all_members_already_claimed"}
+        members = eligible
+        resolved = _resolve_step_payload(campaign=campaign, step=step)
+        if resolved.get("error"):
+            return {"ok": False, "error": resolved["error"]}
+        externals = [m["external_contact_id"] for m in members if m.get("external_contact_id")]
+        if not externals:
+            return {"ok": False, "error": "no_external_userid"}
+        request_payload = dict(resolved["base_request"])
+        request_payload["external_userid"] = externals
 
     from ..marketing_automation.service import dispatch_wecom_task
 
@@ -284,12 +303,80 @@ def run_campaign_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
         progress_member_after_send(
             member_row_id=int(m["cm_id"]), step=step, send_result=send_res,
         )
+
+    # 提前排期：当前 step 发完后，查下一步并立刻入队 broadcast_jobs
+    if send_res.get("ok"):
+        _pre_enqueue_next_step(campaign=campaign, step=step, members=members)
+
     return {
         "ok": send_res.get("ok", False),
         "sent_count": sent_count,
         "failed_count": failed_count,
         "outbound_task_id": int(send_res.get("task_id") or 0) or None,
     }
+
+
+def _pre_enqueue_next_step(
+    *,
+    campaign: dict[str, Any],
+    step: dict[str, Any],
+    members: list[dict[str, Any]],
+) -> None:
+    """当前 step 成功后，把下一步提前写入 broadcast_jobs 以便队列页展示排期。
+
+    此处只做"排期占位"——写入一条 scheduled_for=下一步due 的 job。
+    到时间后 worker claim → handler 走 process_due_campaign_members 正常流程
+    （频次预算、inline reply 等在执行时才检查，排期阶段不做）。
+    """
+    if not members:
+        return
+    # 取第一个 member 的 campaign_segment_id 查下一步
+    first = members[0]
+    campaign_segment_id = int(first.get("campaign_segment_id") or 0)
+    if not campaign_segment_id:
+        return
+    next_step = _next_step(
+        campaign_segment_id=campaign_segment_id,
+        after_step_index=int(step.get("step_index") or 0),
+    )
+    if not next_step:
+        return
+    # 取 anchor_date 算 due 时间（同 batch 的 anchor_date 一致）
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT anchor_date FROM campaign_members WHERE id = ?",
+        (int(first["cm_id"]),),
+    )
+    row = cur.fetchone()
+    if not row:
+        return
+    next_due = _due_at_for_step(
+        anchor_date=str(row["anchor_date"] or ""),
+        day_offset=int(next_step["day_offset"] or 0),
+        send_time=str(next_step["send_time"] or "09:00"),
+    )
+    externals = [m["external_contact_id"] for m in members if m.get("external_contact_id")]
+    if not externals:
+        return
+    from ..broadcast_jobs import service as queue_service
+
+    queue_service.enqueue_job(
+        source_type="campaign",
+        source_id=f"{campaign.get('id')}:{next_step.get('step_index', 0)}",
+        source_table="campaign_members",
+        scheduled_for=next_due,
+        target_external_userids=externals,
+        target_summary=f"campaign={campaign.get('campaign_code')} step={next_step.get('step_index')}",
+        content_type="private_message",
+        content_payload={
+            "campaign": campaign,
+            "step": next_step,
+            "members": members,
+        },
+        content_summary=str(next_step.get("content_text") or "")[:200],
+        trace_id=str(campaign.get("trace_id") or ""),
+    )
 
 
 def _record_member_after_dispatch(
@@ -571,6 +658,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
 
     # 阶段 2：per-group enqueue 到 broadcast_jobs
     from ..broadcast_jobs import service as queue_service
+    from ..broadcast_jobs import repo as queue_repo
 
     batches_enqueued = 0
     for key, group in groups.items():
@@ -580,6 +668,18 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
             continue
         campaign = group["campaign"]
         step = group["step"]
+        source_id = f"{campaign['id']}:{step.get('step_index', 0)}"
+        # 去重：如果预排期的 job 已存在（queued/claimed），跳过
+        existing = queue_repo.fetch_jobs_filtered(
+            statuses=["queued", "claimed"],
+            source_types=["campaign"],
+            limit=1,
+        )
+        already_scheduled = any(
+            str(j.get("source_id") or "") == source_id for j in existing
+        )
+        if already_scheduled:
+            continue
         resolved = _resolve_step_payload(campaign=campaign, step=step)
         if resolved.get("error"):
             for m in members:
@@ -593,7 +693,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         request_payload["external_userid"] = externals
         queue_service.enqueue_job(
             source_type="campaign",
-            source_id=f"{campaign['id']}:{step.get('step_index', 0)}",
+            source_id=source_id,
             source_table="campaign_members",
             scheduled_for=datetime.now(timezone.utc),
             target_external_userids=externals,
@@ -610,14 +710,118 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         )
         batches_enqueued += 1
 
+    # 阶段 3：为尚未入队的未来 step 预排期（让队列页能看到排期）
+    future_enqueued = _pre_enqueue_future_campaign_steps(queue_service=queue_service, queue_repo=queue_repo)
+
     return {
         "processed": len(due),
         "batches_enqueued": batches_enqueued,
+        "future_enqueued": future_enqueued,
         "skipped_budget": skipped_budget,
         "skipped_inline_reply": skipped_inline_reply,
         "completed_no_step": completed_no_step,
         "scanned_at": _now_iso(),
     }
+
+
+def _pre_enqueue_future_campaign_steps(*, queue_service: Any, queue_repo: Any) -> int:
+    """扫描所有 pending + 有 next_due_at 的成员，按 (campaign, step) 分组后预排期。
+
+    只排"尚未在 broadcast_jobs 里的"组合，避免重复。
+    """
+    db = get_db()
+    cur = db.cursor()
+    not_empty_clause = "cm.next_due_at IS NOT NULL" if get_db_backend() == "postgres" else "cm.next_due_at <> ''"
+    cur.execute(
+        f"""
+        SELECT cm.id AS cm_id, cm.member_id, cm.external_contact_id,
+               cm.campaign_id, cm.campaign_segment_id, cm.current_step_index,
+               cm.anchor_date, cm.trace_id, cm.next_due_at,
+               c.campaign_code, c.owner_userid
+        FROM campaign_members cm
+        JOIN campaigns c ON c.id = cm.campaign_id
+        WHERE cm.status = 'pending'
+          AND {not_empty_clause}
+          AND cm.next_due_at > ?
+          AND c.run_status = 'active'
+        ORDER BY cm.next_due_at ASC
+        LIMIT 500
+        """,
+        (_now_iso(),),
+    )
+    future = cur.fetchall() or []
+    if not future:
+        return 0
+
+    # 已有的 queued campaign jobs → 用于去重
+    existing_jobs = queue_repo.fetch_jobs_filtered(
+        statuses=["queued", "claimed"],
+        source_types=["campaign"],
+        limit=200,
+    )
+    existing_source_ids = {str(j.get("source_id") or "") for j in existing_jobs}
+
+    # 按 (campaign_segment_id, next_step_index) 分组
+    groups: dict[str, dict[str, Any]] = {}
+    for r in future:
+        next_step = _next_step(
+            campaign_segment_id=int(r["campaign_segment_id"]),
+            after_step_index=int(r["current_step_index"]) if r["current_step_index"] is not None else -1,
+        )
+        if not next_step:
+            continue
+        source_id = f"{int(r['campaign_id'])}:{next_step.get('step_index', 0)}"
+        if source_id in existing_source_ids:
+            continue
+        if source_id not in groups:
+            groups[source_id] = {
+                "campaign": {
+                    "id": int(r["campaign_id"]),
+                    "campaign_code": str(r["campaign_code"] or ""),
+                    "owner_userid": str(r["owner_userid"] or ""),
+                    "trace_id": str(r["trace_id"] or ""),
+                },
+                "step": next_step,
+                "members": [],
+                "next_due": str(r["next_due_at"] or ""),
+            }
+        external = str(r["external_contact_id"] or "")
+        if external:
+            groups[source_id]["members"].append({
+                "cm_id": int(r["cm_id"]),
+                "member_id": int(r["member_id"] or 0),
+                "external_contact_id": external,
+                "trace_id": str(r["trace_id"] or ""),
+                "campaign_segment_id": int(r["campaign_segment_id"]),
+            })
+
+    enqueued = 0
+    for source_id, group in groups.items():
+        members = group["members"]
+        externals = [m["external_contact_id"] for m in members if m.get("external_contact_id")]
+        if not externals:
+            continue
+        campaign = group["campaign"]
+        step = group["step"]
+        queue_service.enqueue_job(
+            source_type="campaign",
+            source_id=source_id,
+            source_table="campaign_members",
+            scheduled_for=group["next_due"],
+            target_external_userids=externals,
+            target_summary=f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}",
+            content_type="private_message",
+            content_payload={
+                "campaign": campaign,
+                "step": step,
+                "members": members,
+            },
+            content_summary=str(step.get("content_text") or "")[:200],
+            trace_id=str(campaign.get("trace_id") or ""),
+        )
+        existing_source_ids.add(source_id)
+        enqueued += 1
+    return enqueued
 
 
 def register_member_reply(

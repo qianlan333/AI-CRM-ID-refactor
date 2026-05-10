@@ -87,7 +87,8 @@ def _handle_campaign(job: dict[str, Any]) -> dict[str, Any]:
     from ..campaigns.scheduler import run_campaign_batch
 
     payload = job.get("content_payload") or {}
-    if not payload.get("request_payload"):
+    # 预排期 job 没有 request_payload，run_campaign_batch 会现场 resolve
+    if not payload.get("request_payload") and not payload.get("campaign"):
         return {"ok": False, "error": "campaign job missing request_payload"}
     return run_campaign_batch(batch_data=payload)
 
