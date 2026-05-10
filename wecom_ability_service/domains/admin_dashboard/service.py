@@ -20,6 +20,7 @@ ADMIN_NAV_ITEMS = (
     {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
     {"key": "image_library", "label": "图片素材库", "endpoint": "api.admin_image_library_workspace"},
     {"key": "miniprogram_library", "label": "小程序素材库", "endpoint": "api.admin_miniprogram_library_workspace"},
+    {"key": "jobs", "label": "同步任务", "endpoint": "api.admin_console_jobs"},
     {"key": "config", "label": "配置", "endpoint": "api.admin_config_home"},
     {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_console_api_docs"},
 )
