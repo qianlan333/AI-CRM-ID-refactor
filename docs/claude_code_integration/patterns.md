@@ -214,8 +214,7 @@ propose_campaign(
 2. 让运营到 CRM 后台 `/admin/cloud-orchestrator/observability` 输 trace_id
 3. 你这边可以调 `query_recent_touch_outcomes(trace_id=...)` 看到 skipped 原因
 4. 常见原因：
-   - `budget_exceeded:global_per_member_weekly` — 全局周预算用完（每人每周 ≤ 3 次）
-   - `budget_exceeded:global_per_member_daily` — 全局日预算用完（每人每天 ≤ 1 次）
+   - `budget_exceeded:<budget_code>` — 触发了运营在 admin 配置的频次预算（默认无内置预算；运营自加 budget 才会出现这个）
    - `do_not_disturb` — 用户在屏蔽列表
    - `missing_external_userid` — 数据完整性问题，给运营报
 

@@ -144,53 +144,54 @@ def test_pg_bug_202_frequency_budget_select_with_bool(app):
 def test_retired_budget_codes_are_disabled_on_init(app):
     """``_RETIRED_BUDGET_CODES`` 里的旧预算在启动期被自动 disable。
 
-    回归退役 ``ai_initiated_per_member_weekly`` 的迁移路径——生产 DB 老行
-    必须无需运营手工 UPDATE 也能立刻失效，避免每周限 2 次拦死所有
-    AI 主动触发的 campaign。
+    回归三条已退役预算（ai_initiated_per_member_weekly /
+    global_per_member_weekly / global_per_member_daily）的迁移路径——
+    生产 DB 老行必须无需运营手工 UPDATE 也能立刻失效。
     """
     from wecom_ability_service.db import get_db
     from wecom_ability_service.domains.marketing_automation import frequency_budget_service
 
+    legacy_specs = (
+        ("ai_initiated_per_member_weekly", "channel", "ai_initiated", 7 * 24 * 3600, 2),
+        ("global_per_member_weekly", "global", "", 7 * 24 * 3600, 3),
+        ("global_per_member_daily", "global", "", 24 * 3600, 1),
+    )
+
     db = get_db()
     cursor = db.cursor()
-    # 模拟老 DB：手动 INSERT 一条 enabled=true 的 ai_initiated_per_member_weekly
-    cursor.execute(
-        """
-        INSERT INTO automation_frequency_budget
-            (budget_code, scope, scope_key, window_seconds, max_count,
-             description, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            "ai_initiated_per_member_weekly",
-            "channel",
-            "ai_initiated",
-            7 * 24 * 3600,
-            2,
-            "legacy row",
-            True,
-        ),
-    )
+    # 模拟老 DB：手动 INSERT 三条 enabled=true 的旧预算
+    for code, scope, scope_key, window, cap in legacy_specs:
+        cursor.execute(
+            """
+            INSERT INTO automation_frequency_budget
+                (budget_code, scope, scope_key, window_seconds, max_count,
+                 description, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (code, scope, scope_key, window, cap, "legacy row", True),
+        )
     db.commit()
 
     # 模拟下次应用启动
     frequency_budget_service.ensure_default_budgets()
 
-    cursor.execute(
-        "SELECT enabled FROM automation_frequency_budget WHERE budget_code = ?",
-        ("ai_initiated_per_member_weekly",),
-    )
-    row = cursor.fetchone()
-    assert row is not None, "保留行（仅 disable 不删除，维持 consumption 引用完整性）"
-    assert not row["enabled"], f"expected enabled=false, got {row['enabled']!r}"
+    for code, *_ in legacy_specs:
+        cursor.execute(
+            "SELECT enabled FROM automation_frequency_budget WHERE budget_code = ?",
+            (code,),
+        )
+        row = cursor.fetchone()
+        assert row is not None, f"{code} 保留行（仅 disable 不删除，维持 consumption 引用完整性）"
+        assert not row["enabled"], f"{code} expected enabled=false, got {row['enabled']!r}"
 
     # 退役预算不再出现在 list_active_budgets 结果里
     active = frequency_budget_service.list_active_budgets(
         channels=("wecom_private", "ai_initiated"),
         program_codes=("campaign",),
     )
-    codes = [b["budget_code"] for b in active]
-    assert "ai_initiated_per_member_weekly" not in codes
+    codes = {b["budget_code"] for b in active}
+    for code, *_ in legacy_specs:
+        assert code not in codes, f"{code} should be filtered out of active budgets"
 
 
 # ----------------------------------------------------------------------------
@@ -346,16 +347,34 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
     from wecom_ability_service.db import get_db
     from wecom_ability_service.domains.campaigns import service as campaign_service
     from wecom_ability_service.domains.campaigns import scheduler
-    from wecom_ability_service.domains.marketing_automation import frequency_budget_service
 
-    # PG 模式下 conftest TRUNCATE 了 automation_frequency_budget，重新 seed
-    frequency_budget_service.ensure_default_budgets()
-
-    seg_id = _insert_segment_with_known_member(
-        app, segment_code="seg-multi-step", member_id=950, external_id="ext-950",
-    )
+    # 框架默认预算已全部退役（见 _RETIRED_BUDGET_CODES）；本测试仍需要 daily budget
+    # 存在才能验证 PR #224 修复（同 campaign 续推不被自己的 daily 消耗挡），
+    # 因此手动 seed 一条 test-only 的 daily budget。
     db = get_db()
     cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO automation_frequency_budget
+            (budget_code, scope, scope_key, window_seconds, max_count,
+             description, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "test_daily_budget_for_pr224",
+            "global",
+            "",
+            24 * 3600,
+            1,
+            "test-only daily budget for PR #224 regression",
+            True,
+        ),
+    )
+    db.commit()
+
+    _insert_segment_with_known_member(
+        app, segment_code="seg-multi-step", member_id=950, external_id="ext-950",
+    )
 
     overview = campaign_service.propose_campaign(
         display_name="multi-step budget test",
