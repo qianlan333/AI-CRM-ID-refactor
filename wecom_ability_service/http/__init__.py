@@ -102,7 +102,7 @@ HTTP_ROUTE_PLACEMENT = {
         "automation_conversion.py for /admin/automation-conversion* and /api/admin/automation-conversion*",
         "admin_dashboard.py for /api/admin/dashboard/* shell status",
         "admin_user_ops.py for /api/admin/user-ops* and /admin/user-ops/ui",
-        "admin_class_user.py for /api/admin/class-user-management* and /admin/class-user-backoffice/ui",
+        "admin_class_user.py for /api/admin/class-user-management*",
         "admin_questionnaires.py for /api/admin/questionnaires* and /admin/questionnaires/ui",
     ),
     "callbacks": (
