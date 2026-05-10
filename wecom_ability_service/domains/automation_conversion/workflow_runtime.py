@@ -1581,6 +1581,16 @@ def _run_due_node(
         }
         _log_runtime_event("node_already_processed", result)
         return result
+    if _normalized_text(execution.get("status")) == "running":
+        result = {
+            "ok": True,
+            "status": "already_enqueued",
+            "execution_id": _normalized_text(execution.get("execution_id")),
+            "node_id": int(node.get("id") or 0),
+            "execution": execution,
+        }
+        _log_runtime_event("node_already_enqueued", result)
+        return result
 
     execution = workflow_repo.update_workflow_execution_row(
         int(execution["id"]),
@@ -1703,6 +1713,10 @@ def _run_immediate_node(
         if not execution:
             continue
         if _normalized_text(execution.get("status")) in _FINAL_EXECUTION_STATUSES:
+            diagnostics["already_sent_count"] += 1
+            processed_executions.append(execution)
+            continue
+        if _normalized_text(execution.get("status")) == "running":
             diagnostics["already_sent_count"] += 1
             processed_executions.append(execution)
             continue
