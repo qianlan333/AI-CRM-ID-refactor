@@ -912,86 +912,41 @@ def run_due_sop(
                 )
                 sendable_candidates.append(candidate)
 
-            dispatch_result = None
             if sendable_targets:
-                image_media_ids, images = _normalize_sop_template_images(template)
-                miniprogram_library_ids: list[int] = []
-                for mp_item in list(template.get("miniprograms_json") or []):
-                    if isinstance(mp_item, int):
-                        miniprogram_library_ids.append(int(mp_item))
-                        continue
-                    if not isinstance(mp_item, dict):
-                        continue
-                    raw_lid = mp_item.get("library_id")
-                    if not raw_lid:
-                        continue
-                    try:
-                        miniprogram_library_ids.append(int(raw_lid))
-                    except (TypeError, ValueError):
-                        continue
-                dispatch_result = _dispatch_private_message_batch(
-                    target_items=sendable_targets,
-                    content=_normalized_text(template.get("content")),
-                    image_media_ids=image_media_ids,
-                    images=images,
-                    miniprogram_library_ids=miniprogram_library_ids,
-                    operator_id=_normalized_text(operator_id) or "sop_runner",
-                    filter_snapshot={
-                        "selection_mode": "automation_conversion_sop",
+                from ..broadcast_jobs import service as queue_service
+
+                externals = [_normalized_text(t.get("external_userid")) for t in sendable_targets if _normalized_text(t.get("external_userid"))]
+                queue_service.enqueue_job(
+                    source_type="sop",
+                    source_id=str(batch.get("id") or ""),
+                    source_table="automation_sop_batches",
+                    scheduled_for=datetime.now(),
+                    target_external_userids=externals,
+                    target_summary=f"sop pool={pool_key} day={day_index} — {len(externals)} 人",
+                    content_type="private_message",
+                    content_payload={
+                        "batch_id": int(batch.get("id") or 0),
                         "pool_key": pool_key,
                         "day_index": day_index,
+                        "template": template,
+                        "sendable_targets": sendable_targets,
+                        "sendable_candidates": sendable_candidates,
+                        "operator_id": _normalized_text(operator_id) or "sop_runner",
                     },
+                    content_summary=_normalized_text(template.get("content"))[:200],
                 )
-                if int(dispatch_result.get("record_id") or 0) > 0:
-                    success_record_ids.append(int(dispatch_result["record_id"]))
-                failed_external_userids = {
-                    _normalized_text(item)
-                    for item in list(dispatch_result.get("fail_external_userids") or [])
-                    if _normalized_text(item)
-                }
-                for target, candidate in zip(sendable_targets, sendable_candidates):
-                    member = dict(candidate.get("member") or {})
-                    progress = dict(candidate.get("progress") or {})
-                    external_userid = _normalized_text(target.get("external_userid"))
-                    if external_userid in failed_external_userids:
-                        _record_sop_batch_item(
-                            batch_id=int(batch.get("id") or 0),
-                            member=member,
-                            pool_key=pool_key,
-                            day_index=day_index,
-                            external_userid=external_userid,
-                            status="failed",
-                            error_message="dispatch_failed",
-                            sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
-                        )
-                        failed_count += 1
-                    else:
-                        _record_sop_batch_item(
-                            batch_id=int(batch.get("id") or 0),
-                            member=member,
-                            pool_key=pool_key,
-                            day_index=day_index,
-                            external_userid=external_userid,
-                            status="success",
-                            content_snapshot=_normalized_text(template.get("content")),
-                            images_snapshot=list(template.get("images_json") or []),
-                            sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
-                        )
-                        success_count += 1
-                    _update_sop_progress_day(progress, day_index=day_index, sent_at=now_text)
+            else:
+                _finalize_sop_batch(
+                    batch,
+                    success_count=0,
+                    skipped_count=skipped_count,
+                    failed_count=0,
+                    skipped_reasons=skipped_reasons,
+                    success_record_ids=[],
+                )
 
-            finalized = _finalize_sop_batch(
-                batch,
-                success_count=success_count,
-                skipped_count=skipped_count,
-                failed_count=failed_count,
-                skipped_reasons=skipped_reasons,
-                success_record_ids=success_record_ids,
-            )
-            batches_payload.append({"batch": finalized})
-            total_success_count += success_count
+            batches_payload.append({"batch_id": int(batch.get("id") or 0)})
             total_skipped_count += skipped_count
-            total_failed_count += failed_count
 
     get_db().commit()
     return {
@@ -999,11 +954,113 @@ def run_due_sop(
         "status": "completed",
         "scanned_pool_count": len(enabled_configs),
         "created_batch_count": created_batch_count,
-        "total_success_count": total_success_count,
         "total_skipped_count": total_skipped_count,
-        "total_failed_count": total_failed_count,
         "batch_ids": batch_ids,
         "batches": batches_payload,
+    }
+
+
+def run_sop_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
+    """broadcast_jobs handler 调用 — 执行一个 SOP batch 的真发 + 记录。"""
+    batch_id = int(batch_data.get("batch_id") or 0)
+    pool_key = _normalized_text(batch_data.get("pool_key"))
+    day_index = int(batch_data.get("day_index") or 0)
+    template = batch_data.get("template") or {}
+    sendable_targets = batch_data.get("sendable_targets") or []
+    sendable_candidates = batch_data.get("sendable_candidates") or []
+    operator_id = _normalized_text(batch_data.get("operator_id")) or "sop_runner"
+
+    if not sendable_targets or not batch_id:
+        return {"ok": False, "error": "empty sendable_targets or missing batch_id"}
+
+    image_media_ids, images = _normalize_sop_template_images(template)
+    miniprogram_library_ids: list[int] = []
+    for mp_item in list(template.get("miniprograms_json") or []):
+        if isinstance(mp_item, int):
+            miniprogram_library_ids.append(int(mp_item))
+            continue
+        if not isinstance(mp_item, dict):
+            continue
+        raw_lid = mp_item.get("library_id")
+        if not raw_lid:
+            continue
+        try:
+            miniprogram_library_ids.append(int(raw_lid))
+        except (TypeError, ValueError):
+            continue
+
+    dispatch_result = _dispatch_private_message_batch(
+        target_items=sendable_targets,
+        content=_normalized_text(template.get("content")),
+        image_media_ids=image_media_ids,
+        images=images,
+        miniprogram_library_ids=miniprogram_library_ids,
+        operator_id=operator_id,
+        filter_snapshot={
+            "selection_mode": "automation_conversion_sop",
+            "pool_key": pool_key,
+            "day_index": day_index,
+        },
+    )
+
+    now_text = _iso_now()
+    success_count = 0
+    failed_count = 0
+    success_record_ids: list[int] = []
+    if int(dispatch_result.get("record_id") or 0) > 0:
+        success_record_ids.append(int(dispatch_result["record_id"]))
+    failed_external_userids = {
+        _normalized_text(item)
+        for item in list(dispatch_result.get("fail_external_userids") or [])
+        if _normalized_text(item)
+    }
+
+    for target, candidate in zip(sendable_targets, sendable_candidates):
+        member = dict(candidate.get("member") or {})
+        progress = dict(candidate.get("progress") or {})
+        external_userid = _normalized_text(target.get("external_userid"))
+        if external_userid in failed_external_userids:
+            _record_sop_batch_item(
+                batch_id=batch_id,
+                member=member,
+                pool_key=pool_key,
+                day_index=day_index,
+                external_userid=external_userid,
+                status="failed",
+                error_message="dispatch_failed",
+                sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
+            )
+            failed_count += 1
+        else:
+            _record_sop_batch_item(
+                batch_id=batch_id,
+                member=member,
+                pool_key=pool_key,
+                day_index=day_index,
+                external_userid=external_userid,
+                status="success",
+                content_snapshot=_normalized_text(template.get("content")),
+                images_snapshot=list(template.get("images_json") or []),
+                sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
+            )
+            success_count += 1
+        _update_sop_progress_day(progress, day_index=day_index, sent_at=now_text)
+
+    batch_row = repo.get_sop_batch(batch_id)
+    if batch_row:
+        _finalize_sop_batch(
+            dict(batch_row),
+            success_count=success_count,
+            skipped_count=0,
+            failed_count=failed_count,
+            skipped_reasons={},
+            success_record_ids=success_record_ids,
+        )
+    get_db().commit()
+    return {
+        "ok": True,
+        "sent_count": success_count,
+        "failed_count": failed_count,
     }
 
 

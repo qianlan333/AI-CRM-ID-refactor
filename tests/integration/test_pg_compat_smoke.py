@@ -268,15 +268,23 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
         dispatched_calls.append(payload)
         return {"task_id": 42}
 
+    import sys
+    from pathlib import Path
+    _scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
+    if str(_scripts_dir) not in sys.path:
+        sys.path.insert(0, str(_scripts_dir))
+    import run_broadcast_queue_worker as worker
+
     with patch(
         "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
         side_effect=_fake_dispatch,
     ):
-        result = scheduler.process_due_campaign_members(batch_size=10)
+        scan_result = scheduler.process_due_campaign_members(batch_size=10)
+        assert scan_result["batches_enqueued"] == 1, f"enqueue failed: {scan_result}"
+        worker_result = worker.run(batch_size=10)
 
     # 关键断言：3 个 member，1 次 dispatch，1 个 task 含 3 人
-    assert result["sent_ok"] == 3, f"sent_ok={result['sent_ok']} result={result}"
-    assert result["batches_dispatched"] == 1, f"batches={result['batches_dispatched']} (PR #206 batch broken)"
+    assert worker_result["sent_ok"] == 1, f"sent_ok={worker_result['sent_ok']} result={worker_result}"
     assert len(dispatched_calls) == 1, f"dispatch called {len(dispatched_calls)} times, should be 1"
     assert len(dispatched_calls[0]["external_userid"]) == 3
     assert set(dispatched_calls[0]["external_userid"]) == {"ext-901", "ext-902", "ext-903"}
@@ -286,7 +294,6 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
     rows = cur.fetchall() or []
     assert len(rows) == 3
     for r in rows:
-        # 仅 1 个 step 所以推进后是 completed
         assert r["status"] == "completed", f"member status not completed: {dict(r)}"
         assert int(r["current_step_index"]) == 0
 
@@ -344,6 +351,13 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
     场景：campaign 有 2 个 step（day_offset=0, 1），step 0 发完记了 consumption，
     step 1 调度时应该排除同 campaign 的消耗记录，不触发 budget_exceeded。
     """
+    import sys
+    from pathlib import Path
+    _scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
+    if str(_scripts_dir) not in sys.path:
+        sys.path.insert(0, str(_scripts_dir))
+    import run_broadcast_queue_worker as worker
+
     from wecom_ability_service.db import get_db
     from wecom_ability_service.domains.campaigns import service as campaign_service
     from wecom_ability_service.domains.campaigns import scheduler
@@ -421,8 +435,8 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
         side_effect=_fake_dispatch,
     ):
         r1 = scheduler.process_due_campaign_members(batch_size=10)
-
-    assert r1["sent_ok"] == 1, f"step 0 failed: {r1}"
+        assert r1["batches_enqueued"] == 1, f"step 0 enqueue failed: {r1}"
+        worker.run(batch_size=10)
 
     # step 0 写了 consumption → daily budget 已扣 1 次
     cur.execute(
@@ -444,9 +458,10 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
         side_effect=_fake_dispatch,
     ):
         r2 = scheduler.process_due_campaign_members(batch_size=10)
+        assert r2["batches_enqueued"] == 1, f"step 1 enqueue failed: {r2}"
+        assert r2["skipped_budget"] == 0, f"step 1 was skipped by budget: {r2}"
+        worker.run(batch_size=10)
 
-    assert r2["sent_ok"] == 1, f"step 1 blocked by budget: {r2}"
-    assert r2["skipped_budget"] == 0, f"step 1 was skipped by budget: {r2}"
     assert dispatched[0]["text"]["content"] == "step 1", f"wrong step dispatched: {dispatched}"
 
     cur.execute(
