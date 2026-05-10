@@ -2556,12 +2556,19 @@ CREATE TABLE IF NOT EXISTS image_library (
     thumb_media_id TEXT NOT NULL DEFAULT '',
     thumb_media_id_expires_at TEXT NOT NULL DEFAULT '',
     enabled INTEGER NOT NULL DEFAULT 1,
+    description TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    category TEXT NOT NULL DEFAULT '',
+    ai_metadata TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_image_library_enabled
 ON image_library (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_image_library_category
+ON image_library (category);
 
 -- broadcast_jobs — 统一群发任务队列（revision 0008，SQLite 版）
 
