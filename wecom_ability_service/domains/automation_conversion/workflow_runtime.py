@@ -1619,25 +1619,67 @@ def _run_due_node(
         for item in execution_items
         if _normalized_text(item.get("status")) == "pending" and _normalized_text(item.get("external_contact_id"))
     ]
-    if pending_externals:
-        from ..broadcast_jobs import service as queue_service
-
-        queue_service.enqueue_job(
-            source_type="workflow",
-            source_id=str(execution.get("execution_id") or ""),
-            source_table="automation_workflow_executions",
-            scheduled_for=datetime.now(),
-            target_external_userids=pending_externals,
-            target_summary=f"workflow node={int(node.get('id') or 0)} — {len(pending_externals)} 人",
-            content_type="private_message",
-            content_payload={
-                "execution_id": _normalized_text(execution.get("execution_id")),
-                "workflow_id": int(execution.get("workflow_id") or 0),
-                "node_id": int(node.get("id") or 0),
-                "operator_id": operator_id,
-            },
-            content_summary=_normalized_text(node.get("standard_content_text"))[:200],
+    if not pending_externals:
+        # 无候选人 — 立刻标 finished，避免永远卡在 running
+        counters = {"total_count": 0, "success_count": 0, "skipped_count": 0, "failed_count": 0,
+                    "pending_count": 0, "missing_external_contact_id_count": 0,
+                    "owner_staff_id_missing_count": 0, "send_api_failed_count": 0,
+                    "segment_or_content_miss_count": 0, "content_missing_count": 0}
+        summary_json = _execution_summary_json(
+            workflow_bundle=workflow_bundle, node=node, diagnostics=diagnostics, counters=counters,
         )
+        workflow_repo.update_workflow_execution_row(
+            int(execution["id"]),
+            {
+                **execution,
+                "status": "finished",
+                "total_count": 0,
+                "success_count": 0,
+                "skipped_count": 0,
+                "failed_count": 0,
+                "finished_at": _iso_now(),
+                "summary_json": summary_json,
+            },
+        )
+        result = {
+            "ok": True,
+            "status": "finished_no_candidates",
+            "execution_id": _normalized_text(execution.get("execution_id")),
+            "node_id": int(node.get("id") or 0),
+            "pending_count": 0,
+            "execution": execution,
+        }
+        _log_runtime_event("scheduled_node_no_candidates", result)
+        return result
+
+    # 入队前先把 diagnostics 快照到 execution，worker 执行后会保留
+    workflow_repo.update_workflow_execution_row(
+        int(execution["id"]),
+        {
+            **execution,
+            "status": "running",
+            "summary_json": {"diagnostics": diagnostics},
+        },
+    )
+
+    from ..broadcast_jobs import service as queue_service
+
+    queue_service.enqueue_job(
+        source_type="workflow",
+        source_id=str(execution.get("execution_id") or ""),
+        source_table="automation_workflow_executions",
+        scheduled_for=datetime.now(),
+        target_external_userids=pending_externals,
+        target_summary=f"workflow node={int(node.get('id') or 0)} — {len(pending_externals)} 人",
+        content_type="private_message",
+        content_payload={
+            "execution_id": _normalized_text(execution.get("execution_id")),
+            "workflow_id": int(execution.get("workflow_id") or 0),
+            "node_id": int(node.get("id") or 0),
+            "operator_id": operator_id,
+        },
+        content_summary=_normalized_text(node.get("standard_content_text"))[:200],
+    )
     result = {
         "ok": True,
         "status": "enqueued",
@@ -1756,25 +1798,34 @@ def _run_immediate_node(
         )
         diagnostics["inserted_pending_count"] += 1
         external_userid = _normalized_text((audience_entry.get("member") or {}).get("external_contact_id"))
-        if external_userid:
-            from ..broadcast_jobs import service as queue_service
-
-            queue_service.enqueue_job(
-                source_type="workflow",
-                source_id=execution_key,
-                source_table="automation_workflow_executions",
-                scheduled_for=datetime.now(),
-                target_external_userids=[external_userid],
-                target_summary=f"workflow immediate node={int(node.get('id') or 0)}",
-                content_type="private_message",
-                content_payload={
-                    "execution_id": execution_key,
-                    "workflow_id": int(execution.get("workflow_id") or 0),
-                    "node_id": int(node.get("id") or 0),
-                    "operator_id": operator_id,
-                },
-                content_summary=_normalized_text(node.get("standard_content_text"))[:200],
+        if not external_userid:
+            # 无 external_userid — 标 finished 避免卡在 running
+            workflow_repo.update_workflow_execution_row(
+                int(execution["id"]),
+                {**execution, "status": "finished", "finished_at": _iso_now(),
+                 "summary_json": {"note": "no_external_userid"}},
             )
+            processed_executions.append(execution)
+            continue
+
+        from ..broadcast_jobs import service as queue_service
+
+        queue_service.enqueue_job(
+            source_type="workflow",
+            source_id=execution_key,
+            source_table="automation_workflow_executions",
+            scheduled_for=datetime.now(),
+            target_external_userids=[external_userid],
+            target_summary=f"workflow immediate node={int(node.get('id') or 0)}",
+            content_type="private_message",
+            content_payload={
+                "execution_id": execution_key,
+                "workflow_id": int(execution.get("workflow_id") or 0),
+                "node_id": int(node.get("id") or 0),
+                "operator_id": operator_id,
+            },
+            content_summary=_normalized_text(node.get("standard_content_text"))[:200],
+        )
         processed_executions.append(execution)
     result = {
         "ok": True,
@@ -1846,7 +1897,13 @@ def run_workflow_execution(*, execution_data: dict[str, Any]) -> dict[str, Any]:
 
     refreshed_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
     final_status, counters = _execution_summary_from_items(refreshed_items)
-    diagnostics = {"workflow_id": workflow_id, "node_id": node_id}
+    # 合并 cron 阶段存的 diagnostics（如 day_offset_miss_count 等）
+    prior_summary = execution.get("summary_json") or {}
+    diagnostics = {
+        **(prior_summary.get("diagnostics") or {}),
+        "workflow_id": workflow_id,
+        "node_id": node_id,
+    }
     summary_json = _execution_summary_json(
         workflow_bundle=workflow_bundle,
         node=node,
