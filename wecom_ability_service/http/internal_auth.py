@@ -57,8 +57,6 @@ ADMIN_ROUTE_MODULE_PREFIXES = (
 )
 ADMIN_SUNSET_PAGE_PREFIXES = (
     "/admin/user-ops",
-    "/admin/customer-pulse",
-    "/admin/followup-orchestrator",
     "/admin/system",
     "/admin/audit",
     "/admin/class-user-management",
