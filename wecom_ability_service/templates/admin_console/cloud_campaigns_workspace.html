@@ -9,7 +9,6 @@
   <section class="admin-card">
     <header class="admin-card-head">
       <h2 class="admin-card-title">运营计划审阅</h2>
-      <p class="admin-card-summary">Agent 上架的 Campaign 在这里审阅启动。计划必须人工点"启动"才会按节奏推送。</p>
       <div class="cloud-camp-toolbar">
         <select id="cloud-camp-filter-review" class="admin-input">
           <option value="">全部审阅状态</option>
@@ -30,7 +29,7 @@
     </header>
     <table class="admin-table cloud-camp-table">
       <thead><tr>
-        <th>Campaign</th><th>意图</th><th>分层</th><th>成员</th>
+        <th>运营计划</th><th>意图</th><th>分层</th><th>成员</th>
         <th>审阅</th><th>运行</th><th>更新时间</th><th>操作</th>
       </tr></thead>
       <tbody id="cloud-camp-tbody"><tr><td colspan="8">加载中…</td></tr></tbody>
@@ -90,6 +89,8 @@
 .cloud-camp-toolbar { display:flex; gap:8px; margin-top:8px; }
 .cloud-camp-toolbar select { max-width:160px; }
 .cloud-camp-table th, .cloud-camp-table td { padding:8px 12px; vertical-align:top; }
+.cloud-camp-name { font-weight:500; color:#1d1d1f; font-size:13px; line-height:1.4; }
+.cloud-camp-code { display:inline-block; margin-top:4px; color:#a0a4ad; font-size:11px; background:transparent; padding:0; }
 .cloud-camp-intent-cell { max-width:520px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.45; color:#3a3a3c; font-size:13px; }
 .cloud-orch-status-chip { display:inline-block; padding:2px 8px; border-radius:10px; background:#eef0f4; font-size:12px; color:#5b626f; margin-left:8px; }
 .cloud-orch-status-chip.pending_review, .cloud-orch-status-chip.draft { background:#fff7e6; color:#a06400; }
@@ -202,6 +203,36 @@
   const fmt = s => (s == null ? '' : String(s));
   const escapeHtml = s => fmt(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+  // 状态英文 → 中文。CSS class 还是用英文（用于配色），只换显示文案
+  const REVIEW_STATUS_LABEL = {
+    pending_review: '待审阅',
+    approved: '已批准',
+    rejected: '已拒绝',
+    draft: '草稿',
+  };
+  const RUN_STATUS_LABEL = {
+    draft: '草稿',
+    active: '运行中',
+    paused: '已暂停',
+    finished: '已结束',
+    cancelled: '已撤销',
+  };
+  const reviewLabel = s => REVIEW_STATUS_LABEL[s] || fmt(s);
+  const runLabel = s => RUN_STATUS_LABEL[s] || fmt(s);
+
+  // 后端 jsonify 把 datetime 序列化成 RFC1123 ("Sun, 10 May 2026 01:23:45 GMT")
+  // 也可能是 ISO ("2026-05-10T01:23:45Z")。两种都丢给 Date 都能解，最后统一渲染
+  // 成 "YYYY-MM-DD"（只展示年月日，按用户要求）
+  function formatYMD(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return fmt(value).slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   let _miniprogramLibraryCache = null;
   async function loadMiniprogramLibrary() {
     if (_miniprogramLibraryCache) return _miniprogramLibraryCache;
@@ -284,19 +315,22 @@
     if (!data.ok) return;
     tbody.innerHTML = '';
     if (!data.campaigns.length) {
-      tbody.innerHTML = '<tr><td colspan="8">无 Campaign</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8">暂无运营计划</td></tr>';
       return;
     }
     for (const c of data.campaigns) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><code>${escapeHtml(c.campaign_code).slice(0, 18)}</code><br>${escapeHtml(c.display_name)}</td>
+        <td>
+          <div class="cloud-camp-name">${escapeHtml(c.display_name) || '<em>未命名</em>'}</div>
+          <code class="cloud-camp-code">${escapeHtml(c.campaign_code).slice(0, 18)}</code>
+        </td>
         <td><div class="cloud-camp-intent-cell" title="${escapeHtml(c.intent)}">${escapeHtml(c.intent)}</div></td>
         <td>${fmt(c.segment_count || 0)}</td>
         <td>${fmt(c.member_count || 0)}</td>
-        <td><span class="cloud-orch-status-chip ${escapeHtml(c.review_status)}">${escapeHtml(c.review_status)}</span></td>
-        <td><span class="cloud-orch-status-chip ${escapeHtml(c.run_status)}">${escapeHtml(c.run_status)}</span></td>
-        <td>${escapeHtml(c.updated_at).slice(0, 19)}</td>
+        <td><span class="cloud-orch-status-chip ${escapeHtml(c.review_status)}">${escapeHtml(reviewLabel(c.review_status))}</span></td>
+        <td><span class="cloud-orch-status-chip ${escapeHtml(c.run_status)}">${escapeHtml(runLabel(c.run_status))}</span></td>
+        <td>${escapeHtml(formatYMD(c.updated_at))}</td>
         <td><button class="admin-button admin-button--ghost" data-code="${escapeHtml(c.campaign_code)}">查看</button></td>
       `;
       tr.querySelector('button').addEventListener('click', e => loadDetail(e.currentTarget.dataset.code));
@@ -314,9 +348,9 @@
     detailSection.hidden = false;
     detailName.textContent = camp.display_name || camp.campaign_code;
     detailReview.className = 'cloud-orch-status-chip ' + escapeHtml(camp.review_status);
-    detailReview.textContent = fmt(camp.review_status);
+    detailReview.textContent = reviewLabel(camp.review_status);
     detailRun.className = 'cloud-orch-status-chip ' + escapeHtml(camp.run_status);
-    detailRun.textContent = fmt(camp.run_status);
+    detailRun.textContent = runLabel(camp.run_status);
     detailTrace.textContent = `code=${fmt(camp.campaign_code)}  trace=${fmt(camp.trace_id)}`;
 
     const sections = [];
@@ -533,12 +567,15 @@
   deleteBtn.addEventListener('click', async () => {
     if (!currentCode) return;
     morePop.hidden = true;
-    if (!confirm('删除这个草稿 Campaign？删除后不可恢复。')) return;
-    const reason = '草稿删除';
-    await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}/reject`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ reason }),
+    if (!confirm('永久删除这个 Campaign？包含所有节奏、命中成员、待发批次都会一并清空，且不可恢复。')) return;
+    const resp = await fetch(`/api/admin/cloud-orchestrator/campaigns/${encodeURIComponent(currentCode)}`, {
+      method: 'DELETE',
     });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      alert('删除失败：' + (data.error || `HTTP ${resp.status}`));
+      return;
+    }
     detailSection.hidden = true;
     currentCode = '';
     loadList();

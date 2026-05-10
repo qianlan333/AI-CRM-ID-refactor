@@ -468,6 +468,23 @@ def cloud_orchestrator_reject_campaign(campaign_code: str) -> Response:
     return jsonify({"ok": ok})
 
 
+def cloud_orchestrator_delete_campaign(campaign_code: str) -> Response:
+    """硬删 campaign — DELETE FROM campaigns + 全部子表行。
+
+    active 状态返 409，让调用方先暂停；其他状态都可删。
+    """
+    camp = campaign_service.get_campaign(campaign_code=campaign_code)
+    if not camp:
+        return jsonify({"ok": False, "error": "campaign_not_found"}), 404
+    try:
+        result = campaign_service.delete_campaign(campaign_id=int(camp["id"]))
+    except PermissionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 409
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, **result})
+
+
 def cloud_orchestrator_run_due_campaigns() -> Response:
     """供 cron 调用：扫一批 due 的 campaign_member 各推一步。
 
@@ -628,6 +645,10 @@ def register_routes(bp):
         "/api/admin/cloud-orchestrator/campaigns/<campaign_code>/reject",
         methods=["POST"],
     )(cloud_orchestrator_reject_campaign)
+    bp.route(
+        "/api/admin/cloud-orchestrator/campaigns/<campaign_code>",
+        methods=["DELETE"],
+    )(cloud_orchestrator_delete_campaign)
     bp.route(
         "/api/admin/cloud-orchestrator/campaigns/run-due",
         methods=["POST"],
