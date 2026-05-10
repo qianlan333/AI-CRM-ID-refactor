@@ -279,9 +279,37 @@
         await loadAll();
       });
       card.querySelector('[data-action="delete"]').addEventListener('click', async function () {
-        if (!confirm('确认删除（停用）这张图？已经引用了它的群发将无法发送。')) return;
-        await deleteReq('/api/admin/image-library/' + id);
-        await loadAll();
+        // 第一次 confirm：硬删提醒
+        if (!confirm('永久删除这张图（id=' + id + '），操作不可恢复。确认继续？')) return;
+        var d = await deleteReq('/api/admin/image-library/' + id);
+        if (d.ok) {
+          await loadAll();
+          return;
+        }
+        // 409：被引用拒删；弹引用清单 + 二次确认
+        if (d.references) {
+          var minis = (d.references.miniprograms || []).length;
+          var steps = (d.references.campaign_steps || []).length;
+          var lines = [];
+          lines.push('这张图被引用，删除会让以下引用失效：');
+          if (minis) lines.push('· ' + minis + ' 个小程序卡片（thumb_image_id 会被置 NULL）');
+          if (steps) lines.push('· ' + steps + ' 个群发步骤（image_library_ids 数组里会移除）');
+          lines.push('');
+          lines.push('强制删除会先清空这些引用，再删图。继续？');
+          if (!confirm(lines.join('\n'))) return;
+          var d2 = await deleteReq('/api/admin/image-library/' + id + '?force=true');
+          if (d2.ok) {
+            var cleared = d2.references_cleared || {};
+            alert('已删除。清理引用：小程序 ' + (cleared.miniprograms_cleared || 0)
+              + ' 个，群发步骤 ' + (cleared.campaign_steps_cleared || 0) + ' 个。');
+            await loadAll();
+          } else {
+            alert('强删失败：' + (d2.error || '未知错误'));
+          }
+          return;
+        }
+        // 其他错误
+        alert('删除失败：' + (d.error || '未知错误'));
       });
     });
   }

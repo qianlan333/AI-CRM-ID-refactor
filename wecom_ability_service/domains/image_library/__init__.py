@@ -514,16 +514,195 @@ def update_image(
     return get_image(image_id)
 
 
-def delete_image(image_id: int) -> bool:
-    """软删（enabled=false）。已被 miniprogram_library / campaign_steps 引用的不实删，避免悬空。"""
+def find_image_references(image_id: int) -> dict[str, list[dict[str, Any]]]:
+    """查这张图被哪些表引用，给硬删前的悬空检查用。
+
+    返回 ``{"miniprograms": [...], "campaign_steps": [...]}``：
+    - miniprograms：``miniprogram_library.thumb_image_id = image_id`` 的记录摘要
+    - campaign_steps：``content_payload_json -> 'image_library_ids'`` 数组里含 image_id 的 step
+
+    只要任一非空，硬删就要么拒绝，要么 force 走 cascade 清理。
+    """
+    from ...db import get_db_backend
+
+    is_pg = get_db_backend() == "postgres"
+    image_id = int(image_id)
     db = get_db()
     cur = db.cursor()
+
+    # 1) miniprogram_library
     cur.execute(
-        "UPDATE image_library SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (False, int(image_id)),  # PG BOOLEAN / SQLite truthy
+        "SELECT id, name, appid, title FROM miniprogram_library "
+        "WHERE thumb_image_id = ?",
+        (image_id,),
     )
+    minis = [dict(r) for r in (cur.fetchall() or [])]
+
+    # 2) campaign_steps：JSONB 数组 contains 整数。PG 用 @> '[id]'::jsonb；
+    # SQLite 是 TEXT，含 ``"image_library_ids"`` 数组的 JSON 串，用 LIKE 凑合
+    if is_pg:
+        # 直接用 JSONB 的 ``@>`` / ``?`` / ``?|`` 操作符会跟 cursor adapter
+        # 的 ``?`` → ``%s`` 翻译冲突。改写成 EXISTS + jsonb_array_elements_text
+        # 拆数组逐个比较，干净不踩坑。
+        cur.execute(
+            "SELECT id, campaign_id, step_index FROM campaign_steps "
+            "WHERE EXISTS ("
+            "  SELECT 1 FROM jsonb_array_elements_text("
+            "    COALESCE(content_payload_json -> 'image_library_ids', '[]'::jsonb)"
+            "  ) AS iid WHERE iid = ?"
+            ")",
+            (str(image_id),),
+        )
+    else:
+        # SQLite: content_payload_json 是 TEXT；image_library_ids 在 JSON 里
+        # 形如 ``"image_library_ids": [1, 2, 3]``。用 LIKE 配合两端 [, ] 边界
+        # 防止 12 误中 1。粗糙但够用（dev 用）。
+        like_a = f'%"image_library_ids":%[%, {image_id},%'
+        like_b = f'%"image_library_ids":%[ {image_id},%'
+        like_c = f'%"image_library_ids":%[ {image_id}]%'
+        like_d = f'%"image_library_ids":%[{image_id},%'
+        like_e = f'%"image_library_ids":%[{image_id}]%'
+        like_f = f'%"image_library_ids":%, {image_id}]%'
+        like_g = f'%"image_library_ids":%,{image_id}]%'
+        like_h = f'%"image_library_ids":%, {image_id},%'
+        like_i = f'%"image_library_ids":%,{image_id},%'
+        cur.execute(
+            "SELECT id, campaign_id, step_index FROM campaign_steps WHERE "
+            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
+            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
+            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
+            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
+            "content_payload_json LIKE ?",
+            (like_a, like_b, like_c, like_d, like_e, like_f, like_g, like_h, like_i),
+        )
+    steps = [dict(r) for r in (cur.fetchall() or [])]
+
+    return {"miniprograms": minis, "campaign_steps": steps}
+
+
+def _cascade_clear_references(image_id: int) -> dict[str, int]:
+    """force=True 时清理引用方：
+
+    - miniprogram_library.thumb_image_id 置 NULL（仍保留 thumb_image_url /
+      thumb_image_base64 兜底字段，老 fallback 路径还能跑）
+    - campaign_steps.content_payload_json 里的 image_library_ids 数组移除
+      该 id（保留其他 ids；如果数组只剩一项就移除整个 key 也行，但留空数组
+      最简单且语义清晰）
+
+    返回每张表清理的行数，给上游汇报用。
+    """
+    from ...db import get_db_backend
+
+    is_pg = get_db_backend() == "postgres"
+    image_id = int(image_id)
+    db = get_db()
+    cur = db.cursor()
+
+    cur.execute(
+        "UPDATE miniprogram_library SET thumb_image_id = NULL, "
+        "updated_at = CURRENT_TIMESTAMP WHERE thumb_image_id = ?",
+        (image_id,),
+    )
+    minis_cleared = cur.rowcount or 0
+
+    if is_pg:
+        # PG: 用 jsonb_set + 过滤掉等于 image_id 的元素
+        cur.execute(
+            "UPDATE campaign_steps SET "
+            "content_payload_json = jsonb_set("
+            "  content_payload_json, "
+            "  '{image_library_ids}', "
+            "  COALESCE("
+            "    (SELECT jsonb_agg(elem) FROM jsonb_array_elements("
+            "      content_payload_json -> 'image_library_ids'"
+            "    ) AS elem WHERE elem::text::int <> ?),"
+            "    '[]'::jsonb"
+            "  )"
+            "), updated_at = CURRENT_TIMESTAMP "
+            "WHERE EXISTS ("
+            "  SELECT 1 FROM jsonb_array_elements_text("
+            "    COALESCE(content_payload_json -> 'image_library_ids', '[]'::jsonb)"
+            "  ) AS iid WHERE iid = ?"
+            ")",
+            (image_id, str(image_id)),
+        )
+        steps_cleared = cur.rowcount or 0
+    else:
+        # SQLite: 拉出来 Python 端改 + 写回，简单可靠
+        refs = find_image_references(image_id)
+        steps_cleared = 0
+        for step in refs["campaign_steps"]:
+            step_id = int(step["id"])
+            cur2 = db.cursor()
+            cur2.execute(
+                "SELECT content_payload_json FROM campaign_steps WHERE id = ?",
+                (step_id,),
+            )
+            row = cur2.fetchone()
+            if not row:
+                continue
+            payload = _decode_jsonb(dict(row).get("content_payload_json"), default={})
+            if not isinstance(payload, dict):
+                continue
+            ids = payload.get("image_library_ids") or []
+            new_ids = [int(x) for x in ids if int(x) != image_id]
+            payload["image_library_ids"] = new_ids
+            cur2.execute(
+                "UPDATE campaign_steps SET content_payload_json = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (_to_jsonb_text(payload, default="{}"), step_id),
+            )
+            steps_cleared += 1
+
     db.commit()
-    return (cur.rowcount or 0) > 0
+    return {"miniprograms_cleared": minis_cleared, "campaign_steps_cleared": steps_cleared}
+
+
+def delete_image(image_id: int, *, force: bool = False) -> dict[str, Any]:
+    """硬删图片素材（DELETE FROM image_library WHERE id = ?）。
+
+    引用检查：
+    - 默认（force=False）：发现 miniprogram_library / campaign_steps 引用就抛
+      ValueError，让调用方先解除引用，避免悬空
+    - force=True：先 cascade 清理引用方（miniprogram.thumb_image_id 置 NULL；
+      campaign_steps.image_library_ids 数组移除此 id），再 DELETE
+
+    返回 ``{"ok": bool, "deleted_id": int, "references_cleared": {...}}``。
+    上一版返回 bool（软删），这次行为变化也改了返回值形态；调用方只有 admin
+    endpoint 一处，已同步更新。
+    """
+    image_id = int(image_id)
+    existing = get_image(image_id)
+    if not existing:
+        raise ValueError(f"image_library id={image_id} not found")
+
+    refs = find_image_references(image_id)
+    has_refs = bool(refs["miniprograms"] or refs["campaign_steps"])
+    references_cleared: dict[str, int] = {"miniprograms_cleared": 0, "campaign_steps_cleared": 0}
+
+    if has_refs and not force:
+        # 把引用列表打包到异常 message，HTTP 层会序列化给前端
+        raise ValueError(
+            "image_library id={id} 被引用：miniprograms={mn} campaign_steps={cn}；"
+            "若确认删除请用 force=True 强删（会清空这些引用方的 image 关联）".format(
+                id=image_id,
+                mn=len(refs["miniprograms"]),
+                cn=len(refs["campaign_steps"]),
+            )
+        )
+
+    if has_refs and force:
+        references_cleared = _cascade_clear_references(image_id)
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM image_library WHERE id = ?", (image_id,))
+    db.commit()
+    return {
+        "ok": (cur.rowcount or 0) > 0,
+        "deleted_id": image_id,
+        "references_cleared": references_cleared,
+    }
 
 
 def _decode_image_bytes(record_full: dict[str, Any]) -> tuple[bytes, str, str]:
@@ -618,5 +797,6 @@ __all__ = [
     "create_image_from_base64",
     "update_image",
     "delete_image",
+    "find_image_references",
     "resolve_image_media_id",
 ]
