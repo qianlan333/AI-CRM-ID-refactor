@@ -37,16 +37,21 @@ _BASE_COLUMNS = (
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S+00:00")
 
 
 def _normalize_dt(value: Any) -> str:
+    """将各种时间值标准化为 PG TIMESTAMPTZ 可正确解析的带时区字符串。
+
+    naive datetime 视为本地时间（服务器 Asia/Shanghai），而非 UTC。
+    """
     if value is None:
         return _now_iso()
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            # naive datetime 来自 datetime.now() — 本地时间，标记为 +08:00
+            return value.strftime("%Y-%m-%d %H:%M:%S+08:00")
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S+00:00")
     return str(value).strip() or _now_iso()
 
 
