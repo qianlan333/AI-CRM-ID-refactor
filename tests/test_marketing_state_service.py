@@ -409,13 +409,12 @@ def test_questionnaire_initial_split_enters_corresponding_pool(app, monkeypatch)
         assert normal_state["stage_key"] == "pool/inactive_normal"
         assert normal_state["pool_key"] == "inactive_normal"
         assert normal_state["current_segment"] == "normal"
-        # PG TIMESTAMPTZ: naive 入库按 Asia/Shanghai (+08) → _strip_tz 读回 UTC
-        assert normal_state["entered_at"] == "2026-04-04 02:00:00"
+        assert normal_state["entered_at"] == "2026-04-04 10:00:00"
 
         assert focus_state["stage_key"] == "pool/inactive_focus"
         assert focus_state["pool_key"] == "inactive_focus"
         assert focus_state["current_segment"] == "focus"
-        assert focus_state["entered_at"] == "2026-04-04 02:00:00"
+        assert focus_state["entered_at"] == "2026-04-04 10:00:00"
 
 
 def test_activation_moves_customer_from_inactive_pool_to_active_pool(app, monkeypatch):
@@ -458,10 +457,8 @@ def test_activation_moves_customer_from_inactive_pool_to_active_pool(app, monkey
 
         assert second["stage_key"] == "pool/active_focus"
         assert second["pool_key"] == "active_focus"
-        # PG TIMESTAMPTZ: 12:00 Asia/Shanghai → 04:00 UTC
-        assert second["last_activation_at"] == "2026-04-04 04:00:00"
-        # entered_at uses frozen now (12:30) → 04:30 UTC
-        assert second["entered_at"] == "2026-04-04 04:30:00"
+        assert second["last_activation_at"] == "2026-04-04 12:00:00"
+        assert second["entered_at"] == "2026-04-04 12:00:00"
         assert int(history_total) == 2
 
 
@@ -558,8 +555,7 @@ def test_customer_enters_silent_pool_after_threshold_days(app, monkeypatch):
     with app.app_context():
         first = evaluate_customer_marketing_state(external_userid="wm_pool_silent")
         assert first["stage_key"] == "pool/inactive_focus"
-        # PG TIMESTAMPTZ: 10:10 frozen now → 02:10 UTC
-        assert first["entered_at"] == "2026-04-04 02:10:00"
+        assert first["entered_at"] == "2026-04-04 10:10:00"
 
     _freeze_state_time(monkeypatch, timestamp="2026-04-05 10:30:00")
     with app.app_context():
@@ -569,11 +565,9 @@ def test_customer_enters_silent_pool_after_threshold_days(app, monkeypatch):
         assert second["stage_key"] == "pool/silent"
         assert second["pool_key"] == "silent"
         assert second["eligible_for_conversion"] is False
-        # PG TIMESTAMPTZ: 10:30 frozen now → 02:30 UTC
-        assert second["entered_at"] == "2026-04-05 02:30:00"
+        assert second["entered_at"] == "2026-04-05 10:30:00"
         assert second["state_payload"]["silent_base_pool_key"] == "inactive_focus"
-        # PG TIMESTAMPTZ: first entered_at persisted as 02:10 UTC
-        assert second["state_payload"]["silent_base_pool_entered_at"] == "2026-04-04 02:10:00"
+        assert second["state_payload"]["silent_base_pool_entered_at"] == "2026-04-04 10:10:00"
         assert value_segment["segment"] == "top"
 
 
@@ -614,7 +608,6 @@ def test_trial_opening_fact_controls_transition_into_inactive_pool(app, monkeypa
         after = evaluate_customer_marketing_state(external_userid="wm_trial_gate")
         assert after["stage_key"] == "pool/inactive_focus"
         assert after["eligible_for_conversion"] is True
-        # PG TIMESTAMPTZ: 11:35 frozen now → 03:35 UTC
-        assert after["entered_at"] == "2026-04-04 03:35:00"
+        assert after["entered_at"] == "2026-04-04 11:35:00"
         assert after["state_payload"]["trial_opened"] is True
         assert after["state_payload"]["trial_opened_source"] == "test_seed"

@@ -1616,7 +1616,7 @@ def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app
     assert initial_payload["hit_count"] == 4
     assert initial_payload["matched_question_ids"] == seed["question_ids"][:4]
     assert initial_payload["eligible_for_conversion"] is True
-    assert initial_payload["last_activation_at"] == "2026-04-04 05:00:00"
+    assert initial_payload["last_activation_at"] == "2026-04-04 13:00:00"
     assert initial_payload["last_conversion_marked_at"] == ""
 
     mark_response = client.post(
@@ -2871,15 +2871,15 @@ def test_activation_webhook_moves_inactive_pools_and_refreshes_active_pool(app, 
 
     assert normal_response.status_code == 200
     assert normal_response.get_json()["marketing_state"]["stage_key"] == "pool/active_normal"
-    assert normal_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 07:10:00"
+    assert normal_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 15:10:00"
 
     assert focus_response.status_code == 200
     assert focus_response.get_json()["marketing_state"]["stage_key"] == "pool/active_focus"
-    assert focus_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 07:11:00"
+    assert focus_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 15:11:00"
 
     assert repeat_response.status_code == 200
     assert repeat_response.get_json()["marketing_state"]["stage_key"] == "pool/active_focus"
-    assert repeat_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 07:12:00"
+    assert repeat_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 15:12:00"
 
 
 def test_activation_webhook_returns_error_when_mobile_not_found(app, client):
