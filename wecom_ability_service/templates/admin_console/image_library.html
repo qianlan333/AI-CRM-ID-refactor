@@ -192,11 +192,6 @@
     padding-right:30px;  /* 给关闭按钮腾位 */
   }
   .il-edit-subtitle { font-size:11px; color:#9ca3af; margin-bottom:8px; }
-  .il-edit-readonly {
-    margin-top:12px; padding:10px 12px; background:#f9fafb; border-radius:6px;
-    font-size:11px; color:#6b7280; line-height:1.7;
-  }
-  .il-edit-readonly span.k { color:#9ca3af; display:inline-block; min-width:64px; }
   .il-edit-actions {
     display:flex; gap:8px; justify-content:flex-end; margin-top:16px;
     padding-top:14px; border-top:1px solid #e5e7eb;
@@ -305,10 +300,6 @@
         <label>标签（逗号分隔）</label>
         <input type="text" id="il-edit-tags">
 
-        <div class="il-edit-readonly" id="il-edit-readonly">
-          <!-- 只读元信息 by JS -->
-        </div>
-
         <div class="il-modal-status" id="il-edit-status"></div>
 
         <div class="il-edit-actions">
@@ -351,10 +342,6 @@
     if (n < 1024) return n + ' B';
     if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
     return (n / 1024 / 1024).toFixed(2) + ' MB';
-  }
-  function fmtTime(s) {
-    if (!s) return '-';
-    return String(s).replace('T', ' ').replace(/\.\d+/, '').replace(/\+00:00$/, ' UTC');
   }
 
   // ---------- 状态 ---------- //
@@ -606,17 +593,6 @@
     document.getElementById('il-edit-description').value = item.description || '';
     document.getElementById('il-edit-tags').value = (item.tags || []).join(', ');
     $editToggleBtn.textContent = item.enabled ? '停用' : '启用';
-
-    var ro = document.getElementById('il-edit-readonly');
-    ro.innerHTML = ''
-      + '<div><span class="k">id</span> ' + item.id + '</div>'
-      + '<div><span class="k">文件名</span> ' + escapeHtml(item.file_name || '-') + '</div>'
-      + '<div><span class="k">来源</span> ' + escapeHtml(item.source || '-') + '</div>'
-      + '<div><span class="k">大小</span> ' + fmtBytes(item.file_size) + '</div>'
-      + '<div><span class="k">MIME</span> ' + escapeHtml(item.mime_type || '-') + '</div>'
-      + '<div><span class="k">状态</span> ' + (item.enabled ? '启用' : '已停用') + '</div>'
-      + '<div><span class="k">创建</span> ' + escapeHtml(fmtTime(item.created_at)) + '</div>'
-      + '<div><span class="k">更新</span> ' + escapeHtml(fmtTime(item.updated_at)) + '</div>';
 
     setEditStatus('', '');
     $editModal.hidden = false;
