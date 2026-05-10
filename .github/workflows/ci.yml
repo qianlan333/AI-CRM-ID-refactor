@@ -74,5 +74,5 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run all tests (PG-only)
-        run: python -m pytest tests/ -v --tb=short --timeout=120
+        run: python -m pytest tests/ -v --tb=short --timeout=120 --timeout-method=thread
         timeout-minutes: 45
