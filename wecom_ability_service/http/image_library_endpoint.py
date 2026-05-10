@@ -196,8 +196,32 @@ def admin_image_library_update(image_id: int) -> Response:
 
 
 def admin_image_library_delete(image_id: int) -> Response:
-    ok = image_library.delete_image(int(image_id))
-    return jsonify({"ok": ok})
+    """硬删 image_library 记录。
+
+    - 默认拒绝有引用的删除，返回 409 + ``references`` 列表给前端展示
+    - ``?force=true`` 强删 + cascade 清理引用方
+    """
+    force = _parse_bool_arg(request.args.get("force"), default=False)
+    try:
+        result = image_library.delete_image(int(image_id), force=force)
+        return jsonify(result)
+    except ValueError as exc:
+        msg = str(exc)
+        # 区分"找不到记录"（404）和"被引用拒删"（409）
+        if "not found" in msg:
+            return jsonify({"ok": False, "error": msg}), 404
+        # 把引用列表也带上，前端弹二次确认时直接展示
+        try:
+            refs = image_library.find_image_references(int(image_id))
+        except Exception:  # pragma: no cover - defensive
+            refs = {}
+        return jsonify({"ok": False, "error": msg, "references": refs}), 409
+
+
+def admin_image_library_references(image_id: int) -> Response:
+    """查这张图被哪些表引用，给前端在删除前预览用。"""
+    refs = image_library.find_image_references(int(image_id))
+    return jsonify({"ok": True, "references": refs})
 
 
 def admin_image_library_test_resolve(image_id: int) -> Response:
@@ -218,6 +242,7 @@ def register_routes(bp) -> None:
     bp.route("/api/admin/image-library/<int:image_id>", methods=["GET"])(admin_image_library_get)
     bp.route("/api/admin/image-library/<int:image_id>", methods=["PUT"])(admin_image_library_update)
     bp.route("/api/admin/image-library/<int:image_id>", methods=["DELETE"])(admin_image_library_delete)
+    bp.route("/api/admin/image-library/<int:image_id>/references", methods=["GET"])(admin_image_library_references)
     bp.route(
         "/api/admin/image-library/<int:image_id>/test-resolve",
         methods=["POST"],
