@@ -346,6 +346,11 @@ def _truncate_before_each_test():
         return
     conn = psycopg.connect(url, autocommit=True)
     cur = conn.cursor()
+    # 防止 TRUNCATE 在等锁时无限阻塞（daemon 线程可能遗留连接 + 开放事务）
+    try:
+        cur.execute("SET lock_timeout = '5s'")
+    except Exception:
+        pass
     for table in _TABLES_TO_TRUNCATE:
         try:
             cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
