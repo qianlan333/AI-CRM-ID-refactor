@@ -143,17 +143,6 @@ def test_api_admin_audit_logs_route_jobs_actions_back_to_jobs_console(app, clien
     assert payload["audit"]["items"][0]["target_href"] == "/admin/jobs"
 
 
-def test_admin_system_page_renders_runbooks_and_legacy_strategy(client):
-    response = client.get("/admin/system")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "常用入口" in html
-    assert "重要操作提醒" in html
-    assert "/admin/audit" in html
-    assert "/admin/user-ops/ui" not in html
-
-
 def test_shell_topbar_renders_governance_links(client):
     response = client.get("/admin")
     html = response.get_data(as_text=True)

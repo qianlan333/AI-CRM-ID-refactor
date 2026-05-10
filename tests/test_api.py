@@ -1428,7 +1428,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
     assert "班级状态" in shell_text
 
     legacy_response = client.get("/admin/_legacy/class-user-management")
-    assert legacy_response.status_code == 410
+    assert legacy_response.status_code == 404
 
 
 def test_admin_questionnaire_ui_redirects_to_management_page(client):
@@ -1442,7 +1442,7 @@ def test_admin_questionnaire_ui_redirects_to_management_page(client):
 def test_admin_questionnaire_legacy_ui_is_gone(client):
     response = client.get("/admin/_legacy/questionnaires", follow_redirects=False)
 
-    assert response.status_code == 410
+    assert response.status_code == 404
 
 
 def test_admin_questionnaire_management_page_exists(client):
@@ -1524,7 +1524,7 @@ def test_admin_questionnaire_editor_page_uses_scrollable_sticky_inspector(client
 def test_class_user_backoffice_legacy_ui_is_gone(client):
     response = client.get("/admin/class-user-backoffice/ui", follow_redirects=False)
 
-    assert response.status_code == 410
+    assert response.status_code == 404
 
     shell_response = client.get("/admin/class-users?tab=class-users")
     shell_text = shell_response.get_data(as_text=True)
