@@ -241,7 +241,7 @@ def test_super_admin_navigation_restores_customer_primary_entry(app, client, mon
     assert 'href="/admin/user-ops"' not in html
     assert 'href="/admin/customer-pulse"' not in html
     assert 'href="/admin/followup-orchestrator"' not in html
-    assert 'href="/admin/jobs"' not in html
+    assert 'href="/admin/jobs"' in html
     assert 'href="/admin/audit"' not in html
     assert 'href="/admin/system"' not in html
 
