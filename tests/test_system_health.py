@@ -27,7 +27,7 @@ def client(app):
 def _insert_event(app, *, status="pending", retry_count=0, minutes_ago=0):
     with app.app_context():
         db = get_db()
-        created = (datetime.utcnow() - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%d %H:%M:%S")
+        created = (datetime.now() - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%d %H:%M:%S")
         db.execute(
             """
             INSERT INTO wecom_external_contact_event_logs

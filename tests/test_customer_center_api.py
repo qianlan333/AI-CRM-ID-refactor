@@ -396,9 +396,9 @@ def test_customer_list_scope_sql_casts_timestamp_sort_columns_for_postgres(monke
 
     sql = customer_repo._customer_list_scope_sql()
 
-    assert "NULLIF(class_status.updated_at::text, '')" in sql
-    assert "NULLIF(contact.updated_at::text, '')" in sql
-    assert "NULLIF(binding.updated_at::text, '')" in sql
+    assert "(class_status.updated_at)::timestamp::text" in sql
+    assert "(contact.updated_at)::timestamp::text" in sql
+    assert "(binding.updated_at)::timestamp::text" in sql
     assert "NULLIF(class_status.updated_at, '')" not in sql
     assert "NULLIF(contact.updated_at, '')" not in sql
     assert "NULLIF(binding.updated_at, '')" not in sql

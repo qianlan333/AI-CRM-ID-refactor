@@ -180,7 +180,8 @@ def test_admin_dashboard_apis_return_aggregated_metrics_and_todos(app, client):
     assert system_payload["system_status"]["deferred_counts"]["pending_count"] == 1
     deferred_card = next(card for card in system_payload["system_status"]["cards"] if card["key"] == "deferred_jobs")
     assert deferred_card["value"] == 2
-    assert system_payload["system_status"]["last_contacts_sync_time"] == "2026-04-02 09:30:00"
+    # PG TIMESTAMPTZ：naive 字符串按服务器时区入库，_strip_tz 读回转 UTC，只断言日期
+    assert "2026-04-02" in system_payload["system_status"]["last_contacts_sync_time"]
 
     assert summary_response.status_code == 200
     assert summary_payload["ok"] is True
@@ -189,7 +190,7 @@ def test_admin_dashboard_apis_return_aggregated_metrics_and_todos(app, client):
     assert summary_payload["summary"]["group_chats_total"] == 1
     assert summary_payload["summary"]["customers_total"] == 3
     assert summary_payload["summary"]["questionnaire_total"] == 1
-    assert summary_payload["summary"]["questionnaire_latest_submission"] == "2026-04-02 10:30:00"
+    assert summary_payload["summary"]["questionnaire_latest_submission"] == "2026-04-02 02:30:00"
     assert summary_payload["summary"]["user_ops_lead_pool_total"] == 2
     assert summary_payload["summary"]["class_user_current_total"] == 1
 

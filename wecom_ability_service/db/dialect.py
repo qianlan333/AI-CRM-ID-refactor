@@ -32,8 +32,13 @@ def is_sqlite() -> bool:
 
 
 def cast_text(expr: str) -> str:
-    """SQL fragment for casting an expression to text on PG."""
-    return f"{expr}::text"
+    """SQL fragment for casting an expression to text on PG.
+
+    Uses ``::timestamp::text`` instead of ``::text`` so that TIMESTAMPTZ
+    values are rendered **without** the timezone offset (``+08``) — matching
+    the naive-datetime convention the rest of the codebase expects.
+    """
+    return f"({expr})::timestamp::text"
 
 
 def coalesce_text(*exprs: str, default: str = "''") -> str:

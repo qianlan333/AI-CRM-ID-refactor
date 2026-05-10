@@ -85,7 +85,16 @@ def app(tmp_path):
 
 @pytest.fixture()
 def client(app):
-    return app.test_client()
+    c = app.test_client()
+    # 注入 break-glass 管理员 session，让 admin 页面不被 302 重定向
+    with c.session_transaction() as sess:
+        sess["admin_session_user_id"] = 0
+        sess["admin_session_wecom_userid"] = ""
+        sess["admin_session_role_list"] = ["super_admin"]
+        sess["admin_session_login_type"] = "break_glass"
+        sess["admin_session_display_name"] = "test-admin"
+        sess["admin_session_break_glass_username"] = "test-admin"
+    return c
 
 
 def _seed_user_ops_sources(app) -> None:
@@ -1605,78 +1614,21 @@ def test_user_ops_shell_page_exists(client):
 
 
 def test_user_ops_legacy_ui_hides_legacy_fields_and_buttons(client):
+    # /admin/_legacy 已进入 ADMIN_SUNSET_PAGE_PREFIXES，返回 410
     response = client.get("/admin/_legacy/user-ops")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="admin-sidebar"' in html
-    assert "发送记录" in html
-    assert "免打扰" in html
-    assert "批量群发" in html
-    assert "转化链路运营页" in html
-    assert "用户运营明细表" in html
-    assert "操作历史" not in html
-    assert "运营名单历史" not in html
-    assert "待处理作业" not in html
-    assert "班期状态" not in html
-    assert "班期状态历史" not in html
-    assert "导入" not in html
-    assert "班期回填" not in html
-    assert "执行待处理自动归班任务" not in html
-    assert "激活待录入" not in html
-    assert 'id="batch-send-modal-backdrop" class="backdrop center hidden"' in html
-    assert 'id="send-records-backdrop" class="backdrop hidden"' in html
-    assert 'id="customer-detail-backdrop" class="backdrop hidden"' in html
+    assert response.status_code == 410
 
 
 def test_user_ops_legacy_ui_prioritizes_phone_bound_class_term_activation_columns(client):
+    # /admin/_legacy 已进入 ADMIN_SUNSET_PAGE_PREFIXES，返回 410
     response = client.get("/admin/_legacy/user-ops")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    checkbox_index = html.index("<th style=\"width: 48px;\">选中</th>")
-    customer_name_index = html.index("<th>客户昵称</th>")
-    phone_index = html.index("<th>手机号</th>")
-    class_term_index = html.index("<th>班期</th>")
-    wecom_added_index = html.index("<th>已加微状态</th>")
-    mobile_bound_index = html.index("<th>手机绑定状态</th>")
-    activation_index = html.index("<th>激活状态</th>")
-    external_index = html.index("<th>external_userid</th>")
-    actions_index = html.index("<th>操作</th>")
-
-    assert checkbox_index < customer_name_index < phone_index < class_term_index < wecom_added_index < mobile_bound_index < activation_index < external_index < actions_index
-    assert "<th>免打扰</th>" not in html
+    assert response.status_code == 410
 
 
 def test_user_ops_legacy_ui_includes_batch_send_modal_and_drawers(client):
+    # /admin/_legacy 已进入 ADMIN_SUNSET_PAGE_PREFIXES，返回 410
     response = client.get("/admin/_legacy/user-ops")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'id="open-send-records-btn"' in html
-    assert 'id="open-batch-send-btn"' in html
-    assert 'id="batch-send-text"' in html
-    assert 'id="batch-image-input"' in html
-    assert 'id="pick-batch-images-btn"' in html
-    assert 'id="batch-image-list"' in html
-    assert 'id="batch-image-count"' in html
-    assert 'id="include-dnd-toggle"' in html
-    assert 'id="include-dnd-confirm-toggle"' in html
-    assert 'id="preview-target-body"' in html
-    assert 'id="preview-eligible-count"' in html
-    assert 'id="preview-skipped-summary"' in html
-    assert 'id="preview-message-summary"' in html
-    assert 'id="customer-detail-grid"' in html
-    assert 'id="customer-timeline-list"' in html
-    assert 'id="send-record-detail-panel"' in html
-    assert 'id="send-record-detail-summary"' in html
-    assert 'id="send-record-task-results"' in html
-    assert 'id="refresh-send-record-status-btn"' in html
-    assert 'id="back-send-record-list-btn"' in html
-    assert "发送内容" in html
-    assert "包含免打扰用户" in html
-    assert "附加图片" in html
-    assert "最多 3 张" in html
+    assert response.status_code == 410
 
 
 def test_user_ops_batch_send_modal_removes_large_stats_and_sender_bucket_from_main_ui(client):
@@ -2670,8 +2622,17 @@ def test_sidebar_bind_mobile_merges_external_only_and_mobile_only_members(client
     assert bool(merged["is_mobile_bound"]) is True
     assert merge_history["action_type"] == "mobile_bind_merge"
     assert merge_history["source_type"] == "mobile_bind"
-    assert '"external_userid": "wm_sidebar_bind_001"' in merge_history["before_json"]
-    assert '"mobile": "13800138111"' in merge_history["after_json"]
+    # PG JSON/JSONB 列返回 dict，不能用 in 查子串
+    before = merge_history["before_json"]
+    if isinstance(before, dict):
+        assert before.get("external_userid") == "wm_sidebar_bind_001"
+    else:
+        assert '"external_userid": "wm_sidebar_bind_001"' in before
+    after = merge_history["after_json"]
+    if isinstance(after, dict):
+        assert after.get("mobile") == "13800138111"
+    else:
+        assert '"mobile": "13800138111"' in after
 
 
 def test_lead_pool_upsert_same_external_userid_keeps_current_row_and_appends_history(app):
@@ -2729,8 +2690,14 @@ def test_lead_pool_upsert_same_external_userid_keeps_current_row_and_appends_his
     assert history_rows[1]["source_type"] == "sidebar_manual_set_class_term"
     assert history_rows[1]["operator"] == "tester_b"
     assert history_rows[1]["remark"] == "pool core stability check"
-    assert '"customer_name": "更新客户"' in history_rows[1]["after_json"]
-    assert '"huangxiaocan_activation_state": "activated"' in history_rows[1]["after_json"]
+    # PG JSON/JSONB 列返回 dict
+    after = history_rows[1]["after_json"]
+    if isinstance(after, dict):
+        assert after.get("customer_name") == "更新客户"
+        assert after.get("huangxiaocan_activation_state") == "activated"
+    else:
+        assert '"customer_name": "更新客户"' in after
+        assert '"huangxiaocan_activation_state": "activated"' in after
 
 
 def test_import_mobile_class_terms_from_pasted_text_updates_pool(client, app):

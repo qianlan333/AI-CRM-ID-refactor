@@ -44,6 +44,7 @@ _TABLES_TO_TRUNCATE = [
     "automation_workflow_node",
     "automation_workflow_goal",
     "automation_workflow",
+    "automation_event",
     "automation_member",
     "automation_program",
     "automation_channel",
@@ -51,6 +52,7 @@ _TABLES_TO_TRUNCATE = [
     "automation_sop_pool_config",
     "automation_sop_batch_item",
     "automation_sop_batch",
+    "automation_sop_template",
     "automation_agent_run",
     "automation_agent_output",
     "automation_focus_send_batch_item",
@@ -83,13 +85,15 @@ _TABLES_TO_TRUNCATE = [
     "customer_value_segment_current",
     "customer_marketing_state_history",
     "customer_marketing_state_current",
-    "signup_conversion_question_rules",
-    "signup_conversion_config",
+    # signup_conversion_question_rules / signup_conversion_config 已合入
+    # marketing_automation_question_rules / marketing_automation_configs（下面列出），
+    # PG schema 里不再有这两张表。
     # — libraries
     "image_library",
     "miniprogram_library",
     # — questionnaire
     "questionnaire_external_push_logs",
+    "questionnaire_scrm_apply_logs",
     "questionnaire_submission_answers",
     "questionnaire_submissions",
     "questionnaire_options",
@@ -98,10 +102,11 @@ _TABLES_TO_TRUNCATE = [
     "questionnaires",
     # — admin / auth
     "admin_users",
-    "admin_wecom_directory_member",
+    # admin_wecom_directory_member 不在 PG schema 中（WeCom 目录走 admin_users）
     "owner_role_map",
     "routing_rule_config",
     "app_settings",
+    "mcp_tool_settings",
     # — contacts / identity
     "contacts",
     "external_contact_bindings",
@@ -110,7 +115,7 @@ _TABLES_TO_TRUNCATE = [
     "wecom_external_contact_event_logs",
     "contact_tags",
     "group_chats",
-    "group_chat_members",
+    # group_chat_members 不在 PG schema 中（成员信息嵌入 group_chats.raw_payload）
     "people",
     "class_user_status_current",
     "class_user_status_history",
@@ -132,8 +137,13 @@ _TABLES_TO_TRUNCATE = [
     "message_batches",
     # — archive / system
     "archived_messages",
+    "archive_sync_state",
+    "sync_runs",
     "outbound_tasks",
     "outbound_webhook_deliveries",
+    "outbound_event_outbox",
+    "admin_operation_logs",
+    "user_ops_import_batches",
     # — customer pulse / followup
     "customer_pulse_signal_events",
     "customer_pulse_snapshots",
@@ -262,13 +272,9 @@ class _AppContextManager:
             _run_schema_with_retries(db, schema_path.read_text(encoding="utf-8"))
             db.commit()
         init_db()
-        cur = db.cursor()
-        for table in _TABLES_TO_TRUNCATE:
-            try:
-                cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
-            except Exception:
-                db.rollback()
-        db.commit()
+        # 跳过冗余 truncate — autouse ``_truncate_before_each_test`` 已经用
+        # 独立 raw psycopg 连接做过了。在同一 setup 阶段再跑一遍会和 init_db
+        # 的 seed 产生 AccessExclusiveLock 竞争（deadlock）。
         return self._app
 
     def __exit__(self, *args):
@@ -389,14 +395,7 @@ def app(tmp_path) -> Iterator[Any]:
             _run_schema_with_retries(db, schema_path.read_text(encoding="utf-8"))
             db.commit()
         init_db()
-        # truncate 隔离
-        cur = db.cursor()
-        for table in _TABLES_TO_TRUNCATE:
-            try:
-                cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
-            except Exception:
-                db.rollback()
-        db.commit()
+        # 跳过冗余 truncate — autouse ``_truncate_before_each_test`` 已处理
         yield app
 
 

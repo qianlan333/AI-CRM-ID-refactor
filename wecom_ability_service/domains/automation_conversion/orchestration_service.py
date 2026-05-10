@@ -242,9 +242,10 @@ def _parse_datetime_text(value: Any) -> datetime | None:
         return None
     # PG TIMESTAMPTZ ISO 字符串带时区（``+00:00``），fromisoformat 返回 aware
     # datetime。上层比对老代码用 ``datetime.now()`` 是 naive，``aware - naive``
-    # 抛 TypeError。统一脱时区让所有比对在 naive 域。
+    # 抛 TypeError。先转 UTC 再脱时区，与 db.connection._strip_tz 保持一致。
     if parsed.tzinfo is not None:
-        parsed = parsed.replace(tzinfo=None)
+        from datetime import timezone as _tz
+        parsed = parsed.astimezone(_tz.utc).replace(tzinfo=None)
     return parsed
 
 
@@ -255,6 +256,10 @@ def _display_datetime_text(value: Any) -> str:
     parsed = _parse_datetime_text(text)
     if parsed is None:
         return text.split(".")[0] if "." in text else text
+    # 先转 UTC 再去 tz —— 与 db.connection._strip_tz 保持一致
+    from datetime import timezone as _tz
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(_tz.utc)
     return parsed.replace(tzinfo=None, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
 
 

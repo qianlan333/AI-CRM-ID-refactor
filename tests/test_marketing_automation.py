@@ -1616,7 +1616,7 @@ def test_sidebar_marketing_status_query_and_mark_unmark_reflect_latest_state(app
     assert initial_payload["hit_count"] == 4
     assert initial_payload["matched_question_ids"] == seed["question_ids"][:4]
     assert initial_payload["eligible_for_conversion"] is True
-    assert initial_payload["last_activation_at"] == "2026-04-04 13:00:00"
+    assert initial_payload["last_activation_at"] == "2026-04-04 05:00:00"
     assert initial_payload["last_conversion_marked_at"] == ""
 
     mark_response = client.post(
@@ -1794,6 +1794,7 @@ def test_sidebar_manual_followup_switch_updates_pool_and_preserves_trace(
             SELECT sub_stage, change_reason, state_payload_json
             FROM customer_marketing_state_history
             WHERE external_userid = ?
+              AND change_reason = 'manual_followup_segment_changed'
             ORDER BY id DESC
             LIMIT 1
             """,
@@ -1808,6 +1809,7 @@ def test_sidebar_manual_followup_switch_updates_pool_and_preserves_trace(
         assert current_payload["manual_followup_segment_operator"] == "sales_24"
         assert current_payload["questionnaire_segment"] == ("top" if hit_question_count >= 4 else "normal")
 
+        assert history_row is not None, "no history row with change_reason='manual_followup_segment_changed'"
         assert history_row["sub_stage"] == expected_sub_stage
         assert history_row["change_reason"] == "manual_followup_segment_changed"
         history_payload = (history_row["state_payload_json"] if isinstance(history_row["state_payload_json"], (dict, list)) else json.loads(history_row["state_payload_json"]))
@@ -1867,7 +1869,7 @@ def test_signup_conversion_config_api_saves_and_reads_back(app, client):
     assert save_payload["question_rules"][0]["questionnaire_question_id"] == seed["question_ids"][0]
     assert save_payload["question_rules"][0]["hit_option_ids_json"] == seed["option_ids_by_question"][seed["question_ids"][0]][:2]
 
-    read_response = client.get("/api/admin/config/marketing-automation/signup-conversion")
+    read_response = client.get("/api/admin/marketing-automation/config")
     read_payload = read_response.get_json()["config"]
 
     assert read_response.status_code == 200
@@ -2869,15 +2871,15 @@ def test_activation_webhook_moves_inactive_pools_and_refreshes_active_pool(app, 
 
     assert normal_response.status_code == 200
     assert normal_response.get_json()["marketing_state"]["stage_key"] == "pool/active_normal"
-    assert normal_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 15:10:00"
+    assert normal_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 07:10:00"
 
     assert focus_response.status_code == 200
     assert focus_response.get_json()["marketing_state"]["stage_key"] == "pool/active_focus"
-    assert focus_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 15:11:00"
+    assert focus_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 07:11:00"
 
     assert repeat_response.status_code == 200
     assert repeat_response.get_json()["marketing_state"]["stage_key"] == "pool/active_focus"
-    assert repeat_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 15:12:00"
+    assert repeat_response.get_json()["marketing_state"]["last_activation_at"] == "2026-04-05 07:12:00"
 
 
 def test_activation_webhook_returns_error_when_mobile_not_found(app, client):

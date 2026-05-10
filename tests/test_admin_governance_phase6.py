@@ -140,7 +140,7 @@ def test_admin_system_page_renders_runbooks_and_legacy_strategy(client):
 
 
 def test_shell_topbar_renders_governance_links(client):
-    response = client.get("/admin")
+    response = client.get("/admin", follow_redirects=True)
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200

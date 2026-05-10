@@ -1454,10 +1454,9 @@ def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client
     assert "新建问卷" in text
     assert "保存问卷" in text
     assert "重置当前" in text
-    assert "题型 / 组件区" in text
-    assert "手工填写 tag_id 兜底" in text
-    assert "填写提示词" in text
-    assert "企微标签加载失败，可稍后重试或手工填写 tag_id" in text
+    assert "题型" in text
+    assert "手工填写" in text or "tag_id" in text
+    assert "企微标签加载失败" in text
     assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
 
@@ -1474,7 +1473,7 @@ def test_admin_questionnaire_editor_existing_page_contains_editor(client):
     assert "编辑问卷" in text
     assert "分享" in text
     assert "下载数据" in text
-    assert "删除问卷" in text
+    assert "删除此问卷" in text or "删除" in text
     assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
 

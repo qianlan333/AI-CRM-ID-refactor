@@ -491,7 +491,8 @@ def test_login_access_refreshes_wecom_directory_and_authorizes_cached_member(app
 def test_sunset_pages_are_offline_and_logged(app, client, monkeypatch):
     _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"])
 
-    response = client.get("/admin/jobs")
+    # /admin/class-user-management is still sunset
+    response = client.get("/admin/class-user-management")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 410
@@ -508,7 +509,7 @@ def test_sunset_pages_are_offline_and_logged(app, client, monkeypatch):
             """
         ).fetchone()
         assert row is not None
-        assert row["target_id"] == "/admin/jobs"
+        assert row["target_id"] == "/admin/class-user-management"
         assert row["action_type"] == "sunset_route_access"
 
 

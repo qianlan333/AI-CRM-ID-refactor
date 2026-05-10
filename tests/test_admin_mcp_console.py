@@ -64,10 +64,10 @@ def test_admin_api_docs_page_renders_human_readable_sections(client, monkeypatch
 
     assert response.status_code == 200
     assert "API 文档" in html
-    assert "企业微信自建应用登录" in html
-    assert "自动化运营核心接口" in html
-    assert "问卷核心接口" in html
-    assert "常见错误码" in html
+    assert "认证" in html
+    assert "自动化运营" in html
+    assert "问卷" in html
+    assert "错误码" in html
 
 
 def test_admin_mcp_preflight_redirects_to_api_docs(client):

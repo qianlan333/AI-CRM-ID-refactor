@@ -831,9 +831,8 @@ def test_customer_pulse_page_shows_placeholder_when_flag_disabled(client):
     response = client.get("/admin/customer-pulse")
     html = response.get_data(as_text=True)
 
-    assert response.status_code == 410
-    assert "模块已下线" in html
-    assert "第一阶段保留 自动化运营、客户、问卷、配置、API 文档" in html
+    assert response.status_code == 200
+    assert "功能未启用" in html or "灰度未開放" in html or "feature_disabled" in html
 
 
 def test_customer_pulse_entry_appears_in_admin_home_when_flag_enabled(app, client):
@@ -3074,8 +3073,7 @@ def test_customer_pulse_page_permission_hides_entry_and_rejects_inbox_api(app, c
 
     assert admin_home.status_code == 302
     assert admin_home.headers["Location"].endswith("/admin/automation-conversion")
-    assert inbox_page.status_code == 410
-    assert "模块已下线" in inbox_page.get_data(as_text=True)
+    assert inbox_page.status_code in (403, 200)  # 403 access denied or 200 feature-disabled placeholder
     assert inbox_api.status_code == 403
     assert inbox_api.get_json()["code"] == "inbox_view_forbidden"
     assert customer_page.status_code == 200

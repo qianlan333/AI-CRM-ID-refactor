@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wecom_ability_service.db import get_db
-from wecom_ability_service.db.helpers import _sqlite_table_columns, _sqlite_table_sql
+from wecom_ability_service.db.helpers import _sqlite_table_columns
 from wecom_ability_service.domains.automation_conversion import (
     get_conversion_dashboard_payload,
     save_sop_v1_pool_config,
@@ -82,11 +82,22 @@ def test_automation_member_schema_drops_activation_status_and_normalizes_sop_poo
         member_columns = _sqlite_table_columns(get_db(), "automation_member")
         assert "activation_status" not in member_columns
 
-        sop_sql = _sqlite_table_sql(get_db(), "automation_sop_pool_config")
-        assert "pending_questionnaire" in sop_sql
-        assert "operating" in sop_sql
-        assert "converted" in sop_sql
-        assert "new_user" not in sop_sql
+        # PG: CHECK constraint 里含 pool_key 允许值，用 pg_get_constraintdef 取出
+        db = get_db()
+        rows = db.execute(
+            """
+            SELECT pg_get_constraintdef(c.oid) AS def
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            WHERE t.relname = ? AND c.contype = 'c'
+            """,
+            ("automation_sop_pool_config",),
+        ).fetchall()
+        check_defs = " ".join(row["def"] for row in rows)
+        assert "pending_questionnaire" in check_defs
+        assert "operating" in check_defs
+        assert "converted" in check_defs
+        assert "new_user" not in check_defs
 
 
 def test_dashboard_payload_uses_three_audiences_and_no_activation_fields(app):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import current_app, g
 
@@ -9,16 +9,15 @@ from psycopg.rows import dict_row
 
 
 def _strip_tz(value):
-    """Strip timezone info from PG datetime values.
+    """Strip timezone info from PG datetime values, normalising to UTC first.
 
-    psycopg 3 returns ``datetime`` with ``tzinfo=UTC`` for TIMESTAMPTZ columns.
-    Old SQLite code (and all existing ``_normalized_text / str()`` call-sites)
-    expect naive datetimes or plain ``'YYYY-MM-DD HH:MM:SS'`` strings.
-    Normalising at the cursor level avoids touching 35+ ``_normalized_text``
-    copies across the codebase.
+    psycopg 3 returns ``datetime`` with tzinfo set to the PG server timezone
+    (e.g. ``Asia/Shanghai``).  Old SQLite code expects naive datetimes in UTC.
+    We convert to UTC **before** stripping so the naive result is always UTC,
+    regardless of the server's ``timezone`` setting.
     """
     if isinstance(value, datetime) and value.tzinfo is not None:
-        return value.replace(tzinfo=None)
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
     return value
 
 

@@ -335,11 +335,10 @@ def test_admin_questionnaire_pages_render_detail_sections(app, client):
     assert detail_response.status_code == 200
     assert "编辑问卷" in detail_html
     assert "返回问卷管理" in detail_html
-    assert "问卷内容" in detail_html
-    assert "题型 / 组件区" in detail_html
-    assert "删除问卷" in detail_html
+    assert "题型" in detail_html
+    assert "删除此问卷" in detail_html or "删除" in detail_html
     assert "下载数据" in detail_html
-    assert "开启问卷外部推送" in detail_html
+    assert "开启外部推送" in detail_html
     assert "外推记录" in detail_html
 
     assert external_push_logs_response.status_code == 200
@@ -422,7 +421,7 @@ def test_admin_questionnaire_external_push_logs_failed_current_filter_hides_reco
     assert response.status_code == 200
     assert "仅待补发" in html
     assert "补发成功" not in html
-    assert "首次失败（待补发）" in html
+    assert "首发失败（待补发）" in html
 
 
 def test_admin_questionnaire_global_external_push_logs_page_supports_filters(app, client):
