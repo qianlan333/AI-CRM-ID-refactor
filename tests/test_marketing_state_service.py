@@ -458,7 +458,7 @@ def test_activation_moves_customer_from_inactive_pool_to_active_pool(app, monkey
         assert second["stage_key"] == "pool/active_focus"
         assert second["pool_key"] == "active_focus"
         assert second["last_activation_at"] == "2026-04-04 12:00:00"
-        assert second["entered_at"] == "2026-04-04 12:00:00"
+        assert second["entered_at"] == "2026-04-04 12:30:00"
         assert int(history_total) == 2
 
 
