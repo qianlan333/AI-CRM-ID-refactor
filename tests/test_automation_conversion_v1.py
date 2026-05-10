@@ -78,6 +78,21 @@ from wecom_ability_service.domains.automation_conversion.workflow_service import
 
 
 from _automation_conversion_v1_helpers import *  # noqa: F401,F403  helpers + service-level imports
+from wecom_ability_service.domains.automation_conversion.workflow_runtime import run_workflow_execution
+
+
+def _drain_running_executions():
+    """模拟 broadcast_jobs worker: 执行所有 running 状态的 workflow execution。"""
+    rows = get_db().execute(
+        "SELECT execution_id, workflow_id, node_id FROM automation_workflow_execution WHERE status = 'running'"
+    ).fetchall()
+    for row in rows:
+        run_workflow_execution(execution_data={
+            "execution_id": row["execution_id"],
+            "workflow_id": row["workflow_id"],
+            "node_id": row["node_id"],
+        })
+
 
 @pytest.fixture()
 def app(tmp_path):
@@ -269,6 +284,10 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+
+        assert result["ok"] is True
+        _drain_running_executions()
+
         item_rows = get_db().execute(
             """
             SELECT external_contact_id, rendered_content_text, status
@@ -277,7 +296,6 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
             """
         ).fetchall()
 
-    assert result["ok"] is True
     assert len(dispatched) == 1
     assert dispatched[0]["external_userid"] == ["wm_profile_low_001"]
     assert [dict(row) for row in item_rows] == [
@@ -336,10 +354,13 @@ def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3
     with app.app_context():
         _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
         first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         _mock_workflow_runtime_now(monkeypatch, "2026-04-09 09:05:00")
         second = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         _mock_workflow_runtime_now(monkeypatch, "2026-04-10 09:05:00")
         third = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         execution_items = get_db().execute(
             """
             SELECT rendered_content_text, status
@@ -348,9 +369,9 @@ def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3
             """
         ).fetchall()
 
-    assert first["total_success_count"] == 1
-    assert second["total_success_count"] == 1
-    assert third["total_success_count"] == 1
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert third["ok"] is True
     assert [item["text"]["content"] for item in dispatched] == [
         "第1天提醒填写问卷",
         "第2天继续提醒填写问卷",
@@ -411,8 +432,9 @@ def test_run_due_conversion_workflows_supports_operating_audience_scheduled_node
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
 
-    assert result["total_success_count"] == 1
+    assert result["ok"] is True
     assert len(dispatched) == 1
     assert dispatched[0]["external_userid"] == ["wm_operating_scheduled_001"]
     assert dispatched[0]["text"]["content"] == "运营中人群定时触达"
@@ -601,6 +623,7 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         execution_rows = get_db().execute(
             """
             SELECT execution_id, total_count, success_count, summary_json
@@ -609,17 +632,21 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
             """
         ).fetchall()
 
-    assert result["total_success_count"] == 3
-    assert [item["text"]["content"] for item in dispatched] == [
+    assert result["ok"] is True
+    assert sorted(item["text"]["content"] for item in dispatched) == [
         "第3天激活提醒",
         "第4天使用场景激活",
         "第5天结果预期激活",
     ]
     summaries = [json.loads(row["summary_json"]) for row in execution_rows]
-    assert [summary["result"]["success_count"] for summary in summaries] == [1, 1, 1]
-    assert summaries[0]["diagnostics"]["day_offset_miss_count"] == 5
-    assert summaries[2]["diagnostics"]["recipient_filter_behavior_tier_miss_count"] == 1
-    assert summaries[2]["diagnostics"]["day_offset_miss_count"] == 4
+    assert sorted(summary["result"]["success_count"] for summary in summaries) == [1, 1, 1]
+    # 按 node_name 排序来验证诊断信息
+    summaries_by_name = {s["node_name"]: s for s in summaries}
+    day3_summary = summaries_by_name["第3天激活提醒"]
+    day5_summary = summaries_by_name["第5天结果预期激活"]
+    assert day3_summary["diagnostics"]["day_offset_miss_count"] == 5
+    assert day5_summary["diagnostics"]["recipient_filter_behavior_tier_miss_count"] == 1
+    assert day5_summary["diagnostics"]["day_offset_miss_count"] == 4
 
 
 def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_usage_source_as_zero(app, monkeypatch):
@@ -679,6 +706,7 @@ def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_u
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         execution_row = get_db().execute(
             """
             SELECT success_count, skipped_count, summary_json
@@ -689,7 +717,7 @@ def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_u
         ).fetchone()
 
     summary = json.loads(execution_row["summary_json"])
-    assert result["total_success_count"] == 1
+    assert result["ok"] is True
     assert len(dispatched) == 1
     assert dispatched[0]["text"]["content"] == "第3天激活提醒"
     assert execution_row["success_count"] == 1
@@ -756,6 +784,7 @@ def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         item_row = get_db().execute(
             """
             SELECT rendered_content_text, content_snapshot_json, status
@@ -766,7 +795,7 @@ def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_
         ).fetchone()
 
     snapshot = json.loads(item_row["content_snapshot_json"])
-    assert result["total_success_count"] == 1
+    assert result["ok"] is True
     assert len(dispatched) == 1
     assert dict(item_row)["rendered_content_text"] == "低行为脏配置仍可发送"
     assert dict(item_row)["status"] == "sent"
@@ -835,6 +864,7 @@ def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_t
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         item_row = get_db().execute(
             """
             SELECT rendered_content_text, content_snapshot_json, status
@@ -845,7 +875,7 @@ def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_t
         ).fetchone()
 
     snapshot = json.loads(item_row["content_snapshot_json"])
-    assert result["total_success_count"] == 1
+    assert result["ok"] is True
     assert len(dispatched) == 1
     assert dict(item_row)["rendered_content_text"] == "没有命中画像时走标准 fallback"
     assert dict(item_row)["status"] == "sent"
@@ -2720,7 +2750,9 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
 
     with app.app_context():
         first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         second = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         execution_rows = get_db().execute(
             """
             SELECT execution_id, total_count, success_count, status, scheduled_for
@@ -2822,6 +2854,7 @@ def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standa
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        _drain_running_executions()
         item_row = get_db().execute(
             """
             SELECT status, error_message, rendered_content_text, content_snapshot_json
@@ -10569,8 +10602,7 @@ def test_due_jobs_api_runs_registered_conversion_workflow_job(app, client, monke
     assert payload["ok"] is True
     assert payload["requested_job_codes"] == ["conversion_workflow"]
     assert payload["jobs"][0]["job_code"] == "conversion_workflow"
-    assert payload["jobs"][0]["result"]["total_success_count"] == 1
-    assert payload["total_success_count"] == 1
+    assert payload["jobs"][0]["result"]["ok"] is True
 
 
 def test_due_jobs_api_rejects_invalid_internal_token_for_conversion_workflow_job(app, client):
