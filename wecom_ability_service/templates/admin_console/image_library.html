@@ -2,32 +2,64 @@
 
 {% block head_extra %}
 <style>
-  .il-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-top:14px; }
-  .il-card { border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#fff; }
-  .il-thumb { width:100%; aspect-ratio:1; background:#f5f6f8; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#bbb; overflow:hidden; margin-bottom:8px; }
+  /* ----- 筛选栏 ----- */
+  .il-filters { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px; background:#f9fafb; border-radius:8px; margin-top:14px; }
+  .il-filters input[type=search], .il-filters select { padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:12px; min-width:160px; }
+  .il-filters label.checkbox { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:#5b626f; cursor:pointer; }
+  .il-tag-pool { display:flex; flex-wrap:wrap; gap:6px; padding:8px 0 0; }
+  .il-tag-pool .chip { font-size:11px; padding:3px 10px; border:1px solid #d1d5db; border-radius:12px; background:#fff; cursor:pointer; user-select:none; }
+  .il-tag-pool .chip.active { background:#2c5cdb; color:#fff; border-color:#2c5cdb; }
+  .il-tag-pool .empty { font-size:11px; color:#999; padding:3px 0; }
+  .il-filters .reset { font-size:11px; color:#a02929; background:transparent; border:none; cursor:pointer; padding:4px 6px; }
+
+  /* ----- 网格 + 卡片 ----- */
+  .il-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; margin-top:14px; }
+  .il-card { border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#fff; display:flex; flex-direction:column; }
+  .il-thumb { width:100%; aspect-ratio:1; background:#f5f6f8; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#bbb; overflow:hidden; margin-bottom:8px; cursor:pointer; }
   .il-thumb img { width:100%; height:100%; object-fit:cover; }
-  .il-meta { font-size:11px; color:#888; line-height:1.5; }
+  .il-card-title { font-size:13px; font-weight:500; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .il-card-desc { font-size:11px; color:#5b626f; line-height:1.4; min-height:30px; max-height:46px; overflow:hidden; margin-bottom:6px; }
+  .il-card-chips { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; min-height:18px; }
+  .il-card-chips .tag { font-size:10px; padding:1px 7px; border-radius:8px; background:#eef2ff; color:#3730a3; }
+  .il-card-chips .cat { font-size:10px; padding:1px 7px; border-radius:8px; background:#fef3c7; color:#92400e; }
+  .il-card-chips .unlabeled { font-size:10px; padding:1px 7px; border-radius:8px; background:#fee2e2; color:#991b1b; }
+  .il-meta { font-size:10px; color:#999; line-height:1.4; }
   .il-actions { display:flex; gap:6px; margin-top:8px; }
   .il-actions button { font-size:11px; padding:3px 8px; border-radius:4px; border:1px solid #d1d5db; background:#fff; cursor:pointer; }
   .il-actions .danger { color:#a02929; border-color:#f3c7c7; }
+
+  /* ----- 上传表单 ----- */
   .il-form { background:#f9fafb; padding:16px; border-radius:8px; margin-top:14px; }
   .il-form-tabs { display:flex; gap:8px; margin-bottom:10px; }
   .il-form-tabs button { background:transparent; border:1px solid #d1d5db; border-radius:4px; padding:4px 12px; cursor:pointer; font-size:12px; }
   .il-form-tabs button.active { background:#2c5cdb; color:#fff; border-color:#2c5cdb; }
   .il-form-pane { display:none; }
   .il-form-pane.active { display:block; }
-  .il-form input[type=text], .il-form input[type=url] { width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; box-sizing:border-box; }
+  .il-form input[type=text], .il-form input[type=url], .il-form textarea, .il-form select { width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; box-sizing:border-box; font-family:inherit; font-size:12px; }
+  .il-form textarea { resize:vertical; min-height:60px; }
   .il-form label { display:block; font-size:12px; color:#5b626f; margin:8px 0 4px; }
+  .il-form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  /* ----- 通用徽章 ----- */
   .badge-on { background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:12px; font-size:11px; }
   .badge-off { background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:11px; }
+
+  /* ----- 编辑模态框 ----- */
+  .il-modal[hidden] { display:none; }
+  .il-modal { position:fixed; inset:0; z-index:50; background:rgba(15,23,42,0.55); display:grid; place-items:center; padding:20px; }
+  .il-modal-card { width:min(560px,100%); max-height:calc(100vh - 48px); overflow:auto; background:#fff; border-radius:12px; padding:22px; box-shadow:0 20px 50px rgba(15,23,42,0.25); }
+  .il-modal-card h3 { margin:0 0 12px; font-size:15px; }
+  .il-modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  .il-modal-status { font-size:11px; color:#a02929; min-height:14px; margin-top:8px; }
 </style>
 {% endblock %}
 
 {% block content %}
-<section>
+<section data-il-root>
   <h1>{{ page_title }}</h1>
   <p class="subtle">{{ page_summary }}</p>
 
+  <!-- 上传区 -->
   <div class="il-form">
     <h3 style="margin:0 0 8px;font-size:14px;">新增图片素材</h3>
     <div class="il-form-tabs">
@@ -37,145 +69,420 @@
     <div class="il-form-pane active" data-pane="upload">
       <label>选择图片（image/*，最大 5MB）</label>
       <input type="file" id="il-upload-file" accept="image/*">
-      <label>素材名（可选，留空用文件名）</label>
-      <input type="text" id="il-upload-name" placeholder="如：5月活动主图">
-      <button class="btn primary" id="il-upload-btn" type="button" style="margin-top:10px;">上传</button>
     </div>
     <div class="il-form-pane" data-pane="url">
       <label>图片 URL</label>
       <input type="url" id="il-url-input" placeholder="https://...">
-      <label>素材名（可选）</label>
-      <input type="text" id="il-url-name">
-      <button class="btn primary" id="il-url-btn" type="button" style="margin-top:10px;">添加</button>
     </div>
+    <div class="il-form-row">
+      <div>
+        <label>素材名（留空用文件名）</label>
+        <input type="text" id="il-form-name" placeholder="如：5月活动主图">
+      </div>
+      <div>
+        <label>分类</label>
+        <input type="text" id="il-form-category" list="il-form-category-options" placeholder="如：好评截图 / 活动海报">
+        <datalist id="il-form-category-options"></datalist>
+      </div>
+    </div>
+    <label>描述（可选；用于聊天场景推荐时给 AI 看）</label>
+    <textarea id="il-form-description" placeholder="如：用户表达对效果质疑时回复，截图来自上海宝妈群体"></textarea>
+    <label>标签（逗号分隔；可与分类搭配筛选）</label>
+    <input type="text" id="il-form-tags" placeholder="如：好评, 信任建立, 宝妈群体">
+    <button class="btn primary" id="il-submit-btn" type="button" style="margin-top:10px;">提交</button>
     <div id="il-form-status" class="subtle" style="margin-top:8px;font-size:12px;"></div>
   </div>
 
+  <!-- 筛选栏 -->
+  <div class="il-filters">
+    <input type="search" id="il-q" placeholder="搜索名称 / 描述">
+    <select id="il-category-filter">
+      <option value="">全部分类</option>
+    </select>
+    <label class="checkbox"><input type="checkbox" id="il-only-unlabeled"> 只看未打标</label>
+    <label class="checkbox"><input type="checkbox" id="il-include-disabled"> 含已停用</label>
+    <button class="reset" id="il-reset" type="button">重置</button>
+  </div>
+  <div class="il-tag-pool" id="il-tag-pool"></div>
+
+  <!-- 网格 -->
   <div id="il-list-wrap" class="il-grid">
     <p class="subtle">加载中…</p>
   </div>
 </section>
 
+<!-- 编辑模态框 -->
+<div class="il-modal" id="il-edit-modal" hidden>
+  <div class="il-modal-card">
+    <h3 id="il-edit-title">编辑图片素材</h3>
+    <label>素材名</label>
+    <input type="text" id="il-edit-name" class="il-form-input" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">
+    <label style="margin-top:10px;display:block;">分类</label>
+    <input type="text" id="il-edit-category" list="il-form-category-options" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">
+    <label style="margin-top:10px;display:block;">描述</label>
+    <textarea id="il-edit-description" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;min-height:80px;font-family:inherit;font-size:12px;"></textarea>
+    <label style="margin-top:10px;display:block;">标签（逗号分隔）</label>
+    <input type="text" id="il-edit-tags" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">
+    <div class="il-modal-status" id="il-edit-status"></div>
+    <div class="il-modal-actions">
+      <button type="button" id="il-edit-cancel">取消</button>
+      <button type="button" class="btn primary" id="il-edit-save">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
-function escapeHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+(function () {
+  // ---------- 工具 ---------- //
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function getJSON(url) {
+    return fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.json(); });
+  }
+  function putJSON(url, body) {
+    return fetch(url, {
+      method: 'PUT', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }).then(function (r) { return r.json(); });
+  }
+  function postJSON(url, body) {
+    return fetch(url, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }).then(function (r) { return r.json(); });
+  }
+  function postForm(url, fd) {
+    return fetch(url, { method: 'POST', credentials: 'same-origin', body: fd }).then(function (r) { return r.json(); });
+  }
+  function deleteReq(url) {
+    return fetch(url, { method: 'DELETE', credentials: 'same-origin' }).then(function (r) { return r.json(); });
+  }
 
-async function thumbnailUrl(item) {
-  if (item._thumb) return item._thumb;
-  if (item.source === 'url' && item.source_url) { item._thumb = item.source_url; return item._thumb; }
-  try {
-    const r = await fetch('/api/admin/image-library/' + item.id, { credentials: 'same-origin' });
-    const d = await r.json();
-    if (d.ok && d.item.data_base64) {
-      item._thumb = 'data:' + (d.item.mime_type || 'image/png') + ';base64,' + d.item.data_base64;
+  // ---------- 状态 ---------- //
+  var STATE = {
+    items: [],            // 当前列表
+    facets: { categories: [], tags: [] },
+    filters: {
+      q: '',
+      category: '',
+      tags: [],           // 选中 tags 的数组
+      onlyUnlabeled: false,
+      includeDisabled: false,
+    },
+  };
+
+  // ---------- 渲染：筛选栏 tag pool ---------- //
+  function renderTagPool() {
+    var wrap = document.getElementById('il-tag-pool');
+    if (!STATE.facets.tags.length) {
+      wrap.innerHTML = '<span class="empty">还没有标签 — 通过编辑或上传时填写</span>';
+      return;
     }
-  } catch (e) {}
-  return item._thumb || '';
-}
-
-async function loadList() {
-  const wrap = document.getElementById('il-list-wrap');
-  wrap.innerHTML = '<p class="subtle">加载中…</p>';
-  const r = await fetch('/api/admin/image-library?enabled_only=false&limit=300', { credentials: 'same-origin' });
-  const d = await r.json();
-  if (!d.ok) { wrap.innerHTML = '<p>加载失败：' + (d.error || '') + '</p>'; return; }
-  if (!d.items.length) { wrap.innerHTML = '<p class="subtle">还没有图片素材，使用上方表单添加一条。</p>'; return; }
-  wrap.innerHTML = d.items.map(function (it) {
-    const badge = it.enabled ? '<span class="badge-on">启用</span>' : '<span class="badge-off">停用</span>';
-    return '<div class="il-card" data-id="' + it.id + '">'
-      + '<div class="il-thumb">…</div>'
-      + '<div style="font-size:13px;font-weight:500;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.name || it.file_name || '#' + it.id) + ' ' + badge + '</div>'
-      + '<div class="il-meta">id=' + it.id + ' · ' + escapeHtml(it.source) + (it.file_size ? ' · ' + Math.round(it.file_size/1024) + ' KB' : '')
-      + (it.thumb_media_id ? ' · 企微缓存' : '') + '</div>'
-      + '<div class="il-actions">'
-      + '<button data-action="toggle">' + (it.enabled ? '停用' : '启用') + '</button>'
-      + '<button data-action="rename">改名</button>'
-      + '<button data-action="delete" class="danger">删除</button>'
-      + '</div></div>';
-  }).join('');
-  // 异步填缩略图
-  d.items.forEach(async function (it) {
-    const url = await thumbnailUrl(it);
-    const cell = wrap.querySelector('.il-card[data-id="' + it.id + '"] .il-thumb');
-    if (cell && url) cell.innerHTML = '<img src="' + url + '">';
-    else if (cell) cell.textContent = '(无图)';
-  });
-  wrap.querySelectorAll('.il-card').forEach(function (card) {
-    const id = Number(card.dataset.id);
-    const item = d.items.find(function (x) { return x.id === id; });
-    card.querySelector('[data-action="toggle"]').addEventListener('click', async function () {
-      await fetch('/api/admin/image-library/' + id, {
-        method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: !item.enabled }),
+    wrap.innerHTML = STATE.facets.tags.map(function (tag) {
+      var active = STATE.filters.tags.indexOf(tag) >= 0 ? ' active' : '';
+      return '<span class="chip' + active + '" data-tag="' + escapeHtml(tag) + '">' + escapeHtml(tag) + '</span>';
+    }).join('');
+    wrap.querySelectorAll('.chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var tag = chip.dataset.tag;
+        var idx = STATE.filters.tags.indexOf(tag);
+        if (idx >= 0) STATE.filters.tags.splice(idx, 1);
+        else STATE.filters.tags.push(tag);
+        renderTagPool();
+        loadList();
       });
-      loadList();
     });
-    card.querySelector('[data-action="rename"]').addEventListener('click', async function () {
-      const name = prompt('新备注名：', item.name || '');
-      if (name == null) return;
-      await fetch('/api/admin/image-library/' + id, {
-        method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name }),
+  }
+
+  // ---------- 渲染：分类下拉 ---------- //
+  function renderCategoryOptions() {
+    var sel = document.getElementById('il-category-filter');
+    var current = STATE.filters.category;
+    var opts = ['<option value="">全部分类</option>'];
+    STATE.facets.categories.forEach(function (c) {
+      opts.push('<option value="' + escapeHtml(c) + '"' + (current === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>');
+    });
+    sel.innerHTML = opts.join('');
+
+    var dl = document.getElementById('il-form-category-options');
+    dl.innerHTML = STATE.facets.categories.map(function (c) {
+      return '<option value="' + escapeHtml(c) + '">';
+    }).join('');
+  }
+
+  // ---------- 渲染：网格 ---------- //
+  async function thumbnailUrl(item) {
+    if (item._thumb) return item._thumb;
+    if (item.source === 'url' && item.source_url) { item._thumb = item.source_url; return item._thumb; }
+    try {
+      var d = await getJSON('/api/admin/image-library/' + item.id);
+      if (d.ok && d.item.data_base64) {
+        item._thumb = 'data:' + (d.item.mime_type || 'image/png') + ';base64,' + d.item.data_base64;
+      }
+    } catch (e) {}
+    return item._thumb || '';
+  }
+
+  function renderGrid() {
+    var wrap = document.getElementById('il-list-wrap');
+    if (!STATE.items.length) {
+      wrap.innerHTML = '<p class="subtle">没有匹配的素材。可以试试重置筛选条件。</p>';
+      return;
+    }
+    wrap.innerHTML = STATE.items.map(function (it) {
+      var badge = it.enabled ? '<span class="badge-on">启用</span>' : '<span class="badge-off">停用</span>';
+      var chips = [];
+      if (it.category) {
+        chips.push('<span class="cat">' + escapeHtml(it.category) + '</span>');
+      }
+      (it.tags || []).slice(0, 5).forEach(function (t) {
+        chips.push('<span class="tag">' + escapeHtml(t) + '</span>');
       });
-      loadList();
-    });
-    card.querySelector('[data-action="delete"]').addEventListener('click', async function () {
-      if (!confirm('确认删除（停用）这张图？已经引用了它的群发将无法发送。')) return;
-      await fetch('/api/admin/image-library/' + id, { method: 'DELETE', credentials: 'same-origin' });
-      loadList();
-    });
-  });
-}
+      if ((it.tags || []).length > 5) {
+        chips.push('<span class="tag">+' + ((it.tags || []).length - 5) + '</span>');
+      }
+      var unlabeled = !it.description && !(it.tags || []).length && !it.category;
+      if (unlabeled) chips.push('<span class="unlabeled">未打标</span>');
+      var desc = it.description ? escapeHtml(it.description) : '<span style="color:#bbb;">（暂无描述）</span>';
+      return '<div class="il-card" data-id="' + it.id + '">'
+        + '<div class="il-thumb" data-action="preview">…</div>'
+        + '<div class="il-card-title">' + escapeHtml(it.name || it.file_name || '#' + it.id) + ' ' + badge + '</div>'
+        + '<div class="il-card-desc">' + desc + '</div>'
+        + '<div class="il-card-chips">' + chips.join('') + '</div>'
+        + '<div class="il-meta">id=' + it.id + ' · ' + escapeHtml(it.source) + (it.file_size ? ' · ' + Math.round(it.file_size/1024) + ' KB' : '')
+        + (it.thumb_media_id ? ' · 企微缓存' : '') + '</div>'
+        + '<div class="il-actions">'
+        + '<button data-action="edit">编辑</button>'
+        + '<button data-action="toggle">' + (it.enabled ? '停用' : '启用') + '</button>'
+        + '<button data-action="delete" class="danger">删除</button>'
+        + '</div></div>';
+    }).join('');
 
-// tab 切换
-document.querySelectorAll('.il-form-tabs button').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    document.querySelectorAll('.il-form-tabs button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.il-form-pane').forEach(p => p.classList.remove('active'));
-    document.querySelector('.il-form-pane[data-pane="' + btn.dataset.tab + '"]').classList.add('active');
-  });
-});
+    // 异步填缩略图
+    STATE.items.forEach(async function (it) {
+      var url = await thumbnailUrl(it);
+      var cell = wrap.querySelector('.il-card[data-id="' + it.id + '"] .il-thumb');
+      if (cell && url) cell.innerHTML = '<img src="' + url + '">';
+      else if (cell) cell.textContent = '(无图)';
+    });
 
-document.getElementById('il-upload-btn').addEventListener('click', async function () {
-  const status = document.getElementById('il-form-status');
-  const f = document.getElementById('il-upload-file').files[0];
-  if (!f) { status.textContent = '请先选择文件'; return; }
-  status.textContent = '上传中…';
-  const fd = new FormData();
-  fd.append('image', f);
-  fd.append('name', document.getElementById('il-upload-name').value);
-  const r = await fetch('/api/admin/image-library/upload', { method: 'POST', credentials: 'same-origin', body: fd });
-  const d = await r.json();
-  if (d.ok) {
-    status.textContent = '已新增 #' + d.item.id;
+    // 事件绑定
+    wrap.querySelectorAll('.il-card').forEach(function (card) {
+      var id = Number(card.dataset.id);
+      var item = STATE.items.find(function (x) { return x.id === id; });
+      card.querySelector('[data-action="edit"]').addEventListener('click', function () { openEditModal(item); });
+      card.querySelector('[data-action="toggle"]').addEventListener('click', async function () {
+        await putJSON('/api/admin/image-library/' + id, { enabled: !item.enabled });
+        await loadAll();
+      });
+      card.querySelector('[data-action="delete"]').addEventListener('click', async function () {
+        if (!confirm('确认删除（停用）这张图？已经引用了它的群发将无法发送。')) return;
+        await deleteReq('/api/admin/image-library/' + id);
+        await loadAll();
+      });
+    });
+  }
+
+  // ---------- 数据加载 ---------- //
+  function buildListUrl() {
+    var params = new URLSearchParams();
+    params.set('limit', '300');
+    params.set('enabled_only', STATE.filters.includeDisabled ? 'false' : 'true');
+    if (STATE.filters.q) params.set('q', STATE.filters.q);
+    if (STATE.filters.category) params.set('category', STATE.filters.category);
+    if (STATE.filters.tags.length) params.set('tags', STATE.filters.tags.join(','));
+    if (STATE.filters.onlyUnlabeled) params.set('only_unlabeled', 'true');
+    return '/api/admin/image-library?' + params.toString();
+  }
+
+  async function loadList() {
+    var wrap = document.getElementById('il-list-wrap');
+    wrap.innerHTML = '<p class="subtle">加载中…</p>';
+    try {
+      var d = await getJSON(buildListUrl());
+      if (!d.ok) {
+        wrap.innerHTML = '<p>加载失败：' + escapeHtml(d.error || '') + '</p>';
+        return;
+      }
+      STATE.items = d.items || [];
+      renderGrid();
+    } catch (e) {
+      wrap.innerHTML = '<p>加载失败：' + escapeHtml(String(e)) + '</p>';
+    }
+  }
+
+  async function loadFacets() {
+    try {
+      // facets 默认只返回启用记录的；包含已停用时也用启用集合做筛选选项即可
+      var d = await getJSON('/api/admin/image-library/facets');
+      if (d.ok) {
+        STATE.facets.categories = d.categories || [];
+        STATE.facets.tags = d.tags || [];
+      }
+    } catch (e) {
+      STATE.facets = { categories: [], tags: [] };
+    }
+    renderTagPool();
+    renderCategoryOptions();
+  }
+
+  async function loadAll() {
+    await loadFacets();
+    await loadList();
+  }
+
+  // ---------- 上传表单 ---------- //
+  function activeUploadTab() {
+    var btn = document.querySelector('.il-form-tabs button.active');
+    return btn ? btn.dataset.tab : 'upload';
+  }
+  function commonFormFields() {
+    return {
+      name: document.getElementById('il-form-name').value.trim(),
+      description: document.getElementById('il-form-description').value.trim(),
+      tags: document.getElementById('il-form-tags').value.trim(),
+      category: document.getElementById('il-form-category').value.trim(),
+    };
+  }
+  function clearForm() {
     document.getElementById('il-upload-file').value = '';
-    document.getElementById('il-upload-name').value = '';
-    loadList();
-  } else {
-    status.textContent = '失败：' + d.error;
-  }
-});
-
-document.getElementById('il-url-btn').addEventListener('click', async function () {
-  const status = document.getElementById('il-form-status');
-  const url = document.getElementById('il-url-input').value;
-  if (!url) { status.textContent = '请输入 URL'; return; }
-  status.textContent = '提交中…';
-  const r = await fetch('/api/admin/image-library/from-url', {
-    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: url, name: document.getElementById('il-url-name').value }),
-  });
-  const d = await r.json();
-  if (d.ok) {
-    status.textContent = '已新增 #' + d.item.id;
     document.getElementById('il-url-input').value = '';
-    document.getElementById('il-url-name').value = '';
-    loadList();
-  } else {
-    status.textContent = '失败：' + d.error;
+    document.getElementById('il-form-name').value = '';
+    document.getElementById('il-form-description').value = '';
+    document.getElementById('il-form-tags').value = '';
+    document.getElementById('il-form-category').value = '';
   }
-});
 
-loadList();
+  document.querySelectorAll('.il-form-tabs button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.il-form-tabs button').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      document.querySelectorAll('.il-form-pane').forEach(function (p) { p.classList.remove('active'); });
+      document.querySelector('.il-form-pane[data-pane="' + btn.dataset.tab + '"]').classList.add('active');
+    });
+  });
+
+  document.getElementById('il-submit-btn').addEventListener('click', async function () {
+    var status = document.getElementById('il-form-status');
+    var fields = commonFormFields();
+    var tab = activeUploadTab();
+    if (tab === 'upload') {
+      var f = document.getElementById('il-upload-file').files[0];
+      if (!f) { status.textContent = '请先选择文件'; return; }
+      status.textContent = '上传中…';
+      var fd = new FormData();
+      fd.append('image', f);
+      fd.append('name', fields.name);
+      fd.append('description', fields.description);
+      fd.append('tags', fields.tags);
+      fd.append('category', fields.category);
+      var d = await postForm('/api/admin/image-library/upload', fd);
+      if (d.ok) {
+        status.textContent = '已新增 #' + d.item.id;
+        clearForm();
+        await loadAll();
+      } else {
+        status.textContent = '失败：' + (d.error || '未知错误');
+      }
+    } else {
+      var url = document.getElementById('il-url-input').value.trim();
+      if (!url) { status.textContent = '请输入 URL'; return; }
+      status.textContent = '提交中…';
+      var d2 = await postJSON('/api/admin/image-library/from-url', {
+        url: url,
+        name: fields.name,
+        description: fields.description,
+        tags: fields.tags,  // 后端 _normalize_tags 接受 csv 字符串
+        category: fields.category,
+      });
+      if (d2.ok) {
+        status.textContent = '已新增 #' + d2.item.id;
+        clearForm();
+        await loadAll();
+      } else {
+        status.textContent = '失败：' + (d2.error || '未知错误');
+      }
+    }
+  });
+
+  // ---------- 筛选事件 ---------- //
+  var qInput = document.getElementById('il-q');
+  var qDebounce = null;
+  qInput.addEventListener('input', function () {
+    clearTimeout(qDebounce);
+    qDebounce = setTimeout(function () {
+      STATE.filters.q = qInput.value.trim();
+      loadList();
+    }, 250);
+  });
+  document.getElementById('il-category-filter').addEventListener('change', function (e) {
+    STATE.filters.category = e.target.value;
+    loadList();
+  });
+  document.getElementById('il-only-unlabeled').addEventListener('change', function (e) {
+    STATE.filters.onlyUnlabeled = e.target.checked;
+    loadList();
+  });
+  document.getElementById('il-include-disabled').addEventListener('change', function (e) {
+    STATE.filters.includeDisabled = e.target.checked;
+    loadList();
+  });
+  document.getElementById('il-reset').addEventListener('click', function () {
+    STATE.filters = { q: '', category: '', tags: [], onlyUnlabeled: false, includeDisabled: false };
+    qInput.value = '';
+    document.getElementById('il-category-filter').value = '';
+    document.getElementById('il-only-unlabeled').checked = false;
+    document.getElementById('il-include-disabled').checked = false;
+    renderTagPool();
+    loadList();
+  });
+
+  // ---------- 编辑模态框 ---------- //
+  var editingId = null;
+  function openEditModal(item) {
+    editingId = item.id;
+    document.getElementById('il-edit-title').textContent = '编辑 #' + item.id + ' ' + (item.name || item.file_name || '');
+    document.getElementById('il-edit-name').value = item.name || '';
+    document.getElementById('il-edit-category').value = item.category || '';
+    document.getElementById('il-edit-description').value = item.description || '';
+    document.getElementById('il-edit-tags').value = (item.tags || []).join(', ');
+    document.getElementById('il-edit-status').textContent = '';
+    document.getElementById('il-edit-modal').hidden = false;
+  }
+  function closeEditModal() {
+    editingId = null;
+    document.getElementById('il-edit-modal').hidden = true;
+  }
+  document.getElementById('il-edit-cancel').addEventListener('click', closeEditModal);
+  document.getElementById('il-edit-modal').addEventListener('click', function (e) {
+    if (e.target.id === 'il-edit-modal') closeEditModal();
+  });
+  document.getElementById('il-edit-save').addEventListener('click', async function () {
+    if (!editingId) return;
+    var status = document.getElementById('il-edit-status');
+    status.textContent = '保存中…';
+    var tagsRaw = document.getElementById('il-edit-tags').value;
+    var tagsArr = tagsRaw.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var d = await putJSON('/api/admin/image-library/' + editingId, {
+      name: document.getElementById('il-edit-name').value,
+      description: document.getElementById('il-edit-description').value,
+      tags: tagsArr,
+      category: document.getElementById('il-edit-category').value,
+    });
+    if (d.ok) {
+      status.textContent = '';
+      closeEditModal();
+      await loadAll();
+    } else {
+      status.textContent = '失败：' + (d.error || '未知错误');
+    }
+  });
+
+  // ---------- 启动 ---------- //
+  loadAll();
+})();
 </script>
 {% endblock %}
