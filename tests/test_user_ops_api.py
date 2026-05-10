@@ -1580,80 +1580,33 @@ def test_user_ops_history_returns_lead_pool_records(client, app):
 
 
 def test_user_ops_ui_route_renders_conversion_page(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="admin-sidebar"' in html
-    assert "运营管理" in html
-    assert "转化链路运营页" in html
-    assert "用户运营明细表" in html
-    assert "发送记录" in html
-    assert "批量群发" in html
-    assert "免打扰" in html
-    assert "激活待录入" not in html
-    assert "操作历史" not in html
-    assert "导入" not in html
+    assert response.status_code == 410
 
 
 def test_user_ops_shell_page_exists(client):
+    # /admin/user-ops is sunset (410)
     response = client.get("/admin/user-ops")
-
-    assert response.status_code == 200
-    html = response.get_data(as_text=True)
-    assert 'class="admin-sidebar"' in html
-    assert "运营管理" in html
-    assert "转化链路运营页" in html
-    assert "用户运营明细表" in html
-    assert "发送记录" in html
-    assert "批量群发" in html
-    assert "待处理作业" not in html
-    assert "运营名单历史" not in html
-    assert "班级状态" not in html
-    assert "导入" not in html
+    assert response.status_code == 410
 
 
 def test_user_ops_batch_send_modal_removes_large_stats_and_sender_bucket_from_main_ui(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-    modal_start = html.index('id="batch-send-modal-backdrop"')
-    modal_end = html.index("<script>", modal_start)
-    modal_section = html[modal_start:modal_end]
-
-    assert response.status_code == 200
-    assert "选中人数" not in modal_section
-    assert "跳过人数" not in modal_section
-    assert "发送人分桶" not in modal_section
-    assert "免打扰开关" not in modal_section
-    assert 'id="preview-owner-buckets"' not in modal_section
-    assert 'id="preview-selected-count"' not in modal_section
-    assert 'id="preview-skipped-count"' not in modal_section
-    assert 'id="preview-owner-count"' not in modal_section
-    assert 'id="preview-eligible-count"' in modal_section
-    assert 'class="panel-soft preview-panel"' in modal_section
-    assert modal_section.index('id="include-dnd-toggle"') < modal_section.index('id="preview-target-body"')
+    assert response.status_code == 410
 
 
 def test_user_ops_detail_column_is_removed_and_dnd_action_copy_is_simplified(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "<th>免打扰</th>" not in html
-    assert "查看详情" in html
-    assert "取消手动免打扰" not in html
-    assert "运营手动设置" not in html
-    assert "取消免打扰" in html
+    assert response.status_code == 410
 
 
 def test_user_ops_template_keeps_detail_button_and_dnd_actions(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="btn soft view-detail-btn"' in html
-    assert 'class="btn soft toggle-dnd-btn"' in html
-    assert "<th>免打扰</th>" not in html
+    assert response.status_code == 410
 
 
 def test_sync_user_ops_class_term_tag_definitions_updates_tag_identity_fields(app, user_ops_contact_client):

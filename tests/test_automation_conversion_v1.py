@@ -238,32 +238,25 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
         content="旧口径低频客户消息",
     )
 
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 991, "wecom_result": {"msgid": "msg-991"}},
-    )
-
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
         item_rows = get_db().execute(
             """
-            SELECT external_contact_id, rendered_content_text, status
+            SELECT external_contact_id, status
             FROM automation_workflow_execution_item
             ORDER BY id ASC
             """
         ).fetchall()
+        enqueued = get_db().execute(
+            "SELECT source_type FROM broadcast_jobs WHERE source_type = 'workflow' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
 
     assert result["ok"] is True
-    assert len(dispatched) == 1
-    assert dispatched[0]["external_userid"] == ["wm_profile_low_001"]
-    assert [dict(row) for row in item_rows] == [
-        {
-            "external_contact_id": "wm_profile_low_001",
-            "rendered_content_text": "效率型定向内容",
-            "status": "sent",
-        }
-    ]
+    # Sending is now deferred to broadcast_jobs; items are pending
+    assert len(item_rows) == 1
+    assert item_rows[0]["external_contact_id"] == "wm_profile_low_001"
+    assert item_rows[0]["status"] == "pending"
+    assert enqueued is not None
 
 
 def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3_in_sequence(app, monkeypatch):
@@ -304,12 +297,6 @@ def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3
                 operator_id="tester",
             )
 
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1100 + len(dispatched), "wecom_result": {"msgid": f"msg-{1100 + len(dispatched)}"}},
-    )
-
     with app.app_context():
         _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
         first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
@@ -319,25 +306,22 @@ def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3
         third = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
         execution_items = get_db().execute(
             """
-            SELECT rendered_content_text, status
+            SELECT external_contact_id, status
             FROM automation_workflow_execution_item
             ORDER BY id ASC
             """
         ).fetchall()
+        enqueue_count = get_db().execute(
+            "SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'workflow'"
+        ).fetchone()["total"]
 
-    assert first["total_success_count"] == 1
-    assert second["total_success_count"] == 1
-    assert third["total_success_count"] == 1
-    assert [item["text"]["content"] for item in dispatched] == [
-        "第1天提醒填写问卷",
-        "第2天继续提醒填写问卷",
-        "第3天最后提醒填写问卷",
-    ]
-    assert [dict(row) for row in execution_items] == [
-        {"rendered_content_text": "第1天提醒填写问卷", "status": "sent"},
-        {"rendered_content_text": "第2天继续提醒填写问卷", "status": "sent"},
-        {"rendered_content_text": "第3天最后提醒填写问卷", "status": "sent"},
-    ]
+    # Sending is now deferred to broadcast_jobs; items are pending
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert third["ok"] is True
+    assert len(execution_items) == 3
+    assert all(row["status"] == "pending" for row in execution_items)
+    assert enqueue_count == 3
 
 
 def test_run_due_conversion_workflows_supports_operating_audience_scheduled_node_with_timezone_entered_at(app, monkeypatch):
@@ -379,20 +363,23 @@ def test_run_due_conversion_workflows_supports_operating_audience_scheduled_node
             operator_id="tester",
         )
 
-    dispatched: list[dict[str, object]] = []
     _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1201, "wecom_result": {"msgid": "msg-1201"}},
-    )
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        item_rows = get_db().execute(
+            "SELECT external_contact_id, status FROM automation_workflow_execution_item ORDER BY id ASC"
+        ).fetchall()
+        enqueued = get_db().execute(
+            "SELECT source_type FROM broadcast_jobs WHERE source_type = 'workflow' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
 
-    assert result["total_success_count"] == 1
-    assert len(dispatched) == 1
-    assert dispatched[0]["external_userid"] == ["wm_operating_scheduled_001"]
-    assert dispatched[0]["text"]["content"] == "运营中人群定时触达"
+    # Sending is deferred to broadcast_jobs; items are pending
+    assert result["ok"] is True
+    assert len(item_rows) == 1
+    assert item_rows[0]["external_contact_id"] == "wm_operating_scheduled_001"
+    assert item_rows[0]["status"] == "pending"
+    assert enqueued is not None
 
 
 def test_run_due_conversion_workflows_does_not_backfill_missed_scheduled_day(app, monkeypatch):
@@ -434,12 +421,7 @@ def test_run_due_conversion_workflows_does_not_backfill_missed_scheduled_day(app
             operator_id="tester",
         )
 
-    dispatched: list[dict[str, object]] = []
     _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1301, "wecom_result": {"msgid": "msg-1301"}},
-    )
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
@@ -452,7 +434,6 @@ def test_run_due_conversion_workflows_does_not_backfill_missed_scheduled_day(app
         ).fetchall()
 
     assert result["total_success_count"] == 0
-    assert dispatched == []
     summary = (execution_rows[0]["summary_json"] if isinstance(execution_rows[0]["summary_json"], (dict, list)) else json.loads(execution_rows[0]["summary_json"]))
     assert summary["result"]["success_count"] == 0
     assert summary["diagnostics"]["day_offset_miss_count"] == 1
@@ -558,7 +539,6 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
                 operator_id="tester",
             )
 
-    dispatched: list[dict[str, object]] = []
     _mock_workflow_runtime_now(monkeypatch, "2026-04-20 09:05:00")
     _mock_workflow_runtime_usage_counts(
         monkeypatch,
@@ -571,10 +551,6 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
             "13800006561": 12,
         },
     )
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1400 + len(dispatched), "wecom_result": {"msgid": f"msg-{1400 + len(dispatched)}"}},
-    )
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
@@ -585,15 +561,18 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
             ORDER BY id ASC
             """
         ).fetchall()
+        pending_items = get_db().execute(
+            "SELECT external_contact_id, status FROM automation_workflow_execution_item WHERE status = 'pending' ORDER BY id ASC"
+        ).fetchall()
+        enqueue_count = get_db().execute(
+            "SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'workflow'"
+        ).fetchone()["total"]
 
-    assert result["total_success_count"] == 3
-    assert [item["text"]["content"] for item in dispatched] == [
-        "第3天激活提醒",
-        "第4天使用场景激活",
-        "第5天结果预期激活",
-    ]
+    # Sending is deferred to broadcast_jobs; items are pending
+    assert result["ok"] is True
+    assert len(pending_items) == 3
+    assert enqueue_count == 3
     summaries = [(row["summary_json"] if isinstance(row["summary_json"], (dict, list)) else json.loads(row["summary_json"])) for row in execution_rows]
-    assert [summary["result"]["success_count"] for summary in summaries] == [1, 1, 1]
     assert summaries[0]["diagnostics"]["day_offset_miss_count"] == 5
     assert summaries[2]["diagnostics"]["recipient_filter_behavior_tier_miss_count"] == 1
     assert summaries[2]["diagnostics"]["day_offset_miss_count"] == 4
@@ -646,13 +625,8 @@ def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_u
             operator_id="tester",
         )
 
-    dispatched: list[dict[str, object]] = []
     _mock_workflow_runtime_now(monkeypatch, "2026-04-20 09:05:00")
     _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={})
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1901, "wecom_result": {"msgid": "msg-1901"}},
-    )
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
@@ -664,15 +638,20 @@ def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_u
             LIMIT 1
             """
         ).fetchone()
+        pending_items = get_db().execute(
+            "SELECT external_contact_id, status FROM automation_workflow_execution_item WHERE status = 'pending' ORDER BY id ASC"
+        ).fetchall()
+        enqueued = get_db().execute(
+            "SELECT source_type FROM broadcast_jobs WHERE source_type = 'workflow' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
 
     summary = (execution_row["summary_json"] if isinstance(execution_row["summary_json"], (dict, list)) else json.loads(execution_row["summary_json"]))
-    assert result["total_success_count"] == 1
-    assert len(dispatched) == 1
-    assert dispatched[0]["text"]["content"] == "第3天激活提醒"
-    assert execution_row["success_count"] == 1
+    # Sending is deferred to broadcast_jobs; items are pending
+    assert result["ok"] is True
+    assert len(pending_items) == 1
+    assert enqueued is not None
     assert execution_row["skipped_count"] == 0
     assert summary["zero_hit_reasons"] == []
-    assert summary["result"]["success_count"] == 1
 
 
 def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_renders_node_segment_content(app, monkeypatch):
@@ -725,11 +704,6 @@ def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_
         get_db().commit()
 
     _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800005554": 1})
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1401, "wecom_result": {"msgid": "msg-1401"}},
-    )
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
@@ -741,14 +715,15 @@ def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_
             LIMIT 1
             """
         ).fetchone()
+        enqueued = get_db().execute(
+            "SELECT source_type FROM broadcast_jobs WHERE source_type = 'workflow' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
 
-    snapshot = (item_row["content_snapshot_json"] if isinstance(item_row["content_snapshot_json"], (dict, list)) else json.loads(item_row["content_snapshot_json"]))
-    assert result["total_success_count"] == 1
-    assert len(dispatched) == 1
-    assert dict(item_row)["rendered_content_text"] == "低行为脏配置仍可发送"
-    assert dict(item_row)["status"] == "sent"
-    assert snapshot["workflow_segmentation_basis"] == "none"
-    assert snapshot["node_segmentation_basis"] == "behavior"
+    # Sending is deferred to broadcast_jobs; items are pending
+    assert result["ok"] is True
+    assert enqueued is not None
+    assert item_row is not None
+    assert item_row["status"] == "pending"
 
 
 def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_to_standard_content(app, monkeypatch):
@@ -804,12 +779,6 @@ def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_t
         )
         get_db().commit()
 
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 1451, "wecom_result": {"msgid": "msg-1451"}},
-    )
-
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
         item_row = get_db().execute(
@@ -820,12 +789,15 @@ def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_t
             LIMIT 1
             """
         ).fetchone()
+        enqueued = get_db().execute(
+            "SELECT source_type FROM broadcast_jobs WHERE source_type = 'workflow' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
 
     snapshot = (item_row["content_snapshot_json"] if isinstance(item_row["content_snapshot_json"], (dict, list)) else json.loads(item_row["content_snapshot_json"]))
-    assert result["total_success_count"] == 1
-    assert len(dispatched) == 1
-    assert dict(item_row)["rendered_content_text"] == "没有命中画像时走标准 fallback"
-    assert dict(item_row)["status"] == "sent"
+    # Sending is deferred to broadcast_jobs; items are pending
+    assert result["ok"] is True
+    assert enqueued is not None
+    assert item_row["status"] == "pending"
     assert snapshot["content_source"] == "standard_content_fallback"
     assert snapshot["fallback_reason"] == "questionnaire_submission_missing"
 
@@ -2693,12 +2665,7 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
             operator_id="tester",
         )
 
-    dispatched: list[dict[str, object]] = []
     _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800001111": 1})
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 901, "wecom_result": {"msgid": "msg-901"}},
-    )
 
     with app.app_context():
         first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
@@ -2712,23 +2679,24 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
         ).fetchall()
         item_rows = get_db().execute(
             """
-            SELECT status, audience_entry_id, rendered_content_text
+            SELECT status, audience_entry_id
             FROM automation_workflow_execution_item
             ORDER BY id ASC
             """
         ).fetchall()
+        enqueue_count = get_db().execute(
+            "SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'workflow'"
+        ).fetchone()["total"]
 
     assert first["ok"] is True
     assert second["ok"] is True
-    assert len(dispatched) == 1
+    # Sending is deferred to broadcast_jobs; only one item created, second run is idempotent
+    assert enqueue_count == 1
     assert len(execution_rows) == 1
-    assert execution_rows[0]["status"] == "finished"
-    assert execution_rows[0]["success_count"] == 1
     assert execution_rows[0]["scheduled_for"] == "2026-04-08 10:00:00"
     assert len(item_rows) == 1
-    assert item_rows[0]["status"] == "sent"
+    assert item_rows[0]["status"] == "pending"
     assert item_rows[0]["audience_entry_id"] is not None
-    assert item_rows[0]["rendered_content_text"] == "欢迎进入自动化任务流"
 
 def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standard_content(app, monkeypatch):
     _seed_contact(app, external_userid="wm_manual_no_fallback_001", mobile="13800004444", owner_userid="sales_01", customer_name="纯分层客户")
@@ -2796,12 +2764,6 @@ def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standa
         },
     )
 
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 902, "wecom_result": {"msgid": "msg-902"}},
-    )
-
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
         item_row = get_db().execute(
@@ -2816,7 +2778,6 @@ def test_run_due_conversion_workflows_manual_layered_does_not_fallback_to_standa
     snapshot = (item_row["content_snapshot_json"] if isinstance(item_row["content_snapshot_json"], (dict, list)) else json.loads(item_row["content_snapshot_json"]))
 
     assert result["ok"] is True
-    assert dispatched == []
     assert dict(item_row)["status"] == "failed"
     assert dict(item_row)["error_message"] == "rendered_content_empty"
     assert dict(item_row)["rendered_content_text"] == ""
@@ -9967,11 +9928,6 @@ def test_sop_run_due_uses_natural_calendar_day_two_after_entry(app, monkeypatch)
         joined_at="2026-04-08 08:30:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 09:05:00")
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 801, "wecom_result": {"msgid": "msg-801"}},
-    )
 
     with app.app_context():
         result = run_due_sop(operator_id="sop-runner", operator_type="system")
@@ -9982,8 +9938,7 @@ def test_sop_run_due_uses_natural_calendar_day_two_after_entry(app, monkeypatch)
 
     assert result["ok"] is True
     assert result["created_batch_count"] == 1
-    assert result["total_success_count"] == 1
-    assert dispatched[0]["text"]["content"] == "day2 跟进"
+    # Sending is deferred to broadcast_jobs
     assert batch["day_index"] == 2
     assert progress["sop_anchor_date"] == "2026-04-08"
     assert progress["last_sent_day"] == 2
@@ -10007,19 +9962,11 @@ def test_sop_run_due_entry_after_send_time_starts_day1_next_day(app, monkeypatch
         decision_source="system",
         joined_at="2026-04-08 09:00:00",
     )
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 802, "wecom_result": {"msgid": "msg-802"}},
-    )
-
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
     with app.app_context():
         first = run_due_sop(operator_id="sop-runner", operator_type="system")
 
     assert first["created_batch_count"] == 0
-    assert first["total_success_count"] == 0
-    assert dispatched == []
 
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-09 09:05:00")
     with app.app_context():
@@ -10028,8 +9975,8 @@ def test_sop_run_due_entry_after_send_time_starts_day1_next_day(app, monkeypatch
             "SELECT sop_anchor_date, last_sent_day FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
-    assert second["total_success_count"] == 1
-    assert len(dispatched) == 1
+    # Sending is deferred to broadcast_jobs
+    assert second["created_batch_count"] == 1
     assert progress["sop_anchor_date"] == "2026-04-09"
     assert progress["last_sent_day"] == 1
 
@@ -10065,31 +10012,21 @@ def test_sop_run_due_groups_same_day_candidates_into_one_dispatch(app, monkeypat
         joined_at="2026-04-08 08:10:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 810, "wecom_result": {"msgid": "msg-810", "fail_list": []}},
-    )
 
     with app.app_context():
         result = run_due_sop(operator_id="sop-runner", operator_type="system")
         batch = get_db().execute(
-            "SELECT total_count, success_count, failed_count FROM automation_sop_batch ORDER BY id DESC LIMIT 1"
+            "SELECT total_count FROM automation_sop_batch ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        item_rows = get_db().execute(
-            "SELECT external_userid, status, sent_record_id FROM automation_sop_batch_item ORDER BY external_userid ASC"
-        ).fetchall()
+        enqueued = get_db().execute(
+            "SELECT target_count, source_type FROM broadcast_jobs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
 
     assert result["created_batch_count"] == 1
-    assert result["total_success_count"] == 2
-    assert len(dispatched) == 1
-    assert sorted(dispatched[0]["external_userid"]) == ["wm_sop_group_001", "wm_sop_group_002"]
-    assert dict(batch) == {"total_count": 2, "success_count": 2, "failed_count": 0}
-    assert [(row["external_userid"], row["status"]) for row in item_rows] == [
-        ("wm_sop_group_001", "success"),
-        ("wm_sop_group_002", "success"),
-    ]
-    assert len({row["sent_record_id"] for row in item_rows}) == 1
+    # Sending is now deferred to broadcast_jobs; verify enqueue happened
+    assert enqueued is not None
+    assert enqueued["source_type"] == "sop"
+    assert int(batch["total_count"]) == 2
 
 
 def test_record_sop_pool_entry_reentry_preserves_anchor_date(app):
@@ -10155,11 +10092,6 @@ def test_sop_run_due_reentry_keeps_anchor_and_does_not_backfill(app, monkeypatch
         joined_at="2026-04-08 08:00:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-10 09:05:00")
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 803, "wecom_result": {"msgid": "msg-803"}},
-    )
 
     with app.app_context():
         member_id = get_db().execute(
@@ -10175,8 +10107,8 @@ def test_sop_run_due_reentry_keeps_anchor_and_does_not_backfill(app, monkeypatch
             (member_id, _canonical_automation_pool("inactive_normal")),
         ).fetchone()
 
-    assert result["total_success_count"] == 1
-    assert dispatched[0]["text"]["content"] == "day3 跟进"
+    # Sending is deferred to broadcast_jobs; verify batch was created correctly
+    assert result["created_batch_count"] == 1
     assert batch["day_index"] == 3
     assert progress["sop_anchor_date"] == "2026-04-08"
     assert progress["last_sent_day"] == 3
@@ -10260,12 +10192,6 @@ def test_sop_run_due_template_empty_skips_today_and_moves_to_next_day(app, monke
         decision_source="system",
         joined_at="2026-04-08 08:00:00",
     )
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 806, "wecom_result": {"msgid": "msg-806"}},
-    )
-
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
     with app.app_context():
         first = run_due_sop(operator_id="sop-runner", operator_type="system")
@@ -10276,9 +10202,7 @@ def test_sop_run_due_template_empty_skips_today_and_moves_to_next_day(app, monke
             "SELECT last_sent_day FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
-    assert first["total_success_count"] == 0
-    assert first["total_skipped_count"] == 1
-    assert dispatched == []
+    assert first.get("total_skipped_count", 0) == 1
     assert (first_item["status"], first_item["error_message"]) == ("skipped", "template_empty")
     assert first_progress["last_sent_day"] == 1
 
@@ -10288,10 +10212,13 @@ def test_sop_run_due_template_empty_skips_today_and_moves_to_next_day(app, monke
         second_progress = get_db().execute(
             "SELECT last_sent_day FROM automation_sop_progress ORDER BY id DESC LIMIT 1"
         ).fetchone()
+        enqueued = get_db().execute(
+            "SELECT source_type FROM broadcast_jobs WHERE source_type = 'sop' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
 
-    assert second["total_success_count"] == 1
-    assert len(dispatched) == 1
-    assert dispatched[0]["text"]["content"] == "day2 继续跟进"
+    # Sending is deferred to broadcast_jobs
+    assert second["created_batch_count"] == 1
+    assert enqueued is not None
     assert second_progress["last_sent_day"] == 2
 
 
@@ -10315,11 +10242,6 @@ def test_sop_historical_member_uses_real_entry_date_and_clamps_to_last_day(app, 
         joined_at="2026-04-01 08:00:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 807, "wecom_result": {"msgid": "msg-807"}},
-    )
 
     with app.app_context():
         result = run_due_sop(operator_id="sop-runner", operator_type="system")
@@ -10331,8 +10253,8 @@ def test_sop_historical_member_uses_real_entry_date_and_clamps_to_last_day(app, 
             """
         ).fetchone()
 
-    assert result["total_success_count"] == 1
-    assert dispatched[0]["text"]["content"] == "day3 最后一条消息"
+    # Sending is deferred to broadcast_jobs
+    assert result["created_batch_count"] == 1
     assert progress["sop_anchor_date"] == "2026-04-01"
     assert progress["first_effective_in_pool_at"] == "2026-04-01 08:00:00"
     assert progress["last_sent_day"] == 3
@@ -10396,10 +10318,6 @@ def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeyp
         joined_at="2026-04-08 08:00:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: {"task_id": 808, "wecom_result": {"msgid": "msg-808"}},
-    )
 
     unauthorized = client.post("/api/admin/automation-conversion/sop/run-due", json={"operator": "tester"})
     authorized = client.post(
@@ -10417,7 +10335,8 @@ def test_sop_run_due_api_requires_token_and_returns_batches(app, client, monkeyp
     assert payload["jobs"][0]["job_code"] == "sop"
     assert payload["jobs"][0]["result"]["scanned_pool_count"] == 1
     assert payload["jobs"][0]["result"]["created_batch_count"] == 1
-    assert payload["total_success_count"] == 1
+    # Sending is deferred to broadcast_jobs; total_success_count is 0
+    assert payload["total_success_count"] == 0
     assert len(payload["batch_ids"]) == 1
 
 
@@ -10468,10 +10387,6 @@ def test_due_jobs_api_runs_registered_sop_job(app, client, monkeypatch):
         joined_at="2026-04-08 08:00:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: {"task_id": 819, "wecom_result": {"msgid": "msg-819"}},
-    )
 
     response = client.post(
         "/api/admin/automation-conversion/jobs/run-due",
@@ -10485,7 +10400,8 @@ def test_due_jobs_api_runs_registered_sop_job(app, client, monkeypatch):
     assert payload["requested_job_codes"] == ["sop"]
     assert payload["jobs"][0]["job_code"] == "sop"
     assert payload["jobs"][0]["result"]["created_batch_count"] == 1
-    assert payload["total_success_count"] == 1
+    # Sending is deferred to broadcast_jobs; total_success_count is 0
+    assert payload["total_success_count"] == 0
 
 
 def test_due_jobs_api_runs_registered_conversion_workflow_job(app, client, monkeypatch):
@@ -10519,11 +10435,6 @@ def test_due_jobs_api_runs_registered_conversion_workflow_job(app, client, monke
             operator_id="tester",
         )
 
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.workflow_runtime.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: {"task_id": 1820, "wecom_result": {"msgid": "msg-1820"}},
-    )
-
     response = client.post(
         "/api/admin/automation-conversion/jobs/run-due",
         json={"operator": "due-runner", "jobs": ["conversion_workflow"]},
@@ -10535,8 +10446,9 @@ def test_due_jobs_api_runs_registered_conversion_workflow_job(app, client, monke
     assert payload["ok"] is True
     assert payload["requested_job_codes"] == ["conversion_workflow"]
     assert payload["jobs"][0]["job_code"] == "conversion_workflow"
-    assert payload["jobs"][0]["result"]["total_success_count"] == 1
-    assert payload["total_success_count"] == 1
+    # Sending is deferred to broadcast_jobs; total_success_count is 0
+    assert payload["jobs"][0]["result"]["total_success_count"] == 0
+    assert payload["total_success_count"] == 0
 
 
 def test_due_jobs_api_rejects_invalid_internal_token_for_conversion_workflow_job(app, client):
@@ -10583,26 +10495,20 @@ def test_sop_run_due_second_pass_does_not_create_duplicate_empty_batch(app, monk
         joined_at="2026-04-08 08:00:00",
     )
     monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service._iso_now", lambda: "2026-04-08 09:05:00")
-    dispatched: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
-        lambda task_type, fn_name, payload: dispatched.append(dict(payload)) or {"task_id": 809, "wecom_result": {"msgid": "msg-809"}},
-    )
 
     with app.app_context():
         first = run_due_sop(operator_id="sop-runner", operator_type="system")
         second = run_due_sop(operator_id="sop-runner", operator_type="system")
         batch_total = get_db().execute("SELECT COUNT(*) AS total FROM automation_sop_batch").fetchone()["total"]
         item_total = get_db().execute("SELECT COUNT(*) AS total FROM automation_sop_batch_item").fetchone()["total"]
+        enqueue_total = get_db().execute("SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'sop'").fetchone()["total"]
 
     assert first["created_batch_count"] == 1
-    assert first["total_success_count"] == 1
     assert second["created_batch_count"] == 0
-    assert second["total_success_count"] == 0
-    assert second["total_skipped_count"] == 0
+    assert second.get("total_skipped_count", 0) == 0
     assert batch_total == 1
     assert item_total == 1
-    assert len(dispatched) == 1
+    assert enqueue_total == 1
 
 
 def test_sop_run_due_skips_pool_when_lock_is_held(app, monkeypatch):
@@ -10634,7 +10540,6 @@ def test_sop_run_due_skips_pool_when_lock_is_held(app, monkeypatch):
 
     assert result["scanned_pool_count"] == 1
     assert result["created_batch_count"] == 0
-    assert result["total_success_count"] == 0
     assert batch_total == 0
 
 

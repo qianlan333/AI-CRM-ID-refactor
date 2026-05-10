@@ -85,18 +85,11 @@ def _seed_audit_logs(app) -> None:
 def test_admin_audit_page_renders_filters_pagination_and_detail(app, client):
     _seed_audit_logs(app)
 
+    # /admin/audit is sunset (410)
     response = client.get(
         "/admin/audit?target_type=app_setting&sort_by=operator&sort_dir=asc&page=1&page_size=10&log_id=1"
     )
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "操作记录" in html
-    assert "筛选条件" in html
-    assert "复制当前筛选链接" in html
-    assert "WECOM_SECRET" in html
-    assert "tester-beta" in html
-    assert "查看详情" in html
+    assert response.status_code == 410
 
 
 def test_api_admin_audit_logs_support_filters_sort_and_pagination(app, client):

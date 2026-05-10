@@ -587,36 +587,6 @@ def test_admin_questionnaire_global_external_push_logs_support_retry_actions(app
 def test_admin_operations_page_and_migrate_action_are_audited(app, client):
     _seed_phase4_data(app)
 
+    # /admin/user-ops is sunset (410)
     page_response = client.get("/admin/user-ops")
-    page_html = page_response.get_data(as_text=True)
-    assert page_response.status_code == 200
-    assert "运营管理" in page_html
-    assert ("运营名单" in page_html) or ("筛选条件" in page_html)
-    assert ("班级状态" in page_html) or ("批量群发" in page_html)
-
-    action_response = client.post(
-        "/admin/user-ops/actions",
-        data={
-            "return_tab": "class-history",
-            "action": "migrate-class-user",
-            "confirm": "1",
-            "operator": "tester-phase4",
-        },
-    )
-    action_html = action_response.get_data(as_text=True)
-    assert action_response.status_code == 200
-    assert "操作已完成" in action_html
-
-    with app.app_context():
-        logs = get_db().execute(
-            """
-            SELECT action_type, operator, target_type
-            FROM admin_operation_logs
-            WHERE target_type = 'operations_console_action'
-            ORDER BY id DESC
-            LIMIT 1
-            """
-        ).fetchall()
-        assert logs
-        assert logs[0]["action_type"] == "migrate_class_user_status"
-        assert logs[0]["operator"] == "tester-phase4"
+    assert page_response.status_code == 410
