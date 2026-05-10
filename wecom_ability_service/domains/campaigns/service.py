@@ -26,7 +26,8 @@ import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...db import get_db, get_db_backend
 from ..segments.service import get_segment, increment_usage
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 _VALID_ANCHOR_MODES = ("campaign_start_date", "member_joined_at")
 _DEFAULT_SEND_TIME = "09:00"
+_DEFAULT_TIMEZONE = "Asia/Shanghai"
 
 
 def _now_iso() -> str:
@@ -47,6 +49,36 @@ def _now_iso() -> str:
 
 def _new_campaign_code() -> str:
     return f"camp-{uuid.uuid4().hex[:12]}"
+
+
+def _compute_first_step_due_iso(
+    *,
+    anchor_date: str,
+    day_offset: int,
+    send_time: str,
+    step_timezone: str,
+) -> str:
+    """算 D+day_offset @ send_time 在 step.timezone 下的 tz-aware ISO。
+
+    必须输出带时区后缀的 ISO（如 ``2026-05-09T08:00:00+08:00``），否则 PG
+    TIMESTAMPTZ 字段会按 server timezone（Asia/Shanghai）解读 naive 字符串，
+    跨 UTC↔本地的写入会错位 8 小时，cron 立即扫到一个"已过期"的 due。
+    """
+    try:
+        tzinfo = ZoneInfo(step_timezone or _DEFAULT_TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        tzinfo = ZoneInfo(_DEFAULT_TIMEZONE)
+    try:
+        base = datetime.fromisoformat((anchor_date or "")[:10])
+    except ValueError:
+        base = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        hour_str, minute_str = (send_time or _DEFAULT_SEND_TIME).split(":")[:2]
+        base = base.replace(hour=int(hour_str), minute=int(minute_str))
+    except ValueError:
+        pass
+    base = base + timedelta(days=int(day_offset or 0))
+    return base.replace(tzinfo=tzinfo).isoformat()
 
 
 # ---------- 创建 / 编辑 -----------------------------------------------------
@@ -393,7 +425,7 @@ def start_campaign(
     for mr in member_rows:
         cur.execute(
             """
-            SELECT day_offset, send_time
+            SELECT day_offset, send_time, timezone
             FROM campaign_steps
             WHERE campaign_segment_id = ?
             ORDER BY step_index ASC LIMIT 1
@@ -403,20 +435,15 @@ def start_campaign(
         step_row = cur.fetchone()
         if not step_row:
             continue
-        try:
-            base_date = datetime.fromisoformat(str(mr["anchor_date"] or "")[:10])
-        except ValueError:
-            base_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        send_time = str(step_row["send_time"] or _DEFAULT_SEND_TIME)
-        try:
-            hour_str, minute_str = send_time.split(":")[:2]
-            base_date = base_date.replace(hour=int(hour_str), minute=int(minute_str))
-        except ValueError:
-            pass
-        due_dt = base_date + timedelta(days=int(step_row["day_offset"] or 0))
+        due_iso = _compute_first_step_due_iso(
+            anchor_date=str(mr["anchor_date"] or ""),
+            day_offset=int(step_row["day_offset"] or 0),
+            send_time=str(step_row["send_time"] or _DEFAULT_SEND_TIME),
+            step_timezone=str(step_row["timezone"] or _DEFAULT_TIMEZONE),
+        )
         cur.execute(
             "UPDATE campaign_members SET next_due_at = ?, current_step_index = -1 WHERE id = ?",
-            (due_dt.isoformat(), int(mr["cm_id"])),
+            (due_iso, int(mr["cm_id"])),
         )
     db.commit()
     logger.info("campaign %s started by %s", campaign_id, human_approver)

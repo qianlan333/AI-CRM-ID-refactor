@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from ...db import get_db
 
@@ -49,36 +49,27 @@ class MemberBudgetCheck:
     verdicts: list[BudgetVerdict]
 
 
-_DEFAULT_BUDGETS = (
-    {
-        "budget_code": "global_per_member_weekly",
-        "scope": "global",
-        "scope_key": "",
-        "window_seconds": 7 * 24 * 3600,
-        "max_count": 3,
-        "description": "全局每周每人 ≤ 3 次（防反复骚扰兜底）",
-    },
-    {
-        "budget_code": "ai_initiated_per_member_weekly",
-        "scope": "channel",
-        "scope_key": "ai_initiated",
-        "window_seconds": 7 * 24 * 3600,
-        "max_count": 2,
-        "description": "AI 触发的每周每人 ≤ 2 次",
-    },
-    {
-        "budget_code": "global_per_member_daily",
-        "scope": "global",
-        "scope_key": "",
-        "window_seconds": 24 * 3600,
-        "max_count": 1,
-        "description": "全局每天每人 ≤ 1 次",
-    },
+# 没有内置默认预算 —— 全部通过 admin 手动加。
+# 框架 (check_member_budget / list_active_budgets / record_consumption) 仍保留，
+# 任何运营在 admin 加的 budget 都会按既有逻辑生效。
+_DEFAULT_BUDGETS: tuple[dict[str, Any], ...] = ()
+
+
+# 历史曾经默认开启、现在退役的预算 code。
+# 启动时自动把这些行 disable（保留行 + 历史 consumption 引用完整性，不删除），
+# 这样生产 DB 已经 INSERT 过的旧记录不需要运营手工 UPDATE 也能立刻失效。
+_RETIRED_BUDGET_CODES: tuple[str, ...] = (
+    "ai_initiated_per_member_weekly",
+    "global_per_member_weekly",
+    "global_per_member_daily",
 )
 
 
 def ensure_default_budgets() -> None:
     """启动期把默认预算写进库（已存在则不覆盖运营修改的值）。
+
+    同时把 ``_RETIRED_BUDGET_CODES`` 里的历史预算自动 disable —— 仅当 DB 里
+    现存且 enabled 时才 UPDATE，避免覆盖运营手动重新开启的状态。
 
     自带 rollback 防护：调用前如果事务已 abort（PG），先 rollback 清干净。
     """
@@ -122,6 +113,21 @@ def ensure_default_budgets() -> None:
             except Exception:
                 pass
             cursor = db.cursor()  # rollback 后重建 cursor
+    for retired_code in _RETIRED_BUDGET_CODES:
+        try:
+            cursor.execute(
+                "UPDATE automation_frequency_budget SET enabled = ? "
+                "WHERE budget_code = ? AND enabled",
+                (False, retired_code),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("retire_budget failed code=%s err=%s", retired_code, exc)
+            try:
+                if hasattr(db, "rollback"):
+                    db.rollback()
+            except Exception:
+                pass
+            cursor = db.cursor()
     db.commit()
 
 
@@ -172,35 +178,45 @@ def _count_consumption(
     member_id: int | None,
     external_contact_id: str,
     window_seconds: int,
+    exclude_source_kind: str = "",
+    exclude_source_ids: Sequence[str] = (),
 ) -> int:
     db = get_db()
     cur = db.cursor()
-    # 跨 SQLite/PG 通用做法：Python 算时间戳，SQL 只做字符串比较
     from datetime import datetime, timedelta
 
     cutoff_iso = (datetime.utcnow() - timedelta(seconds=int(window_seconds))).isoformat()
+
+    # 同 campaign 续推排除：不计入同来源的历史消耗
+    exclude_clause = ""
+    exclude_params: tuple = ()
+    if exclude_source_kind and exclude_source_ids:
+        placeholders = ", ".join("?" for _ in exclude_source_ids)
+        exclude_clause = f" AND NOT (source_kind = ? AND source_id IN ({placeholders}))"
+        exclude_params = (exclude_source_kind, *exclude_source_ids)
+
     if member_id and int(member_id) > 0:
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*) AS c FROM automation_frequency_consumption
             WHERE budget_id = ?
               AND member_id = ?
-              AND consumed_at >= ?
+              AND consumed_at >= ?{exclude_clause}
             """,
-            (int(budget_id), int(member_id), cutoff_iso),
+            (int(budget_id), int(member_id), cutoff_iso, *exclude_params),
         )
         row = cur.fetchone()
         if row:
             return int(row["c"] or 0)
     if external_contact_id:
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*) AS c FROM automation_frequency_consumption
             WHERE budget_id = ?
               AND external_contact_id = ?
-              AND consumed_at >= ?
+              AND consumed_at >= ?{exclude_clause}
             """,
-            (int(budget_id), external_contact_id, cutoff_iso),
+            (int(budget_id), external_contact_id, cutoff_iso, *exclude_params),
         )
         row = cur.fetchone()
         if row:
@@ -215,10 +231,15 @@ def check_member_budget(
     channels: Iterable[str] = ("wecom_private",),
     program_codes: Iterable[str] = (),
     pool_keys: Iterable[str] = (),
+    exclude_source_kind: str = "",
+    exclude_source_ids: Sequence[str] = (),
 ) -> MemberBudgetCheck:
     """合并检查一个 member 是否被任何相关 budget 拒绝。
 
     返回结构里带每条 budget 的明细，便于 UI 展示"为什么被跳过"。
+
+    ``exclude_source_kind`` / ``exclude_source_ids`` — 排除特定来源的消耗记录，
+    用于同一 campaign 续推时不重复消耗 daily budget。
     """
     budgets = list_active_budgets(
         channels=channels,
@@ -233,6 +254,8 @@ def check_member_budget(
             member_id=member_id,
             external_contact_id=external_contact_id,
             window_seconds=int(b["window_seconds"]),
+            exclude_source_kind=exclude_source_kind,
+            exclude_source_ids=exclude_source_ids,
         )
         cap = int(b["max_count"])
         allowed = used < cap

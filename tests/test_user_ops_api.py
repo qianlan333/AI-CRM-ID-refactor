@@ -1613,24 +1613,6 @@ def test_user_ops_shell_page_exists(client):
     assert "导入" not in html
 
 
-def test_user_ops_legacy_ui_hides_legacy_fields_and_buttons(client):
-    # /admin/_legacy 已进入 ADMIN_SUNSET_PAGE_PREFIXES，返回 410
-    response = client.get("/admin/_legacy/user-ops")
-    assert response.status_code == 410
-
-
-def test_user_ops_legacy_ui_prioritizes_phone_bound_class_term_activation_columns(client):
-    # /admin/_legacy 已进入 ADMIN_SUNSET_PAGE_PREFIXES，返回 410
-    response = client.get("/admin/_legacy/user-ops")
-    assert response.status_code == 410
-
-
-def test_user_ops_legacy_ui_includes_batch_send_modal_and_drawers(client):
-    # /admin/_legacy 已进入 ADMIN_SUNSET_PAGE_PREFIXES，返回 410
-    response = client.get("/admin/_legacy/user-ops")
-    assert response.status_code == 410
-
-
 def test_user_ops_batch_send_modal_removes_large_stats_and_sender_bucket_from_main_ui(client):
     response = client.get("/admin/user-ops/ui")
     html = response.get_data(as_text=True)

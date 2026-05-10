@@ -10,8 +10,7 @@
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
@@ -99,7 +98,7 @@ def test_pg_bug_184_185_token_timezone_aware_storage(app):
     from wecom_ability_service.db import get_db
     from wecom_ability_service.domains.cloud_orchestrator import approval_token
 
-    issued = approval_token.issue_token(plan_id="test-tz", operator="alice", ttl_seconds=300)
+    approval_token.issue_token(plan_id="test-tz", operator="alice", ttl_seconds=300)
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT expires_at FROM cloud_approval_tokens WHERE plan_id = 'test-tz'")
@@ -142,6 +141,59 @@ def test_pg_bug_202_frequency_budget_select_with_bool(app):
     assert verdict.allowed is True
 
 
+def test_retired_budget_codes_are_disabled_on_init(app):
+    """``_RETIRED_BUDGET_CODES`` 里的旧预算在启动期被自动 disable。
+
+    回归三条已退役预算（ai_initiated_per_member_weekly /
+    global_per_member_weekly / global_per_member_daily）的迁移路径——
+    生产 DB 老行必须无需运营手工 UPDATE 也能立刻失效。
+    """
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.marketing_automation import frequency_budget_service
+
+    legacy_specs = (
+        ("ai_initiated_per_member_weekly", "channel", "ai_initiated", 7 * 24 * 3600, 2),
+        ("global_per_member_weekly", "global", "", 7 * 24 * 3600, 3),
+        ("global_per_member_daily", "global", "", 24 * 3600, 1),
+    )
+
+    db = get_db()
+    cursor = db.cursor()
+    # 模拟老 DB：手动 INSERT 三条 enabled=true 的旧预算
+    for code, scope, scope_key, window, cap in legacy_specs:
+        cursor.execute(
+            """
+            INSERT INTO automation_frequency_budget
+                (budget_code, scope, scope_key, window_seconds, max_count,
+                 description, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (code, scope, scope_key, window, cap, "legacy row", True),
+        )
+    db.commit()
+
+    # 模拟下次应用启动
+    frequency_budget_service.ensure_default_budgets()
+
+    for code, *_ in legacy_specs:
+        cursor.execute(
+            "SELECT enabled FROM automation_frequency_budget WHERE budget_code = ?",
+            (code,),
+        )
+        row = cursor.fetchone()
+        assert row is not None, f"{code} 保留行（仅 disable 不删除，维持 consumption 引用完整性）"
+        assert not row["enabled"], f"{code} expected enabled=false, got {row['enabled']!r}"
+
+    # 退役预算不再出现在 list_active_budgets 结果里
+    active = frequency_budget_service.list_active_budgets(
+        channels=("wecom_private", "ai_initiated"),
+        program_codes=("campaign",),
+    )
+    codes = {b["budget_code"] for b in active}
+    for code, *_ in legacy_specs:
+        assert code not in codes, f"{code} should be filtered out of active budgets"
+
+
 # ----------------------------------------------------------------------------
 # Bug 4 + 5 (PR #192/#200): scheduler 的 substr / next_due_at 处理
 # ----------------------------------------------------------------------------
@@ -160,7 +212,7 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
     from wecom_ability_service.domains.campaigns import scheduler
 
     # 造数据：3 个 member 同 segment
-    seg_id = _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=901, external_id="ext-901")
+    _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=901, external_id="ext-901")
     _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=902, external_id="ext-902")
     _insert_segment_with_known_member(app, segment_code="seg-batch", member_id=903, external_id="ext-903")
     db = get_db()
@@ -216,15 +268,23 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
         dispatched_calls.append(payload)
         return {"task_id": 42}
 
+    import sys
+    from pathlib import Path
+    _scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
+    if str(_scripts_dir) not in sys.path:
+        sys.path.insert(0, str(_scripts_dir))
+    import run_broadcast_queue_worker as worker
+
     with patch(
         "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
         side_effect=_fake_dispatch,
     ):
-        result = scheduler.process_due_campaign_members(batch_size=10)
+        scan_result = scheduler.process_due_campaign_members(batch_size=10)
+        assert scan_result["batches_enqueued"] == 1, f"enqueue failed: {scan_result}"
+        worker_result = worker.run(batch_size=10)
 
     # 关键断言：3 个 member，1 次 dispatch，1 个 task 含 3 人
-    assert result["sent_ok"] == 3, f"sent_ok={result['sent_ok']} result={result}"
-    assert result["batches_dispatched"] == 1, f"batches={result['batches_dispatched']} (PR #206 batch broken)"
+    assert worker_result["sent_ok"] == 1, f"sent_ok={worker_result['sent_ok']} result={worker_result}"
     assert len(dispatched_calls) == 1, f"dispatch called {len(dispatched_calls)} times, should be 1"
     assert len(dispatched_calls[0]["external_userid"]) == 3
     assert set(dispatched_calls[0]["external_userid"]) == {"ext-901", "ext-902", "ext-903"}
@@ -234,7 +294,6 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
     rows = cur.fetchall() or []
     assert len(rows) == 3
     for r in rows:
-        # 仅 1 个 step 所以推进后是 completed
         assert r["status"] == "completed", f"member status not completed: {dict(r)}"
         assert int(r["current_step_index"]) == 0
 
@@ -284,6 +343,133 @@ def test_pg_bug_200_register_member_reply_clears_next_due(app):
     assert row["status"] == "replied"
     nda = row["next_due_at"]
     assert (nda is None) or (str(nda).strip() == ""), f"next_due_at not cleared: {nda!r}"
+
+
+def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
+    """同 campaign 续推不被 global_per_member_daily 挡住。
+
+    场景：campaign 有 2 个 step（day_offset=0, 1），step 0 发完记了 consumption，
+    step 1 调度时应该排除同 campaign 的消耗记录，不触发 budget_exceeded。
+    """
+    import sys
+    from pathlib import Path
+    _scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
+    if str(_scripts_dir) not in sys.path:
+        sys.path.insert(0, str(_scripts_dir))
+    import run_broadcast_queue_worker as worker
+
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+    from wecom_ability_service.domains.campaigns import scheduler
+
+    # 框架默认预算已全部退役（见 _RETIRED_BUDGET_CODES）；本测试仍需要 daily budget
+    # 存在才能验证 PR #224 修复（同 campaign 续推不被自己的 daily 消耗挡），
+    # 因此手动 seed 一条 test-only 的 daily budget。
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO automation_frequency_budget
+            (budget_code, scope, scope_key, window_seconds, max_count,
+             description, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "test_daily_budget_for_pr224",
+            "global",
+            "",
+            24 * 3600,
+            1,
+            "test-only daily budget for PR #224 regression",
+            True,
+        ),
+    )
+    db.commit()
+
+    _insert_segment_with_known_member(
+        app, segment_code="seg-multi-step", member_id=950, external_id="ext-950",
+    )
+
+    overview = campaign_service.propose_campaign(
+        display_name="multi-step budget test",
+        intent="验证续推不被 daily 挡",
+        segments=[{
+            "segment_code": "seg-multi-step",
+            "priority": 100,
+            "steps": [
+                {"step_index": 0, "day_offset": 0, "send_time": "10:00", "content_text": "step 0", "stop_on_reply": False},
+                {"step_index": 1, "day_offset": 1, "send_time": "10:00", "content_text": "step 1", "stop_on_reply": False},
+            ],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    camp_id = int(overview["campaign"]["id"])
+
+    from wecom_ability_service.domains.cloud_orchestrator import approval_token
+    issued = approval_token.issue_token(
+        plan_id=overview["campaign"]["campaign_code"],
+        operator="alice",
+        scope="start_campaign",
+    )
+    campaign_service.start_campaign(
+        campaign_id=camp_id,
+        human_approver="bob",
+        approval_token_value=issued["token"],
+    )
+
+    # step 0 已经 due
+    cur.execute(
+        "UPDATE campaign_members SET next_due_at = ? WHERE campaign_id = ?",
+        ("2020-01-01 00:00:00+00:00", int(camp_id)),
+    )
+    db.commit()
+
+    dispatched: list[dict[str, Any]] = []
+
+    def _fake_dispatch(task_type, fn_name, payload):
+        dispatched.append(payload)
+        return {"task_id": 100}
+
+    with patch(
+        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        side_effect=_fake_dispatch,
+    ):
+        r1 = scheduler.process_due_campaign_members(batch_size=10)
+        assert r1["batches_enqueued"] == 1, f"step 0 enqueue failed: {r1}"
+        worker.run(batch_size=10)
+
+    # step 0 写了 consumption → daily budget 已扣 1 次
+    cur.execute(
+        "SELECT COUNT(*) AS c FROM automation_frequency_consumption "
+        "WHERE external_contact_id = 'ext-950' AND source_kind = 'campaign_step'",
+    )
+    assert int(cur.fetchone()["c"]) > 0, "consumption not recorded after step 0"
+
+    # 把 step 1 的 next_due_at 也拉到过去
+    cur.execute(
+        "UPDATE campaign_members SET next_due_at = ? WHERE campaign_id = ? AND status = 'pending'",
+        ("2020-01-01 00:00:00+00:00", int(camp_id)),
+    )
+    db.commit()
+
+    dispatched.clear()
+    with patch(
+        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        side_effect=_fake_dispatch,
+    ):
+        r2 = scheduler.process_due_campaign_members(batch_size=10)
+        assert r2["batches_enqueued"] == 1, f"step 1 enqueue failed: {r2}"
+        assert r2["skipped_budget"] == 0, f"step 1 was skipped by budget: {r2}"
+        worker.run(batch_size=10)
+
+    assert dispatched[0]["text"]["content"] == "step 1", f"wrong step dispatched: {dispatched}"
+
+    cur.execute(
+        "SELECT status, current_step_index FROM campaign_members WHERE campaign_id = ?",
+        (int(camp_id),),
+    )
+    row = cur.fetchone()
+    assert row["status"] == "completed", f"member not completed: {dict(row)}"
 
 
 # ----------------------------------------------------------------------------

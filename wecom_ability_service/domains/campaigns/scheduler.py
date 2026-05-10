@@ -109,6 +109,16 @@ def _claim_due_member(*, member_row_id: int) -> bool:
     return (cur.rowcount or 0) > 0
 
 
+def _all_step_ids_for_campaign(campaign_id: int) -> list[str]:
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT id FROM campaign_steps WHERE campaign_id = ?",
+        (int(campaign_id),),
+    )
+    return [str(row["id"]) for row in (cur.fetchall() or [])]
+
+
 def _next_step(
     *, campaign_segment_id: int, after_step_index: int
 ) -> dict[str, Any] | None:
@@ -239,6 +249,47 @@ def _dispatch_step_batch(
     except Exception as exc:
         logger.exception("campaign batch dispatch failed (%d recipients): %s", len(externals), exc)
         return {"ok": False, "reason": f"dispatch_error:{exc}"}
+
+
+def run_campaign_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
+    """broadcast_jobs handler 调用 — 执行一个 campaign batch 的真发 + side effects。"""
+    campaign = batch_data.get("campaign") or {}
+    step = batch_data.get("step") or {}
+    members = batch_data.get("members") or []
+    request_payload = batch_data.get("request_payload") or {}
+    if not members or not request_payload:
+        return {"ok": False, "error": "empty batch or missing request_payload"}
+
+    from ..marketing_automation.service import dispatch_wecom_task
+
+    try:
+        wecom_result = dispatch_wecom_task(
+            "private_message", "create_private_message_task", request_payload
+        )
+        send_res = {"ok": True, "task_id": int(wecom_result.get("task_id") or 0), "recipient_count": len(members)}
+    except Exception as exc:
+        logger.exception("campaign batch dispatch failed: %s", exc)
+        send_res = {"ok": False, "reason": f"dispatch_error:{exc}"}
+
+    sent_count = 0
+    failed_count = 0
+    for m in members:
+        if send_res.get("ok"):
+            sent_count += 1
+            _record_member_after_dispatch(
+                campaign=campaign, member=m, step=step, send_result=send_res,
+            )
+        else:
+            failed_count += 1
+        progress_member_after_send(
+            member_row_id=int(m["cm_id"]), step=step, send_result=send_res,
+        )
+    return {
+        "ok": send_res.get("ok", False),
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "outbound_task_id": int(send_res.get("task_id") or 0) or None,
+    }
 
 
 def _record_member_after_dispatch(
@@ -430,6 +481,8 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
     skipped_budget = 0
     skipped_inline_reply = 0
     completed_no_step = 0
+    # 同 campaign 续推不重复消耗 daily budget — 缓存 campaign_id → step_ids
+    _step_ids_cache: dict[int, list[str]] = {}
 
     for r in due:
         cm_id = int(r["cm_id"])
@@ -438,7 +491,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         # 取下一个待发的 step（current_step_index 之后的第一个）
         step = _next_step(
             campaign_segment_id=int(r["campaign_segment_id"]),
-            after_step_index=int(r["current_step_index"] or -1),
+            after_step_index=int(r["current_step_index"]) if r["current_step_index"] is not None else -1,
         )
         if not step:
             cur.execute(
@@ -467,16 +520,25 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
             db.commit()
             continue
         # 频次预算 per-member（如果该 member 跨方案累计触达超预算就跳过）
+        # 同 campaign 续推排除：同一 campaign 先前 step 的消耗不计入 daily 限额
+        campaign_id = int(r["campaign_id"])
         member_id = int(r["member_id"] or 0)
+        if campaign_id not in _step_ids_cache:
+            _step_ids_cache[campaign_id] = _all_step_ids_for_campaign(campaign_id)
         verdict = frequency_budget_service.check_member_budget(
             member_id=member_id,
             external_contact_id=external,
             channels=("wecom_private", "ai_initiated"),
             program_codes=("campaign",),
+            exclude_source_kind="campaign_step",
+            exclude_source_ids=_step_ids_cache[campaign_id],
         )
         if not verdict.allowed:
-            # 把 status 改回 pending，next_due_at 推后 1 小时避免下次 cron 立刻重试
-            retry_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+            # 把 status 改回 pending，next_due_at 推后 1 小时避免下次 cron 立刻重试。
+            # 必须输出 timezone-aware ISO（带 +00:00 后缀），否则 PG TIMESTAMPTZ
+            # 字段会按 server timezone（Asia/Shanghai）解读 naive 字符串 → 倒推
+            # 8 小时变成已过期，下次 cron 立刻又扫到，每 15 分钟死循环。
+            retry_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
             cur.execute(
                 "UPDATE campaign_members SET status = 'pending', next_due_at = ?, "
                 "last_error_text = ?, updated_at = ? WHERE id = ?",
@@ -505,48 +567,53 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
             groups[key] = {"campaign": campaign_dict, "step": step, "members": []}
         groups[key]["members"].append(member_dict)
 
-    # 阶段 2：per-group 一次 dispatch
-    sent_ok = 0
-    sent_failed = 0
-    batches_dispatched = 0
+    # 阶段 2：per-group enqueue 到 broadcast_jobs
+    from ..broadcast_jobs import service as queue_service
+
+    batches_enqueued = 0
     for key, group in groups.items():
         members = group["members"]
-        try:
-            send_res = _dispatch_step_batch(
-                campaign=group["campaign"],
-                members=members,
-                step=group["step"],
-            )
-        except Exception as exc:
-            logger.exception("dispatch_step_batch crashed: %s", exc)
-            send_res = {"ok": False, "reason": f"crash:{exc}"}
-
-        batches_dispatched += 1
-        for m in members:
-            if send_res.get("ok"):
-                sent_ok += 1
-                _record_member_after_dispatch(
-                    campaign=group["campaign"],
-                    member=m,
-                    step=group["step"],
-                    send_result=send_res,
+        externals = [m["external_contact_id"] for m in members if m.get("external_contact_id")]
+        if not externals:
+            continue
+        campaign = group["campaign"]
+        step = group["step"]
+        resolved = _resolve_step_payload(campaign=campaign, step=step)
+        if resolved.get("error"):
+            for m in members:
+                progress_member_after_send(
+                    member_row_id=int(m["cm_id"]),
+                    step=step,
+                    send_result={"ok": False, "reason": resolved["error"]},
                 )
-            else:
-                sent_failed += 1
-            progress_member_after_send(
-                member_row_id=int(m["cm_id"]),
-                step=group["step"],
-                send_result=send_res,
-            )
+            continue
+        request_payload = dict(resolved["base_request"])
+        request_payload["external_userid"] = externals
+        queue_service.enqueue_job(
+            source_type="campaign",
+            source_id=f"{campaign['id']}:{step.get('step_index', 0)}",
+            source_table="campaign_members",
+            scheduled_for=datetime.now(timezone.utc),
+            target_external_userids=externals,
+            target_summary=f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}",
+            content_type="private_message",
+            content_payload={
+                "request_payload": request_payload,
+                "campaign": campaign,
+                "step": step,
+                "members": members,
+            },
+            content_summary=str(request_payload.get("text", {}).get("content") or "")[:200],
+            trace_id=str(campaign.get("trace_id") or ""),
+        )
+        batches_enqueued += 1
 
     return {
-        "processed": sent_ok + sent_failed + skipped_budget + skipped_inline_reply + completed_no_step,
-        "sent_ok": sent_ok,
-        "sent_failed": sent_failed,
+        "processed": len(due),
+        "batches_enqueued": batches_enqueued,
         "skipped_budget": skipped_budget,
         "skipped_inline_reply": skipped_inline_reply,
         "completed_no_step": completed_no_step,
-        "batches_dispatched": batches_dispatched,
         "scanned_at": _now_iso(),
     }
 

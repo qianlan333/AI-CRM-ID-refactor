@@ -215,7 +215,7 @@ def test_super_admin_navigation_restores_customer_primary_entry(app, client, mon
     assert 'href="/admin/user-ops"' not in html
     assert 'href="/admin/customer-pulse"' not in html
     assert 'href="/admin/followup-orchestrator"' not in html
-    assert 'href="/admin/jobs"' not in html
+    assert 'href="/admin/jobs"' in html
     assert 'href="/admin/audit"' not in html
     assert 'href="/admin/system"' not in html
 
@@ -491,8 +491,7 @@ def test_login_access_refreshes_wecom_directory_and_authorizes_cached_member(app
 def test_sunset_pages_are_offline_and_logged(app, client, monkeypatch):
     _login_via_wecom(client, app, monkeypatch, wecom_userid="root.admin", roles=["super_admin"])
 
-    # /admin/class-user-management is still sunset
-    response = client.get("/admin/class-user-management")
+    response = client.get("/admin/audit")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 410
@@ -509,7 +508,7 @@ def test_sunset_pages_are_offline_and_logged(app, client, monkeypatch):
             """
         ).fetchone()
         assert row is not None
-        assert row["target_id"] == "/admin/class-user-management"
+        assert row["target_id"] == "/admin/audit"
         assert row["action_type"] == "sunset_route_access"
 
 

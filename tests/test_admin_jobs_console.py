@@ -4,7 +4,10 @@ import json
 
 import pytest
 
+from urllib.parse import parse_qs, urlparse
+
 from wecom_ability_service.db import get_db
+from wecom_ability_service.domains.admin_auth import save_admin_user
 
 
 @pytest.fixture()
@@ -15,6 +18,8 @@ def app(tmp_path):
     with build_pg_test_app(
         tmp_path,
         AUTOMATION_INTERNAL_API_TOKEN="internal-token",
+        SECRET_KEY="test-secret-key",
+        ADMIN_AUTH_MODE="wecom_sso",
     ) as app:
         yield app
 
@@ -30,6 +35,36 @@ def client(app):
         sess["admin_session_display_name"] = "test-admin"
         sess["admin_session_break_glass_username"] = "test-admin"
     return client
+
+
+@pytest.fixture(autouse=True)
+def _login_admin(app, client, monkeypatch):
+    with app.app_context():
+        try:
+            save_admin_user(
+                {
+                    "wecom_userid": "jobs-admin",
+                    "display_name": "Jobs Admin",
+                    "wecom_corpid": app.config["WECOM_CORP_ID"],
+                    "role_codes": ["super_admin"],
+                    "is_active": "1",
+                },
+                operator="test-suite",
+            )
+        except ValueError:
+            pass
+    start = client.get("/auth/wecom/start?mode=qr&next=/admin/jobs", follow_redirects=False)
+    state = parse_qs(urlparse(start.headers["Location"]).query).get("state", [""])[0]
+    monkeypatch.setattr(
+        "wecom_ability_service.http.internal_auth.exchange_code_for_wecom_user",
+        lambda code: {
+            "wecom_userid": "jobs-admin",
+            "display_name": "Jobs Admin",
+            "wecom_corpid": app.config["WECOM_CORP_ID"],
+            "raw_identity": {"UserId": "jobs-admin"},
+        },
+    )
+    client.get(f"/auth/wecom/callback?code=mock-code&state={state}", follow_redirects=False)
 
 
 def _internal_headers() -> dict[str, str]:

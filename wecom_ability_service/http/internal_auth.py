@@ -56,9 +56,9 @@ ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin", "automation_conversion"),
 )
 ADMIN_SUNSET_PAGE_PREFIXES = (
+    "/admin/user-ops",
+    "/admin/audit",
     "/admin/class-user-management",
-    "/admin/class-user-backoffice",
-    "/admin/_legacy",
 )
 
 
