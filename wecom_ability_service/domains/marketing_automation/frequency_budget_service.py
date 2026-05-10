@@ -49,24 +49,10 @@ class MemberBudgetCheck:
     verdicts: list[BudgetVerdict]
 
 
-_DEFAULT_BUDGETS = (
-    {
-        "budget_code": "global_per_member_weekly",
-        "scope": "global",
-        "scope_key": "",
-        "window_seconds": 7 * 24 * 3600,
-        "max_count": 3,
-        "description": "全局每周每人 ≤ 3 次（防反复骚扰兜底）",
-    },
-    {
-        "budget_code": "global_per_member_daily",
-        "scope": "global",
-        "scope_key": "",
-        "window_seconds": 24 * 3600,
-        "max_count": 1,
-        "description": "全局每天每人 ≤ 1 次",
-    },
-)
+# 没有内置默认预算 —— 全部通过 admin 手动加。
+# 框架 (check_member_budget / list_active_budgets / record_consumption) 仍保留，
+# 任何运营在 admin 加的 budget 都会按既有逻辑生效。
+_DEFAULT_BUDGETS: tuple[dict[str, Any], ...] = ()
 
 
 # 历史曾经默认开启、现在退役的预算 code。
@@ -74,6 +60,8 @@ _DEFAULT_BUDGETS = (
 # 这样生产 DB 已经 INSERT 过的旧记录不需要运营手工 UPDATE 也能立刻失效。
 _RETIRED_BUDGET_CODES: tuple[str, ...] = (
     "ai_initiated_per_member_weekly",
+    "global_per_member_weekly",
+    "global_per_member_daily",
 )
 
 
