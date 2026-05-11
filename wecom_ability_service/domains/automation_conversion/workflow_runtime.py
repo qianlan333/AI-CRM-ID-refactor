@@ -1619,16 +1619,28 @@ def _run_due_node(
         for item in execution_items
         if _normalized_text(item.get("status")) == "pending" and _normalized_text(item.get("external_contact_id"))
     ]
-    if pending_externals:
-        # 入队前把完整 summary（含 diagnostics / result / zero_hit_reasons）快照到
-        # execution，方便监控页和测试立即读到；worker 执行后会用最终结果覆盖。
-        _enqueue_counters = _execution_summary_from_items(execution_items)[1]
-        _enqueue_summary = _execution_summary_json(
-            workflow_bundle=workflow_bundle,
-            node=node,
-            diagnostics=diagnostics,
-            counters=_enqueue_counters,
+    # 不管有没有候选人，都把完整 summary（含 diagnostics / result / zero_hit_reasons）
+    # 快照到 execution，方便监控页和测试立即读到。有候选时 worker 执行后会用最终结果覆盖。
+    _enqueue_counters = _execution_summary_from_items(execution_items)[1]
+    _enqueue_summary = _execution_summary_json(
+        workflow_bundle=workflow_bundle,
+        node=node,
+        diagnostics=diagnostics,
+        counters=_enqueue_counters,
+    )
+    if not pending_externals:
+        # 没有候选人 → 直接标 finished，不入队
+        workflow_repo.update_workflow_execution_row(
+            int(execution["id"]),
+            {
+                **execution,
+                "status": "finished",
+                "finished_at": _iso_now(),
+                "total_count": _enqueue_counters["total_count"],
+                "summary_json": _enqueue_summary,
+            },
         )
+    else:
         workflow_repo.update_workflow_execution_row(
             int(execution["id"]),
             {
