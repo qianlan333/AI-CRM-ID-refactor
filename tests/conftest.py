@@ -7,6 +7,11 @@
 
 CI 上 service container 自动起 PG 并设 DATABASE_URL。
 
+并行执行（pytest-xdist）：``pytest -n auto``。每个 worker 拿一个独立的
+``test_<worker_id>`` 数据库——避免并发 truncate / 写竞争。需要 ``DATABASE_URL``
+对应的 user 有 ``CREATEDB`` 权限（postgres 官方镜像里 POSTGRES_USER 是
+superuser，开箱即用）。
+
 提供的 fixture：
 - ``app``：每个 test 一个干净 Flask app + truncate 关键表
 - ``client``：``app.test_client()``
@@ -20,6 +25,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import urlparse, urlunparse
 
 import pytest
 
@@ -27,6 +33,47 @@ import pytest
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+
+def _xdist_worker_id() -> str:
+    """xdist 子 worker 是 "gw0" / "gw1" / ...；非并行运行 / 主进程返回 "master"。"""
+    return os.environ.get("PYTEST_XDIST_WORKER", "master")
+
+
+def _resolve_worker_database_url() -> str:
+    """把 base ``DATABASE_URL`` 改成 per-worker DB ``test_<worker_id>``。
+
+    主进程（serial 或 xdist master）继续用 base DB。子 worker 各自挂自己的 DB
+    避免 truncate / DDL 互相打架。如果 worker DB 还不存在，连 base DB 用 raw
+    psycopg 发一次 ``CREATE DATABASE``（postgres 官方镜像里 POSTGRES_USER 是
+    superuser，有 CREATEDB 权限）。
+    """
+    base_url = os.environ.get("DATABASE_URL", "").strip()
+    if not base_url:
+        return ""
+    worker_id = _xdist_worker_id()
+    if worker_id == "master":
+        return base_url
+    parsed = urlparse(base_url)
+    base_db = parsed.path.lstrip("/") or "test"
+    worker_db = f"{base_db}_{worker_id}"
+    try:
+        import psycopg
+
+        bootstrap = psycopg.connect(base_url, autocommit=True)
+        cur = bootstrap.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (worker_db,))
+        if not cur.fetchone():
+            # PG identifiers can't be parameterised; worker_id is "gw\d+" so safe to inline
+            cur.execute(f'CREATE DATABASE "{worker_db}"')
+        cur.close()
+        bootstrap.close()
+    except Exception:
+        # 起 worker DB 失败时降级回 base DB（serial 模式）
+        return base_url
+    new_url = urlunparse(parsed._replace(path=f"/{worker_db}"))
+    os.environ["DATABASE_URL"] = new_url
+    return new_url
 
 
 # 测试间需要清理的关键表（FK 反向顺序：子表先清，autouse 用 CASCADE 兜底剩余 FK）
@@ -146,38 +193,9 @@ _TABLES_TO_TRUNCATE = [
     "outbound_event_outbox",
     "admin_operation_logs",
     "user_ops_import_batches",
-    # — customer pulse / followup
-    "customer_pulse_signal_events",
-    "customer_pulse_snapshots",
-    "customer_pulse_cards",
-    "customer_pulse_feedback_logs",
-    "customer_pulse_execution_logs",
-    "followup_orchestrator_missions",
-    "followup_orchestrator_mission_items",
-    "followup_orchestrator_assignment_decisions",
+    # customer_pulse_* / followup_orchestrator_* 表已经被 PR #232 删除——不再列入
+    # truncate 清单（之前每个 test 跑 8 次注定失败的 SQL，刷 PG error log 还耗时）。
 ]
-
-
-def _truncate_all(db_or_conn) -> None:
-    """对每张已知表跑 TRUNCATE … RESTART IDENTITY CASCADE。
-
-    单条失败（表不存在 / 约束冲突）就 rollback 跳过，不让一个表连累整个 reset。
-    """
-    if hasattr(db_or_conn, "cursor"):
-        cur = db_or_conn.cursor()
-    else:
-        cur = db_or_conn  # 已经是 cursor
-    for table in _TABLES_TO_TRUNCATE:
-        try:
-            cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
-        except Exception:
-            try:
-                if hasattr(db_or_conn, "rollback"):
-                    db_or_conn.rollback()
-            except Exception:
-                pass
-    if hasattr(db_or_conn, "commit"):
-        db_or_conn.commit()
 
 
 def _ensure_pg_url() -> str:
@@ -190,28 +208,6 @@ def _ensure_pg_url() -> str:
             "then DATABASE_URL=postgresql://test:test@localhost:5432/test pytest"
         )
     return url
-
-
-def _run_schema_with_retries(db: Any, script: str, *, max_passes: int = 3) -> None:
-    """跑 schema_postgres.sql，对前向 FK 引用容错（少数 CREATE 语句要等被引用表后建好）。"""
-    statements = [s.strip() for s in script.split(";") if s.strip()]
-    pending = statements
-    for _ in range(max_passes):
-        if not pending:
-            return
-        cursor = db._conn.cursor()
-        next_pending: list[str] = []
-        for stmt in pending:
-            try:
-                cursor.execute(stmt)
-                db._conn.commit()
-            except Exception:
-                db._conn.rollback()
-                next_pending.append(stmt)
-        cursor.close()
-        if len(next_pending) == len(pending):
-            return  # 没进展 — 残留就是真坏掉的
-        pending = next_pending
 
 
 def build_pg_test_app(tmp_path, **extra_config: Any):
@@ -245,7 +241,7 @@ class _AppContextManager:
         sdk_lib.write_text("fake-so", encoding="utf-8")
 
         from wecom_ability_service import create_app
-        from wecom_ability_service.db import get_db, init_db
+        from wecom_ability_service.db import init_db
 
         config = {
             "TESTING": True,
@@ -268,15 +264,9 @@ class _AppContextManager:
         self._ctx = self._app.app_context()
         self._ctx.push()
 
-        db = get_db()
-        schema_path = Path(self._app.root_path) / "schema_postgres.sql"
-        if schema_path.exists():
-            _run_schema_with_retries(db, schema_path.read_text(encoding="utf-8"))
-            db.commit()
+        # session 级 ``_ensure_schema_once`` 已经建好 schema；这里只跑 init_db 做
+        # ALTER 补丁 + seed。autouse ``_truncate_before_each_test`` 已经清完表。
         init_db()
-        # 跳过冗余 truncate — autouse ``_truncate_before_each_test`` 已经用
-        # 独立 raw psycopg 连接做过了。在同一 setup 阶段再跑一遍会和 init_db
-        # 的 seed 产生 AccessExclusiveLock 竞争（deadlock）。
         return self._app
 
     def __exit__(self, *args):
@@ -288,14 +278,36 @@ def _build_app_context(tmp_path, extra_config):
     return _AppContextManager(tmp_path, extra_config)
 
 
+# 缓存：session 起点 query 出 _TABLES_TO_TRUNCATE 中**真正存在**于当前 worker DB
+# 的表名（按原顺序）。每个 test 起点拼成单条 ``TRUNCATE t1, t2, ... CASCADE`` 一次
+# round-trip 全部清掉——之前是 N 张表 N 次 round-trip + 不存在表抛 ERROR + 单连接每
+# test 重新建。从 ~250ms/test 降到 ~30ms/test。
+_truncate_state: dict[str, Any] = {
+    "url": "",
+    "tables_sql": "",
+    "conn": None,  # session-cached autocommit psycopg conn
+}
+
+
+def _close_truncate_conn() -> None:
+    conn = _truncate_state.pop("conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_schema_once():
-    """Session 起点：用 raw psycopg 跑一遍 schema_postgres.sql（带前向 FK 重试）。
+    """Session 起点（每个 xdist worker 各跑一次）：
 
-    任何 test 不管用哪个 app fixture，都能假定 schema 已就位。``_init_postgres``
-    自带 ALTER 也能在已有 schema 上幂等运行。
+    1. 路由到 per-worker DB（``test_<worker_id>``，主进程仍用 base ``test``）
+    2. 跑 ``schema_postgres.sql`` 建表（带前向 FK 重试）
+    3. 缓存 ``_TABLES_TO_TRUNCATE`` 里**真正存在**的表名 → 后续 per-test
+       truncate 一次性 ``TRUNCATE t1, t2, ...`` 单 SQL 跑完
     """
-    url = os.environ.get("DATABASE_URL", "").strip()
+    url = _resolve_worker_database_url()
     if not url:
         yield
         return
@@ -326,19 +338,41 @@ def _ensure_schema_once():
                 break
             pending = next_pending
         conn.close()
+
+    # 过滤出真存在的表，拼成单条 TRUNCATE。原顺序保留没意义（CASCADE 会自动处理 FK），
+    # 但 information_schema 查一次省得每 test 抛 N 个 "relation does not exist"。
+    probe = psycopg.connect(url, autocommit=True)
+    pcur = probe.cursor()
+    placeholders = ", ".join(["%s"] * len(_TABLES_TO_TRUNCATE))
+    pcur.execute(
+        f"SELECT table_name FROM information_schema.tables "
+        f"WHERE table_schema = 'public' AND table_name IN ({placeholders})",
+        tuple(_TABLES_TO_TRUNCATE),
+    )
+    existing = {row[0] for row in pcur.fetchall()}
+    pcur.close()
+    probe.close()
+    ordered = [t for t in _TABLES_TO_TRUNCATE if t in existing]
+    _truncate_state["url"] = url
+    _truncate_state["tables_sql"] = (
+        f"TRUNCATE TABLE {', '.join(ordered)} RESTART IDENTITY CASCADE"
+        if ordered
+        else ""
+    )
     yield
+    _close_truncate_conn()
 
 
 @pytest.fixture(autouse=True)
 def _truncate_before_each_test():
-    """每个 test 起点 truncate 关键表。
+    """每个 test 起点单条 TRUNCATE 清完所有缓存的表。
 
-    覆盖**所有** test —— 不管它用顶层 ``app`` fixture 还是自己的 ``app`` fixture
-    （即未迁 PG 的老 test 也受益）。truncate 用 raw psycopg 在 Flask 上下文之外
-    跑，避免和待迁 fixture 的 init_db 顺序冲突。
+    覆盖**所有** test，不管它用顶层 ``app`` fixture 还是自己的 ``app`` fixture。
+    复用 session 级别 autocommit 连接（建一次用一辈子）；只在断连后重建。
     """
-    url = os.environ.get("DATABASE_URL", "").strip()
-    if not url:
+    url = _truncate_state.get("url") or os.environ.get("DATABASE_URL", "").strip()
+    sql = _truncate_state.get("tables_sql", "")
+    if not url or not sql:
         yield
         return
     try:
@@ -346,20 +380,31 @@ def _truncate_before_each_test():
     except ImportError:  # pragma: no cover
         yield
         return
-    conn = psycopg.connect(url, autocommit=True)
-    cur = conn.cursor()
-    # 防止 TRUNCATE 在等锁时无限阻塞（daemon 线程可能遗留连接 + 开放事务）
-    try:
-        cur.execute("SET lock_timeout = '5s'")
-    except Exception:
-        pass
-    for table in _TABLES_TO_TRUNCATE:
+    conn = _truncate_state.get("conn")
+    if conn is None or getattr(conn, "closed", True):
+        conn = psycopg.connect(url, autocommit=True)
+        cur = conn.cursor()
         try:
-            cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+            cur.execute("SET lock_timeout = '5s'")
         except Exception:
             pass
-    cur.close()
-    conn.close()
+        cur.close()
+        _truncate_state["conn"] = conn
+    cur = conn.cursor()
+    try:
+        cur.execute(sql)
+    except Exception:
+        # 断连 / 死锁 / 表被外部 drop 等异常：弃旧连接，下次 test 重建
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _truncate_state["conn"] = None
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
     yield
 
 
@@ -375,7 +420,7 @@ def app(tmp_path) -> Iterator[Any]:
     sdk_lib.write_text("fake-so", encoding="utf-8")
 
     from wecom_ability_service import create_app
-    from wecom_ability_service.db import get_db, init_db
+    from wecom_ability_service.db import init_db
 
     app = create_app(
         test_config={
@@ -395,14 +440,13 @@ def app(tmp_path) -> Iterator[Any]:
         }
     )
     with app.app_context():
-        # 跑 schema_postgres.sql 建表（容错前向 FK 引用），再 init_db 跑 ALTER 补丁
-        db = get_db()
-        schema_path = Path(app.root_path) / "schema_postgres.sql"
-        if schema_path.exists():
-            _run_schema_with_retries(db, schema_path.read_text(encoding="utf-8"))
-            db.commit()
+        # session 级 ``_ensure_schema_once`` 已经把 schema_postgres.sql 跑过了，
+        # 这里不再重建（每 test 50-100ms × 1004 tests = 50-100s 浪费）。
+        # init_db 仍要 per-test：内含 seed_default_segments / ensure_default_budgets，
+        # 它们写入的 ``segments`` / ``automation_frequency_budget`` 表会被 truncate
+        # fixture 清掉，必须每 test 重 seed。_init_postgres 的 ALTER 是 IF NOT EXISTS
+        # 幂等，再跑一次也只是成本（暂未优化掉）。
         init_db()
-        # 跳过冗余 truncate — autouse ``_truncate_before_each_test`` 已处理
         yield app
 
 
