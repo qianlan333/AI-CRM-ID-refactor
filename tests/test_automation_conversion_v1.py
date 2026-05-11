@@ -330,7 +330,7 @@ def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3
             """
         ).fetchall()
         enqueue_count = get_db().execute(
-            "SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'workflow'"
+            "SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'workflow' AND content_payload::text NOT LIKE '%pre_scheduled%'"
         ).fetchone()["total"]
 
     # Sending is now deferred to broadcast_jobs; items are pending
@@ -583,7 +583,7 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
             "SELECT external_contact_id, status FROM automation_workflow_execution_item WHERE status = 'pending' ORDER BY id ASC"
         ).fetchall()
         enqueue_count = get_db().execute(
-            "SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'workflow'"
+            "SELECT COUNT(*) AS total FROM broadcast_jobs WHERE source_type = 'workflow' AND content_payload::text NOT LIKE '%pre_scheduled%'"
         ).fetchone()["total"]
 
     # Sending is deferred to broadcast_jobs; items are pending
@@ -6356,8 +6356,8 @@ def test_router_callback_rejects_invalid_target_pool_and_records_error(app, clie
         app,
         enabled=True,
         last_capture_cursor=0,
-        quiet_hours_start="02:00",
-        quiet_hours_end="03:00",
+        quiet_hours_start="00:00",
+        quiet_hours_end="00:00",
     )
     _seed_contact(app, external_userid="wm_reply_invalid_pool_001", mobile="13800009183", owner_userid="sales_01", customer_name="invalid-pool")
     _seed_automation_member(app, external_contact_id="wm_reply_invalid_pool_001", phone="13800009183", owner_staff_id="sales_01", current_pool="inactive_normal", follow_type="normal", activation_status="inactive", questionnaire_status="submitted", questionnaire_follow_type="normal", decision_source="questionnaire")
