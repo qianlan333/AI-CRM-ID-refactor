@@ -257,7 +257,6 @@ def test_run_due_conversion_workflows_filters_recipients_by_behavior_and_keeps_p
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
 
         assert result["ok"] is True
-        _drain_running_executions()
 
         item_rows = get_db().execute(
             """
@@ -319,13 +318,10 @@ def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3
     with app.app_context():
         _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
         first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         _mock_workflow_runtime_now(monkeypatch, "2026-04-09 09:05:00")
         second = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         _mock_workflow_runtime_now(monkeypatch, "2026-04-10 09:05:00")
         third = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         execution_items = get_db().execute(
             """
             SELECT external_contact_id, status
@@ -389,7 +385,6 @@ def test_run_due_conversion_workflows_supports_operating_audience_scheduled_node
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         item_rows = get_db().execute(
             "SELECT external_contact_id, status FROM automation_workflow_execution_item ORDER BY id ASC"
         ).fetchall()
@@ -577,7 +572,6 @@ def test_run_due_conversion_workflows_daily_recurring_operating_nodes_patrol_cur
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         execution_rows = get_db().execute(
             """
             SELECT execution_id, total_count, success_count, summary_json
@@ -658,7 +652,6 @@ def test_run_due_conversion_workflows_daily_recurring_treats_operating_missing_u
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         execution_row = get_db().execute(
             """
             SELECT success_count, skipped_count, summary_json
@@ -736,7 +729,6 @@ def test_run_due_conversion_workflows_legacy_manual_layered_none_workflow_still_
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         item_row = get_db().execute(
             """
             SELECT rendered_content_text, content_snapshot_json, status
@@ -814,7 +806,6 @@ def test_run_due_conversion_workflows_manual_layered_profile_node_can_fallback_t
 
     with app.app_context():
         result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         item_row = get_db().execute(
             """
             SELECT rendered_content_text, content_snapshot_json, status
@@ -2703,9 +2694,7 @@ def test_run_due_conversion_workflows_runs_immediate_node_once_per_audience_entr
 
     with app.app_context():
         first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         second = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
-        _drain_running_executions()
         execution_rows = get_db().execute(
             """
             SELECT execution_id, total_count, success_count, status, scheduled_for
