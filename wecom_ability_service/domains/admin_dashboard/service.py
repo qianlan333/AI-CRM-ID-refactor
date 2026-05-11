@@ -347,7 +347,7 @@ def _build_mcp_runtime_group() -> dict[str, Any]:
         "tone": "warn" if items else "ok",
         "items": items,
         "empty_title": "AI 工具配置正常",
-        "href": "/admin/mcp",
+        "href": "/admin/api-docs",
     }
 
 
