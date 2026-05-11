@@ -257,6 +257,55 @@ def test_full_image_cache_avoids_duplicate_fetch(source: str):
     assert "fullCache" in source
 
 
+# ---------- L1 缩略图加速三件套（IDB + 懒加载 + 并发限流）---------- #
+
+def test_thumb_uses_indexeddb_persistent_cache(source: str):
+    """L1：缩略图 base64 走 IndexedDB 持久缓存，跨刷新 / 跨 tab 都生效。"""
+    assert "indexedDB.open" in source
+    # 提供一个统一的 IDB 工具对象，避免在多处散落 raw indexedDB API
+    assert "IDB.get" in source
+    assert "IDB.set" in source
+
+
+def test_thumb_cache_key_includes_updated_at(source: str):
+    """IDB cache key 必须含 updated_at，让图改了自动失效（避免脏数据）。"""
+    assert "_thumbCacheKey" in source
+    # key 形态：il:<id>:<updated_at>
+    assert "'il:'" in source
+    assert "item.updated_at" in source
+
+
+def test_thumb_lazy_load_via_intersection_observer(source: str):
+    """L1：缩略图懒加载用 IntersectionObserver，视口外的卡片不发请求。"""
+    assert "new IntersectionObserver" in source
+    assert "rootMargin" in source  # 必须配 rootMargin 提前加载减少滚动 jank
+    assert "isIntersecting" in source
+    assert "unobserve" in source  # 加载过的卡片要 unobserve，避免重复触发
+
+
+def test_thumb_observer_disconnect_on_rerender(source: str):
+    """重新渲染网格前必须 disconnect 旧 observer，避免内存泄漏 + 多次触发。"""
+    assert "thumbObserver" in source
+    assert "disconnect" in source
+
+
+def test_thumb_fetch_concurrency_limited(source: str):
+    """L1：缩略图网络请求走并发限流（≤ 4），避免一次性 100 个 fetch 排队。"""
+    assert "pLimit" in source
+    assert "fetchLimit" in source
+
+
+def test_thumb_concurrent_request_dedupe(source: str):
+    """同一张图在并发场景下只 fetch 一次（_thumbPromise 复用）。"""
+    assert "_thumbPromise" in source
+
+
+def test_edit_modal_reuses_thumbnail_url_for_large_image(source: str):
+    """编辑 modal 加载大图走 thumbnailUrl()，跟列表共享 IDB + 内存缓存。"""
+    # 编辑 modal 里直接 await thumbnailUrl(item)，不重复实现一套缓存逻辑
+    assert "await thumbnailUrl(item)" in source
+
+
 def test_extends_admin_console_base(source: str):
     """模板必须继承 admin_console/base.html，跟整个后台 shell 一致。"""
     assert '{% extends "admin_console/base.html" %}' in source
