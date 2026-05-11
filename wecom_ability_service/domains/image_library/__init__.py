@@ -16,126 +16,31 @@
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import mimetypes
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
 
 from ...db import get_db
 from ...wecom_client import WeComClient
+from ..media_library._utils import (
+    decode_jsonb as _decode_jsonb,
+    iso as _iso,
+    normalize_ai_metadata as _normalize_ai_metadata,
+    normalize_tags as _normalize_tags,
+    now_utc as _now_utc,
+    parse_iso as _parse_iso,
+    row_to_dict as _row_to_dict,
+    to_jsonb_text as _to_jsonb_text,
+)
 
 _logger = logging.getLogger(__name__)
 
 THUMB_MEDIA_TTL_DAYS = 2
 _DEFAULT_FILENAME = "image-library-asset.png"
 _VALID_SOURCES = {"upload", "url", "base64"}
-
-
-def _to_jsonb_text(payload: Any, *, default: str) -> str:
-    """把 dict/list/str 序列化成 JSON 文本，给 PG JSONB / SQLite TEXT 写入用。
-
-    与 ``broadcast_jobs/repo.py:_to_jsonb_text`` 同源。``default`` 必须是有效
-    JSON 字面量（``'[]'`` 或 ``'{}'``）。
-    """
-    if payload is None:
-        return default
-    if isinstance(payload, (dict, list)):
-        return json.dumps(payload, ensure_ascii=False)
-    if isinstance(payload, str):
-        return payload or default
-    return json.dumps(payload, ensure_ascii=False)
-
-
-def _decode_jsonb(value: Any, *, default: Any) -> Any:
-    """从 PG JSONB / SQLite TEXT 读出来的值统一解码。
-
-    PG psycopg 已经把 JSONB 反序列化成 dict/list；SQLite 是字符串。两边都支持。
-    """
-    if value is None or value == "":
-        return default
-    if isinstance(value, (dict, list)):
-        return value
-    try:
-        return json.loads(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _normalize_tags(value: Any) -> list[str]:
-    """把外部传入的 tags 标准化成去重 + 去空 + trim 的字符串数组。
-
-    入参可能是 list / 逗号分隔字符串 / None。统一截断每个 tag 到 64 字符，
-    最多保留 50 个，避免脏数据撑爆。
-    """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        # "好评,信任建立" → ["好评", "信任建立"]
-        raw = [s.strip() for s in value.split(",")]
-    elif isinstance(value, (list, tuple, set)):
-        raw = [str(s).strip() for s in value]
-    else:
-        return []
-    seen: set[str] = set()
-    out: list[str] = []
-    for tag in raw:
-        if not tag:
-            continue
-        clipped = tag[:64]
-        if clipped in seen:
-            continue
-        seen.add(clipped)
-        out.append(clipped)
-        if len(out) >= 50:
-            break
-    return out
-
-
-def _normalize_ai_metadata(value: Any) -> dict[str, Any]:
-    """ai_metadata 必须是 dict；其他形态丢回空 dict 防写脏。"""
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str) and value.strip():
-        try:
-            parsed = json.loads(value)
-            return parsed if isinstance(parsed, dict) else {}
-        except (TypeError, ValueError):
-            return {}
-    return {}
-
-
-def _now_utc() -> datetime:
-    return datetime.now(tz=timezone.utc)
-
-
-def _iso(dt: datetime) -> str:
-    return dt.replace(microsecond=0).isoformat()
-
-
-def _parse_iso(value: Any) -> datetime | None:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        if text.endswith("Z"):
-            text = text[:-1] + "+00:00"
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    if row is None:
-        return {}
-    return dict(row)
 
 
 def _serialize(row: dict[str, Any], *, include_data: bool = False) -> dict[str, Any]:

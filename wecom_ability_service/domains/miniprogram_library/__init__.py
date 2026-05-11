@@ -17,51 +17,24 @@ from __future__ import annotations
 import base64
 import logging
 import mimetypes
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
 
 from ...db import get_db
 from ...wecom_client import WeComClient
+from ..media_library._utils import (
+    iso as _iso,
+    now_utc as _now_utc,
+    parse_iso as _parse_iso,
+    row_to_dict as _row_to_dict,
+)
 
 _logger = logging.getLogger(__name__)
 
 THUMB_MEDIA_TTL_DAYS = 2  # 企微临时素材 3 天，留 1 天 buffer
 _THUMB_DEFAULT_FILENAME = "miniprogram-thumb.png"
-
-
-def _now_utc() -> datetime:
-    return datetime.now(tz=timezone.utc)
-
-
-def _iso(dt: datetime) -> str:
-    return dt.replace(microsecond=0).isoformat()
-
-
-def _parse_iso(value: Any) -> datetime | None:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        if text.endswith("Z"):
-            text = text[:-1] + "+00:00"
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    if row is None:
-        return {}
-    if isinstance(row, dict):
-        return dict(row)
-    return dict(row)
 
 
 def _serialize(row: dict[str, Any]) -> dict[str, Any]:
