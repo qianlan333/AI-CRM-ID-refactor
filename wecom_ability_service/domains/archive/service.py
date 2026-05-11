@@ -176,7 +176,10 @@ def list_archived_messages_by_window(start_time: str, end_time: str, owner_useri
     has_more = len(rows) > limit
     page_rows = rows[:limit]
     next_cursor = str(offset + limit) if has_more else ""
-    messages = [json.loads(row["raw_payload"]) for row in page_rows]
+    messages = [
+        row["raw_payload"] if isinstance(row["raw_payload"], (dict, list)) else json.loads(row["raw_payload"])
+        for row in page_rows
+    ]
     return {"messages": messages, "has_more": has_more, "next_cursor": next_cursor}
 
 

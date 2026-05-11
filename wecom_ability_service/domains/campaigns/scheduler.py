@@ -31,13 +31,13 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _empty_ts() -> str | None:
+def _empty_ts() -> None:
     """``campaign_members.next_due_at / last_step_sent_at`` 的"未设置"占位值。
 
-    PG 上是 ``TIMESTAMPTZ``（nullable），写入空字符串会抛 InvalidDatetimeFormat —
-    必须用 NULL；SQLite 上是 ``TEXT NOT NULL DEFAULT ''``，沿用空字符串。
+    历史上是 PG/SQLite 双语义；2026-05 砍 SQLite 后统一返回 ``None`` (PG NULL)。
+    保留函数名让 N 处 caller 不用改。
     """
-    return None if get_db_backend() == "postgres" else ""
+    return None
 
 
 def _due_at_for_step(*, anchor_date: str, day_offset: int, send_time: str) -> str:
@@ -544,10 +544,8 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
 
     db = get_db()
     cur = db.cursor()
-    # PG: ``next_due_at IS NOT NULL``；SQLite: ``next_due_at <> ''``。``_empty_ts()`` 决定占位语义
-    not_empty_clause = "cm.next_due_at IS NOT NULL" if get_db_backend() == "postgres" else "cm.next_due_at <> ''"
     cur.execute(
-        f"""
+        """
         SELECT cm.id AS cm_id, cm.member_id, cm.external_contact_id,
                cm.campaign_id, cm.campaign_segment_id, cm.current_step_index,
                cm.anchor_date, cm.trace_id, cm.last_step_sent_at,
@@ -555,7 +553,7 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         FROM campaign_members cm
         JOIN campaigns c ON c.id = cm.campaign_id
         WHERE cm.status = 'pending'
-          AND {not_empty_clause}
+          AND cm.next_due_at IS NOT NULL
           AND cm.next_due_at <= ?
           AND c.run_status = 'active'
         ORDER BY cm.next_due_at ASC, cm.id ASC

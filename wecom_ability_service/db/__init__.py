@@ -3,7 +3,6 @@ from __future__ import annotations
 from .connection import (  # noqa: F401
     PostgresConnection,
     close_db,
-    dict_factory,
     get_db,
     get_db_backend,
 )
@@ -19,13 +18,9 @@ from .dialect import (  # noqa: F401
 
 def init_db() -> None:
     from .migrations.postgres_migrations import _init_postgres
-    from .migrations.sqlite_migrations import _init_sqlite
 
     db = get_db()
-    if get_db_backend() == "postgres":
-        _init_postgres(db)
-    else:
-        _init_sqlite(db)
+    _init_postgres(db)
 
     # PG 上 DDL 失败会让事务进入 abort 状态，后续任何查询都会被忽略
     # （"current transaction is aborted, commands ignored"）。在 seed 之前

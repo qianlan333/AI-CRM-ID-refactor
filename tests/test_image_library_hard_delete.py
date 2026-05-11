@@ -105,7 +105,7 @@ def test_find_image_references_picks_up_miniprogram(app):
             "INSERT INTO miniprogram_library "
             "(name, appid, pagepath, title, thumb_image_id, thumb_image_url, "
             " thumb_image_base64, thumb_media_id, thumb_media_id_expires_at, enabled) "
-            "VALUES (?, ?, ?, ?, ?, '', '', '', '', 1)",
+            "VALUES (?, ?, ?, ?, ?, '', '', '', NULL, TRUE)",
             ("卡片A", "wx-test", "pages/x", "测试卡片", img["id"]),
         )
         get_db().commit()
@@ -164,7 +164,7 @@ def test_delete_image_with_miniprogram_ref_rejects(app):
             "INSERT INTO miniprogram_library "
             "(name, appid, pagepath, title, thumb_image_id, thumb_image_url, "
             " thumb_image_base64, thumb_media_id, thumb_media_id_expires_at, enabled) "
-            "VALUES (?, ?, ?, ?, ?, '', '', '', '', 1)",
+            "VALUES (?, ?, ?, ?, ?, '', '', '', NULL, TRUE)",
             ("卡片", "wx-y", "p", "t", img["id"]),
         )
         get_db().commit()
@@ -200,7 +200,7 @@ def test_delete_image_force_clears_miniprogram_thumb(app):
             "INSERT INTO miniprogram_library "
             "(name, appid, pagepath, title, thumb_image_id, thumb_image_url, "
             " thumb_image_base64, thumb_media_id, thumb_media_id_expires_at, enabled) "
-            "VALUES (?, ?, ?, ?, ?, '', '', '', '', 1)",
+            "VALUES (?, ?, ?, ?, ?, '', '', '', NULL, TRUE)",
             ("卡片", "wx-z", "p", "t", img["id"]),
         )
         get_db().commit()
@@ -253,7 +253,7 @@ def test_delete_image_force_handles_both_ref_types(app):
             "INSERT INTO miniprogram_library "
             "(name, appid, pagepath, title, thumb_image_id, thumb_image_url, "
             " thumb_image_base64, thumb_media_id, thumb_media_id_expires_at, enabled) "
-            "VALUES (?, ?, ?, ?, ?, '', '', '', '', 1)",
+            "VALUES (?, ?, ?, ?, ?, '', '', '', NULL, TRUE)",
             ("卡片", "wx-both", "p", "t", img["id"]),
         )
         cur.execute(

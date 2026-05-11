@@ -911,6 +911,18 @@ def run_due_sop(
                     }
                 )
                 sendable_candidates.append(candidate)
+                # Record batch item as "pending" immediately so dedup checks work
+                # on consecutive runs, and update progress so last_sent_day is tracked
+                # before the broadcast_jobs worker runs.
+                _record_sop_batch_item(
+                    batch_id=int(batch.get("id") or 0),
+                    member=member,
+                    pool_key=pool_key,
+                    day_index=day_index,
+                    external_userid=external_userid,
+                    status="pending",
+                )
+                _update_sop_progress_day(progress, day_index=day_index, sent_at=now_text)
 
             if sendable_targets:
                 from ..broadcast_jobs import service as queue_service
@@ -1019,18 +1031,30 @@ def run_sop_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
         member = dict(candidate.get("member") or {})
         progress = dict(candidate.get("progress") or {})
         external_userid = _normalized_text(target.get("external_userid"))
-        if external_userid in failed_external_userids:
-            _record_sop_batch_item(
-                batch_id=batch_id,
-                member=member,
-                pool_key=pool_key,
-                day_index=day_index,
-                external_userid=external_userid,
-                status="failed",
-                error_message="dispatch_failed",
-                sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
+        member_id = int(member.get("id") or 0)
+        # Look for existing "pending" batch item recorded during run_due_sop
+        existing_item = repo.get_sop_batch_item_for_member_day(
+            member_id=member_id,
+            pool_key=pool_key,
+            day_index_snapshot=day_index,
+        ) if member_id else None
+        final_status = "failed" if external_userid in failed_external_userids else "success"
+        error_message = "dispatch_failed" if final_status == "failed" else ""
+        content_snapshot = _normalized_text(template.get("content")) if final_status == "success" else ""
+        images_snapshot = list(template.get("images_json") or []) if final_status == "success" else []
+        sent_record_id = int(dispatch_result.get("record_id") or 0) or None
+        if existing_item and int(existing_item.get("id") or 0):
+            repo.update_sop_batch_item(
+                int(existing_item["id"]),
+                {
+                    **existing_item,
+                    "status": final_status,
+                    "error_message": error_message,
+                    "content_snapshot": content_snapshot,
+                    "images_snapshot": images_snapshot,
+                    "sent_record_id": sent_record_id,
+                },
             )
-            failed_count += 1
         else:
             _record_sop_batch_item(
                 batch_id=batch_id,
@@ -1038,11 +1062,15 @@ def run_sop_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
                 pool_key=pool_key,
                 day_index=day_index,
                 external_userid=external_userid,
-                status="success",
-                content_snapshot=_normalized_text(template.get("content")),
-                images_snapshot=list(template.get("images_json") or []),
-                sent_record_id=int(dispatch_result.get("record_id") or 0) or None,
+                status=final_status,
+                error_message=error_message,
+                content_snapshot=content_snapshot,
+                images_snapshot=images_snapshot,
+                sent_record_id=sent_record_id,
             )
+        if final_status == "failed":
+            failed_count += 1
+        else:
             success_count += 1
         _update_sop_progress_day(progress, day_index=day_index, sent_at=now_text)
 

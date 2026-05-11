@@ -1652,13 +1652,22 @@ def _run_due_node(
         _log_runtime_event("scheduled_node_no_candidates", result)
         return result
 
-    # 入队前先把 diagnostics 快照到 execution，worker 执行后会保留
+    # 入队前把完整 summary（含 diagnostics / result / zero_hit_reasons）快照到
+    # execution，方便监控页和测试立即读到；worker 执行后会用最终结果覆盖。
+    _enqueue_counters = _execution_summary_from_items(execution_items)[1]
+    _enqueue_summary = _execution_summary_json(
+        workflow_bundle=workflow_bundle,
+        node=node,
+        diagnostics=diagnostics,
+        counters=_enqueue_counters,
+    )
     workflow_repo.update_workflow_execution_row(
         int(execution["id"]),
         {
             **execution,
             "status": "running",
-            "summary_json": {"diagnostics": diagnostics},
+            "total_count": _enqueue_counters["total_count"],
+            "summary_json": _enqueue_summary,
         },
     )
 
@@ -1789,7 +1798,7 @@ def _run_immediate_node(
                 },
             },
         )
-        workflow_repo.insert_workflow_execution_item_row(
+        new_item = workflow_repo.insert_workflow_execution_item_row(
             {
                 "execution_id": int(execution.get("id") or 0),
                 "workflow_id": int(execution.get("workflow_id") or 0),
@@ -1809,9 +1818,51 @@ def _run_immediate_node(
             }
         )
         diagnostics["inserted_pending_count"] += 1
+
+        # ── 立即渲染内容 ──
+        # 内容决策是确定性的（不依赖外部 API），在入队前完成：
+        #   - 渲染成功 → 更新 item 保持 pending，入队给 broadcast worker 真发
+        #   - 渲染为空 → 标 failed，跳过入队
+        _imm_member = dict(audience_entry.get("member") or {})
+        _imm_rendered = _render_node_content(
+            member=_imm_member,
+            workflow_bundle=workflow_bundle,
+            node=node,
+            execution_request_id=f"workflow-node-{int(node['id'])}-item-{int(new_item.get('id') or 0)}",
+        )
+        _imm_content = _normalized_text(_imm_rendered.get("content_text"))
+        _imm_snapshot = {
+            "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
+            "workflow_name": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_name")),
+            "node_code": _normalized_text(node.get("node_code")),
+            "node_name": _normalized_text(node.get("node_name")),
+            "node_content_mode": _node_content_mode(node, workflow_bundle),
+            "node_generation_mode": _node_generation_mode(node, workflow_bundle),
+            "node_segmentation_basis": _node_segmentation_basis(node, workflow_bundle),
+            "workflow_generation_mode": _normalized_text((workflow_bundle.get("workflow") or {}).get("generation_mode")),
+            "workflow_segmentation_basis": _normalized_text((workflow_bundle.get("workflow") or {}).get("segmentation_basis")),
+            "standard_content_text": _normalized_text(node.get("standard_content_text")),
+            "rendered_content_text": _imm_content,
+            "content_source": _normalized_text(_imm_rendered.get("content_source")),
+            "fallback_reason": _normalized_text(_imm_rendered.get("fallback_reason")),
+            "agent_code": _normalized_text(_imm_rendered.get("agent_code")),
+            "segment_match": dict(_imm_rendered.get("segment_match") or {}),
+            "behavior_match": dict(_imm_rendered.get("behavior_match") or {}),
+        }
+
         external_userid = _normalized_text((audience_entry.get("member") or {}).get("external_contact_id"))
+
         if not external_userid:
-            # 无 external_userid — 标 finished 避免卡在 running
+            workflow_repo.update_workflow_execution_item_row(
+                int(new_item["id"]),
+                {
+                    **new_item,
+                    "status": "skipped",
+                    "error_message": "missing_external_contact_id",
+                    "content_snapshot_json": _imm_snapshot,
+                    "rendered_content_text": _imm_content,
+                },
+            )
             workflow_repo.update_workflow_execution_row(
                 int(execution["id"]),
                 {**execution, "status": "finished", "finished_at": _iso_now(),
@@ -1819,6 +1870,37 @@ def _run_immediate_node(
             )
             processed_executions.append(execution)
             continue
+
+        if not _imm_content:
+            # 内容为空 — 标 failed，不入队
+            workflow_repo.update_workflow_execution_item_row(
+                int(new_item["id"]),
+                {
+                    **new_item,
+                    "status": "failed",
+                    "error_message": "rendered_content_empty",
+                    "content_snapshot_json": _imm_snapshot,
+                    "rendered_content_text": "",
+                    "agent_code": _imm_rendered.get("agent_code"),
+                    "agent_run_id": _imm_rendered.get("agent_run_id"),
+                    "agent_output_id": _imm_rendered.get("agent_output_id"),
+                },
+            )
+            processed_executions.append(execution)
+            continue
+
+        # 内容已渲染 — 更新 item 并入队给 broadcast worker 真发
+        workflow_repo.update_workflow_execution_item_row(
+            int(new_item["id"]),
+            {
+                **new_item,
+                "rendered_content_text": _imm_content,
+                "content_snapshot_json": _imm_snapshot,
+                "agent_code": _imm_rendered.get("agent_code"),
+                "agent_run_id": _imm_rendered.get("agent_run_id"),
+                "agent_output_id": _imm_rendered.get("agent_output_id"),
+            },
+        )
 
         from ..broadcast_jobs import service as queue_service
 
@@ -1836,7 +1918,7 @@ def _run_immediate_node(
                 "node_id": int(node.get("id") or 0),
                 "operator_id": operator_id,
             },
-            content_summary=_normalized_text(node.get("standard_content_text"))[:200],
+            content_summary=_imm_content[:200],
         )
         processed_executions.append(execution)
     result = {

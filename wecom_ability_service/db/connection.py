@@ -1,25 +1,43 @@
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
+from datetime import datetime, timezone
 
 from flask import current_app, g
 
-try:
-    import psycopg
-    from psycopg.rows import dict_row
-except ImportError:  # pragma: no cover - sqlite mode does not require psycopg locally
-    psycopg = None
-    dict_row = None
+import psycopg
+from psycopg.rows import dict_row
 
 
-def dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
-    return {column[0]: row[idx] for idx, column in enumerate(cursor.description)}
+def _strip_tz(value):
+    """Strip timezone info from PG datetime values, normalising to UTC first.
+
+    psycopg 3 returns ``datetime`` with tzinfo set to the PG server timezone
+    (e.g. ``Asia/Shanghai``).  Old SQLite code expects naive datetimes in UTC.
+    We convert to UTC **before** stripping so the naive result is always UTC,
+    regardless of the server's ``timezone`` setting.
+    """
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _dict_row_strip_tz(cursor):
+    """Row factory: ``dict_row`` + strip timezone from all datetime values."""
+    base_factory = dict_row(cursor)
+
+    def row_maker(values):
+        row = base_factory(values)
+        return {k: _strip_tz(v) for k, v in row.items()}
+
+    return row_maker
 
 
 def get_db_backend() -> str:
-    database_url = str(current_app.config.get("DATABASE_URL", "") or "").strip()
-    return "postgres" if database_url else "sqlite"
+    """历史接口，2026-05 砍 SQLite 后总返回 ``"postgres"``。
+
+    保留函数为了不动 50+ 处 caller。新代码不需要再调用。
+    """
+    return "postgres"
 
 
 def _translate_sql(sql: str) -> str:
@@ -38,7 +56,7 @@ class PostgresCursor:
 
     def __init__(self, conn):
         self._conn = conn
-        self._cursor = conn.cursor(row_factory=dict_row)
+        self._cursor = conn.cursor(row_factory=_dict_row_strip_tz)
         self._last_was_insert = False
         self.lastrowid = None
 
@@ -57,17 +75,31 @@ class PostgresCursor:
         upper_head = translated.lstrip().upper()[:6]
         self._last_was_insert = upper_head == "INSERT"
         self.lastrowid = None
-        if self._last_was_insert:
+        # 只有在真插入了行（rowcount > 0）时才尝试拿 lastval()。``INSERT ...
+        # SELECT WHERE NOT EXISTS`` 这种 conditional INSERT 可能 insert 0 行，
+        # 那 ``SELECT lastval()`` 会抛 ``object "..." is not yet defined``，
+        # 把 cursor 状态打 abort，后续 SQL 全炸。用 SAVEPOINT 保护以防万一。
+        if self._last_was_insert and self._cursor.rowcount and self._cursor.rowcount > 0:
+            sp_cursor = self._conn.cursor()
             try:
-                lv_cursor = self._conn.cursor()
-                lv_cursor.execute("SELECT lastval()")
-                row = lv_cursor.fetchone()
-                lv_cursor.close()
-                if row:
-                    # row 是 tuple（plain cursor）
-                    self.lastrowid = int(row[0])
+                sp_cursor.execute("SAVEPOINT _pg_lastval_probe")
+                try:
+                    sp_cursor.execute("SELECT lastval()")
+                    row = sp_cursor.fetchone()
+                    if row:
+                        self.lastrowid = int(row[0])
+                    sp_cursor.execute("RELEASE SAVEPOINT _pg_lastval_probe")
+                except Exception:
+                    self.lastrowid = None
+                    try:
+                        sp_cursor.execute("ROLLBACK TO SAVEPOINT _pg_lastval_probe")
+                        sp_cursor.execute("RELEASE SAVEPOINT _pg_lastval_probe")
+                    except Exception:
+                        pass
             except Exception:
                 self.lastrowid = None
+            finally:
+                sp_cursor.close()
         return self
 
     def executemany(self, sql, seq):
@@ -114,18 +146,14 @@ class PostgresConnection:
         return PostgresCursor(self._conn)
 
     def execute(self, sql: str, params: tuple | list | None = None):
-        cursor = self._conn.cursor(row_factory=dict_row)
-        translated = _translate_sql(sql)
-        # 同 PostgresCursor.execute — params 为空时不传，避免 LIKE '%X%' 中
-        # 的字面 % 被 psycopg 当 placeholder 解析失败。
-        if params is None or (hasattr(params, "__len__") and len(params) == 0):
-            cursor.execute(translated)
-        else:
-            cursor.execute(translated, tuple(params))
-        return cursor
+        # 走 PostgresCursor wrapper 让 INSERT 后 ``cursor.lastrowid`` 能拿到自增 id
+        # （raw psycopg cursor 没有 lastrowid 属性，老 sqlite-shaped 代码会 AttributeError）。
+        wrapper = PostgresCursor(self._conn)
+        wrapper.execute(sql, params)
+        return wrapper
 
     def executemany(self, sql: str, seq_of_params: list[tuple] | list[list]):
-        cursor = self._conn.cursor(row_factory=dict_row)
+        cursor = self._conn.cursor(row_factory=_dict_row_strip_tz)
         cursor.executemany(_translate_sql(sql), seq_of_params)
         return cursor
 
@@ -147,30 +175,20 @@ class PostgresConnection:
 
 
 def _connect_postgres():
-    if psycopg is None:
-        raise RuntimeError("psycopg is required for PostgreSQL mode. Install requirements first.")
-    conn = psycopg.connect(current_app.config["DATABASE_URL"], autocommit=False)
+    database_url = str(current_app.config.get("DATABASE_URL", "") or "").strip()
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is required. SQLite has been removed (2026-05). "
+            "Run a local Postgres (e.g. `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=test postgres:16`) "
+            "and set DATABASE_URL=postgresql://...."
+        )
+    conn = psycopg.connect(database_url, autocommit=False)
     return PostgresConnection(conn)
-
-
-def _connect_sqlite():
-    db_path = Path(current_app.config["DATABASE_PATH"])
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    busy_timeout_ms = int(current_app.config.get("SQLITE_BUSY_TIMEOUT_MS", 5000))
-    conn = sqlite3.connect(db_path, timeout=max(busy_timeout_ms / 1000, 1))
-    conn.row_factory = dict_factory
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
 
 
 def get_db():
     if "db" not in g:
-        if get_db_backend() == "postgres":
-            g.db = _connect_postgres()
-        else:
-            g.db = _connect_sqlite()
+        g.db = _connect_postgres()
     return g.db
 
 

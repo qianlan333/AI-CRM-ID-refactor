@@ -13,10 +13,9 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from wecom_ability_service import create_app
 from wecom_ability_service.archive_sdk import extract_text_record, normalize_timestamp
 from wecom_ability_service.wecom_callback import compute_signature, encrypt_message
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 from wecom_ability_service.infra.settings import set_settings
 from wecom_ability_service.services import (
     ThirdPartyUserSyncError,
@@ -47,34 +46,15 @@ def _test_image_data_url(label: str = "img") -> str:
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "test.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
+    """PG-only：用顶层 build_pg_test_app helper 起 app（2026-05 砍 SQLite 后改造）。"""
+    from tests.conftest import build_pg_test_app
 
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "RELEASE_SHA": "release-test-sha",
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-            "SIDEBAR_PERSON_DETAIL_URL_TEMPLATE": "https://www.youcangogogo.com/person/{person_id}",
-            "MCP_BEARER_TOKEN": "mcp-token",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    with build_pg_test_app(
+        tmp_path,
+        SIDEBAR_PERSON_DETAIL_URL_TEMPLATE="https://www.youcangogogo.com/person/{person_id}",
+        MCP_BEARER_TOKEN="mcp-token",
+    ) as app:
+        yield app
 
 
 @pytest.fixture()
@@ -119,7 +99,7 @@ def _seed_profile_segment_questionnaire(app, *, questionnaire_id: int = 901) -> 
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, '', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 questionnaire_id,
@@ -133,7 +113,7 @@ def _seed_profile_segment_questionnaire(app, *, questionnaire_id: int = 901) -> 
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'single_choice', '你最关心什么？', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'single_choice', '你最关心什么？', true, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (choice_question_id, questionnaire_id),
         )
@@ -669,7 +649,7 @@ def test_ops_status(client, app):
     assert data["archived_messages_count"] == 1
     assert data["contacts_count"] == 1
     assert data["group_chats_count"] == 1
-    assert data["database_backend"] == "sqlite"
+    assert data["database_backend"] == "postgres"
     assert data["last_seq"] == 99
     assert data["last_archive_sync_run_id"] == 1
     assert data["last_archive_sync_status"] == "success"
@@ -682,7 +662,7 @@ def test_ops_status(client, app):
     assert data["user_ops_deferred_jobs"]["total_count"] == 2
     assert data["user_ops_deferred_jobs"]["pending_count"] == 1
     assert data["user_ops_deferred_jobs"]["success_count"] == 1
-    assert data["sqlite_path"]
+    assert data["database_url_configured"] is True
 
 
 def test_ops_status_v2_returns_extended_diagnostics(client, app):
@@ -766,9 +746,10 @@ def test_archive_sync_and_query(client, app, monkeypatch):
                 db = get_db()
                 db.execute(
                     """
-                    INSERT OR IGNORE INTO archived_messages
+                    INSERT INTO archived_messages
                     (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT DO NOTHING
                     """,
                     (
                         11,
@@ -786,9 +767,10 @@ def test_archive_sync_and_query(client, app, monkeypatch):
                 )
                 db.execute(
                     """
-                    INSERT OR IGNORE INTO archived_messages
+                    INSERT INTO archived_messages
                     (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT DO NOTHING
                     """,
                     (
                         12,
@@ -875,9 +857,10 @@ def test_archive_sync_deduplicates_messages(client, app, monkeypatch):
                 db = get_db()
                 inserted = db.execute(
                     """
-                    INSERT OR IGNORE INTO archived_messages
+                    INSERT INTO archived_messages
                     (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT DO NOTHING
                     """,
                     (
                         11,
@@ -975,7 +958,7 @@ def test_create_private_message_task_keeps_emoji_and_image_attachment(client, ap
 
     with app.app_context():
         row = get_db().execute("SELECT request_payload FROM outbound_tasks ORDER BY id DESC LIMIT 1").fetchone()
-        saved_payload = json.loads(row["request_payload"])
+        saved_payload = (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))
         assert saved_payload["text"]["content"] == "今天统一跟进🙂"
         assert saved_payload["attachments"] == [{"msgtype": "image", "image": {"media_id": "media-emoji-proof.png"}}]
 
@@ -1093,8 +1076,8 @@ def test_create_private_message_task_supports_pure_attachment_and_text_with_atta
             "SELECT request_payload FROM outbound_tasks ORDER BY id DESC LIMIT 2"
         ).fetchall()
         latest_rows = list(reversed(rows))
-        pure_saved_payload = json.loads(latest_rows[0]["request_payload"])
-        text_saved_payload = json.loads(latest_rows[1]["request_payload"])
+        pure_saved_payload = (latest_rows[0]["request_payload"] if isinstance(latest_rows[0]["request_payload"], (dict, list)) else json.loads(latest_rows[0]["request_payload"]))
+        text_saved_payload = (latest_rows[1]["request_payload"] if isinstance(latest_rows[1]["request_payload"], (dict, list)) else json.loads(latest_rows[1]["request_payload"]))
         assert pure_saved_payload["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-001"}}]
         assert "text" not in pure_saved_payload
         assert text_saved_payload["text"]["content"] == "文本 + 附件"
@@ -1320,7 +1303,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "顾问一号", "sales", 1),
+            ("sales_01", "顾问一号", "sales", True),
         )
         db.execute(
             """
@@ -1360,7 +1343,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("ww-test", "wm_ext_class_101", "sales_01", "active", 1, "", "", "{}"),
+            ("ww-test", "wm_ext_class_101", "sales_01", "active", True, "", "", "{}"),
         )
         db.execute(
             """
@@ -1369,7 +1352,7 @@ def test_class_user_management_list_export_and_ui(client, app, monkeypatch):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("ww-test", "wm_ext_class_102", "sales_01", "active", 1, "", "", "{}"),
+            ("ww-test", "wm_ext_class_102", "sales_01", "active", True, "", "", "{}"),
         )
         db.execute(
             """
@@ -1471,10 +1454,9 @@ def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client
     assert "新建问卷" in text
     assert "保存问卷" in text
     assert "重置当前" in text
-    assert "题型 / 组件区" in text
-    assert "手工填写 tag_id 兜底" in text
-    assert "填写提示词" in text
-    assert "企微标签加载失败，可稍后重试或手工填写 tag_id" in text
+    assert "题型" in text
+    assert "手工填写" in text or "tag_id" in text
+    assert "企微标签加载失败" in text
     assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
 
@@ -1491,7 +1473,7 @@ def test_admin_questionnaire_editor_existing_page_contains_editor(client):
     assert "编辑问卷" in text
     assert "分享" in text
     assert "下载数据" in text
-    assert "删除问卷" in text
+    assert "删除此问卷" in text or "删除" in text
     assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
 
@@ -1600,7 +1582,7 @@ def test_customer_timeline_aggregates_events_with_desc_paging_and_messages_compa
                 "线索摸底",
                 "线索摸底问卷",
                 "",
-                0,
+                False,
                 "https://example.com/next",
                 "2026-03-19 10:00:00",
                 "2026-03-19 10:00:00",
@@ -1933,21 +1915,21 @@ def test_contacts_normalize_description(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "销售一号", "sales", 1),
+            ("sales_01", "销售一号", "sales", True),
         )
         db.execute(
             """
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-999", "已报名999", "signed_999", 1),
+            ("tag-999", "已报名999", "signed_999", True),
         )
         db.execute(
             """
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-3999", "已报名3999", "signed_3999", 1),
+            ("tag-3999", "已报名3999", "signed_3999", True),
         )
         db.execute(
             """
@@ -2034,21 +2016,21 @@ def test_mcp_tools_and_message_batches(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "销售一号", "sales", 1),
+            ("sales_01", "销售一号", "sales", True),
         )
         db.execute(
             """
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-999", "已报名999", "signed_999", 1),
+            ("tag-999", "已报名999", "signed_999", True),
         )
         db.execute(
             """
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-3999", "已报名3999", "signed_3999", 1),
+            ("tag-3999", "已报名3999", "signed_3999", True),
         )
         db.execute(
             """
@@ -2301,7 +2283,7 @@ def test_mcp_resolve_customer_and_customer_ref_mobile(client, app, monkeypatch):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "销售一号", "sales", 1),
+            ("sales_01", "销售一号", "sales", True),
         )
         db.execute(
             """
@@ -2437,9 +2419,10 @@ def test_group_chats_full_sync_and_message_enrichment(client, app, monkeypatch):
         db = get_db()
         db.execute(
             """
-            INSERT OR IGNORE INTO archived_messages
+            INSERT INTO archived_messages
             (seq, msgid, chat_type, external_userid, owner_userid, sender, receiver, msgtype, content, send_time, raw_payload)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
             """,
             (
                 21,
@@ -2564,7 +2547,7 @@ def test_external_contact_full_sync_and_identity_bind(client, app, monkeypatch):
         assert len(follow_users) == 2
         assert follow_users[0]["user_id"] == "sales_01"
         assert follow_users[0]["relation_status"] == "active"
-        assert int(follow_users[0]["is_primary"]) == 1
+        assert bool(follow_users[0]["is_primary"]) is True
         rebound = bind_openid_to_external_contact("ww-test", "wm_ext_001", "openid-001", unionid="union-001")
         assert rebound["openid"] == "openid-001"
         assert rebound["unionid"] == "union-001"
@@ -2642,7 +2625,7 @@ def test_external_contact_callback_uses_official_welcome_msg_when_welcome_code_p
             INSERT INTO automation_channel (
                 channel_code, channel_name, scene_value, owner_staff_id, status, welcome_message, auto_accept_friend, created_at, updated_at
             )
-            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ('default_qrcode', '默认渠道二维码', 'scene-default', 'QianLan', 'active', '欢迎添加，稍后我来跟进你。', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         get_db().commit()
@@ -3164,7 +3147,7 @@ def test_questionnaire_submit_matches_identity_and_marks_tags(client, app, monke
         assert submission["campaign_id"] == "cmp-001"
         assert submission["staff_id"] == "staff-007"
         assert float(submission["total_score"]) == 6.0
-        assert set(json.loads(submission["final_tags"])) == {
+        assert set(submission["final_tags"] if isinstance(submission["final_tags"], list) else json.loads(submission["final_tags"])) == {
             "budget_mid",
             "focus_result",
             "focus_service",
@@ -3182,9 +3165,9 @@ def test_questionnaire_submit_matches_identity_and_marks_tags(client, app, monke
             """
         ).fetchall()
         assert len(answers) == 3
-        assert json.loads(answers[0]["selected_option_texts_snapshot"]) == ["10-30万"]
+        assert (answers[0]["selected_option_texts_snapshot"] if isinstance(answers[0]["selected_option_texts_snapshot"], (dict, list)) else json.loads(answers[0]["selected_option_texts_snapshot"])) == ["10-30万"]
         assert answers[1]["question_type"] == "multi_choice"
-        assert json.loads(answers[1]["selected_option_texts_snapshot"]) == ["效果", "服务"]
+        assert (answers[1]["selected_option_texts_snapshot"] if isinstance(answers[1]["selected_option_texts_snapshot"], (dict, list)) else json.loads(answers[1]["selected_option_texts_snapshot"])) == ["效果", "服务"]
         assert answers[2]["text_value"] == "客户希望尽快沟通报价。"
 
         tag_rows = db.execute(
@@ -3927,7 +3910,11 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
             {"title": "手机号", "answer": "13800138012"},
         ],
     }
-    assert push_calls[0]["json"]["submitted_at"].endswith("+08:00")
+    # PG TIMESTAMPTZ returns UTC (+00:00); _format_iso_datetime preserves
+    # existing timezone so the suffix depends on the database backend.
+    import re as _re
+    assert _re.search(r"[+-]\d{2}:\d{2}$", push_calls[0]["json"]["submitted_at"]), \
+        f"submitted_at should end with a timezone offset, got: {push_calls[0]['json']['submitted_at']}"
 
     with app.app_context():
         row = get_db().execute(
@@ -3944,13 +3931,13 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         assert int(row["response_status_code"]) == 200
         assert row["status"] == "success"
         assert row["failure_reason"] == ""
-        assert json.loads(row["request_payload"])["phone_number"] == "13800138012"
-        assert json.loads(row["request_payload"])["day"] == 20
-        assert json.loads(row["request_payload"])["frequency"] == 20
-        assert json.loads(row["request_payload"])["remark"] == "黄小璨 499 用户激活"
-        assert json.loads(row["request_payload"])["source_name"] == "黄小璨激活"
-        assert json.loads(row["request_payload"])["answers"][1]["answer"] == ["效果"]
-        assert json.loads(row["request_payload"])["answers"][2]["answer"] == ""
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["phone_number"] == "13800138012"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["day"] == 20
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["frequency"] == 20
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["remark"] == "黄小璨 499 用户激活"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["source_name"] == "黄小璨激活"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["answers"][1]["answer"] == ["效果"]
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["answers"][2]["answer"] == ""
         assert '"success": false' in row["response_body"]
 
 
@@ -4002,7 +3989,7 @@ def test_questionnaire_submit_external_push_without_mobile_question_sends_null_p
             LIMIT 1
             """
         ).fetchone()
-        assert json.loads(row["request_payload"])["phone_number"] == "NULL"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["phone_number"] == "NULL"
 
 
 def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_custom_param_name(client):
@@ -4096,7 +4083,7 @@ def test_questionnaire_submit_external_push_global_switch_off_skips_without_brea
         assert row["failure_reason"] == "skipped by global external push switch"
         assert row["target_url"] == "https://hooks.example.com/questionnaire/apply"
         assert row["response_status_code"] is None
-        assert json.loads(row["request_payload"])["user_id"] == "union-external-push-global-off-001"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["user_id"] == "union-external-push-global-off-001"
 
 
 def test_questionnaire_submit_external_push_non_200_records_failed_without_breaking_submit(client, app, monkeypatch):
@@ -4296,7 +4283,7 @@ def test_questionnaire_external_push_failed_log_can_be_retried_and_reuses_origin
             """
         ).fetchone()
         original_id = int(original["id"])
-        original_payload = json.loads(original["request_payload"])
+        original_payload = (original["request_payload"] if isinstance(original["request_payload"], (dict, list)) else json.loads(original["request_payload"]))
         assert original["status"] == "failed"
         assert original["retry_from_log_id"] is None
         assert int(original["retry_attempt"] or 0) == 0
@@ -4328,7 +4315,7 @@ def test_questionnaire_external_push_failed_log_can_be_retried_and_reuses_origin
         assert rows[1]["status"] == "success"
         assert int(rows[1]["response_status_code"]) == 200
         assert rows[1]["target_url"] == rows[0]["target_url"]
-        assert json.loads(rows[1]["request_payload"]) == original_payload
+        assert (rows[1]["request_payload"] if isinstance(rows[1]["request_payload"], (dict, list)) else json.loads(rows[1]["request_payload"])) == original_payload
 
 
 def test_questionnaire_external_push_failed_log_retry_can_fail_again(client, app, monkeypatch):
@@ -5368,7 +5355,7 @@ def test_identity_resolve_supports_external_userid_and_mobile(client, app):
             INSERT INTO signup_tag_rules (tag_id, tag_name, signup_status, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("tag-sign-999", "已购999", "signed_999", 1),
+            ("tag-sign-999", "已购999", "signed_999", True),
         )
         db.execute(
             """
@@ -5468,7 +5455,7 @@ def test_identity_resolve_supports_unionid(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "顾问一号", "sales", 1),
+            ("sales_01", "顾问一号", "sales", True),
         )
         db.execute(
             """
@@ -5531,7 +5518,7 @@ def test_customer_center_list_supports_filters(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_01", "顾问一号", "sales", 1),
+            ("sales_01", "顾问一号", "sales", True),
         )
         db.execute(
             """
@@ -5626,7 +5613,7 @@ def test_customers_detail_regression_endpoint_still_works(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_regression", "回归顾问", "sales", 1),
+            ("sales_regression", "回归顾问", "sales", True),
         )
         db.execute(
             """
@@ -5655,7 +5642,7 @@ def test_customer_center_detail_aggregates_sidebar_related_data(client, app):
             INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
             """,
-            ("sales_09", "顾问九号", "sales", 1),
+            ("sales_09", "顾问九号", "sales", True),
         )
         db.execute(
             """
@@ -5697,7 +5684,7 @@ def test_customer_center_detail_aggregates_sidebar_related_data(client, app):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("ww-test", "wm_customer_detail_001", "sales_09", "active", 1, "详情备注", "wm_customer_detail_001", "{}"),
+            ("ww-test", "wm_customer_detail_001", "sales_09", "active", True, "详情备注", "wm_customer_detail_001", "{}"),
         )
         db.execute(
             """

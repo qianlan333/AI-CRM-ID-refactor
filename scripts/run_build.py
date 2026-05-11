@@ -32,7 +32,7 @@ def _flask_smoke_build() -> None:
         app = create_app(
             {
                 "TESTING": True,
-                "DATABASE_PATH": str(tmp_path / "build-smoke.sqlite3"),
+                # DATABASE_URL 从环境变量读取（PG-only，2026-05 砍 SQLite 后不再需要 DATABASE_PATH）
                 "RELEASE_SHA": "build-smoke",
                 "WECOM_CORP_ID": "ww-build",
                 "WECOM_CONTACT_SECRET": "contact-secret-build",

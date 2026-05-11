@@ -196,10 +196,14 @@ def _json_loads(value: Any, *, default: Any) -> Any:
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
     text = _normalized_text(value)
     if not text:
         return None
-    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+    import re as _re
+    text = _re.sub(r"[+-]\d{2}(:\d{2})?$", "", text).rstrip()
+    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M"):
         try:
             return datetime.strptime(text, pattern)
         except ValueError:

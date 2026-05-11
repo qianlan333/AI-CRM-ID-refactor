@@ -320,18 +320,10 @@ def _insert_image(
 ) -> int:
     if source not in _VALID_SOURCES:
         raise ValueError(f"invalid source: {source}")
-    from ...db import get_db_backend
-
-    is_pg = get_db_backend() == "postgres"
     db = get_db()
     cur = db.cursor()
-    # PG: thumb_media_id_expires_at 是 TIMESTAMPTZ nullable，写入 '' 抛 InvalidDatetimeFormat
-    # 必须用 NULL；SQLite: 是 TEXT NOT NULL DEFAULT ''，沿用空字符串
-    expires_placeholder = None if is_pg else ""
     tags_norm = _normalize_tags(tags)
     metadata_norm = _normalize_ai_metadata(ai_metadata)
-    # PG JSONB 和 SQLite TEXT 都接受 JSON 字符串（psycopg3 隐式 cast text→jsonb）。
-    # 与 broadcast_jobs/repo.py 同套范式。
     tags_payload = _to_jsonb_text(tags_norm, default="[]")
     ai_meta_payload = _to_jsonb_text(metadata_norm, default="{}")
     cur.execute(
@@ -350,8 +342,8 @@ def _insert_image(
             data_base64 or "",
             (mime_type or "image/png").strip()[:80],
             int(file_size or 0),
-            expires_placeholder,
-            True if is_pg else 1,  # enabled: PG BOOLEAN / SQLite INTEGER
+            None,  # thumb_media_id_expires_at TIMESTAMPTZ：未设置写 NULL
+            True,  # enabled BOOLEAN (PG-only)
             (description or "").strip()[:4000],
             tags_payload,
             (category or "").strip()[:80],

@@ -220,7 +220,7 @@ def _query_base_rows(
         sql += f" AND current.id IN ({_build_placeholders(len(pool_ids))})"
         params.extend(pool_ids)
     if normalized_filters["class_term_no"]:
-        sql += " AND CAST(COALESCE(current.class_term_no, '') AS TEXT) = ?"
+        sql += " AND COALESCE(CAST(current.class_term_no AS TEXT), '') = ?"
         params.append(normalized_filters["class_term_no"])
     if normalized_filters["owner_userid"]:
         sql += " AND current.owner_userid = ?"

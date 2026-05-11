@@ -148,14 +148,28 @@ def _mcp_call(client, name: str, arguments: dict[str, object]):
 
 
 def _sqlite_object_names(db, object_type: str) -> set[str]:
-    rows = db.execute(
-        """
-        SELECT name
-        FROM sqlite_master
-        WHERE type = ?
-        """,
-        (object_type,),
-    ).fetchall()
+    """PG-only：用 information_schema 替代 SQLite 的 sqlite_master。
+
+    object_type 仅支持 ``'table'`` / ``'index'``（测试里只用到这两种）。
+    """
+    if object_type == "table":
+        rows = db.execute(
+            """
+            SELECT table_name AS name
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+            """
+        ).fetchall()
+    elif object_type == "index":
+        rows = db.execute(
+            """
+            SELECT indexname AS name
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+            """
+        ).fetchall()
+    else:
+        rows = []
     return {str(row["name"]) for row in rows}
 
 
@@ -208,7 +222,7 @@ def _seed_automation_member(
     external_contact_id: str,
     phone: str = "",
     owner_staff_id: str = "sales_01",
-    in_pool: int = 1,
+    in_pool: bool | int = True,
     current_pool: str = "active_normal",
     follow_type: str = "normal",
     activation_status: str = "active",
@@ -245,7 +259,7 @@ def _seed_automation_member(
                 external_contact_id,
                 phone,
                 owner_staff_id,
-                in_pool,
+                bool(in_pool),
                 normalized_current_pool,
                 follow_type,
                 questionnaire_status,
@@ -271,7 +285,7 @@ def _seed_settings_questionnaire(app, *, questionnaire_id: int = 501) -> dict[st
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, '', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 questionnaire_id,
@@ -285,7 +299,7 @@ def _seed_settings_questionnaire(app, *, questionnaire_id: int = 501) -> dict[st
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'single_choice', '你当前更关注什么？', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'single_choice', '你当前更关注什么？', true, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (choice_question_id, questionnaire_id),
         )
@@ -306,7 +320,7 @@ def _seed_settings_questionnaire(app, *, questionnaire_id: int = 501) -> dict[st
             INSERT INTO questionnaire_questions (
                 id, questionnaire_id, type, title, required, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, 'mobile', '请填写手机号', 1, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'mobile', '请填写手机号', true, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (mobile_question_id, questionnaire_id),
         )
@@ -495,7 +509,7 @@ def _configure_reply_monitor(
             VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
-                1 if enabled else 0,
+                bool(enabled),
                 last_capture_cursor,
                 last_capture_at,
                 last_capture_status,
@@ -588,7 +602,7 @@ def _assign_member_to_current_audience(
                 member_id, audience_code, entered_at, exited_at, is_current,
                 entry_source, entry_reason, source_snapshot_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, '', 1, 'test', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, '', true, 'test', '', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (member_id, audience_code, entered_at),
         )
@@ -767,11 +781,11 @@ def _seed_test_agent_config(app, *, agent_code: str, display_name: str = "") -> 
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, '[]', 1, '', '', '[]', '[]', '', '', '[]', '[]', 1, 1, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, '[]', true, '', '', '[]', '[]', '', '', '[]', '[]', 1, 1, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT(agent_code) DO UPDATE SET
                 display_name = excluded.display_name,
-                enabled = 1,
-                published_version = MAX(automation_agent_config.published_version, 1),
+                enabled = true,
+                published_version = GREATEST(automation_agent_config.published_version, 1),
                 updated_at = CURRENT_TIMESTAMP
             """,
             (agent_code, display_name or agent_code),

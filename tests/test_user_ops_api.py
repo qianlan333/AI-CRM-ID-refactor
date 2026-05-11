@@ -77,36 +77,24 @@ def _build_batch_send_form_data(
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "user-ops.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
+    from tests.conftest import build_pg_test_app
 
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    with build_pg_test_app(tmp_path) as app:
+        yield app
 
 
 @pytest.fixture()
 def client(app):
-    return app.test_client()
+    c = app.test_client()
+    # 注入 break-glass 管理员 session，让 admin 页面不被 302 重定向
+    with c.session_transaction() as sess:
+        sess["admin_session_user_id"] = 0
+        sess["admin_session_wecom_userid"] = ""
+        sess["admin_session_role_list"] = ["super_admin"]
+        sess["admin_session_login_type"] = "break_glass"
+        sess["admin_session_display_name"] = "test-admin"
+        sess["admin_session_break_glass_username"] = "test-admin"
+    return c
 
 
 def _seed_user_ops_sources(app) -> None:
@@ -1592,80 +1580,33 @@ def test_user_ops_history_returns_lead_pool_records(client, app):
 
 
 def test_user_ops_ui_route_renders_conversion_page(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="admin-sidebar"' in html
-    assert "运营管理" in html
-    assert "转化链路运营页" in html
-    assert "用户运营明细表" in html
-    assert "发送记录" in html
-    assert "批量群发" in html
-    assert "免打扰" in html
-    assert "激活待录入" not in html
-    assert "操作历史" not in html
-    assert "导入" not in html
+    assert response.status_code == 410
 
 
 def test_user_ops_shell_page_exists(client):
+    # /admin/user-ops is sunset (410)
     response = client.get("/admin/user-ops")
-
-    assert response.status_code == 200
-    html = response.get_data(as_text=True)
-    assert 'class="admin-sidebar"' in html
-    assert "运营管理" in html
-    assert "转化链路运营页" in html
-    assert "用户运营明细表" in html
-    assert "发送记录" in html
-    assert "批量群发" in html
-    assert "待处理作业" not in html
-    assert "运营名单历史" not in html
-    assert "班级状态" not in html
-    assert "导入" not in html
+    assert response.status_code == 410
 
 
 def test_user_ops_batch_send_modal_removes_large_stats_and_sender_bucket_from_main_ui(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-    modal_start = html.index('id="batch-send-modal-backdrop"')
-    modal_end = html.index("<script>", modal_start)
-    modal_section = html[modal_start:modal_end]
-
-    assert response.status_code == 200
-    assert "选中人数" not in modal_section
-    assert "跳过人数" not in modal_section
-    assert "发送人分桶" not in modal_section
-    assert "免打扰开关" not in modal_section
-    assert 'id="preview-owner-buckets"' not in modal_section
-    assert 'id="preview-selected-count"' not in modal_section
-    assert 'id="preview-skipped-count"' not in modal_section
-    assert 'id="preview-owner-count"' not in modal_section
-    assert 'id="preview-eligible-count"' in modal_section
-    assert 'class="panel-soft preview-panel"' in modal_section
-    assert modal_section.index('id="include-dnd-toggle"') < modal_section.index('id="preview-target-body"')
+    assert response.status_code == 410
 
 
 def test_user_ops_detail_column_is_removed_and_dnd_action_copy_is_simplified(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "<th>免打扰</th>" not in html
-    assert "查看详情" in html
-    assert "取消手动免打扰" not in html
-    assert "运营手动设置" not in html
-    assert "取消免打扰" in html
+    assert response.status_code == 410
 
 
 def test_user_ops_template_keeps_detail_button_and_dnd_actions(client):
+    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="btn soft view-detail-btn"' in html
-    assert 'class="btn soft toggle-dnd-btn"' in html
-    assert "<th>免打扰</th>" not in html
+    assert response.status_code == 410
 
 
 def test_sync_user_ops_class_term_tag_definitions_updates_tag_identity_fields(app, user_ops_contact_client):
@@ -2616,8 +2557,17 @@ def test_sidebar_bind_mobile_merges_external_only_and_mobile_only_members(client
     assert bool(merged["is_mobile_bound"]) is True
     assert merge_history["action_type"] == "mobile_bind_merge"
     assert merge_history["source_type"] == "mobile_bind"
-    assert '"external_userid": "wm_sidebar_bind_001"' in merge_history["before_json"]
-    assert '"mobile": "13800138111"' in merge_history["after_json"]
+    # PG JSON/JSONB 列返回 dict，不能用 in 查子串
+    before = merge_history["before_json"]
+    if isinstance(before, dict):
+        assert before.get("external_userid") == "wm_sidebar_bind_001"
+    else:
+        assert '"external_userid": "wm_sidebar_bind_001"' in before
+    after = merge_history["after_json"]
+    if isinstance(after, dict):
+        assert after.get("mobile") == "13800138111"
+    else:
+        assert '"mobile": "13800138111"' in after
 
 
 def test_lead_pool_upsert_same_external_userid_keeps_current_row_and_appends_history(app):
@@ -2675,8 +2625,14 @@ def test_lead_pool_upsert_same_external_userid_keeps_current_row_and_appends_his
     assert history_rows[1]["source_type"] == "sidebar_manual_set_class_term"
     assert history_rows[1]["operator"] == "tester_b"
     assert history_rows[1]["remark"] == "pool core stability check"
-    assert '"customer_name": "更新客户"' in history_rows[1]["after_json"]
-    assert '"huangxiaocan_activation_state": "activated"' in history_rows[1]["after_json"]
+    # PG JSON/JSONB 列返回 dict
+    after = history_rows[1]["after_json"]
+    if isinstance(after, dict):
+        assert after.get("customer_name") == "更新客户"
+        assert after.get("huangxiaocan_activation_state") == "activated"
+    else:
+        assert '"customer_name": "更新客户"' in after
+        assert '"huangxiaocan_activation_state": "activated"' in after
 
 
 def test_import_mobile_class_terms_from_pasted_text_updates_pool(client, app):
@@ -3164,7 +3120,7 @@ def test_migrate_legacy_user_ops_pool_to_lead_pool_ignores_signed_semantics(clie
                 "",
                 "",
                 "signed_999",
-                0,
+                False,
                 "high_intent",
                 "",
                 5,
@@ -3186,7 +3142,7 @@ def test_migrate_legacy_user_ops_pool_to_lead_pool_ignores_signed_semantics(clie
                 "",
                 "",
                 "signed_3999",
-                0,
+                False,
                 "not_activated",
                 "",
                 None,

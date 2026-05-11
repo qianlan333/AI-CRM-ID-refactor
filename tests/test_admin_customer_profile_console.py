@@ -5,39 +5,15 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "admin-customer-profile.sqlite3"
-    private_key_path = tmp_path / "wecom_private_key.pem"
-    sdk_lib_path = tmp_path / "libWeWorkFinanceSdk_C.so"
-    private_key_path.write_text("fake-key", encoding="utf-8")
-    sdk_lib_path.write_text("fake-so", encoding="utf-8")
+    from tests.conftest import build_pg_test_app
 
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "RELEASE_SHA": "release-test-sha",
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_CONTACT_SECRET": "contact-secret-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-            "WECOM_ARCHIVE_SECRET": "archive-secret",
-            "WECOM_API_BASE": "http://fake-wecom.local",
-            "WECOM_PRIVATE_KEY_PATH": str(private_key_path),
-            "WECOM_SDK_LIB_PATH": str(sdk_lib_path),
-            "WECOM_CALLBACK_TOKEN": "callback-token",
-            "WECOM_CALLBACK_AES_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-            "MCP_BEARER_TOKEN": "mcp-token",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    with build_pg_test_app(tmp_path, MCP_BEARER_TOKEN="mcp-token") as app:
+        yield app
 
 
 @pytest.fixture()
@@ -104,7 +80,7 @@ def _seed_customer_profile_fixture(app) -> None:
         db.execute(
             """
             INSERT INTO owner_role_map (userid, display_name, role, active)
-            VALUES ('owner-a', '顾问甲', 'sales', 1)
+            VALUES ('owner-a', '顾问甲', 'sales', true)
             """
         )
         db.execute(
@@ -142,7 +118,7 @@ def _seed_customer_profile_fixture(app) -> None:
             INSERT INTO wecom_external_contact_follow_users (
                 corp_id, external_userid, user_id, relation_status, is_primary, remark, description, raw_follow_user
             )
-            VALUES ('ww-test', 'ext-1', 'owner-a', 'active', 1, '主跟进', '一线顾问', '{}')
+            VALUES ('ww-test', 'ext-1', 'owner-a', 'active', true, '主跟进', '一线顾问', '{}')
             """
         )
         db.execute(
@@ -163,7 +139,7 @@ def _seed_customer_profile_fixture(app) -> None:
             INSERT INTO questionnaires (
                 id, slug, name, title, description, is_disabled, redirect_url, created_at, updated_at
             )
-            VALUES (1, 'q-1', '客户问卷', '客户问卷', '', 0, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (1, 'q-1', '客户问卷', '客户问卷', '', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """
         )
         db.execute(
@@ -199,9 +175,9 @@ def _seed_customer_profile_fixture(app) -> None:
                 last_trigger_message_at, entered_at, exited_at, exit_reason, state_payload_json, created_at, updated_at
             )
             VALUES (
-                1, 'ext-1', 'signup_conversion_v1', 'pool', 'active_focus', 1, 0, 1, 'pool',
+                1, 'ext-1', 'signup_conversion_v1', 'pool', 'active_focus', true, false, true, 'pool',
                 ?, '', ?, NULL, '', '', '',
-                ?, ?, '', '',
+                ?, ?, NULL, '',
                 ?,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )

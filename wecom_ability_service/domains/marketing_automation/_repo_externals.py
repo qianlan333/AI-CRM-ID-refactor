@@ -179,7 +179,7 @@ def list_pool_batch_send_candidates(pool_key: str) -> list[dict[str, Any]]:
             current.id AS marketing_state_id,
             current.person_id,
             COALESCE(current.external_userid, '') AS external_userid,
-            COALESCE(current.entered_at, '') AS entered_at,
+            COALESCE(current.entered_at::text, '') AS entered_at,
             COALESCE(current.last_activation_at, '') AS last_activation_at,
             COALESCE(current.state_payload_json, '{}') AS state_payload_json,
             COALESCE(contact.customer_name, '') AS customer_name,
@@ -281,7 +281,7 @@ def get_latest_class_user_restore_status(external_userid: str) -> dict[str, Any]
         FROM class_user_status_history
         WHERE external_userid = ?
           AND old_signup_status <> ''
-          AND old_signup_status NOT LIKE 'signed_%'
+          AND old_signup_status NOT LIKE 'signed_%%'
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -302,7 +302,7 @@ def get_questionnaire_signal(external_userid: str) -> dict[str, Any]:
     else:
         row = _fetchone_dict(
             """
-            SELECT COUNT(*) AS submission_count, COALESCE(MAX(submitted_at), '') AS last_submitted_at
+            SELECT COUNT(*) AS submission_count, COALESCE(MAX(submitted_at)::text, '') AS last_submitted_at
             FROM questionnaire_submissions
             WHERE external_userid = ?
             """,
@@ -334,7 +334,7 @@ def get_customer_inbound_message_signal(external_userid: str) -> dict[str, Any]:
             """
             SELECT
                 COALESCE(MAX(send_time), '') AS last_customer_text_at,
-                SUM(CASE WHEN send_time >= datetime('now', '-72 hours') THEN 1 ELSE 0 END) AS customer_text_72h_count
+                SUM(CASE WHEN send_time >= (NOW() - INTERVAL '72 hours')::text THEN 1 ELSE 0 END) AS customer_text_72h_count
             FROM archived_messages
             WHERE external_userid = ? AND sender = ? AND msgtype = 'text'
             """,
