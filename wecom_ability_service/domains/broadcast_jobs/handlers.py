@@ -87,7 +87,8 @@ def _handle_campaign(job: dict[str, Any]) -> dict[str, Any]:
     from ..campaigns.scheduler import run_campaign_batch
 
     payload = job.get("content_payload") or {}
-    if not payload.get("request_payload"):
+    # 预排期 job 没有 request_payload，run_campaign_batch 会现场 resolve
+    if not payload.get("request_payload") and not payload.get("campaign"):
         return {"ok": False, "error": "campaign job missing request_payload"}
     return run_campaign_batch(batch_data=payload)
 
@@ -112,9 +113,16 @@ def _handle_sop(job: dict[str, Any]) -> dict[str, Any]:
 
 @register("workflow")
 def _handle_workflow(job: dict[str, Any]) -> dict[str, Any]:
-    from ..automation_conversion.workflow_runtime import run_workflow_execution
+    from ..automation_conversion.workflow_runtime import run_workflow_execution, run_pre_scheduled_workflow_node
 
     payload = job.get("content_payload") or {}
+    # 预排期的 job 没有 execution_id，到期后走完整 node 执行流程
+    if payload.get("pre_scheduled"):
+        workflow_id = int(payload.get("workflow_id") or 0)
+        node_id = int(payload.get("node_id") or 0)
+        if not workflow_id or not node_id:
+            return {"ok": False, "error": "pre_scheduled workflow job missing workflow_id or node_id"}
+        return run_pre_scheduled_workflow_node(workflow_id=workflow_id, node_id=node_id)
     if not payload.get("execution_id"):
         return {"ok": False, "error": "workflow job missing execution_id"}
     return run_workflow_execution(execution_data=payload)

@@ -486,6 +486,63 @@ def reject_campaign(*, campaign_id: int, reason: str = "") -> bool:
     return (cur.rowcount or 0) > 0
 
 
+def delete_campaign(*, campaign_id: int) -> dict[str, Any]:
+    """硬删 campaign 及其全部子表行（campaign_segments / campaign_steps /
+    campaign_members）+ broadcast_jobs 中由该 campaign 派生出的待发批次。
+
+    安全闸：只允许删 ``run_status in (draft, paused, cancelled, finished)``。
+    active 不能删——队列里可能正在跑，删了会让 worker 拿到悬空 source_id。
+
+    cloud_broadcast_plans.campaign_id 是兼容字段，置 NULL 即可，不删 plan。
+    """
+    camp = get_campaign(campaign_id=campaign_id)
+    if not camp:
+        raise LookupError("campaign not found")
+    run_status = str(camp.get("run_status") or "")
+    if run_status == "active":
+        raise PermissionError(
+            f"campaign run_status={run_status} 正在运行，不能删除；请先暂停或撤销"
+        )
+
+    db = get_db()
+    cur = db.cursor()
+    cid = int(campaign_id)
+    # broadcast_jobs.source_id 是 "{campaign_id}:{step_index}" 形式（见 scheduler.py），
+    # 用 LIKE '{cid}:%' 精确匹配；不能用 source_id = str(cid) 因为格式不一样
+    cur.execute(
+        "DELETE FROM broadcast_jobs WHERE source_type = 'campaign' AND source_id LIKE ?",
+        (f"{cid}:%",),
+    )
+    jobs_deleted = int(cur.rowcount or 0)
+    cur.execute("DELETE FROM campaign_members WHERE campaign_id = ?", (cid,))
+    members_deleted = int(cur.rowcount or 0)
+    cur.execute("DELETE FROM campaign_steps WHERE campaign_id = ?", (cid,))
+    steps_deleted = int(cur.rowcount or 0)
+    cur.execute("DELETE FROM campaign_segments WHERE campaign_id = ?", (cid,))
+    segments_deleted = int(cur.rowcount or 0)
+    # cloud_broadcast_plans 留住 plan 本身（审计要），只解关联
+    cur.execute(
+        "UPDATE cloud_broadcast_plans SET campaign_id = NULL WHERE campaign_id = ?",
+        (cid,),
+    )
+    plans_unlinked = int(cur.rowcount or 0)
+    cur.execute("DELETE FROM campaigns WHERE id = ?", (cid,))
+    deleted = (cur.rowcount or 0) > 0
+    db.commit()
+    return {
+        "ok": deleted,
+        "deleted_id": cid,
+        "deleted_campaign_code": str(camp.get("campaign_code") or ""),
+        "rows_cleared": {
+            "campaign_segments": segments_deleted,
+            "campaign_steps": steps_deleted,
+            "campaign_members": members_deleted,
+            "broadcast_jobs": jobs_deleted,
+            "cloud_broadcast_plans_unlinked": plans_unlinked,
+        },
+    }
+
+
 def finish_campaign(*, campaign_id: int) -> dict[str, Any]:
     db = get_db()
     cur = db.cursor()
