@@ -38,6 +38,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run all tests (PG-only)
-        run: python -m pytest tests/ -v --tb=short --timeout=120 --timeout-method=thread
+      - name: Run all tests (PG-only, parallel)
+        # ``-n auto`` 让 pytest-xdist 按 CPU 核数派发 test 到 worker 子进程；
+        # conftest._resolve_worker_database_url 给每个 worker 路由到独立 PG DB
+        # ``test_<worker_id>``。CI runner 默认 4 vCPU → ~4 worker 并行。
+        run: python -m pytest tests/ -n auto --dist=loadfile -v --tb=short --timeout=120 --timeout-method=thread
         timeout-minutes: 45
