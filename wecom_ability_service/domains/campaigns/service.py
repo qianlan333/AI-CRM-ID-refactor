@@ -51,6 +51,55 @@ def _new_campaign_code() -> str:
     return f"camp-{uuid.uuid4().hex[:12]}"
 
 
+def _find_active_member_conflicts(*, campaign_id: int, limit: int = 10) -> dict[str, Any]:
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(*) AS conflict_count
+        FROM campaign_members cm
+        JOIN campaign_members other_cm
+          ON other_cm.external_contact_id = cm.external_contact_id
+         AND other_cm.campaign_id <> cm.campaign_id
+         AND other_cm.status IN ('pending', 'running')
+        JOIN campaigns other_c
+          ON other_c.id = other_cm.campaign_id
+         AND other_c.run_status = 'active'
+        WHERE cm.campaign_id = ?
+          AND cm.status = 'pending'
+          AND cm.external_contact_id <> ''
+        """,
+        (int(campaign_id),),
+    )
+    count_row = cur.fetchone()
+    total = int(count_row["conflict_count"] or 0) if count_row else 0
+    if not total:
+        return {"count": 0, "examples": []}
+    cur.execute(
+        """
+        SELECT cm.external_contact_id,
+               other_c.id AS campaign_id,
+               other_c.campaign_code,
+               other_c.display_name
+        FROM campaign_members cm
+        JOIN campaign_members other_cm
+          ON other_cm.external_contact_id = cm.external_contact_id
+         AND other_cm.campaign_id <> cm.campaign_id
+         AND other_cm.status IN ('pending', 'running')
+        JOIN campaigns other_c
+          ON other_c.id = other_cm.campaign_id
+         AND other_c.run_status = 'active'
+        WHERE cm.campaign_id = ?
+          AND cm.status = 'pending'
+          AND cm.external_contact_id <> ''
+        ORDER BY other_c.started_at DESC, other_c.id DESC, cm.id ASC
+        LIMIT ?
+        """,
+        (int(campaign_id), int(limit)),
+    )
+    return {"count": total, "examples": [dict(row) for row in (cur.fetchall() or [])]}
+
+
 def _compute_first_step_due_iso(
     *,
     anchor_date: str,
@@ -375,6 +424,17 @@ def start_campaign(
         raise LookupError("campaign not found")
     if camp.get("run_status") in ("active", "paused", "finished"):
         return camp
+    conflicts = _find_active_member_conflicts(campaign_id=campaign_id)
+    if conflicts["count"]:
+        sample = ", ".join(
+            f"{item.get('external_contact_id')}->{item.get('campaign_code')}"
+            for item in conflicts["examples"][:5]
+        )
+        raise PermissionError(
+            f"campaign has {conflicts['count']} member(s) already pending/running "
+            f"in active campaigns; examples: {sample}; pause or finish the existing "
+            "campaign before starting this one"
+        )
     token_check = approval_token.consume_token(
         token=approval_token_value,
         plan_id=str(camp["campaign_code"]),
@@ -451,6 +511,12 @@ def start_campaign(
             (due_iso, int(mr["cm_id"])),
         )
     db.commit()
+    try:
+        from .scheduler import ensure_campaign_scheduled_jobs
+
+        ensure_campaign_scheduled_jobs(campaign_id=int(campaign_id))
+    except Exception as exc:  # pragma: no cover - scheduling fallback remains run-due
+        logger.warning("campaign %s schedule sync failed after start: %s", campaign_id, exc)
     logger.info("campaign %s started by %s", campaign_id, human_approver)
     return get_campaign(campaign_id=campaign_id) or {}
 
