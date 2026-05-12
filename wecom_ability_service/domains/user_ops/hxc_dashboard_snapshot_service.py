@@ -2,9 +2,14 @@
 
 每次调用 :func:`refresh_hxc_dashboard_snapshot` 都会:
 
-1. 从 CRM (PG) 拉 ``user_ops_lead_pool_current`` ∪ ``people`` ∪
-   激活/开通问卷的 ``questionnaire_submissions`` 三表手机号并集, 带上 lead_pool 字段
-   和问卷聚合字段.
+1. 从 CRM (PG) 拉 ``user_ops_lead_pool_current`` ∪ ``user_ops_pool_current`` ∪
+   ``people`` ∪ 激活/开通问卷的 ``questionnaire_submissions`` 四表手机号并集,
+   带上 lead_pool / pool_current 字段和问卷聚合字段.
+   - ``external_userid`` / ``customer_name`` / ``owner_userid`` 三个客户身份字段
+     用 ``COALESCE(pool_current, lead_pool)`` 双源合并: pool_current 是客户档案
+     主表 (覆盖更全, ~6300 个 external_userid), lead_pool 是线索池 (~1200 个).
+     早期版本只查 lead_pool 会让"已加企微但首次入口不在线索池"的 100+ 个客户在
+     看板里 customer_name / external_userid 空白.
 2. 从黄小璨 (MySQL) 拉 ``new_version_users`` / ``new_version_memberships`` /
    ``new_version_consultation_states`` / ``new_version_conversations`` /
    ``new_version_messages`` 按手机号聚合的指标.
@@ -60,6 +65,9 @@ WITH all_mobiles AS (
     SELECT mobile FROM user_ops_lead_pool_current
         WHERE mobile ~ '^1[3-9][0-9]{{9}}$'
     UNION
+    SELECT mobile FROM user_ops_pool_current
+        WHERE mobile ~ '^1[3-9][0-9]{{9}}$'
+    UNION
     SELECT mobile FROM people
         WHERE mobile ~ '^1[3-9][0-9]{{9}}$'
     UNION
@@ -80,27 +88,30 @@ q AS (
 )
 SELECT
     am.mobile,
-    lp.external_userid,
-    COALESCE(lp.customer_name, '')             AS customer_name,
-    COALESCE(lp.owner_userid, '')              AS owner_userid,
+    -- 客户身份三字段双源合并: pool_current 是客户档案主表(更全), lead_pool 兜底
+    COALESCE(NULLIF(pc.external_userid, ''), lp.external_userid)         AS external_userid,
+    COALESCE(NULLIF(pc.customer_name, ''),  lp.customer_name, '')        AS customer_name,
+    COALESCE(NULLIF(pc.owner_userid, ''),   lp.owner_userid, '')         AS owner_userid,
     lp.is_wecom_added,
     lp.is_mobile_bound,
-    lp.class_term_no,
-    COALESCE(lp.class_term_label, '')          AS class_term_label,
-    COALESCE(lp.first_entry_source, '')        AS first_entry_source,
-    COALESCE(lp.last_entry_source, '')         AS last_entry_source,
-    COALESCE(lp.huangxiaocan_activation_state, '') AS crm_hxc_state,
-    lp.created_at::date                         AS crm_created_at,
-    (lp.mobile IS NOT NULL)                    AS in_lead_pool,
-    (ppl.mobile IS NOT NULL)                   AS in_people,
-    (q.mobile IS NOT NULL)                     AS in_questionnaire,
-    COALESCE(q.questionnaires, '')             AS questionnaires,
-    COALESCE(q.questionnaire_count, 0)         AS questionnaire_count,
+    COALESCE(lp.class_term_no, pc.class_term_no)                         AS class_term_no,
+    COALESCE(NULLIF(lp.class_term_label, ''), pc.class_term_label, '')   AS class_term_label,
+    COALESCE(lp.first_entry_source, '')                                  AS first_entry_source,
+    COALESCE(lp.last_entry_source, '')                                   AS last_entry_source,
+    COALESCE(NULLIF(lp.huangxiaocan_activation_state, ''),
+             pc.activation_status, '')                                   AS crm_hxc_state,
+    COALESCE(lp.created_at, pc.created_at)::date                         AS crm_created_at,
+    (lp.mobile IS NOT NULL)                                              AS in_lead_pool,
+    (ppl.mobile IS NOT NULL)                                             AS in_people,
+    (q.mobile IS NOT NULL)                                               AS in_questionnaire,
+    COALESCE(q.questionnaires, '')                                       AS questionnaires,
+    COALESCE(q.questionnaire_count, 0)                                   AS questionnaire_count,
     q.last_questionnaire_at
 FROM all_mobiles am
 LEFT JOIN user_ops_lead_pool_current lp ON lp.mobile = am.mobile
-LEFT JOIN people ppl ON ppl.mobile = am.mobile
-LEFT JOIN q ON q.mobile = am.mobile
+LEFT JOIN user_ops_pool_current pc      ON pc.mobile = am.mobile
+LEFT JOIN people ppl                    ON ppl.mobile = am.mobile
+LEFT JOIN q                             ON q.mobile  = am.mobile
 """
 
 
