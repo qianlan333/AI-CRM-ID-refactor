@@ -350,6 +350,7 @@
     const aAll = document.createElement('span'); aAll.className='hxc-ms-action'; aAll.textContent='全选';
     const aClr = document.createElement('span'); aClr.className='hxc-ms-action'; aClr.textContent='清除';
     acts.append(aAll, aClr); dd.append(acts);
+    dd.addEventListener('click', e=>e.stopPropagation());
     const cbs = [];
     values.forEach(val=>{
       const lbl = document.createElement('label');
@@ -660,8 +661,7 @@
       if(result.ok){
         let msg = '发送完成!\n成功: '+result.total_sent+' 人';
         if(result.total_failed) msg += '\n失败: '+result.total_failed+' 人';
-        if(result.skipped_not_whitelisted) msg += '\n跟进人不在白名单: '+result.skipped_not_whitelisted+' 人';
-        if(result.skipped_no_owner) msg += '\n无跟进人: '+result.skipped_no_owner+' 人';
+        if(result.skipped_no_match) msg += '\n无匹配发送人 (好友中无白名单成员): '+result.skipped_no_match+' 人';
         if(result.sender_results){
           msg += '\n\n各发送人明细:';
           result.sender_results.forEach(sr=>{
@@ -672,8 +672,7 @@
         modal.classList.remove('open');
       } else {
         alert('发送失败: '+(result.error||'未知错误')+
-          (result.skipped_not_whitelisted?'\n跟进人不在白名单: '+result.skipped_not_whitelisted+' 人':'')+
-          (result.skipped_no_owner?'\n无跟进人: '+result.skipped_no_owner+' 人':''));
+          (result.skipped_no_match?'\n无匹配发送人: '+result.skipped_no_match+' 人':''));
       }
     } catch(err) {
       btn.disabled = false; btn.textContent = '确认群发';

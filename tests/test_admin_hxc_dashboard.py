@@ -275,6 +275,20 @@ def _seed_send_config(db, sender_userid, display_name="", priority=100, is_activ
     db.commit()
 
 
+def _seed_follow_users(db, pairs):
+    """pairs: [(external_userid, user_id), ...]"""
+    for euid, uid in pairs:
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_follow_users
+                (corp_id, external_userid, user_id, relation_status, is_primary)
+            VALUES ('corp1', ?, ?, 'active', FALSE)
+            """,
+            (euid, uid),
+        )
+    db.commit()
+
+
 def test_broadcast_no_targets(client):
     resp = client.post(
         "/api/admin/hxc-dashboard/broadcast",
@@ -294,14 +308,6 @@ def test_broadcast_empty_content(client):
 
 
 def test_broadcast_no_active_senders(client, app):
-    with app.app_context():
-        from wecom_ability_service.db import get_db
-        db = get_db()
-        _seed_snapshot(db, [
-            {"mobile": "13900000001", "funnel_state": "inactive",
-             "external_userid": "ext1", "owner_userid": "owner1"},
-        ])
-
     resp = client.post(
         "/api/admin/hxc-dashboard/broadcast",
         json={"external_userids": ["ext1"], "content": "hello"},
@@ -312,15 +318,13 @@ def test_broadcast_no_active_senders(client, app):
     assert data["error"] == "no_active_senders"
 
 
-def test_broadcast_skips_non_whitelisted_owners(client, app):
+def test_broadcast_skips_no_matching_sender(client, app):
+    """ext1 的好友是 unknown_owner，不在白名单 → skipped."""
     with app.app_context():
         from wecom_ability_service.db import get_db
         db = get_db()
         _seed_send_config(db, "alice", "Alice", priority=1)
-        _seed_snapshot(db, [
-            {"mobile": "13900000001", "funnel_state": "inactive",
-             "external_userid": "ext1", "owner_userid": "unknown_owner"},
-        ])
+        _seed_follow_users(db, [("ext1", "unknown_owner")])
 
     resp = client.post(
         "/api/admin/hxc-dashboard/broadcast",
@@ -330,7 +334,7 @@ def test_broadcast_skips_non_whitelisted_owners(client, app):
     data = resp.get_json()
     assert data["ok"] is False
     assert data["error"] == "no_eligible_targets"
-    assert data["skipped_not_whitelisted"] == 1
+    assert data["skipped_no_match"] == 1
 
 
 def test_broadcast_dispatches_grouped_by_sender(client, app, monkeypatch):
@@ -339,13 +343,10 @@ def test_broadcast_dispatches_grouped_by_sender(client, app, monkeypatch):
         db = get_db()
         _seed_send_config(db, "alice", "Alice", priority=1)
         _seed_send_config(db, "bob", "Bob", priority=2)
-        _seed_snapshot(db, [
-            {"mobile": "13900000001", "funnel_state": "inactive",
-             "external_userid": "ext1", "owner_userid": "alice"},
-            {"mobile": "13900000002", "funnel_state": "inactive",
-             "external_userid": "ext2", "owner_userid": "alice"},
-            {"mobile": "13900000003", "funnel_state": "inactive",
-             "external_userid": "ext3", "owner_userid": "bob"},
+        _seed_follow_users(db, [
+            ("ext1", "alice"),
+            ("ext2", "alice"),
+            ("ext3", "bob"),
         ])
 
     dispatched = []
@@ -378,17 +379,50 @@ def test_broadcast_dispatches_grouped_by_sender(client, app, monkeypatch):
         assert d["payload"]["text"]["content"] == "测试消息"
 
 
+def test_broadcast_priority_overrides_owner(client, app, monkeypatch):
+    """ext1 同时加了 alice(优先级1) 和 bob(优先级2) 为好友，应由 alice 发送."""
+    with app.app_context():
+        from wecom_ability_service.db import get_db
+        db = get_db()
+        _seed_send_config(db, "alice", "Alice", priority=1)
+        _seed_send_config(db, "bob", "Bob", priority=2)
+        _seed_follow_users(db, [
+            ("ext1", "bob"),
+            ("ext1", "alice"),
+        ])
+
+    dispatched = []
+
+    def mock_dispatch(task_type, action, payload):
+        dispatched.append(payload)
+        return {"task_id": "mock"}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task",
+        mock_dispatch,
+    )
+
+    resp = client.post(
+        "/api/admin/hxc-dashboard/broadcast",
+        json={"external_userids": ["ext1"], "content": "hello"},
+    )
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["total_sent"] == 1
+    assert len(dispatched) == 1
+    assert dispatched[0]["sender"] == "alice"
+
+
 def test_broadcast_inactive_sender_excluded(client, app, monkeypatch):
+    """bob 是 ext2 的好友但已停用 → ext2 无匹配 sender → skipped."""
     with app.app_context():
         from wecom_ability_service.db import get_db
         db = get_db()
         _seed_send_config(db, "alice", "Alice", priority=1, is_active=True)
         _seed_send_config(db, "bob", "Bob", priority=2, is_active=False)
-        _seed_snapshot(db, [
-            {"mobile": "13900000001", "funnel_state": "inactive",
-             "external_userid": "ext1", "owner_userid": "alice"},
-            {"mobile": "13900000002", "funnel_state": "inactive",
-             "external_userid": "ext2", "owner_userid": "bob"},
+        _seed_follow_users(db, [
+            ("ext1", "alice"),
+            ("ext2", "bob"),
         ])
 
     dispatched = []
@@ -409,6 +443,6 @@ def test_broadcast_inactive_sender_excluded(client, app, monkeypatch):
     data = resp.get_json()
     assert data["ok"] is True
     assert data["total_sent"] == 1
-    assert data["skipped_not_whitelisted"] == 1
+    assert data["skipped_no_match"] == 1
     assert len(dispatched) == 1
     assert dispatched[0]["sender"] == "alice"

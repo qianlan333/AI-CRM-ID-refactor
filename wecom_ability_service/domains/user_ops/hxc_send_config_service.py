@@ -155,6 +155,58 @@ def _resolve_broadcast_attachments(
     return image_media_ids, attachments, None
 
 
+def _match_sender_for_targets(
+    external_userids: list[str],
+    active_senders: dict[str, dict[str, Any]],
+) -> tuple[dict[str, list[str]], int]:
+    """为每个 external_userid 匹配最优发送人。
+
+    查 wecom_external_contact_follow_users 拿到每个外部联系人的全部好友
+    (不只是 owner)，在白名单中找优先级最高的 active sender 作为发送人。
+    """
+    db = get_db()
+    placeholders = ", ".join(["?"] * len(external_userids))
+    rows = db.execute(
+        f"""
+        SELECT external_userid, user_id
+        FROM wecom_external_contact_follow_users
+        WHERE external_userid IN ({placeholders})
+          AND relation_status = 'active'
+        """,
+        tuple(external_userids),
+    ).fetchall()
+
+    euid_friends: dict[str, set[str]] = {}
+    for row in rows:
+        euid = (row["external_userid"] or "").strip()
+        uid = (row["user_id"] or "").strip()
+        if euid and uid:
+            euid_friends.setdefault(euid, set()).add(uid)
+
+    priority_sorted = sorted(active_senders.keys(), key=lambda u: active_senders[u]["priority"])
+
+    sender_targets: dict[str, list[str]] = {}
+    skipped = 0
+    seen: set[str] = set()
+
+    for euid in external_userids:
+        if euid in seen or not euid:
+            continue
+        seen.add(euid)
+        friends = euid_friends.get(euid, set())
+        matched = None
+        for sender in priority_sorted:
+            if sender in friends:
+                matched = sender
+                break
+        if matched:
+            sender_targets.setdefault(matched, []).append(euid)
+        else:
+            skipped += 1
+
+    return sender_targets, skipped
+
+
 def broadcast_to_filtered_users(
     *,
     external_userids: list[str],
@@ -183,41 +235,15 @@ def broadcast_to_filtered_users(
     if not active_senders:
         return {"ok": False, "error": "no_active_senders"}
 
-    db = get_db()
-    placeholders = ", ".join(["?"] * len(external_userids))
-    rows = db.execute(
-        f"""
-        SELECT external_userid, owner_userid
-        FROM user_ops_hxc_dashboard_snapshot
-        WHERE external_userid IN ({placeholders})
-          AND external_userid != ''
-        """,
-        tuple(external_userids),
-    ).fetchall()
-
-    sender_targets: dict[str, list[str]] = {}
-    seen: set[str] = set()
-    skipped_no_owner = 0
-    skipped_not_whitelisted = 0
-
-    for row in rows:
-        euid = row["external_userid"]
-        owner = row["owner_userid"]
-        if euid in seen:
-            continue
-        if not owner or owner not in active_senders:
-            skipped_no_owner += 1 if not owner else 0
-            skipped_not_whitelisted += 1 if owner and owner not in active_senders else 0
-            continue
-        seen.add(euid)
-        sender_targets.setdefault(owner, []).append(euid)
+    sender_targets, skipped_no_match = _match_sender_for_targets(
+        external_userids, active_senders,
+    )
 
     if not sender_targets:
         return {
             "ok": False,
             "error": "no_eligible_targets",
-            "skipped_no_owner": skipped_no_owner,
-            "skipped_not_whitelisted": skipped_not_whitelisted,
+            "skipped_no_match": skipped_no_match,
         }
 
     from ...domains.tasks.service import dispatch_wecom_task
@@ -269,7 +295,6 @@ def broadcast_to_filtered_users(
         "ok": total_sent > 0,
         "total_sent": total_sent,
         "total_failed": total_failed,
-        "skipped_no_owner": skipped_no_owner,
-        "skipped_not_whitelisted": skipped_not_whitelisted,
+        "skipped_no_match": skipped_no_match,
         "sender_results": results,
     }
