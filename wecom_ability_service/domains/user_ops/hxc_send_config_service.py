@@ -9,6 +9,57 @@ from ...db import get_db
 _logger = logging.getLogger(__name__)
 
 
+# ── 发送人白名单页面数据 ──────────────────────────────────────────
+
+def build_send_config_page_data() -> dict[str, Any]:
+    from ...domains.admin_auth import repo as auth_repo
+
+    from flask import current_app
+    corp_id = (current_app.config.get("WECOM_CORP_ID") or "").strip()
+    directory_members = auth_repo.list_admin_wecom_directory_members(wecom_corpid=corp_id)
+
+    configs = {c["sender_userid"]: c for c in list_send_configs()}
+
+    members = []
+    for m in directory_members:
+        uid = (m.get("wecom_userid") or "").strip()
+        if not uid:
+            continue
+        cfg = configs.pop(uid, None)
+        members.append({
+            "wecom_userid": uid,
+            "display_name": (m.get("display_name") or "").strip() or uid,
+            "position": (m.get("position") or "").strip(),
+            "wecom_status": m.get("wecom_status", 0),
+            "is_sender": cfg is not None,
+            "priority": cfg["priority"] if cfg else 100,
+            "is_active": cfg["is_active"] if cfg else True,
+        })
+
+    for uid, cfg in configs.items():
+        members.append({
+            "wecom_userid": uid,
+            "display_name": cfg.get("display_name") or uid,
+            "position": "",
+            "wecom_status": 0,
+            "is_sender": True,
+            "priority": cfg["priority"],
+            "is_active": cfg["is_active"],
+        })
+
+    last_synced = max(
+        ((m.get("synced_at") or "") for m in directory_members),
+        default="",
+    )
+    return {
+        "members": members,
+        "directory_count": len(directory_members),
+        "sender_count": sum(1 for m in members if m["is_sender"]),
+        "active_sender_count": sum(1 for m in members if m["is_sender"] and m["is_active"]),
+        "last_synced_at": last_synced or "尚未同步",
+    }
+
+
 # ── 发送人白名单 CRUD ──────────────────────────────────────────────
 
 def list_send_configs() -> list[dict[str, Any]]:
