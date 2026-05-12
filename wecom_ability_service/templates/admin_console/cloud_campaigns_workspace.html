@@ -351,6 +351,7 @@
   function renderGroupRow(g) {
     const total = g.campaigns.reduce((s, c) => s + (Number(c.member_count) || 0), 0);
     const owners = Array.from(new Set(g.campaigns.map(c => c.owner_userid || '').filter(Boolean)));
+    const hasDraft = g.campaigns.some(c => ['draft', 'pending_review'].includes(c.review_status) && ['draft', 'paused'].includes(c.run_status));
     const headTr = document.createElement('tr');
     headTr.className = 'cloud-camp-group-head';
     headTr.style.cssText = 'cursor:pointer;background:#fff8e6;border-top:2px solid #f0b400;';
@@ -363,9 +364,37 @@
       <td><strong>${fmt(total)}</strong></td>
       <td><small>${escapeHtml(aggLabelByKey(g.campaigns, 'review_status', reviewLabel))}</small></td>
       <td><small>${escapeHtml(aggLabelByKey(g.campaigns, 'run_status', runLabel))}</small></td>
-      <td colspan="2"><em style="color:#666;">点行展开 ↓</em></td>
+      <td><em style="color:#666;font-size:12px;">点行展开 ↓</em></td>
+      <td>${hasDraft ? `<button class="admin-button admin-button--primary" data-batch-start="${escapeHtml(g.code)}" style="font-size:12px;padding:4px 10px;white-space:nowrap;">全部启动</button>` : ''}</td>
     `;
     tbody.appendChild(headTr);
+
+    const batchBtn = headTr.querySelector('[data-batch-start]');
+    if (batchBtn) {
+      batchBtn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const gcode = batchBtn.dataset.batchStart;
+        const draftCount = g.campaigns.filter(c => ['draft', 'pending_review'].includes(c.review_status) && ['draft', 'paused'].includes(c.run_status)).length;
+        if (!confirm(`将批量审批并启动 ${draftCount} 个 sub-Campaign，确认？`)) return;
+        const operator = (window.prompt('确认人（仅做审计标记）', 'ui_user') || '').trim();
+        if (!operator) return;
+        batchBtn.disabled = true;
+        batchBtn.textContent = '启动中…';
+        try {
+          const resp = await fetch('/api/admin/cloud-orchestrator/campaigns/batch-start', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ group_code: gcode, operator }),
+          });
+          const d = await resp.json().catch(() => ({}));
+          if (!resp.ok || !d.ok) { alert('批量启动失败：' + (d.error || `HTTP ${resp.status}`)); return; }
+          alert(`批量启动完成 ✓\n成功：${d.started_count}\n跳过（已启动/拒绝）：${d.skipped_count}\n失败：${d.failed_count}`);
+          loadList();
+        } finally {
+          batchBtn.disabled = false;
+          batchBtn.textContent = '全部启动';
+        }
+      });
+    }
 
     const childTrs = [];
     for (const c of g.campaigns) {
@@ -376,7 +405,6 @@
     }
 
     headTr.addEventListener('click', (ev) => {
-      // 子行内部按钮事件别冒泡触发收折 (虽然子行默认隐藏, 点了"查看"等于点 group, 这里保险)
       if (ev.target.tagName === 'BUTTON') return;
       const opening = childTrs[0]?.style.display === 'none';
       childTrs.forEach(tr => { tr.style.display = opening ? '' : 'none'; });
