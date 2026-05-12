@@ -19,6 +19,7 @@ from .admin_dashboard import register_routes as register_admin_dashboard_routes
 from .admin_class_user import register_routes as register_admin_class_user_routes
 from .admin_hxc_dashboard import register_routes as register_admin_hxc_dashboard_routes
 from .admin_questionnaires import register_routes as register_admin_questionnaires_routes
+from .api_hxc_dashboard import register_routes as register_api_hxc_dashboard_routes
 from .admin_user_ops import register_routes as register_admin_user_ops_routes
 from .automation_conversion import register_routes as register_automation_conversion_routes
 from .cloud_orchestrator_endpoint import register_routes as register_cloud_orchestrator_routes
@@ -137,6 +138,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_dashboard", register_admin_dashboard_routes),
     ("admin_user_ops", register_admin_user_ops_routes),
     ("admin_hxc_dashboard", register_admin_hxc_dashboard_routes),
+    ("api_hxc_dashboard", register_api_hxc_dashboard_routes),
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_questionnaires", register_admin_questionnaires_routes),
     ("automation_conversion", register_automation_conversion_routes),

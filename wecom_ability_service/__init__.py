@@ -117,6 +117,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         WECOM_SYNC_RETRY_LIMIT=int(os.getenv("WECOM_SYNC_RETRY_LIMIT", "3")),
         AUTOMATION_CONVERSION_CHANNEL_PROVIDER=os.getenv("AUTOMATION_CONVERSION_CHANNEL_PROVIDER", "wecom_contact_way"),
         MCP_BEARER_TOKEN=os.getenv("MCP_BEARER_TOKEN", ""),
+        HXC_DASHBOARD_API_TOKEN=os.getenv("HXC_DASHBOARD_API_TOKEN", ""),
         ACCESS_TOKEN_CACHE_SECONDS=int(os.getenv("ACCESS_TOKEN_CACHE_SECONDS", "7000")),
         SQLITE_BUSY_TIMEOUT_MS=int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000")),
         SIDEBAR_THIRD_PARTY_API_URL=os.getenv("SIDEBAR_THIRD_PARTY_API_URL", ""),
