@@ -404,35 +404,42 @@ def _record_member_after_dispatch(
 
     db = get_db()
     cur = db.cursor()
-    cur.execute(
-        """
-        INSERT INTO automation_touch_delivery_log
-            (program_code, touch_surface, rule_key, member_id,
-             external_contact_id, status, detail, metadata_json, trace_id, sent_at)
-        VALUES (?, 'campaign_step', ?, ?, ?, 'sent', ?, ?, ?, ?)
-        ON CONFLICT DO NOTHING
-        """,
-        (
-            f"campaign:{campaign.get('campaign_code')}",
-            f"step:{step.get('step_index')}",
-            int(member_id) if member_id else None,
-            external,
-            f"campaign_step task_id={task_id}",
-            json.dumps(
-                {
-                    "campaign_id": campaign.get("id"),
-                    "campaign_segment_id": member.get("campaign_segment_id"),
-                    "step_index": step.get("step_index"),
-                    "wecom_task_id": task_id,
-                    "batch_recipient_count": send_result.get("recipient_count") or 1,
-                },
-                ensure_ascii=False,
+    try:
+        cur.execute(
+            """
+            INSERT INTO automation_touch_delivery_log
+                (program_code, touch_surface, rule_key, member_id,
+                 external_contact_id, status, detail, metadata_json, trace_id, sent_at)
+            VALUES (?, 'campaign_step', ?, ?, ?, 'sent', ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
+            """,
+            (
+                f"campaign:{campaign.get('campaign_code')}",
+                f"step:{step.get('step_index')}",
+                int(member_id) if member_id else None,
+                external,
+                f"campaign_step task_id={task_id}",
+                json.dumps(
+                    {
+                        "campaign_id": campaign.get("id"),
+                        "campaign_segment_id": member.get("campaign_segment_id"),
+                        "step_index": step.get("step_index"),
+                        "wecom_task_id": task_id,
+                        "batch_recipient_count": send_result.get("recipient_count") or 1,
+                    },
+                    ensure_ascii=False,
+                ),
+                trace_id,
+                _now_iso(),
             ),
-            trace_id,
-            _now_iso(),
-        ),
-    )
-    db.commit()
+        )
+        db.commit()
+    except Exception as exc:
+        logger.warning("delivery_log insert failed (member_id=%s): %s", member_id, exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
     try:
         frequency_budget_service.record_consumption(
             member_id=member_id or None,
