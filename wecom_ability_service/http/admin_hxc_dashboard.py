@@ -106,13 +106,33 @@ def admin_hxc_dashboard_broadcast():
     body = request.json or {}
     external_userids = body.get("external_userids") or []
     content = (body.get("content") or "").strip()
+    image_library_ids = body.get("image_library_ids") or []
+    miniprogram_library_id = body.get("miniprogram_library_id")
+
     if not external_userids:
         return jsonify({"ok": False, "error": "no targets"}), 400
-    if not content:
+    if not content and not image_library_ids and not miniprogram_library_id:
         return jsonify({"ok": False, "error": "empty content"}), 400
+
+    safe_image_ids = []
+    for raw in image_library_ids[:3]:
+        try:
+            safe_image_ids.append(int(raw))
+        except (TypeError, ValueError):
+            pass
+
+    safe_mp_id = None
+    if miniprogram_library_id:
+        try:
+            safe_mp_id = int(miniprogram_library_id)
+        except (TypeError, ValueError):
+            pass
+
     result = broadcast_to_filtered_users(
         external_userids=external_userids,
         content=content,
+        image_library_ids=safe_image_ids or None,
+        miniprogram_library_id=safe_mp_id,
         operator_id="admin",
     )
     status_code = 200 if result.get("ok") else 400
