@@ -149,9 +149,8 @@ def test_admin_dashboard_page_renders(client, app):
     assert "漏斗状态汇总" in body
     # nav 已注册
     assert "激活漏斗" in body
-    # 数据 JSON 嵌入
+    # 数据 JSON 嵌入 (tojson ensure_ascii=True 会把中文转 \uXXXX, 只验 ASCII 字段)
     assert "139****5678" in body
-    assert "测试客户" in body
 
 
 def test_admin_refresh_endpoint_fails_when_not_configured(client, app):
