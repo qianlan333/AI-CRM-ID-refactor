@@ -2,8 +2,8 @@
 
 页面: ``/admin/hxc-dashboard``  (HTML, Jinja 模板嵌入 JSON + Tabulator)
 即时刷新: ``POST /api/admin/hxc-dashboard/refresh``
-
-数据从 ``user_ops_hxc_dashboard_snapshot`` 快照表读, 看板自带筛选/排序/CSV 导出.
+发送人白名单 CRUD: ``/api/admin/hxc-dashboard/send-config``
+一键群发: ``POST /api/admin/hxc-dashboard/broadcast``
 """
 from __future__ import annotations
 
@@ -14,12 +14,19 @@ from ..domains.user_ops.hxc_dashboard_view_service import (
     get_dashboard_summary,
     list_hxc_dashboard_rows,
 )
+from ..domains.user_ops.hxc_send_config_service import (
+    broadcast_to_filtered_users,
+    delete_send_config,
+    list_send_configs,
+    upsert_send_config,
+)
 from .admin_console import _breadcrumb_items, _render_admin_template
 
 
 def admin_hxc_dashboard_workspace():
     rows = list_hxc_dashboard_rows()
     summary = get_dashboard_summary()
+    send_configs = list_send_configs()
     return _render_admin_template(
         "hxc_dashboard.html",
         active_nav="user_ops_funnel",
@@ -34,6 +41,7 @@ def admin_hxc_dashboard_workspace():
         ),
         dashboard_rows=rows,
         dashboard_summary=summary,
+        send_configs=send_configs,
     )
 
 
@@ -44,6 +52,54 @@ def admin_hxc_dashboard_refresh():
     return jsonify(result), status_code
 
 
+# ── 发送人白名单 CRUD ──
+
+def admin_hxc_send_config_list():
+    return jsonify(list_send_configs())
+
+
+def admin_hxc_send_config_upsert():
+    body = request.json or {}
+    sender_userid = (body.get("sender_userid") or "").strip()
+    if not sender_userid:
+        return jsonify({"ok": False, "error": "sender_userid required"}), 400
+    result = upsert_send_config(
+        sender_userid=sender_userid,
+        display_name=(body.get("display_name") or "").strip(),
+        priority=int(body.get("priority", 100)),
+        is_active=bool(body.get("is_active", True)),
+    )
+    return jsonify(result)
+
+
+def admin_hxc_send_config_delete(sender_userid):
+    result = delete_send_config(sender_userid)
+    return jsonify(result)
+
+
+# ── 一键群发 ──
+
+def admin_hxc_dashboard_broadcast():
+    body = request.json or {}
+    external_userids = body.get("external_userids") or []
+    content = (body.get("content") or "").strip()
+    if not external_userids:
+        return jsonify({"ok": False, "error": "no targets"}), 400
+    if not content:
+        return jsonify({"ok": False, "error": "empty content"}), 400
+    result = broadcast_to_filtered_users(
+        external_userids=external_userids,
+        content=content,
+        operator_id="admin",
+    )
+    status_code = 200 if result.get("ok") else 400
+    return jsonify(result), status_code
+
+
 def register_routes(bp):
     bp.route("/admin/hxc-dashboard", methods=["GET"])(admin_hxc_dashboard_workspace)
     bp.route("/api/admin/hxc-dashboard/refresh", methods=["POST"])(admin_hxc_dashboard_refresh)
+    bp.route("/api/admin/hxc-dashboard/send-config", methods=["GET"])(admin_hxc_send_config_list)
+    bp.route("/api/admin/hxc-dashboard/send-config", methods=["POST"])(admin_hxc_send_config_upsert)
+    bp.route("/api/admin/hxc-dashboard/send-config/<sender_userid>", methods=["DELETE"])(admin_hxc_send_config_delete)
+    bp.route("/api/admin/hxc-dashboard/broadcast", methods=["POST"])(admin_hxc_dashboard_broadcast)

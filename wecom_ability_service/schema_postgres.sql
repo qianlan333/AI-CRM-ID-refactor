@@ -2714,3 +2714,14 @@ CREATE TABLE IF NOT EXISTS user_ops_hxc_dashboard_meta (
 
 CREATE INDEX IF NOT EXISTS idx_hxc_snapshot_meta_started_at
 ON user_ops_hxc_dashboard_meta (started_at DESC);
+
+-- 激活漏斗看板 - 发送人白名单 (alembic 0011)
+CREATE TABLE IF NOT EXISTS user_ops_hxc_send_config (
+    id              BIGSERIAL PRIMARY KEY,
+    sender_userid   TEXT NOT NULL UNIQUE,
+    display_name    TEXT NOT NULL DEFAULT '',
+    priority        INTEGER NOT NULL DEFAULT 100,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);

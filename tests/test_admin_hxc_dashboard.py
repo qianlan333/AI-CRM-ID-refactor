@@ -170,3 +170,223 @@ def test_admin_refresh_endpoint_fails_when_not_configured(client, app):
     payload = resp.get_json()
     assert payload["ok"] is False
     assert payload["status"] == "not_configured"
+
+
+# ── 发送人白名单 CRUD ──
+
+
+def test_send_config_upsert_and_list(client, app):
+    resp = client.post(
+        "/api/admin/hxc-dashboard/send-config",
+        json={"sender_userid": "alice", "display_name": "Alice", "priority": 10},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True
+
+    resp = client.get("/api/admin/hxc-dashboard/send-config")
+    configs = resp.get_json()
+    assert len(configs) == 1
+    assert configs[0]["sender_userid"] == "alice"
+    assert configs[0]["display_name"] == "Alice"
+    assert configs[0]["priority"] == 10
+    assert configs[0]["is_active"] is True
+
+
+def test_send_config_upsert_updates_existing(client, app):
+    client.post(
+        "/api/admin/hxc-dashboard/send-config",
+        json={"sender_userid": "bob", "display_name": "Bob", "priority": 50},
+    )
+    client.post(
+        "/api/admin/hxc-dashboard/send-config",
+        json={"sender_userid": "bob", "display_name": "Bob Updated", "priority": 20},
+    )
+    configs = client.get("/api/admin/hxc-dashboard/send-config").get_json()
+    assert len(configs) == 1
+    assert configs[0]["display_name"] == "Bob Updated"
+    assert configs[0]["priority"] == 20
+
+
+def test_send_config_upsert_rejects_empty_userid(client):
+    resp = client.post(
+        "/api/admin/hxc-dashboard/send-config",
+        json={"sender_userid": "", "display_name": "X"},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["ok"] is False
+
+
+def test_send_config_delete(client, app):
+    client.post(
+        "/api/admin/hxc-dashboard/send-config",
+        json={"sender_userid": "charlie", "display_name": "Charlie"},
+    )
+    resp = client.delete("/api/admin/hxc-dashboard/send-config/charlie")
+    assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True
+
+    configs = client.get("/api/admin/hxc-dashboard/send-config").get_json()
+    assert len(configs) == 0
+
+
+def test_send_config_ordering_by_priority(client, app):
+    for uid, prio in [("z_low", 99), ("a_high", 1), ("m_mid", 50)]:
+        client.post(
+            "/api/admin/hxc-dashboard/send-config",
+            json={"sender_userid": uid, "priority": prio},
+        )
+    configs = client.get("/api/admin/hxc-dashboard/send-config").get_json()
+    assert [c["sender_userid"] for c in configs] == ["a_high", "m_mid", "z_low"]
+
+
+# ── 一键群发 ──
+
+
+def _seed_send_config(db, sender_userid, display_name="", priority=100, is_active=True):
+    db.execute(
+        """
+        INSERT INTO user_ops_hxc_send_config (sender_userid, display_name, priority, is_active)
+        VALUES (?, ?, ?, ?)
+        """,
+        (sender_userid, display_name, priority, is_active),
+    )
+    db.commit()
+
+
+def test_broadcast_no_targets(client):
+    resp = client.post(
+        "/api/admin/hxc-dashboard/broadcast",
+        json={"external_userids": [], "content": "hello"},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "no targets"
+
+
+def test_broadcast_empty_content(client):
+    resp = client.post(
+        "/api/admin/hxc-dashboard/broadcast",
+        json={"external_userids": ["ext1"], "content": ""},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "empty content"
+
+
+def test_broadcast_no_active_senders(client, app):
+    with app.app_context():
+        from wecom_ability_service.db import get_db
+        db = get_db()
+        _seed_snapshot(db, [
+            {"mobile": "13900000001", "funnel_state": "inactive",
+             "external_userid": "ext1", "owner_userid": "owner1"},
+        ])
+
+    resp = client.post(
+        "/api/admin/hxc-dashboard/broadcast",
+        json={"external_userids": ["ext1"], "content": "hello"},
+    )
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["ok"] is False
+    assert data["error"] == "no_active_senders"
+
+
+def test_broadcast_skips_non_whitelisted_owners(client, app):
+    with app.app_context():
+        from wecom_ability_service.db import get_db
+        db = get_db()
+        _seed_send_config(db, "alice", "Alice", priority=1)
+        _seed_snapshot(db, [
+            {"mobile": "13900000001", "funnel_state": "inactive",
+             "external_userid": "ext1", "owner_userid": "unknown_owner"},
+        ])
+
+    resp = client.post(
+        "/api/admin/hxc-dashboard/broadcast",
+        json={"external_userids": ["ext1"], "content": "hello"},
+    )
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["ok"] is False
+    assert data["error"] == "no_eligible_targets"
+    assert data["skipped_not_whitelisted"] == 1
+
+
+def test_broadcast_dispatches_grouped_by_sender(client, app, monkeypatch):
+    with app.app_context():
+        from wecom_ability_service.db import get_db
+        db = get_db()
+        _seed_send_config(db, "alice", "Alice", priority=1)
+        _seed_send_config(db, "bob", "Bob", priority=2)
+        _seed_snapshot(db, [
+            {"mobile": "13900000001", "funnel_state": "inactive",
+             "external_userid": "ext1", "owner_userid": "alice"},
+            {"mobile": "13900000002", "funnel_state": "inactive",
+             "external_userid": "ext2", "owner_userid": "alice"},
+            {"mobile": "13900000003", "funnel_state": "inactive",
+             "external_userid": "ext3", "owner_userid": "bob"},
+        ])
+
+    dispatched = []
+
+    def mock_dispatch(task_type, action, payload):
+        dispatched.append({"task_type": task_type, "action": action, "payload": payload})
+        return {"task_id": f"mock_{len(dispatched)}"}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task",
+        mock_dispatch,
+    )
+
+    resp = client.post(
+        "/api/admin/hxc-dashboard/broadcast",
+        json={"external_userids": ["ext1", "ext2", "ext3"], "content": "测试消息"},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["total_sent"] == 3
+    assert data["total_failed"] == 0
+    assert len(data["sender_results"]) == 2
+
+    assert len(dispatched) == 2
+    senders = {d["payload"]["sender"] for d in dispatched}
+    assert senders == {"alice", "bob"}
+    for d in dispatched:
+        assert d["task_type"] == "private_message"
+        assert d["payload"]["text"]["content"] == "测试消息"
+
+
+def test_broadcast_inactive_sender_excluded(client, app, monkeypatch):
+    with app.app_context():
+        from wecom_ability_service.db import get_db
+        db = get_db()
+        _seed_send_config(db, "alice", "Alice", priority=1, is_active=True)
+        _seed_send_config(db, "bob", "Bob", priority=2, is_active=False)
+        _seed_snapshot(db, [
+            {"mobile": "13900000001", "funnel_state": "inactive",
+             "external_userid": "ext1", "owner_userid": "alice"},
+            {"mobile": "13900000002", "funnel_state": "inactive",
+             "external_userid": "ext2", "owner_userid": "bob"},
+        ])
+
+    dispatched = []
+
+    def mock_dispatch(task_type, action, payload):
+        dispatched.append(payload)
+        return {"task_id": "mock"}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task",
+        mock_dispatch,
+    )
+
+    resp = client.post(
+        "/api/admin/hxc-dashboard/broadcast",
+        json={"external_userids": ["ext1", "ext2"], "content": "hello"},
+    )
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["total_sent"] == 1
+    assert data["skipped_not_whitelisted"] == 1
+    assert len(dispatched) == 1
+    assert dispatched[0]["sender"] == "alice"
