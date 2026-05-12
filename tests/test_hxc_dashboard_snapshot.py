@@ -242,6 +242,115 @@ def test_refresh_writes_snapshot_with_mocked_hxc(app, monkeypatch):
         assert meta["trigger_source"] == "test"
 
 
+def test_refresh_merges_pool_current_for_external_userid(app, monkeypatch):
+    """pool_current 是客户档案主表; 当 lead_pool 没收到某 mobile 时,
+    看板必须从 pool_current 拿 external_userid / customer_name / owner_userid.
+
+    回归: 历史版本只查 lead_pool, 导致 100+ 个"已加企微但首次入口不在线索池"
+    的客户在看板里 customer_name / external_userid 空白 (issue 2026-05-12).
+    """
+    from wecom_ability_service.db import get_db
+
+    with app.app_context():
+        app.config.update(
+            MESSAGE_ACTIVITY_DB_HOST="x",
+            MESSAGE_ACTIVITY_DB_PORT=3306,
+            MESSAGE_ACTIVITY_DB_NAME="x",
+            MESSAGE_ACTIVITY_DB_USER="x",
+            MESSAGE_ACTIVITY_DB_PASS="x",
+        )
+
+        db = get_db()
+        # mobile 只在 pool_current, lead_pool 没收到; 看板必须仍能反查到客户身份
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_current (
+                mobile, external_userid, customer_name, owner_userid,
+                current_status, is_wecom_bound, activation_status,
+                class_term_no, class_term_label, source_type
+            ) VALUES (
+                ?, ?, ?, ?, 'active_focus', true, 'activated',
+                NULL, '', 'manual'
+            )
+            """,
+            ("13570554128", "wm_only_in_pool_current", "Lucky", "MengYu"),
+        )
+        # mobile 同时在 pool_current 和 lead_pool, 但 lead_pool 的 customer_name 是空
+        # 看板应该取 pool_current 的非空值, 而不是 lead_pool 的空串
+        db.execute(
+            """
+            INSERT INTO user_ops_pool_current (
+                mobile, external_userid, customer_name, owner_userid,
+                current_status, is_wecom_bound, activation_status,
+                class_term_no, class_term_label, source_type
+            ) VALUES (
+                ?, ?, ?, ?, 'active_focus', true, 'activated',
+                NULL, '', 'manual'
+            )
+            """,
+            ("13800002222", "wm_pool_new", "新名字", "owner_pool"),
+        )
+        db.execute(
+            """
+            INSERT INTO user_ops_lead_pool_current (
+                mobile, external_userid, customer_name, owner_userid,
+                is_wecom_added, is_mobile_bound,
+                huangxiaocan_activation_state,
+                class_term_no, class_term_label,
+                first_entry_source, last_entry_source
+            ) VALUES (?, '', '', '', true, true, 'unknown', NULL, '', 'mobile_bind', 'mobile_bind')
+            """,
+            ("13800002222",),
+        )
+        db.commit()
+
+        def _mock_fetch_hxc_index() -> dict[str, dict[str, Any]]:
+            return {
+                "13570554128": {
+                    "phone": "13570554128",
+                    "hxc_user_hit": True,
+                    "hxc_member_hit": True,
+                    "membership_type": "member",
+                    "membership_days_left": 30,
+                },
+                "13800002222": {
+                    "phone": "13800002222",
+                    "hxc_user_hit": True,
+                    "hxc_member_hit": True,
+                    "membership_type": "member",
+                    "membership_days_left": 10,
+                },
+            }
+
+        monkeypatch.setattr(svc, "_fetch_hxc_index", _mock_fetch_hxc_index)
+
+        result = svc.refresh_hxc_dashboard_snapshot(trigger_source="test_pool_current")
+        assert result["ok"] is True, result
+        assert result["row_count"] == 2
+
+        rows = db.execute(
+            """
+            SELECT mobile, external_userid, customer_name, owner_userid,
+                   in_lead_pool, in_people
+            FROM user_ops_hxc_dashboard_snapshot
+            ORDER BY mobile
+            """
+        ).fetchall()
+        snap = {row["mobile"]: dict(row) for row in rows}
+
+        # Lucky: 只在 pool_current → 客户身份必须从 pool_current 反查到
+        assert snap["13570554128"]["external_userid"] == "wm_only_in_pool_current"
+        assert snap["13570554128"]["customer_name"] == "Lucky"
+        assert snap["13570554128"]["owner_userid"] == "MengYu"
+        assert snap["13570554128"]["in_lead_pool"] is False
+
+        # 同 mobile 两表都有: pool_current 优先 (覆盖 lead_pool 的空值)
+        assert snap["13800002222"]["external_userid"] == "wm_pool_new"
+        assert snap["13800002222"]["customer_name"] == "新名字"
+        assert snap["13800002222"]["owner_userid"] == "owner_pool"
+        assert snap["13800002222"]["in_lead_pool"] is True
+
+
 def test_refresh_fails_when_mysql_not_configured(app, monkeypatch):
     with app.app_context():
         # 清空 message_activity 配置
