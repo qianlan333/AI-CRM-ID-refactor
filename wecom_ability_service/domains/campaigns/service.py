@@ -605,8 +605,9 @@ def list_campaigns(
     cur.execute(
         f"""
         SELECT c.id, c.campaign_code, c.display_name, c.intent, c.anchor_mode, c.anchor_date,
-               c.review_status, c.run_status, c.created_by_agent, c.started_at, c.finished_at,
-               c.created_at, c.updated_at,
+               c.review_status, c.run_status, c.created_by_agent,
+               c.owner_userid, c.started_at, c.finished_at,
+               c.created_at, c.updated_at, c.metadata_json,
                (SELECT COUNT(*) FROM campaign_segments cs WHERE cs.campaign_id = c.id) AS segment_count,
                (SELECT COUNT(*) FROM campaign_members cm WHERE cm.campaign_id = c.id) AS member_count
         FROM campaigns c WHERE {' AND '.join(where)}
@@ -614,7 +615,22 @@ def list_campaigns(
         """,
         tuple(args),
     )
-    return [dict(r) for r in (cur.fetchall() or [])]
+    rows: list[dict[str, Any]] = []
+    for r in (cur.fetchall() or []):
+        d = dict(r)
+        # 解 metadata_json 拿 group_code / group_label, 让前端按 group 折叠
+        raw_meta = d.get("metadata_json") or "{}"
+        if isinstance(raw_meta, dict):
+            meta = raw_meta
+        else:
+            try:
+                meta = json.loads(str(raw_meta) or "{}")
+            except (TypeError, ValueError):
+                meta = {}
+        d["group_code"] = str(meta.get("group_code") or "")
+        d["group_label"] = str(meta.get("group_label") or "")
+        rows.append(d)
+    return rows
 
 
 def update_campaign_step(
@@ -896,6 +912,9 @@ def propose_campaign(
     session_id: str = "",
     trace_id: str = "",
     auto_allocate: bool = True,
+    group_code: str = "",
+    group_label: str = "",
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Agent 一次调用搞定整个 Campaign 草稿。
 
@@ -917,6 +936,14 @@ def propose_campaign(
     """
     if not segments:
         raise ValueError("at least one segment is required")
+    # group_code / group_label 落进 metadata_json, 让 admin list 接口按 group
+    # 折叠展示多 campaign (典型场景: 同一份名单按 owner_userid 拆 N 个 campaign,
+    # 业务上仍是 1 个推送计划, 见技能 md §3.5 拆 Campaign 模式)
+    merged_metadata: dict[str, Any] = dict(metadata or {})
+    if group_code:
+        merged_metadata["group_code"] = str(group_code)
+    if group_label:
+        merged_metadata["group_label"] = str(group_label)
     camp = create_campaign_draft(
         display_name=display_name,
         intent=intent,
@@ -926,6 +953,7 @@ def propose_campaign(
         operator=operator,
         session_id=session_id,
         trace_id=trace_id,
+        metadata=merged_metadata or None,
     )
     camp_id = int(camp["id"])
     for seg_spec in segments:
