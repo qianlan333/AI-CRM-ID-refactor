@@ -40,6 +40,14 @@ ALLOWED_TABLES = frozenset(
         "automation_focus_send_batch",
         "automation_focus_send_batch_item",
         "user_ops_pool_current",
+        # 客户档案双源里另一半 (lead_pool ∪ pool_current 互补, 详见 PR #259 hxc_dashboard
+        # 看板的双源合并). pool_current 单表覆盖 ~6300 个 external_userid, lead_pool 还
+        # 覆盖额外 ~100 个仅在线索池的客户. 不加进来, Agent 写 segment SQL 用 lead_pool
+        # 独有客户会被沙箱拒, 漏掉真实可触达人群.
+        "user_ops_lead_pool_current",
+        # 黄小璨激活漏斗预聚合快照 (CRM 三表 × 黄小璨 MySQL, 每 30 分钟刷新).
+        # 技能 md §3.4 承诺"直接 SQL 喂 propose_segment", 这里把约束跟文档对齐.
+        "user_ops_hxc_dashboard_snapshot",
         "user_ops_send_records",
         "contact_tags",
         "automation_value_segment_current",
