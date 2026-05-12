@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...db import get_db, get_db_backend
 from ..segments.service import get_segment, increment_usage
-from ..segments.sql_sandbox import fetch_member_ids
+from ..segments.sql_sandbox import fetch_member_rows
 
 
 logger = logging.getLogger(__name__)
@@ -282,24 +282,29 @@ def allocate_campaign_members(
         except (TypeError, ValueError):
             params = {}
         try:
-            member_ids = fetch_member_ids(sql=str(s["sql_query"] or ""), params=params)
+            member_rows = fetch_member_rows(sql=str(s["sql_query"] or ""), params=params)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("segment %s sql failed during allocation: %s", s["segment_code"], exc)
             continue
         bucket = per_segment.setdefault(cs_id, {"matched": 0, "allocated": 0, "skipped": 0})
-        bucket["matched"] += len(member_ids)
-        for mid in member_ids:
+        bucket["matched"] += len(member_rows)
+        for mr_in in member_rows:
+            mid = mr_in["member_id"]
+            sql_ext = mr_in.get("external_contact_id", "")
             if mid in seen_member_ids:
                 collision += 1
                 bucket["skipped"] += 1
                 continue
-            # 取 external_contact_id 兜底
-            cur.execute(
-                "SELECT external_contact_id FROM automation_member WHERE id = ?",
-                (int(mid),),
-            )
-            mr = cur.fetchone()
-            external = str(mr["external_contact_id"] or "") if mr else ""
+            # 优先用 segment SQL 自带的 external_contact_id (允许 user_ops_pool_current 等表
+            # 直接输出 ext_id), 没带才 fallback 到 automation_member.id 反查 (兼容老 segment).
+            external = sql_ext
+            if not external:
+                cur.execute(
+                    "SELECT external_contact_id FROM automation_member WHERE id = ?",
+                    (int(mid),),
+                )
+                mr = cur.fetchone()
+                external = str(mr["external_contact_id"] or "") if mr else ""
             try:
                 cur.execute(
                     """
