@@ -157,7 +157,7 @@ def test_refresh_writes_snapshot_with_mocked_hxc(app, monkeypatch):
                 class_term_no, class_term_label,
                 first_entry_source, last_entry_source
             ) VALUES (
-                ?, ?, ?, ?, true, true, '', NULL, '', 'mobile_bind', 'mobile_bind'
+                ?, ?, ?, ?, true, true, 'unknown', NULL, '', 'mobile_bind', 'mobile_bind'
             )
             """,
             ("13912345678", "wm_test_1", "张三", "owner_a"),
