@@ -16,6 +16,7 @@ from ..domains.user_ops.hxc_dashboard_view_service import (
 )
 from ..domains.user_ops.hxc_send_config_service import (
     broadcast_to_filtered_users,
+    build_send_config_page_data,
     delete_send_config,
     list_send_configs,
     upsert_send_config,
@@ -43,6 +44,28 @@ def admin_hxc_dashboard_workspace():
         dashboard_summary=summary,
         send_configs=send_configs,
     )
+
+
+def admin_hxc_send_config_page():
+    page_data = build_send_config_page_data()
+    return _render_admin_template(
+        "hxc_send_config.html",
+        active_nav="user_ops_funnel",
+        page_title="群发发送人管理",
+        page_summary="从企微通讯录选择群发发送人，设置优先级和启用状态。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("激活漏斗看板", url_for("api.admin_hxc_dashboard_workspace")),
+            ("群发发送人管理", None),
+        ),
+        **page_data,
+    )
+
+
+def admin_hxc_refresh_directory():
+    from ..domains.admin_auth.service import sync_admin_wecom_directory_members
+    result = sync_admin_wecom_directory_members(operator="hxc_send_config")
+    return jsonify(result)
 
 
 def admin_hxc_dashboard_refresh():
@@ -83,13 +106,33 @@ def admin_hxc_dashboard_broadcast():
     body = request.json or {}
     external_userids = body.get("external_userids") or []
     content = (body.get("content") or "").strip()
+    image_library_ids = body.get("image_library_ids") or []
+    miniprogram_library_id = body.get("miniprogram_library_id")
+
     if not external_userids:
         return jsonify({"ok": False, "error": "no targets"}), 400
-    if not content:
+    if not content and not image_library_ids and not miniprogram_library_id:
         return jsonify({"ok": False, "error": "empty content"}), 400
+
+    safe_image_ids = []
+    for raw in image_library_ids[:3]:
+        try:
+            safe_image_ids.append(int(raw))
+        except (TypeError, ValueError):
+            pass
+
+    safe_mp_id = None
+    if miniprogram_library_id:
+        try:
+            safe_mp_id = int(miniprogram_library_id)
+        except (TypeError, ValueError):
+            pass
+
     result = broadcast_to_filtered_users(
         external_userids=external_userids,
         content=content,
+        image_library_ids=safe_image_ids or None,
+        miniprogram_library_id=safe_mp_id,
         operator_id="admin",
     )
     status_code = 200 if result.get("ok") else 400
@@ -98,7 +141,9 @@ def admin_hxc_dashboard_broadcast():
 
 def register_routes(bp):
     bp.route("/admin/hxc-dashboard", methods=["GET"])(admin_hxc_dashboard_workspace)
+    bp.route("/admin/hxc-send-config", methods=["GET"])(admin_hxc_send_config_page)
     bp.route("/api/admin/hxc-dashboard/refresh", methods=["POST"])(admin_hxc_dashboard_refresh)
+    bp.route("/api/admin/hxc-dashboard/refresh-directory", methods=["POST"])(admin_hxc_refresh_directory)
     bp.route("/api/admin/hxc-dashboard/send-config", methods=["GET"])(admin_hxc_send_config_list)
     bp.route("/api/admin/hxc-dashboard/send-config", methods=["POST"])(admin_hxc_send_config_upsert)
     bp.route("/api/admin/hxc-dashboard/send-config/<sender_userid>", methods=["DELETE"])(admin_hxc_send_config_delete)
