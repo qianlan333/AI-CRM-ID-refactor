@@ -495,6 +495,9 @@ def cloud_orchestrator_batch_start_campaigns() -> Response:
         "started_count": len(started),
         "skipped_count": len(skipped),
         "failed_count": len(failed),
+        "started": started,
+        "skipped": skipped,
+        "failed": failed,
     })
 
 
