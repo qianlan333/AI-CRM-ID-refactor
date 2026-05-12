@@ -298,6 +298,82 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
         assert int(r["current_step_index"]) == 0
 
 
+def test_propose_campaign_segment_sql_carries_external_contact_id(app):
+    """Segment SQL 自带 external_contact_id 时, propose_campaign 必须直接用, 不再走
+    automation_member.id 反查.
+
+    回归: 历史 service.py 硬编码 ``SELECT ext FROM automation_member WHERE id=?``,
+    导致用 user_ops_pool_current 等非 automation_member 表写 segment 时,
+    campaign_members.external_contact_id 被填空, 启动后 dispatch 直接 skip
+    no_external_userid (issue 2026-05-12 灰度记忆 campaign 实战暴露).
+    """
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+
+    db = get_db()
+    cur = db.cursor()
+    # 在 user_ops_pool_current 造 2 个真实客户 (sandbox 白名单允许)
+    # 注意: 不在 automation_member 表里 → 老逻辑会拿不到 ext_id
+    cur.execute(
+        """
+        INSERT INTO user_ops_pool_current
+            (id, mobile, external_userid, customer_name, owner_userid,
+             current_status, is_wecom_bound, activation_status,
+             class_term_no, class_term_label, source_type)
+        VALUES
+            (888001, '13800000001', 'wm-pc-001', 'A',  'Sender1',
+             'active_focus', true, 'activated', NULL, '', 'manual'),
+            (888002, '13800000002', 'wm-pc-002', 'B',  'Sender1',
+             'active_focus', true, 'activated', NULL, '', 'manual')
+        ON CONFLICT (id) DO UPDATE SET external_userid = excluded.external_userid
+        """
+    )
+    cur.execute(
+        """
+        INSERT INTO segments
+            (segment_code, display_name, source_type, sql_query, sql_params_json,
+             cached_headcount, status)
+        VALUES (?, ?, 'sql', ?, '{}', 0, 'active')
+        ON CONFLICT (segment_code) DO UPDATE SET status = 'active', sql_query = excluded.sql_query
+        """,
+        (
+            "seg-pool-current-pilot",
+            "test pool_current segment",
+            "SELECT id AS member_id, external_userid AS external_contact_id "
+            "FROM user_ops_pool_current WHERE id IN (888001, 888002)",
+        ),
+    )
+    db.commit()
+
+    overview = campaign_service.propose_campaign(
+        display_name="pool_current pilot",
+        intent="验证 segment SQL 自带 ext 时 propose 不丢",
+        segments=[{
+            "segment_code": "seg-pool-current-pilot",
+            "priority": 100,
+            "steps": [
+                {"step_index": 0, "day_offset": 0, "send_time": "10:00",
+                 "content_text": "hi", "stop_on_reply": True},
+            ],
+        }],
+        anchor_mode="campaign_start_date",
+    )
+    assert overview["allocation"]["allocated"] == 2
+
+    cur.execute(
+        "SELECT member_id, external_contact_id FROM campaign_members "
+        "WHERE campaign_id = ? ORDER BY member_id",
+        (int(overview["campaign"]["id"]),),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    assert len(rows) == 2
+    # 关键: external_contact_id 必须从 SQL 输出直接取, 不能为空
+    assert rows[0]["member_id"] == 888001
+    assert rows[0]["external_contact_id"] == "wm-pc-001"
+    assert rows[1]["member_id"] == 888002
+    assert rows[1]["external_contact_id"] == "wm-pc-002"
+
+
 def test_pg_bug_200_register_member_reply_clears_next_due(app):
     """``register_member_reply`` 把 next_due_at 清空 —— PR #200 修了 SET = '' 写入。"""
     from wecom_ability_service.db import get_db

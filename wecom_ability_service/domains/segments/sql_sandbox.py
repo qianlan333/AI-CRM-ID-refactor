@@ -244,6 +244,31 @@ def fetch_member_ids(
     return [int(r["member_id"]) for r in res["rows"]]
 
 
+def fetch_member_rows(
+    *,
+    sql: str,
+    params: dict[str, Any] | None = None,
+    max_rows: int = MAX_ROWS,
+) -> list[dict[str, Any]]:
+    """返回 ``[{"member_id": int, "external_contact_id": str|""}]`` 列表.
+
+    Campaign 互斥分配 (``_allocate_members``) 优先用 SQL 自带的 external_contact_id;
+    SQL 没输出时 (老的 ``SELECT m.id AS member_id ... FROM automation_member m`` 模板)
+    回退到 automation_member.id 反查. 这样既兼容老 segment, 也能让按 ``user_ops_pool_current``
+    或其他白名单表写的新 segment 直接拿到 external_contact_id (历史 bug: pool_current.id ≠
+    automation_member.id, 之前 reverse-lookup 失败导致 campaign_members.external_contact_id
+    全空, 启动后 dispatch 因 no_external_userid 直接 skip).
+    """
+    res = run_segment_query(sql=sql, params=params, max_rows=max_rows)
+    return [
+        {
+            "member_id": int(r["member_id"]),
+            "external_contact_id": str(r.get("external_contact_id") or ""),
+        }
+        for r in res["rows"]
+    ]
+
+
 __all__ = [
     "ALLOWED_TABLES",
     "FORBIDDEN_KEYWORDS",
@@ -251,6 +276,7 @@ __all__ = [
     "MAX_SQL_LENGTH",
     "SqlSandboxError",
     "fetch_member_ids",
+    "fetch_member_rows",
     "run_segment_query",
     "validate_segment_sql",
 ]
