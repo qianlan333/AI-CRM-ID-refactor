@@ -1,0 +1,295 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_simple.min.css">
+<style>
+  /* —— stat 卡片 (4 漏斗) —— */
+  .hxc-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .hxc-stat {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 14px 16px;
+    border-left: 4px solid #d1d5db;
+  }
+  .hxc-stat--member-and-user { border-left-color: #10b981; }
+  .hxc-stat--only-member     { border-left-color: #f59e0b; }
+  .hxc-stat--user-no-member  { border-left-color: #3b82f6; }
+  .hxc-stat--inactive        { border-left-color: #9ca3af; }
+  .hxc-stat-label { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+  .hxc-stat-value { font-size: 22px; font-weight: 600; color: #111827; }
+  .hxc-stat-sub   { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+
+  /* —— 工具栏 —— */
+  .hxc-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .hxc-toolbar input.hxc-search {
+    flex: 1;
+    min-width: 220px;
+    max-width: 320px;
+    padding: 7px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .hxc-toolbar input.hxc-search:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: -1px;
+    border-color: #3b82f6;
+  }
+  .hxc-toolbar .hxc-spacer { flex: 1; }
+  .hxc-toolbar .admin-button { font-size: 13px; }
+  .hxc-meta {
+    font-size: 12px;
+    color: #6b7280;
+    margin-left: auto;
+    padding-right: 4px;
+  }
+  .hxc-meta b { color: #111827; }
+
+  /* —— 表格 —— */
+  .hxc-table { font-size: 12px; background: #fff; }
+  .tabulator { border: 1px solid #e5e7eb; border-radius: 8px; }
+  .tabulator .tabulator-header {
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 500;
+  }
+  .tabulator .tabulator-header .tabulator-col {
+    background: #f9fafb;
+    border-right: 1px solid #f3f4f6;
+  }
+  .tabulator-row.tabulator-row-even { background-color: #fafafa; }
+  .tabulator-row:hover { background-color: #f3f4f6 !important; }
+
+  /* 状态色 */
+  .hxc-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .hxc-tag--hit   { background: #d1fae5; color: #047857; }
+  .hxc-tag--warn  { background: #fef3c7; color: #b45309; }
+  .hxc-tag--info  { background: #dbeafe; color: #1e40af; }
+  .hxc-tag--miss  { background: #f3f4f6; color: #6b7280; }
+  .hxc-tick--hit  { color: #10b981; font-weight: bold; }
+  .hxc-tick--miss { color: #cbd5e1; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="admin-card">
+  <div class="admin-card-head">
+    <div>
+      <h2>漏斗状态汇总</h2>
+      <p>每行 = 1 个手机号; "仅激活未打开" 是重点拉回人群.</p>
+    </div>
+    <div class="admin-toolbar">
+      <button class="admin-button admin-button--primary" id="hxc-refresh-btn" type="button">立即刷新</button>
+    </div>
+  </div>
+
+  <div class="hxc-stats">
+    <div class="hxc-stat">
+      <div class="hxc-stat-label">总数 (基础人群)</div>
+      <div class="hxc-stat-value">{{ dashboard_summary.total }}</div>
+      <div class="hxc-stat-sub">CRM 三表手机号并集</div>
+    </div>
+    <div class="hxc-stat hxc-stat--member-and-user">
+      <div class="hxc-stat-label">已激活并打开</div>
+      <div class="hxc-stat-value">{{ dashboard_summary.funnel.member_and_user }}</div>
+      <div class="hxc-stat-sub">会员开通 + 真打开过小程序</div>
+    </div>
+    <div class="hxc-stat hxc-stat--only-member">
+      <div class="hxc-stat-label">仅激活未打开 (拉回重点)</div>
+      <div class="hxc-stat-value">{{ dashboard_summary.funnel.only_member }}</div>
+      <div class="hxc-stat-sub">有会员资格 / 从未登录</div>
+    </div>
+    <div class="hxc-stat hxc-stat--user-no-member">
+      <div class="hxc-stat-label">注册但无会员</div>
+      <div class="hxc-stat-value">{{ dashboard_summary.funnel.user_no_member }}</div>
+      <div class="hxc-stat-sub">异常: 登录过但会员缺失</div>
+    </div>
+    <div class="hxc-stat hxc-stat--inactive">
+      <div class="hxc-stat-label">未激活</div>
+      <div class="hxc-stat-value">{{ dashboard_summary.funnel.inactive }}</div>
+      <div class="hxc-stat-sub">在 CRM 但未开通</div>
+    </div>
+  </div>
+
+  <div class="hxc-toolbar">
+    <input id="hxc-search" class="hxc-search" placeholder="全局搜索 (姓名/昵称/手机尾号/企微 ID...)">
+    <div class="hxc-spacer"></div>
+    <button class="admin-button admin-button--ghost" type="button" id="hxc-export-csv">导出 CSV (筛选后)</button>
+    <button class="admin-button admin-button--ghost" type="button" id="hxc-export-xlsx">导出 Excel</button>
+    <div class="hxc-meta">
+      上次刷新:
+      <b>{{ dashboard_summary.latest_refresh.finished_at or dashboard_summary.latest_refresh.started_at or "暂无" }}</b>
+      &nbsp;·&nbsp;状态:
+      <b>{{ dashboard_summary.latest_refresh.status }}</b>
+    </div>
+  </div>
+
+  <div id="hxc-table" class="hxc-table"></div>
+</section>
+{% endblock %}
+
+{% block scripts_extra %}
+<script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+<script src="https://oss.sheetjs.com/sheetjs/xlsx.full.min.js"></script>
+<script id="hxc-dashboard-data" type="application/json">{{ dashboard_rows | tojson }}</script>
+<script>
+(function(){
+  const data = JSON.parse(document.getElementById('hxc-dashboard-data').textContent);
+
+  function tick(cell){
+    const v = cell.getValue();
+    if (v === '✓') return '<span class="hxc-tick--hit">✓</span>';
+    if (v === '✗') return '<span class="hxc-tick--miss">✗</span>';
+    return v || '';
+  }
+
+  function funnelTag(cell){
+    const row = cell.getRow().getData();
+    const label = row.funnel_label || cell.getValue();
+    const state = row.funnel_state;
+    let cls = 'hxc-tag--miss';
+    if (state === 'member_and_user') cls = 'hxc-tag--hit';
+    else if (state === 'only_member') cls = 'hxc-tag--warn';
+    else if (state === 'user_no_member') cls = 'hxc-tag--info';
+    return '<span class="hxc-tag '+cls+'">'+label+'</span>';
+  }
+
+  const table = new Tabulator("#hxc-table", {
+    data: data,
+    height: "calc(100vh - 360px)",
+    layout: "fitDataStretch",
+    movableColumns: true,
+    columnDefaults: { resizable: true, headerSortStartingDir: "desc", tooltip: true },
+    initialSort: [{column: "msg_user", dir: "desc"}],
+    columns: [
+      {title:"脱敏手机号",     field:"mobile_masked",  frozen:true, width:120, headerFilter:"input"},
+      {title:"客户名",         field:"customer_name",  frozen:true, width:120, headerFilter:"input"},
+      {title:"漏斗状态",       field:"funnel_label",   frozen:true, width:130, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true},
+        formatter: funnelTag},
+      {title:"企微外部联系人ID", field:"external_userid", width:200, headerFilter:"input"},
+      {title:"企微跟进人",      field:"owner_userid",   width:140, headerFilter:"input"},
+      {title:"在销售线索池",    field:"in_lead_pool", width:100, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}, formatter: tick},
+      {title:"在人员主表",      field:"in_people", width:90, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}, formatter: tick},
+      {title:"填过激活问卷",    field:"in_questionnaire", width:100, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}, formatter: tick},
+      {title:"填过的问卷名称",  field:"questionnaires", width:220, headerFilter:"input"},
+      {title:"问卷提交次数",    field:"questionnaire_count", width:90, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"最近一次提交问卷",field:"last_questionnaire_at", width:130, headerFilter:"input"},
+      {title:"是否已加企微",    field:"is_wecom_added", width:90, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}, formatter: tick},
+      {title:"是否已绑手机",    field:"is_mobile_bound", width:90, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}, formatter: tick},
+      {title:"班期标签",        field:"class_term_label", width:120,
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}},
+      {title:"首次入口来源",    field:"first_entry_source", width:140,
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}},
+      {title:"最近入口来源",    field:"last_entry_source", width:140,
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}},
+      {title:"CRM 标注激活态",  field:"crm_hxc_state", width:120,
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}},
+      {title:"CRM 建档日期",    field:"crm_created_at", width:110, headerFilter:"input"},
+      {title:"已激活会员",      field:"hxc_member_hit", width:90, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}, formatter: tick},
+      {title:"已注册打开",      field:"hxc_user_hit", width:90, hozAlign:"center",
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}, formatter: tick},
+      {title:"黄小璨昵称",      field:"hxc_nickname", width:140, headerFilter:"input"},
+      {title:"用户会员状态",    field:"hxc_member_status", width:100,
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}},
+      {title:"会员类型",        field:"membership_type", width:90,
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}},
+      {title:"会员剩余天数",    field:"membership_days_left", width:100, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"咨询使用/上限",   field:"consult_usage", width:100},
+      {title:"会员开通来源",    field:"membership_source", width:130,
+        headerFilter:"list", headerFilterParams:{valuesLookup:true, clearable:true}},
+      {title:"沉默天数",        field:"hxc_silent_days", width:90, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"黄小璨注册时间",  field:"hxc_registered_at", width:140, headerFilter:"input"},
+      {title:"黄小璨最后登录",  field:"hxc_last_login_at", width:140, headerFilter:"input"},
+      {title:"对话会话数",      field:"conv_chat", width:100, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"咨询会话数",      field:"conv_consult", width:100, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"日课会话数",      field:"conv_lesson", width:100, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"用户消息数",      field:"msg_user", width:100, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"AI 回复数",       field:"msg_ai", width:100, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"完成咨询数",      field:"consult_completed", width:100, sorter:"number",
+        headerFilter:"number", headerFilterPlaceholder:">", headerFilterFunc:">="},
+      {title:"咨询平均轮次",    field:"consult_avg_turn", width:100, sorter:"number"},
+      {title:"最后活跃时间",    field:"last_msg_at", width:150, headerFilter:"input"},
+    ],
+  });
+
+  // —— 全局搜索 ——
+  document.getElementById("hxc-search").addEventListener("input", e => {
+    const v = (e.target.value || "").trim().toLowerCase();
+    if (!v) { table.clearFilter(true); return; }
+    table.setFilter(row => {
+      return Object.values(row).some(x => x != null && String(x).toLowerCase().includes(v));
+    });
+  });
+
+  // —— 导出 (筛选后行) ——
+  const ts = () => new Date().toISOString().slice(0,16).replace(/[-:T]/g, "");
+  document.getElementById("hxc-export-csv").addEventListener("click", () => {
+    table.download("csv", "hxc-dashboard-" + ts() + ".csv", {bom: true});
+  });
+  document.getElementById("hxc-export-xlsx").addEventListener("click", () => {
+    table.download("xlsx", "hxc-dashboard-" + ts() + ".xlsx", {sheetName: "激活漏斗"});
+  });
+
+  // —— 立即刷新 ——
+  document.getElementById("hxc-refresh-btn").addEventListener("click", async () => {
+    const btn = document.getElementById("hxc-refresh-btn");
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "刷新中…";
+    try {
+      const resp = await fetch("/api/admin/user-ops/hxc-dashboard/refresh", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({trigger_source: "admin"}),
+      });
+      const result = await resp.json();
+      if (resp.ok && result.ok) {
+        btn.textContent = "刷新成功, 重载中…";
+        setTimeout(() => window.location.reload(), 600);
+      } else {
+        btn.textContent = original;
+        btn.disabled = false;
+        alert("刷新失败: " + (result.error || result.status || "未知错误"));
+      }
+    } catch (err) {
+      btn.textContent = original;
+      btn.disabled = false;
+      alert("刷新失败: " + err.message);
+    }
+  });
+})();
+</script>
+{% endblock %}
