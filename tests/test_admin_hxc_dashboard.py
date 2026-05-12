@@ -153,6 +153,28 @@ def test_admin_dashboard_page_renders(client, app):
     assert "139****5678" in body
 
 
+def test_admin_dashboard_has_send_config_link(client, app):
+    """漏斗看板工具栏应包含「发送人管理」链接."""
+    with app.app_context():
+        from wecom_ability_service.db import get_db
+        _seed_snapshot(get_db(), [
+            {"mobile": "13900000001", "funnel_state": "inactive"},
+        ])
+
+    resp = client.get("/admin/hxc-dashboard")
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert "/admin/hxc-send-config" in body
+
+
+def test_send_config_page_renders(client, app):
+    """GET /admin/hxc-send-config 应返回 200 + 含关键字."""
+    resp = client.get("/admin/hxc-send-config")
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert "群发发送人管理" in body or "sc-members-data" in body
+
+
 def test_admin_refresh_endpoint_fails_when_not_configured(client, app):
     """没配 MESSAGE_ACTIVITY_DB_* → /refresh 返回 500 + status=not_configured."""
     with app.app_context():

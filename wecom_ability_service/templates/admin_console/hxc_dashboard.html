@@ -122,25 +122,6 @@
   .hxc-ms-action { color: #3b82f6; cursor: pointer; }
   .hxc-ms-action:hover { text-decoration: underline; }
 
-  /* —— 发送人管理面板 —— */
-  .hxc-sender-panel { margin-top: 16px; }
-  .hxc-sender-panel summary {
-    cursor: pointer; font-size: 14px; font-weight: 600; color: #374151;
-    padding: 8px 0; user-select: none;
-  }
-  .hxc-sender-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
-  .hxc-sender-table th { text-align: left; padding: 6px 10px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-weight: 500; color: #6b7280; }
-  .hxc-sender-table td { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; }
-  .hxc-sender-table input { padding: 3px 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; }
-  .hxc-sender-table input[type=number] { width: 60px; }
-  .hxc-sender-table input[type=text] { width: 100px; }
-  .hxc-sender-add { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-  .hxc-sender-add input { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; }
-  .hxc-btn-sm { padding: 3px 10px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer; background: #fff; }
-  .hxc-btn-sm:hover { background: #f3f4f6; }
-  .hxc-btn-sm--danger { color: #dc2626; border-color: #fca5a5; }
-  .hxc-btn-sm--danger:hover { background: #fef2f2; }
-
   /* —— 群发弹窗 —— */
   .hxc-modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
@@ -205,6 +186,7 @@
     <input id="hxc-search" class="hxc-search" placeholder="全局搜索 (姓名/昵称/手机尾号/企微 ID...)">
     <div class="hxc-spacer"></div>
     <button class="admin-button admin-button--primary" type="button" id="hxc-broadcast-btn">群发选中用户</button>
+    <a class="admin-button admin-button--secondary" href="/admin/hxc-send-config">发送人管理</a>
     <button class="admin-button admin-button--ghost" type="button" id="hxc-export-csv">导出 CSV (筛选后)</button>
     <button class="admin-button admin-button--ghost" type="button" id="hxc-export-xlsx">导出 Excel</button>
     <div class="hxc-meta">
@@ -217,20 +199,7 @@
 
   <div id="hxc-table" class="hxc-table"></div>
 
-  <!-- 发送人白名单管理 -->
-  <details class="hxc-sender-panel">
-    <summary>发送人管理 (白名单 + 权重)</summary>
-    <table class="hxc-sender-table">
-      <thead><tr><th>企微 UserID</th><th>显示名</th><th>优先级 (越小越优先)</th><th>启用</th><th>操作</th></tr></thead>
-      <tbody id="hxc-sender-tbody"></tbody>
-    </table>
-    <div class="hxc-sender-add">
-      <input id="sc-uid" type="text" placeholder="企微 UserID" style="width:140px">
-      <input id="sc-name" type="text" placeholder="显示名">
-      <input id="sc-pri" type="number" value="100" min="1" style="width:60px">
-      <button class="admin-button admin-button--primary" style="font-size:12px;padding:4px 12px" id="sc-add-btn" type="button">添加</button>
-    </div>
-  </details>
+
 </section>
 
 <!-- 群发弹窗 -->
@@ -501,75 +470,9 @@
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // 发送人白名单管理
-  // ═══════════════════════════════════════════════════════════════
-  let senderConfigs = JSON.parse(document.getElementById('hxc-send-config-data').textContent);
-  const sTbody = document.getElementById('hxc-sender-tbody');
-
-  function renderSenders(){
-    sTbody.innerHTML = '';
-    if(!senderConfigs.length){
-      sTbody.innerHTML = '<tr><td colspan="5" style="color:#9ca3af;text-align:center;padding:12px">暂无发送人, 请在下方添加</td></tr>';
-      return;
-    }
-    senderConfigs.forEach(sc=>{
-      const tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td>'+sc.sender_userid+'</td>'+
-        '<td>'+sc.display_name+'</td>'+
-        '<td>'+sc.priority+'</td>'+
-        '<td>'+(sc.is_active?'<span style="color:#10b981">启用</span>':'<span style="color:#9ca3af">停用</span>')+'</td>'+
-        '<td><button class="hxc-btn-sm" data-toggle="'+sc.sender_userid+'">'+(sc.is_active?'停用':'启用')+'</button> '+
-        '<button class="hxc-btn-sm hxc-btn-sm--danger" data-del="'+sc.sender_userid+'">删除</button></td>';
-      sTbody.appendChild(tr);
-    });
-    sTbody.querySelectorAll('[data-toggle]').forEach(btn=>{
-      btn.addEventListener('click', ()=>toggleSender(btn.dataset.toggle));
-    });
-    sTbody.querySelectorAll('[data-del]').forEach(btn=>{
-      btn.addEventListener('click', ()=>deleteSender(btn.dataset.del));
-    });
-  }
-
-  async function saveSender(uid, name, pri, active){
-    await fetch('/api/admin/hxc-dashboard/send-config', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({sender_userid:uid, display_name:name, priority:pri, is_active:active}),
-    });
-    const resp = await fetch('/api/admin/hxc-dashboard/send-config');
-    senderConfigs = await resp.json();
-    renderSenders();
-  }
-
-  function toggleSender(uid){
-    const sc = senderConfigs.find(s=>s.sender_userid===uid);
-    if(sc) saveSender(uid, sc.display_name, sc.priority, !sc.is_active);
-  }
-
-  async function deleteSender(uid){
-    if(!confirm('确定删除发送人 '+uid+' ?')) return;
-    await fetch('/api/admin/hxc-dashboard/send-config/'+encodeURIComponent(uid), {method:'DELETE'});
-    const resp = await fetch('/api/admin/hxc-dashboard/send-config');
-    senderConfigs = await resp.json();
-    renderSenders();
-  }
-
-  document.getElementById('sc-add-btn').addEventListener('click', ()=>{
-    const uid = document.getElementById('sc-uid').value.trim();
-    const name = document.getElementById('sc-name').value.trim();
-    const pri = parseInt(document.getElementById('sc-pri').value) || 100;
-    if(!uid){ alert('请输入企微 UserID'); return; }
-    saveSender(uid, name, pri, true);
-    document.getElementById('sc-uid').value = '';
-    document.getElementById('sc-name').value = '';
-    document.getElementById('sc-pri').value = '100';
-  });
-
-  renderSenders();
-
-  // ═══════════════════════════════════════════════════════════════
   // 一键群发
   // ═══════════════════════════════════════════════════════════════
+  const senderConfigs = JSON.parse(document.getElementById('hxc-send-config-data').textContent);
   const modal = document.getElementById('hxc-broadcast-modal');
   const infoEl = document.getElementById('hxc-broadcast-info');
   let broadcastEuids = [];
