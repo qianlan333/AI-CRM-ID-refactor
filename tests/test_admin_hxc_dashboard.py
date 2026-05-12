@@ -131,7 +131,7 @@ def test_summary_returns_funnel_buckets(app):
 
 
 def test_admin_dashboard_page_renders(client, app):
-    """GET /admin/user-ops/hxc-dashboard 应该 200 + 含关键关键字 + 数据 JSON."""
+    """GET /admin/hxc-dashboard 应该 200 + 含关键关键字 + 数据 JSON."""
     from wecom_ability_service.db import get_db
 
     with app.app_context():
@@ -141,7 +141,7 @@ def test_admin_dashboard_page_renders(client, app):
              "customer_name": "测试客户", "msg_user": 5},
         ])
 
-    resp = client.get("/admin/user-ops/hxc-dashboard")
+    resp = client.get("/admin/hxc-dashboard")
     assert resp.status_code == 200, resp.data[:300]
     body = resp.data.decode("utf-8")
     # 页面壳
@@ -164,7 +164,7 @@ def test_admin_refresh_endpoint_fails_when_not_configured(client, app):
             MESSAGE_ACTIVITY_DB_PASS="",
         )
     resp = client.post(
-        "/api/admin/user-ops/hxc-dashboard/refresh",
+        "/api/admin/hxc-dashboard/refresh",
         json={"trigger_source": "admin"},
     )
     assert resp.status_code == 500

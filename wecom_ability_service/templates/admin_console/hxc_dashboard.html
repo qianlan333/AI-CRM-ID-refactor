@@ -270,7 +270,7 @@
     btn.disabled = true;
     btn.textContent = "刷新中…";
     try {
-      const resp = await fetch("/api/admin/user-ops/hxc-dashboard/refresh", {
+      const resp = await fetch("/api/admin/hxc-dashboard/refresh", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({trigger_source: "admin"}),

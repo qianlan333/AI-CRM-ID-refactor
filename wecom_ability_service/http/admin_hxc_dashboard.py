@@ -1,7 +1,7 @@
 """用户激活漏斗看板 — admin 后台路由
 
-页面: ``/admin/user-ops/hxc-dashboard``  (HTML, Jinja 模板嵌入 JSON + Tabulator)
-即时刷新: ``POST /api/admin/user-ops/hxc-dashboard/refresh``
+页面: ``/admin/hxc-dashboard``  (HTML, Jinja 模板嵌入 JSON + Tabulator)
+即时刷新: ``POST /api/admin/hxc-dashboard/refresh``
 
 数据从 ``user_ops_hxc_dashboard_snapshot`` 快照表读, 看板自带筛选/排序/CSV 导出.
 """
@@ -45,5 +45,5 @@ def admin_hxc_dashboard_refresh():
 
 
 def register_routes(bp):
-    bp.route("/admin/user-ops/hxc-dashboard", methods=["GET"])(admin_hxc_dashboard_workspace)
-    bp.route("/api/admin/user-ops/hxc-dashboard/refresh", methods=["POST"])(admin_hxc_dashboard_refresh)
+    bp.route("/admin/hxc-dashboard", methods=["GET"])(admin_hxc_dashboard_workspace)
+    bp.route("/api/admin/hxc-dashboard/refresh", methods=["POST"])(admin_hxc_dashboard_refresh)
