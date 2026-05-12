@@ -589,7 +589,7 @@ def list_campaigns(
     *,
     review_status: str = "",
     run_status: str = "",
-    limit: int = 50,
+    limit: int = 500,
 ) -> list[dict[str, Any]]:
     db = get_db()
     cur = db.cursor()
