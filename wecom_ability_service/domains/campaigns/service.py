@@ -869,14 +869,25 @@ def assemble_campaign_overview(*, campaign_id: int) -> dict[str, Any]:
         cur.execute(
             """
             SELECT step_index, day_offset, send_time, content_text, stop_on_reply,
-                   skip_if_recently_touched_days
+                   skip_if_recently_touched_days, content_payload_json
             FROM campaign_steps
             WHERE campaign_segment_id = ?
             ORDER BY step_index ASC
             """,
             (cs_id,),
         )
-        steps = [dict(r) for r in (cur.fetchall() or [])]
+        steps = []
+        for r in (cur.fetchall() or []):
+            sd = dict(r)
+            raw = sd.get("content_payload_json")
+            if isinstance(raw, str):
+                try:
+                    sd["content_payload_json"] = json.loads(raw or "{}")
+                except (TypeError, ValueError):
+                    sd["content_payload_json"] = {}
+            elif raw is None:
+                sd["content_payload_json"] = {}
+            steps.append(sd)
         d = dict(row)
         d["steps"] = steps
         segments.append(d)
