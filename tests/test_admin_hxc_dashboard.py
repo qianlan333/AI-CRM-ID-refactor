@@ -1,6 +1,27 @@
 """用户激活漏斗看板 — admin 路由 + 视图层测试."""
 from __future__ import annotations
 
+import pytest
+
+
+@pytest.fixture()
+def client(app):
+    """覆盖顶层 client fixture: 注入 break_glass admin session 绕开 /login 重定向.
+
+    与 tests/test_admin_console_phase4.py 同款做法 — 所有 /admin/* 路径都被
+    register_admin_request_guards 守住, 没 admin session 会 302 到 /login,
+    导致 page render 测试拿到 302 而不是 200.
+    """
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["admin_session_user_id"] = 0
+        sess["admin_session_wecom_userid"] = ""
+        sess["admin_session_role_list"] = ["super_admin"]
+        sess["admin_session_login_type"] = "break_glass"
+        sess["admin_session_display_name"] = "hxc-dashboard-test-admin"
+        sess["admin_session_break_glass_username"] = "hxc-dashboard-test-admin"
+    return client
+
 
 def _seed_snapshot(db, rows):
     for row in rows:
