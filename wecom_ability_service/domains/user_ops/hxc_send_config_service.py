@@ -1,0 +1,175 @@
+"""激活漏斗看板 — 发送人白名单 + 一键群发."""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from ...db import get_db
+
+_logger = logging.getLogger(__name__)
+
+
+# ── 发送人白名单 CRUD ──────────────────────────────────────────────
+
+def list_send_configs() -> list[dict[str, Any]]:
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT id, sender_userid, display_name, priority, is_active,
+               created_at, updated_at
+        FROM user_ops_hxc_send_config
+        ORDER BY priority ASC, sender_userid ASC
+        """
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_active_senders() -> dict[str, dict[str, Any]]:
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT sender_userid, display_name, priority
+        FROM user_ops_hxc_send_config
+        WHERE is_active = TRUE
+        ORDER BY priority ASC
+        """
+    ).fetchall()
+    return {r["sender_userid"]: dict(r) for r in rows}
+
+
+def upsert_send_config(
+    sender_userid: str,
+    display_name: str = "",
+    priority: int = 100,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO user_ops_hxc_send_config
+            (sender_userid, display_name, priority, is_active)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (sender_userid)
+        DO UPDATE SET display_name = EXCLUDED.display_name,
+                      priority     = EXCLUDED.priority,
+                      is_active    = EXCLUDED.is_active,
+                      updated_at   = now()
+        """,
+        (sender_userid, display_name, priority, is_active),
+    )
+    db.commit()
+    return {"ok": True, "sender_userid": sender_userid}
+
+
+def delete_send_config(sender_userid: str) -> dict[str, Any]:
+    db = get_db()
+    db.execute(
+        "DELETE FROM user_ops_hxc_send_config WHERE sender_userid = ?",
+        (sender_userid,),
+    )
+    db.commit()
+    return {"ok": True, "sender_userid": sender_userid}
+
+
+# ── 一键群发 ──────────────────────────────────────────────────────
+
+def broadcast_to_filtered_users(
+    *,
+    external_userids: list[str],
+    content: str,
+    operator_id: str = "admin",
+) -> dict[str, Any]:
+    if not external_userids:
+        return {"ok": False, "error": "no_targets"}
+    if not content.strip():
+        return {"ok": False, "error": "empty_content"}
+
+    active_senders = get_active_senders()
+    if not active_senders:
+        return {"ok": False, "error": "no_active_senders"}
+
+    db = get_db()
+    placeholders = ", ".join(["?"] * len(external_userids))
+    rows = db.execute(
+        f"""
+        SELECT external_userid, owner_userid
+        FROM user_ops_hxc_dashboard_snapshot
+        WHERE external_userid IN ({placeholders})
+          AND external_userid != ''
+        """,
+        tuple(external_userids),
+    ).fetchall()
+
+    sender_targets: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    skipped_no_owner = 0
+    skipped_not_whitelisted = 0
+
+    for row in rows:
+        euid = row["external_userid"]
+        owner = row["owner_userid"]
+        if euid in seen:
+            continue
+        if not owner or owner not in active_senders:
+            skipped_no_owner += 1 if not owner else 0
+            skipped_not_whitelisted += 1 if owner and owner not in active_senders else 0
+            continue
+        seen.add(euid)
+        sender_targets.setdefault(owner, []).append(euid)
+
+    if not sender_targets:
+        return {
+            "ok": False,
+            "error": "no_eligible_targets",
+            "skipped_no_owner": skipped_no_owner,
+            "skipped_not_whitelisted": skipped_not_whitelisted,
+        }
+
+    from ...domains.tasks.service import dispatch_wecom_task
+
+    results = []
+    total_sent = 0
+    total_failed = 0
+
+    for sender_userid, targets in sender_targets.items():
+        try:
+            payload = {
+                "sender": sender_userid,
+                "external_userid": targets,
+                "text": {"content": content},
+            }
+            result = dispatch_wecom_task(
+                "private_message",
+                "create_private_message_task",
+                payload,
+            )
+            total_sent += len(targets)
+            results.append({
+                "sender": sender_userid,
+                "display_name": active_senders[sender_userid].get("display_name", ""),
+                "target_count": len(targets),
+                "ok": True,
+                "task_id": result.get("task_id"),
+            })
+        except Exception as exc:
+            _logger.warning(
+                "hxc broadcast failed sender=%s targets=%d: %s",
+                sender_userid, len(targets), exc,
+            )
+            total_failed += len(targets)
+            results.append({
+                "sender": sender_userid,
+                "display_name": active_senders[sender_userid].get("display_name", ""),
+                "target_count": len(targets),
+                "ok": False,
+                "error": str(exc),
+            })
+
+    return {
+        "ok": total_sent > 0,
+        "total_sent": total_sent,
+        "total_failed": total_failed,
+        "skipped_no_owner": skipped_no_owner,
+        "skipped_not_whitelisted": skipped_not_whitelisted,
+        "sender_results": results,
+    }
