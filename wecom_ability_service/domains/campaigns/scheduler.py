@@ -17,6 +17,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ...db import get_db, get_db_backend
 
@@ -41,6 +42,7 @@ def _empty_ts() -> None:
 
 
 def _due_at_for_step(*, anchor_date: str, day_offset: int, send_time: str) -> str:
+    """算 step 的 due ISO — 必须输出 tz-aware（+08:00），防止 PG 二次套时区。"""
     try:
         base = datetime.fromisoformat((anchor_date or "")[:10])
     except ValueError:
@@ -50,7 +52,8 @@ def _due_at_for_step(*, anchor_date: str, day_offset: int, send_time: str) -> st
         base = base.replace(hour=int(h), minute=int(m))
     except ValueError:
         pass
-    return (base + timedelta(days=int(day_offset))).isoformat()
+    base = base + timedelta(days=int(day_offset))
+    return base.replace(tzinfo=ZoneInfo("Asia/Shanghai")).isoformat()
 
 
 def _has_inbound_since(*, external_userid: str, since_iso: str) -> bool:
@@ -772,6 +775,13 @@ def _pre_enqueue_future_campaign_steps(*, queue_service: Any, queue_repo: Any) -
         if source_id in existing_source_ids:
             continue
         if source_id not in groups:
+            due_val = r["next_due_at"]
+            if isinstance(due_val, datetime):
+                if due_val.tzinfo is None:
+                    due_val = due_val.replace(tzinfo=timezone.utc)
+                due_str = due_val.isoformat()
+            else:
+                due_str = str(due_val or "")
             groups[source_id] = {
                 "campaign": {
                     "id": int(r["campaign_id"]),
@@ -781,7 +791,7 @@ def _pre_enqueue_future_campaign_steps(*, queue_service: Any, queue_repo: Any) -
                 },
                 "step": next_step,
                 "members": [],
-                "next_due": str(r["next_due_at"] or ""),
+                "next_due": due_str,
             }
         external = str(r["external_contact_id"] or "")
         if external:
