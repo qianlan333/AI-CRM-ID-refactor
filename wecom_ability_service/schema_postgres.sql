@@ -2633,7 +2633,9 @@ ON broadcast_jobs (source_table, source_id, scheduled_for)
 WHERE source_id <> '';
 
 -- ---------- 用户激活漏斗看板快照 (alembic 0010) ----------
--- CRM × 黄小璨 聚合快照. 每 30 分钟 TRUNCATE + 重写; 供 admin 看板页 + 外部 API.
+-- CRM × 黄小璨 聚合快照, 每 30 分钟 TRUNCATE + 重写, 供 admin 看板页 + 外部 API.
+-- 注意: 这段注释里禁止出现 分号 字符. _run_schema_with_forward_fk_retries
+-- 按字符切 SQL 会把注释里的分号也当成语句分隔符, 触发 syntax error.
 CREATE TABLE IF NOT EXISTS user_ops_hxc_dashboard_snapshot (
     id                       BIGSERIAL PRIMARY KEY,
     mobile                   TEXT NOT NULL UNIQUE,
