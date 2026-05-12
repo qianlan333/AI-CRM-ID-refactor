@@ -318,24 +318,95 @@
       tbody.innerHTML = '<tr><td colspan="8">暂无运营计划</td></tr>';
       return;
     }
+    // 按 group_code 分桶: 同一份名单按 owner 拆 N 个 campaign 时, 同 group_code
+    // 的多个 campaign 聚合成 1 张展开/收起的卡片 (技能 md §3.5).
+    const groups = new Map();
+    const standalone = [];
     for (const c of data.campaigns) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>
-          <div class="cloud-camp-name">${escapeHtml(c.display_name) || '<em>未命名</em>'}</div>
-          <code class="cloud-camp-code">${escapeHtml(c.campaign_code).slice(0, 18)}</code>
-        </td>
-        <td><div class="cloud-camp-intent-cell" title="${escapeHtml(c.intent)}">${escapeHtml(c.intent)}</div></td>
-        <td>${fmt(c.segment_count || 0)}</td>
-        <td>${fmt(c.member_count || 0)}</td>
-        <td><span class="cloud-orch-status-chip ${escapeHtml(c.review_status)}">${escapeHtml(reviewLabel(c.review_status))}</span></td>
-        <td><span class="cloud-orch-status-chip ${escapeHtml(c.run_status)}">${escapeHtml(runLabel(c.run_status))}</span></td>
-        <td>${escapeHtml(formatYMD(c.updated_at))}</td>
-        <td><button class="admin-button admin-button--ghost" data-code="${escapeHtml(c.campaign_code)}">查看</button></td>
-      `;
-      tr.querySelector('button').addEventListener('click', e => loadDetail(e.currentTarget.dataset.code));
-      tbody.appendChild(tr);
+      const gcode = (c.group_code || '').trim();
+      if (!gcode) { standalone.push(c); continue; }
+      if (!groups.has(gcode)) {
+        groups.set(gcode, { code: gcode, label: c.group_label || gcode, campaigns: [] });
+      }
+      groups.get(gcode).campaigns.push(c);
     }
+    // group 排序: 各 group 内最大 id 倒序; 然后跟 standalone 按 id 整体合并
+    const groupArr = Array.from(groups.values()).sort((a, b) => {
+      const maxA = Math.max(...a.campaigns.map(c => Number(c.id) || 0));
+      const maxB = Math.max(...b.campaigns.map(c => Number(c.id) || 0));
+      return maxB - maxA;
+    });
+    const standaloneSorted = standalone.slice().sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+    // 简单合并: group 显示在前 (新建任务常常 group, 优先看), standalone 跟在后面
+    for (const g of groupArr) renderGroupRow(g);
+    for (const c of standaloneSorted) appendCampaignRow(c, false);
+  }
+
+  function aggLabelByKey(camps, key, labelFn) {
+    const counts = {};
+    for (const c of camps) counts[c[key]] = (counts[c[key]] || 0) + 1;
+    return Object.entries(counts).map(([s, n]) => `${n} ${labelFn(s)}`).join(' · ');
+  }
+
+  function renderGroupRow(g) {
+    const total = g.campaigns.reduce((s, c) => s + (Number(c.member_count) || 0), 0);
+    const owners = Array.from(new Set(g.campaigns.map(c => c.owner_userid || '').filter(Boolean)));
+    const headTr = document.createElement('tr');
+    headTr.className = 'cloud-camp-group-head';
+    headTr.style.cssText = 'cursor:pointer;background:#fff8e6;border-top:2px solid #f0b400;';
+    headTr.innerHTML = `
+      <td colspan="2">
+        <div class="cloud-camp-name"><span data-toggle-icon>▶</span> 📦 ${escapeHtml(g.label)}</div>
+        <code class="cloud-camp-code" style="opacity:0.65;">group=${escapeHtml(g.code)} · ${g.campaigns.length} 个 sub-Campaign${owners.length ? ' · senders=' + escapeHtml(owners.join(', ')) : ''}</code>
+      </td>
+      <td>${g.campaigns.length}</td>
+      <td><strong>${fmt(total)}</strong></td>
+      <td><small>${escapeHtml(aggLabelByKey(g.campaigns, 'review_status', reviewLabel))}</small></td>
+      <td><small>${escapeHtml(aggLabelByKey(g.campaigns, 'run_status', runLabel))}</small></td>
+      <td colspan="2"><em style="color:#666;">点行展开 ↓</em></td>
+    `;
+    tbody.appendChild(headTr);
+
+    const childTrs = [];
+    for (const c of g.campaigns) {
+      const tr = appendCampaignRow(c, true);
+      tr.classList.add('cloud-camp-group-child');
+      tr.style.display = 'none';
+      childTrs.push(tr);
+    }
+
+    headTr.addEventListener('click', (ev) => {
+      // 子行内部按钮事件别冒泡触发收折 (虽然子行默认隐藏, 点了"查看"等于点 group, 这里保险)
+      if (ev.target.tagName === 'BUTTON') return;
+      const opening = childTrs[0]?.style.display === 'none';
+      childTrs.forEach(tr => { tr.style.display = opening ? '' : 'none'; });
+      const icon = headTr.querySelector('[data-toggle-icon]');
+      if (icon) icon.textContent = opening ? '▼' : '▶';
+    });
+  }
+
+  function appendCampaignRow(c, isChild) {
+    const tr = document.createElement('tr');
+    const namePrefix = isChild ? '<span style="opacity:0.45;">└─ </span>' : '';
+    tr.innerHTML = `
+      <td${isChild ? ' style="padding-left:24px;"' : ''}>
+        <div class="cloud-camp-name">${namePrefix}${escapeHtml(c.display_name) || '<em>未命名</em>'}</div>
+        <code class="cloud-camp-code">${escapeHtml(c.campaign_code).slice(0, 18)}${c.owner_userid ? ' · sender=' + escapeHtml(c.owner_userid) : ''}</code>
+      </td>
+      <td><div class="cloud-camp-intent-cell" title="${escapeHtml(c.intent)}">${escapeHtml(c.intent)}</div></td>
+      <td>${fmt(c.segment_count || 0)}</td>
+      <td>${fmt(c.member_count || 0)}</td>
+      <td><span class="cloud-orch-status-chip ${escapeHtml(c.review_status)}">${escapeHtml(reviewLabel(c.review_status))}</span></td>
+      <td><span class="cloud-orch-status-chip ${escapeHtml(c.run_status)}">${escapeHtml(runLabel(c.run_status))}</span></td>
+      <td>${escapeHtml(formatYMD(c.updated_at))}</td>
+      <td><button class="admin-button admin-button--ghost" data-code="${escapeHtml(c.campaign_code)}">查看</button></td>
+    `;
+    tr.querySelector('button').addEventListener('click', e => {
+      e.stopPropagation();
+      loadDetail(e.currentTarget.dataset.code);
+    });
+    tbody.appendChild(tr);
+    return tr;
   }
 
   async function loadDetail(code) {

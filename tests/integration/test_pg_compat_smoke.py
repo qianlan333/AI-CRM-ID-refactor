@@ -374,6 +374,121 @@ def test_propose_campaign_segment_sql_carries_external_contact_id(app):
     assert rows[1]["external_contact_id"] == "wm-pc-002"
 
 
+def test_propose_campaign_group_code_round_trip(app):
+    """propose_campaign 传 group_code/group_label 后:
+    1. 落进 campaigns.metadata_json
+    2. list_campaigns 返回顶层 group_code/group_label, 让 admin 前端按 group 折叠
+
+    回归: 同一份名单按 owner_userid 拆 N 个 campaign 时, 用 group 把这 N 个
+    在 admin 列表合并成 1 张折叠卡 (2026-05-12 observation_invite 97 人拆 12 个
+    campaign 实战引入).
+    """
+    import json as _json
+
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import service as campaign_service
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO user_ops_pool_current
+            (id, mobile, external_userid, customer_name, owner_userid,
+             current_status, is_wecom_bound, activation_status,
+             class_term_no, class_term_label, source_type)
+        VALUES
+            (999001, '13900000001', 'wm-grp-001', 'A', 'Sender1',
+             'active_focus', true, 'activated', NULL, '', 'manual'),
+            (999002, '13900000002', 'wm-grp-002', 'B', 'Sender2',
+             'active_focus', true, 'activated', NULL, '', 'manual')
+        ON CONFLICT (id) DO UPDATE SET external_userid = excluded.external_userid
+        """
+    )
+    cur.execute(
+        """
+        INSERT INTO segments
+            (segment_code, display_name, source_type, sql_query, sql_params_json,
+             cached_headcount, status)
+        VALUES (?, ?, 'sql', ?, '{}', 0, 'active'),
+               (?, ?, 'sql', ?, '{}', 0, 'active')
+        ON CONFLICT (segment_code) DO UPDATE SET status = 'active', sql_query = excluded.sql_query
+        """,
+        (
+            "seg-grp-sender1", "grp seg sender1",
+            "SELECT id AS member_id, external_userid AS external_contact_id "
+            "FROM user_ops_pool_current WHERE id = 999001",
+            "seg-grp-sender2", "grp seg sender2",
+            "SELECT id AS member_id, external_userid AS external_contact_id "
+            "FROM user_ops_pool_current WHERE id = 999002",
+        ),
+    )
+    db.commit()
+
+    overview_a = campaign_service.propose_campaign(
+        display_name="GRP test A · Sender1",
+        intent="集合卡测试 A",
+        owner_userid="Sender1",
+        group_code="grp_test_2026_05_12",
+        group_label="集合卡测试组",
+        segments=[{
+            "segment_code": "seg-grp-sender1", "priority": 100,
+            "steps": [{"step_index": 0, "day_offset": 0, "send_time": "10:00",
+                       "content_text": "hi A", "stop_on_reply": True}],
+        }],
+    )
+    overview_b = campaign_service.propose_campaign(
+        display_name="GRP test B · Sender2",
+        intent="集合卡测试 B",
+        owner_userid="Sender2",
+        group_code="grp_test_2026_05_12",
+        group_label="集合卡测试组",
+        segments=[{
+            "segment_code": "seg-grp-sender2", "priority": 100,
+            "steps": [{"step_index": 0, "day_offset": 0, "send_time": "10:00",
+                       "content_text": "hi B", "stop_on_reply": True}],
+        }],
+    )
+
+    # 1) metadata_json 落库正确
+    cur.execute(
+        "SELECT metadata_json FROM campaigns WHERE id IN (?, ?) ORDER BY id",
+        (int(overview_a["campaign"]["id"]), int(overview_b["campaign"]["id"])),
+    )
+    rows = cur.fetchall() or []
+    assert len(rows) == 2
+    for r in rows:
+        raw = r["metadata_json"]
+        meta = raw if isinstance(raw, dict) else _json.loads(raw or "{}")
+        assert meta.get("group_code") == "grp_test_2026_05_12"
+        assert meta.get("group_label") == "集合卡测试组"
+
+    # 2) list_campaigns 顶层暴露 group_code/group_label
+    campaigns = campaign_service.list_campaigns(limit=20)
+    grp_rows = [c for c in campaigns if c.get("group_code") == "grp_test_2026_05_12"]
+    assert len(grp_rows) == 2
+    for c in grp_rows:
+        assert c["group_label"] == "集合卡测试组"
+        assert c["owner_userid"] in ("Sender1", "Sender2")
+
+    # 3) 不传 group_code 的 campaign 不被错误归组 (空字符串)
+    overview_c = campaign_service.propose_campaign(
+        display_name="GRP test C · standalone",
+        intent="独立 campaign",
+        owner_userid="Sender1",
+        segments=[{
+            "segment_code": "seg-grp-sender1", "priority": 50,
+            "steps": [{"step_index": 0, "day_offset": 0, "send_time": "10:00",
+                       "content_text": "hi C", "stop_on_reply": True}],
+        }],
+    )
+    campaigns2 = campaign_service.list_campaigns(limit=20)
+    standalone = next((c for c in campaigns2
+                       if c["campaign_code"] == overview_c["campaign"]["campaign_code"]), None)
+    assert standalone is not None
+    assert standalone["group_code"] == ""
+    assert standalone["group_label"] == ""
+
+
 def test_pg_bug_200_register_member_reply_clears_next_due(app):
     """``register_member_reply`` 把 next_due_at 清空 —— PR #200 修了 SET = '' 写入。"""
     from wecom_ability_service.db import get_db
