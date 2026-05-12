@@ -124,16 +124,60 @@ def delete_send_config(sender_userid: str) -> dict[str, Any]:
 
 # ── 一键群发 ──────────────────────────────────────────────────────
 
+def _resolve_broadcast_attachments(
+    *,
+    image_library_ids: list[int],
+    miniprogram_library_id: int | None,
+) -> tuple[list[str], list[dict[str, Any]], str | None]:
+    image_media_ids: list[str] = []
+    attachments: list[dict[str, Any]] = []
+
+    if image_library_ids:
+        from ...domains import image_library as _image_library
+        for iid in image_library_ids[:3]:
+            try:
+                mid = _image_library.resolve_image_media_id(iid)
+                if mid:
+                    image_media_ids.append(mid)
+            except Exception as exc:
+                _logger.warning("resolve image_library_id=%s failed: %s", iid, exc)
+                return [], [], f"image_resolve_failed:id={iid}"
+
+    if miniprogram_library_id:
+        from ...domains import miniprogram_library as _miniprogram_library
+        try:
+            att = _miniprogram_library.materialize_miniprogram_attachment(miniprogram_library_id)
+            attachments.append(att)
+        except Exception as exc:
+            _logger.warning("resolve miniprogram_library_id=%s failed: %s", miniprogram_library_id, exc)
+            return [], [], f"miniprogram_resolve_failed:id={miniprogram_library_id}"
+
+    return image_media_ids, attachments, None
+
+
 def broadcast_to_filtered_users(
     *,
     external_userids: list[str],
     content: str,
+    image_library_ids: list[int] | None = None,
+    miniprogram_library_id: int | None = None,
     operator_id: str = "admin",
 ) -> dict[str, Any]:
     if not external_userids:
         return {"ok": False, "error": "no_targets"}
-    if not content.strip():
+
+    has_text = bool(content.strip())
+    has_images = bool(image_library_ids)
+    has_miniprogram = bool(miniprogram_library_id)
+    if not has_text and not has_images and not has_miniprogram:
         return {"ok": False, "error": "empty_content"}
+
+    image_media_ids, attachments, resolve_err = _resolve_broadcast_attachments(
+        image_library_ids=image_library_ids or [],
+        miniprogram_library_id=miniprogram_library_id,
+    )
+    if resolve_err:
+        return {"ok": False, "error": resolve_err}
 
     active_senders = get_active_senders()
     if not active_senders:
@@ -184,11 +228,16 @@ def broadcast_to_filtered_users(
 
     for sender_userid, targets in sender_targets.items():
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "sender": sender_userid,
                 "external_userid": targets,
-                "text": {"content": content},
             }
+            if has_text:
+                payload["text"] = {"content": content}
+            if image_media_ids:
+                payload["image_media_ids"] = list(image_media_ids)
+            if attachments:
+                payload["attachments"] = list(attachments)
             result = dispatch_wecom_task(
                 "private_message",
                 "create_private_message_task",
