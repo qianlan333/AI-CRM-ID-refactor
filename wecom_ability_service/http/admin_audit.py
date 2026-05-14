@@ -4,8 +4,10 @@ from flask import jsonify, request, url_for
 
 from ..domains.admin_audit import build_admin_audit_payload
 from .admin_console import _breadcrumb_items, _render_admin_template
+from .internal_auth import require_admin_roles
 
 
+@require_admin_roles("config_admin")
 def admin_audit_logs():
     payload = build_admin_audit_payload(request.args)
     return _render_admin_template(
@@ -18,6 +20,7 @@ def admin_audit_logs():
     )
 
 
+@require_admin_roles("config_admin")
 def api_admin_audit_logs():
     return jsonify({"ok": True, "audit": build_admin_audit_payload(request.args)})
 

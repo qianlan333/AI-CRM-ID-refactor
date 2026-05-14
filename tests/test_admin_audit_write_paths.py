@@ -122,3 +122,51 @@ def test_sunset_access_uses_unified_audit(monkeypatch):
             },
         }
     ]
+
+
+def test_admin_audit_api_requires_login(monkeypatch):
+    from wecom_ability_service.domains.admin_auth import auth_runtime
+    from wecom_ability_service.http import admin_audit
+
+    app = Flask(__name__)
+    monkeypatch.setattr(auth_runtime, "current_admin_user", lambda: None)
+
+    with app.test_request_context("/api/admin/audit/logs"):
+        response, status_code = admin_audit.api_admin_audit_logs()
+
+    assert status_code == 401
+    assert response.get_json() == {"ok": False, "error": "admin login required"}
+
+
+def test_admin_audit_api_requires_config_role(monkeypatch):
+    from wecom_ability_service.domains.admin_auth import auth_runtime
+    from wecom_ability_service.http import admin_audit
+
+    app = Flask(__name__)
+    monkeypatch.setattr(auth_runtime, "current_admin_user", lambda: {"id": 1, "roles": ["viewer"]})
+    monkeypatch.setattr(auth_runtime, "current_admin_role_codes", lambda: ["viewer"])
+
+    with app.test_request_context("/api/admin/audit/logs"):
+        response, status_code = admin_audit.api_admin_audit_logs()
+
+    assert status_code == 403
+    assert response.get_json() == {"ok": False, "error": "permission denied"}
+
+
+def test_admin_audit_api_allows_config_admin(monkeypatch):
+    from wecom_ability_service.domains.admin_auth import auth_runtime
+    from wecom_ability_service.http import admin_audit
+
+    app = Flask(__name__)
+    monkeypatch.setattr(auth_runtime, "current_admin_user", lambda: {"id": 1, "roles": ["config_admin"]})
+    monkeypatch.setattr(auth_runtime, "current_admin_role_codes", lambda: ["config_admin"])
+    monkeypatch.setattr(admin_audit, "build_admin_audit_payload", lambda args: {"items": [], "filters": dict(args)})
+
+    with app.test_request_context("/api/admin/audit/logs?target_type=app_setting"):
+        response = admin_audit.api_admin_audit_logs()
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "ok": True,
+        "audit": {"items": [], "filters": {"target_type": "app_setting"}},
+    }

@@ -6,6 +6,7 @@ import pytest
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.domains.admin_auth import save_admin_user
 
 
 @pytest.fixture()
@@ -106,6 +107,44 @@ def test_api_admin_audit_logs_support_filters_sort_and_pagination(app, client):
     assert payload["audit"]["pagination"]["page_size"] == 10
     assert len(payload["audit"]["items"]) == 1
     assert payload["audit"]["items"][0]["operator"] == "tester-beta"
+
+
+def test_api_admin_audit_logs_requires_admin_login(app):
+    client = app.test_client()
+
+    response = client.get("/api/admin/audit/logs")
+    payload = response.get_json()
+
+    assert response.status_code == 401
+    assert payload == {"ok": False, "error": "admin login required"}
+
+
+def test_api_admin_audit_logs_requires_config_role(app):
+    with app.app_context():
+        viewer = save_admin_user(
+            {
+                "wecom_userid": "readonly.audit",
+                "wecom_corpid": app.config["WECOM_CORP_ID"],
+                "display_name": "Readonly Audit",
+                "role_codes": ["viewer"],
+                "is_active": "1",
+            },
+            operator="test-suite",
+        )
+
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["admin_session_user_id"] = viewer["id"]
+        sess["admin_session_wecom_userid"] = "readonly.audit"
+        sess["admin_session_role_list"] = ["viewer"]
+        sess["admin_session_login_type"] = "wecom_sso"
+        sess["admin_session_display_name"] = "readonly-admin"
+
+    response = client.get("/api/admin/audit/logs")
+    payload = response.get_json()
+
+    assert response.status_code == 403
+    assert payload == {"ok": False, "error": "permission denied"}
 
 
 def test_api_admin_audit_logs_route_jobs_actions_back_to_jobs_console(app, client):
