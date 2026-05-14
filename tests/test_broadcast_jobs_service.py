@@ -11,26 +11,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import init_db
 from wecom_ability_service.domains.broadcast_jobs import service as queue_service
 
 
 @pytest.fixture()
 def app(tmp_path):
-    db_path = tmp_path / "test.sqlite3"
-    app = create_app(
-        {
-            "TESTING": True,
-            "DATABASE_PATH": str(db_path),
-            "WECOM_CORP_ID": "ww-test",
-            "WECOM_SECRET": "secret-test",
-            "WECOM_AGENT_ID": "1000002",
-        }
-    )
-    with app.app_context():
-        init_db()
-    yield app
+    from tests.conftest import build_pg_test_app
+
+    with build_pg_test_app(tmp_path) as app:
+        yield app
 
 
 def _enqueue(
