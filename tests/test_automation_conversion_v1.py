@@ -2428,6 +2428,73 @@ def test_workflow_node_api_supports_operating_immediate_personalized_single_with
     ]
 
 
+def test_workflow_node_api_updates_miniprogram_payload_on_inherited_personalized_single_node(app, client):
+    _seed_test_agent_config(app, agent_code="questionnaire_followup_agent", display_name="问卷提交 agent")
+    workflow_bundle = _create_test_workflow(
+        app,
+        workflow_name="问卷提交小程序卡片",
+        audiences=["operating"],
+        status="active",
+        generation_mode="personalized_single",
+        agent_bindings=[
+            {
+                "binding_scope": "personalized",
+                "segment_key": "",
+                "agent_code": "questionnaire_followup_agent",
+            }
+        ],
+    )
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    create_response = client.post(
+        f"/api/admin/automation-conversion/workflows/{workflow_id}/nodes",
+        json={
+            "node_name": "问卷提交后进入运营中立即发送",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "enabled": True,
+            "operator": "tester-node-api",
+        },
+    )
+    assert create_response.status_code == 201
+    node_id = int((create_response.get_json().get("node") or {}).get("id") or 0)
+
+    update_response = client.put(
+        f"/api/admin/automation-conversion/workflow-nodes/{node_id}",
+        json={
+            "node_name": "问卷提交后进入运营中立即发送",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "standard_content_payload": {"miniprogram_library_ids": [321]},
+            "enabled": True,
+            "operator": "tester-node-api",
+        },
+    )
+    payload = update_response.get_json()
+
+    assert update_response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["node"]["content_mode"] == "personalized_single"
+    assert payload["node"]["agent_bindings"] == []
+    assert payload["node"]["standard_content_payload"]["miniprogram_library_ids"] == [321]
+
+    clear_response = client.put(
+        f"/api/admin/automation-conversion/workflow-nodes/{node_id}",
+        json={
+            "node_name": "问卷提交后进入运营中立即发送",
+            "target_audience_code": "operating",
+            "trigger_mode": "audience_entered",
+            "standard_content_payload": {"miniprogram_library_ids": []},
+            "enabled": True,
+            "operator": "tester-node-api",
+        },
+    )
+    cleared_payload = clear_response.get_json()
+
+    assert clear_response.status_code == 200
+    assert cleared_payload["node"]["standard_content_payload"]["miniprogram_library_ids"] == []
+
+
 def test_workflow_node_api_rejects_immediate_trigger_with_day_offset_and_send_time(app, client):
     _seed_test_agent_config(app, agent_code="questionnaire_followup_agent", display_name="问卷提交 agent")
     workflow_bundle = _create_test_workflow(
