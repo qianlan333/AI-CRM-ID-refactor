@@ -345,8 +345,6 @@ def _dispatch_step_batch(
 
     所有 ``members`` 必须是同一 ``(campaign_id, campaign_segment_id, step_index)``，
     调用方负责分组。"""
-    from ..marketing_automation.service import dispatch_wecom_task
-
     if not members:
         return {"ok": False, "reason": "empty_batch"}
 
@@ -361,6 +359,12 @@ def _dispatch_step_batch(
     request_payload = dict(resolved["base_request"])
     request_payload["external_userid"] = externals
 
+    return _dispatch_private_message_payload(request_payload=request_payload, recipient_count=len(externals))
+
+
+def _dispatch_private_message_payload(*, request_payload: dict[str, Any], recipient_count: int) -> dict[str, Any]:
+    from ..marketing_automation.service import dispatch_wecom_task
+
     try:
         wecom_result = dispatch_wecom_task(
             "private_message",
@@ -368,9 +372,9 @@ def _dispatch_step_batch(
             request_payload,
         )
         task_id = int(wecom_result.get("task_id") or 0)
-        return {"ok": True, "task_id": task_id, "recipient_count": len(externals)}
+        return {"ok": True, "task_id": task_id, "recipient_count": int(recipient_count)}
     except Exception as exc:
-        logger.exception("campaign batch dispatch failed (%d recipients): %s", len(externals), exc)
+        logger.exception("campaign batch dispatch failed (%d recipients): %s", int(recipient_count), exc)
         return {"ok": False, "reason": f"dispatch_error:{exc}"}
 
 
@@ -460,16 +464,7 @@ def run_campaign_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
         request_payload = dict(resolved["base_request"])
         request_payload["external_userid"] = externals
 
-    from ..marketing_automation.service import dispatch_wecom_task
-
-    try:
-        wecom_result = dispatch_wecom_task(
-            "private_message", "create_private_message_task", request_payload
-        )
-        send_res = {"ok": True, "task_id": int(wecom_result.get("task_id") or 0), "recipient_count": len(members)}
-    except Exception as exc:
-        logger.exception("campaign batch dispatch failed: %s", exc)
-        send_res = {"ok": False, "reason": f"dispatch_error:{exc}"}
+    send_res = _dispatch_private_message_payload(request_payload=request_payload, recipient_count=len(members))
 
     sent_count = 0
     failed_count = 0
