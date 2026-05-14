@@ -25,6 +25,7 @@ from ...application.routing_config.queries import (
     GetRoutingRuleQuery,
 )
 from ...infra.constants import USER_OPS_CLASS_TERM_TAG_GROUP_NAME
+from ...infra.config_schema import validate_config_value
 from ...infra.settings import get_setting, mask_value
 from ..admin_auth import count_admin_users
 from ..tags import service as tags_service
@@ -1027,6 +1028,9 @@ def _setting_value_source(key: str) -> tuple[str, str]:
 
 def _validate_known_setting(key: str, value: str) -> str:
     normalized = _normalized_text(value)
+    schema_error = validate_config_value(key, normalized, require_required=False)
+    if schema_error:
+        raise ValueError(f"{key} {schema_error}")
     if key in {
         "WECOM_ARCHIVE_TIMEOUT",
         "DEEPSEEK_TIMEOUT_SECONDS",
@@ -1104,9 +1108,7 @@ def save_admin_app_settings(payload: dict[str, Any], *, operator: str) -> list[d
         if metadata:
             if metadata["mode"] == "masked" and _normalized_text(raw_value) == "":
                 continue
-            validated = _validate_known_setting(normalized_key, _normalized_text(raw_value))
-        else:
-            validated = _normalized_text(raw_value)
+        validated = _validate_known_setting(normalized_key, _normalized_text(raw_value))
         before_row = repo.get_app_setting_row(normalized_key)
         before_value = _normalized_text((before_row or {}).get("value"))
         if before_value == validated:

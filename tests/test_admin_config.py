@@ -7,12 +7,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import get_db, init_db
+from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.admin_auth import save_admin_user
 from wecom_ability_service.services import (
     get_routing_config,
-    get_signup_conversion_config,
     resolve_contact_routing_context,
 )
 
@@ -643,6 +641,31 @@ def test_admin_config_settings_require_confirmation(client):
     assert response.status_code == 400
     assert payload["ok"] is False
     assert payload["error"] == "confirm is required before saving app settings"
+
+
+def test_admin_config_settings_apply_config_schema_ranges(app, client):
+    response = client.put(
+        "/api/settings",
+        json={
+            "settings": {
+                "HTTP_DEFAULT_TIMEOUT": "0",
+            },
+            "operator": "tester-settings",
+            "confirm": True,
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"] == "HTTP_DEFAULT_TIMEOUT 不能小于 1"
+
+    with app.app_context():
+        row = get_db().execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            ("HTTP_DEFAULT_TIMEOUT",),
+        ).fetchone()
+        assert row is None
 
 
 def test_admin_config_mcp_tool_settings_control_runtime(client):

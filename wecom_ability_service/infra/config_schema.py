@@ -334,49 +334,60 @@ CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
 }
 
 
+def _config_field(group_key: str, group: dict[str, Any], field_key: str, field: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **field,
+        "group_key": group_key,
+        "group_label": group["label"],
+        "key": field_key,
+    }
+
+
+def get_config_field(field_key: str) -> dict[str, Any] | None:
+    for group_key, group in CONFIG_SCHEMA.items():
+        for key, field in group["fields"].items():
+            if key == field_key:
+                return _config_field(group_key, group, key, field)
+    return None
+
+
+def validate_config_value(field_key: str, value: str, *, require_required: bool = True) -> str | None:
+    field = get_config_field(field_key)
+    if field is None:
+        return None
+
+    normalized = str(value or "").strip()
+    if field.get("required") and not normalized and require_required:
+        return "必填项不能为空"
+
+    if normalized and field.get("type") == "integer":
+        try:
+            int_value = int(normalized)
+        except ValueError:
+            return "必须为整数"
+        min_value = field.get("min")
+        max_value = field.get("max")
+        if min_value is not None and int_value < int(min_value):
+            return f"不能小于 {min_value}"
+        if max_value is not None and int_value > int(max_value):
+            return f"不能大于 {max_value}"
+
+    return None
+
+
 def validate_config(settings: dict[str, str]) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     for group_key, group in CONFIG_SCHEMA.items():
         for field_key, field in group["fields"].items():
             value = settings.get(field_key, "").strip()
-            if field.get("required") and not value:
+            error = validate_config_value(field_key, value)
+            if error:
                 errors.append({
                     "group": group["label"],
                     "field": field.get("label", field_key),
                     "key": field_key,
-                    "error": "必填项不能为空",
+                    "error": error,
                 })
-            if value and field.get("type") == "integer":
-                try:
-                    int_value = int(value)
-                except ValueError:
-                    errors.append({
-                        "group": group["label"],
-                        "field": field.get("label", field_key),
-                        "key": field_key,
-                        "error": "必须为整数",
-                    })
-                    continue
-                # Range validation when ``min``/``max`` declared on the field.
-                # Catches "fat-fingered" reliability knobs like a timeout of
-                # 0 or a retry count in the millions before they reach
-                # production.
-                min_value = field.get("min")
-                max_value = field.get("max")
-                if min_value is not None and int_value < int(min_value):
-                    errors.append({
-                        "group": group["label"],
-                        "field": field.get("label", field_key),
-                        "key": field_key,
-                        "error": f"不能小于 {min_value}",
-                    })
-                if max_value is not None and int_value > int(max_value):
-                    errors.append({
-                        "group": group["label"],
-                        "field": field.get("label", field_key),
-                        "key": field_key,
-                        "error": f"不能大于 {max_value}",
-                    })
     return errors
 
 

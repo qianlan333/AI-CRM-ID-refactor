@@ -118,6 +118,15 @@ def test_get_all_schema_keys():
     assert len(keys) > 20
 
 
+def test_admin_app_setting_validation_reuses_config_schema_ranges():
+    from wecom_ability_service.domains.admin_config.service import _validate_known_setting
+
+    with pytest.raises(ValueError, match="HTTP_DEFAULT_TIMEOUT 不能小于 1"):
+        _validate_known_setting("HTTP_DEFAULT_TIMEOUT", "0")
+
+    assert _validate_known_setting("HTTP_DEFAULT_TIMEOUT", "15") == "15"
+
+
 def test_setup_wizard_page_renders(client):
     resp = client.get("/setup/wizard")
     assert resp.status_code == 200
