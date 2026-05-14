@@ -34,7 +34,6 @@ from ..domains.admin_auth import (
     resolve_admin_user_from_wecom_identity,
     touch_admin_user_login,
 )
-from ..domains.admin_config import repo as admin_config_repo
 from ..infra.internal_auth_runtime import require_internal_api_token_compat
 from ..infra.settings import get_setting
 from ..wecom_client import WeComClientError
@@ -138,18 +137,20 @@ def validate_admin_console_action_token() -> str:
 
 
 def _record_sunset_access(path: str, *, action_type: str = "sunset_route_access") -> None:
+    from ..domains.admin_audit import record_audit
+
     operator = current_admin_operator() if current_admin_session_user() else "anonymous"
-    admin_config_repo.insert_admin_operation_log(
+    record_audit(
         operator=operator,
         action_type=action_type,
         target_type="sunset_route",
         target_id=_normalized_text(path),
-        before_json={
+        before={
             "path": _normalized_text(path),
             "method": request.method,
             "operator": operator,
         },
-        after_json={
+        after={
             "referrer": _normalized_text(request.referrer),
             "remote_addr": _normalized_text(request.headers.get("X-Forwarded-For")) or _normalized_text(request.remote_addr),
             "user_agent": _normalized_text(request.user_agent.string),
