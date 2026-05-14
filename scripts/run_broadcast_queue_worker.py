@@ -17,7 +17,7 @@ cron 例（每分钟）：
 
 环境变量：
 - ``BROADCAST_QUEUE_BATCH_SIZE``  默认 50，单次最多 claim 多少 job
-- ``DATABASE_PATH`` / ``DATABASE_URL`` 同主程序
+- ``DATABASE_URL`` 同主程序
 """
 from __future__ import annotations
 

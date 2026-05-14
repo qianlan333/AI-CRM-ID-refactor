@@ -10,7 +10,7 @@ cron 例（每 5 分钟跑一次）：
 
 环境变量：
 - ``CAMPAIGN_SCHEDULER_BATCH_SIZE``（默认 200）
-- ``DATABASE_PATH`` / ``DATABASE_URL`` 同主程序
+- ``DATABASE_URL`` 同主程序
 """
 from __future__ import annotations
 
