@@ -125,6 +125,49 @@ def _open_campaign_job_exists(*, queue_repo: Any, source_ids: tuple[str, ...]) -
     )
 
 
+def _resolve_automation_member_id(
+    *,
+    candidate_member_id: int | None,
+    external_contact_id: str,
+) -> int | None:
+    """Return a real ``automation_member.id`` for campaign-side member data.
+
+    Campaign segments may come from non-automation_member pools where
+    ``member_id`` is only the source table row id. FK-backed touch tables must
+    never use that id directly.
+    """
+    candidate = int(candidate_member_id or 0)
+    external = str(external_contact_id or "").strip()
+    db = get_db()
+    cur = db.cursor()
+    try:
+        if candidate > 0:
+            cur.execute("SELECT id FROM automation_member WHERE id = ? LIMIT 1", (candidate,))
+            row = cur.fetchone()
+            if row:
+                return int(row["id"])
+        if external:
+            cur.execute(
+                "SELECT id FROM automation_member WHERE external_contact_id = ? ORDER BY id DESC LIMIT 1",
+                (external,),
+            )
+            row = cur.fetchone()
+            if row:
+                return int(row["id"])
+    except Exception as exc:  # pragma: no cover - defensive against partial schemas
+        logger.warning(
+            "resolve automation member failed (candidate=%s external=%s): %s",
+            candidate,
+            external,
+            exc,
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    return None
+
+
 def _mark_member_replied_inline(*, member_row_id: int) -> None:
     """同步路径：发前现查命中时，立刻把 member 标 replied。reply_monitor 异步路径也会做这件事，互为兜底。"""
     db = get_db()
@@ -375,8 +418,12 @@ def run_campaign_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
                 )
                 db.commit()
                 continue
+            automation_member_id = _resolve_automation_member_id(
+                candidate_member_id=int(context.get("member_id") or 0) or None,
+                external_contact_id=external,
+            )
             verdict = frequency_budget_service.check_member_budget(
-                member_id=int(context.get("member_id") or 0) or None,
+                member_id=automation_member_id,
                 external_contact_id=external,
                 channels=("wecom_private", "ai_initiated"),
                 program_codes=("campaign",),
@@ -541,6 +588,10 @@ def _record_member_after_dispatch(
     task_id = int(send_result.get("task_id") or 0)
     external = str(member.get("external_contact_id") or "")
     member_id = int(member.get("member_id") or 0)
+    automation_member_id = _resolve_automation_member_id(
+        candidate_member_id=member_id or None,
+        external_contact_id=external,
+    )
     trace_id = str(member.get("trace_id") or campaign.get("trace_id") or "")
 
     db = get_db()
@@ -557,7 +608,7 @@ def _record_member_after_dispatch(
             (
                 f"campaign:{campaign.get('campaign_code')}",
                 f"step:{step.get('step_index')}",
-                int(member_id) if member_id else None,
+                automation_member_id,
                 external,
                 f"campaign_step task_id={task_id}",
                 json.dumps(
@@ -576,14 +627,19 @@ def _record_member_after_dispatch(
         )
         db.commit()
     except Exception as exc:
-        logger.warning("delivery_log insert failed (member_id=%s): %s", member_id, exc)
+        logger.warning(
+            "delivery_log insert failed (campaign_member_id=%s automation_member_id=%s): %s",
+            member_id,
+            automation_member_id,
+            exc,
+        )
         try:
             db.rollback()
         except Exception:
             pass
     try:
         frequency_budget_service.record_consumption(
-            member_id=member_id or None,
+            member_id=automation_member_id,
             external_contact_id=external,
             channels=("wecom_private", "ai_initiated"),
             program_codes=("campaign",),
@@ -776,10 +832,14 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         # 同 campaign 续推排除：同一 campaign 先前 step 的消耗不计入 daily 限额
         campaign_id = int(r["campaign_id"])
         member_id = int(r["member_id"] or 0)
+        automation_member_id = _resolve_automation_member_id(
+            candidate_member_id=member_id or None,
+            external_contact_id=external,
+        )
         if campaign_id not in _step_ids_cache:
             _step_ids_cache[campaign_id] = _all_step_ids_for_campaign(campaign_id)
         verdict = frequency_budget_service.check_member_budget(
-            member_id=member_id,
+            member_id=automation_member_id,
             external_contact_id=external,
             channels=("wecom_private", "ai_initiated"),
             program_codes=("campaign",),

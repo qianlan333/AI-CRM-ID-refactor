@@ -379,6 +379,146 @@ def test_propose_campaign_segment_sql_carries_external_contact_id(app):
     assert rows[1]["external_contact_id"] == "wm-pc-002"
 
 
+def test_campaign_dispatch_resolves_source_member_id_before_fk_touch_log(app):
+    """Campaign member_id may be a source-pool row id, not automation_member.id.
+
+    The dispatch path must resolve by external_contact_id before writing FK-backed
+    touch logs, otherwise the worker can fail after WeCom dispatch and leave members
+    stuck in running.
+    """
+    from wecom_ability_service.db import get_db
+    from wecom_ability_service.domains.campaigns import scheduler
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO automation_member (id, external_contact_id, phone, current_audience_code, in_pool)
+        VALUES (990, 'wm-source-pool-001', '', 'operating', ?)
+        """,
+        (True,),
+    )
+    cur.execute(
+        """
+        INSERT INTO automation_frequency_budget
+            (budget_code, scope, scope_key, window_seconds, max_count, description, enabled)
+        VALUES ('test_campaign_resolve_member', 'global', '', 604800, 3, 'test', ?)
+        """,
+        (True,),
+    )
+    cur.execute(
+        """
+        INSERT INTO segments
+            (segment_code, display_name, source_type, sql_query, sql_params_json, cached_headcount, status)
+        VALUES ('seg-source-pool-id', 'source pool id', 'sql',
+                'SELECT id AS member_id, external_userid AS external_contact_id FROM user_ops_pool_current',
+                '{}', 0, 'active')
+        RETURNING id
+        """
+    )
+    seg_id = int(cur.fetchone()["id"])
+    cur.execute(
+        """
+        INSERT INTO campaigns (campaign_code, display_name, intent, anchor_mode, anchor_date,
+                               review_status, run_status, owner_userid, metadata_json)
+        VALUES ('camp-source-pool-id', 'source pool id campaign', '', 'campaign_start_date',
+                '2026-05-13', 'approved', 'active', 'ZhaoYanFang', '{}')
+        RETURNING id
+        """
+    )
+    camp_id = int(cur.fetchone()["id"])
+    cur.execute(
+        """
+        INSERT INTO campaign_segments (campaign_id, segment_id, segment_code, priority)
+        VALUES (?, ?, 'seg-source-pool-id', 100)
+        RETURNING id
+        """,
+        (camp_id, seg_id),
+    )
+    cs_id = int(cur.fetchone()["id"])
+    cur.execute(
+        """
+        INSERT INTO campaign_steps
+            (campaign_id, campaign_segment_id, step_index, day_offset, send_time,
+             timezone, content_text, stop_on_reply)
+        VALUES (?, ?, 0, 0, '10:00', 'Asia/Shanghai', 'step 0', ?)
+        RETURNING id
+        """,
+        (camp_id, cs_id, False),
+    )
+    step0_id = int(cur.fetchone()["id"])
+    cur.execute(
+        """
+        INSERT INTO campaign_steps
+            (campaign_id, campaign_segment_id, step_index, day_offset, send_time,
+             timezone, content_text, stop_on_reply)
+        VALUES (?, ?, 1, 1, '10:00', 'Asia/Shanghai', 'step 1', ?)
+        """,
+        (camp_id, cs_id, False),
+    )
+    cur.execute(
+        """
+        INSERT INTO campaign_members
+            (campaign_id, campaign_segment_id, segment_id, member_id, external_contact_id,
+             status, current_step_index, next_due_at, anchor_date, trace_id)
+        VALUES (?, ?, ?, 888001, 'wm-source-pool-001',
+                'running', -1, '2026-05-13 10:00:00+08', '2026-05-13', 'trace-source-pool')
+        RETURNING id
+        """,
+        (camp_id, cs_id, seg_id),
+    )
+    cm_id = int(cur.fetchone()["id"])
+    db.commit()
+
+    with patch(
+        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        return_value={"task_id": 9900},
+    ):
+        result = scheduler.run_campaign_batch(
+            batch_data={
+                "campaign": {
+                    "id": camp_id,
+                    "campaign_code": "camp-source-pool-id",
+                    "owner_userid": "ZhaoYanFang",
+                    "trace_id": "trace-source-pool",
+                },
+                "step": {"id": step0_id, "step_index": 0, "content_text": "step 0"},
+                "members": [{
+                    "cm_id": cm_id,
+                    "member_id": 888001,
+                    "external_contact_id": "wm-source-pool-001",
+                    "campaign_segment_id": cs_id,
+                    "trace_id": "trace-source-pool",
+                }],
+                "request_payload": {
+                    "external_userid": ["wm-source-pool-001"],
+                    "text": {"content": "step 0"},
+                },
+            }
+        )
+
+    assert result["ok"] is True
+    assert result["sent_count"] == 1
+    cur.execute(
+        "SELECT member_id, external_contact_id FROM automation_touch_delivery_log "
+        "WHERE external_contact_id = 'wm-source-pool-001'",
+    )
+    delivery = cur.fetchone()
+    assert delivery is not None
+    assert int(delivery["member_id"]) == 990
+    cur.execute(
+        "SELECT member_id FROM automation_frequency_consumption "
+        "WHERE external_contact_id = 'wm-source-pool-001'",
+    )
+    consumption = cur.fetchone()
+    assert consumption is not None
+    assert int(consumption["member_id"]) == 990
+    cur.execute("SELECT status, current_step_index FROM campaign_members WHERE id = ?", (cm_id,))
+    member = cur.fetchone()
+    assert member["status"] == "pending"
+    assert int(member["current_step_index"]) == 0
+
+
 def test_propose_campaign_group_code_round_trip(app):
     """propose_campaign 传 group_code/group_label 后:
     1. 落进 campaigns.metadata_json
