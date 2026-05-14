@@ -16,13 +16,13 @@ from .service import (
     SOP_V1_ALLOWED_POOLS,
     SOP_V1_DEFAULT_SEND_TIME,
     SOP_V1_DEFAULT_TIMEZONE,
-    _dispatch_private_message_batch,
     _normalize_bool,
     _normalized_text,
     _parse_timestamp,
     _pool_label,
     _serialize_member,
 )
+from .private_message_dispatch import _dispatch_private_message_batch
 
 
 
@@ -1090,5 +1090,4 @@ def run_sop_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
         "sent_count": success_count,
         "failed_count": failed_count,
     }
-
 

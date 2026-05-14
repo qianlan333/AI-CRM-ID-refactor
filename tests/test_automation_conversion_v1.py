@@ -2999,7 +2999,7 @@ def test_run_workflow_execution_batches_same_sender_and_content(app, monkeypatch
 
     _mock_workflow_runtime_now(monkeypatch, "2026-04-08 09:05:00")
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         _fake_dispatch,
     )
 
@@ -3119,7 +3119,7 @@ def test_run_workflow_execution_keeps_personalized_single_as_one_member_per_send
         _fake_deepseek_agent,
     )
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         _fake_dispatch,
     )
 
@@ -3164,7 +3164,7 @@ def test_private_message_batch_marks_all_targets_failed_when_dispatch_raises(app
     from wecom_ability_service.domains.automation_conversion.service import _dispatch_private_message_batch
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: (_ for _ in ()).throw(RuntimeError("wecom api unavailable")),
     )
 
@@ -3227,7 +3227,7 @@ def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payloa
 
     _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800002222": 1})
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: {"task_id": 1001, "wecom_result": {"msgid": "msg-1001"}},
     )
 
@@ -3340,7 +3340,7 @@ def test_execution_item_send_via_bazhuayu_api_accepts_admin_action_token_and_ret
 
     _mock_workflow_runtime_usage_counts(monkeypatch, usage_by_phone={"13800003333": 1})
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: {"task_id": 1002, "wecom_result": {"msgid": "msg-1002"}},
     )
 
@@ -8484,7 +8484,7 @@ def test_manual_send_new_user_stage_uses_single_sender_without_owner_buckets(app
         dispatched_payloads.append({"task_type": task_type, "fn_name": fn_name, "payload": dict(payload)})
         return {"task_id": 701, "wecom_result": {"msgid": "msg-701"}}
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task", fake_dispatch)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task", fake_dispatch)
 
     response = client.post(
         "/api/admin/automation-conversion/stage/new-user/manual-send",
@@ -8546,7 +8546,7 @@ def test_manual_send_skips_already_touched_member_on_repeat(app, client, monkeyp
         dispatched_payloads.append(dict(payload))
         return {"task_id": 706, "wecom_result": {"msgid": "msg-706"}}
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task", fake_dispatch)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task", fake_dispatch)
 
     first_response = client.post(
         "/api/admin/automation-conversion/stage/new-user/manual-send",
@@ -8633,7 +8633,7 @@ def test_manual_send_respects_historical_send_records_before_touch_log(app, clie
         get_db().commit()
     dispatched_payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 709, "wecom_result": {"msgid": "msg-709"}},
     )
 
@@ -8682,7 +8682,7 @@ def test_manual_send_operating_stage_uses_current_audience_not_pool_status(app, 
         db.commit()
     dispatched_payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 707, "wecom_result": {"msgid": "msg-707"}},
     )
 
@@ -8723,7 +8723,7 @@ def test_manual_send_operating_stage_includes_legacy_pool_aliases(app, client, m
         db.commit()
     dispatched_payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 710, "wecom_result": {"msgid": "msg-710"}},
     )
 
@@ -8770,7 +8770,7 @@ def test_manual_send_operating_stage_treats_legacy_terminal_pool_as_audience_met
     ]
     dispatched_payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: dispatched_payloads.append(dict(payload)) or {"task_id": 711, "wecom_result": {"msgid": "msg-711"}},
     )
 
@@ -8848,7 +8848,7 @@ def test_manual_send_silent_stage_can_send(app, client, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: {"task_id": 702, "wecom_result": {"msgid": "msg-702"}},
     )
 
@@ -8883,7 +8883,7 @@ def test_manual_send_won_stage_can_send(app, client, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: {"task_id": 703, "wecom_result": {"msgid": "msg-703"}},
     )
 
@@ -8931,7 +8931,7 @@ def test_manual_send_skips_members_missing_external_userid(app, client, monkeypa
         dispatched_payloads.append(dict(payload))
         return {"task_id": 704, "wecom_result": {"msgid": "msg-704"}}
 
-    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task", fake_dispatch)
+    monkeypatch.setattr("wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task", fake_dispatch)
 
     response = client.post(
         "/api/admin/automation-conversion/stage/active-normal/manual-send",
@@ -8977,7 +8977,7 @@ def test_admin_stage_send_page_shows_manual_send_summary(app, client, monkeypatc
         decision_source="system",
     )
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: captured_payloads.append(dict(payload)) or {"task_id": 705, "wecom_result": {"msgid": "msg-705"}},
     )
     captured_payloads: list[dict[str, object]] = []
@@ -9031,7 +9031,7 @@ def test_admin_stage_send_program_route_returns_json_for_ajax_submit(app, client
     )
     captured_payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: captured_payloads.append(dict(payload)) or {"task_id": 706, "wecom_result": {"msgid": "msg-706"}},
     )
     program_id = _default_program_id(app)
@@ -10595,7 +10595,7 @@ def test_manual_send_does_not_change_sop_anchor_or_progress(app, client, monkeyp
         joined_at="2026-04-08 08:00:00",
     )
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
         lambda task_type, fn_name, payload: {"task_id": 900, "wecom_result": {"msgid": "msg-900"}},
     )
 
@@ -10917,7 +10917,7 @@ def test_due_jobs_api_runs_registered_conversion_workflow_job(app, client, monke
 def test_due_jobs_api_defaults_to_all_registered_jobs(app, client, monkeypatch):
     app.config["AUTOMATION_INTERNAL_API_TOKEN"] = "runner-token"
     monkeypatch.setattr(
-        "wecom_ability_service.domains.automation_conversion.service.run_due_sop",
+        "wecom_ability_service.domains.automation_conversion.sop_service.run_due_sop",
         lambda **kwargs: {"ok": True, "total_success_count": 0, "batch_ids": [11]},
     )
     monkeypatch.setattr(
