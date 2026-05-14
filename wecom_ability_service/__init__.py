@@ -78,14 +78,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     explicit_debug_session_api = os.getenv("ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API", "").strip()
     openclaw_webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", DEFAULT_OPENCLAW_WEBHOOK_URL)
 
-    default_db_path = Path(app.root_path).parent / "data.sqlite3"
     app.config.from_mapping(
         DEBUG=os.getenv("FLASK_ENV", "").lower() == "development",
         SECRET_KEY=os.getenv("SECRET_KEY", DEFAULT_SECRET_KEY),
         APP_HOST=os.getenv("APP_HOST", "127.0.0.1"),
         APP_PORT=os.getenv("APP_PORT", "5000"),
         DATABASE_URL=os.getenv("DATABASE_URL", ""),
-        DATABASE_PATH=os.getenv("DATABASE_PATH", str(default_db_path)),
         RELEASE_SHA=os.getenv("RELEASE_SHA", ""),
         WECOM_CORP_ID=os.getenv("WECOM_CORP_ID", ""),
         WECOM_CONTACT_SECRET=os.getenv("WECOM_CONTACT_SECRET", ""),
@@ -118,7 +116,6 @@ def create_app(test_config: dict | None = None) -> Flask:
         AUTOMATION_CONVERSION_CHANNEL_PROVIDER=os.getenv("AUTOMATION_CONVERSION_CHANNEL_PROVIDER", "wecom_contact_way"),
         MCP_BEARER_TOKEN=os.getenv("MCP_BEARER_TOKEN", ""),
         ACCESS_TOKEN_CACHE_SECONDS=int(os.getenv("ACCESS_TOKEN_CACHE_SECONDS", "7000")),
-        SQLITE_BUSY_TIMEOUT_MS=int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000")),
         SIDEBAR_THIRD_PARTY_API_URL=os.getenv("SIDEBAR_THIRD_PARTY_API_URL", ""),
         SIDEBAR_THIRD_PARTY_API_TOKEN=os.getenv("SIDEBAR_THIRD_PARTY_API_TOKEN", ""),
         SIDEBAR_THIRD_PARTY_TIMEOUT_SECONDS=int(os.getenv("SIDEBAR_THIRD_PARTY_TIMEOUT_SECONDS", "10")),
