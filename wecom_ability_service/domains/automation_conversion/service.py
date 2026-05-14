@@ -1433,7 +1433,9 @@ def _dispatch_private_message_batch(
     attachments: list[dict[str, Any]] | None = None,
     operator_id: str,
     filter_snapshot: dict[str, Any],
+    sender_userid: str | None = None,
 ) -> dict[str, Any]:
+    normalized_sender = _normalized_text(sender_userid) or DEFAULT_OWNER_STAFF_ID
     normalized_content = _normalized_text(content)
     normalized_image_media_ids = _normalize_manual_send_image_media_ids(image_media_ids)
     payload_for_build: dict[str, Any] = {
@@ -1451,9 +1453,14 @@ def _dispatch_private_message_batch(
     outbound_task_ids: list[int] = []
     task_results: list[dict[str, Any]] = []
     fail_external_userids: list[str] = []
+    target_external_userids = [
+        _normalized_text(item.get("external_userid"))
+        for item in target_items
+        if _normalized_text(item.get("external_userid"))
+    ]
     request_payload = {
-        "sender": DEFAULT_OWNER_STAFF_ID,
-        "external_userid": [_normalized_text(item.get("external_userid")) for item in target_items if _normalized_text(item.get("external_userid"))],
+        "sender": normalized_sender,
+        "external_userid": target_external_userids,
         **task_payload,
     }
     try:
@@ -1464,9 +1471,10 @@ def _dispatch_private_message_batch(
             if _normalized_text(item)
         ]
         outbound_task_ids.append(int(wecom_result["task_id"]))
-        task_results.append(user_ops_page_service._build_sender_success_result(DEFAULT_OWNER_STAFF_ID, target_items, wecom_result))
-    except (WeComClientError, AttributeError) as exc:
-        task_results.append(user_ops_page_service._build_sender_failure_result(DEFAULT_OWNER_STAFF_ID, target_items, exc))
+        task_results.append(user_ops_page_service._build_sender_success_result(normalized_sender, target_items, wecom_result))
+    except Exception as exc:
+        fail_external_userids = list(target_external_userids)
+        task_results.append(user_ops_page_service._build_sender_failure_result(normalized_sender, target_items, exc))
 
     if fail_external_userids:
         sent_count = max(0, len(target_items) - len(set(fail_external_userids)))
@@ -1488,10 +1496,15 @@ def _dispatch_private_message_batch(
         include_do_not_disturb=False,
         content_preview=content_preview,
         image_count=image_count,
-        sender_userids=[DEFAULT_OWNER_STAFF_ID],
+        sender_userids=[normalized_sender],
         filter_snapshot=filter_snapshot,
         operator=_normalized_text(operator_id) or "crm_console",
         status=status,
+    )
+    error_message = (
+        _normalized_text(task_results[0].get("error_message"))
+        if status == "failed" and task_results
+        else ("dispatch_failed" if fail_external_userids else "")
     )
     return {
         "ok": status != "failed",
@@ -1503,11 +1516,9 @@ def _dispatch_private_message_batch(
         "image_count": image_count,
         "sent_count": sent_count,
         "fail_external_userids": fail_external_userids,
-        "error": (
-            _normalized_text(task_results[0].get("error_message"))
-            if status == "failed" and task_results
-            else ""
-        ),
+        "error": error_message if status == "failed" else "",
+        "error_message": error_message,
+        "sender_userid": normalized_sender,
     }
 
 
@@ -1562,13 +1573,14 @@ def run_registered_due_jobs(
     operator_type: str = "system",
 ) -> dict[str, Any]:
     registry = {item["job_code"]: dict(item) for item in list_registered_due_jobs()}
+    default_job_codes = list(registry.keys())
     selected_job_codes = [
         _normalized_text(item)
-        for item in (job_codes if job_codes is not None else ["conversion_workflow"])
+        for item in (job_codes if job_codes is not None else default_job_codes)
         if _normalized_text(item)
     ]
     if not selected_job_codes:
-        selected_job_codes = ["conversion_workflow"]
+        selected_job_codes = default_job_codes
 
     invalid_job_codes = [item for item in selected_job_codes if item not in registry]
     if invalid_job_codes:

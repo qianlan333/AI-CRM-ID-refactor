@@ -330,9 +330,30 @@ def run_due_focus_send_batches(
     now_dt = _parse_timestamp(now_text) or datetime.now()
     processed_count = 0
     batches_payload: list[dict[str, Any]] = []
+    from ..broadcast_jobs import repo as queue_repo
+
     for row in repo.list_due_focus_send_batches(due_at=now_text, limit=max(1, int(limit))):
         batch = _serialize_focus_send_batch(row)
-        item = repo.claim_next_focus_send_batch_item(batch_id=int(batch.get("id") or 0), started_at=now_text)
+        batch_id = int(batch.get("id") or 0)
+        existing_job = queue_repo.fetch_job_by_source(
+            source_type="focus_send",
+            source_id=str(batch_id),
+            source_table="automation_focus_send_batch",
+            statuses=["waiting_approval", "queued", "claimed"],
+        )
+        if existing_job:
+            batches_payload.append(
+                {
+                    **_focus_batch_detail_payload(batch, item_limit=12),
+                    "queue_status": "already_queued",
+                    "queue_job": {
+                        "id": int(existing_job.get("id") or 0),
+                        "status": _normalized_text(existing_job.get("status")),
+                    },
+                }
+            )
+            continue
+        item = repo.claim_next_focus_send_batch_item(batch_id=batch_id, started_at=now_text)
         if not item:
             finalized = _update_focus_batch_counters(
                 batch,

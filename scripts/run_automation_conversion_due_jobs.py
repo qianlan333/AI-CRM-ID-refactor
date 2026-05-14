@@ -11,6 +11,11 @@ DEFAULT_OPERATOR = "automation_conversion_due_runner"
 DEFAULT_RETRY_COUNT = 6
 DEFAULT_RETRY_INTERVAL_SECONDS = 10
 JOB_DEFINITIONS = {
+    "sop": {
+        "label": "自动化转化 SOP",
+        "path": "/api/admin/automation-conversion/jobs/run-due",
+        "payload": {"jobs": ["sop"]},
+    },
     "conversion_workflow": {
         "label": "自动化转化任务流",
         "path": "/api/admin/automation-conversion/jobs/run-due",

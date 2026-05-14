@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -9,8 +8,6 @@ from flask import current_app, g, has_app_context
 
 from ...db import get_db
 from ...services import get_recent_messages_by_user
-from ..tasks.service import dispatch_wecom_task
-from ..user_ops import page_service as user_ops_page_service
 from . import repo as legacy_repo
 from .agents import DeepSeekClientError, call_deepseek_agent
 from .orchestration_service import (
@@ -44,6 +41,7 @@ from .workflow_definitions import (
 )
 from .workflow_service import get_conversion_workflow_model_bundle
 from . import workflow_repo
+from .service import _dispatch_private_message_batch
 
 
 DEFAULT_AUTOMATION_SENDER = "HuangYouCan"
@@ -174,6 +172,16 @@ def _behavior_tier_for_count(usage_count: int) -> dict[str, Any]:
             continue
         return dict(item)
     return dict(_behavior_tier_items()[0])
+
+
+def _behavior_tier_for_key(tier_key: str) -> dict[str, Any]:
+    normalized_tier_key = _normalized_text(tier_key)
+    if not normalized_tier_key:
+        return {}
+    for item in _behavior_tier_items():
+        if _normalized_text(item.get("tier_code")) == normalized_tier_key:
+            return dict(item)
+    return {}
 
 
 def _usage_activity_snapshot() -> dict[str, Any]:
@@ -531,6 +539,18 @@ def _resolve_profile_segment_match(
 
 
 def _resolve_behavior_segment_match(member: dict[str, Any]) -> dict[str, Any]:
+    materialized_tier = _behavior_tier_for_key(_normalized_text(member.get("behavior_tier_key")))
+    if materialized_tier:
+        return {
+            "matched": True,
+            "reason": "",
+            "segment_key": _normalized_text(materialized_tier.get("tier_code")),
+            "segment_label": _normalized_text(materialized_tier.get("label")),
+            "usage_count": 0,
+            "message_count": 0,
+            "usage_source": "automation_member.behavior_tier_key",
+            "phone_match_key": _phone_match_key(member.get("phone")),
+        }
     usage_activity = _usage_activity_for_member(member)
     if not bool(usage_activity.get("available")):
         return {
@@ -929,66 +949,48 @@ def _generate_content_with_agent(
     }
 
 
-def _send_private_message_to_member(
+def _node_miniprogram_library_ids(*, node: dict[str, Any], workflow_bundle: dict[str, Any]) -> list[int]:
+    raw_node_miniprograms = node.get("miniprogram_library_ids") or []
+    if not raw_node_miniprograms:
+        scp = node.get("standard_content_payload")
+        if isinstance(scp, dict):
+            raw_node_miniprograms = scp.get("miniprogram_library_ids") or []
+    if not raw_node_miniprograms:
+        raw_node_miniprograms = workflow_bundle.get("miniprogram_library_ids") or []
+    miniprogram_library_ids: list[int] = []
+    for value in raw_node_miniprograms:
+        try:
+            miniprogram_library_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return miniprogram_library_ids
+
+
+def _send_private_message_to_members_batch(
     *,
-    member: dict[str, Any],
+    members: list[dict[str, Any]],
+    sender_userid: str,
     content_text: str,
     operator_id: str,
     filter_snapshot: dict[str, Any],
     miniprogram_library_ids: list[int] | None = None,
 ) -> dict[str, Any]:
-    owner_staff_id = _normalized_text(member.get("owner_staff_id"))
-    sender_userid = owner_staff_id or DEFAULT_AUTOMATION_SENDER
-    payload_for_build: dict[str, Any] = {"content": _normalized_text(content_text)}
-    library_ids = [int(i) for i in (miniprogram_library_ids or []) if i]
-    if library_ids:
-        payload_for_build["attachments"] = [
-            {"msgtype": "miniprogram", "miniprogram": {"library_id": lid}} for lid in library_ids
-        ]
-    task_payload, content_preview, image_count = user_ops_page_service._build_private_message_payload(payload_for_build)
-    request_payload = {
-        "sender": sender_userid,
-        "external_userid": [_normalized_text(member.get("external_contact_id"))],
-        **task_payload,
-    }
-    try:
-        result = dispatch_wecom_task("private_message", "create_private_message_task", request_payload)
-        task_results = [user_ops_page_service._build_sender_success_result(sender_userid, [{"external_userid": _normalized_text(member.get("external_contact_id")), "owner_display_name": sender_userid}], result)]
-        sent_count = 1
-        status = "sent"
-        error_message = ""
-        outbound_task_ids = [int(result["task_id"])]
-    except Exception as exc:
-        task_results = [user_ops_page_service._build_sender_failure_result(sender_userid, [{"external_userid": _normalized_text(member.get("external_contact_id")), "owner_display_name": sender_userid}], exc)]
-        sent_count = 0
-        status = "failed"
-        error_message = str(exc)
-        outbound_task_ids = []
-    record_id = user_ops_page_service._insert_send_record(
-        outbound_task_ids=outbound_task_ids,
-        task_results=task_results,
-        selected_count=1,
-        eligible_count=1,
-        sent_count=sent_count,
-        skipped_count=0,
-        skipped_reasons={},
-        include_do_not_disturb=False,
-        content_preview=content_preview,
-        image_count=image_count,
-        sender_userids=[sender_userid],
+    target_items = [
+        {
+            "external_userid": _normalized_text(member.get("external_contact_id")),
+            "owner_display_name": sender_userid,
+        }
+        for member in members
+        if _normalized_text(member.get("external_contact_id"))
+    ]
+    return _dispatch_private_message_batch(
+        target_items=target_items,
+        sender_userid=sender_userid,
+        content=_normalized_text(content_text),
+        miniprogram_library_ids=list(miniprogram_library_ids or []),
+        operator_id=_normalized_text(operator_id) or "automation_conversion_workflow",
         filter_snapshot=filter_snapshot,
-        operator=_normalized_text(operator_id) or "automation_conversion_workflow",
-        status=status,
     )
-    return {
-        "ok": status == "sent",
-        "status": status,
-        "record_id": int(record_id),
-        "error_message": error_message,
-        "task_results": task_results,
-        "sender_userid": sender_userid,
-        "owner_staff_id_missing": not bool(owner_staff_id),
-    }
 
 
 def _render_node_content(
@@ -1061,18 +1063,16 @@ def _render_node_content(
     }
 
 
-def _process_execution_item(
+def _prepare_execution_item_for_send(
     *,
     execution: dict[str, Any],
     execution_item: dict[str, Any],
     workflow_bundle: dict[str, Any],
     node: dict[str, Any],
-    audience_entry: dict[str, Any],
-    operator_id: str,
 ) -> dict[str, Any]:
     member = workflow_repo.get_automation_member_row(int(execution_item.get("member_id") or 0)) or {}
     if not member:
-        return workflow_repo.update_workflow_execution_item_row(
+        updated = workflow_repo.update_workflow_execution_item_row(
             int(execution_item["id"]),
             {
                 **execution_item,
@@ -1084,36 +1084,52 @@ def _process_execution_item(
                 "sent_at": "",
             },
         )
-    rendered = _render_node_content(
-        member=member,
-        workflow_bundle=workflow_bundle,
-        node=node,
-        execution_request_id=f"workflow-node-{int(node['id'])}-item-{int(execution_item['id'])}",
-    )
-    final_content = _normalized_text(rendered.get("content_text"))
+        return {"ready": False, "item": updated}
+
+    existing_content = _normalized_text(execution_item.get("rendered_content_text"))
+    existing_snapshot = dict(execution_item.get("content_snapshot_json") or {})
+    if existing_content and existing_snapshot:
+        final_content = existing_content
+        snapshot = {
+            **existing_snapshot,
+            "rendered_content_text": existing_content,
+        }
+        rendered = {
+            "agent_code": _normalized_text(execution_item.get("agent_code")),
+            "agent_run_id": _normalized_text(execution_item.get("agent_run_id")),
+            "agent_output_id": _normalized_text(execution_item.get("agent_output_id")),
+        }
+    else:
+        rendered = _render_node_content(
+            member=member,
+            workflow_bundle=workflow_bundle,
+            node=node,
+            execution_request_id=f"workflow-node-{int(node['id'])}-item-{int(execution_item['id'])}",
+        )
+        final_content = _normalized_text(rendered.get("content_text"))
+        snapshot = {
+            "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
+            "workflow_name": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_name")),
+            "node_code": _normalized_text(node.get("node_code")),
+            "node_name": _normalized_text(node.get("node_name")),
+            "node_content_mode": _node_content_mode(node, workflow_bundle),
+            "node_generation_mode": _node_generation_mode(node, workflow_bundle),
+            "node_segmentation_basis": _node_segmentation_basis(node, workflow_bundle),
+            "workflow_generation_mode": _normalized_text((workflow_bundle.get("workflow") or {}).get("generation_mode")),
+            "workflow_segmentation_basis": _normalized_text((workflow_bundle.get("workflow") or {}).get("segmentation_basis")),
+            "standard_content_text": _normalized_text(node.get("standard_content_text")),
+            "rendered_content_text": final_content,
+            "content_source": _normalized_text(rendered.get("content_source")),
+            "fallback_reason": _normalized_text(rendered.get("fallback_reason")),
+            "agent_code": _normalized_text(rendered.get("agent_code")),
+            "segment_match": dict(rendered.get("segment_match") or {}),
+            "behavior_match": dict(rendered.get("behavior_match") or {}),
+        }
+
     node_content_mode = _node_content_mode(node, workflow_bundle)
-    node_segmentation_basis = _node_segmentation_basis(node, workflow_bundle)
-    node_generation_mode = _node_generation_mode(node, workflow_bundle)
-    snapshot = {
-        "workflow_code": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_code")),
-        "workflow_name": _normalized_text((workflow_bundle.get("workflow") or {}).get("workflow_name")),
-        "node_code": _normalized_text(node.get("node_code")),
-        "node_name": _normalized_text(node.get("node_name")),
-        "node_content_mode": node_content_mode,
-        "node_generation_mode": node_generation_mode,
-        "node_segmentation_basis": node_segmentation_basis,
-        "workflow_generation_mode": _normalized_text((workflow_bundle.get("workflow") or {}).get("generation_mode")),
-        "workflow_segmentation_basis": _normalized_text((workflow_bundle.get("workflow") or {}).get("segmentation_basis")),
-        "standard_content_text": _normalized_text(node.get("standard_content_text")),
-        "rendered_content_text": final_content,
-        "content_source": _normalized_text(rendered.get("content_source")),
-        "fallback_reason": _normalized_text(rendered.get("fallback_reason")),
-        "agent_code": _normalized_text(rendered.get("agent_code")),
-        "segment_match": dict(rendered.get("segment_match") or {}),
-        "behavior_match": dict(rendered.get("behavior_match") or {}),
-    }
+    miniprogram_library_ids = _node_miniprogram_library_ids(node=node, workflow_bundle=workflow_bundle)
     if not _normalized_text(member.get("external_contact_id")):
-        return workflow_repo.update_workflow_execution_item_row(
+        updated = workflow_repo.update_workflow_execution_item_row(
             int(execution_item["id"]),
             {
                 **execution_item,
@@ -1128,8 +1144,9 @@ def _process_execution_item(
                 "sent_at": "",
             },
         )
+        return {"ready": False, "item": updated}
     if not final_content:
-        return workflow_repo.update_workflow_execution_item_row(
+        updated = workflow_repo.update_workflow_execution_item_row(
             int(execution_item["id"]),
             {
                 **execution_item,
@@ -1144,52 +1161,30 @@ def _process_execution_item(
                 "sent_at": "",
             },
         )
-    raw_node_miniprograms = node.get("miniprogram_library_ids") or []
-    if not raw_node_miniprograms:
-        scp = node.get("standard_content_payload")
-        if isinstance(scp, dict):
-            raw_node_miniprograms = scp.get("miniprogram_library_ids") or []
-    if not raw_node_miniprograms:
-        raw_node_miniprograms = workflow_bundle.get("miniprogram_library_ids") or []
-    miniprogram_library_ids: list[int] = []
-    for value in raw_node_miniprograms:
-        try:
-            miniprogram_library_ids.append(int(value))
-        except (TypeError, ValueError):
-            continue
-    send_result = _send_private_message_to_member(
-        member=member,
-        content_text=final_content,
-        operator_id=operator_id,
-        filter_snapshot={
+        return {"ready": False, "item": updated}
+
+    sender_userid = _normalized_text(member.get("owner_staff_id")) or DEFAULT_AUTOMATION_SENDER
+    return {
+        "ready": True,
+        "item": execution_item,
+        "member": member,
+        "content_text": final_content,
+        "snapshot": snapshot,
+        "sender_userid": sender_userid,
+        "owner_staff_id_missing": not bool(_normalized_text(member.get("owner_staff_id"))),
+        "agent_code": rendered.get("agent_code"),
+        "agent_run_id": rendered.get("agent_run_id"),
+        "agent_output_id": rendered.get("agent_output_id"),
+        "miniprogram_library_ids": miniprogram_library_ids,
+        "send_isolation_key": str(execution_item.get("id") or "") if node_content_mode == "personalized_single" else "",
+        "filter_snapshot": {
             "selection_mode": "automation_conversion_workflow_node",
             "workflow_id": int(execution.get("workflow_id") or 0),
             "node_id": int(execution.get("node_id") or 0),
             "execution_id": _normalized_text(execution.get("execution_id")),
-            "audience_entry_id": int(audience_entry.get("id") or 0),
             "miniprogram_library_ids": miniprogram_library_ids,
         },
-        miniprogram_library_ids=miniprogram_library_ids,
-    )
-    return workflow_repo.update_workflow_execution_item_row(
-        int(execution_item["id"]),
-        {
-            **execution_item,
-            "status": "sent" if bool(send_result.get("ok")) else "failed",
-            "error_message": _normalized_text(send_result.get("error_message")),
-            "content_snapshot_json": {
-                **snapshot,
-                "sender_userid": _normalized_text(send_result.get("sender_userid")),
-                "owner_staff_id_missing": bool(send_result.get("owner_staff_id_missing")),
-            },
-            "rendered_content_text": final_content,
-            "agent_code": rendered.get("agent_code"),
-            "agent_run_id": rendered.get("agent_run_id"),
-            "agent_output_id": rendered.get("agent_output_id"),
-            "send_record_id": int(send_result.get("record_id") or 0) or None,
-            "sent_at": _iso_now() if bool(send_result.get("ok")) else "",
-        },
-    )
+    }
 
 
 def _timed_sequence_nodes(
@@ -2002,26 +1997,88 @@ def run_workflow_execution(*, execution_data: dict[str, Any]) -> dict[str, Any]:
     if not node:
         return {"ok": False, "error": f"node {node_id} not found in workflow {workflow_id}"}
 
-    audience_map: dict[int, dict[str, Any]] = {}
     execution_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
     sent_count = 0
     failed_count = 0
+    prepared_items: list[dict[str, Any]] = []
     for item in execution_items:
         if _normalized_text(item.get("status")) != "pending":
             continue
-        audience_entry = audience_map.get(int(item.get("audience_entry_id") or 0)) or {}
-        result_item = _process_execution_item(
+        prepared = _prepare_execution_item_for_send(
             execution=execution,
             execution_item=item,
             workflow_bundle=workflow_bundle,
             node=node,
-            audience_entry=audience_entry,
-            operator_id=operator_id,
         )
-        if _normalized_text((result_item or {}).get("status")) == "sent":
+        if bool(prepared.get("ready")):
+            prepared_items.append(prepared)
+            continue
+        result_item = dict(prepared.get("item") or {})
+        if _normalized_text(result_item.get("status")) == "sent":
             sent_count += 1
-        else:
+        elif _normalized_text(result_item.get("status")) in {"failed", "skipped"}:
             failed_count += 1
+
+    grouped_items: dict[tuple[str, str, tuple[int, ...], str], list[dict[str, Any]]] = {}
+    for prepared in prepared_items:
+        key = (
+            _normalized_text(prepared.get("sender_userid")),
+            _normalized_text(prepared.get("content_text")),
+            tuple(int(item) for item in (prepared.get("miniprogram_library_ids") or [])),
+            _normalized_text(prepared.get("send_isolation_key")),
+        )
+        grouped_items.setdefault(key, []).append(prepared)
+
+    for group in grouped_items.values():
+        first = group[0]
+        filter_snapshot = {
+            **dict(first.get("filter_snapshot") or {}),
+            "execution_item_ids": [int(dict(item.get("item") or {}).get("id") or 0) for item in group],
+            "batch_group_count": len(group),
+        }
+        send_result = _send_private_message_to_members_batch(
+            members=[dict(item.get("member") or {}) for item in group],
+            sender_userid=_normalized_text(first.get("sender_userid")) or DEFAULT_AUTOMATION_SENDER,
+            content_text=_normalized_text(first.get("content_text")),
+            operator_id=operator_id,
+            filter_snapshot=filter_snapshot,
+            miniprogram_library_ids=list(first.get("miniprogram_library_ids") or []),
+        )
+        failed_external_userids = {
+            _normalized_text(item)
+            for item in (send_result.get("fail_external_userids") or [])
+            if _normalized_text(item)
+        }
+        batch_failed = _normalized_text(send_result.get("status")) == "failed" and not int(send_result.get("sent_count") or 0)
+        for prepared in group:
+            item = dict(prepared.get("item") or {})
+            member = dict(prepared.get("member") or {})
+            external_userid = _normalized_text(member.get("external_contact_id"))
+            item_failed = batch_failed or external_userid in failed_external_userids
+            final_status = "failed" if item_failed else "sent"
+            updated = workflow_repo.update_workflow_execution_item_row(
+                int(item["id"]),
+                {
+                    **item,
+                    "status": final_status,
+                    "error_message": _normalized_text(send_result.get("error_message")) if item_failed else "",
+                    "content_snapshot_json": {
+                        **dict(prepared.get("snapshot") or {}),
+                        "sender_userid": _normalized_text(send_result.get("sender_userid")),
+                        "owner_staff_id_missing": bool(prepared.get("owner_staff_id_missing")),
+                    },
+                    "rendered_content_text": _normalized_text(prepared.get("content_text")),
+                    "agent_code": prepared.get("agent_code"),
+                    "agent_run_id": prepared.get("agent_run_id"),
+                    "agent_output_id": prepared.get("agent_output_id"),
+                    "send_record_id": int(send_result.get("record_id") or 0) or None,
+                    "sent_at": _iso_now() if final_status == "sent" else "",
+                },
+            )
+            if _normalized_text((updated or {}).get("status")) == "sent":
+                sent_count += 1
+            else:
+                failed_count += 1
 
     refreshed_items = workflow_repo.list_workflow_execution_item_rows(int(execution["id"]))
     final_status, counters = _execution_summary_from_items(refreshed_items)
@@ -2173,15 +2230,6 @@ def _pre_enqueue_future_workflow_nodes() -> int:
             estimated_count = len(audience_rows)
             if estimated_count == 0:
                 continue
-            # 取一个 placeholder external_userid 用于满足 enqueue_job 的非空要求
-            # 实际发送时 handler 会重新决策候选人
-            placeholder_externals = [
-                _normalized_text((r.get("member") or {}).get("external_contact_id"))
-                for r in audience_rows
-                if _normalized_text((r.get("member") or {}).get("external_contact_id"))
-            ][:5]  # 只取前 5 个做占位，避免 payload 过大
-            if not placeholder_externals:
-                continue
             node_name = _normalized_text(node.get("node_name")) or f"node-{node.get('id')}"
             workflow_name = _normalized_text(workflow.get("workflow_name")) or f"workflow-{workflow.get('id')}"
             queue_service.enqueue_job(
@@ -2189,7 +2237,7 @@ def _pre_enqueue_future_workflow_nodes() -> int:
                 source_id=execution_key,
                 source_table="automation_workflow_executions",
                 scheduled_for=scheduled_for_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                target_external_userids=placeholder_externals,
+                target_external_userids=[],
                 target_summary=f"workflow node={int(node.get('id') or 0)} — ~{estimated_count} 人",
                 content_type="private_message",
                 content_payload={
@@ -2198,6 +2246,7 @@ def _pre_enqueue_future_workflow_nodes() -> int:
                     "pre_scheduled": True,
                 },
                 content_summary=f"[{workflow_name}] {node_name}",
+                allow_empty_targets=True,
             )
             existing_source_ids.add(execution_key)
             enqueued += 1

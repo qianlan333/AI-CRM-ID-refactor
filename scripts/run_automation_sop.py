@@ -8,7 +8,7 @@ import urllib.request
 
 
 DEFAULT_OPERATOR = "automation_sop_runner"
-DEFAULT_PATH = "/api/admin/automation-conversion/jobs/run-due"
+DEFAULT_PATH = "/api/admin/automation-conversion/sop/run-due"
 DEFAULT_RETRY_COUNT = 6
 DEFAULT_RETRY_INTERVAL_SECONDS = 10
 
@@ -19,7 +19,7 @@ def build_request(*, host: str, port: str, token: str, operator: str, path: str 
         headers["Authorization"] = f"Bearer {token}"
     return urllib.request.Request(
         f"http://{host}:{port}{path}",
-        data=json.dumps({"operator": operator, "jobs": ["conversion_workflow"]}).encode("utf-8"),
+        data=json.dumps({"operator": operator, "jobs": ["sop"]}).encode("utf-8"),
         headers=headers,
         method="POST",
     )

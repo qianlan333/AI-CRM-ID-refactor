@@ -83,6 +83,28 @@ def test_enqueue_rejects_empty_targets(app):
             _enqueue(target_users=())
 
 
+def test_enqueue_allows_empty_targets_when_handler_resolves_later(app):
+    with app.app_context():
+        job_id = queue_service.enqueue_job(
+            source_type="workflow",
+            source_id="pre-scheduled-workflow-1",
+            source_table="automation_workflow_executions",
+            scheduled_for=datetime.now(timezone.utc),
+            target_external_userids=[],
+            target_summary="workflow node=1 — ~12 人",
+            content_type="private_message",
+            content_payload={"workflow_id": 1, "node_id": 1, "pre_scheduled": True},
+            content_summary="明日任务流",
+            allow_empty_targets=True,
+        )
+        job = queue_service.get_job(job_id)
+
+    assert job is not None
+    assert job["target_count"] == 0
+    assert job["target_external_userids"] == []
+    assert job["target_summary"] == "workflow node=1 — ~12 人"
+
+
 def test_enqueue_rejects_invalid_source_type(app):
     with app.app_context():
         with pytest.raises(ValueError, match="source_type"):
