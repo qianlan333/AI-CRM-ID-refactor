@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
@@ -33,11 +32,8 @@ DEMO_CUSTOMERS = [
 ]
 
 
-def _create_app(database_path: str = ""):
-    overrides: dict[str, object] = {"TESTING": True}
-    if database_path:
-        overrides["DATABASE_PATH"] = database_path
-    return create_app(overrides)
+def _create_app():
+    return create_app({"TESTING": True})
 
 
 def _seed_demo_customers(*, corp_id: str) -> None:
@@ -175,7 +171,6 @@ def _insert_focus_message() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed local demo data for automation conversion acceptance.")
-    parser.add_argument("--database-path", default="", help="Optional sqlite DATABASE_PATH override")
     parser.add_argument("--corp-id", default="ww-local-demo", help="Corp id used for demo identity map rows")
     parser.add_argument("--init-db", action="store_true", help="Initialize database schema before seeding")
     parser.add_argument("--write-settings", action="store_true", help="Write local demo settings into app_settings")
@@ -190,7 +185,7 @@ def main() -> int:
     parser.add_argument("--insert-focus-message", action="store_true", help="Insert one inbound focus message for wm_demo_focus")
     args = parser.parse_args()
 
-    app = _create_app(database_path=args.database_path)
+    app = _create_app()
     with app.app_context():
         if args.init_db:
             init_db()

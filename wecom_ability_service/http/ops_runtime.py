@@ -19,6 +19,7 @@ def build_ops_status_payload() -> dict:
     callback_enabled = bool(
         (get_callback_config().get("token") and get_callback_config().get("aes_key") and get_callback_config().get("corp_id"))
     )
+    database_backend = get_db_backend()
     payload = {
         "ok": True,
         "service_ok": True,
@@ -30,7 +31,7 @@ def build_ops_status_payload() -> dict:
         "archived_messages_count": count_archived_messages(),
         "contacts_count": count_contacts(),
         "group_chats_count": count_group_chats(),
-        "database_backend": get_db_backend(),
+        "database_backend": database_backend,
         "last_seq": get_archive_last_seq(),
         "last_archive_sync_run_id": last_sync.get("id"),
         "last_archive_sync_status": last_sync.get("status", ""),
@@ -40,9 +41,6 @@ def build_ops_status_payload() -> dict:
         "user_ops_deferred_jobs": get_user_ops_deferred_job_counts(),
         "cron_script_path": current_app.config["CRON_SCRIPT_PATH"],
         "env_file_path": current_app.config["ENV_FILE_PATH"],
+        "database_url_configured": bool(current_app.config.get("DATABASE_URL")),
     }
-    if get_db_backend() == "postgres":
-        payload["database_url_configured"] = bool(current_app.config.get("DATABASE_URL"))
-    else:
-        payload["sqlite_path"] = current_app.config["DATABASE_PATH"]
     return payload
