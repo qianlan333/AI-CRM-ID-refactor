@@ -1,27 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
-
 from flask import jsonify, redirect, request, url_for
 
-from ..application.routing_config.commands import (
-    SaveOwnerRoleSettingCommand,
-    SaveRoutingRuleSettingCommand,
-)
-from ..application.routing_config.dto import (
-    GetOwnerRoleMapQueryDTO,
-    GetOwnerRoleQueryDTO,
-    GetRoutingRuleConfigQueryDTO,
-    GetRoutingRuleQueryDTO,
-    SaveOwnerRoleSettingCommandDTO,
-    SaveRoutingRuleSettingCommandDTO,
-)
-from ..application.routing_config.queries import (
-    GetOwnerRoleMapQuery,
-    GetOwnerRoleQuery,
-    GetRoutingRuleConfigQuery,
-    GetRoutingRuleQuery,
-)
 from ..application.automation_engine.commands import (
     RecomputeSignupConversionCustomersCommand,
     SaveSignupConversionConfigCommand,
@@ -44,13 +24,15 @@ from ..domains.admin_config import (
     list_admin_app_settings,
     list_class_term_tag_mappings,
     list_mcp_tool_settings,
+    list_owner_routing_settings,
     list_signup_tag_settings,
     save_admin_app_settings,
     save_class_term_tag_mapping,
     save_mcp_tool_setting,
+    save_owner_role_setting,
+    save_routing_rule_setting,
     save_signup_tag_setting,
 )
-from ..domains.admin_config import repo as admin_config_repo
 from .internal_auth import (
     current_admin_session_user,
     current_admin_operator,
@@ -60,10 +42,6 @@ from .internal_auth import (
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
 from ..wecom_client import WeComClientError
-
-
-TARGET_OWNER_ROLE_MAP = "owner_role_map"
-TARGET_ROUTING_RULE_CONFIG = "routing_rule_config"
 
 
 def _operator_from_request() -> str:
@@ -124,193 +102,6 @@ def _render_config_template(
     )
 
 
-def _normalized_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _filter_text_match(row: dict[str, Any], fields: list[str], query: str) -> bool:
-    normalized_query = _normalized_text(query).lower()
-    if not normalized_query:
-        return True
-    haystack = " ".join(_normalized_text(row.get(field)).lower() for field in fields)
-    return normalized_query in haystack
-
-
-def _recent_audit_entries(target_type: str, limit: int = 8) -> list[dict[str, str]]:
-    return [
-        {
-            "operator": _normalized_text(row.get("operator")),
-            "action_type": _normalized_text(row.get("action_type")),
-            "target_id": _normalized_text(row.get("target_id")),
-            "created_at": _normalized_text(row.get("created_at")),
-        }
-        for row in admin_config_repo.list_admin_operation_logs(target_type=target_type, limit=limit)
-    ]
-
-
-def _audit_meta_map(target_type: str, target_ids: list[str]) -> dict[str, dict[str, str]]:
-    raw = admin_config_repo.get_latest_audit_map(
-        target_type=target_type,
-        target_ids=[_normalized_text(item) for item in target_ids if _normalized_text(item)],
-    )
-    return {
-        target_id: {
-            "last_modified_at": _normalized_text(item.get("created_at")),
-            "last_modified_by": _normalized_text(item.get("operator")),
-            "last_action_type": _normalized_text(item.get("action_type")),
-        }
-        for target_id, item in raw.items()
-    }
-
-
-def _apply_audit_meta(rows: list[dict[str, Any]], *, target_type: str, id_field: str) -> list[dict[str, Any]]:
-    audit_map = _audit_meta_map(target_type, [_normalized_text(row.get(id_field)) for row in rows])
-    return [
-        {
-            **row,
-            **audit_map.get(
-                _normalized_text(row.get(id_field)),
-                {"last_modified_at": "", "last_modified_by": "", "last_action_type": ""},
-            ),
-        }
-        for row in rows
-    ]
-
-
-def _get_owner_role(userid: str) -> dict[str, Any] | None:
-    return GetOwnerRoleQuery()(GetOwnerRoleQueryDTO(userid=_normalized_text(userid)))
-
-
-def _get_routing_rule(rule_key: str) -> dict[str, Any] | None:
-    return GetRoutingRuleQuery()(GetRoutingRuleQueryDTO(rule_key=_normalized_text(rule_key)))
-
-
-def _list_owner_routing_settings(*, query: str, active_only: bool) -> dict[str, Any]:
-    owner_rows = [
-        dict(item)
-        for item in GetOwnerRoleMapQuery()(
-            GetOwnerRoleMapQueryDTO(active_only=bool(active_only))
-        )
-    ]
-    owner_rows = [row for row in owner_rows if _filter_text_match(row, ["userid", "display_name", "role"], query)]
-    owner_rows = _apply_audit_meta(owner_rows, target_type=TARGET_OWNER_ROLE_MAP, id_field="userid")
-
-    routing_payload = GetRoutingRuleConfigQuery()(
-        GetRoutingRuleConfigQueryDTO(active_only=bool(active_only))
-    )
-    routing_rows = [dict(item) for item in (routing_payload.get("routing_rules") or {}).values()]
-    routing_rows = [
-        row
-        for row in routing_rows
-        if _filter_text_match(
-            row,
-            [
-                "rule_key",
-                "routing_alias",
-                "route_owner_userid",
-                "route_owner_role",
-                "routing_target",
-                "fallback_target",
-                "when_owner_role_sales",
-                "when_owner_role_delivery",
-            ],
-            query,
-        )
-    ]
-    routing_rows = _apply_audit_meta(routing_rows, target_type=TARGET_ROUTING_RULE_CONFIG, id_field="rule_key")
-
-    return {
-        "owner_rows": owner_rows,
-        "routing_rows": routing_rows,
-        "summary_cards": [
-            {"label": "负责人条目", "value": len(owner_rows), "description": "当前已维护的负责人角色数量"},
-            {
-                "label": "启用负责人",
-                "value": sum(1 for row in owner_rows if bool(row.get("active"))),
-                "description": "当前启用中的负责人数量",
-            },
-            {"label": "分配规则", "value": len(routing_rows), "description": "当前已维护的分配规则数量"},
-            {
-                "label": "启用规则",
-                "value": sum(1 for row in routing_rows if bool(row.get("active"))),
-                "description": "当前启用中的分配规则数量",
-            },
-        ],
-        "audit_entries": _recent_audit_entries(TARGET_ROUTING_RULE_CONFIG, limit=8)
-        + _recent_audit_entries(TARGET_OWNER_ROLE_MAP, limit=8),
-        "role_options": list(routing_payload.get("owner_role_options") or []),
-        "routing_target_options": list(routing_payload.get("routing_target_options") or []),
-    }
-
-
-def _audit_log(
-    *,
-    operator: str,
-    action_type: str,
-    target_type: str,
-    target_id: str,
-    before: dict[str, Any] | None,
-    after: dict[str, Any] | None,
-) -> None:
-    admin_config_repo.insert_admin_operation_log(
-        operator=_normalized_text(operator) or "crm_console",
-        action_type=_normalized_text(action_type),
-        target_type=_normalized_text(target_type),
-        target_id=_normalized_text(target_id),
-        before_json=before or {},
-        after_json=after or {},
-    )
-
-
-def _save_owner_role_setting(payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
-    userid = _normalized_text(payload.get("userid"))
-    before = _get_owner_role(userid)
-    saved = SaveOwnerRoleSettingCommand()(
-        SaveOwnerRoleSettingCommandDTO(
-            userid=userid,
-            display_name=_normalized_text(payload.get("display_name")),
-            role=_normalized_text(payload.get("role")),
-            active=payload.get("active"),
-        )
-    )
-    _audit_log(
-        operator=operator,
-        action_type="update" if before else "create",
-        target_type=TARGET_OWNER_ROLE_MAP,
-        target_id=userid,
-        before=before,
-        after=saved,
-    )
-    return saved
-
-
-def _save_routing_rule_setting(payload: dict[str, Any], *, operator: str) -> dict[str, Any]:
-    rule_key = _normalized_text(payload.get("rule_key"))
-    before = _get_routing_rule(rule_key)
-    saved = SaveRoutingRuleSettingCommand()(
-        SaveRoutingRuleSettingCommandDTO(
-            rule_key=rule_key,
-            routing_alias=_normalized_text(payload.get("routing_alias")),
-            route_owner_userid=_normalized_text(payload.get("route_owner_userid")),
-            route_owner_role=_normalized_text(payload.get("route_owner_role")),
-            routing_target=_normalized_text(payload.get("routing_target")),
-            fallback_target=_normalized_text(payload.get("fallback_target")),
-            when_owner_role_sales=_normalized_text(payload.get("when_owner_role_sales")),
-            when_owner_role_delivery=_normalized_text(payload.get("when_owner_role_delivery")),
-            active=payload.get("active"),
-        )
-    )
-    _audit_log(
-        operator=operator,
-        action_type="update" if before else "create",
-        target_type=TARGET_ROUTING_RULE_CONFIG,
-        target_id=_normalized_text(saved.get("rule_key") or rule_key),
-        before=before,
-        after=saved,
-    )
-    return saved
-
-
 def admin_config_home():
     payload = build_config_home_payload()
     return _render_config_template(
@@ -326,7 +117,7 @@ def admin_config_home():
 def _routing_page(*, page_error: str = ""):
     query = _query_text("q")
     active_only = _query_bool("active_only")
-    payload = _list_owner_routing_settings(query=query, active_only=active_only)
+    payload = list_owner_routing_settings(query=query, active_only=active_only)
     edit_owner = _query_text("edit_owner")
     edit_rule = _query_text("edit_rule")
     owner_form = next((row for row in payload["owner_rows"] if row["userid"] == edit_owner), {"active": True, "role": "sales"})
@@ -368,7 +159,7 @@ def admin_config_save_owner_role():
         return _routing_page(page_error=token_error)
     payload = dict(request.form)
     try:
-        saved = _save_owner_role_setting(payload, operator=_operator_from_request())
+        saved = save_owner_role_setting(payload, operator=_operator_from_request())
     except ValueError as exc:
         return _routing_page(page_error=str(exc))
     return redirect(url_for("api.admin_config_routing", saved=1, edit_owner=saved.get("userid", "")), code=302)
@@ -380,7 +171,7 @@ def admin_config_save_routing_rule():
         return _routing_page(page_error=token_error)
     payload = dict(request.form)
     try:
-        saved = _save_routing_rule_setting(payload, operator=_operator_from_request())
+        saved = save_routing_rule_setting(payload, operator=_operator_from_request())
     except ValueError as exc:
         return _routing_page(page_error=str(exc))
     return redirect(url_for("api.admin_config_routing", saved=1, edit_rule=saved.get("rule_key", "")), code=302)
@@ -719,13 +510,13 @@ def api_admin_config_overview():
 
 
 def api_admin_config_routing():
-    return jsonify({"ok": True, "config": _list_owner_routing_settings(query=_query_text("q"), active_only=_query_bool("active_only"))})
+    return jsonify({"ok": True, "config": list_owner_routing_settings(query=_query_text("q"), active_only=_query_bool("active_only"))})
 
 
 def api_admin_config_save_owner_role():
     payload = request.get_json(silent=True) or {}
     try:
-        saved = _save_owner_role_setting(payload, operator=_operator_from_request())
+        saved = save_owner_role_setting(payload, operator=_operator_from_request())
         return jsonify({"ok": True, "item": saved})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -734,7 +525,7 @@ def api_admin_config_save_owner_role():
 def api_admin_config_save_routing_rule():
     payload = request.get_json(silent=True) or {}
     try:
-        saved = _save_routing_rule_setting(payload, operator=_operator_from_request())
+        saved = save_routing_rule_setting(payload, operator=_operator_from_request())
         return jsonify({"ok": True, "item": saved})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
