@@ -309,6 +309,7 @@
     </div>
     <div class="op-action-buttons">
       <a class="admin-button admin-button--secondary" href="{{ (workspace.action_urls or {}).workflow_list or '#' }}">高级列表</a>
+      <a class="admin-button admin-button--secondary" href="{{ (workspace.action_urls or {}).workflow_new or '#' }}">新建任务流</a>
       <button class="admin-button admin-button--secondary" id="save-as-template-button" type="button">保存为模板</button>
       <button class="admin-button admin-button--secondary" id="save-draft-button" type="button">保存草稿</button>
       <button class="admin-button admin-button--primary" id="save-active-button" type="button">保存并启用</button>
@@ -464,7 +465,7 @@
         <div class="op-preview-flow" id="preview-flow" style="margin-top:12px;"></div>
       </section>
       <section class="op-preview-card">
-        <h3>内容预览</h3>
+        <h3>执行预览</h3>
         <div class="op-preview-message" id="content-preview" style="margin-top:12px;"></div>
       </section>
       <section class="op-preview-card">
