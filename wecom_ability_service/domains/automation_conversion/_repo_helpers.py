@@ -14,13 +14,10 @@ from __future__ import annotations
 from typing import Any
 
 from ...db import get_db
+from ...infra.helpers import db_bool as _db_bool
 from ...infra.json_utils import json_dumps, safe_json_loads
 
 _AUTOMATION_SOP_POOL_LOCK_NAMESPACE = 41017
-
-
-def _db_bool(value: bool) -> bool:
-    return bool(value)
 
 
 def _normalized_text(value: Any) -> str:
