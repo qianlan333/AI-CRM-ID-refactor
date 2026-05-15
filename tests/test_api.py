@@ -1436,6 +1436,9 @@ def test_admin_questionnaire_management_page_exists(client):
     assert "客户管理后台" in text
     assert "问卷管理" in text
     assert "创建新问卷" in text
+    assert "创建测评问卷模板" in text
+    assert "多维测评按“模板资产”管理" in text
+    assert "多维测评" in text
     assert "问卷名称" in text
     assert "创建时间" in text
     assert "提交数" in text
@@ -1444,6 +1447,29 @@ def test_admin_questionnaire_management_page_exists(client):
     assert 'data-action="delete"' in text
     assert "questionnaire-name-sub" not in text
     assert '<div class="workspace">' not in text
+
+
+def test_assessment_template_asset_detection_distinguishes_templates_from_references():
+    from wecom_ability_service.http.admin_questionnaire_console import _is_assessment_template_asset
+
+    assert _is_assessment_template_asset(
+        {"assessment_enabled": True, "assessment_config": {"asset_kind": "assessment_template"}}
+    )
+    assert not _is_assessment_template_asset(
+        {
+            "assessment_enabled": True,
+            "assessment_config": {
+                "asset_kind": "assessment_template_reference",
+                "source_questionnaire_id": 1,
+            },
+        }
+    )
+    assert _is_assessment_template_asset(
+        {"assessment_enabled": True, "assessment_config": {"template_id": "siyuan_ip_business"}}
+    )
+    assert not _is_assessment_template_asset(
+        {"assessment_enabled": True, "assessment_config": {"template_id": "questionnaire_template_1"}}
+    )
 
 
 def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client):
@@ -1457,8 +1483,31 @@ def test_admin_questionnaire_editor_new_page_contains_tag_picker_fallback(client
     assert "题型" in text
     assert "手工填写" in text or "tag_id" in text
     assert "企微标签加载失败" in text
+    assert "多维测评" in text
+    assert "添加多维测评模板" in text
+    assert "测评维度" in text
+    assert "测评分型" in text
+    assert "选择测评模板资产" in text
+    assert "添加这个模板到当前问卷" in text
+    assert "assessment_template_reference" in text
     assert "从空白模板开始搭建题目、标签和分数规则。" not in text
     assert '<div id="questionnaire-list"' not in text
+
+
+def test_admin_questionnaire_editor_assessment_mode_prefills_config(client):
+    response = client.get("/admin/questionnaires/new?mode=assessment")
+    text = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'defaultAssessment: true' in text
+    assert "创建测评问卷模板" in text
+    assert "小 IP 商业力测评" in text
+    assert "多维测评模板 · 整组引用" in text
+    assert "综合分层说明" in text
+    assert "这一层的结果说明" in text
+    assert "assessment_template" in text
+    assert "用户获取" in text
+    assert "用户成交" in text
 
 
 def test_admin_questionnaire_editor_existing_page_contains_editor(client):
@@ -2776,6 +2825,89 @@ def _build_questionnaire_payload_with_mobile(**overrides) -> dict:
     return payload
 
 
+def _build_assessment_questionnaire_payload(**overrides) -> dict:
+    payload = _build_questionnaire_payload(**overrides)
+    payload["assessment_enabled"] = True
+    payload["assessment_config"] = {
+        "strength_count": 1,
+        "weakness_count": 1,
+        "overall_levels": [
+            {"min_score": 0, "max_score": 4, "title": "待破局", "tag_codes": ["assessment_low"]},
+            {
+                "min_score": 5,
+                "max_score": 99,
+                "title": "进阶型",
+                "greeting": "你已经有基础商业动作。",
+                "summary": "已经有基础动作，可以继续补短板。",
+                "recommended_action": "先把成交和维护动作标准化。",
+                "course_name": "AI 私域商业闭环课",
+                "course_url": "https://example.com/main-course",
+                "cta_text": "领取提升方案",
+                "tag_codes": ["assessment_high"],
+            },
+        ],
+        "dimensions": [
+            {
+                "key": "deal",
+                "name": "成交能力",
+                "type_priority": ["push", "passive"],
+                "types": [
+                    {"key": "passive", "name": "被动型"},
+                    {
+                        "key": "push",
+                        "name": "推销型",
+                        "title": "成交推进型",
+                        "greeting": "你已经愿意主动推进成交。",
+                        "summary": "成交动作主动但需要更稳。",
+                        "diagnosis": "成交动作主动但节奏还需要标准化。",
+                        "recommended_action": "整理异议处理和跟进话术。",
+                        "course_name": "成交话术 SOP 课",
+                        "course_url": "https://example.com/deal-course",
+                        "cta_text": "学习成交话术",
+                        "tag_codes": ["assessment_deal_push"],
+                    },
+                ],
+                "levels": [
+                    {"min_score": 3, "max_score": 5, "title": "成交可用", "tag_codes": ["assessment_deal_ok"]},
+                ],
+            },
+            {
+                "key": "maintain",
+                "name": "用户维护",
+                "type_priority": ["nurture", "warm"],
+                "types": [
+                    {"key": "warm", "name": "暖男女型"},
+                    {"key": "nurture", "name": "养鱼型", "tag_codes": ["assessment_maintain_nurture"]},
+                ],
+            },
+        ],
+        "recommendations": [
+            {
+                "dimension_key": "maintain",
+                "max_score": 3,
+                "title": "先补维护节奏",
+                "summary": "把用户维护动作固定下来。",
+                "tag_codes": ["assessment_reco_maintain"],
+            }
+        ],
+        "final_recommendation": {
+            "enabled": True,
+            "title": "下一步建议",
+            "description": "把获客、维护和成交一次搭起来。",
+            "course_name": "小 IP 商业闭环训练营",
+            "course_url": "https://example.com/final-course",
+            "cta_text": "查看完整课程",
+        },
+    }
+    payload["questions"][0]["assessment_dimension_key"] = "deal"
+    payload["questions"][0]["options"][0]["assessment_type_key"] = "passive"
+    payload["questions"][0]["options"][1]["assessment_type_key"] = "push"
+    payload["questions"][1]["assessment_dimension_key"] = "maintain"
+    payload["questions"][1]["options"][0]["assessment_type_key"] = "warm"
+    payload["questions"][1]["options"][1]["assessment_type_key"] = "nurture"
+    return payload
+
+
 WECHAT_BROWSER_HEADERS = {"User-Agent": "Mozilla/5.0 MicroMessenger"}
 
 
@@ -3195,6 +3327,156 @@ def test_questionnaire_submit_matches_identity_and_marks_tags(client, app, monke
         "focus_service",
         "score_high",
     }
+
+
+def test_assessment_questionnaire_saves_snapshot_and_renders_result_page(client, app):
+    create_response = client.post("/api/admin/questionnaires", json=_build_assessment_questionnaire_payload())
+    assert create_response.status_code == 200
+    questionnaire = create_response.get_json()["questionnaire"]
+    assert questionnaire["assessment_enabled"] is True
+    assert questionnaire["questions"][0]["assessment_dimension_key"] == "deal"
+    assert questionnaire["questions"][0]["options"][1]["assessment_type_key"] == "push"
+
+    public_response = client.get(
+        f"/api/h5/questionnaires/{questionnaire['slug']}",
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert public_response.status_code == 200
+    public_payload = public_response.get_json()["questionnaire"]
+    assert "assessment_config" not in public_payload
+
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1, q2, q3 = detail["questions"]
+    submit_response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "respondent_key": "assessment-user-001",
+            "answers": {
+                str(q1["id"]): q1["options"][1]["id"],
+                str(q2["id"]): [q2["options"][0]["id"], q2["options"][1]["id"]],
+                str(q3["id"]): "希望先看测评结果。",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+
+    assert submit_response.status_code == 200
+    submit_result = submit_response.get_json()
+    assert submit_result["success"] is True
+    assert submit_result["result_url"].startswith(f"/s/{questionnaire['slug']}/result/")
+    assert submit_result["redirect_url"] == submit_result["result_url"]
+
+    with app.app_context():
+        submission = get_db().execute(
+            """
+            SELECT total_score, final_tags, assessment_result_snapshot, result_token, redirect_url_snapshot
+            FROM questionnaire_submissions
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert float(submission["total_score"]) == 6.0
+        assert submission["result_token"]
+        assert submission["redirect_url_snapshot"] == submit_result["result_url"]
+        final_tags = submission["final_tags"] if isinstance(submission["final_tags"], list) else json.loads(submission["final_tags"])
+        assert set(final_tags) == {"assessment_high", "assessment_deal_push"}
+        snapshot = (
+            submission["assessment_result_snapshot"]
+            if isinstance(submission["assessment_result_snapshot"], dict)
+            else json.loads(submission["assessment_result_snapshot"])
+        )
+        assert snapshot["enabled"] is True
+        assert snapshot["overall_level"]["title"] == "进阶型"
+        assert snapshot["overall_level"]["course_url"] == "https://example.com/main-course"
+        assert snapshot["overall_level"]["recommended_action"] == "先把成交和维护动作标准化。"
+        assert [item["key"] for item in snapshot["dimensions"]] == ["deal", "maintain"]
+        assert snapshot["dimensions"][0]["dominant_type"]["name"] == "推销型"
+        assert snapshot["dimensions"][0]["dominant_type"]["course_url"] == "https://example.com/deal-course"
+        assert snapshot["dimensions"][1]["dominant_type"]["name"] == "暖男女型"
+        assert snapshot["final_recommendation"]["course_url"] == "https://example.com/final-course"
+        assert snapshot["tag_plan"]["score_tier_tag_ids"] == ["assessment_high"]
+        assert snapshot["tag_plan"]["dimension_category_tag_ids"] == ["assessment_deal_push"]
+
+    result_page = client.get(submit_result["result_url"])
+    body = result_page.get_data(as_text=True)
+    assert result_page.status_code == 200
+    assert "进阶型" in body
+    assert "领取提升方案" in body
+    assert "成交能力" in body
+    assert "成交话术 SOP 课" in body
+    assert "用户维护" in body
+    assert "暖男女型" in body
+    assert "小 IP 商业闭环训练营" in body
+
+
+def test_assessment_questionnaire_applies_only_result_tags(client, app, monkeypatch):
+    captured_mark_payloads = []
+
+    def capturing_post(url, params=None, json=None, timeout=None):
+        if url.endswith("/cgi-bin/externalcontact/mark_tag"):
+            captured_mark_payloads.append(json or {})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout)
+
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+    monkeypatch.setattr("requests.post", capturing_post)
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("ww-test", "wm_ext_assessment_001", "union-assessment-001", "openid-assessment-001", "sales_01", "测评客户", "active", "{}"),
+        )
+        db.commit()
+
+    create_response = client.post("/api/admin/questionnaires", json=_build_assessment_questionnaire_payload())
+    questionnaire = create_response.get_json()["questionnaire"]
+    detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+    q1, q2, q3 = detail["questions"]
+
+    submit_response = client.post(
+        f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+        json={
+            "openid": "openid-assessment-001",
+            "answers": {
+                str(q1["id"]): q1["options"][1]["id"],
+                str(q2["id"]): [q2["options"][0]["id"], q2["options"][1]["id"]],
+                str(q3["id"]): "希望先看测评结果。",
+            },
+        },
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert submit_response.status_code == 200
+
+    assert len(captured_mark_payloads) == 1
+    assert set(captured_mark_payloads[0]["add_tag"]) == {"assessment_high", "assessment_deal_push"}
+    assert "remove_tag" not in captured_mark_payloads[0]
+
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT status, add_tag_ids, matched_score_tier_name, matched_dimension_categories
+            FROM questionnaire_scrm_apply_logs
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        assert row["status"] == "success"
+        add_tag_ids = row["add_tag_ids"] if isinstance(row["add_tag_ids"], list) else json.loads(row["add_tag_ids"])
+        assert set(add_tag_ids) == {"assessment_high", "assessment_deal_push"}
+        assert row["matched_score_tier_name"] == "进阶型"
+        categories = row["matched_dimension_categories"] if isinstance(row["matched_dimension_categories"], list) else json.loads(row["matched_dimension_categories"])
+        assert categories[0]["category_key"] == "push"
+
+    debug_response = client.get(f"/api/admin/questionnaires/{questionnaire['id']}/latest-submit-debug")
+    debug_payload = debug_response.get_json()
+    assert debug_payload["ok"] is True
+    assert debug_payload["final_add_tag_ids"] == ["assessment_deal_push", "assessment_high"]
+    assert debug_payload["scrm_apply_status"] == "success"
 
 
 def test_questionnaire_submit_prefers_session_identity(client, app):
@@ -5723,5 +6005,3 @@ def test_customer_center_detail_aggregates_sidebar_related_data(client, app):
     assert customer["sidebar_context"]["signup_tag_status"]["current_signup_status"] == "lead"
     assert customer["tags"][0]["tag_name"] == "高净值"
     assert customer["follow_users"][0]["userid"] == "sales_09"
-
-
