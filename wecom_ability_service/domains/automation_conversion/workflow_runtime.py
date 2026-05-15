@@ -516,6 +516,26 @@ def _node_day_index_matches(*, entered_at: str, send_time: str, scheduled_for: s
     return day_index == int(expected_day_offset) if day_index is not None else False
 
 
+def _execution_can_recompute_day_offset_miss(execution: dict[str, Any]) -> bool:
+    if _normalized_text(execution.get("status")) not in _FINAL_EXECUTION_STATUSES:
+        return False
+    if any(
+        int(execution.get(counter_key) or 0) > 0
+        for counter_key in ("total_count", "success_count", "skipped_count", "failed_count")
+    ):
+        return False
+    summary = execution.get("summary_json") or {}
+    if isinstance(summary, str):
+        try:
+            summary = json.loads(summary)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            summary = {}
+    if not isinstance(summary, dict):
+        return False
+    zero_hit_reasons = summary.get("zero_hit_reasons") or []
+    return "day_offset_not_due" in {str(item) for item in zero_hit_reasons}
+
+
 def _resolve_profile_segment_match(
     *,
     member: dict[str, Any],
@@ -1415,7 +1435,7 @@ def _run_due_node(
         ) or workflow_repo.get_workflow_execution_row_by_execution_id(execution_key)
     if not execution:
         return {"ok": False, "status": "execution_create_failed", "node_id": int(node.get("id") or 0)}
-    if _normalized_text(execution.get("status")) in _FINAL_EXECUTION_STATUSES:
+    if _normalized_text(execution.get("status")) in _FINAL_EXECUTION_STATUSES and not _execution_can_recompute_day_offset_miss(execution):
         result = {
             "ok": True,
             "status": "already_processed",

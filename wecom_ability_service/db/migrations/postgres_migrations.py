@@ -121,6 +121,55 @@ def _ensure_postgres_automation_agent_config_tables(db) -> None:
     )
 
 
+def _ensure_pending_questionnaire_followup_cadence(db) -> None:
+    db.execute(
+        """
+        UPDATE automation_workflow_node AS node
+        SET day_offset = CASE node.node_code
+            WHEN '催问卷_1' THEN 1
+            WHEN '催问卷_2' THEN 2
+            WHEN '催问卷_3' THEN 3
+            ELSE node.day_offset
+        END,
+            updated_at = CURRENT_TIMESTAMP
+        FROM automation_workflow AS workflow
+        WHERE workflow.id = node.workflow_id
+          AND workflow.workflow_code = '3_次推填问卷'
+          AND node.node_code IN ('催问卷_1', '催问卷_2', '催问卷_3')
+          AND node.target_audience_code = 'pending_questionnaire'
+          AND node.trigger_mode = 'scheduled'
+          AND node.send_time = '09:00'
+          AND node.day_offset <> CASE node.node_code
+              WHEN '催问卷_1' THEN 1
+              WHEN '催问卷_2' THEN 2
+              WHEN '催问卷_3' THEN 3
+              ELSE node.day_offset
+          END
+          AND EXISTS (
+              SELECT 1
+              FROM automation_workflow_node AS legacy_node
+              WHERE legacy_node.workflow_id = workflow.id
+                AND legacy_node.node_code = '催问卷_1'
+                AND legacy_node.day_offset = 2
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM automation_workflow_node AS legacy_node
+              WHERE legacy_node.workflow_id = workflow.id
+                AND legacy_node.node_code = '催问卷_2'
+                AND legacy_node.day_offset = 3
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM automation_workflow_node AS legacy_node
+              WHERE legacy_node.workflow_id = workflow.id
+                AND legacy_node.node_code = '催问卷_3'
+                AND legacy_node.day_offset = 4
+          )
+        """
+    )
+
+
 def _migrate_postgres_conversion_agent_pools_to_bindings(db) -> None:
     db.execute(
         """
@@ -1075,6 +1124,7 @@ def _init_postgres(db) -> None:
         ON automation_workflow_node (target_audience_code, trigger_mode, enabled, id ASC)
         """
     )
+    _ensure_pending_questionnaire_followup_cadence(db)
     db.execute(
         """
         ALTER TABLE IF EXISTS automation_workflow_execution

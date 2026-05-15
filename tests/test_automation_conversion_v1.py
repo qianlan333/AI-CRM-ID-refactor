@@ -114,6 +114,53 @@ def test_init_db_adds_workflow_node_trigger_mode_column(app):
         assert "trigger_mode" in _sqlite_table_columns(get_db(), "automation_workflow_node")
 
 
+def test_init_db_adjusts_pending_questionnaire_followup_legacy_cadence(app):
+    from wecom_ability_service.db.migrations.postgres_migrations import (
+        _ensure_pending_questionnaire_followup_cadence,
+    )
+
+    workflow_bundle = _create_test_workflow(app, workflow_name="3_次推填问卷", status="active")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+    with app.app_context():
+        for node_code, day_offset in (
+            ("催问卷_1", 2),
+            ("催问卷_2", 3),
+            ("催问卷_3", 4),
+        ):
+            create_conversion_workflow_node(
+                workflow_id,
+                {
+                    "node_code": node_code,
+                    "node_name": node_code,
+                    "target_audience_code": "pending_questionnaire",
+                    "trigger_mode": "scheduled",
+                    "day_offset": day_offset,
+                    "send_time": "09:00",
+                    "content_mode": "standard_direct",
+                    "standard_content_text": f"{node_code} 内容",
+                    "enabled": True,
+                },
+                operator_id="tester",
+            )
+
+        _ensure_pending_questionnaire_followup_cadence(get_db())
+        rows = get_db().execute(
+            """
+            SELECT node_code, day_offset
+            FROM automation_workflow_node
+            WHERE workflow_id = ?
+            ORDER BY node_code ASC
+            """,
+            (workflow_id,),
+        ).fetchall()
+
+    assert {row["node_code"]: row["day_offset"] for row in rows} == {
+        "催问卷_1": 1,
+        "催问卷_2": 2,
+        "催问卷_3": 3,
+    }
+
+
 def test_create_workflow_supports_split_recipient_filter_and_content_segmentation(app):
     template_seed = _seed_profile_segment_template(app, questionnaire_id=711, template_name="拆维度画像模板")
     _seed_test_agent_config(app, agent_code="efficiency_agent", display_name="效率 Agent")
@@ -414,6 +461,124 @@ def test_run_due_conversion_workflows_sends_pending_questionnaire_day1_day2_day3
     # _pre_enqueue_future_workflow_nodes creates additional pre-scheduled
     # broadcast_jobs for tomorrow's nodes on each run, so total >= 3
     assert enqueue_count >= 3
+
+
+def test_run_due_conversion_workflows_sends_pending_questionnaire_first_morning_after_night_entry(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_pending_night_entry_001", mobile="13800005554", owner_userid="sales_01", customer_name="夜间进入待填问卷客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_pending_night_entry_001",
+        phone="13800005554",
+        owner_staff_id="sales_01",
+        current_pool="pending_questionnaire",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-05-14 21:31:39",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="夜间进入问卷提醒", status="active")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "问卷提醒 Day 1",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "scheduled",
+                "day_offset": 1,
+                "send_time": "09:00",
+                "content_mode": "standard_direct",
+                "standard_content_text": "次日上午提醒填写问卷",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+
+    _mock_workflow_runtime_now(monkeypatch, "2026-05-15 09:05:00")
+
+    with app.app_context():
+        result = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        item_rows = get_db().execute(
+            """
+            SELECT external_contact_id, status
+            FROM automation_workflow_execution_item
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    assert result["ok"] is True
+    assert len(item_rows) == 1
+    assert item_rows[0]["external_contact_id"] == "wm_pending_night_entry_001"
+    assert item_rows[0]["status"] == "pending"
+
+
+def test_run_due_conversion_workflows_recomputes_zero_candidate_day_offset_execution_after_cadence_fix(app, monkeypatch):
+    _seed_contact(app, external_userid="wm_pending_recompute_001", mobile="13800005555", owner_userid="sales_01", customer_name="配置修正补算客户")
+    _seed_automation_member(
+        app,
+        external_contact_id="wm_pending_recompute_001",
+        phone="13800005555",
+        owner_staff_id="sales_01",
+        current_pool="pending_questionnaire",
+        activation_status="inactive",
+        questionnaire_status="pending",
+        questionnaire_follow_type="unknown",
+        decision_source="system",
+        joined_at="2026-05-14 21:31:39",
+    )
+    workflow_bundle = _create_test_workflow(app, workflow_name="问卷提醒补算", status="active")
+    workflow_id = int(((workflow_bundle.get("workflow_bundle") or {}).get("workflow") or {}).get("id") or 0)
+
+    with app.app_context():
+        node_bundle = create_conversion_workflow_node(
+            workflow_id,
+            {
+                "node_name": "问卷提醒 Day 1",
+                "target_audience_code": "pending_questionnaire",
+                "trigger_mode": "scheduled",
+                "day_offset": 2,
+                "send_time": "09:00",
+                "content_mode": "standard_direct",
+                "standard_content_text": "第一条提醒填写问卷",
+                "enabled": True,
+            },
+            operator_id="tester",
+        )
+        node_id = int((node_bundle.get("node") or {}).get("id") or 0)
+
+    _mock_workflow_runtime_now(monkeypatch, "2026-05-15 09:05:00")
+
+    with app.app_context():
+        first = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        first_items = get_db().execute("SELECT COUNT(*) AS total FROM automation_workflow_execution_item").fetchone()["total"]
+        first_execution = get_db().execute(
+            "SELECT summary_json FROM automation_workflow_execution WHERE workflow_id = ? AND node_id = ? LIMIT 1",
+            (workflow_id, node_id),
+        ).fetchone()
+        get_db().execute(
+            "UPDATE automation_workflow_node SET day_offset = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (node_id,),
+        )
+        get_db().commit()
+
+    _mock_workflow_runtime_now(monkeypatch, "2026-05-15 13:05:00")
+
+    with app.app_context():
+        second = run_due_conversion_workflows(operator_id="workflow-runner", operator_type="system")
+        item_rows = get_db().execute(
+            "SELECT external_contact_id, status FROM automation_workflow_execution_item ORDER BY id ASC"
+        ).fetchall()
+
+    first_summary = first_execution["summary_json"] if isinstance(first_execution["summary_json"], (dict, list)) else json.loads(first_execution["summary_json"])
+    assert first["ok"] is True
+    assert first_items == 0
+    assert "day_offset_not_due" in first_summary["zero_hit_reasons"]
+    assert second["ok"] is True
+    assert len(item_rows) == 1
+    assert item_rows[0]["external_contact_id"] == "wm_pending_recompute_001"
+    assert item_rows[0]["status"] == "pending"
 
 
 def test_run_due_conversion_workflows_supports_operating_audience_scheduled_node_with_timezone_entered_at(app, monkeypatch):
