@@ -1771,6 +1771,33 @@ ON automation_workflow (enabled, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_automation_workflow_review
 ON automation_workflow (review_status, status, updated_at DESC, id DESC);
 
+CREATE TABLE IF NOT EXISTS automation_operation_templates (
+    id BIGSERIAL PRIMARY KEY,
+    template_code TEXT NOT NULL UNIQUE,
+    template_name TEXT NOT NULL DEFAULT '',
+    template_source TEXT NOT NULL DEFAULT 'crm_local'
+        CHECK (template_source IN ('builtin', 'crm_local', 'ai_generated')),
+    category TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'archived')),
+    default_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ui_schema_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    workflow_blueprint_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_blueprints_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_by TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_operation_templates_source
+ON automation_operation_templates (template_source, status, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_automation_operation_templates_category
+ON automation_operation_templates (category, status, updated_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_workflow_audience (
     id BIGSERIAL PRIMARY KEY,
     workflow_id BIGINT NOT NULL REFERENCES automation_workflow(id) ON DELETE CASCADE,

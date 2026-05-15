@@ -333,6 +333,13 @@ def _operations_page_api_urls(*, program_id: int | None = None) -> dict[str, str
         "workflow_delete_base": url_for("api.api_admin_automation_conversion_workflow_delete", workflow_id=0, **program_params),
         "workflow_nodes_base": url_for("api.api_admin_automation_conversion_workflow_node_list", workflow_id=0),
         "workflow_node_base": url_for("api.api_admin_automation_conversion_workflow_node_update", node_id=0),
+        "action_templates": url_for("api.api_admin_automation_conversion_action_templates"),
+        "action_template_generate": url_for("api.api_admin_automation_conversion_action_template_generate"),
+        "action_template_from_workflow": url_for("api.api_admin_automation_conversion_action_template_from_workflow"),
+        "action_from_template": _program_route_or_main(
+            "api.api_admin_automation_program_action_from_template",
+            program_id=program_id,
+        ),
         "agents_options": url_for("api.api_admin_automation_conversion_agent_options", enabled_only=0),
         "profile_segment_templates_options": url_for("api.api_admin_automation_conversion_profile_segment_template_options", enabled_only=0, **program_params),
         "profile_segment_templates_catalog": url_for("api.api_admin_automation_conversion_profile_segment_catalog"),
@@ -349,6 +356,8 @@ def _operations_page_entry_urls(*, program_id: int | None = None) -> dict[str, s
         fallback = url_for("api.admin_automation_conversion")
         return {
             "list": fallback,
+            "action_orchestration": fallback,
+            "workflow_list": fallback,
             "workflow_new": fallback,
             "workflow_edit_base": fallback,
             "workflow_nodes_base": fallback,
@@ -356,6 +365,8 @@ def _operations_page_entry_urls(*, program_id: int | None = None) -> dict[str, s
         }
     return {
         "list": _program_route("api.admin_automation_program_operations", normalized_program_id),
+        "action_orchestration": _program_route("api.admin_automation_program_operations", normalized_program_id),
+        "workflow_list": _program_route("api.admin_automation_program_workflows", normalized_program_id),
         "workflow_new": _program_route("api.admin_automation_program_workflow_new", normalized_program_id),
         "workflow_edit_base": _program_route("api.admin_automation_program_workflow_edit", normalized_program_id, workflow_id=0),
         "workflow_nodes_base": _program_route("api.admin_automation_program_workflow_nodes", normalized_program_id, workflow_id=0),
@@ -371,6 +382,24 @@ def _build_operations_list_workspace(*, program_id: int | None = None) -> dict[s
         "entry_urls": entry_urls,
         "action_urls": {
             "workflow_new": entry_urls["workflow_new"],
+            "execution_records": entry_urls["executions"],
+        },
+    }
+
+
+def _build_action_orchestration_workspace(workflow_id: int | None = None, *, program_id: int | None = None) -> dict[str, object]:
+    normalized_workflow_id = int(workflow_id or 0) or None
+    entry_urls = _operations_page_entry_urls(program_id=program_id)
+    return {
+        "page_mode": "action_orchestration",
+        "selected_workflow_id": normalized_workflow_id,
+        "api_urls": _operations_page_api_urls(program_id=program_id),
+        "entry_urls": entry_urls,
+        "action_urls": {
+            "list": entry_urls["list"],
+            "workflow_list": entry_urls["workflow_list"],
+            "workflow_edit": entry_urls["workflow_edit_base"].replace("/0/edit", f"/{normalized_workflow_id or 0}/edit"),
+            "workflow_nodes": entry_urls["workflow_nodes_base"].replace("/0/nodes", f"/{normalized_workflow_id or 0}/nodes"),
             "execution_records": entry_urls["executions"],
         },
     }
@@ -803,6 +832,37 @@ def _render_operations_page(*, page_error: str = "", program: dict[str, object] 
     )
 
 
+def _render_action_orchestration_page(
+    *,
+    workflow_id: int | None = None,
+    page_error: str = "",
+    program: dict[str, object] | None = None,
+):
+    program_id = int((program or {}).get("id") or 0) or None
+    return _render_admin_template(
+        "automation_conversion_action_orchestration.html",
+        active_nav="automation_conversion",
+        page_title="运营动作编排",
+        page_summary="从运营动作模板开始，在同一页配置触发、对象、内容和执行节点。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化运营方案", url_for("api.admin_automation_conversion")),
+            (
+                (program or {}).get("program_name") or "自动化运营",
+                url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None,
+            ),
+            ("运营动作编排", None),
+        ),
+        workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else _automation_conversion_workspace_tabs("operations"),
+        program_context=_program_context(program, active_key="operations") if program else None,
+        operations_workspace=_build_action_orchestration_workspace(workflow_id=workflow_id, program_id=program_id),
+        admin_action_token=ensure_admin_console_action_token(),
+        page_error=page_error,
+        show_shell_meta=False,
+        show_page_header=False,
+    )
+
+
 def _render_workflow_editor_page(*, workflow_id: int | None = None, page_error: str = "", program: dict[str, object] | None = None):
     is_new = int(workflow_id or 0) <= 0
     program_id = int((program or {}).get("id") or 0) or None
@@ -1048,6 +1108,7 @@ __all__ = [
     "_automation_conversion_workspace_tabs",
     "_automation_program_workspace_tabs",
     "_build_agent_config_workspace",
+    "_build_action_orchestration_workspace",
     "_build_auto_reply_workspace",
     "_build_execution_records_workspace",
     "_build_flow_design_workspace",
@@ -1083,6 +1144,7 @@ __all__ = [
     "_query_text",
     "_redirect_to_program",
     "_render_agent_config_page",
+    "_render_action_orchestration_page",
     "_render_auto_reply_page",
     "_render_execution_records_page",
     "_render_flow_design_page",
