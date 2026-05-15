@@ -13,6 +13,8 @@ from ._repo_helpers import (  # noqa: F401
     _fetchone_dict,
     _json_dumps,
     _normalized_text,
+    _normalized_text_list,
+    _placeholders,
 )
 
 
@@ -22,13 +24,12 @@ def get_latest_questionnaire_submission_for_value_segment(
     external_userids: list[str] | None = None,
     mobile_snapshot: str = "",
 ) -> dict[str, Any] | None:
-    normalized_external_userids = [_normalized_text(item) for item in external_userids or [] if _normalized_text(item)]
+    normalized_external_userids = _normalized_text_list(external_userids)
     normalized_mobile = _normalized_text(mobile_snapshot)
     filters: list[str] = []
     params: list[Any] = [int(questionnaire_id)]
     if normalized_external_userids:
-        placeholders = ",".join("?" for _ in normalized_external_userids)
-        filters.append(f"external_userid IN ({placeholders})")
+        filters.append(f"external_userid IN ({_placeholders(normalized_external_userids)})")
         params.extend(normalized_external_userids)
     if normalized_mobile:
         filters.append("mobile_snapshot = ?")

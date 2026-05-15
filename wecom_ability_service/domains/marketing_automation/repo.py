@@ -20,7 +20,9 @@ from ._repo_helpers import (  # noqa: F401  shared helpers — 阶段 5.2
     _fetchone_dict,
     _json_dumps,
     _normalized_text,
+    _normalized_text_list,
     _nullable_timestamp_text,
+    _placeholders,
 )
 from ._repo_config import (  # noqa: F401  marketing_automation config + owner_role + question_rules — 阶段 5.4
     get_marketing_automation_config,
@@ -66,13 +68,12 @@ def list_user_ops_lead_pool_rows_for_marketing_state(
     external_userids: list[str] | None = None,
     mobile: str = "",
 ) -> list[dict[str, Any]]:
-    normalized_external_userids = [_normalized_text(item) for item in external_userids or [] if _normalized_text(item)]
+    normalized_external_userids = _normalized_text_list(external_userids)
     normalized_mobile = _normalized_text(mobile)
     filters: list[str] = []
     params: list[Any] = []
     if normalized_external_userids:
-        placeholders = ",".join("?" for _ in normalized_external_userids)
-        filters.append(f"external_userid IN ({placeholders})")
+        filters.append(f"external_userid IN ({_placeholders(normalized_external_userids)})")
         params.extend(normalized_external_userids)
     if normalized_mobile:
         filters.append("mobile = ?")
@@ -102,13 +103,12 @@ def get_explicit_trial_opening_fact(
     external_userids: list[str] | None = None,
     mobile: str = "",
 ) -> dict[str, Any] | None:
-    normalized_external_userids = [_normalized_text(item) for item in external_userids or [] if _normalized_text(item)]
+    normalized_external_userids = _normalized_text_list(external_userids)
     normalized_mobile = _normalized_text(mobile)
     filters: list[str] = []
     params: list[Any] = []
     if normalized_external_userids:
-        placeholders = ",".join("?" for _ in normalized_external_userids)
-        filters.append(f"external_userid IN ({placeholders})")
+        filters.append(f"external_userid IN ({_placeholders(normalized_external_userids)})")
         params.extend(normalized_external_userids)
     if normalized_mobile:
         filters.append("mobile = ?")
@@ -418,8 +418,10 @@ def upsert_customer_marketing_state_current(
     target = existing_rows[0] if existing_rows else None
     duplicate_ids = [int(row["id"]) for row in existing_rows[1:]]
     if duplicate_ids:
-        placeholders = ",".join("?" for _ in duplicate_ids)
-        db.execute(f"DELETE FROM customer_marketing_state_current WHERE id IN ({placeholders})", tuple(duplicate_ids))
+        db.execute(
+            f"DELETE FROM customer_marketing_state_current WHERE id IN ({_placeholders(duplicate_ids)})",
+            tuple(duplicate_ids),
+        )
     params = (
         int(person_id) if person_id is not None else None,
         _normalized_text(external_userid),
