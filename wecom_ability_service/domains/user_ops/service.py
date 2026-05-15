@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime
 from typing import Any
 
@@ -13,8 +12,6 @@ from ...db import get_db
 from ...infra.helpers import stringify_db_timestamp as _stringify_db_timestamp
 from ...infra.constants import (
     LEGACY_USER_OPS_POOL_STATUS_ORDER,
-    USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
-    USER_OPS_CONFIRMED_CLASS_TERM_MAPPINGS,
 )
 from ..class_user import service as class_user_domain_service
 from ..identity import service as identity_domain_service
@@ -91,120 +88,13 @@ def _user_ops_contact_client():
 
 
 def _normalize_user_ops_strategy_tag_groups(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_groups = (
-        payload.get("strategy_tag_group")
-        or payload.get("strategy_tag_list")
-        or payload.get("strategy_tag")
-        or payload.get("tag_group")
-        or []
-    )
-    normalized_groups: list[dict[str, Any]] = []
-    for group in raw_groups:
-        group_name = str((group or {}).get("group_name") or (group or {}).get("name") or "").strip()
-        group_id = str((group or {}).get("group_id") or (group or {}).get("id") or "").strip()
-        strategy_id = str((group or {}).get("strategy_id") or "").strip()
-        normalized_tags: list[dict[str, Any]] = []
-        for tag in ((group or {}).get("tag") or (group or {}).get("tag_list") or (group or {}).get("tags") or []):
-            tag_id = str((tag or {}).get("tag_id") or (tag or {}).get("id") or "").strip()
-            tag_name = str((tag or {}).get("tag_name") or (tag or {}).get("name") or "").strip()
-            if not tag_id or not tag_name:
-                continue
-            normalized_tags.append(
-                {
-                    "tag_id": tag_id,
-                    "tag_name": tag_name,
-                }
-            )
-        if not group_name:
-            continue
-        normalized_groups.append(
-            {
-                "strategy_id": strategy_id,
-                "group_id": group_id,
-                "group_name": group_name,
-                "tags": normalized_tags,
-            }
-        )
-    return normalized_groups
+    return user_ops_class_term_service._normalize_user_ops_strategy_tag_groups(payload)  # type: ignore[attr-defined]
 
 
 def _ensure_class_term_tag_mapping_seed() -> None:
-    db = get_db()
-    active_value = _db_bool(True)
-    existing_rows = db.execute(
-        """
-        SELECT id, strategy_id, group_id, tag_id, tag_group_name, tag_name, class_term_no, class_term_label, is_active
-        FROM class_term_tag_mapping
-        WHERE tag_group_name = ?
-        ORDER BY id ASC
-        """,
-        (USER_OPS_CLASS_TERM_TAG_GROUP_NAME,),
-    ).fetchall()
-    by_tag_id = {
-        str(row.get("tag_id") or "").strip(): dict(row)
-        for row in existing_rows
-        if str(row.get("tag_id") or "").strip()
-    }
-    by_group_name = {
-        (str(row.get("tag_group_name") or "").strip(), str(row.get("tag_name") or "").strip()): dict(row)
-        for row in existing_rows
-    }
-    for item in USER_OPS_CONFIRMED_CLASS_TERM_MAPPINGS:
-        normalized_tag_id = str(item.get("tag_id") or "").strip()
-        normalized_group_name = str(item.get("tag_group_name") or "").strip()
-        normalized_tag_name = str(item.get("tag_name") or "").strip()
-        existing = None
-        if normalized_tag_id:
-            existing = by_tag_id.get(normalized_tag_id)
-        if existing is None:
-            existing = by_group_name.get((normalized_group_name, normalized_tag_name))
-        if existing is None:
-            db.execute(
-                """
-                INSERT INTO class_term_tag_mapping (
-                    strategy_id, group_id, tag_id, tag_group_name, tag_name, class_term_no, class_term_label, is_active, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
-                (
-                    str(item.get("strategy_id") or "").strip(),
-                    str(item.get("group_id") or "").strip(),
-                    normalized_tag_id,
-                    normalized_group_name,
-                    normalized_tag_name,
-                    int(item["class_term_no"]),
-                    item["class_term_label"],
-                    active_value,
-                ),
-            )
-            continue
-        db.execute(
-            """
-            UPDATE class_term_tag_mapping
-            SET strategy_id = ?,
-                group_id = ?,
-                tag_id = ?,
-                tag_group_name = ?,
-                tag_name = ?,
-                class_term_no = ?,
-                class_term_label = ?,
-                is_active = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (
-                str(existing.get("strategy_id") or "").strip() or str(item.get("strategy_id") or "").strip(),
-                str(existing.get("group_id") or "").strip() or str(item.get("group_id") or "").strip(),
-                str(existing.get("tag_id") or "").strip() or normalized_tag_id,
-                normalized_group_name or str(existing.get("tag_group_name") or "").strip(),
-                normalized_tag_name or str(existing.get("tag_name") or "").strip(),
-                int(item["class_term_no"]),
-                item["class_term_label"],
-                active_value,
-                int(existing["id"]),
-            ),
-        )
-    db.commit()
+    user_ops_class_term_service.ensure_class_term_tag_mapping_seed(
+        runtime=_user_ops_class_term_runtime()
+    )
 
 
 def ensure_class_term_tag_mapping_seed() -> None:
@@ -683,61 +573,15 @@ def _get_active_class_term_mapping_by_no(class_term_no: int | None) -> dict[str,
 
 
 def _confirmed_class_term_mappings_by_no() -> dict[int, dict[str, Any]]:
-    return {
-        int(item["class_term_no"]): {
-            "strategy_id": str(item.get("strategy_id") or "").strip(),
-            "group_id": str(item.get("group_id") or "").strip(),
-            "tag_id": str(item.get("tag_id") or "").strip(),
-            "tag_group_name": str(item.get("tag_group_name") or "").strip(),
-            "tag_name": str(item.get("tag_name") or "").strip(),
-            "class_term_no": int(item["class_term_no"]),
-            "class_term_label": str(item.get("class_term_label") or "").strip(),
-        }
-        for item in USER_OPS_CONFIRMED_CLASS_TERM_MAPPINGS
-    }
+    return user_ops_class_term_service._confirmed_class_term_mappings_by_no()  # type: ignore[attr-defined]
 
 
 def _infer_user_ops_class_term_no_from_tag_name(tag_name: str) -> int | None:
-    normalized_tag_name = str(tag_name or "").strip()
-    if not normalized_tag_name:
-        return None
-    if "首期" in normalized_tag_name:
-        return 1
-    matched = re.search(r"第\s*(\d+)\s*期", normalized_tag_name)
-    if matched:
-        return int(matched.group(1))
-    matched = re.fullmatch(r"(\d+)\s*期", normalized_tag_name)
-    if matched:
-        return int(matched.group(1))
-    return None
+    return user_ops_class_term_service._infer_user_ops_class_term_no_from_tag_name(tag_name)  # type: ignore[attr-defined]
 
 
 def _list_live_user_ops_class_term_tags(tag_payload: dict[str, Any]) -> list[dict[str, Any]]:
-    groups = _normalize_user_ops_strategy_tag_groups(tag_payload)
-    items: list[dict[str, Any]] = []
-    seen_tag_ids: set[str] = set()
-    for group in groups:
-        if str(group.get("group_name") or "").strip() != USER_OPS_CLASS_TERM_TAG_GROUP_NAME:
-            continue
-        for tag in group.get("tags") or []:
-            tag_id = str(tag.get("tag_id") or "").strip()
-            tag_name = str(tag.get("tag_name") or "").strip()
-            if not tag_id or tag_id in seen_tag_ids:
-                continue
-            seen_tag_ids.add(tag_id)
-            inferred_no = _infer_user_ops_class_term_no_from_tag_name(tag_name)
-            items.append(
-                {
-                    "strategy_id": str(group.get("strategy_id") or "").strip(),
-                    "group_id": str(group.get("group_id") or "").strip(),
-                    "tag_group_name": USER_OPS_CLASS_TERM_TAG_GROUP_NAME,
-                    "tag_id": tag_id,
-                    "tag_name": tag_name,
-                    "class_term_no": inferred_no,
-                    "class_term_label": f"{inferred_no}期" if inferred_no is not None else "",
-                }
-            )
-    return items
+    return user_ops_class_term_service._list_live_user_ops_class_term_tags(tag_payload)  # type: ignore[attr-defined]
 
 
 def _resolve_owner_backfill_class_term_mappings(
@@ -754,42 +598,7 @@ def _resolve_owner_backfill_class_term_mappings(
 
 
 def _list_owner_backfill_candidate_external_userids(owner_userid: str) -> list[dict[str, Any]]:
-    normalized_owner_userid = str(owner_userid or "").strip()
-    if not normalized_owner_userid:
-        raise ValueError("owner_userid is required")
-    rows = get_db().execute(
-        """
-        WITH candidates AS (
-            SELECT external_userid, 1 AS from_follow_relation, 0 AS from_contact_owner
-            FROM wecom_external_contact_follow_users
-            WHERE user_id = ?
-              AND relation_status = 'active'
-              AND COALESCE(external_userid, '') <> ''
-            UNION ALL
-            SELECT external_userid, 0 AS from_follow_relation, 1 AS from_contact_owner
-            FROM contacts
-            WHERE owner_userid = ?
-              AND COALESCE(external_userid, '') <> ''
-        )
-        SELECT
-            external_userid,
-            MAX(from_follow_relation) AS from_follow_relation,
-            MAX(from_contact_owner) AS from_contact_owner
-        FROM candidates
-        GROUP BY external_userid
-        ORDER BY external_userid ASC
-        """,
-        (normalized_owner_userid, normalized_owner_userid),
-    ).fetchall()
-    return [
-        {
-            "external_userid": str(row.get("external_userid") or "").strip(),
-            "from_follow_relation": bool(row.get("from_follow_relation")),
-            "from_contact_owner": bool(row.get("from_contact_owner")),
-        }
-        for row in rows
-        if str(row.get("external_userid") or "").strip()
-    ]
+    return user_ops_class_term_service._list_owner_backfill_candidate_external_userids(owner_userid)  # type: ignore[attr-defined]
 
 
 def _get_owner_scoped_live_contact_tags(
