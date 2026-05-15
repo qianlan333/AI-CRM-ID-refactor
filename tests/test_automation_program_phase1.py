@@ -326,6 +326,7 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "执行节点" in html
     assert "保存并启用" not in html
     assert "执行预览" not in html
+    assert "在一个页面里维护当前方案下所有运营动作" not in html
 
 
 def test_ai_action_template_generate_returns_chinese_error_when_model_unavailable(app, client, monkeypatch):

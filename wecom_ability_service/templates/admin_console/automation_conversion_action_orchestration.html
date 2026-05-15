@@ -8,25 +8,12 @@
     gap: 18px;
   }
 
-  .op-action-hero {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 18px;
-    padding: 20px 22px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 18px;
-    background: #ffffff;
-  }
-
-  .op-action-hero h1,
   .op-action-panel h2,
   .op-action-section h3 {
     margin: 0;
     color: #1f2329;
   }
 
-  .op-action-hero p,
   .op-muted {
     margin: 6px 0 0;
     color: #667085;
@@ -330,13 +317,6 @@
   data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
   data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
-  <section class="op-action-hero">
-    <div>
-      <h1>运营编排</h1>
-      <p>在一个页面里维护当前方案下所有运营动作。</p>
-    </div>
-  </section>
-
   <div class="op-feedback" id="action-feedback" hidden></div>
 
   <main class="op-action-grid">
