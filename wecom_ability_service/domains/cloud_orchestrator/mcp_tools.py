@@ -14,7 +14,6 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -990,7 +989,6 @@ def dispatch_cloud_tool(
             return ctx["result"]
 
         if tool_name == "query_recent_audit_logs":
-            from . import audit as _audit
             from ...db import get_db
             db = get_db()
             cur = db.cursor()
@@ -1024,24 +1022,21 @@ def dispatch_cloud_tool(
             return ctx["result"]
 
         if tool_name == "query_table_schema":
-            from ...db import get_db, get_db_backend
+            from ...db import get_db
             table_name = str(args.get("table_name") or "").strip()
             if not table_name or not table_name.replace("_", "").isalnum():
                 raise ValueError("invalid table_name")
             db = get_db()
             cur = db.cursor()
-            if get_db_backend() == "postgres":
-                cur.execute(
-                    """
-                    SELECT column_name, data_type, is_nullable, column_default
-                    FROM information_schema.columns
-                    WHERE table_name = ?
-                    ORDER BY ordinal_position
-                    """,
-                    (table_name,),
-                )
-            else:
-                cur.execute(f"PRAGMA table_info({table_name})")
+            cur.execute(
+                """
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_name = ?
+                ORDER BY ordinal_position
+                """,
+                (table_name,),
+            )
             rows = [dict(r) for r in (cur.fetchall() or [])]
             ctx["result"] = {"table_name": table_name, "columns": rows}
             return ctx["result"]
