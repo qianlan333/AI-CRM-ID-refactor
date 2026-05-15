@@ -148,6 +148,12 @@
     font-size: 13px;
   }
 
+  .op-current-action-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
   .op-current-action-card strong {
     color: #1f2329;
   }
@@ -156,6 +162,11 @@
     display: grid;
     gap: 10px;
     margin-bottom: 12px;
+  }
+
+  .op-action-savebar {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .op-badge {
@@ -307,21 +318,6 @@
   data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
   data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
-  <section class="op-action-hero">
-    <div>
-      <h1>运营动作编排</h1>
-      <p>左侧管理当前方案里的运营动作；新增动作时再选择模板，在同一页配置触发、对象、内容和执行节点。</p>
-    </div>
-    <div class="op-action-buttons">
-      <a class="admin-button admin-button--secondary" href="{{ (workspace.action_urls or {}).workflow_list or '#' }}">高级列表</a>
-      <button class="admin-button admin-button--secondary" id="save-as-template-button" type="button">保存为模板</button>
-      <button class="admin-button admin-button--secondary" id="save-draft-button" type="button">保存草稿</button>
-      <button class="admin-button admin-button--primary" id="save-active-button" type="button">保存并启用</button>
-      <button class="admin-button admin-button--primary" id="new-action-button" type="button">新增运营动作</button>
-      <button class="admin-button admin-button--primary" id="new-template-button" type="button">新建动作模板</button>
-    </div>
-  </section>
-
   <div class="op-feedback" id="action-feedback" hidden></div>
 
   <main class="op-action-grid">
@@ -469,6 +465,10 @@
         </div>
         <div class="op-node-list" id="node-list" style="margin-top:14px;"></div>
       </section>
+
+      <div class="op-action-savebar">
+        <button class="admin-button admin-button--primary" id="save-draft-button" type="button">保存草稿</button>
+      </div>
     </section>
 
   </main>
@@ -746,15 +746,20 @@
         const id = Number(workflow.id || 0);
         const nodeCount = Array.isArray(item.nodes) ? item.nodes.length : Number(item.node_count || 0);
         const isActive = id && id === Number(state.currentActionId || 0);
+        const enabled = workflow.status === 'active';
         return `
           <article class="op-current-action-card ${isActive ? 'is-active' : ''}" role="button" tabindex="0" data-action-id="${escapeHtml(id)}">
             <span class="op-current-action-card__top">
               <strong>${escapeHtml(workflow.workflow_name || '未命名运营动作')}</strong>
               <span class="${sourceClass('crm_local')}">${escapeHtml(statusLabel(workflow.status))}</span>
             </span>
-            <span class="op-muted">${escapeHtml(actionAudienceLabel(item))} · ${escapeHtml(actionContentLabel(item))}</span>
             <span class="op-current-action-card__meta">
               <span>${escapeHtml(nodeCount || 0)} 个执行节点</span>
+            </span>
+            <span class="op-current-action-card__actions">
+              <button class="admin-button admin-button--secondary" type="button" data-action-open="${escapeHtml(id)}">编辑</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-toggle="${escapeHtml(id)}">${enabled ? '停用' : '启用'}</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-copy="${escapeHtml(id)}">复制</button>
               <button class="admin-button admin-button--ghost" type="button" data-action-delete="${escapeHtml(id)}">删除</button>
             </span>
           </article>
@@ -1116,7 +1121,7 @@
           state.deletedNodeIds = [];
           await loadActions();
           if (actionId) await loadExistingAction(actionId);
-          showFeedback(elements.feedback, statusOverride === 'active' ? '已保存并启用' : '草稿已保存', '');
+          showFeedback(elements.feedback, statusOverride === 'active' ? '已保存' : '草稿已保存', '');
           if (actionId) {
             window.history.replaceState({}, '', `${entryUrls.action_orchestration || entryUrls.list}?workflow_id=${encodeURIComponent(actionId)}`);
           }
@@ -1143,7 +1148,7 @@
         }
         await loadActions();
         await loadExistingAction(actionId);
-        showFeedback(elements.feedback, statusOverride === 'active' ? '已保存并启用' : '草稿已保存', '');
+        showFeedback(elements.feedback, statusOverride === 'active' ? '已保存' : '草稿已保存', '');
       } catch (error) {
         showFeedback(elements.feedback, error.message || '保存失败', 'error');
       }
@@ -1309,6 +1314,114 @@
       }
     }
 
+    function sendTimingFromNode(node) {
+      if (!node || node.trigger_mode === 'audience_entered') return 'immediate';
+      if (Number(node.day_offset || 0) === 3) return 'day_3_10';
+      if (node.send_time === '14:00') return 'daily_14';
+      return 'daily_10';
+    }
+
+    function audienceTypeFromBundle(bundle) {
+      const audiences = Array.isArray(bundle.audiences) ? bundle.audiences : [];
+      if (audiences.some((item) => item.audience_code === 'pending_questionnaire')) return 'pending_questionnaire';
+      if (audiences.some((item) => item.audience_code === 'converted')) return 'high_intent';
+      return 'custom';
+    }
+
+    function strategyFromBundle(bundle) {
+      const workflow = bundle.workflow || {};
+      const hasVariants = (bundle.nodes || []).some((node) => (node.content_variants || []).length);
+      if (workflow.generation_mode === 'personalized_single') return 'personalized_agent';
+      if (hasVariants) return 'layered_content';
+      return 'standard_content';
+    }
+
+    function copyConfigFromBundle(bundle) {
+      const workflow = bundle.workflow || {};
+      const firstNode = (bundle.nodes || [])[0] || {};
+      const strategy = strategyFromBundle(bundle);
+      const binding = (bundle.agent_bindings || [])[0] || {};
+      const mpIds = ((firstNode.standard_content_payload || {}).miniprogram_library_ids) || [];
+      return {
+        action_name: `${workflow.workflow_name || '运营动作'} 副本`,
+        description: workflow.description || '',
+        status: 'draft',
+        trigger_type: firstNode.trigger_mode === 'audience_entered' ? 'audience_entered' : 'manual',
+        audience_type: audienceTypeFromBundle(bundle),
+        send_timing: sendTimingFromNode(firstNode),
+        content_strategy: strategy,
+        layer_basis: workflow.content_segmentation_basis === 'profile' ? 'profile' : 'behavior',
+        content_profile_segment_template_id: workflow.content_profile_segment_template_id || null,
+        agent_code: binding.agent_code || (state.agentOptions[0] || {}).agent_code || '',
+        generation_requirement: elements.generationRequirement.value || '基于用户当前状态生成自然、具体、可直接发送的跟进内容。',
+        standard_content_text: firstNode.standard_content_text || '',
+        content_variants: firstNode.content_variants || [],
+        audiences: (bundle.audiences || []).map((item) => item.audience_code).filter(Boolean),
+        recipient_behavior_tier_keys: workflow.recipient_behavior_tier_keys || [],
+        miniprogram_library_ids: mpIds,
+      };
+    }
+
+    function copyNodesFromBundle(bundle) {
+      return (bundle.nodes || []).map((node, index) => ({
+        node_name: node.node_name || `执行节点 ${index + 1}`,
+        target_audience_code: node.target_audience_code || 'operating',
+        trigger_mode: node.trigger_mode || 'scheduled',
+        day_offset: node.day_offset || 1,
+        send_time: node.send_time || '10:00',
+        content_source: node.standard_content_text ? 'custom' : 'inherit',
+        enabled: node.enabled !== false,
+        content_mode: node.content_mode,
+        segmentation_basis: node.segmentation_basis,
+        standard_content_text: node.standard_content_text || '',
+        standard_content_payload: node.standard_content_payload || {},
+        content_variants: node.content_variants || [],
+        miniprogram_library_ids: ((node.standard_content_payload || {}).miniprogram_library_ids) || [],
+      }));
+    }
+
+    async function copyAction(actionId) {
+      if (!actionId) return;
+      try {
+        const detail = await requestJson(withId(apiUrls.workflow_detail_base, actionId), { credentials: 'same-origin' });
+        const bundle = detail.workflow_bundle || {};
+        const result = await requestJson(apiUrls.action_from_template, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template_code: 'custom_operation_action',
+            config: copyConfigFromBundle(bundle),
+            nodes: copyNodesFromBundle(bundle),
+          }),
+        });
+        const copiedId = Number(result.workflow_id || (((result.workflow_bundle || {}).workflow || {}).id) || 0);
+        await loadActions();
+        if (copiedId) await loadExistingAction(copiedId);
+        showFeedback(elements.feedback, '已复制运营动作', '');
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '复制失败', 'error');
+      }
+    }
+
+    async function toggleActionStatus(actionId) {
+      if (!actionId) return;
+      const item = state.workflows.find((entry) => Number(workflowFromItem(entry).id || 0) === Number(actionId));
+      const workflow = workflowFromItem(item);
+      const active = workflow.status === 'active';
+      try {
+        await requestJson(withId(active ? apiUrls.workflow_pause_base : apiUrls.workflow_activate_base, actionId), {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+        await loadActions();
+        if (Number(state.currentActionId || 0) === Number(actionId)) await loadExistingAction(actionId);
+        showFeedback(elements.feedback, active ? '已停用运营动作' : '已启用运营动作', '');
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '状态更新失败', 'error');
+      }
+    }
+
     async function createTemplateFromModal() {
       try {
         if (state.createMode === 'ai_generated') {
@@ -1387,6 +1500,24 @@
       renderActionList();
     });
     elements.actionList.addEventListener('click', async (event) => {
+      const openTarget = event.target.closest('[data-action-open]');
+      if (openTarget) {
+        event.stopPropagation();
+        await loadExistingAction(Number(openTarget.dataset.actionOpen || 0));
+        return;
+      }
+      const toggleTarget = event.target.closest('[data-action-toggle]');
+      if (toggleTarget) {
+        event.stopPropagation();
+        await toggleActionStatus(Number(toggleTarget.dataset.actionToggle || 0));
+        return;
+      }
+      const copyTarget = event.target.closest('[data-action-copy]');
+      if (copyTarget) {
+        event.stopPropagation();
+        await copyAction(Number(copyTarget.dataset.actionCopy || 0));
+        return;
+      }
       const deleteTarget = event.target.closest('[data-action-delete]');
       if (deleteTarget) {
         event.stopPropagation();
@@ -1456,12 +1587,8 @@
       renderNodes();
     });
     document.getElementById('save-draft-button').addEventListener('click', () => saveAction('draft'));
-    document.getElementById('save-active-button').addEventListener('click', () => saveAction('active'));
-    document.getElementById('save-as-template-button').addEventListener('click', saveAsTemplate);
-    document.getElementById('new-action-button').addEventListener('click', openActionTemplateModal);
     document.getElementById('new-action-side-button').addEventListener('click', openActionTemplateModal);
     document.getElementById('close-action-template-modal').addEventListener('click', closeActionTemplateModal);
-    document.getElementById('new-template-button').addEventListener('click', openTemplateModal);
     document.getElementById('close-template-modal').addEventListener('click', closeTemplateModal);
     document.getElementById('cancel-template-modal').addEventListener('click', closeTemplateModal);
     document.getElementById('create-template-submit').addEventListener('click', createTemplateFromModal);

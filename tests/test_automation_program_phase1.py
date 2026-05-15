@@ -155,8 +155,9 @@ def test_program_basic_info_edit_updates_list_and_context_header(app, client, mo
 
     updated_context = client.get(f"/admin/automation-conversion/programs/{program_id}/overview").get_data(as_text=True)
     assert "默认自动化转化方案 UI 已编辑" in updated_context
-    assert "列表页编辑后的方案说明" in updated_context
-    assert "编辑方案信息" in updated_context
+    assert "列表页编辑后的方案说明" not in updated_context
+    assert "编辑方案信息" not in updated_context
+    assert "内部编码" not in updated_context
 
 
 def test_archived_program_badge_renders(app, client, monkeypatch):
@@ -316,13 +317,13 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "运营动作编排" in html
     assert "运营动作列表" in html
     assert "新增运营动作" in html
+    assert "保存草稿" in html
     assert "触发与对象" in html
     assert "内容策略" in html
     assert "执行节点" in html
-    assert "新建动作模板" in html
+    assert "保存并启用" not in html
     assert "执行预览" not in html
 
 
