@@ -51,7 +51,13 @@ from ..group_chats.repo import get_group_chat_map
 from ..questionnaire.service import get_questionnaire_detail
 from ..tasks.service import dispatch_wecom_task  # noqa: F401 - legacy campaign dispatch monkeypatch seam
 from .presenter import business_marketing_display
-from ._repo_helpers import _normalized_text, _normalized_text_list, _nullable_timestamp_text
+from ._repo_helpers import (
+    _normalize_bool,
+    _normalize_int,
+    _normalized_text,
+    _normalized_text_list,
+    _nullable_timestamp_text,
+)
 from . import repo
 
 DEFAULT_SCENARIO_KEY = "signup_conversion_v1"
@@ -191,44 +197,6 @@ def _get_active_owner_role(userid: str) -> dict[str, Any]:
     if not owner_role or not bool(owner_role.get("active")):
         return {}
     return owner_role
-
-
-def _normalize_bool(value: Any, *, default: bool = False) -> bool:
-    if value in (None, ""):
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return _normalized_text(value).lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _normalize_int(
-    value: Any,
-    field_name: str,
-    *,
-    default: int | None = None,
-    minimum: int | None = None,
-    maximum: int | None = None,
-    allow_none: bool = False,
-) -> int | None:
-    if value in (None, ""):
-        if allow_none:
-            return None
-        if default is not None:
-            return int(default)
-        raise ValueError(f"{field_name} is required")
-    if isinstance(value, bool):
-        raise ValueError(f"{field_name} must be an integer")
-    try:
-        normalized = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field_name} must be an integer") from exc
-    if minimum is not None and normalized < minimum:
-        raise ValueError(f"{field_name} must be >= {minimum}")
-    if maximum is not None and normalized > maximum:
-        raise ValueError(f"{field_name} must be <= {maximum}")
-    return normalized
 
 
 def _normalize_option_id_list(value: Any) -> list[int]:

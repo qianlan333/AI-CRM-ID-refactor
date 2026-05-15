@@ -13,6 +13,10 @@ from wecom_ability_service.services import (
     insert_archived_messages,
     upsert_customer_trial_opening_fact,
 )
+from wecom_ability_service.domains.marketing_automation._repo_helpers import (
+    _normalize_bool,
+    _normalize_int,
+)
 
 
 class _WebhookResponse:
@@ -24,6 +28,16 @@ class _WebhookResponse:
 def _test_image_data_url(label: str = "img") -> str:
     encoded = base64.b64encode(f"fake-image-{label}".encode("utf-8")).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def test_marketing_normalizers_are_shared_package_helpers():
+    assert _normalize_bool("", default=True) is True
+    assert _normalize_bool("yes") is True
+    assert _normalize_bool("off") is False
+    assert _normalize_int("", "limit", default=3) == 3
+    assert _normalize_int("5", "limit", minimum=1, maximum=9) == 5
+    with pytest.raises(ValueError, match="limit must be <= 9"):
+        _normalize_int(10, "limit", maximum=9)
 
 
 @pytest.fixture()

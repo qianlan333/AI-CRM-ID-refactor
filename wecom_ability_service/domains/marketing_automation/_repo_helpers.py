@@ -40,6 +40,44 @@ def _normalized_text_list(values: list[Any] | tuple[Any, ...] | None) -> list[st
     return [text for item in values or () if (text := _normalized_text(item))]
 
 
+def _normalize_bool(value: Any, *, default: bool = False) -> bool:
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return _normalized_text(value).lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _normalize_int(
+    value: Any,
+    field_name: str,
+    *,
+    default: int | None = None,
+    minimum: int | None = None,
+    maximum: int | None = None,
+    allow_none: bool = False,
+) -> int | None:
+    if value in (None, ""):
+        if allow_none:
+            return None
+        if default is not None:
+            return int(default)
+        raise ValueError(f"{field_name} is required")
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+    if minimum is not None and normalized < minimum:
+        raise ValueError(f"{field_name} must be >= {minimum}")
+    if maximum is not None and normalized > maximum:
+        raise ValueError(f"{field_name} must be <= {maximum}")
+    return normalized
+
+
 def _placeholders(values: list[Any] | tuple[Any, ...]) -> str:
     return _db_placeholders(values)
 
@@ -57,6 +95,8 @@ __all__ = [
     "_db_bool",
     "_fetchone_dict",
     "_fetchall_dicts",
+    "_normalize_bool",
+    "_normalize_int",
     "_normalized_text",
     "_normalized_text_list",
     "_placeholders",
