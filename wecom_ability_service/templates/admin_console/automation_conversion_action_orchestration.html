@@ -122,6 +122,10 @@
     box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.08);
   }
 
+  .op-current-action-card.is-loading {
+    opacity: 0.82;
+  }
+
   .op-current-action-card__top,
   .op-current-action-card__meta {
     display: flex;
@@ -139,6 +143,20 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .op-current-action-card__actions button[disabled] {
+    cursor: wait;
+    opacity: 0.72;
+  }
+
+  .op-card-feedback {
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #fff7ed;
+    color: #b42318;
+    font-size: 13px;
+    line-height: 1.5;
   }
 
   .op-current-action-card strong {
@@ -270,15 +288,21 @@
   }
 
   .op-feedback {
-    padding: 11px 13px;
+    padding: 14px 16px;
+    border: 1px solid rgba(51, 112, 255, 0.24);
+    border-left: 4px solid #3370ff;
     border-radius: 12px;
     background: #eef5ff;
     color: #1456f0;
+    font-weight: 700;
+    line-height: 1.6;
   }
 
   .op-feedback.is-error {
+    border-color: rgba(192, 57, 43, 0.24);
+    border-left-color: #d92d20;
     background: #fff1f1;
-    color: #c2410c;
+    color: #b42318;
   }
 
   .op-feedback[hidden] {
@@ -291,6 +315,19 @@
     place-items: center;
     text-align: center;
     color: #667085;
+  }
+
+  .op-inline-warning {
+    margin-top: 10px;
+    border-radius: 10px;
+    padding: 9px 11px;
+    background: #fff7ed;
+    color: #b42318;
+    line-height: 1.5;
+  }
+
+  .op-inline-warning[hidden] {
+    display: none;
   }
 
   @media (max-width: 1280px) {
@@ -330,6 +367,7 @@
           <button class="admin-button admin-button--primary" id="new-action-side-button" type="button" aria-label="新建任务流">新增动作</button>
           <button class="admin-button admin-button--secondary" id="from-template-button" type="button">从模板创建</button>
         </div>
+        <div class="op-feedback" id="action-list-feedback" hidden></div>
         <div class="op-current-action-list" id="action-list"></div>
         <div class="op-empty op-muted" id="action-empty" hidden>当前没有符合条件的运营动作。</div>
       </div>
@@ -337,8 +375,8 @@
 
     <section class="op-empty-state op-action-section" id="action-empty-state" hidden>
       <div>
-        <h3>还没有选中运营动作</h3>
-        <p class="op-muted">请从左侧选择已有动作，或新增一个动作后继续配置。</p>
+        <h3 id="action-empty-title">还没有选中运营动作</h3>
+        <p class="op-muted" id="action-empty-copy">请从左侧选择已有动作，或新增一个动作后继续配置。</p>
       </div>
     </section>
 
@@ -419,6 +457,7 @@
             <span>生成要求</span>
             <textarea id="generation-requirement" rows="4"></textarea>
           </label>
+          <div class="op-inline-warning" id="agent-binding-warning" hidden></div>
         </div>
 
         <div class="op-config-box" id="standard-config" style="margin-top:14px;" hidden>
@@ -560,8 +599,11 @@
 
     const elements = {
       feedback: document.getElementById('action-feedback'),
+      listFeedback: document.getElementById('action-list-feedback'),
       configStack: document.getElementById('action-config-stack'),
       emptyState: document.getElementById('action-empty-state'),
+      emptyTitle: document.getElementById('action-empty-title'),
+      emptyCopy: document.getElementById('action-empty-copy'),
       actionList: document.getElementById('action-list'),
       actionEmpty: document.getElementById('action-empty'),
       actionSearch: document.getElementById('action-search'),
@@ -576,6 +618,7 @@
       audienceType: document.getElementById('audience-type'),
       sendTiming: document.getElementById('send-timing'),
       agentCode: document.getElementById('agent-code'),
+      agentBindingWarning: document.getElementById('agent-binding-warning'),
       generationRequirement: document.getElementById('generation-requirement'),
       standardContentText: document.getElementById('standard-content-text'),
       miniprogramLibraryIds: document.getElementById('miniprogram-library-ids'),
@@ -590,6 +633,7 @@
       crmCreateBox: document.getElementById('crm-create-box'),
       aiCreateBox: document.getElementById('ai-create-box'),
       crmStartTemplate: document.getElementById('crm-start-template'),
+      saveDraftButton: document.getElementById('save-draft-button'),
     };
 
     const state = {
@@ -608,6 +652,9 @@
       nodes: [],
       deletedNodeIds: [],
       createMode: 'crm_local',
+      actionOperations: {},
+      actionErrors: {},
+      loadingActionId: null,
     };
 
     const triggerOptions = [
@@ -648,6 +695,28 @@
       return String(base || '').replace(/\/0(?=\/|$|\?)/, '/' + encodeURIComponent(String(id)));
     }
 
+    function userFacingErrorMessage(error, fallback) {
+      const raw = String(error && error.message ? error.message : error || '').trim();
+      if (!raw) return fallback || '操作失败，请稍后重试。';
+      if (raw.includes('personalized_single requires exactly 1 agent_binding')) {
+        return '这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。';
+      }
+      if (raw.includes('manual_layered does not allow agent_bindings')) {
+        return '当前内容策略不需要智能体，请先切换到「Agent 单人定制化」或移除智能体绑定。';
+      }
+      if (raw.includes('agent_bindings does not match expected segmentation targets')) {
+        return '当前分层内容缺少对应的智能体绑定，请补齐后再保存。';
+      }
+      if (raw.includes('agent_bindings must cover every segmentation target')) {
+        return '当前分层内容缺少对应的智能体绑定，请补齐后再保存。';
+      }
+      if (raw.includes('agent_code is required')) return '请选择智能体。';
+      if (raw.includes('invalid agent_code')) return '当前选择的智能体不可用，请重新选择。';
+      if (raw.includes('workflow_name is required')) return '动作名称不能为空。';
+      if (/[\u4e00-\u9fa5]/.test(raw)) return raw;
+      return fallback || '操作失败，请稍后重试。';
+    }
+
     async function requestJson(url, options) {
       const response = await fetch(url, options);
       const rawText = await response.text();
@@ -656,12 +725,12 @@
         try { payload = JSON.parse(rawText); } catch (error) { payload = {}; }
       }
       if (!response.ok || payload.ok === false) {
-        throw new Error(String(payload.error || payload.message || rawText || `HTTP ${response.status}`).trim());
+        throw new Error(userFacingErrorMessage(payload.error || payload.message || rawText || `HTTP ${response.status}`));
       }
       return payload;
     }
 
-    function showFeedback(target, message, tone) {
+    function showFeedback(target, message, tone, options) {
       if (!target) return;
       if (!message) {
         target.hidden = true;
@@ -672,11 +741,39 @@
       target.hidden = false;
       target.textContent = message;
       target.className = 'op-feedback' + (tone === 'error' ? ' is-error' : '');
+      if (options && options.scrollIntoView) {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+
+    function showSaveError(error) {
+      const message = userFacingErrorMessage(error, '保存失败，请检查配置后重试。');
+      showFeedback(elements.feedback, message, 'error', { scrollIntoView: true });
+      if (elements.configStack) {
+        elements.configStack.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      }
+    }
+
+    function setAgentWarning(message) {
+      if (!elements.agentBindingWarning) return;
+      elements.agentBindingWarning.hidden = !message;
+      elements.agentBindingWarning.textContent = message || '';
     }
 
     function fillSelect(select, options, selectedValue) {
       select.innerHTML = options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
       if (selectedValue) select.value = selectedValue;
+    }
+
+    function ensureAgentOption(agentCode) {
+      const code = String(agentCode || '').trim();
+      if (!code || !elements.agentCode) return;
+      const exists = Array.from(elements.agentCode.options).some((option) => option.value === code);
+      if (exists) return;
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = `${code}（需确认是否可用）`;
+      elements.agentCode.appendChild(option);
     }
 
     function sourceClass(source) {
@@ -719,12 +816,24 @@
       return '统一内容';
     }
 
+    function setEditorMessage(title, copy) {
+      if (elements.emptyTitle) elements.emptyTitle.textContent = title || '还没有选中运营动作';
+      if (elements.emptyCopy) elements.emptyCopy.textContent = copy || '请从左侧选择已有动作，或新增一个动作后继续配置。';
+    }
+
     function setEditorEmpty(empty) {
       elements.emptyState.hidden = !empty;
       elements.configStack.hidden = empty;
+      if (empty) setEditorMessage('还没有选中运营动作', '请从左侧选择已有动作，或新增一个动作后继续配置。');
       if (empty && entryUrls.action_orchestration) {
         window.history.replaceState({}, '', entryUrls.action_orchestration);
       }
+    }
+
+    function setEditorLoading(message) {
+      setEditorMessage('正在加载...', message || '正在打开这个运营动作，请稍候。');
+      elements.emptyState.hidden = false;
+      elements.configStack.hidden = true;
     }
 
     function updateStartTemplateOptions() {
@@ -755,8 +864,11 @@
         const nodeCount = Array.isArray(item.nodes) ? item.nodes.length : Number(item.node_count || 0);
         const isActive = id && id === Number(state.currentActionId || 0);
         const enabled = workflow.status === 'active';
+        const operation = state.actionOperations[id] || '';
+        const disabled = operation ? 'disabled' : '';
+        const error = state.actionErrors[id] || '';
         return `
-          <article class="op-current-action-card ${isActive ? 'is-active' : ''}" role="button" tabindex="0" data-action-id="${escapeHtml(id)}">
+          <article class="op-current-action-card ${isActive ? 'is-active' : ''} ${operation ? 'is-loading' : ''}" role="button" tabindex="0" data-action-id="${escapeHtml(id)}">
             <span class="op-current-action-card__top">
               <strong>${escapeHtml(workflow.workflow_name || '未命名运营动作')}</strong>
               <span class="${sourceClass('crm_local')}">${escapeHtml(statusLabel(workflow.status))}</span>
@@ -766,15 +878,32 @@
             </span>
             <span class="op-muted">${escapeHtml(workflow.description || actionContentLabel(item))}</span>
             <span class="op-current-action-card__actions">
-              <button class="admin-button admin-button--secondary" type="button" data-action-open="${escapeHtml(id)}">编辑</button>
-              <button class="admin-button admin-button--ghost" type="button" data-action-toggle="${escapeHtml(id)}">${enabled ? '停用' : '启用'}</button>
-              <button class="admin-button admin-button--ghost" type="button" data-action-copy="${escapeHtml(id)}">复制</button>
-              <button class="admin-button admin-button--ghost" type="button" data-action-delete="${escapeHtml(id)}">删除</button>
+              <button class="admin-button admin-button--secondary" type="button" data-action-open="${escapeHtml(id)}" ${disabled}>${operation === 'open' ? '加载中...' : '编辑'}</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-toggle="${escapeHtml(id)}" ${disabled}>${operation === 'toggle' ? '处理中...' : (enabled ? '停用' : '启用')}</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-copy="${escapeHtml(id)}" ${disabled}>${operation === 'copy' ? '复制中...' : '复制'}</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-delete="${escapeHtml(id)}" ${disabled}>${operation === 'delete' ? '删除中...' : '删除'}</button>
             </span>
+            ${error ? `<span class="op-card-feedback">${escapeHtml(error)}</span>` : ''}
           </article>
         `;
       }).join('');
       elements.actionEmpty.hidden = items.length > 0;
+    }
+
+    function setActionOperation(actionId, operation) {
+      const id = Number(actionId || 0);
+      if (!id) return;
+      if (operation) state.actionOperations[id] = operation;
+      else delete state.actionOperations[id];
+      renderActionList();
+    }
+
+    function setActionError(actionId, message) {
+      const id = Number(actionId || 0);
+      if (!id) return;
+      if (message) state.actionErrors[id] = message;
+      else delete state.actionErrors[id];
+      renderActionList();
     }
 
     function behaviorTargets() {
@@ -833,6 +962,7 @@
       document.getElementById('personalized-config').hidden = strategy !== 'personalized_agent';
       document.getElementById('standard-config').hidden = strategy !== 'standard_content';
       document.getElementById('layered-config').hidden = strategy !== 'layered_content';
+      if (strategy !== 'personalized_agent') setAgentWarning('');
       renderLayeredContent();
       renderPreview();
     }
@@ -893,6 +1023,7 @@
       elements.layerBasis.value = config.layer_basis === 'profile' ? 'profile' : 'behavior';
       const firstAgent = (state.agentOptions[0] || {}).agent_code || '';
       elements.agentCode.value = config.agent_code || config.default_agent_code || firstAgent;
+      setAgentWarning('');
       const templateNodes = Array.isArray(template.node_blueprints) ? template.node_blueprints : [];
       state.nodes = templateNodes.length ? templateNodes.map((node, index) => ({
         ...node,
@@ -1013,9 +1144,15 @@
         recipient_behavior_tier_keys: state.contentStrategy === 'layered_content' && elements.layerBasis.value === 'behavior' ? ['lt_2', 'between_2_9'] : [],
         miniprogram_library_ids: String(elements.miniprogramLibraryIds.value || '').split(',').map((item) => Number(item.trim())).filter(Boolean),
       };
-      if (!config.action_name) throw new Error('动作名称不能为空');
-      if (config.content_strategy === 'personalized_agent' && !config.agent_code) throw new Error('请先选择智能体');
+      if (!config.action_name) throw new Error('动作名称不能为空。');
+      if (config.content_strategy === 'personalized_agent' && state.agentOptions.length === 0) {
+        throw new Error('当前还没有可用智能体，请先创建或启用一个智能体，再保存 Agent 单人定制化动作。');
+      }
+      if (config.content_strategy === 'personalized_agent' && !config.agent_code) {
+        throw new Error('这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。');
+      }
       if (config.content_strategy === 'standard_content' && !config.standard_content_text) throw new Error('统一内容不能为空');
+      if (config.content_strategy === 'layered_content' && !config.layer_basis) throw new Error('请先选择分层依据。');
       if (config.content_strategy === 'layered_content' && config.content_variants.some((item) => !item.content_text)) {
         throw new Error('请补全每个分层的话术');
       }
@@ -1084,6 +1221,42 @@
       return payload;
     }
 
+    function validateActionPayload(config, nodes, payload) {
+      if (!config.action_name) throw new Error('动作名称不能为空。');
+      if (config.content_strategy === 'personalized_agent') {
+        if (state.agentOptions.length === 0) {
+          throw new Error('当前还没有可用智能体，请先创建或启用一个智能体，再保存 Agent 单人定制化动作。');
+        }
+        if (!config.agent_code) {
+          throw new Error('这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。');
+        }
+        const bindings = Array.isArray(payload.agent_bindings) ? payload.agent_bindings : [];
+        if (payload.generation_mode !== 'personalized_single' || bindings.length !== 1 || bindings[0].binding_scope !== 'personalized' || bindings[0].segment_key !== 'personalized' || !bindings[0].agent_code) {
+          throw new Error('这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。');
+        }
+      }
+      if (config.content_strategy === 'standard_content' && !config.standard_content_text) {
+        throw new Error('统一内容不能为空。');
+      }
+      if (config.content_strategy === 'layered_content') {
+        if (!config.layer_basis) throw new Error('请先选择分层依据。');
+        if (config.layer_basis === 'profile' && !config.content_profile_segment_template_id) {
+          throw new Error('请先选择画像分层模板。');
+        }
+        if (!config.content_variants.length) throw new Error('请至少填写一个分层话术。');
+        if (config.content_variants.some((item) => !item.content_text)) throw new Error('请补全每个分层的话术。');
+      }
+      nodes.forEach((node, index) => {
+        const position = `第 ${index + 1} 个节点`;
+        if (!String(node.node_name || '').trim()) throw new Error(`${position} 的节点名称不能为空。`);
+        if (!String(node.target_audience_code || '').trim()) throw new Error(`${position} 的节点对象不能为空。`);
+        if (!String(node.trigger_mode || '').trim()) throw new Error(`${position} 的执行时间不能为空。`);
+        if (node.trigger_mode !== 'audience_entered' && !String(node.send_time || '').trim()) {
+          throw new Error(`${position} 的执行时间不能为空。`);
+        }
+      });
+    }
+
     function nodePayloadForSave(node, config) {
       const payload = {
         node_name: node.node_name,
@@ -1110,9 +1283,17 @@
     }
 
     async function saveAction(statusOverride) {
+      const originalSaveLabel = elements.saveDraftButton ? elements.saveDraftButton.textContent : '';
       try {
+        if (elements.saveDraftButton) {
+          elements.saveDraftButton.disabled = true;
+          elements.saveDraftButton.textContent = '保存中...';
+        }
+        showFeedback(elements.feedback, '', '');
         const config = collectConfig(statusOverride);
         const nodes = collectNodes(config);
+        const workflowPayload = actionPayloadFromConfig(config);
+        validateActionPayload(config, nodes, workflowPayload);
         let actionId = Number(state.currentActionId || 0) || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
         if (!actionId) {
           const result = await requestJson(apiUrls.action_from_template, {
@@ -1142,7 +1323,7 @@
           method: 'PUT',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(actionPayloadFromConfig(config)),
+          body: JSON.stringify(workflowPayload),
         });
         for (const nodeId of state.deletedNodeIds) {
           await requestJson(withId(apiUrls.workflow_node_base, nodeId), { method: 'DELETE', credentials: 'same-origin' });
@@ -1160,7 +1341,12 @@
         await loadExistingAction(actionId);
         showFeedback(elements.feedback, statusOverride === 'active' ? '已保存' : '草稿已保存', '');
       } catch (error) {
-        showFeedback(elements.feedback, error.message || '保存失败', 'error');
+        showSaveError(error);
+      } finally {
+        if (elements.saveDraftButton) {
+          elements.saveDraftButton.disabled = false;
+          elements.saveDraftButton.textContent = originalSaveLabel || '保存草稿';
+        }
       }
     }
 
@@ -1203,8 +1389,21 @@
         renderTemplates();
         showFeedback(elements.feedback, '已保存为 CRM 本地模板', '');
       } catch (error) {
-        showFeedback(elements.feedback, error.message || '保存模板失败', 'error');
+        showFeedback(elements.feedback, userFacingErrorMessage(error, '保存模板失败，请稍后重试。'), 'error');
       }
+    }
+
+    function findPersonalizedBinding(bundle) {
+      const workflowBindings = Array.isArray(bundle.agent_bindings) ? bundle.agent_bindings : [];
+      const workflowBinding = workflowBindings.find((item) => item && (item.binding_scope === 'personalized' || item.segment_key === 'personalized' || item.agent_code));
+      if (workflowBinding && workflowBinding.agent_code) return workflowBinding;
+      const nodes = Array.isArray(bundle.nodes) ? bundle.nodes : [];
+      for (const node of nodes) {
+        const nodeBindings = Array.isArray(node.agent_bindings) ? node.agent_bindings : [];
+        const nodeBinding = nodeBindings.find((item) => item && (item.binding_scope === 'personalized' || item.segment_key === 'personalized' || item.agent_code));
+        if (nodeBinding && nodeBinding.agent_code) return nodeBinding;
+      }
+      return null;
     }
 
     async function loadExistingAction(actionId) {
@@ -1223,8 +1422,16 @@
       const mode = action.generation_mode;
       const hasVariants = (bundle.nodes || []).some((node) => (node.content_variants || []).length);
       const strategy = mode === 'personalized_single' ? 'personalized_agent' : hasVariants ? 'layered_content' : 'standard_content';
-      const binding = (bundle.agent_bindings || [])[0] || {};
-      elements.agentCode.value = binding.agent_code || (state.agentOptions[0] || {}).agent_code || '';
+      const binding = findPersonalizedBinding(bundle);
+      if (strategy === 'personalized_agent') {
+        ensureAgentOption((binding || {}).agent_code);
+        elements.agentCode.value = (binding || {}).agent_code || '';
+        setAgentWarning(binding && binding.agent_code ? '' : '当前动作为 Agent 单人定制化，但缺少智能体绑定，请补充后保存。');
+      } else {
+        ensureAgentOption((binding || {}).agent_code);
+        elements.agentCode.value = (binding || {}).agent_code || (state.agentOptions[0] || {}).agent_code || '';
+        setAgentWarning('');
+      }
       const firstNode = (bundle.nodes || [])[0] || {};
       elements.standardContentText.value = firstNode.standard_content_text || '';
       const mpIds = (((firstNode.standard_content_payload || {}).miniprogram_library_ids) || []).join(',');
@@ -1239,6 +1446,33 @@
       renderActionList();
       if (state.currentActionId && entryUrls.action_orchestration) {
         window.history.replaceState({}, '', `${entryUrls.action_orchestration}?workflow_id=${encodeURIComponent(state.currentActionId)}`);
+      }
+    }
+
+    async function selectAction(actionId, options) {
+      const id = Number(actionId || 0);
+      if (!id) return false;
+      const opts = options || {};
+      state.currentActionId = id;
+      state.loadingActionId = id;
+      setActionError(id, '');
+      setActionOperation(id, 'open');
+      setEditorLoading('正在打开这个运营动作，请稍候。');
+      try {
+        await loadExistingAction(id);
+        if (!opts.keepFeedback) showFeedback(elements.listFeedback, '', '');
+        return true;
+      } catch (error) {
+        const message = userFacingErrorMessage(error, '动作加载失败，请稍后重试。');
+        setActionError(id, message);
+        showFeedback(elements.listFeedback, message, 'error');
+        setEditorMessage('动作加载失败', message);
+        elements.emptyState.hidden = false;
+        elements.configStack.hidden = true;
+        return false;
+      } finally {
+        state.loadingActionId = null;
+        setActionOperation(id, '');
       }
     }
 
@@ -1273,10 +1507,19 @@
         : '<option value="">请先创建智能体</option>';
       renderActionList();
       if (state.currentActionId) {
-        await loadExistingAction(state.currentActionId);
+        const requestedId = Number(state.currentActionId || 0);
+        const loaded = await selectAction(requestedId, { keepFeedback: true });
+        if (!loaded && state.workflows.length) {
+          const fallbackWorkflow = workflowFromItem(state.workflows[0]);
+          const fallbackId = Number(fallbackWorkflow.id || 0);
+          if (fallbackId && fallbackId !== requestedId) {
+            await selectAction(fallbackId, { keepFeedback: true });
+            showFeedback(elements.feedback, '当前动作加载失败，已切换到第一个可用动作。', 'error');
+          }
+        }
       } else if (state.workflows.length) {
         const firstWorkflow = workflowFromItem(state.workflows[0]);
-        await loadExistingAction(Number(firstWorkflow.id || 0));
+        await selectAction(Number(firstWorkflow.id || 0));
       } else {
         state.currentActionId = null;
         state.workflowBundle = null;
@@ -1306,8 +1549,9 @@
 
     async function deleteAction(actionId) {
       if (!actionId) return;
-      const item = state.workflows.find((entry) => Number(workflowFromItem(entry).id || 0) === Number(actionId));
       if (!window.confirm('确认删除这个运营动作吗？删除后不可恢复。')) return;
+      setActionError(actionId, '');
+      setActionOperation(actionId, 'delete');
       try {
         await requestJson(withId(apiUrls.workflow_delete_base, actionId), { method: 'DELETE', credentials: 'same-origin' });
         if (Number(state.currentActionId || 0) === Number(actionId)) {
@@ -1317,15 +1561,19 @@
         await loadActions();
         const next = state.workflows.length ? workflowFromItem(state.workflows[0]) : null;
         if (next && next.id) {
-          await loadExistingAction(Number(next.id));
+          await selectAction(Number(next.id), { keepFeedback: true });
         } else {
           state.currentActionId = null;
           state.workflowBundle = null;
           setEditorEmpty(true);
         }
-        showFeedback(elements.feedback, '已删除运营动作', '');
+        showFeedback(elements.listFeedback, '已删除运营动作', '');
       } catch (error) {
-        showFeedback(elements.feedback, error.message || '删除失败', 'error');
+        const message = userFacingErrorMessage(error, '删除失败，请稍后重试。');
+        setActionError(actionId, message);
+        showFeedback(elements.listFeedback, message, 'error');
+      } finally {
+        setActionOperation(actionId, '');
       }
     }
 
@@ -1355,7 +1603,7 @@
       const workflow = bundle.workflow || {};
       const firstNode = (bundle.nodes || [])[0] || {};
       const strategy = strategyFromBundle(bundle);
-      const binding = (bundle.agent_bindings || [])[0] || {};
+      const binding = findPersonalizedBinding(bundle) || {};
       const mpIds = ((firstNode.standard_content_payload || {}).miniprogram_library_ids) || [];
       return {
         action_name: `${workflow.workflow_name || '运营动作'} 副本`,
@@ -1397,6 +1645,8 @@
 
     async function copyAction(actionId) {
       if (!actionId) return;
+      setActionError(actionId, '');
+      setActionOperation(actionId, 'copy');
       try {
         const detail = await requestJson(withId(apiUrls.workflow_detail_base, actionId), { credentials: 'same-origin' });
         const bundle = detail.workflow_bundle || {};
@@ -1412,10 +1662,14 @@
         });
         const copiedId = Number(result.workflow_id || (((result.workflow_bundle || {}).workflow || {}).id) || 0);
         await loadActions();
-        if (copiedId) await loadExistingAction(copiedId);
-        showFeedback(elements.feedback, '已复制运营动作', '');
+        if (copiedId) await selectAction(copiedId, { keepFeedback: true });
+        showFeedback(elements.listFeedback, '已复制运营动作', '');
       } catch (error) {
-        showFeedback(elements.feedback, error.message || '复制失败', 'error');
+        const message = userFacingErrorMessage(error, '复制失败，请稍后重试。');
+        setActionError(actionId, message);
+        showFeedback(elements.listFeedback, message, 'error');
+      } finally {
+        setActionOperation(actionId, '');
       }
     }
 
@@ -1424,16 +1678,25 @@
       const item = state.workflows.find((entry) => Number(workflowFromItem(entry).id || 0) === Number(actionId));
       const workflow = workflowFromItem(item);
       const active = workflow.status === 'active';
+      setActionError(actionId, '');
+      setActionOperation(actionId, 'toggle');
       try {
         await requestJson(withId(active ? apiUrls.workflow_pause_base : apiUrls.workflow_activate_base, actionId), {
           method: 'POST',
           credentials: 'same-origin',
         });
         await loadActions();
-        if (Number(state.currentActionId || 0) === Number(actionId)) await loadExistingAction(actionId);
-        showFeedback(elements.feedback, active ? '已停用运营动作' : '已启用运营动作', '');
+        if (Number(state.currentActionId || 0) === Number(actionId)) {
+          await loadExistingAction(actionId);
+          elements.actionStatus.value = active ? 'paused' : 'active';
+        }
+        showFeedback(elements.listFeedback, active ? '已停用运营动作' : '已启用运营动作', '');
       } catch (error) {
-        showFeedback(elements.feedback, error.message || '状态更新失败', 'error');
+        const message = userFacingErrorMessage(error, '状态更新失败，请稍后重试。');
+        setActionError(actionId, message);
+        showFeedback(elements.listFeedback, message, 'error');
+      } finally {
+        setActionOperation(actionId, '');
       }
     }
 
@@ -1526,7 +1789,7 @@
       }).then(() => {
         showFeedback(elements.feedback, '已从模板创建动作草稿', '');
       }).catch((error) => {
-        showFeedback(elements.feedback, error.message || '创建动作失败', 'error');
+        showFeedback(elements.feedback, userFacingErrorMessage(error, '创建动作失败，请稍后重试。'), 'error');
       });
     });
     elements.templateSearch.addEventListener('input', renderTemplates);
@@ -1541,7 +1804,7 @@
       const openTarget = event.target.closest('[data-action-open]');
       if (openTarget) {
         event.stopPropagation();
-        await loadExistingAction(Number(openTarget.dataset.actionOpen || 0));
+        await selectAction(Number(openTarget.dataset.actionOpen || 0));
         return;
       }
       const toggleTarget = event.target.closest('[data-action-toggle]');
@@ -1564,18 +1827,22 @@
       }
       const card = event.target.closest('[data-action-id]');
       if (!card) return;
-      await loadExistingAction(Number(card.dataset.actionId || 0));
+      await selectAction(Number(card.dataset.actionId || 0));
     });
     elements.actionList.addEventListener('keydown', async (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const card = event.target.closest('[data-action-id]');
       if (!card || event.target.closest('[data-action-delete]')) return;
       event.preventDefault();
-      await loadExistingAction(Number(card.dataset.actionId || 0));
+      await selectAction(Number(card.dataset.actionId || 0));
     });
     [elements.actionName, elements.actionStatus, elements.actionDescription, elements.triggerType, elements.audienceType, elements.sendTiming, elements.standardContentText, elements.layerBasis].forEach((input) => {
       input.addEventListener('input', renderPreview);
       input.addEventListener('change', renderPreview);
+    });
+    elements.agentCode.addEventListener('change', () => {
+      if (elements.agentCode.value) setAgentWarning('');
+      renderPreview();
     });
     elements.layeredContentGrid.addEventListener('input', renderPreview);
     elements.profileTemplateId.addEventListener('change', async () => {
