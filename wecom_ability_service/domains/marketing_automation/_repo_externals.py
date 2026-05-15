@@ -19,6 +19,8 @@ from ._repo_helpers import (  # noqa: F401
     _fetchall_dicts,
     _fetchone_dict,
     _normalized_text,
+    _normalized_text_list,
+    _placeholders,
 )
 
 
@@ -131,7 +133,7 @@ def has_live_external_userid(external_userid: str) -> bool:
 
 
 def list_class_status_rows(external_userids: list[str]) -> list[dict[str, Any]]:
-    normalized_external_userids = [_normalized_text(item) for item in external_userids if _normalized_text(item)]
+    normalized_external_userids = _normalized_text_list(external_userids)
     if not normalized_external_userids:
         return []
     result = fetch_class_status_map(normalized_external_userids)
@@ -160,7 +162,7 @@ def get_huangxiaocan_activation_source_by_mobile(mobile: str) -> dict[str, Any] 
 
 
 def get_latest_message_at_for_external_userids(external_userids: list[str]) -> str:
-    normalized_external_userids = [_normalized_text(item) for item in external_userids if _normalized_text(item)]
+    normalized_external_userids = _normalized_text_list(external_userids)
     if not normalized_external_userids:
         return ""
     message_map = fetch_last_message_map(normalized_external_userids)
@@ -206,15 +208,15 @@ def list_active_do_not_disturb_rows(
     external_userids: list[str] | None = None,
     mobiles: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    normalized_external_userids = [_normalized_text(item) for item in (external_userids or []) if _normalized_text(item)]
-    normalized_mobiles = [_normalized_text(item) for item in (mobiles or []) if _normalized_text(item)]
+    normalized_external_userids = _normalized_text_list(external_userids)
+    normalized_mobiles = _normalized_text_list(mobiles)
     filters: list[str] = []
     params: list[Any] = [_db_bool(True)]
     if normalized_external_userids:
-        filters.append(f"external_userid IN ({', '.join(['?'] * len(normalized_external_userids))})")
+        filters.append(f"external_userid IN ({_placeholders(normalized_external_userids)})")
         params.extend(normalized_external_userids)
     if normalized_mobiles:
-        filters.append(f"mobile IN ({', '.join(['?'] * len(normalized_mobiles))})")
+        filters.append(f"mobile IN ({_placeholders(normalized_mobiles)})")
         params.extend(normalized_mobiles)
     if not filters:
         return []
