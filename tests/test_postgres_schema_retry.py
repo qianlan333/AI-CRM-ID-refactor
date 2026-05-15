@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wecom_ability_service.db.migrations.postgres_migrations import _run_schema_with_forward_fk_retries
+from wecom_ability_service.db.migrations.schema_runner import split_schema_statements
 
 
 class _FakeSchemaDb:
@@ -34,6 +35,13 @@ def test_schema_retry_eventually_runs_deferred_statement():
     assert db.executed == ["create parent", "create child", "create child"]
     assert db.commits == 2
     assert db.rollbacks == 1
+
+
+def test_schema_splitter_omits_empty_statements():
+    assert split_schema_statements(" create parent; ;\n create child ;") == [
+        "create parent",
+        "create child",
+    ]
 
 
 def test_schema_retry_raises_when_pending_remains_after_max_passes():

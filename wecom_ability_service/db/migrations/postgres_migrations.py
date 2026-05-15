@@ -9,6 +9,7 @@ from . import (
     _ensure_automation_agent_prompt_defaults,
     _ensure_automation_sop_v1_seed_data,
 )
+from .schema_runner import run_schema_with_forward_fk_retries
 
 
 _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN = "questionnaire" "_result"
@@ -25,27 +26,13 @@ def _run_schema_with_forward_fk_retries(db, script: str, *, max_passes: int = 4)
     fresh PG 上的 ``init_db`` 整个崩。多 pass 重试容错：每轮跑通能跑通的，把
     ``UndefinedTable`` 失败的留到下一轮 —— 等被引用表建好后再补。
     """
-    statements = [s.strip() for s in script.split(";") if s.strip()]
-    pending = statements
-    for _ in range(max_passes):
-        if not pending:
-            return
-        next_pending: list[str] = []
-        for stmt in pending:
-            try:
-                db.execute(stmt)
-                db.commit()
-            except Exception:
-                db.rollback()
-                next_pending.append(stmt)
-        if len(next_pending) == len(pending):
-            # 没进展：剩下的就是真坏掉的，让最后一条原样抛出来便于 debug。
-            for stmt in next_pending:
-                db.execute(stmt)
-            return
-        pending = next_pending
-    for stmt in pending:
-        db.execute(stmt)
+    run_schema_with_forward_fk_retries(
+        script,
+        execute=db.execute,
+        commit=db.commit,
+        rollback=db.rollback,
+        max_passes=max_passes,
+    )
 
 
 def _ensure_postgres_user_ops_page_tables(db) -> None:
