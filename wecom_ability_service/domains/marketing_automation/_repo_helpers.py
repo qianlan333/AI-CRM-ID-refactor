@@ -11,10 +11,10 @@ for this domain.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ...db import get_db
+from ...infra.json_utils import json_dumps
 
 
 def _db_bool(value: bool) -> bool:
@@ -41,7 +41,7 @@ def _nullable_timestamp_text(value: Any) -> str | None:
 
 
 def _json_dumps(value: Any) -> str:
-    return json.dumps({} if value is None else value, ensure_ascii=False)
+    return json_dumps(value, none_as_empty_object=True)
 
 
 __all__ = [

@@ -12,15 +12,11 @@ for external push, so the requests.post monkeypatch keeps working.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
-
-import requests
-from flask import current_app, has_request_context, session
 
 from ...application.identity_contact.commands import BindExternalContactIdentityCommand
 from ...application.identity_contact.dto import (
@@ -33,9 +29,11 @@ from ...application.identity_contact.queries import (
     ResolvePersonIdentityQuery,
 )
 from ...db import get_db
-from ...infra.settings import get_setting
-from ..outbound_webhook.service import EVENT_QUESTIONNAIRE_SUBMIT, send_outbound_webhook
-from ..tags import repo as tags_repo
+from ...infra.json_utils import (
+    json_array as _json_array,
+    json_dumps as _json_dumps,
+    safe_json_loads as _json_loads,
+)
 
 questionnaire_logger = logging.getLogger("questionnaire")
 QUESTIONNAIRE_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
@@ -116,39 +114,6 @@ def _bind_questionnaire_identity(
             corp_id=str(corp_id or "").strip(),
         )
     )
-
-
-def _json_dumps(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False)
-
-
-def _json_loads(value: Any, *, default: Any) -> Any:
-    if isinstance(value, (dict, list)):
-        return value
-    text = str(value or "").strip()
-    if not text:
-        return default
-    try:
-        parsed = json.loads(text)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
-    return parsed
-
-
-def _json_array(value: Any) -> list[Any]:
-    if value in (None, ""):
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        return parsed if isinstance(parsed, list) else []
-    return []
 
 
 def _dedupe_strings(values: list[Any]) -> list[str]:
