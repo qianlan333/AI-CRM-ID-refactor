@@ -4,7 +4,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from script_runtime import REPO_ROOT
+
+ROOT = REPO_ROOT
 PYTHON_TARGETS = [
     "wecom_ability_service/db",
     "wecom_ability_service/infra/settings.py",

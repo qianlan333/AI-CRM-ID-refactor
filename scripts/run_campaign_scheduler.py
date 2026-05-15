@@ -15,11 +15,12 @@ cron 例（每 5 分钟跑一次）：
 from __future__ import annotations
 
 import os
-import sys
+
+from script_runtime import ensure_repo_root_on_path
 
 
 def main() -> None:
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ensure_repo_root_on_path()
     from wecom_ability_service import create_app
     from wecom_ability_service.domains.campaigns.scheduler import process_due_campaign_members
 
