@@ -1,31 +1,20 @@
 from __future__ import annotations
 
-import json
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-import requests
 from flask import current_app, has_request_context, session
 
-from ...application.identity_contact.commands import BindExternalContactIdentityCommand
-from ...application.identity_contact.dto import (
-    BindExternalContactIdentityCommandDTO,
-    ResolveExternalContactIdentityQueryDTO,
-    ResolvePersonIdentityQueryDTO,
-)
-from ...application.identity_contact.queries import (
-    ResolveExternalContactIdentityQuery,
-    ResolvePersonIdentityQuery,
-)
 from ...db import get_db
+from ...domains.identity import service as identity_domain_service
 from ...infra.settings import get_setting
 from ..outbound_webhook.service import EVENT_QUESTIONNAIRE_SUBMIT, send_outbound_webhook
 from ..tags import repo as tags_repo
 
 questionnaire_logger = logging.getLogger("questionnaire")
+_normalize_mobile = identity_domain_service.normalize_mobile
 QUESTIONNAIRE_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SUCCESS = "success"
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED = "failed"
