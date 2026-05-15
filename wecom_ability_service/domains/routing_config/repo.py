@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from ...db import get_db
-
-
-def _db_bool(value: bool) -> bool:
-    return bool(value)
+from ...infra.helpers import db_bool
 
 
 def get_owner_role(userid: str):
@@ -26,7 +23,7 @@ def list_owner_role_map(active_only: bool = False):
     params: list[object] = []
     if active_only:
         sql += " WHERE active = ?"
-        params.append(_db_bool(True))
+        params.append(db_bool(True))
     sql += " ORDER BY active DESC, display_name ASC, userid ASC"
     return get_db().execute(sql, tuple(params)).fetchall()
 
@@ -46,7 +43,7 @@ def upsert_owner_role_map_item(*, userid: str, display_name: str, role: str, act
             str(userid or "").strip(),
             str(display_name or "").strip(),
             str(role or "").strip(),
-            _db_bool(active),
+            db_bool(active),
         ),
     )
     get_db().commit()
@@ -91,7 +88,7 @@ def list_routing_rules(active_only: bool = False):
     params: list[object] = []
     if active_only:
         sql += " WHERE active = ?"
-        params.append(_db_bool(True))
+        params.append(db_bool(True))
     sql += " ORDER BY active DESC, rule_key ASC"
     return get_db().execute(sql, tuple(params)).fetchall()
 
@@ -143,7 +140,7 @@ def upsert_routing_rule(
             str(fallback_target or "").strip(),
             str(when_owner_role_sales or "").strip(),
             str(when_owner_role_delivery or "").strip(),
-            _db_bool(active),
+            db_bool(active),
         ),
     )
     get_db().commit()
