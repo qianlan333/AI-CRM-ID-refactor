@@ -903,7 +903,6 @@
             <span class="op-current-action-card__meta">
               <span>${escapeHtml(actionAudienceLabel(item))} · ${escapeHtml(nodeCount || 0)} 个节点</span>
             </span>
-            <span class="op-muted">${escapeHtml(workflow.description || actionContentLabel(item))}</span>
             <span class="op-current-action-card__actions">
               <button class="admin-button admin-button--secondary" type="button" data-action-open="${escapeHtml(id)}" ${disabled}>${operation === 'open' ? '加载中...' : '编辑'}</button>
               <button class="admin-button admin-button--ghost" type="button" data-action-toggle="${escapeHtml(id)}" ${disabled}>${operation === 'toggle' ? '处理中...' : (enabled ? '停用' : '启用')}</button>
