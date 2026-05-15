@@ -44,6 +44,8 @@ def _run_schema_with_forward_fk_retries(db, script: str, *, max_passes: int = 4)
                 db.execute(stmt)
             return
         pending = next_pending
+    for stmt in pending:
+        db.execute(stmt)
 
 
 def _ensure_postgres_user_ops_page_tables(db) -> None:
