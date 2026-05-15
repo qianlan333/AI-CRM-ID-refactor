@@ -44,7 +44,10 @@ ADMIN_AUTH_EXEMPT_PATHS = {
     "/auth/wecom/start",
     "/auth/wecom/callback",
 }
-ADMIN_API_CONFIG_PREFIX = "/api/admin/config"
+ADMIN_API_MODULE_PREFIXES = (
+    ("/api/admin/config", "config"),
+    ("/api/admin/marketing-automation", "config"),
+)
 ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin/automation-conversion", "automation_conversion"),
     ("/admin/customers", "customers"),
@@ -98,6 +101,14 @@ def _request_is_admin_write() -> bool:
 def _module_for_admin_path(path: str) -> str:
     normalized_path = _normalized_text(path)
     for prefix, module_key in ADMIN_ROUTE_MODULE_PREFIXES:
+        if normalized_path == prefix or normalized_path.startswith(prefix + "/"):
+            return module_key
+    return ""
+
+
+def _module_for_admin_api_path(path: str) -> str:
+    normalized_path = _normalized_text(path)
+    for prefix, module_key in ADMIN_API_MODULE_PREFIXES:
         if normalized_path == prefix or normalized_path.startswith(prefix + "/"):
             return module_key
     return ""
@@ -427,10 +438,11 @@ def register_admin_request_guards(app) -> None:
         if path in ADMIN_AUTH_EXEMPT_PATHS:
             return None
 
-        if path.startswith(ADMIN_API_CONFIG_PREFIX):
+        api_module_key = _module_for_admin_api_path(path)
+        if api_module_key:
             if not current_admin_session_user():
                 return jsonify({"ok": False, "error": "admin login required"}), 401
-            if not _can_access_admin_module("config", write=_request_is_admin_write()):
+            if not _can_access_admin_module(api_module_key, write=_request_is_admin_write()):
                 return jsonify({"ok": False, "error": "permission denied"}), 403
             return None
 
