@@ -40,7 +40,10 @@ class FakeResponse:
 
 
 def _test_image_data_url(label: str = "img") -> str:
-    encoded = base64.b64encode(f"fake-image-{label}".encode("utf-8")).decode("ascii")
+    _ = label
+    encoded = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAEAAAcAAekVCC0AAAAASUVORK5CYII="
+    )
     return f"data:image/png;base64,{encoded}"
 
 

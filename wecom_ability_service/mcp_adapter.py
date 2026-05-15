@@ -236,7 +236,7 @@ TOOL_DEFS = [
     },
     {
         "name": "send_pool_private_message",
-        "description": "Send one private-message batch directly to one CRM pool. Supports text, images, attachments, or mixed combinations; CRM filters the pool, sends, and writes send records.",
+        "description": "Send one private-message batch directly to one CRM pool. Supports text, JPG/PNG images (<=2MB), attachments (<=9 total), or mixed combinations; CRM filters the pool, sends, and writes send records.",
         "inputSchema": {
             "type": "object",
             "properties": {

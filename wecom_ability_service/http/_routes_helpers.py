@@ -101,6 +101,10 @@ from ..domains.automation_conversion.service import (
     set_follow_type,
     unmark_won,
 )
+from ..domains.wecom_media_limits import (
+    detect_wecom_image_mime_type,
+    validate_wecom_image_upload,
+)
 from ..domains.automation_conversion.sop_service import (
     delete_sop_v1_template_day,
     get_sop_v1_batches_payload,
@@ -187,27 +191,17 @@ def _overview_notice() -> str:
     return ""
 
 
-MAX_STAGE_SEND_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
-ALLOWED_STAGE_SEND_IMAGE_TYPES = {
-    "png": "image/png",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "webp": "image/webp",
-}
 FLOW_DESIGN_SECTIONS = ("profile-segments", "channel")
 RUN_CENTER_TABS = ("overview", "sync", "logs", "model-infra", "agent-orchestration", "debug")
 RUN_CENTER_AGENT_SUBTABS = ("router", "agents", "metrics", "outputs", "replay")
 
 
 def _detect_stage_send_image_type(file_bytes: bytes) -> str:
-    if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+    detected = detect_wecom_image_mime_type(file_bytes)
+    if detected == "image/png":
         return "png"
-    if file_bytes.startswith(b"\xff\xd8\xff"):
+    if detected == "image/jpeg":
         return "jpeg"
-    if file_bytes.startswith((b"GIF87a", b"GIF89a")):
-        return "gif"
-    if len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
-        return "webp"
     return ""
 
 
@@ -222,15 +216,15 @@ def _stage_send_images_from_request() -> list[dict[str, str]]:
         if not mime_type.startswith("image/"):
             raise ValueError("only image files are allowed")
         file_bytes = file_storage.read()
-        if len(file_bytes) > MAX_STAGE_SEND_IMAGE_SIZE_BYTES:
-            raise ValueError("image file is too large (max 5MB)")
-        detected_type = ALLOWED_STAGE_SEND_IMAGE_TYPES.get(_detect_stage_send_image_type(file_bytes), "")
-        if not detected_type:
-            raise ValueError("only image files are allowed")
+        content_type = validate_wecom_image_upload(
+            file_bytes,
+            file_name=file_name,
+            mime_type=mime_type,
+        )
         images.append(
             {
                 "file_name": file_name,
-                "content_type": detected_type,
+                "content_type": content_type,
                 "data_base64": base64.b64encode(file_bytes).decode("ascii"),
             }
         )
