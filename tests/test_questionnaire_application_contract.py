@@ -4,6 +4,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 def test_questionnaire_application_skeleton_is_importable():
     sys.modules.setdefault("imghdr", types.ModuleType("imghdr"))
@@ -131,3 +133,35 @@ def test_admin_support_questionnaire_tag_lookup_uses_application_query():
 
     assert "ListAvailableWeComTagsQuery" in source
     assert "from ..domains.questionnaire.service import list_available_wecom_tags" not in source
+
+
+def test_assessment_recommendation_display_contract_is_visible_in_templates():
+    templates_dir = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "templates"
+    admin_source = (templates_dir / "admin_questionnaires.html").read_text(encoding="utf-8")
+    result_source = (templates_dir / "questionnaire_h5_result.html").read_text(encoding="utf-8")
+
+    assert "推荐展示" in admin_source
+    assert "按维度结果推荐" in admin_source
+    assert "统一推荐一个课程" in admin_source
+    assert "维度课程 + 统一推荐" in admin_source
+    assert "尾部集中推荐" not in admin_source
+    assert "recommendation_display_mode" in admin_source
+    assert "recommendation_display_mode" in result_source
+    assert "show_dimension_courses" in result_source
+    assert "show_global_recommendation" in result_source
+
+
+def test_assessment_recommendation_display_config_defaults_and_validation():
+    from wecom_ability_service.domains.questionnaire._service_helpers import _normalize_questionnaire_assessment_config
+
+    assert _normalize_questionnaire_assessment_config({"final_recommendation": {"enabled": True}})[
+        "recommendation_display_mode"
+    ] == "mixed"
+    assert _normalize_questionnaire_assessment_config({"final_recommendation": {"enabled": False}})[
+        "recommendation_display_mode"
+    ] == "dimension"
+    assert _normalize_questionnaire_assessment_config({"recommendation_display_mode": "bad-value"})[
+        "recommendation_display_mode"
+    ] == "dimension"
+    with pytest.raises(ValueError, match="推荐展示方式不正确"):
+        _normalize_questionnaire_assessment_config({"recommendation_display_mode": "bad-value"}, strict=True)

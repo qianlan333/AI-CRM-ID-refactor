@@ -2260,6 +2260,14 @@
       return value;
     }
 
+    const RECOMMENDATION_DISPLAY_MODES = ['dimension', 'global', 'mixed'];
+
+    function normalizeRecommendationDisplayMode(value, finalRecommendation = {}) {
+      const normalized = String(value || '').trim();
+      if (RECOMMENDATION_DISPLAY_MODES.includes(normalized)) return normalized;
+      return finalRecommendation?.enabled ? 'mixed' : 'dimension';
+    }
+
     function createAssessmentType(type = {}, index = 0) {
       return {
         local_key: type.local_key || nextLocalKey('assessment_type'),
@@ -2349,6 +2357,10 @@
         template_name: String(normalized.template_name || '').trim(),
         asset_kind: String(normalized.asset_kind || '').trim(),
         source_questionnaire_id: normalized.source_questionnaire_id ?? '',
+        recommendation_display_mode: normalizeRecommendationDisplayMode(
+          normalized.recommendation_display_mode,
+          normalized.final_recommendation,
+        ),
         total_score_title: String(normalized.total_score_title || '多维测评综合结果').trim() || '多维测评综合结果',
         strength_count: Number(normalized.strength_count || 2),
         weakness_count: Number(normalized.weakness_count || 2),
@@ -2449,6 +2461,10 @@
           })),
         })),
         recommendations: builder.recommendations || [],
+        recommendation_display_mode: normalizeRecommendationDisplayMode(
+          builder.recommendation_display_mode,
+          builder.final_recommendation,
+        ),
         final_recommendation: {
           enabled: Boolean(builder.final_recommendation?.enabled),
           title: builder.final_recommendation?.title || '',
@@ -4842,7 +4858,7 @@
         '当前维度的名称、计分和展示规则统一在这里维护。',
         `${renderDimensionSettingsForm(currentDimension)}
         <section class="config-group">
-          <div class="helper-note">删除维度会二次确认。第一版采用“删除维度时连同该维度下题目和选项一起删除”的策略。</div>
+          <div class="helper-note">删除维度会二次确认，并同步移除该维度下的题目和选项。</div>
           <button type="button" class="btn primary" data-next-step="results" style="width:100%;margin-top:12px;">下一步：结果配置</button>
         </section>`,
       );
@@ -5062,25 +5078,26 @@
     function renderAssessmentResultsPage() {
       const { builder, dimensions, currentDimension } = ensureAssessmentEditorState();
       const phoneStage = document.querySelector('.phone-stage');
-      const tab = state.assessmentResultTab || 'dimension';
+      const tab = state.assessmentResultTab === 'final' ? 'recommend' : (state.assessmentResultTab || 'dimension');
+      state.assessmentResultTab = tab;
       phoneStage.innerHTML = `
         <div class="template-page">
           <div class="template-page-head">
             <div>
               <h2>结果配置</h2>
-              <p>独立配置维度分类结果、总分分层和尾部集中推荐。</p>
+              <p>独立配置维度分类结果、总分分层和推荐展示。</p>
             </div>
           </div>
           <div class="result-tabs-v2">
             ${[
               ['dimension', '维度结果配置'],
               ['overall', '总分分层配置'],
-              ['final', '尾部集中推荐'],
+              ['recommend', '推荐展示'],
             ].map(([key, label]) => `<button type="button" class="btn ghost${tab === key ? ' active' : ''}" data-result-tab="${key}">${label}</button>`).join('')}
           </div>
           ${tab === 'dimension' ? renderDimensionResultConfig(dimensions, currentDimension) : ''}
           ${tab === 'overall' ? renderOverallResultConfig(builder) : ''}
-          ${tab === 'final' ? renderFinalRecommendationConfig(builder) : ''}
+          ${tab === 'recommend' ? renderRecommendationDisplayConfig(builder, dimensions) : ''}
         </div>
       `;
       phoneStage.querySelectorAll('[data-result-tab]').forEach((button) => {
@@ -5092,10 +5109,10 @@
       bindResultPageEvents(phoneStage);
       setInspectorContent(
         '结果配置',
-        '空配置也能进入编辑，课程链接第一版就是普通 URL。',
+        '空配置也能进入编辑，课程链接使用完整 URL。',
         `${renderResultInspectorContent(tab, builder)}
         <section class="config-group">
-          <div class="helper-note">总分分层是主结果；维度分类结果用于辅助诊断和分课程推荐；尾部集中推荐是统一转化入口。</div>
+          <div class="helper-note">总分分层是主结果；维度分类结果用于辅助诊断和分课程推荐；推荐展示决定 H5 课程推荐区的组合方式。</div>
           <button type="button" class="btn primary" data-next-step="preview" style="width:100%;margin-top:12px;">下一步：H5 预览 / 发布</button>
         </section>`,
       );
@@ -5202,22 +5219,97 @@
       `;
     }
 
-    function renderFinalRecommendationConfig(builder) {
-      const finalRec = builder.final_recommendation || {};
-      return `
-        <div class="template-grid-single">
-        <section class="template-panel">
-          <div class="template-panel-head"><div><h3>尾部集中推荐</h3><p>展示在最终 H5 结果页底部，不影响总分和维度推荐。</p></div></div>
-          <div class="template-panel-body">
-            <div class="result-card-v2 active" style="cursor:default;">
-              <div class="dimension-card-title">
-                <span>${escapeHtml(finalRec.title || '未设置推荐区标题')}</span>
-                <span class="template-status ${finalRec.enabled ? 'ok' : 'warn'}">${finalRec.enabled ? '启用' : '未启用'}</span>
-              </div>
-              <div class="template-muted">${escapeHtml(finalRec.description || '右侧配置推荐区说明、课程链接和 CTA 文案。')}</div>
+    function recommendationDisplayModeMeta(mode) {
+      const metas = {
+        dimension: { title: '按维度结果推荐', summary: '展示命中的维度分型课程。' },
+        global: { title: '统一推荐一个课程', summary: '在结果页尾部展示统一推荐课程。' },
+        mixed: { title: '维度课程 + 统一推荐', summary: '先展示维度分型课程，再展示统一推荐课程。' },
+      };
+      return metas[mode] || metas.dimension;
+    }
+
+    function getRecommendationPreviewType(dimension) {
+      const types = Array.isArray(dimension?.types) ? dimension.types : [];
+      if (!types.length) return null;
+      if (dimension?.key === state.selectedDimensionKey && state.selectedAssessmentTypeKey) {
+        const selected = types.find((type) => type.key === state.selectedAssessmentTypeKey);
+        if (selected) return selected;
+      }
+      return types.find((type) => type.enabled !== false) || types[0];
+    }
+
+    function recommendationPreviewStatus(type) {
+      if (!type || type.enabled === false || type.show_in_result === false) {
+        return { label: '未启用', className: 'warn' };
+      }
+      if (!String(type.course_name || '').trim()) {
+        return { label: '缺课程', className: 'warn' };
+      }
+      if (!String(type.course_url || '').trim()) {
+        return { label: '缺链接', className: 'warn' };
+      }
+      return { label: '已配置', className: 'ok' };
+    }
+
+    function renderDimensionRecommendationPreview(dimensions) {
+      const rows = (dimensions || []).map((dimension) => {
+        const type = getRecommendationPreviewType(dimension);
+        const status = recommendationPreviewStatus(type);
+        return `
+          <div class="result-card-v2" style="cursor:default;">
+            <div class="dimension-card-title">
+              <span>${escapeHtml(dimension.name || '未命名维度')}：${escapeHtml(type?.title || type?.name || '未命名分型')}</span>
+              <span class="template-status ${status.className}">${status.label}</span>
             </div>
+            <div class="template-muted">推荐课程：${escapeHtml(type?.course_name || '未填写')}</div>
+            <div class="template-muted">CTA：${escapeHtml(type?.cta_text || '查看推荐课程')}</div>
+            <button type="button" class="link-btn" data-go-result-type="${escapeHtml(type?.key || '')}" data-go-result-dimension="${escapeHtml(dimension.key || '')}">去补充</button>
+          </div>
+        `;
+      }).join('');
+      return `
+        <section class="template-panel">
+          <div class="template-panel-head"><div><h3>命中结果推荐预览</h3><p>预览课程来自维度结果配置。</p></div></div>
+          <div class="template-panel-body">
+            <div class="result-list-v2">${rows || '<div class="empty-state">还没有可预览的维度。</div>'}</div>
           </div>
         </section>
+      `;
+    }
+
+    function renderRecommendationDisplayConfig(builder, dimensions) {
+      const finalRec = builder.final_recommendation || {};
+      const mode = normalizeRecommendationDisplayMode(builder.recommendation_display_mode, finalRec);
+      builder.recommendation_display_mode = mode;
+      const modeCards = RECOMMENDATION_DISPLAY_MODES.map((item) => {
+        const meta = recommendationDisplayModeMeta(item);
+        return `
+          <button type="button" class="result-card-v2${mode === item ? ' active' : ''}" data-recommendation-mode="${item}">
+            <div class="dimension-card-title"><span>${meta.title}</span></div>
+            <div class="template-muted">${meta.summary}</div>
+          </button>
+        `;
+      }).join('');
+      return `
+        <div class="template-grid-single">
+          <section class="template-panel">
+            <div class="template-panel-head"><div><h3>推荐展示</h3><p>选择 H5 结果页的课程推荐展示方式。</p></div></div>
+            <div class="template-panel-body">
+              <div class="result-list-v2">${modeCards}</div>
+            </div>
+          </section>
+          ${['dimension', 'mixed'].includes(mode) ? renderDimensionRecommendationPreview(dimensions) : ''}
+          ${['global', 'mixed'].includes(mode) ? `
+            <section class="template-panel">
+              <div class="template-panel-head">
+                <div><h3>统一推荐课程</h3><p>配置结果页尾部统一展示的课程。</p></div>
+                <span class="template-status ${finalRec.enabled ? 'ok' : 'warn'}">${finalRec.enabled ? '启用' : '未启用'}</span>
+              </div>
+              <div class="template-panel-body">
+                ${renderFinalRecommendationForm(builder)}
+              </div>
+            </section>
+          ` : ''}
         </div>
       `;
     }
@@ -5226,7 +5318,7 @@
       const finalRec = builder.final_recommendation || {};
       return `
         <section class="config-group">
-          <label class="field"><input data-final-field="enabled" type="checkbox" ${finalRec.enabled ? 'checked' : ''}> 启用尾部集中推荐</label>
+          <label class="field"><input data-final-field="enabled" type="checkbox" ${finalRec.enabled ? 'checked' : ''}> 启用统一推荐</label>
           <label class="field">推荐区标题<input data-final-field="title" value="${escapeHtml(finalRec.title || '')}"></label>
           <label class="field">推荐区说明<textarea data-final-field="description">${escapeHtml(finalRec.description || '')}</textarea></label>
           <label class="field">推荐课程名称<input data-final-field="course_name" value="${escapeHtml(finalRec.course_name || '')}"></label>
@@ -5244,8 +5336,11 @@
           ${selectedLevel ? renderOverallLevelForm(selectedLevel) : '<div class="empty-state">选择或添加一个分层。</div>'}
         </section>`;
       }
-      if (tab === 'final') {
-        return `${renderFinalRecommendationForm(builder)}`;
+      if (tab === 'recommend') {
+        return `<section class="config-group">
+          <div class="config-head"><h3>推荐展示</h3><p>展示方式只影响 H5 课程推荐区；总分主结果和维度诊断照常展示。</p></div>
+          <div class="helper-note">维度分型课程在“维度结果配置”里填写；统一推荐课程在中间配置区填写。</div>
+        </section>`;
       }
       const selectedType = selectedAssessmentType();
       return `<section class="config-group">
@@ -5255,6 +5350,23 @@
     }
 
     function bindResultPageEvents(root) {
+      root.querySelectorAll('[data-recommendation-mode]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const builder = ensureAssessmentBuilder();
+          const mode = normalizeRecommendationDisplayMode(button.dataset.recommendationMode, builder.final_recommendation);
+          builder.recommendation_display_mode = mode;
+          updateDraftIndicator();
+          renderWorkspace();
+        });
+      });
+      root.querySelectorAll('[data-go-result-type]').forEach((button) => {
+        button.addEventListener('click', () => {
+          state.assessmentResultTab = 'dimension';
+          state.selectedDimensionKey = button.dataset.goResultDimension || '';
+          state.selectedAssessmentTypeKey = button.dataset.goResultType || '';
+          renderWorkspace();
+        });
+      });
       root.querySelectorAll('[data-dimension-key]').forEach((button) => {
         button.addEventListener('click', () => {
           state.selectedDimensionKey = button.dataset.dimensionKey;
@@ -5488,6 +5600,9 @@
     function renderH5ResultPreview(builder, dimensions) {
       const level = selectedOverallLevel() || {};
       const finalRec = builder.final_recommendation || {};
+      const mode = normalizeRecommendationDisplayMode(builder.recommendation_display_mode, finalRec);
+      const showDimensionCourses = ['dimension', 'mixed'].includes(mode);
+      const showGlobalRecommendation = ['global', 'mixed'].includes(mode) && finalRec.enabled;
       return `
         <div class="h5-card-v2">
           <span class="question-type">测评结果</span>
@@ -5501,12 +5616,14 @@
             <strong>${escapeHtml(dimension.name)}：${escapeHtml(type.title || type.name || '未分类')}</strong>
             <p class="template-muted">${escapeHtml(type.diagnosis || type.summary || '暂未配置该分类结果。')}</p>
             ${type.recommended_action ? `<p class="template-muted">${escapeHtml(type.recommended_action)}</p>` : ''}
-            ${type.course_url ? `<a class="btn ghost" style="margin-top:8px;width:100%;" href="${escapeHtml(type.course_url)}">${escapeHtml(type.cta_text || '查看课程')}</a>` : ''}
+            ${showDimensionCourses && type.course_name ? `<p class="template-muted">${escapeHtml(type.course_name)}</p>` : ''}
+            ${showDimensionCourses && type.course_url ? `<a class="btn ghost" style="margin-top:8px;width:100%;" href="${escapeHtml(type.course_url)}">${escapeHtml(type.cta_text || type.course_name || '查看推荐课程')}</a>` : ''}
           </div>`;
         }).join('')}
-        ${finalRec.enabled ? `<div class="h5-card-v2">
+        ${showGlobalRecommendation ? `<div class="h5-card-v2">
           <strong>${escapeHtml(finalRec.title || '下一步建议')}</strong>
           <p class="template-muted">${escapeHtml(finalRec.description || '')}</p>
+          ${finalRec.course_name ? `<p class="template-muted">${escapeHtml(finalRec.course_name)}</p>` : ''}
           ${finalRec.course_url ? `<a class="btn primary" style="margin-top:10px;width:100%;" href="${escapeHtml(finalRec.course_url)}">${escapeHtml(finalRec.cta_text || '查看完整课程')}</a>` : ''}
         </div>` : ''}
       `;
@@ -5744,6 +5861,9 @@
     function validateAssessmentConfigBeforeSave() {
       if (!state.questionnaire?.assessment_enabled) return;
       const builder = ensureAssessmentBuilder();
+      if (!RECOMMENDATION_DISPLAY_MODES.includes(String(builder.recommendation_display_mode || '').trim())) {
+        throw new Error('推荐展示方式不正确');
+      }
       (builder.overall_levels || []).forEach((level, index) => {
         const min = level.min_score === '' || level.min_score === null ? null : Number(level.min_score);
         const max = level.max_score === '' || level.max_score === null ? null : Number(level.max_score);
@@ -5783,7 +5903,7 @@
           validateUrlField(type.course_url, `维度“${dimension.name}”分类“${type.name}”的课程链接`);
         });
       });
-      validateUrlField(builder.final_recommendation?.course_url, '尾部集中推荐课程链接');
+      validateUrlField(builder.final_recommendation?.course_url, '统一推荐课程链接');
     }
 
     async function saveQuestionnaire() {

@@ -156,6 +156,16 @@
 <body>
   {% set result = result_payload.assessment_result %}
   {% set level = result.overall_level or {} %}
+  {% set final_recommendation = result.final_recommendation or {} %}
+  {% if result.recommendation_display_mode in ["dimension", "global", "mixed"] %}
+    {% set recommendation_display_mode = result.recommendation_display_mode %}
+  {% elif final_recommendation.enabled %}
+    {% set recommendation_display_mode = "mixed" %}
+  {% else %}
+    {% set recommendation_display_mode = "dimension" %}
+  {% endif %}
+  {% set show_dimension_courses = recommendation_display_mode == "dimension" or recommendation_display_mode == "mixed" %}
+  {% set show_global_recommendation = (recommendation_display_mode == "global" or recommendation_display_mode == "mixed") and final_recommendation.enabled %}
   <main class="page">
     <section class="hero">
       <p class="eyebrow">测评结果</p>
@@ -227,10 +237,10 @@
           {% if item.dominant_type and item.dominant_type.recommended_action %}
             <p class="meta">{{ item.dominant_type.recommended_action }}</p>
           {% endif %}
-          {% if item.dominant_type and item.dominant_type.course_name %}
+          {% if show_dimension_courses and item.dominant_type and item.dominant_type.course_name %}
             <p class="meta">{{ item.dominant_type.course_name }}</p>
           {% endif %}
-          {% if item.dominant_type and item.dominant_type.course_url %}
+          {% if show_dimension_courses and item.dominant_type and item.dominant_type.course_url %}
             <a class="cta" href="{{ item.dominant_type.course_url }}">{{ item.dominant_type.cta_text or item.dominant_type.course_name or "查看推荐课程" }}</a>
           {% endif %}
         </article>
@@ -253,8 +263,7 @@
       </section>
     {% endif %}
 
-    {% set final_recommendation = result.final_recommendation or {} %}
-    {% if final_recommendation.enabled %}
+    {% if show_global_recommendation %}
       <section class="section">
         <h2>{{ final_recommendation.title or "下一步建议" }}</h2>
         {% if final_recommendation.description %}

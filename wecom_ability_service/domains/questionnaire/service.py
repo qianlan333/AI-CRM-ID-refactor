@@ -1114,6 +1114,7 @@ def _compute_assessment_result(questionnaire: dict[str, Any], validated_answers:
     strengths = ranked[: max(0, strength_count)]
     weaknesses = list(reversed(ranked[-max(0, weakness_count) :])) if weakness_count > 0 else []
     recommendations = _assessment_recommendations(config, dimensions)
+    final_recommendation = config.get("final_recommendation") if isinstance(config.get("final_recommendation"), dict) else {}
     final_tag_codes = _dedupe_strings(assessment_tag_codes)
     overall_level_key = str((overall_level or {}).get("key") or (overall_level or {}).get("local_key") or "").strip()
     overall_level_name = str((overall_level or {}).get("name") or (overall_level or {}).get("title") or "").strip()
@@ -1129,7 +1130,10 @@ def _compute_assessment_result(questionnaire: dict[str, Any], validated_answers:
         "recommendations": [
             {key: value for key, value in item.items() if key != "tag_codes"} for item in recommendations
         ],
-        "final_recommendation": config.get("final_recommendation") if isinstance(config.get("final_recommendation"), dict) else {},
+        "final_recommendation": final_recommendation,
+        "recommendation_display_mode": str(config.get("recommendation_display_mode") or "").strip() or (
+            "mixed" if _normalize_bool(final_recommendation.get("enabled")) else "dimension"
+        ),
         "tag_codes": final_tag_codes,
         "tag_plan": {
             "matched_score_tier_id": overall_level_key,

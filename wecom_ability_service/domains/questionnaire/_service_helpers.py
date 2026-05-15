@@ -40,6 +40,7 @@ from ..tags import repo as tags_repo
 questionnaire_logger = logging.getLogger("questionnaire")
 QUESTIONNAIRE_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
 QUESTIONNAIRE_ANSWER_DISPLAY_MODES = {"all_in_one", "one_by_one"}
+QUESTIONNAIRE_RECOMMENDATION_DISPLAY_MODES = {"dimension", "global", "mixed"}
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SUCCESS = "success"
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED = "failed"
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SKIPPED = "skipped"
@@ -292,7 +293,17 @@ def _normalize_questionnaire_external_push_custom_params(value: Any) -> list[dic
     return normalized
 
 
-def _normalize_questionnaire_assessment_config(value: Any) -> dict[str, Any]:
+def _normalize_recommendation_display_mode(value: Any, final_recommendation: Any, *, strict: bool = False) -> str:
+    normalized = str(value or "").strip()
+    if normalized in QUESTIONNAIRE_RECOMMENDATION_DISPLAY_MODES:
+        return normalized
+    if normalized and strict:
+        raise ValueError("推荐展示方式不正确")
+    final_config = final_recommendation if isinstance(final_recommendation, dict) else {}
+    return "mixed" if _normalize_bool(final_config.get("enabled")) else "dimension"
+
+
+def _normalize_questionnaire_assessment_config(value: Any, *, strict: bool = False) -> dict[str, Any]:
     if value in (None, ""):
         return {}
     raw_value = _json_loads(value, default={}) if isinstance(value, str) else value
@@ -300,7 +311,13 @@ def _normalize_questionnaire_assessment_config(value: Any) -> dict[str, Any]:
         return {}
     if not isinstance(raw_value, dict):
         raise ValueError("assessment_config must be an object")
-    return raw_value
+    normalized = dict(raw_value)
+    normalized["recommendation_display_mode"] = _normalize_recommendation_display_mode(
+        normalized.get("recommendation_display_mode"),
+        normalized.get("final_recommendation"),
+        strict=strict,
+    )
+    return normalized
 
 
 def _normalize_answer_display_mode(value: Any, *, strict: bool = False) -> str:
@@ -354,7 +371,8 @@ def _normalize_questionnaire_payload(
         payload.get("assessment_enabled", (existing or {}).get("assessment_enabled"))
     )
     assessment_config = _normalize_questionnaire_assessment_config(
-        payload.get("assessment_config", (existing or {}).get("assessment_config"))
+        payload.get("assessment_config", (existing or {}).get("assessment_config")),
+        strict="assessment_config" in payload,
     )
     slug_source = str(raw_slug or (existing or {}).get("slug") or name or title).strip()
     slug = _slugify_questionnaire(slug_source)

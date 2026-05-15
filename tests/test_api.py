@@ -3419,6 +3419,7 @@ def test_assessment_questionnaire_saves_snapshot_and_renders_result_page(client,
         assert snapshot["dimensions"][0]["dominant_type"]["course_url"] == "https://example.com/deal-course"
         assert snapshot["dimensions"][1]["dominant_type"]["name"] == "暖男女型"
         assert snapshot["final_recommendation"]["course_url"] == "https://example.com/final-course"
+        assert snapshot["recommendation_display_mode"] == "mixed"
         assert snapshot["tag_plan"]["score_tier_tag_ids"] == ["assessment_high"]
         assert snapshot["tag_plan"]["dimension_category_tag_ids"] == ["assessment_deal_push"]
 
@@ -3432,6 +3433,53 @@ def test_assessment_questionnaire_saves_snapshot_and_renders_result_page(client,
     assert "用户维护" in body
     assert "暖男女型" in body
     assert "小 IP 商业闭环训练营" in body
+
+
+def test_assessment_result_recommendation_display_modes(client, app):
+    def create_and_submit(mode: str, respondent_key: str) -> str:
+        payload = _build_assessment_questionnaire_payload(name=f"测评推荐展示 {mode}", title=f"测评推荐展示 {mode}")
+        payload["assessment_config"]["recommendation_display_mode"] = mode
+        create_response = client.post("/api/admin/questionnaires", json=payload)
+        assert create_response.status_code == 200
+        questionnaire = create_response.get_json()["questionnaire"]
+        detail = client.get(f"/api/admin/questionnaires/{questionnaire['id']}").get_json()["questionnaire"]
+        q1, q2, q3 = detail["questions"]
+        submit_response = client.post(
+            f"/api/h5/questionnaires/{questionnaire['slug']}/submit",
+            json={
+                "respondent_key": respondent_key,
+                "answers": {
+                    str(q1["id"]): q1["options"][1]["id"],
+                    str(q2["id"]): [q2["options"][0]["id"]],
+                    str(q3["id"]): "验证推荐展示。",
+                },
+            },
+            headers=WECHAT_BROWSER_HEADERS,
+        )
+        assert submit_response.status_code == 200
+        with app.app_context():
+            row = get_db().execute(
+                "SELECT assessment_result_snapshot FROM questionnaire_submissions ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            snapshot = (
+                row["assessment_result_snapshot"]
+                if isinstance(row["assessment_result_snapshot"], dict)
+                else json.loads(row["assessment_result_snapshot"])
+            )
+            assert snapshot["recommendation_display_mode"] == mode
+        return submit_response.get_json()["result_url"]
+
+    dimension_result_url = create_and_submit("dimension", "assessment-mode-dimension")
+    dimension_body = client.get(dimension_result_url).get_data(as_text=True)
+    assert "成交话术 SOP 课" in dimension_body
+    assert "小 IP 商业闭环训练营" not in dimension_body
+    assert "AI 私域商业闭环课" in dimension_body
+
+    global_result_url = create_and_submit("global", "assessment-mode-global")
+    global_body = client.get(global_result_url).get_data(as_text=True)
+    assert "成交话术 SOP 课" not in global_body
+    assert "小 IP 商业闭环训练营" in global_body
+    assert "AI 私域商业闭环课" in global_body
 
 
 def test_assessment_questionnaire_applies_only_result_tags(client, app, monkeypatch):
