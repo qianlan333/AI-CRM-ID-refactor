@@ -4,9 +4,11 @@ from typing import Any
 
 from ..tasks.service import dispatch_wecom_task
 from ..user_ops import page_service as user_ops_page_service
+from ...wecom_client import WeComClientError
 
 
 DEFAULT_PRIVATE_MESSAGE_SENDER = "HuangYouCan"
+_MINIPROGRAM_FALLBACK_ERRCODES = {41006, 90208}
 
 
 def _normalized_text(value: Any) -> str:
@@ -20,6 +22,42 @@ def _normalize_private_message_image_media_ids(image_media_ids: list[str] | None
         if normalized_media_id:
             normalized_image_media_ids.append(normalized_media_id)
     return normalized_image_media_ids
+
+
+def _miniprogram_attachment_count(payload: dict[str, Any]) -> int:
+    return sum(
+        1
+        for item in list(payload.get("attachments") or [])
+        if isinstance(item, dict) and _normalized_text(item.get("msgtype")).lower() == "miniprogram"
+    )
+
+
+def _without_miniprogram_attachments(payload: dict[str, Any]) -> dict[str, Any]:
+    fallback = dict(payload)
+    kept_attachments = [
+        item
+        for item in list(payload.get("attachments") or [])
+        if not (isinstance(item, dict) and _normalized_text(item.get("msgtype")).lower() == "miniprogram")
+    ]
+    if kept_attachments:
+        fallback["attachments"] = kept_attachments
+    else:
+        fallback.pop("attachments", None)
+    return fallback
+
+
+def _should_retry_without_miniprogram(payload: dict[str, Any], exc: Exception) -> bool:
+    if not _miniprogram_attachment_count(payload):
+        return False
+    if not _normalized_text(payload.get("text", {}).get("content") if isinstance(payload.get("text"), dict) else payload.get("content")):
+        return False
+    if not isinstance(exc, WeComClientError):
+        return False
+    errcode = (exc.payload or {}).get("errcode")
+    try:
+        return int(errcode) in _MINIPROGRAM_FALLBACK_ERRCODES
+    except (TypeError, ValueError):
+        return False
 
 
 def _dispatch_private_message_batch(
@@ -72,8 +110,48 @@ def _dispatch_private_message_batch(
         outbound_task_ids.append(int(wecom_result["task_id"]))
         task_results.append(user_ops_page_service._build_sender_success_result(normalized_sender, target_items, wecom_result))
     except Exception as exc:
-        fail_external_userids = list(target_external_userids)
-        task_results.append(user_ops_page_service._build_sender_failure_result(normalized_sender, target_items, exc))
+        if _should_retry_without_miniprogram(request_payload, exc):
+            fallback_payload = _without_miniprogram_attachments(request_payload)
+            try:
+                wecom_result = dispatch_wecom_task("private_message", "create_private_message_task", fallback_payload)
+                fail_external_userids = [
+                    _normalized_text(item)
+                    for item in (wecom_result.get("wecom_result") or {}).get("fail_list", [])
+                    if _normalized_text(item)
+                ]
+                outbound_task_ids.append(int(wecom_result["task_id"]))
+                fallback_result = user_ops_page_service._build_sender_success_result(
+                    normalized_sender,
+                    target_items,
+                    wecom_result,
+                )
+                fallback_result.update(
+                    {
+                        "fallback_without_miniprogram": True,
+                        "fallback_reason": "wecom_miniprogram_rejected",
+                        "fallback_error_message": str(exc),
+                        "fallback_removed_attachment_count": _miniprogram_attachment_count(request_payload),
+                    }
+                )
+                task_results.append(fallback_result)
+            except Exception as fallback_exc:
+                fail_external_userids = list(target_external_userids)
+                failure_result = user_ops_page_service._build_sender_failure_result(
+                    normalized_sender,
+                    target_items,
+                    fallback_exc,
+                )
+                failure_result.update(
+                    {
+                        "fallback_without_miniprogram": True,
+                        "fallback_reason": "wecom_miniprogram_rejected",
+                        "fallback_error_message": str(exc),
+                    }
+                )
+                task_results.append(failure_result)
+        else:
+            fail_external_userids = list(target_external_userids)
+            task_results.append(user_ops_page_service._build_sender_failure_result(normalized_sender, target_items, exc))
 
     if fail_external_userids:
         sent_count = max(0, len(target_items) - len(set(fail_external_userids)))
