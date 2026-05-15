@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...db import get_db, get_db_backend
+from ...db import get_db
 
 
 def get_contact_tag_snapshots(external_userid: str) -> list[dict[str, Any]]:

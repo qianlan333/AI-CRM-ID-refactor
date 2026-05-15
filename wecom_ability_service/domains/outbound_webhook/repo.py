@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...db import get_db, get_db_backend
+from ...db import get_db
 
 
 def _normalized_text(value: Any) -> str:
