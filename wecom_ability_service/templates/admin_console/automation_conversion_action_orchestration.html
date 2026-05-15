@@ -6,6 +6,9 @@
   .op-action-shell {
     display: grid;
     gap: 18px;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
   }
 
   .op-action-panel h2,
@@ -22,20 +25,32 @@
 
   .op-action-grid {
     display: grid;
-    grid-template-columns: 320px minmax(720px, 1fr);
+    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
+    width: 100%;
+    max-width: none;
   }
 
   .op-action-panel,
   .op-action-section {
+    min-width: 0;
     border: 1px solid rgba(15, 23, 42, 0.08);
     border-radius: 16px;
     background: #ffffff;
   }
 
   .op-action-panel {
+    min-width: 0;
+    width: 100%;
     overflow: hidden;
+  }
+
+  .op-config-stack,
+  .op-empty-state {
+    grid-column: 2;
+    min-width: 0;
+    width: 100%;
   }
 
   .op-action-panel__head,
@@ -262,8 +277,10 @@
 
   .op-modal[hidden],
   .op-config-box[hidden],
+  .op-config-stack[hidden],
+  .op-empty-state[hidden],
   .op-empty[hidden] {
-    display: none;
+    display: none !important;
   }
 
   .op-modal-card {
@@ -330,8 +347,16 @@
     display: none;
   }
 
-  @media (max-width: 1280px) {
-    .op-action-grid,
+  @media (max-width: 960px) {
+    .op-action-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .op-config-stack,
+    .op-empty-state {
+      grid-column: 1;
+    }
+
     .op-field-grid,
     .op-field-grid--three,
     .op-choice-grid {
@@ -377,6 +402,7 @@
       <div>
         <h3 id="action-empty-title">还没有选中运营动作</h3>
         <p class="op-muted" id="action-empty-copy">请从左侧选择已有动作，或新增一个动作后继续配置。</p>
+        <button class="admin-button admin-button--primary" id="empty-new-action-button" type="button" style="margin-top:14px;">新增动作</button>
       </div>
     </section>
 
@@ -634,6 +660,7 @@
       aiCreateBox: document.getElementById('ai-create-box'),
       crmStartTemplate: document.getElementById('crm-start-template'),
       saveDraftButton: document.getElementById('save-draft-button'),
+      emptyNewActionButton: document.getElementById('empty-new-action-button'),
     };
 
     const state = {
@@ -702,7 +729,7 @@
         return '这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。';
       }
       if (raw.includes('manual_layered does not allow agent_bindings')) {
-        return '当前内容策略不需要智能体，请先切换到「Agent 单人定制化」或移除智能体绑定。';
+        return '当前内容策略不需要智能体，请移除智能体绑定或切换为「Agent 单人定制化」。';
       }
       if (raw.includes('agent_bindings does not match expected segmentation targets')) {
         return '当前分层内容缺少对应的智能体绑定，请补齐后再保存。';
@@ -824,14 +851,14 @@
     function setEditorEmpty(empty) {
       elements.emptyState.hidden = !empty;
       elements.configStack.hidden = empty;
-      if (empty) setEditorMessage('还没有选中运营动作', '请从左侧选择已有动作，或新增一个动作后继续配置。');
+      if (empty) setEditorMessage('还没有运营动作', '请新增一个动作后继续配置。');
       if (empty && entryUrls.action_orchestration) {
         window.history.replaceState({}, '', entryUrls.action_orchestration);
       }
     }
 
     function setEditorLoading(message) {
-      setEditorMessage('正在加载...', message || '正在打开这个运营动作，请稍候。');
+      setEditorMessage(message || '正在加载运营动作...', '正在打开当前运营动作，请稍候。');
       elements.emptyState.hidden = false;
       elements.configStack.hidden = true;
     }
@@ -904,6 +931,14 @@
       if (message) state.actionErrors[id] = message;
       else delete state.actionErrors[id];
       renderActionList();
+    }
+
+    function firstWorkflowId(excludedId) {
+      const excluded = Number(excludedId || 0);
+      const match = state.workflows
+        .map((entry) => Number(workflowFromItem(entry).id || 0))
+        .find((id) => id && id !== excluded);
+      return match || null;
     }
 
     function behaviorTargets() {
@@ -1453,11 +1488,12 @@
       const id = Number(actionId || 0);
       if (!id) return false;
       const opts = options || {};
+      const previousActionId = Number(state.currentActionId || 0) || null;
       state.currentActionId = id;
       state.loadingActionId = id;
       setActionError(id, '');
       setActionOperation(id, 'open');
-      setEditorLoading('正在打开这个运营动作，请稍候。');
+      setEditorLoading('正在加载...');
       try {
         await loadExistingAction(id);
         if (!opts.keepFeedback) showFeedback(elements.listFeedback, '', '');
@@ -1466,6 +1502,16 @@
         const message = userFacingErrorMessage(error, '动作加载失败，请稍后重试。');
         setActionError(id, message);
         showFeedback(elements.listFeedback, message, 'error');
+        if (opts.fallbackToPrevious !== false && previousActionId && previousActionId !== id) {
+          state.currentActionId = previousActionId;
+          renderActionList();
+          try {
+            await loadExistingAction(previousActionId);
+            return false;
+          } catch (fallbackError) {
+            showFeedback(elements.listFeedback, userFacingErrorMessage(fallbackError, '上一个运营动作也加载失败，请刷新页面后重试。'), 'error');
+          }
+        }
         setEditorMessage('动作加载失败', message);
         elements.emptyState.hidden = false;
         elements.configStack.hidden = true;
@@ -1486,6 +1532,7 @@
       fillSelect(elements.triggerType, triggerOptions, 'manual');
       fillSelect(elements.audienceType, audienceOptions, 'custom');
       fillSelect(elements.sendTiming, sendTimingOptions, 'immediate');
+      setEditorLoading('正在加载运营动作...');
       const [templatesPayload, registryPayload, agentsPayload, profilePayload, workflowsPayload] = await Promise.all([
         requestJson(apiUrls.action_templates, { credentials: 'same-origin' }),
         requestJson(apiUrls.registry, { credentials: 'same-origin' }),
@@ -1508,18 +1555,20 @@
       renderActionList();
       if (state.currentActionId) {
         const requestedId = Number(state.currentActionId || 0);
-        const loaded = await selectAction(requestedId, { keepFeedback: true });
+        const loaded = await selectAction(requestedId, { keepFeedback: true, fallbackToPrevious: false });
         if (!loaded && state.workflows.length) {
-          const fallbackWorkflow = workflowFromItem(state.workflows[0]);
-          const fallbackId = Number(fallbackWorkflow.id || 0);
-          if (fallbackId && fallbackId !== requestedId) {
-            await selectAction(fallbackId, { keepFeedback: true });
+          const fallbackId = firstWorkflowId(requestedId) || firstWorkflowId(null);
+          if (fallbackId) {
+            await selectAction(fallbackId, { keepFeedback: true, fallbackToPrevious: false });
             showFeedback(elements.feedback, '当前动作加载失败，已切换到第一个可用动作。', 'error');
+          } else {
+            setEditorMessage('动作加载失败', '当前动作加载失败，请刷新页面后重试。');
+            elements.emptyState.hidden = false;
+            elements.configStack.hidden = true;
           }
         }
       } else if (state.workflows.length) {
-        const firstWorkflow = workflowFromItem(state.workflows[0]);
-        await selectAction(Number(firstWorkflow.id || 0));
+        await selectAction(firstWorkflowId(null), { fallbackToPrevious: false });
       } else {
         state.currentActionId = null;
         state.workflowBundle = null;
@@ -1893,13 +1942,19 @@
     });
     document.getElementById('save-draft-button').addEventListener('click', () => saveAction('draft'));
     document.getElementById('new-action-side-button').addEventListener('click', openTemplateModal);
+    if (elements.emptyNewActionButton) elements.emptyNewActionButton.addEventListener('click', openTemplateModal);
     document.getElementById('from-template-button').addEventListener('click', openActionTemplateModal);
     document.getElementById('close-action-template-modal').addEventListener('click', closeActionTemplateModal);
     document.getElementById('close-template-modal').addEventListener('click', closeTemplateModal);
     document.getElementById('cancel-template-modal').addEventListener('click', closeTemplateModal);
     document.getElementById('create-template-submit').addEventListener('click', createActionFromModal);
 
-    loadInitialData().catch((error) => showFeedback(elements.feedback, error.message || '加载失败', 'error'));
+    loadInitialData().catch((error) => {
+      showFeedback(elements.feedback, userFacingErrorMessage(error, '运营动作加载失败，请刷新页面后重试。'), 'error');
+      setEditorMessage('运营动作加载失败', '请刷新页面后重试。');
+      elements.emptyState.hidden = false;
+      elements.configStack.hidden = true;
+    });
   })();
 </script>
 {% endblock %}
