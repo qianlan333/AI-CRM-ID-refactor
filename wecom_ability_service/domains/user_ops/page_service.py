@@ -238,6 +238,49 @@ def _auto_dnd_reasons(row: dict[str, Any]) -> list[dict[str, str]]:
     return []
 
 
+def _serialize_manual_dnd_reason(row: dict[str, Any]) -> dict[str, str]:
+    return {
+        "source_type": _normalize_str(row.get("source_type")),
+        "reason_code": _normalize_str(row.get("reason_code")),
+        "reason_text": _normalize_str(row.get("reason_text")),
+    }
+
+
+def _index_manual_dnd_rows(
+    dnd_rows: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+    rows_by_external: dict[str, list[dict[str, Any]]] = {}
+    rows_by_mobile: dict[str, list[dict[str, Any]]] = {}
+    for row in dnd_rows:
+        external_userid = _normalize_str(row.get("external_userid"))
+        mobile = _normalize_str(row.get("mobile"))
+        if external_userid:
+            rows_by_external.setdefault(external_userid, []).append(row)
+        if mobile:
+            rows_by_mobile.setdefault(mobile, []).append(row)
+    return rows_by_external, rows_by_mobile
+
+
+def _manual_dnd_reasons_for_identity(
+    *,
+    external_userid: str,
+    mobile: str,
+    rows_by_external: dict[str, list[dict[str, Any]]],
+    rows_by_mobile: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, str]]:
+    candidate_rows = list(rows_by_external.get(external_userid, [])) + list(rows_by_mobile.get(mobile, []))
+    reasons: list[dict[str, str]] = []
+    seen_keys: set[tuple[str, str, str]] = set()
+    for row in candidate_rows:
+        reason = _serialize_manual_dnd_reason(row)
+        dedupe_key = (reason["source_type"], reason["reason_code"], reason["reason_text"])
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        reasons.append(reason)
+    return reasons
+
+
 def _derive_activation_bucket(row: dict[str, Any]) -> str:
     activation_source_status = _normalize_str(row.get("activation_source_status"))
     activation_status = _normalize_str(row.get("activation_status"))
@@ -276,36 +319,17 @@ def _collect_manual_dnd_reasons(rows: list[dict[str, Any]]) -> dict[int, list[di
     sql += f" AND ({' OR '.join(clauses)})"
 
     rows_by_id: dict[int, list[dict[str, str]]] = {}
-    dnd_rows = get_db().execute(sql, tuple(params)).fetchall()
+    dnd_rows = [dict(row) for row in get_db().execute(sql, tuple(params)).fetchall()]
+    rows_by_external, rows_by_mobile = _index_manual_dnd_rows(dnd_rows)
     for item in rows:
         external_userid = _normalize_str(item.get("external_userid"))
         mobile = _normalize_str(item.get("mobile"))
-        reasons: list[dict[str, str]] = []
-        seen_keys: set[tuple[str, str, str]] = set()
-        for dnd_row in dnd_rows:
-            dnd_external_userid = _normalize_str(dnd_row.get("external_userid"))
-            dnd_mobile = _normalize_str(dnd_row.get("mobile"))
-            if external_userid and dnd_external_userid == external_userid:
-                pass
-            elif mobile and dnd_mobile == mobile:
-                pass
-            else:
-                continue
-            dedupe_key = (
-                _normalize_str(dnd_row.get("source_type")),
-                _normalize_str(dnd_row.get("reason_code")),
-                _normalize_str(dnd_row.get("reason_text")),
-            )
-            if dedupe_key in seen_keys:
-                continue
-            seen_keys.add(dedupe_key)
-            reasons.append(
-                {
-                    "source_type": _normalize_str(dnd_row.get("source_type")),
-                    "reason_code": _normalize_str(dnd_row.get("reason_code")),
-                    "reason_text": _normalize_str(dnd_row.get("reason_text")),
-                }
-            )
+        reasons = _manual_dnd_reasons_for_identity(
+            external_userid=external_userid,
+            mobile=mobile,
+            rows_by_external=rows_by_external,
+            rows_by_mobile=rows_by_mobile,
+        )
         rows_by_id[int(item["id"])] = reasons
     return rows_by_id
 
