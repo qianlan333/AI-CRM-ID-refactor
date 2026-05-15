@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ...db import get_db, get_db_backend
+from ...db import get_db
 
 
 logger = logging.getLogger(__name__)
@@ -948,7 +948,6 @@ def _pre_enqueue_future_campaign_steps(
     """
     db = get_db()
     cur = db.cursor()
-    not_empty_clause = "cm.next_due_at IS NOT NULL" if get_db_backend() == "postgres" else "cm.next_due_at <> ''"
     where_extra = ""
     args: list[Any] = []
     if campaign_id is not None:
@@ -964,7 +963,7 @@ def _pre_enqueue_future_campaign_steps(
         FROM campaign_members cm
         JOIN campaigns c ON c.id = cm.campaign_id
         WHERE cm.status = 'pending'
-          AND {not_empty_clause}
+          AND cm.next_due_at IS NOT NULL
           AND c.run_status = 'active'
           {where_extra}
         ORDER BY cm.next_due_at ASC
