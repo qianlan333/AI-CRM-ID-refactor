@@ -787,6 +787,33 @@
       elements.agentBindingWarning.textContent = message || '';
     }
 
+    function isAgentSelectionError(message) {
+      return String(message || '').includes('必须先选择 1 个智能体') || String(message || '').includes('请选择智能体');
+    }
+
+    function normalizedAgentCode(item) {
+      const value = item || {};
+      return String(
+        value.agent_code ||
+        value.code ||
+        value.value ||
+        value.id ||
+        ((value.agent || {}).agent_code) ||
+        ''
+      ).trim();
+    }
+
+    function agentDisplayName(item) {
+      const value = item || {};
+      return String(
+        value.agent_name ||
+        value.display_name ||
+        value.name ||
+        ((value.agent || {}).agent_name) ||
+        normalizedAgentCode(value)
+      ).trim();
+    }
+
     function fillSelect(select, options, selectedValue) {
       select.innerHTML = options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
       if (selectedValue) select.value = selectedValue;
@@ -799,8 +826,19 @@
       if (exists) return;
       const option = document.createElement('option');
       option.value = code;
+      option.dataset.agentCode = code;
       option.textContent = `${code}（需确认是否可用）`;
       elements.agentCode.appendChild(option);
+    }
+
+    function selectedAgentCode() {
+      const option = elements.agentCode ? elements.agentCode.selectedOptions[0] : null;
+      return String(
+        (elements.agentCode || {}).value ||
+        (option || {}).dataset?.agentCode ||
+        (option || {}).value ||
+        ''
+      ).trim();
     }
 
     function sourceClass(source) {
@@ -1055,8 +1093,10 @@
       elements.generationRequirement.value = config.generation_requirement || '基于用户当前状态生成自然、具体、可直接发送的跟进内容。';
       elements.standardContentText.value = config.standard_content_text || '';
       elements.layerBasis.value = config.layer_basis === 'profile' ? 'profile' : 'behavior';
-      const firstAgent = (state.agentOptions[0] || {}).agent_code || '';
-      elements.agentCode.value = config.agent_code || config.default_agent_code || firstAgent;
+      const firstAgent = normalizedAgentCode(state.agentOptions[0]);
+      const configuredAgent = config.agent_code || config.default_agent_code || firstAgent;
+      ensureAgentOption(configuredAgent);
+      elements.agentCode.value = configuredAgent;
       setAgentWarning('');
       const templateNodes = Array.isArray(template.node_blueprints) ? template.node_blueprints : [];
       state.nodes = templateNodes.length ? templateNodes.map((node, index) => ({
@@ -1170,7 +1210,7 @@
         content_strategy: state.contentStrategy,
         layer_basis: state.contentStrategy === 'layered_content' ? elements.layerBasis.value : 'none',
         content_profile_segment_template_id: Number(elements.profileTemplateId.value || 0) || null,
-        agent_code: elements.agentCode.value,
+        agent_code: selectedAgentCode(),
         generation_requirement: String(elements.generationRequirement.value || '').trim(),
         standard_content_text: String(elements.standardContentText.value || '').trim(),
         content_variants: collectLayeredVariants(),
@@ -1429,13 +1469,13 @@
 
     function findPersonalizedBinding(bundle) {
       const workflowBindings = Array.isArray(bundle.agent_bindings) ? bundle.agent_bindings : [];
-      const workflowBinding = workflowBindings.find((item) => item && (item.binding_scope === 'personalized' || item.segment_key === 'personalized' || item.agent_code));
-      if (workflowBinding && workflowBinding.agent_code) return workflowBinding;
+      const workflowBinding = workflowBindings.find((item) => item && (item.binding_scope === 'personalized' || item.segment_key === 'personalized' || normalizedAgentCode(item)));
+      if (workflowBinding && normalizedAgentCode(workflowBinding)) return { ...workflowBinding, agent_code: normalizedAgentCode(workflowBinding) };
       const nodes = Array.isArray(bundle.nodes) ? bundle.nodes : [];
       for (const node of nodes) {
         const nodeBindings = Array.isArray(node.agent_bindings) ? node.agent_bindings : [];
-        const nodeBinding = nodeBindings.find((item) => item && (item.binding_scope === 'personalized' || item.segment_key === 'personalized' || item.agent_code));
-        if (nodeBinding && nodeBinding.agent_code) return nodeBinding;
+        const nodeBinding = nodeBindings.find((item) => item && (item.binding_scope === 'personalized' || item.segment_key === 'personalized' || normalizedAgentCode(item)));
+        if (nodeBinding && normalizedAgentCode(nodeBinding)) return { ...nodeBinding, agent_code: normalizedAgentCode(nodeBinding) };
       }
       return null;
     }
@@ -1463,7 +1503,7 @@
         setAgentWarning(binding && binding.agent_code ? '' : '当前动作为 Agent 单人定制化，但缺少智能体绑定，请补充后保存。');
       } else {
         ensureAgentOption((binding || {}).agent_code);
-        elements.agentCode.value = (binding || {}).agent_code || (state.agentOptions[0] || {}).agent_code || '';
+        elements.agentCode.value = (binding || {}).agent_code || normalizedAgentCode(state.agentOptions[0]) || '';
         setAgentWarning('');
       }
       const firstNode = (bundle.nodes || [])[0] || {};
@@ -1549,7 +1589,10 @@
         ? '<option value="">请选择画像分层模板</option>' + state.profileTemplateOptions.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.template_name || item.template_code)}</option>`).join('')
         : '<option value="">暂无可用画像分层模板</option>';
       elements.agentCode.innerHTML = state.agentOptions.length
-        ? state.agentOptions.map((item) => `<option value="${escapeHtml(item.agent_code)}">${escapeHtml(item.agent_name || item.agent_code)}</option>`).join('')
+        ? state.agentOptions.map((item) => {
+            const code = normalizedAgentCode(item);
+            return `<option value="${escapeHtml(code)}" data-agent-code="${escapeHtml(code)}">${escapeHtml(agentDisplayName(item) || code)}</option>`;
+          }).join('')
         : '<option value="">请先创建智能体</option>';
       renderActionList();
       if (state.currentActionId) {
@@ -1652,6 +1695,7 @@
       const firstNode = (bundle.nodes || [])[0] || {};
       const strategy = strategyFromBundle(bundle);
       const binding = findPersonalizedBinding(bundle) || {};
+      const fallbackAgentCode = normalizedAgentCode(state.agentOptions[0]);
       const mpIds = ((firstNode.standard_content_payload || {}).miniprogram_library_ids) || [];
       return {
         action_name: `${workflow.workflow_name || '运营动作'} 副本`,
@@ -1663,7 +1707,7 @@
         content_strategy: strategy,
         layer_basis: workflow.content_segmentation_basis === 'profile' ? 'profile' : 'behavior',
         content_profile_segment_template_id: workflow.content_profile_segment_template_id || null,
-        agent_code: binding.agent_code || (state.agentOptions[0] || {}).agent_code || '',
+        agent_code: binding.agent_code || fallbackAgentCode || '',
         generation_requirement: elements.generationRequirement.value || '基于用户当前状态生成自然、具体、可直接发送的跟进内容。',
         standard_content_text: firstNode.standard_content_text || '',
         content_variants: firstNode.content_variants || [],
@@ -1890,6 +1934,8 @@
     });
     elements.agentCode.addEventListener('change', () => {
       if (elements.agentCode.value) setAgentWarning('');
+      if (isAgentSelectionError(elements.feedback.textContent)) showFeedback(elements.feedback, '', '');
+      if (isAgentSelectionError(elements.listFeedback.textContent)) showFeedback(elements.listFeedback, '', '');
       renderPreview();
     });
     elements.layeredContentGrid.addEventListener('input', renderPreview);

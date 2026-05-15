@@ -335,6 +335,10 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "当前还没有可用智能体，请先创建或启用一个智能体，再保存 Agent 单人定制化动作。" in html
     assert "当前内容策略不需要智能体，请移除智能体绑定或切换为「Agent 单人定制化」。" in html
     assert "当前选择的智能体不可用，请重新选择。" in html
+    assert "function normalizedAgentCode" in html
+    assert "function selectedAgentCode" in html
+    assert "data-agent-code" in html
+    assert "isAgentSelectionError" in html
     assert "@media (max-width: 1280px)" not in html
     assert "保存并启用" not in html
     assert "执行预览" not in html
