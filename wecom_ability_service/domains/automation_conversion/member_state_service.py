@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from ...infra.wecom_runtime import get_app_runtime_client, get_contact_runtime_client
 from ...wecom_client import WeComClientError
 from ..tags import repo as tags_repo
 from . import service as service_seams
@@ -475,7 +474,7 @@ def _send_channel_welcome_message(
         if welcome_attachments:
             request_payload["attachments"] = welcome_attachments
     try:
-        wecom_result = get_contact_runtime_client().send_welcome_msg(request_payload)
+        wecom_result = service_seams.get_contact_runtime_client().send_welcome_msg(request_payload)
     except (WeComClientError, AttributeError, ValueError) as exc:
         _write_event(
             member_id=int(member["id"]),
@@ -524,7 +523,7 @@ def _apply_channel_entry_tag(
     if not owner_staff_id:
         return {"attempted": False, "applied": False, "reason": "missing_owner_staff_id"}
     try:
-        wecom_result = get_app_runtime_client().mark_external_contact_tags(
+        wecom_result = service_seams.get_app_runtime_client().mark_external_contact_tags(
             external_userid=external_contact_id,
             follow_user_userid=owner_staff_id,
             add_tags=[entry_tag_id],
