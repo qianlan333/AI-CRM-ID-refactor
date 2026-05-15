@@ -40,6 +40,10 @@ logger = logging.getLogger(__name__)
 
 
 _VALID_ANCHOR_MODES = ("campaign_start_date", "member_joined_at")
+_EDITABLE_REVIEW_STATUSES = ("draft", "pending_review")
+_EDITABLE_RUN_STATUSES = ("draft", "paused")
+
+
 def _now_iso() -> str:
     # 同 scheduler._now_iso —— 必须 timezone-aware，否则 PG TIMESTAMPTZ 解读错位
     return datetime.now(timezone.utc).isoformat()
@@ -117,6 +121,15 @@ def _compute_first_step_due_iso(
         send_time=send_time,
         step_timezone=step_timezone,
     )
+
+
+def _ensure_campaign_editable(camp: dict[str, Any]) -> None:
+    review_status = camp.get("review_status")
+    if review_status not in _EDITABLE_REVIEW_STATUSES:
+        raise PermissionError(f"campaign review_status={review_status} not editable")
+    run_status = camp.get("run_status")
+    if run_status not in _EDITABLE_RUN_STATUSES:
+        raise PermissionError(f"campaign run_status={run_status} not editable")
 
 
 # ---------- 创建 / 编辑 -----------------------------------------------------
@@ -713,10 +726,7 @@ def update_campaign_step(
     camp = get_campaign(campaign_id=campaign_id)
     if not camp:
         raise LookupError("campaign not found")
-    if camp.get("review_status") not in ("draft", "pending_review"):
-        raise PermissionError(f"campaign review_status={camp.get('review_status')} not editable")
-    if camp.get("run_status") not in ("draft", "paused"):
-        raise PermissionError(f"campaign run_status={camp.get('run_status')} not editable")
+    _ensure_campaign_editable(camp)
 
     db = get_db()
     cur = db.cursor()
@@ -802,12 +812,23 @@ def delete_campaign_step(*, campaign_id: int, step_index: int) -> dict[str, Any]
     camp = get_campaign(campaign_id=campaign_id)
     if not camp:
         raise LookupError("campaign not found")
-    if camp.get("review_status") not in ("draft", "pending_review"):
-        raise PermissionError(f"campaign review_status={camp.get('review_status')} not editable")
-    if camp.get("run_status") not in ("draft", "paused"):
-        raise PermissionError(f"campaign run_status={camp.get('run_status')} not editable")
+    _ensure_campaign_editable(camp)
     db = get_db()
     cur = db.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS cnt FROM campaign_steps WHERE campaign_id = ?",
+        (int(campaign_id),),
+    )
+    count_row = cur.fetchone() or {}
+    step_count = int(count_row.get("cnt") if isinstance(count_row, dict) else count_row[0] or 0)
+    cur.execute(
+        "SELECT id FROM campaign_steps WHERE campaign_id = ? AND step_index = ? LIMIT 1",
+        (int(campaign_id), int(step_index)),
+    )
+    if not cur.fetchone():
+        raise LookupError(f"step {step_index} not found in campaign {campaign_id}")
+    if step_count <= 1:
+        raise PermissionError("cannot delete last campaign step")
     cur.execute(
         "DELETE FROM campaign_steps WHERE campaign_id = ? AND step_index = ?",
         (int(campaign_id), int(step_index)),
@@ -829,10 +850,7 @@ def append_campaign_step(
     camp = get_campaign(campaign_id=campaign_id)
     if not camp:
         raise LookupError("campaign not found")
-    if camp.get("review_status") not in ("draft", "pending_review"):
-        raise PermissionError(f"campaign review_status={camp.get('review_status')} not editable")
-    if camp.get("run_status") not in ("draft", "paused"):
-        raise PermissionError(f"campaign run_status={camp.get('run_status')} not editable")
+    _ensure_campaign_editable(camp)
     db = get_db()
     cur = db.cursor()
     cur.execute(

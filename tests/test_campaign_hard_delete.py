@@ -218,6 +218,77 @@ def test_delete_paused_campaign_allowed(app):
             assert result["ok"] is True
 
 
+# ---------- step 编辑闸口 ----------
+
+def test_campaign_step_mutations_reject_active_campaign(app):
+    with app.app_context():
+        camp = _create_draft("active-step-edit")
+        cid = int(camp["id"])
+        seg_id, step_index = _seed_segment_and_step(cid)
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE campaigns SET run_status = 'active' WHERE id = ?", (cid,))
+        db.commit()
+
+        with pytest.raises(PermissionError, match="run_status=active"):
+            campaign_service.update_campaign_step(
+                campaign_id=cid,
+                step_index=step_index,
+                content_text="new copy",
+            )
+        with pytest.raises(PermissionError, match="run_status=active"):
+            campaign_service.delete_campaign_step(campaign_id=cid, step_index=step_index)
+        with pytest.raises(PermissionError, match="run_status=active"):
+            campaign_service.append_campaign_step(
+                campaign_id=cid,
+                campaign_segment_id=seg_id,
+                content_text="next copy",
+            )
+
+
+def test_delete_campaign_step_rejects_last_step(app):
+    with app.app_context():
+        camp = _create_draft("last-step")
+        cid = int(camp["id"])
+        _seed_segment_and_step(cid)
+
+        with pytest.raises(PermissionError, match="last campaign step"):
+            campaign_service.delete_campaign_step(campaign_id=cid, step_index=0)
+        assert _row_count("campaign_steps", "campaign_id = ?", (cid,)) == 1
+
+
+def test_delete_campaign_step_requires_existing_step(app):
+    with app.app_context():
+        camp = _create_draft("missing-step")
+        cid = int(camp["id"])
+        _seed_segment_and_step(cid)
+
+        with pytest.raises(LookupError, match="step 99 not found"):
+            campaign_service.delete_campaign_step(campaign_id=cid, step_index=99)
+
+
+def test_delete_campaign_step_removes_one_step_when_multiple_exist(app):
+    with app.app_context():
+        camp = _create_draft("multi-step")
+        cid = int(camp["id"])
+        seg_id, _ = _seed_segment_and_step(cid)
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO campaign_steps (campaign_id, campaign_segment_id, step_index, day_offset, "
+            "send_time, content_text) VALUES (?, ?, ?, ?, ?, ?)",
+            (cid, seg_id, 1, 1, "11:00", "next"),
+        )
+        db.commit()
+
+        result = campaign_service.delete_campaign_step(campaign_id=cid, step_index=0)
+
+        assert result["deleted"] is True
+        assert result["rowcount"] == 1
+        assert _row_count("campaign_steps", "campaign_id = ?", (cid,)) == 1
+        assert _row_count("campaign_steps", "campaign_id = ? AND step_index = 1", (cid,)) == 1
+
+
 # ---------- HTTP endpoint ----------
 
 def test_http_delete_campaign_endpoint(app):
