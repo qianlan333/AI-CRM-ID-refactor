@@ -13,7 +13,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ...db import get_db, get_db_backend
+from ...db import get_db
 
 
 logger = logging.getLogger(__name__)
