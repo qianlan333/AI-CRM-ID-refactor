@@ -20,6 +20,7 @@ from wecom_ability_service.domains.image_library import (
     _normalize_tags,
     _to_jsonb_text,
 )
+from wecom_ability_service.domains.wecom_media_limits import WECOM_IMAGE_MAX_BYTES
 
 
 # 1x1 PNG，已知工作的最小 base64
@@ -145,6 +146,73 @@ def test_create_defaults_empty_metadata_when_omitted(app):
         assert item["tags"] == []
         assert item["category"] == ""
         assert item["ai_metadata"] == {}
+
+
+def test_create_from_upload_rejects_images_over_wecom_limit(app):
+    oversized_png = b"\x89PNG\r\n\x1a\n" + (b"0" * WECOM_IMAGE_MAX_BYTES)
+    with app.app_context():
+        with pytest.raises(ValueError, match="max 2MB"):
+            image_library.create_image_from_upload(
+                file_bytes=oversized_png,
+                file_name="too-large.png",
+                mime_type="image/png",
+            )
+
+
+def test_create_from_upload_rejects_unsupported_wecom_image_type(app):
+    gif_bytes = b"GIF89a" + (b"0" * 32)
+    with app.app_context():
+        with pytest.raises(ValueError, match="JPG/PNG"):
+            image_library.create_image_from_upload(
+                file_bytes=gif_bytes,
+                file_name="animated.gif",
+                mime_type="image/gif",
+            )
+
+
+def test_create_from_base64_normalizes_jpg_alias(app):
+    jpeg_bytes = b"\xff\xd8\xff" + (b"0" * 32)
+    jpeg_b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+    with app.app_context():
+        item = image_library.create_image_from_base64(
+            data_base64=f"data:image/jpg;base64,{jpeg_b64}",
+            file_name="alias.jpg",
+            mime_type="image/jpg",
+        )
+        assert item["mime_type"] == "image/jpeg"
+
+
+def test_create_from_url_rejects_explicit_unsupported_mime(app):
+    with app.app_context():
+        with pytest.raises(ValueError, match="JPG/PNG"):
+            image_library.create_image_from_url(
+                url="https://cdn.example.com/a.gif",
+                mime_type="image/gif",
+            )
+
+
+def test_resolve_image_media_id_rejects_legacy_oversized_record_before_upload(app):
+    oversized_png = b"\x89PNG\r\n\x1a\n" + (b"0" * WECOM_IMAGE_MAX_BYTES)
+    called = []
+
+    with app.app_context():
+        image_id = image_library._insert_image(
+            name="历史超限图",
+            file_name="legacy-too-large.png",
+            source="upload",
+            source_url="",
+            data_base64=base64.b64encode(oversized_png).decode("ascii"),
+            mime_type="image/png",
+            file_size=len(oversized_png),
+        )
+
+        def _upload(*args):
+            called.append(args)
+            return "should-not-upload"
+
+        with pytest.raises(ValueError, match="max 2MB"):
+            image_library.resolve_image_media_id(image_id, upload_image=_upload)
+        assert called == []
 
 
 # ---------- update：partial 语义 ---------- #

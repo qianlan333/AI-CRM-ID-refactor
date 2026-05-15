@@ -26,6 +26,7 @@ from ..application.user_ops import (
 )
 from ..domains.routing_config import DEFAULT_SALES_ROUTE_OWNER_USERID
 from ..domains.tasks.private_message import MAX_PRIVATE_MESSAGE_IMAGES
+from ..domains.wecom_media_limits import validate_wecom_image_upload
 from ..domains.user_ops.page_service import (
     execute_user_ops_batch_send,
     get_user_ops_send_record_detail,
@@ -37,27 +38,6 @@ from ..domains.user_ops.page_service import (
 from ..wecom_client import WeComClientError
 from .admin_console import render_admin_user_ops_shell
 from .common import _build_excel_xml, _coerce_request_bool, _wecom_error_response
-
-MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
-ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES = {
-    "png": "image/png",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "webp": "image/webp",
-}
-
-
-def _detect_one_time_batch_send_image_type(file_bytes: bytes) -> str:
-    if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "png"
-    if file_bytes.startswith(b"\xff\xd8\xff"):
-        return "jpeg"
-    if file_bytes.startswith((b"GIF87a", b"GIF89a")):
-        return "gif"
-    if len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
-        return "webp"
-    return ""
-
 
 def _page_filters_from_request_args() -> dict[str, str]:
     return {
@@ -101,16 +81,15 @@ def _normalize_one_time_batch_send_images():
         if not mime_type.startswith("image/"):
             raise ValueError("only image files are allowed")
         file_bytes = file_storage.read()
-        if len(file_bytes) > MAX_ONE_TIME_BATCH_SEND_IMAGE_SIZE_BYTES:
-            raise ValueError("image file is too large (max 5MB)")
-        detected_image_type = _detect_one_time_batch_send_image_type(file_bytes)
-        detected_type = ALLOWED_ONE_TIME_BATCH_SEND_IMAGE_TYPES.get(detected_image_type, "")
-        if not detected_type:
-            raise ValueError("only image files are allowed")
+        content_type = validate_wecom_image_upload(
+            file_bytes,
+            file_name=file_name,
+            mime_type=mime_type,
+        )
         images.append(
             {
                 "file_name": file_name,
-                "content_type": detected_type,
+                "content_type": content_type,
                 "data_base64": base64.b64encode(file_bytes).decode("ascii"),
             }
         )

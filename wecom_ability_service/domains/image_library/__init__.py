@@ -35,6 +35,12 @@ from ..media_library._utils import (
     row_to_dict as _row_to_dict,
     to_jsonb_text as _to_jsonb_text,
 )
+from ..wecom_media_limits import (
+    WECOM_IMAGE_ALLOWED_MIME_TYPES,
+    WECOM_IMAGE_MAX_MB,
+    normalize_wecom_image_mime_type,
+    validate_wecom_image_upload,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -252,10 +258,11 @@ def create_image_from_upload(
 ) -> dict[str, Any]:
     if not file_bytes:
         raise ValueError("file_bytes is empty")
-    if not (mime_type or "").startswith("image/"):
-        raise ValueError(f"only image/* allowed, got {mime_type}")
-    if len(file_bytes) > 5 * 1024 * 1024:
-        raise ValueError("file too large (max 5MB)")
+    normalized_mime = validate_wecom_image_upload(
+        file_bytes,
+        file_name=file_name,
+        mime_type=mime_type,
+    )
     encoded = base64.b64encode(file_bytes).decode("ascii")
     image_id = _insert_image(
         name=name or file_name,
@@ -263,7 +270,7 @@ def create_image_from_upload(
         source="upload",
         source_url="",
         data_base64=encoded,
-        mime_type=mime_type,
+        mime_type=normalized_mime,
         file_size=len(file_bytes),
         description=description,
         tags=tags,
@@ -286,13 +293,16 @@ def create_image_from_url(
     url = (url or "").strip()
     if not url:
         raise ValueError("url is empty")
+    normalized_mime = normalize_wecom_image_mime_type(mime_type, file_name=url) or "image/png"
+    if normalized_mime not in WECOM_IMAGE_ALLOWED_MIME_TYPES:
+        raise ValueError("only JPG/PNG images are supported by WeCom")
     image_id = _insert_image(
         name=name or url.rsplit("/", 1)[-1],
         file_name=url.rsplit("/", 1)[-1].split("?", 1)[0],
         source="url",
         source_url=url,
         data_base64="",
-        mime_type=mime_type,
+        mime_type=normalized_mime,
         file_size=0,
         description=description,
         tags=tags,
@@ -328,15 +338,18 @@ def create_image_from_base64(
         decoded = base64.b64decode(payload)
     except (ValueError, TypeError) as exc:
         raise ValueError("data_base64 decode failed") from exc
-    if len(decoded) > 5 * 1024 * 1024:
-        raise ValueError("file too large (max 5MB)")
+    normalized_mime = validate_wecom_image_upload(
+        decoded,
+        file_name=file_name,
+        mime_type=mime_type,
+    )
     image_id = _insert_image(
         name=name or (file_name or _DEFAULT_FILENAME),
         file_name=file_name,
         source="base64",
         source_url="",
         data_base64=payload,
-        mime_type=mime_type,
+        mime_type=normalized_mime,
         file_size=len(decoded),
         description=description,
         tags=tags,
@@ -596,6 +609,11 @@ def resolve_image_media_id(
         return cached_media_id
 
     file_bytes, content_type, file_name = _decode_image_bytes(record)
+    content_type = validate_wecom_image_upload(
+        file_bytes,
+        file_name=file_name,
+        mime_type=content_type,
+    )
     if upload_image is None:
         client = WeComClient.from_app()
         upload_image = client._upload_private_message_image
@@ -616,4 +634,5 @@ __all__ = [
     "delete_image",
     "find_image_references",
     "resolve_image_media_id",
+    "WECOM_IMAGE_MAX_MB",
 ]

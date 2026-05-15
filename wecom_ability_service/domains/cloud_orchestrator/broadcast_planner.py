@@ -26,6 +26,7 @@ from ..automation_conversion import (
 )
 from ..marketing_automation import frequency_budget_service
 from ..marketing_automation import message_dispatch_service
+from ..tasks.private_message import MAX_PRIVATE_MESSAGE_ATTACHMENTS
 from . import approval_token, audit
 
 
@@ -217,6 +218,8 @@ def _normalize_draft_attachments(
     """draft 阶段只允许 miniprogram(library_id) / file(media_id)，不接 AI 自由 appid。"""
     if not attachments:
         return []
+    if len(attachments) > MAX_PRIVATE_MESSAGE_ATTACHMENTS:
+        raise ValueError(f"at most {MAX_PRIVATE_MESSAGE_ATTACHMENTS} attachments are allowed")
     normalized: list[dict[str, Any]] = []
     for item in attachments:
         if not isinstance(item, dict):
