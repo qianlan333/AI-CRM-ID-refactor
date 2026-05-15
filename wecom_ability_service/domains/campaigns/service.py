@@ -31,6 +31,7 @@ from typing import Any
 from ...db import get_db
 from ..segments.service import get_segment, increment_usage
 from ..segments.sql_sandbox import fetch_member_rows
+from .payload_helpers import normalize_int_list, normalize_str_list, parse_step_payload
 from .time_helpers import DEFAULT_SEND_TIME as _DEFAULT_SEND_TIME
 from .time_helpers import DEFAULT_TIMEZONE as _DEFAULT_TIMEZONE
 from .time_helpers import campaign_step_due_iso
@@ -740,16 +741,7 @@ def update_campaign_step(
         raise LookupError(f"step {step_index} not found in campaign {campaign_id}")
 
     # PG: jsonb 自动反序列化为 dict；SQLite: 是字符串。统一处理
-    raw_payload = existing.get("content_payload_json") if isinstance(existing, dict) else None
-    if isinstance(raw_payload, dict):
-        payload = dict(raw_payload)
-    elif isinstance(raw_payload, str):
-        try:
-            payload = json.loads(raw_payload or "{}")
-        except (TypeError, ValueError):
-            payload = {}
-    else:
-        payload = {}
+    payload = parse_step_payload(dict(existing).get("content_payload_json"))
 
     sets: list[str] = []
     args: list[Any] = []
@@ -767,26 +759,13 @@ def update_campaign_step(
         args.append(bool(stop_on_reply))
     payload_dirty = False
     if image_library_ids is not None:
-        cleaned_lib_ids: list[int] = []
-        for raw in image_library_ids:
-            try:
-                cleaned_lib_ids.append(int(raw))
-            except (TypeError, ValueError):
-                continue
-        payload["image_library_ids"] = cleaned_lib_ids[:9]
+        payload["image_library_ids"] = normalize_int_list(image_library_ids, limit=9)
         payload_dirty = True
     if image_media_ids is not None:
-        cleaned = [str(x).strip() for x in image_media_ids if str(x).strip()]
-        payload["image_media_ids"] = cleaned[:9]  # 老格式兼容
+        payload["image_media_ids"] = normalize_str_list(image_media_ids, limit=9)  # 老格式兼容
         payload_dirty = True
     if miniprogram_library_ids is not None:
-        cleaned_ids: list[int] = []
-        for raw in miniprogram_library_ids:
-            try:
-                cleaned_ids.append(int(raw))
-            except (TypeError, ValueError):
-                continue
-        payload["miniprogram_library_ids"] = cleaned_ids
+        payload["miniprogram_library_ids"] = normalize_int_list(miniprogram_library_ids)
         payload_dirty = True
     if payload_dirty:
         sets.append("content_payload_json = ?")
@@ -952,14 +931,7 @@ def assemble_campaign_overview(*, campaign_id: int) -> dict[str, Any]:
         steps = []
         for r in (cur.fetchall() or []):
             sd = dict(r)
-            raw = sd.get("content_payload_json")
-            if isinstance(raw, str):
-                try:
-                    sd["content_payload_json"] = json.loads(raw or "{}")
-                except (TypeError, ValueError):
-                    sd["content_payload_json"] = {}
-            elif raw is None:
-                sd["content_payload_json"] = {}
+            sd["content_payload_json"] = parse_step_payload(sd.get("content_payload_json"))
             steps.append(sd)
         d = dict(row)
         d["steps"] = steps

@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ...db import get_db
+from .payload_helpers import normalize_int_list, normalize_str_list, parse_step_payload
 from .time_helpers import DEFAULT_TIMEZONE, campaign_step_due_iso
 
 
@@ -264,25 +265,12 @@ def _resolve_step_payload(*, campaign: dict[str, Any], step: dict[str, Any]) -> 
 
     owner_userid = str(campaign.get("owner_userid") or "") or DEFAULT_AUTOMATION_OWNER_USERID
 
-    # PG jsonb 自动反序列化为 dict；SQLite 是字符串
-    raw_payload = step.get("content_payload_json") or "{}"
-    if isinstance(raw_payload, dict):
-        step_payload = raw_payload
-    else:
-        try:
-            step_payload = json.loads(str(raw_payload) or "{}")
-        except (TypeError, ValueError):
-            step_payload = {}
+    step_payload = parse_step_payload(step.get("content_payload_json"))
 
     # 老格式：image_media_ids 直接是企微 media_id（兼容老 step）
-    image_media_ids = [str(x).strip() for x in (step_payload.get("image_media_ids") or []) if str(x).strip()]
+    image_media_ids = normalize_str_list(step_payload.get("image_media_ids"), limit=9)
     # 新格式：image_library_ids 引用图片素材库；发送前 resolve 成有效 media_id
-    image_library_ids: list[int] = []
-    for raw_iid in (step_payload.get("image_library_ids") or []):
-        try:
-            image_library_ids.append(int(raw_iid))
-        except (TypeError, ValueError):
-            continue
+    image_library_ids = normalize_int_list(step_payload.get("image_library_ids"), limit=9)
     if image_library_ids:
         from .. import image_library as _image_library
 
@@ -296,12 +284,7 @@ def _resolve_step_payload(*, campaign: dict[str, Any], step: dict[str, Any]) -> 
                 image_media_ids.append(resolved)
     image_media_ids = image_media_ids[:9]  # 企微单消息最多 9 张
 
-    miniprogram_library_ids: list[int] = []
-    for raw_lid in (step_payload.get("miniprogram_library_ids") or []):
-        try:
-            miniprogram_library_ids.append(int(raw_lid))
-        except (TypeError, ValueError):
-            continue
+    miniprogram_library_ids = normalize_int_list(step_payload.get("miniprogram_library_ids"))
     attachments: list[dict[str, Any]] = []
     if miniprogram_library_ids:
         from .. import miniprogram_library as _miniprogram_library
