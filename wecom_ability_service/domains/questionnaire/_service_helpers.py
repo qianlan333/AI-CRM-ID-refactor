@@ -451,7 +451,7 @@ def _get_questionnaire_row(questionnaire_id: int) -> dict[str, Any] | None:
         WHERE id = ?
         """,
         (int(questionnaire_id),),
-    ).fetchone()
+    )
 
 
 def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -493,7 +493,7 @@ def _load_questionnaire_questions(questionnaire_id: int) -> list[dict[str, Any]]
         ORDER BY sort_order ASC, id ASC
         """,
         (int(questionnaire_id),),
-    ).fetchall()
+    )
     if not question_rows:
         return []
     question_ids = [int(row["id"]) for row in question_rows]
