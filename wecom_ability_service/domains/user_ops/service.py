@@ -1183,6 +1183,7 @@ def upsert_user_ops_huangxiaocan_activation_source(
     *,
     mobile: str,
     activation_state: str,
+    activation_remark: str = "",
     import_batch_id: str = "",
     created_by: str = "",
     is_active: bool = True,
@@ -1190,6 +1191,7 @@ def upsert_user_ops_huangxiaocan_activation_source(
     return user_ops_import_service.upsert_user_ops_huangxiaocan_activation_source(
         mobile=mobile,
         activation_state=activation_state,
+        activation_remark=activation_remark,
         import_batch_id=import_batch_id,
         created_by=created_by,
         is_active=is_active,
