@@ -9,6 +9,8 @@ import requests
 from flask import current_app, has_request_context, session
 
 from ...db import get_db
+from ...db.helpers import fetchall_dicts
+from ...infra.helpers import db_bool as _db_bool
 from ...infra.helpers import stringify_db_timestamp as _stringify_db_timestamp
 from ...infra.constants import (
     LEGACY_USER_OPS_POOL_STATUS_ORDER,
@@ -50,10 +52,6 @@ update_class_user_status_sync_result = class_user_domain_service.update_class_us
 
 class ThirdPartyUserSyncError(RuntimeError):
     pass
-
-
-def _db_bool(value: Any) -> bool:
-    return bool(value)
 
 
 def get_user_ops_deferred_job_counts() -> dict[str, int]:
@@ -110,7 +108,8 @@ def sync_user_ops_class_term_tag_definitions() -> dict[str, Any]:
 
 
 def _list_user_ops_crm_source_rows() -> list[dict[str, Any]]:
-    rows = get_db().execute(
+    return fetchall_dicts(
+        get_db(),
         """
         WITH candidate_external_userids AS (
             SELECT external_userid
@@ -155,15 +154,15 @@ def _list_user_ops_crm_source_rows() -> list[dict[str, Any]]:
           ON p.id = bindings.person_id
         ORDER BY candidate.external_userid ASC
         """
-    ).fetchall()
-    return [dict(row) for row in rows]
+    )
 
 
 def _list_user_ops_experience_lead_rows() -> list[dict[str, Any]]:
     # W06/W09 note: class-term import currently reuses user_ops_experience_leads
     # as the phone anchor so phone-only rows can participate in pool reload.
     # The actual class-term values still land on the pool projection.
-    rows = get_db().execute(
+    return fetchall_dicts(
+        get_db(),
         """
         SELECT
             'experience_import' AS source_kind,
@@ -197,8 +196,7 @@ def _list_user_ops_experience_lead_rows() -> list[dict[str, Any]]:
         ORDER BY leads.mobile ASC, bindings.updated_at DESC, bindings.external_userid ASC
         """,
         (_db_bool(True),),
-    ).fetchall()
-    return [dict(row) for row in rows]
+    )
 
 
 def _materialize_user_ops_crm_candidate(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -306,7 +304,8 @@ def _merge_user_ops_candidate(existing: dict[str, Any], candidate: dict[str, Any
 
 
 def _list_user_ops_activation_source_rows() -> list[dict[str, Any]]:
-    rows = get_db().execute(
+    return fetchall_dicts(
+        get_db(),
         """
         SELECT
             mobile,
@@ -320,8 +319,7 @@ def _list_user_ops_activation_source_rows() -> list[dict[str, Any]]:
         ORDER BY mobile ASC
         """,
         (_db_bool(True),),
-    ).fetchall()
-    return [dict(row) for row in rows]
+    )
 
 
 def _apply_user_ops_activation_sources(next_map: dict[str, dict[str, Any]]) -> None:

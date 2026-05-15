@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from ...db import get_db
+from ...db.helpers import fetchall_dicts, fetchone_dict
 from ...infra.helpers import db_bool, stringify_db_timestamp
 from ...infra.json_utils import json_dumps as _json_dumps, safe_json_loads as _json_loads
 from .. import miniprogram_library
@@ -227,8 +228,7 @@ def _query_base_rows(
         params.extend([like_value, like_value, like_value, like_value, like_value])
 
     sql += " ORDER BY current.updated_at DESC, current.id DESC"
-    rows = get_db().execute(sql, tuple(params)).fetchall()
-    return [dict(row) for row in rows]
+    return fetchall_dicts(get_db(), sql, tuple(params))
 
 
 def _auto_dnd_reasons(row: dict[str, Any]) -> list[dict[str, str]]:
@@ -505,7 +505,8 @@ def _resolve_pool_target(*, external_userid: str = "", mobile: str = "") -> dict
     normalized_external_userid = _normalize_str(external_userid)
     normalized_mobile = _normalize_str(mobile)
     if normalized_external_userid:
-        row = get_db().execute(
+        return fetchone_dict(
+            get_db(),
             """
             SELECT id, external_userid, mobile
             FROM user_ops_pool_current
@@ -513,10 +514,10 @@ def _resolve_pool_target(*, external_userid: str = "", mobile: str = "") -> dict
             LIMIT 1
             """,
             (normalized_external_userid,),
-        ).fetchone()
-        return dict(row) if row else None
+        )
     if normalized_mobile:
-        row = get_db().execute(
+        return fetchone_dict(
+            get_db(),
             """
             SELECT id, external_userid, mobile
             FROM user_ops_pool_current
@@ -524,8 +525,7 @@ def _resolve_pool_target(*, external_userid: str = "", mobile: str = "") -> dict
             LIMIT 1
             """,
             (normalized_mobile,),
-        ).fetchone()
-        return dict(row) if row else None
+        )
     return None
 
 
@@ -870,7 +870,8 @@ def _fetch_outbound_task_rows(task_ids: list[int]) -> list[dict[str, Any]]:
     normalized_task_ids = [int(task_id) for task_id in task_ids if int(task_id) > 0]
     if not normalized_task_ids:
         return []
-    rows = get_db().execute(
+    return fetchall_dicts(
+        get_db(),
         f"""
         SELECT id, task_type, request_payload, response_payload, wecom_task_id, status, created_at
         FROM outbound_tasks
@@ -878,8 +879,7 @@ def _fetch_outbound_task_rows(task_ids: list[int]) -> list[dict[str, Any]]:
         ORDER BY id ASC
         """,
         tuple(normalized_task_ids),
-    ).fetchall()
-    return [dict(row) for row in rows]
+    )
 
 
 def _task_result_from_outbound_task_row(row: dict[str, Any], owner_display_names: dict[str, str]) -> dict[str, Any]:
@@ -915,7 +915,8 @@ def _sender_userids_from_task_results(task_results: list[dict[str, Any]]) -> lis
 
 
 def _load_send_record_row(record_id: int) -> dict[str, Any] | None:
-    row = get_db().execute(
+    return fetchone_dict(
+        get_db(),
         """
         SELECT
             id,
@@ -941,8 +942,7 @@ def _load_send_record_row(record_id: int) -> dict[str, Any] | None:
         LIMIT 1
         """,
         (int(record_id),),
-    ).fetchone()
-    return dict(row) if row else None
+    )
 
 
 def _hydrate_task_results(row: dict[str, Any]) -> list[dict[str, Any]]:
