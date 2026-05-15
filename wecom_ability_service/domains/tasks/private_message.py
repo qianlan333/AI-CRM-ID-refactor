@@ -38,6 +38,27 @@ def _normalize_sender(value: Any) -> str:
     return _normalize_str(value).strip()
 
 
+def _normalize_miniprogram_for_add_msg_template(attachment_payload: dict[str, Any]) -> dict[str, str]:
+    appid = str(attachment_payload.get("appid") or "").strip()
+    page = str(attachment_payload.get("page") or attachment_payload.get("pagepath") or "").strip()
+    title = str(attachment_payload.get("title") or "").strip()
+    pic_media_id = str(attachment_payload.get("pic_media_id") or attachment_payload.get("thumb_media_id") or "").strip()
+    if not appid:
+        raise ValueError("miniprogram attachments must include appid")
+    if not page:
+        raise ValueError("miniprogram attachments must include page")
+    if not title:
+        raise ValueError("miniprogram attachments must include title")
+    if not pic_media_id:
+        raise ValueError("miniprogram attachments must include pic_media_id")
+    return {
+        "appid": appid,
+        "page": page,
+        "title": title,
+        "pic_media_id": pic_media_id,
+    }
+
+
 def _normalize_binary_image_spec(item: Any, index: int) -> dict[str, Any]:
     if isinstance(item, str):
         raw = item.strip()
@@ -142,24 +163,7 @@ def normalize_private_message_attachments(payload: dict[str, Any]) -> list[dict[
             if not media_id:
                 raise ValueError("file attachments must include media_id")
         elif msgtype == "miniprogram":
-            appid = str(attachment_payload.get("appid") or "").strip()
-            pagepath = str(attachment_payload.get("pagepath") or "").strip()
-            title = str(attachment_payload.get("title") or "").strip()
-            thumb_media_id = str(attachment_payload.get("thumb_media_id") or "").strip()
-            if not appid:
-                raise ValueError("miniprogram attachments must include appid")
-            if not pagepath:
-                raise ValueError("miniprogram attachments must include pagepath")
-            if not title:
-                raise ValueError("miniprogram attachments must include title")
-            if not thumb_media_id:
-                raise ValueError("miniprogram attachments must include thumb_media_id")
-            normalized[msgtype] = {
-                "appid": appid,
-                "pagepath": pagepath,
-                "title": title,
-                "thumb_media_id": thumb_media_id,
-            }
+            normalized[msgtype] = _normalize_miniprogram_for_add_msg_template(attachment_payload)
         normalized["msgtype"] = msgtype
         attachments.append(normalized)
     return attachments

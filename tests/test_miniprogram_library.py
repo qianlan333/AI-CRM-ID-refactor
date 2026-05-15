@@ -55,7 +55,38 @@ def test_normalize_miniprogram_attachment_full_payload_pass():
     assert len(result) == 1
     assert result[0]["msgtype"] == "miniprogram"
     assert result[0]["miniprogram"]["appid"] == "wxabc123"
-    assert result[0]["miniprogram"]["thumb_media_id"] == "media-xxx"
+    assert result[0]["miniprogram"]["page"] == "pages/index?from=crm"
+    assert result[0]["miniprogram"]["pic_media_id"] == "media-xxx"
+    assert "pagepath" not in result[0]["miniprogram"]
+    assert "thumb_media_id" not in result[0]["miniprogram"]
+
+
+def test_normalize_miniprogram_attachment_accepts_wecom_template_fields():
+    payload = {
+        "attachments": [
+            {
+                "msgtype": "miniprogram",
+                "miniprogram": {
+                    "appid": "wxabc123",
+                    "page": "pages/index?from=crm",
+                    "title": "体验课卡片",
+                    "pic_media_id": "media-xxx",
+                },
+            }
+        ]
+    }
+    result = normalize_private_message_attachments(payload)
+    assert result == [
+        {
+            "msgtype": "miniprogram",
+            "miniprogram": {
+                "appid": "wxabc123",
+                "page": "pages/index?from=crm",
+                "title": "体验课卡片",
+                "pic_media_id": "media-xxx",
+            },
+        }
+    ]
 
 
 @pytest.mark.parametrize(

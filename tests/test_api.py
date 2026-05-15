@@ -963,6 +963,59 @@ def test_create_private_message_task_keeps_emoji_and_image_attachment(client, ap
         assert saved_payload["attachments"] == [{"msgtype": "image", "image": {"media_id": "media-emoji-proof.png"}}]
 
 
+def test_create_private_message_task_maps_miniprogram_attachment_for_add_msg_template(client, app, monkeypatch):
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/add_msg_template"):
+            captured_payloads.append(json or {})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    response = client.post(
+        "/api/tasks/private-message",
+        json={
+            "sender": ["sales_01"],
+            "external_userid": ["wm_ext_001"],
+            "text": {"content": "点这里继续体验"},
+            "attachments": [
+                {
+                    "msgtype": "miniprogram",
+                    "miniprogram": {
+                        "appid": "wx0ca836834b18e989",
+                        "pagepath": "pages/home/home?from=wecom_card",
+                        "title": "黄小璨AI｜找老黄聊聊",
+                        "thumb_media_id": "media-thumb-001",
+                    },
+                }
+            ],
+        },
+    )
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["wecom_result"]["msgid"] == "task-msg-001"
+    assert captured_payloads[0]["attachments"] == [
+        {
+            "msgtype": "miniprogram",
+            "miniprogram": {
+                "appid": "wx0ca836834b18e989",
+                "page": "pages/home/home?from=wecom_card",
+                "title": "黄小璨AI｜找老黄聊聊",
+                "pic_media_id": "media-thumb-001",
+            },
+        }
+    ]
+
+    with app.app_context():
+        row = get_db().execute("SELECT request_payload FROM outbound_tasks ORDER BY id DESC LIMIT 1").fetchone()
+        saved_payload = (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))
+        assert saved_payload["attachments"] == captured_payloads[0]["attachments"]
+
+
 def test_create_private_message_task_supports_pure_image_and_limits_to_three(client, monkeypatch):
     monkeypatch.setattr("requests.get", fake_wecom_get)
     monkeypatch.setattr("requests.post", fake_wecom_post)
