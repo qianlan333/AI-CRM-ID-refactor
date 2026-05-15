@@ -17,11 +17,8 @@ from ...db import get_db
 from ...db.helpers import fetchall_dicts as _db_fetchall_dicts
 from ...db.helpers import fetchone_dict as _db_fetchone_dict
 from ...db.helpers import placeholders as _db_placeholders
+from ...infra.helpers import db_bool as _db_bool
 from ...infra.json_utils import json_dumps
-
-
-def _db_bool(value: bool) -> bool:
-    return bool(value)
 
 
 def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
