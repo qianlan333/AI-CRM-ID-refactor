@@ -193,6 +193,35 @@ def _to_float(value: Any) -> float | None:
     return float(value)
 
 
+def _hxc_sort_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _hxc_user_row_sort_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        _hxc_sort_text(row.get("last_login_at")),
+        _hxc_sort_text(row.get("last_msg_at")),
+        _hxc_sort_text(row.get("hxc_registered_at")),
+        str(row.get("hxc_user_id") or ""),
+    )
+
+
+def _select_hxc_user_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    users_by_phone: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        phone = row.get("phone")
+        if not phone:
+            continue
+        existing = users_by_phone.get(phone)
+        if existing is None or _hxc_user_row_sort_key(row) > _hxc_user_row_sort_key(existing):
+            users_by_phone[phone] = row
+    return users_by_phone
+
+
 def _connect_hxc():
     """复用 message_activity_client 的 MESSAGE_ACTIVITY_DB_* 配置."""
     import pymysql
@@ -219,9 +248,7 @@ def _fetch_hxc_index() -> dict[str, dict[str, Any]]:
     try:
         with connection.cursor() as cursor:
             cursor.execute(_HXC_USERS_SQL)
-            users_by_phone: dict[str, dict[str, Any]] = {
-                row["phone"]: row for row in cursor.fetchall() if row.get("phone")
-            }
+            users_by_phone = _select_hxc_user_rows(list(cursor.fetchall()))
             cursor.execute(_HXC_MB_SQL)
             mb_by_phone: dict[str, dict[str, Any]] = {}
             for row in cursor.fetchall():
