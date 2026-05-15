@@ -3356,6 +3356,75 @@ def test_private_message_batch_marks_all_targets_failed_when_dispatch_raises(app
     assert dict(row) == {"status": "failed", "selected_count": 2, "sent_count": 0}
 
 
+def test_private_message_batch_falls_back_to_text_when_miniprogram_rejected(app, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion.service import _dispatch_private_message_batch
+    from wecom_ability_service.wecom_client import WeComClientError
+
+    dispatch_payloads = []
+
+    def fake_dispatch(task_type, fn_name, payload):
+        dispatch_payloads.append(dict(payload))
+        if len(dispatch_payloads) == 1:
+            raise WeComClientError(
+                "WeCom API failed: miniprogram not matched",
+                stage="/cgi-bin/externalcontact/add_msg_template",
+                category="wecom_api",
+                payload={"errcode": 90208, "errmsg": "miniprogram not matched", "fail_list": []},
+            )
+        return {
+            "task_id": 123,
+            "wecom_result": {
+                "errcode": 0,
+                "errmsg": "ok",
+                "fail_list": [],
+                "msgid": "msg-fallback-001",
+            },
+        }
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
+        fake_dispatch,
+    )
+
+    with app.app_context():
+        result = _dispatch_private_message_batch(
+            target_items=[{"external_userid": "wm_miniprogram_fallback_001"}],
+            sender_userid="sales_01",
+            content="小程序异常时仍要发出的文本",
+            attachments=[
+                {
+                    "msgtype": "miniprogram",
+                    "miniprogram": {
+                        "appid": "wx-bad",
+                        "page": "pages/home/home",
+                        "title": "卡片",
+                        "pic_media_id": "media-1",
+                    },
+                }
+            ],
+            operator_id="tester",
+            filter_snapshot={"selection_mode": "unit_test", "miniprogram_library_ids": [1]},
+        )
+        row = get_db().execute(
+            "SELECT status, selected_count, sent_count, outbound_task_ids_json, task_results_json "
+            "FROM user_ops_send_records ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+    assert result["ok"] is True
+    assert result["status"] == "sent"
+    assert result["task_ids"] == [123]
+    assert result["fail_external_userids"] == []
+    assert len(dispatch_payloads) == 2
+    assert dispatch_payloads[0]["attachments"][0]["msgtype"] == "miniprogram"
+    assert "attachments" not in dispatch_payloads[1]
+    stored = dict(row)
+    assert stored["status"] == "sent"
+    assert stored["sent_count"] == 1
+    assert stored["outbound_task_ids_json"] == [123]
+    assert stored["task_results_json"][0]["fallback_without_miniprogram"] is True
+    assert stored["task_results_json"][0]["fallback_removed_attachment_count"] == 1
+
+
 def test_send_conversion_execution_item_via_bazhuayu_posts_signed_webhook_payload(app, monkeypatch):
     _seed_contact(app, external_userid="wm_bazhuayu_send_001", mobile="13800002222", owner_userid="sales_01", customer_name="八爪鱼发送客户")
     _seed_automation_member(

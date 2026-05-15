@@ -862,6 +862,10 @@ def _normalize_task_result_item(item: dict[str, Any], owner_display_names: dict[
         "error_message": _normalize_str(item.get("error_message")),
         "error_stage": _normalize_str(item.get("error_stage")),
         "error_category": _normalize_str(item.get("error_category")),
+        "fallback_without_miniprogram": bool(item.get("fallback_without_miniprogram")),
+        "fallback_reason": _normalize_str(item.get("fallback_reason")),
+        "fallback_error_message": _normalize_str(item.get("fallback_error_message")),
+        "fallback_removed_attachment_count": int(item.get("fallback_removed_attachment_count") or 0),
     }
 
 
