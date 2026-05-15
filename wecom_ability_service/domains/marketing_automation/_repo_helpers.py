@@ -1,8 +1,8 @@
-"""Shared helpers for marketing_automation/repo.py.
+"""Shared helpers for the marketing_automation package.
 
 Extracted from repo.py (阶段 5.2 marketing_automation repo cleanup).
 
-Private to the marketing_automation package — names stay underscore-prefixed
+Private to the marketing_automation package; names stay underscore-prefixed
 and are explicitly re-exported via ``__all__``. Callers should import via
 explicit names (`from ._repo_helpers import _normalized_text, ...`) rather
 than star imports, to avoid ruff F405 warnings if/when ruff is configured
