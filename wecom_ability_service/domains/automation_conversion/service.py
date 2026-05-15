@@ -28,6 +28,7 @@ from ..marketing_automation.service import get_signup_conversion_config, save_si
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail, list_available_wecom_tags, list_questionnaires
 from ..tags import repo as tags_repo
+from ..tasks.service import dispatch_wecom_task  # noqa: F401 - legacy monkeypatch seam
 from .agents import (
     AGENT_PROMPT_DEFINITION_MAP,
     AGENT_PROMPT_ORDER,
