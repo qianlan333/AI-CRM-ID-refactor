@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 from wecom_ability_service.domains.user_ops import hxc_dashboard_snapshot_service as svc
+from wecom_ability_service.domains.user_ops.phone_helpers import mask_mobile, phone_match_key
 
 
 # ── 纯函数 (无 DB 依赖) ──
@@ -40,6 +41,12 @@ def test_phone_match_key_too_short():
     assert svc._phone_match_key("123") == ""
     assert svc._phone_match_key("") == ""
     assert svc._phone_match_key(None) == ""  # type: ignore[arg-type]
+
+
+def test_user_ops_phone_helpers_normalize_digits():
+    assert phone_match_key("+86 139-1234-5678") == "861_5678"
+    assert mask_mobile("139 1234 5678") == "139****5678"
+    assert mask_mobile("123") == "123"
 
 
 def test_to_float_handles_decimal():
