@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ...customer_center.repo import (
@@ -13,6 +12,7 @@ from ...customer_center.repo import (
     list_scope_external_userids,
 )
 from ...db import get_db
+from ...infra.json_utils import safe_json_loads as _json_loads
 
 
 def _fetchall_dict(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -26,18 +26,6 @@ def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | N
 
 def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
-
-
-def _json_loads(value: Any, *, default: Any) -> Any:
-    if isinstance(value, (dict, list)):
-        return value
-    text = _normalized_text(value)
-    if not text:
-        return default
-    try:
-        return json.loads(text)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:

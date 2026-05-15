@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...db import get_db, get_db_backend
+from ...db import get_db
+from ...infra.json_utils import safe_json_loads as _json_loads
 
 
 def _db_bool(value: bool) -> bool:
@@ -14,17 +15,6 @@ def _fetch_inserted_id(cursor) -> int:
     """PG INSERT ... RETURNING id 后从 cursor.fetchone() 拿。"""
     row = cursor.fetchone() or {}
     return int((row or {}).get("id") or 0)
-
-
-def _json_loads(value: Any, *, default: Any) -> Any:
-    if isinstance(value, (dict, list)):
-        return value
-    if value in (None, ""):
-        return default
-    try:
-        return json.loads(value)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
 
 
 def list_class_term_tag_mappings(active_only: bool = False) -> list[dict[str, Any]]:

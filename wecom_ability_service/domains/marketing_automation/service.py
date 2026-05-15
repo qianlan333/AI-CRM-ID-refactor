@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -10,6 +9,7 @@ import requests
 from flask import current_app
 
 from ...db import get_db
+from ...infra.json_utils import safe_json_loads as _json_loads
 from ...application.class_user.commands import (
     ApplyClassUserStatusChangeCommand,
     ClearClassUserStatusCurrentCommand,
@@ -25,7 +25,6 @@ from ...application.class_user.queries import (
     GetClassUserStatusDefinitionQuery,
 )
 from ...infra.settings import get_setting
-from ...wecom_client import WeComClientError
 from ..automation_state.calculator import (
     calculate_marketing_state as _calculate_marketing_state,
     resolve_pool_key_for_customer as _shared_resolve_pool_key_for_customer,
@@ -49,10 +48,8 @@ from ..automation_state.state_defs import (
 from ..archive import repo as archive_repo
 from ..archive.service import extract_roomid_from_raw_payload, format_message_row, get_recent_messages_by_user
 from ..group_chats.repo import get_group_chat_map
-from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail
-from ..tasks.service import dispatch_wecom_task
-from ..user_ops import page_service as user_ops_page_service
+from ..tasks.service import dispatch_wecom_task  # noqa: F401 - legacy campaign dispatch monkeypatch seam
 from .presenter import business_marketing_display
 from . import repo
 
@@ -202,18 +199,6 @@ def _get_active_owner_role(userid: str) -> dict[str, Any]:
     if not owner_role or not bool(owner_role.get("active")):
         return {}
     return owner_role
-
-
-def _json_loads(value: Any, *, default: Any) -> Any:
-    if isinstance(value, (dict, list)):
-        return value
-    text = _normalized_text(value)
-    if not text:
-        return default
-    try:
-        return json.loads(text)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
 
 
 def _normalize_bool(value: Any, *, default: bool = False) -> bool:
@@ -1704,8 +1689,6 @@ def evaluate_customer_marketing_state(
     followup_segment = _normalized_text(calculated_state.get("current_segment")) or FOLLOWUP_SEGMENT_UNKNOWN
     followup_segment_source = _normalized_text(calculated_state.get("current_segment_source")) or "awaiting_questionnaire"
     base_pool_key = _normalized_text(calculated_state.get("base_pool_key"))
-    base_stage_key = _normalized_text(calculated_state.get("base_stage_key"))
-    base_reference_at = _normalized_text(calculated_state.get("base_reference_at"))
     base_entered_at = _normalized_text(calculated_state.get("base_entered_at"))
     final_pool_key = _normalized_text(calculated_state.get("pool_key"))
     main_stage = _normalized_text(calculated_state.get("main_stage"))
@@ -2066,8 +2049,8 @@ def get_customer_marketing_profile(
             "marketing_phase": marketing_phase,
             "phase_label": (
                 _blocked_phase_label(
-                    int((batch_context or {}).get("day_start_hour") or config.get("day_start_hour") or DEFAULT_DAY_START_HOUR),
-                    int((batch_context or {}).get("quiet_hour_start") or config.get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START),
+                    int((batch_context or {}).get("day_start_hour") or DEFAULT_DAY_START_HOUR),
+                    int((batch_context or {}).get("quiet_hour_start") or DEFAULT_QUIET_HOUR_START),
                 )
                 if marketing_phase == "blocked_after_2300"
                 else _PHASE_LABELS.get(marketing_phase, marketing_phase)
@@ -2650,7 +2633,7 @@ def ack_conversion_batch(
 
 
 # === Re-exports for backward compatibility (modules split off) ===
-from .value_segment_service import (  # noqa: E402
+from .value_segment_service import (  # noqa: E402,F401
     _compute_submission_hit_result,
     _compute_value_segment,
     _dedupe_tag_names,
@@ -2662,7 +2645,7 @@ from .value_segment_service import (  # noqa: E402
     _value_segment_config_ready,
     evaluate_customer_value_segment,
 )
-from .enrollment_service import (  # noqa: E402
+from .enrollment_service import (  # noqa: E402,F401
     _build_class_user_snapshot_for_conversion,
     _cancel_dispatches_for_pool_change,
     _cancel_pending_conversion_dispatches,
@@ -2674,7 +2657,7 @@ from .enrollment_service import (  # noqa: E402
     set_manual_followup_segment,
     unmark_enrolled,
 )
-from .router_dispatch_service import (  # noqa: E402
+from .router_dispatch_service import (  # noqa: E402,F401
     _build_disabled_batch_result,
     _candidate_preview_segment,
     _candidate_preview_stage,

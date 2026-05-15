@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Any
 
 from ...db import get_db
 from ...infra.helpers import db_bool, stringify_db_timestamp
+from ...infra.json_utils import json_dumps as _json_dumps, safe_json_loads as _json_loads
 from .. import miniprogram_library
 from ..tasks.private_message import (
     count_private_message_images,
@@ -114,21 +114,6 @@ def _normalize_filter_payload(filters: dict[str, Any] | None = None, **kwargs: A
         "mobile": _normalize_str(payload.get("mobile")),
         "owner_userid": _normalize_str(payload.get("owner_userid")),
     }
-
-
-def _json_loads(value: Any, *, default: Any) -> Any:
-    if isinstance(value, (list, dict)):
-        return value
-    if value in (None, ""):
-        return default
-    try:
-        return json.loads(str(value))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
-
-
-def _json_dumps(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False)
 
 
 def _decode_json_list(value: Any) -> list[Any]:

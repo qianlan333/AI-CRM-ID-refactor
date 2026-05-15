@@ -68,6 +68,7 @@ from ...application.routing_config.queries import (
 from ...domains.archive.service import extract_roomid_from_raw_payload, format_message_row
 from ...domains.group_chats.repo import get_group_chat_map
 from ...domains.tags.service import get_signup_status_definition, get_signup_tag_rules_config
+from ...infra.json_utils import safe_json_loads as _json_loads
 from ...infra.settings import get_setting
 from ..admin_config.service import mcp_tool_enabled
 from ..questionnaire import build_questionnaire_preflight_payload
@@ -181,18 +182,6 @@ def _ui_status_label(value: Any) -> str:
     }
     normalized = _normalized_text(value).lower()
     return mapping.get(normalized, _normalized_text(value) or "-")
-
-def _json_loads(value: Any, *, default: Any) -> Any:
-    if isinstance(value, (dict, list)):
-        return value
-    text = _normalized_text(value)
-    if not text:
-        return default
-    try:
-        parsed = json.loads(text)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return default
-    return parsed
 
 def _json_pretty(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
@@ -837,4 +826,3 @@ def execute_operations_action(
         return payload
 
     raise ValueError("不支持的运营操作")
-
