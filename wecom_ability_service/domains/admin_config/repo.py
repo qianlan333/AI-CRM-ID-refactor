@@ -4,17 +4,9 @@ import json
 from typing import Any
 
 from ...db import get_db
+from ...db.helpers import fetch_inserted_id as _fetch_inserted_id, fetchall_dicts, fetchone_dict
+from ...infra.helpers import db_bool as _db_bool
 from ...infra.json_utils import safe_json_loads as _json_loads
-
-
-def _db_bool(value: bool) -> bool:
-    return bool(value)
-
-
-def _fetch_inserted_id(cursor) -> int:
-    """PG INSERT ... RETURNING id 后从 cursor.fetchone() 拿。"""
-    row = cursor.fetchone() or {}
-    return int((row or {}).get("id") or 0)
 
 
 def list_class_term_tag_mappings(active_only: bool = False) -> list[dict[str, Any]]:
@@ -38,12 +30,12 @@ def list_class_term_tag_mappings(active_only: bool = False) -> list[dict[str, An
         sql += " WHERE is_active = ?"
         params.append(_db_bool(True))
     sql += " ORDER BY is_active DESC, class_term_no ASC, id ASC"
-    rows = get_db().execute(sql, tuple(params)).fetchall()
-    return [dict(row) for row in rows]
+    return fetchall_dicts(get_db(), sql, tuple(params))
 
 
 def get_class_term_tag_mapping(mapping_id: int) -> dict[str, Any] | None:
-    row = get_db().execute(
+    return fetchone_dict(
+        get_db(),
         """
         SELECT
             id,
@@ -61,8 +53,7 @@ def get_class_term_tag_mapping(mapping_id: int) -> dict[str, Any] | None:
         WHERE id = ?
         """,
         (int(mapping_id),),
-    ).fetchone()
-    return dict(row) if row else None
+    )
 
 
 def upsert_class_term_tag_mapping(
@@ -183,26 +174,26 @@ def upsert_class_term_tag_mapping(
 
 
 def list_app_setting_rows() -> list[dict[str, Any]]:
-    rows = get_db().execute(
+    return fetchall_dicts(
+        get_db(),
         """
         SELECT key, value, updated_at
         FROM app_settings
         ORDER BY key ASC
         """
-    ).fetchall()
-    return [dict(row) for row in rows]
+    )
 
 
 def get_app_setting_row(key: str) -> dict[str, Any] | None:
-    row = get_db().execute(
+    return fetchone_dict(
+        get_db(),
         """
         SELECT key, value, updated_at
         FROM app_settings
         WHERE key = ?
         """,
         (str(key or "").strip(),),
-    ).fetchone()
-    return dict(row) if row else None
+    )
 
 
 def upsert_app_setting(*, key: str, value: str) -> None:
@@ -220,7 +211,8 @@ def upsert_app_setting(*, key: str, value: str) -> None:
 
 
 def list_mcp_tool_settings() -> list[dict[str, Any]]:
-    rows = get_db().execute(
+    return fetchall_dicts(
+        get_db(),
         """
         SELECT
             tool_name,
@@ -236,12 +228,12 @@ def list_mcp_tool_settings() -> list[dict[str, Any]]:
         FROM mcp_tool_settings
         ORDER BY sort_order ASC, tool_name ASC
         """
-    ).fetchall()
-    return [dict(row) for row in rows]
+    )
 
 
 def get_mcp_tool_setting(tool_name: str) -> dict[str, Any] | None:
-    row = get_db().execute(
+    return fetchone_dict(
+        get_db(),
         """
         SELECT
             tool_name,
@@ -258,8 +250,7 @@ def get_mcp_tool_setting(tool_name: str) -> dict[str, Any] | None:
         WHERE tool_name = ?
         """,
         (str(tool_name or "").strip(),),
-    ).fetchone()
-    return dict(row) if row else None
+    )
 
 
 def upsert_mcp_tool_setting(
@@ -362,8 +353,7 @@ def list_admin_operation_logs(*, target_type: str = "", limit: int = 20) -> list
         params.append(str(target_type or "").strip())
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(max(1, min(int(limit), 200)))
-    rows = get_db().execute(sql, tuple(params)).fetchall()
-    return [dict(row) for row in rows]
+    return fetchall_dicts(get_db(), sql, tuple(params))
 
 
 def get_latest_audit_map(*, target_type: str, target_ids: list[str]) -> dict[str, dict[str, Any]]:
