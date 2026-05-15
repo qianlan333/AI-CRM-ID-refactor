@@ -15,6 +15,7 @@ TARGETS = [
     "scripts/run_lint.py",
     "scripts/run_typecheck.py",
     "scripts/run_build.py",
+    "scripts/script_runtime.py",
 ]
 
 

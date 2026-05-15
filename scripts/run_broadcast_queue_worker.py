@@ -21,17 +21,15 @@ cron 例（每分钟）：
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+from script_runtime import ensure_repo_root_on_path, print_json
+
+ensure_repo_root_on_path()
 
 
 logger = logging.getLogger("broadcast_queue_worker")
@@ -103,7 +101,7 @@ def main() -> int:
     app = create_app()
     with app.app_context():
         summary = run(batch_size)
-    print(json.dumps(summary, ensure_ascii=False))
+    print_json(summary)
     return 0
 
 
