@@ -61,6 +61,7 @@ from ._service_helpers import (  # noqa: F401  helpers — 阶段 7.2
     _load_questionnaire_questions,
     _load_questionnaire_score_rules,
     _normalize_bool,
+    _normalize_answer_display_mode,
     _normalize_float,
     _normalize_int,
     _normalize_questionnaire_assessment_config,
@@ -84,6 +85,7 @@ def list_questionnaires() -> list[dict[str, Any]]:
     rows = get_db().execute(
         """
         SELECT q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
+               q.answer_display_mode,
                q.assessment_enabled, q.assessment_config,
                q.external_push_enabled, q.external_push_url, q.external_push_day, q.external_push_frequency,
                q.external_push_remark, q.external_push_custom_params, q.created_at, q.updated_at,
@@ -91,6 +93,7 @@ def list_questionnaires() -> list[dict[str, Any]]:
         FROM questionnaires q
         LEFT JOIN questionnaire_submissions s ON s.questionnaire_id = q.id
         GROUP BY q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
+                 q.answer_display_mode,
                  q.assessment_enabled, q.assessment_config,
                  q.external_push_enabled, q.external_push_url, q.external_push_day, q.external_push_frequency,
                  q.external_push_remark, q.external_push_custom_params, q.created_at, q.updated_at
@@ -206,11 +209,12 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
             """
             INSERT INTO questionnaires (
                 slug, name, title, description, is_disabled, redirect_url,
+                answer_display_mode,
                 assessment_enabled, assessment_config,
                 external_push_enabled, external_push_url, external_push_day, external_push_frequency,
                 external_push_remark, external_push_custom_params, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (
@@ -220,6 +224,7 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
                 normalized["description"],
                 normalized["is_disabled"],
                 normalized["redirect_url"],
+                normalized["answer_display_mode"],
                 normalized["assessment_enabled"],
                 _json_dumps(normalized["assessment_config"]),
                 normalized["external_push_enabled"],
@@ -261,6 +266,7 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
             """
             UPDATE questionnaires
             SET slug = ?, name = ?, title = ?, description = ?, is_disabled = ?, redirect_url = ?,
+                answer_display_mode = ?,
                 assessment_enabled = ?, assessment_config = ?,
                 external_push_enabled = ?, external_push_url = ?, external_push_day = ?, external_push_frequency = ?,
                 external_push_remark = ?, external_push_custom_params = ?, updated_at = CURRENT_TIMESTAMP
@@ -273,6 +279,7 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
                 normalized["description"],
                 normalized["is_disabled"],
                 normalized["redirect_url"],
+                normalized["answer_display_mode"],
                 normalized["assessment_enabled"],
                 _json_dumps(normalized["assessment_config"]),
                 normalized["external_push_enabled"],
@@ -487,6 +494,7 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     row = get_db().execute(
         """
         SELECT id, slug, name, title, description, is_disabled, redirect_url,
+               answer_display_mode,
                assessment_enabled, assessment_config,
                external_push_enabled, external_push_url, external_push_day, external_push_frequency,
                external_push_remark, external_push_custom_params, created_at, updated_at
@@ -499,6 +507,7 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     if not row:
         return None
     detail = _build_questionnaire_detail(row)
+    detail["answer_display_mode"] = _normalize_answer_display_mode(detail.get("answer_display_mode"))
     detail["questions"] = [
         {
             "id": question["id"],
@@ -2054,6 +2063,7 @@ def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[
     row = get_db().execute(
         """
         SELECT id, slug, name, title, description, is_disabled, redirect_url,
+               answer_display_mode,
                assessment_enabled, assessment_config,
                external_push_enabled, external_push_url, external_push_day, external_push_frequency,
                external_push_remark, external_push_custom_params, created_at, updated_at

@@ -175,6 +175,7 @@ def _build_questionnaire_page_state(
         "submitted_url": _questionnaire_submitted_path(slug),
         "title": questionnaire.get("title", ""),
         "description": questionnaire.get("description", ""),
+        "answer_display_mode": questionnaire.get("answer_display_mode") or "all_in_one",
         "env_notice": env_notice,
         "oauth_start_url": oauth_start_url if _wechat_oauth_is_configured() else "",
         "is_wechat_browser": is_wechat_browser,

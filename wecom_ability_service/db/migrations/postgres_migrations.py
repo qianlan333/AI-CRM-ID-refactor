@@ -1094,6 +1094,8 @@ def _init_postgres(db) -> None:
         "ALTER TABLE IF EXISTS questionnaires "
         "ADD COLUMN IF NOT EXISTS assessment_enabled BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE IF EXISTS questionnaires "
+        "ADD COLUMN IF NOT EXISTS answer_display_mode TEXT NOT NULL DEFAULT 'all_in_one'",
+        "ALTER TABLE IF EXISTS questionnaires "
         "ADD COLUMN IF NOT EXISTS assessment_config JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE IF EXISTS questionnaire_questions "
         "ADD COLUMN IF NOT EXISTS assessment_dimension_key TEXT NOT NULL DEFAULT ''",
@@ -1192,6 +1194,32 @@ def _init_postgres(db) -> None:
         """
         ALTER TABLE questionnaire_questions
         ADD COLUMN IF NOT EXISTS placeholder_text TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS answer_display_mode TEXT NOT NULL DEFAULT 'all_in_one'
+        """
+    )
+    db.execute(
+        """
+        UPDATE questionnaires
+        SET answer_display_mode = 'all_in_one'
+        WHERE COALESCE(answer_display_mode, '') NOT IN ('all_in_one', 'one_by_one')
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        DROP CONSTRAINT IF EXISTS questionnaires_answer_display_mode_check
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD CONSTRAINT questionnaires_answer_display_mode_check
+        CHECK (answer_display_mode IN ('all_in_one', 'one_by_one'))
         """
     )
     db.execute(

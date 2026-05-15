@@ -979,6 +979,7 @@ CREATE TABLE IF NOT EXISTS questionnaires (
     description TEXT NOT NULL DEFAULT '',
     is_disabled BOOLEAN NOT NULL DEFAULT FALSE,
     redirect_url TEXT NOT NULL DEFAULT '',
+    answer_display_mode TEXT NOT NULL DEFAULT 'all_in_one' CHECK (answer_display_mode IN ('all_in_one', 'one_by_one')),
     assessment_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     assessment_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     external_push_enabled BOOLEAN NOT NULL DEFAULT FALSE,

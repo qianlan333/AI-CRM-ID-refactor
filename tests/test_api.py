@@ -2917,6 +2917,7 @@ def test_questionnaire_admin_routes_and_public_h5(client):
     questionnaire = create_response.get_json()["questionnaire"]
     questionnaire_id = questionnaire["id"]
     slug = questionnaire["slug"]
+    assert questionnaire["answer_display_mode"] == "all_in_one"
 
     list_response = client.get("/api/admin/questionnaires")
     list_payload = list_response.get_json()
@@ -2927,12 +2928,36 @@ def test_questionnaire_admin_routes_and_public_h5(client):
     detail_response = client.get(f"/api/admin/questionnaires/{questionnaire_id}")
     detail_payload = detail_response.get_json()["questionnaire"]
     assert detail_response.status_code == 200
+    assert detail_payload["answer_display_mode"] == "all_in_one"
     assert len(detail_payload["questions"]) == 3
     assert detail_payload["questions"][0]["options"][0]["tag_codes"] == ["budget_low"]
 
     blocked_public_response = client.get(f"/api/h5/questionnaires/{slug}")
     assert blocked_public_response.status_code == 403
     assert blocked_public_response.get_json() == {"ok": False, "error": "please_open_in_wechat"}
+
+    update_payload = _build_questionnaire_payload(
+        slug=slug,
+        answer_display_mode="one_by_one",
+    )
+    update_response = client.put(f"/api/admin/questionnaires/{questionnaire_id}", json=update_payload)
+    assert update_response.status_code == 200
+    assert update_response.get_json()["questionnaire"]["answer_display_mode"] == "one_by_one"
+
+    public_response = client.get(
+        f"/api/h5/questionnaires/{slug}",
+        headers=WECHAT_BROWSER_HEADERS,
+    )
+    assert public_response.status_code == 200
+    public_payload = public_response.get_json()["questionnaire"]
+    assert public_payload["answer_display_mode"] == "one_by_one"
+
+    invalid_response = client.put(
+        f"/api/admin/questionnaires/{questionnaire_id}",
+        json=_build_questionnaire_payload(slug=slug, answer_display_mode="auto_next_enabled"),
+    )
+    assert invalid_response.status_code == 400
+    assert invalid_response.get_json()["error"] == "答题展示方式不正确"
 
     public_response = client.get(f"/api/h5/questionnaires/{slug}", headers=WECHAT_BROWSER_HEADERS)
     public_payload = public_response.get_json()["questionnaire"]

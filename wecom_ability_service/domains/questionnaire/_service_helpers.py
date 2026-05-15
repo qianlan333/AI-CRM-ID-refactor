@@ -39,6 +39,7 @@ from ..tags import repo as tags_repo
 
 questionnaire_logger = logging.getLogger("questionnaire")
 QUESTIONNAIRE_TYPES = {"single_choice", "multi_choice", "textarea", "mobile"}
+QUESTIONNAIRE_ANSWER_DISPLAY_MODES = {"all_in_one", "one_by_one"}
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SUCCESS = "success"
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED = "failed"
 QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_SKIPPED = "skipped"
@@ -302,6 +303,17 @@ def _normalize_questionnaire_assessment_config(value: Any) -> dict[str, Any]:
     return raw_value
 
 
+def _normalize_answer_display_mode(value: Any, *, strict: bool = False) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return "all_in_one"
+    if normalized in QUESTIONNAIRE_ANSWER_DISPLAY_MODES:
+        return normalized
+    if strict:
+        raise ValueError("答题展示方式不正确")
+    return "all_in_one"
+
+
 def _normalize_questionnaire_payload(
     payload: dict[str, Any],
     *,
@@ -314,6 +326,10 @@ def _normalize_questionnaire_payload(
     title = str(payload.get("title") or "").strip()
     description = str(payload.get("description") or "").strip()
     redirect_url = str(payload.get("redirect_url") or "").strip()
+    answer_display_mode = _normalize_answer_display_mode(
+        payload.get("answer_display_mode", (existing or {}).get("answer_display_mode")),
+        strict="answer_display_mode" in payload,
+    )
     external_push_enabled = _normalize_bool(
         payload.get("external_push_enabled", (existing or {}).get("external_push_enabled"))
     )
@@ -443,6 +459,7 @@ def _normalize_questionnaire_payload(
         "description": description,
         "is_disabled": _normalize_bool(payload.get("is_disabled", (existing or {}).get("is_disabled"))),
         "redirect_url": redirect_url,
+        "answer_display_mode": answer_display_mode,
         "assessment_enabled": assessment_enabled,
         "assessment_config": assessment_config,
         "external_push_enabled": external_push_enabled,
@@ -460,6 +477,7 @@ def _get_questionnaire_row(questionnaire_id: int) -> dict[str, Any] | None:
     return get_db().execute(
         """
         SELECT id, slug, name, title, description, is_disabled, redirect_url,
+               answer_display_mode,
                assessment_enabled, assessment_config,
                external_push_enabled, external_push_url, external_push_day, external_push_frequency,
                external_push_remark, external_push_custom_params, created_at, updated_at
@@ -479,6 +497,7 @@ def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
         "description": row.get("description", "") or "",
         "is_disabled": _normalize_bool(row.get("is_disabled")),
         "redirect_url": row.get("redirect_url", "") or "",
+        "answer_display_mode": _normalize_answer_display_mode(row.get("answer_display_mode")),
         "assessment_enabled": _normalize_bool(row.get("assessment_enabled")),
         "assessment_config": _normalize_questionnaire_assessment_config(row.get("assessment_config")),
         "external_push_enabled": _normalize_bool(row.get("external_push_enabled")),
@@ -691,6 +710,7 @@ __all__ = [
     "_normalize_float",
     "_normalize_int",
     "_normalize_questionnaire_assessment_config",
+    "_normalize_answer_display_mode",
     "_normalize_questionnaire_external_push_custom_params",
     "_normalize_questionnaire_payload",
     "_normalize_required_integer",
