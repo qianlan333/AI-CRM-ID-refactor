@@ -5,9 +5,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from script_runtime import ensure_repo_root_on_path
+
+ROOT = ensure_repo_root_on_path()
 
 
 def _compile_targets() -> bool:

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from script_runtime import REPO_ROOT
+
+ROOT = REPO_ROOT
 TARGETS = [
     "wecom_ability_service/http/admin_console.py",
     "wecom_ability_service/domains/admin_dashboard/service.py",
