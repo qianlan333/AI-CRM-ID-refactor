@@ -31,6 +31,7 @@ from ..automation_conversion.message_activity_client import (
     _db_config,
     get_message_activity_db_status,
 )
+from .phone_helpers import phone_match_key
 
 
 # ── 漏斗状态枚举 (DB 用英文; UI 层翻译成中文) ──
@@ -181,9 +182,7 @@ def _funnel_state(user_hit: bool, member_hit: bool) -> str:
 
 
 def _phone_match_key(phone: str) -> str:
-    if not phone or len(phone) < 7:
-        return ""
-    return f"{phone[:3]}_{phone[-4:]}"
+    return phone_match_key(phone)
 
 
 def _to_float(value: Any) -> float | None:
