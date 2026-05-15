@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flask import current_app
 
-from ..helpers import _postgres_table_columns
+from ..helpers import pg_table_columns
 from . import (
     _ensure_automation_agent_prompt_defaults,
     _ensure_automation_sop_v1_seed_data,
@@ -621,7 +621,7 @@ def _ensure_postgres_admin_auth_tables(db) -> None:
         ADD COLUMN IF NOT EXISTS updated_by TEXT NOT NULL DEFAULT ''
         """
     )
-    admin_user_columns = _postgres_table_columns(db, "admin_users")
+    admin_user_columns = pg_table_columns(db, "admin_users")
     if "username" in admin_user_columns:
         db.execute(
             """

@@ -13,7 +13,7 @@ import requests
 
 from wecom_ability_service import create_app
 from wecom_ability_service.db import get_db, init_db
-from wecom_ability_service.db.helpers import _sqlite_table_columns
+from wecom_ability_service.db.helpers import pg_table_columns
 from wecom_ability_service.domains.automation_conversion import (
     append_agent_output,
     apply_dashboard_signup_tag,
@@ -111,7 +111,7 @@ def client(app):
 
 def test_init_db_adds_workflow_node_trigger_mode_column(app):
     with app.app_context():
-        assert "trigger_mode" in _sqlite_table_columns(get_db(), "automation_workflow_node")
+        assert "trigger_mode" in pg_table_columns(get_db(), "automation_workflow_node")
 
 
 def test_init_db_adjusts_pending_questionnaire_followup_legacy_cadence(app):
@@ -3937,10 +3937,10 @@ def _patch_live_context(
 def test_init_db_creates_automation_conversion_tables_and_indexes(app):
     with app.app_context():
         db = get_db()
-        table_names = _sqlite_object_names(db, "table")
-        index_names = _sqlite_object_names(db, "index")
-        channel_columns = _sqlite_table_columns(db, "automation_channel")
-        agent_output_columns = _sqlite_table_columns(db, "automation_agent_output")
+        table_names = pg_object_names(db, "table")
+        index_names = pg_object_names(db, "index")
+        channel_columns = pg_table_columns(db, "automation_channel")
+        agent_output_columns = pg_table_columns(db, "automation_agent_output")
 
         assert {
             "automation_channel",
