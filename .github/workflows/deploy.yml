@@ -21,13 +21,19 @@ jobs:
             if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
               git stash push --include-untracked -m "deploy-backup-$(date -u +%Y%m%dT%H%M%SZ)"
             fi
+            before_sha="$(git rev-parse HEAD)"
             git pull --ff-only origin main
+            after_sha="$(git rev-parse HEAD)"
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a
             test -n "${DATABASE_URL:-}"
             source /home/ubuntu/venvs/openclaw/bin/activate
-            pip install -r requirements.txt
+            if [ "$before_sha" = "$after_sha" ] || git diff --quiet "$before_sha" "$after_sha" -- requirements.txt; then
+              echo "requirements.txt unchanged; skipping pip install"
+            else
+              pip install -r requirements.txt
+            fi
             # 1) schema + ALTER 补丁 + seed 默认分层/预算（一站式幂等）
             python3 app.py init-db
             # 2) alembic 版本对齐 — 让后续可以走标准 upgrade 路径

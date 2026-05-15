@@ -20,9 +20,23 @@ def test_production_deploy_stashes_dirty_worktree_before_pull():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     stash_index = workflow.index("git stash push --include-untracked")
+    before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
     pull_index = workflow.index("git pull --ff-only origin main")
 
-    assert stash_index < pull_index
+    assert stash_index < before_sha_index < pull_index
+
+
+def test_production_deploy_installs_dependencies_only_when_requirements_change():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    pull_index = workflow.index("git pull --ff-only origin main")
+    after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
+    requirements_guard_index = workflow.index('git diff --quiet "$before_sha" "$after_sha" -- requirements.txt')
+    pip_install_index = workflow.index("pip install -r requirements.txt")
+    init_db_index = workflow.index("python3 app.py init-db")
+
+    assert pull_index < after_sha_index < requirements_guard_index < pip_install_index < init_db_index
+    assert "requirements.txt unchanged; skipping pip install" in workflow
 
 
 def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
