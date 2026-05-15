@@ -41,9 +41,13 @@ class QuestionnaireAlreadySubmittedError(ValueError):
 from ._service_helpers import (  # noqa: F401  helpers — 阶段 7.2
     _bind_questionnaire_identity,
     _build_questionnaire_detail,
+    _count_questionnaire_external_push_retry_logs,
+    _create_questionnaire_external_push_log,
     _dedupe_questionnaire_slug,
     _dedupe_strings,
+    _get_questionnaire_external_push_log,
     _get_questionnaire_row,
+    _get_questionnaire_row_by_slug,
     _insert_questionnaire_options,
     _json_array,
     _json_dumps,
@@ -63,6 +67,7 @@ from ._service_helpers import (  # noqa: F401  helpers — 阶段 7.2
     _questionnaire_submission_stats,
     _resolve_external_contact_identity_payload,
     _resolve_questionnaire_person_identity,
+    _safe_create_questionnaire_external_push_log,
     _serialize_questionnaire_row,
     _slugify_questionnaire,
     _sync_questionnaire_questions,
@@ -481,19 +486,7 @@ def export_questionnaire_submissions(questionnaire_id: int) -> dict[str, Any]:
 
 
 def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
-    row = get_db().execute(
-        """
-        SELECT id, slug, name, title, description, is_disabled, redirect_url,
-               answer_display_mode,
-               assessment_enabled, assessment_config,
-               external_push_enabled, external_push_url, external_push_day, external_push_frequency,
-               external_push_remark, external_push_custom_params, created_at, updated_at
-        FROM questionnaires
-        WHERE slug = ? AND is_disabled = ?
-        LIMIT 1
-        """,
-        (slug.strip(), False),
-    ).fetchone()
+    row = _get_questionnaire_row_by_slug(slug, require_enabled=True)
     if not row:
         return None
     detail = _build_questionnaire_detail(row)
@@ -1505,105 +1498,6 @@ def _build_questionnaire_external_push_payload(
     return payload
 
 
-def _create_questionnaire_external_push_log(
-    *,
-    questionnaire_id: int,
-    questionnaire_title_snapshot: str,
-    submission_record_id: int,
-    retry_from_log_id: int | None = None,
-    retry_attempt: int = 0,
-    user_id: str,
-    target_url: str,
-    request_payload: dict[str, Any],
-    response_status_code: int | None = None,
-    response_body: str = "",
-    status: str,
-    failure_reason: str = "",
-) -> dict[str, Any]:
-    row = get_db().execute(
-        """
-        INSERT INTO questionnaire_external_push_logs (
-            questionnaire_id, questionnaire_title_snapshot, submission_record_id, retry_from_log_id, retry_attempt,
-            user_id, target_url, request_payload, response_status_code, response_body, status, failure_reason,
-            created_at, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id, questionnaire_id, questionnaire_title_snapshot, submission_record_id, retry_from_log_id,
-                  retry_attempt, user_id, target_url, request_payload, response_status_code, response_body, status,
-                  failure_reason, created_at, updated_at
-        """,
-        (
-            int(questionnaire_id),
-            str(questionnaire_title_snapshot or "").strip(),
-            int(submission_record_id),
-            int(retry_from_log_id) if retry_from_log_id else None,
-            max(0, int(retry_attempt or 0)),
-            str(user_id or "").strip(),
-            str(target_url or "").strip(),
-            _json_dumps(request_payload),
-            response_status_code,
-            str(response_body or ""),
-            str(status or QUESTIONNAIRE_EXTERNAL_PUSH_STATUS_FAILED).strip(),
-            str(failure_reason or "").strip(),
-        ),
-    ).fetchone()
-    get_db().commit()
-    result = dict(row or {})
-    result["request_payload"] = _json_loads(result.get("request_payload"), default={})
-    return result
-
-
-def _safe_create_questionnaire_external_push_log(**kwargs: Any) -> dict[str, Any]:
-    try:
-        return _create_questionnaire_external_push_log(**kwargs)
-    except Exception:
-        questionnaire_logger.exception(
-            "questionnaire external push log write failed questionnaire_id=%s submission_record_id=%s",
-            kwargs.get("questionnaire_id"),
-            kwargs.get("submission_record_id"),
-        )
-        return {}
-
-
-def _get_questionnaire_external_push_log(log_id: int) -> dict[str, Any] | None:
-    row = get_db().execute(
-        """
-        SELECT
-            id,
-            questionnaire_id,
-            questionnaire_title_snapshot,
-            submission_record_id,
-            retry_from_log_id,
-            retry_attempt,
-            user_id,
-            target_url,
-            request_payload,
-            response_status_code,
-            response_body,
-            status,
-            failure_reason,
-            created_at,
-            updated_at
-        FROM questionnaire_external_push_logs
-        WHERE id = ?
-        """,
-        (int(log_id),),
-    ).fetchone()
-    if not row:
-        return None
-    result = dict(row)
-    result["request_payload"] = _json_loads(result.get("request_payload"), default={})
-    return result
-
-
-def _count_questionnaire_external_push_retry_logs(root_log_id: int) -> int:
-    row = get_db().execute(
-        "SELECT COUNT(*) AS total FROM questionnaire_external_push_logs WHERE retry_from_log_id = ?",
-        (int(root_log_id),),
-    ).fetchone()
-    return int(row["total"] or 0) if row else 0
-
-
 def _execute_questionnaire_external_push_request(
     *,
     target_url: str,
@@ -2050,19 +1944,7 @@ def apply_questionnaire_submission_tags_to_scrm(submission_id: int) -> dict[str,
 
 def submit_questionnaire(slug: str, payload: dict[str, Any], request_meta: dict[str, Any] | None = None) -> dict[str, Any]:
     slug_value = str(slug or "").strip()
-    row = get_db().execute(
-        """
-        SELECT id, slug, name, title, description, is_disabled, redirect_url,
-               answer_display_mode,
-               assessment_enabled, assessment_config,
-               external_push_enabled, external_push_url, external_push_day, external_push_frequency,
-               external_push_remark, external_push_custom_params, created_at, updated_at
-        FROM questionnaires
-        WHERE slug = ? AND is_disabled = ?
-        LIMIT 1
-        """,
-        (slug_value, False),
-    ).fetchone()
+    row = _get_questionnaire_row_by_slug(slug_value, require_enabled=True)
     if not row:
         raise LookupError("questionnaire not found")
     questionnaire = _build_questionnaire_detail(row)
