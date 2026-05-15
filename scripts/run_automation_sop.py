@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-import time
-import urllib.error
 import urllib.request
+
+from scripts import internal_http
 
 
 DEFAULT_OPERATOR = "automation_sop_runner"
@@ -14,14 +14,12 @@ DEFAULT_RETRY_INTERVAL_SECONDS = 10
 
 
 def build_request(*, host: str, port: str, token: str, operator: str, path: str = DEFAULT_PATH) -> urllib.request.Request:
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return urllib.request.Request(
-        f"http://{host}:{port}{path}",
-        data=json.dumps({"operator": operator, "jobs": ["sop"]}).encode("utf-8"),
-        headers=headers,
-        method="POST",
+    return internal_http.build_json_post_request(
+        host=host,
+        port=port,
+        token=token,
+        path=path,
+        payload={"operator": operator, "jobs": ["sop"]},
     )
 
 
@@ -33,26 +31,19 @@ def run() -> str:
     path = os.getenv("AUTOMATION_SOP_RUNNER_PATH", DEFAULT_PATH).strip() or DEFAULT_PATH
     retry_count = int((os.getenv("AUTOMATION_SOP_RETRY_COUNT") or DEFAULT_RETRY_COUNT))
     retry_interval_seconds = int((os.getenv("AUTOMATION_SOP_RETRY_INTERVAL_SECONDS") or DEFAULT_RETRY_INTERVAL_SECONDS))
-    request = build_request(host=host, port=port, token=token, operator=operator, path=path)
-
-    last_error: Exception | None = None
-    for attempt in range(1, max(1, retry_count) + 1):
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                body = response.read().decode("utf-8")
-            print(body)
-            return body
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            print(body)
-            raise
-        except urllib.error.URLError as exc:
-            last_error = exc
-            if attempt >= max(1, retry_count):
-                raise
-            time.sleep(max(0, retry_interval_seconds))
-    assert last_error is not None
-    raise last_error
+    payload = internal_http.post_json(
+        host=host,
+        port=port,
+        token=token,
+        path=path,
+        payload={"operator": operator, "jobs": ["sop"]},
+        retry_count=retry_count,
+        retry_interval_seconds=retry_interval_seconds,
+        urlopen=urllib.request.urlopen,
+    )
+    body = json.dumps(payload, ensure_ascii=False)
+    print(body)
+    return body
 
 
 def main() -> None:

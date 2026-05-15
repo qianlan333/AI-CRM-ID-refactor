@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-import time
-import urllib.error
 import urllib.request
+
+from scripts import internal_http
 
 
 DEFAULT_OPERATOR = "automation_conversion_due_runner"
@@ -25,14 +25,12 @@ JOB_DEFINITIONS = {
 
 
 def build_request(*, host: str, port: str, token: str, operator: str, path: str, payload: dict[str, object] | None = None) -> urllib.request.Request:
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return urllib.request.Request(
-        f"http://{host}:{port}{path}",
-        data=json.dumps({"operator": operator, **dict(payload or {})}).encode("utf-8"),
-        headers=headers,
-        method="POST",
+    return internal_http.build_json_post_request(
+        host=host,
+        port=port,
+        token=token,
+        path=path,
+        payload={"operator": operator, **dict(payload or {})},
     )
 
 
@@ -47,24 +45,16 @@ def _post_json(
     retry_count: int,
     retry_interval_seconds: int,
 ) -> dict[str, object]:
-    request = build_request(host=host, port=port, token=token, operator=operator, path=path, payload=payload)
-    attempts = max(1, int(retry_count))
-    last_error: Exception | None = None
-    for attempt in range(1, attempts + 1):
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            print(body)
-            raise
-        except urllib.error.URLError as exc:
-            last_error = exc
-            if attempt >= attempts:
-                raise
-            time.sleep(max(0, int(retry_interval_seconds)))
-    assert last_error is not None
-    raise last_error
+    return internal_http.post_json(
+        host=host,
+        port=port,
+        token=token,
+        path=path,
+        payload={"operator": operator, **dict(payload or {})},
+        retry_count=retry_count,
+        retry_interval_seconds=retry_interval_seconds,
+        urlopen=urllib.request.urlopen,
+    )
 
 
 def run(*, jobs: list[str] | None = None) -> str:
