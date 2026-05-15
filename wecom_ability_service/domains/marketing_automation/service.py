@@ -51,6 +51,7 @@ from ..group_chats.repo import get_group_chat_map
 from ..questionnaire.service import get_questionnaire_detail
 from ..tasks.service import dispatch_wecom_task  # noqa: F401 - legacy campaign dispatch monkeypatch seam
 from .presenter import business_marketing_display
+from ._repo_helpers import _normalized_text, _normalized_text_list, _nullable_timestamp_text
 from . import repo
 
 DEFAULT_SCENARIO_KEY = "signup_conversion_v1"
@@ -183,15 +184,6 @@ _FOCUS_POOL_KEYS = set(SHARED_FOCUS_POOL_KEYS)
 
 automation_webhook_logger = logging.getLogger("automation_webhook")
 logger = logging.getLogger(__name__)
-
-
-def _normalized_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _nullable_timestamp_text(value: Any) -> str | None:
-    normalized = _normalized_text(value)
-    return normalized or None
 
 
 def _get_active_owner_role(userid: str) -> dict[str, Any]:
@@ -1358,15 +1350,7 @@ def _normalize_text_list(value: Any) -> list[str]:
     raw_items = value if isinstance(value, list) else _json_loads(value, default=[])
     if not isinstance(raw_items, list):
         return []
-    result: list[str] = []
-    seen: set[str] = set()
-    for item in raw_items:
-        text = _normalized_text(item)
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        result.append(text)
-    return result
+    return _normalized_text_list(raw_items)
 
 
 def _latest_timestamp(*values: Any) -> str:
