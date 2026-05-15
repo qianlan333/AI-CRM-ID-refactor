@@ -1,0 +1,1321 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+{% include "admin_console/_automation_conversion_operations_styles.html" %}
+<style>
+  .op-action-shell {
+    display: grid;
+    gap: 18px;
+  }
+
+  .op-action-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    padding: 20px 22px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    background: #ffffff;
+  }
+
+  .op-action-hero h1,
+  .op-action-panel h2,
+  .op-action-section h3,
+  .op-preview-card h3 {
+    margin: 0;
+    color: #1f2329;
+  }
+
+  .op-action-hero p,
+  .op-muted {
+    margin: 6px 0 0;
+    color: #667085;
+    line-height: 1.6;
+  }
+
+  .op-action-grid {
+    display: grid;
+    grid-template-columns: 300px minmax(560px, 1fr) 340px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .op-action-panel,
+  .op-action-section,
+  .op-preview-card {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    background: #ffffff;
+  }
+
+  .op-action-panel {
+    overflow: hidden;
+  }
+
+  .op-action-panel__head,
+  .op-action-panel__body,
+  .op-action-section,
+  .op-preview-card {
+    padding: 16px;
+  }
+
+  .op-action-panel__head {
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .op-template-tabs,
+  .op-action-buttons,
+  .op-choice-grid,
+  .op-node-actions,
+  .op-inline-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .op-template-tabs button,
+  .op-choice {
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    background: #fff;
+  }
+
+  .op-template-tabs button.is-active,
+  .op-choice.is-active {
+    border-color: rgba(51, 112, 255, 0.42);
+    background: #eef5ff;
+    color: #1456f0;
+  }
+
+  .op-template-search {
+    margin: 12px 0;
+  }
+
+  .op-template-list,
+  .op-config-stack,
+  .op-node-list,
+  .op-preview-stack {
+    display: grid;
+    gap: 12px;
+  }
+
+  .op-template-card {
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    background: #fff;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .op-template-card.is-active {
+    border-color: rgba(51, 112, 255, 0.46);
+    box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.08);
+  }
+
+  .op-template-card strong {
+    color: #1f2329;
+  }
+
+  .op-badge {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    border-radius: 999px;
+    padding: 3px 9px;
+    background: #eef5ff;
+    color: #1456f0;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .op-badge--local {
+    background: #ecfdf3;
+    color: #067647;
+  }
+
+  .op-badge--ai {
+    background: #fff7ed;
+    color: #c2410c;
+  }
+
+  .op-field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .op-field-grid--three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .op-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .op-choice {
+    display: grid;
+    gap: 5px;
+    padding: 13px;
+    border-radius: 14px;
+    cursor: pointer;
+  }
+
+  .op-choice b {
+    color: #1f2329;
+  }
+
+  .op-choice span {
+    color: #667085;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .op-node-card {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    background: #fbfcff;
+  }
+
+  .op-node-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .op-preview-flow {
+    display: grid;
+    gap: 10px;
+  }
+
+  .op-preview-step {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 9px;
+  }
+
+  .op-preview-num {
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #1456f0;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .op-preview-message {
+    white-space: pre-wrap;
+    padding: 12px;
+    border-radius: 14px;
+    background: #f8fafc;
+    color: #344054;
+    line-height: 1.65;
+  }
+
+  .op-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.42);
+  }
+
+  .op-modal[hidden],
+  .op-config-box[hidden],
+  .op-empty[hidden] {
+    display: none;
+  }
+
+  .op-modal-card {
+    width: min(760px, 100%);
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.25);
+  }
+
+  .op-modal-head,
+  .op-modal-body {
+    padding: 18px;
+  }
+
+  .op-modal-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  }
+
+  .op-feedback {
+    padding: 11px 13px;
+    border-radius: 12px;
+    background: #eef5ff;
+    color: #1456f0;
+  }
+
+  .op-feedback.is-error {
+    background: #fff1f1;
+    color: #c2410c;
+  }
+
+  .op-feedback[hidden] {
+    display: none;
+  }
+
+  @media (max-width: 1280px) {
+    .op-action-grid,
+    .op-field-grid,
+    .op-field-grid--three,
+    .op-choice-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set workspace = operations_workspace or {} %}
+{% include "admin_console/_automation_program_context.html" %}
+{% include "admin_console/_automation_conversion_workspace_tabs.html" %}
+
+<div
+  id="operation-action-root"
+  class="op-action-shell"
+  data-selected-action-id="{{ workspace.selected_workflow_id or '' }}"
+  data-api-urls='{{ (workspace.api_urls or {})|tojson }}'
+  data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
+  data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
+>
+  <section class="op-action-hero">
+    <div>
+      <h1>运营动作编排</h1>
+      <p>选择一个运营动作模板，在同一页配置触发、对象、内容和执行节点。</p>
+    </div>
+    <div class="op-action-buttons">
+      <a class="admin-button admin-button--secondary" href="{{ (workspace.action_urls or {}).workflow_list or '#' }}">高级列表</a>
+      <button class="admin-button admin-button--secondary" id="save-as-template-button" type="button">保存为模板</button>
+      <button class="admin-button admin-button--secondary" id="save-draft-button" type="button">保存草稿</button>
+      <button class="admin-button admin-button--primary" id="save-active-button" type="button">保存并启用</button>
+      <button class="admin-button admin-button--primary" id="new-template-button" type="button">新建动作模板</button>
+    </div>
+  </section>
+
+  <div class="op-feedback" id="action-feedback" hidden></div>
+
+  <main class="op-action-grid">
+    <aside class="op-action-panel">
+      <div class="op-action-panel__head">
+        <h2>运营动作模板</h2>
+        <p class="op-muted">支持系统内置、CRM 本地和 AI 生成模板。</p>
+      </div>
+      <div class="op-action-panel__body">
+        <div class="op-template-tabs">
+          <button class="admin-button admin-button--ghost is-active" type="button" data-template-filter="all">全部</button>
+          <button class="admin-button admin-button--ghost" type="button" data-template-filter="crm_local">CRM 本地</button>
+          <button class="admin-button admin-button--ghost" type="button" data-template-filter="ai_generated">AI 生成</button>
+        </div>
+        <label class="admin-field op-template-search">
+          <span>搜索</span>
+          <input type="search" id="template-search" placeholder="搜索动作模板">
+        </label>
+        <div class="op-template-list" id="template-list"></div>
+        <div class="op-empty op-muted" id="template-empty" hidden>没有找到符合条件的模板。</div>
+      </div>
+    </aside>
+
+    <section class="op-config-stack">
+      <section class="op-action-section">
+        <h3>基础信息</h3>
+        <div class="op-field-grid" style="margin-top:12px;">
+          <label class="admin-field">
+            <span>动作名称</span>
+            <input type="text" id="action-name" placeholder="例如：问卷提交后跟进">
+          </label>
+          <label class="admin-field">
+            <span>状态</span>
+            <select id="action-status">
+              <option value="draft">草稿</option>
+              <option value="active">启用</option>
+              <option value="paused">停用</option>
+            </select>
+          </label>
+        </div>
+        <label class="admin-field" style="margin-top:12px;">
+          <span>动作说明</span>
+          <textarea id="action-description" rows="3" placeholder="补充这个运营动作的使用场景"></textarea>
+        </label>
+      </section>
+
+      <section class="op-action-section">
+        <h3>触发与对象</h3>
+        <div class="op-field-grid op-field-grid--three" style="margin-top:12px;">
+          <label class="admin-field">
+            <span>触发条件</span>
+            <select id="trigger-type"></select>
+          </label>
+          <label class="admin-field">
+            <span>目标对象</span>
+            <select id="audience-type"></select>
+          </label>
+          <label class="admin-field">
+            <span>发送时间</span>
+            <select id="send-timing"></select>
+          </label>
+        </div>
+      </section>
+
+      <section class="op-action-section">
+        <h3>内容策略</h3>
+        <div class="op-choice-grid" style="margin-top:12px;">
+          <button class="op-choice is-active" type="button" data-content-strategy="personalized_agent">
+            <b>Agent 单人定制化</b>
+            <span>根据单个用户的问卷结果、标签和画像生成内容。</span>
+          </button>
+          <button class="op-choice" type="button" data-content-strategy="standard_content">
+            <b>统一内容</b>
+            <span>所有目标对象收到同一段内容或同一个入口。</span>
+          </button>
+          <button class="op-choice" type="button" data-content-strategy="layered_content">
+            <b>按分层发不同内容</b>
+            <span>根据消息数、画像分类或标签分层填写不同话术。</span>
+          </button>
+        </div>
+
+        <div class="op-config-box" id="personalized-config" style="margin-top:14px;">
+          <div class="op-field-grid">
+            <label class="admin-field">
+              <span>智能体选择</span>
+              <select id="agent-code"></select>
+            </label>
+            <label class="admin-field">
+              <span>附带内容</span>
+              <select id="personalized-context">
+                <option value="questionnaire_result">问卷结果 / 推荐课程</option>
+                <option value="profile_tags">标签和画像</option>
+                <option value="none">不附带额外内容</option>
+              </select>
+            </label>
+          </div>
+          <label class="admin-field" style="margin-top:12px;">
+            <span>生成要求</span>
+            <textarea id="generation-requirement" rows="4"></textarea>
+          </label>
+        </div>
+
+        <div class="op-config-box" id="standard-config" style="margin-top:14px;" hidden>
+          <label class="admin-field">
+            <span>发送内容</span>
+            <textarea id="standard-content-text" rows="5"></textarea>
+          </label>
+          <label class="admin-field" style="margin-top:12px;">
+            <span>小程序卡片</span>
+            <input type="text" id="miniprogram-library-ids" placeholder="填写素材 ID，多个用逗号分隔；留空则不附带">
+          </label>
+        </div>
+
+        <div class="op-config-box" id="layered-config" style="margin-top:14px;" hidden>
+          <label class="admin-field">
+            <span>分层依据</span>
+            <select id="layer-basis">
+              <option value="behavior">消息数</option>
+              <option value="profile">画像</option>
+              <option value="tag">标签</option>
+            </select>
+          </label>
+          <label class="admin-field" id="profile-template-field" style="margin-top:12px;" hidden>
+            <span>画像分层模板</span>
+            <select id="profile-template-id"></select>
+          </label>
+          <div class="op-field-grid op-field-grid--three" id="layered-content-grid" style="margin-top:12px;"></div>
+        </div>
+      </section>
+
+      <section class="op-action-section">
+        <div class="op-node-head">
+          <div>
+            <h3>执行节点</h3>
+            <p class="op-muted">简单场景默认一个节点；需要多次跟进时再添加节点。</p>
+          </div>
+          <button class="admin-button admin-button--secondary" id="add-node-button" type="button">添加节点</button>
+        </div>
+        <div class="op-node-list" id="node-list" style="margin-top:14px;"></div>
+      </section>
+    </section>
+
+    <aside class="op-preview-stack">
+      <section class="op-preview-card">
+        <h3>链路摘要</h3>
+        <div class="op-preview-flow" id="preview-flow" style="margin-top:12px;"></div>
+      </section>
+      <section class="op-preview-card">
+        <h3>内容预览</h3>
+        <div class="op-preview-message" id="content-preview" style="margin-top:12px;"></div>
+      </section>
+      <section class="op-preview-card">
+        <h3>模板信息</h3>
+        <p class="op-muted" id="template-info"></p>
+      </section>
+    </aside>
+  </main>
+
+  <div class="op-modal" id="template-modal" hidden>
+    <div class="op-modal-card">
+      <div class="op-modal-head">
+        <div>
+          <h2>新建动作模板</h2>
+          <p class="op-muted">选择 CRM 本地创建，或让 AI 根据业务描述生成模板。</p>
+        </div>
+        <button class="admin-button admin-button--ghost" id="close-template-modal" type="button">关闭</button>
+      </div>
+      <div class="op-modal-body">
+        <div class="op-choice-grid">
+          <button class="op-choice is-active" type="button" data-create-mode="crm_local"><b>CRM 本地创建</b><span>先填写名称和说明，再进入配置页继续补齐。</span></button>
+          <button class="op-choice" type="button" data-create-mode="ai_generated"><b>AI 生成模板</b><span>输入业务目标，生成可继续编辑的运营动作模板。</span></button>
+        </div>
+
+        <div id="crm-create-box" style="margin-top:14px;">
+          <div class="op-field-grid">
+            <label class="admin-field">
+              <span>模板名称</span>
+              <input type="text" id="crm-template-name" value="新运营动作模板">
+            </label>
+            <label class="admin-field">
+              <span>适用场景</span>
+              <select id="crm-template-category">
+                <option value="questionnaire">问卷</option>
+                <option value="community">社群</option>
+                <option value="wakeup">唤醒</option>
+                <option value="closing">成交</option>
+                <option value="custom">自定义</option>
+              </select>
+            </label>
+          </div>
+          <label class="admin-field" style="margin-top:12px;">
+            <span>模板说明</span>
+            <textarea id="crm-template-description" rows="3">用于沉淀一套可复用的运营动作。</textarea>
+          </label>
+        </div>
+
+        <div id="ai-create-box" style="margin-top:14px;" hidden>
+          <label class="admin-field">
+            <span>业务目标</span>
+            <textarea id="ai-business-goal" rows="4">用户加入社群后，如果 3 天内没填问卷，就自动发提醒；如果填了问卷，就根据结果生成一条定制化跟进。</textarea>
+          </label>
+          <label class="admin-field" style="margin-top:12px;">
+            <span>生成偏好</span>
+            <select id="ai-preference">
+              <option value="尽量简单，一个节点优先">尽量简单，一个节点优先</option>
+              <option value="允许多个节点">允许多个节点</option>
+              <option value="允许分层内容">允许分层内容</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="op-feedback" id="template-modal-feedback" hidden></div>
+        <div class="op-inline-actions" style="margin-top:14px;">
+          <button class="admin-button admin-button--secondary" id="cancel-template-modal" type="button">取消</button>
+          <button class="admin-button admin-button--primary" id="create-template-submit" type="button">生成并进入配置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script>
+  (() => {
+    const root = document.getElementById('operation-action-root');
+    if (!root) return;
+
+    const apiUrls = JSON.parse(root.dataset.apiUrls || '{}');
+    const entryUrls = JSON.parse(root.dataset.entryUrls || '{}');
+    const actionUrls = JSON.parse(root.dataset.actionUrls || '{}');
+    const selectedActionId = Number(root.dataset.selectedActionId || 0) || null;
+
+    const elements = {
+      feedback: document.getElementById('action-feedback'),
+      templateList: document.getElementById('template-list'),
+      templateEmpty: document.getElementById('template-empty'),
+      templateSearch: document.getElementById('template-search'),
+      actionName: document.getElementById('action-name'),
+      actionStatus: document.getElementById('action-status'),
+      actionDescription: document.getElementById('action-description'),
+      triggerType: document.getElementById('trigger-type'),
+      audienceType: document.getElementById('audience-type'),
+      sendTiming: document.getElementById('send-timing'),
+      agentCode: document.getElementById('agent-code'),
+      generationRequirement: document.getElementById('generation-requirement'),
+      standardContentText: document.getElementById('standard-content-text'),
+      miniprogramLibraryIds: document.getElementById('miniprogram-library-ids'),
+      layerBasis: document.getElementById('layer-basis'),
+      profileTemplateField: document.getElementById('profile-template-field'),
+      profileTemplateId: document.getElementById('profile-template-id'),
+      layeredContentGrid: document.getElementById('layered-content-grid'),
+      nodeList: document.getElementById('node-list'),
+      previewFlow: document.getElementById('preview-flow'),
+      contentPreview: document.getElementById('content-preview'),
+      templateInfo: document.getElementById('template-info'),
+      modal: document.getElementById('template-modal'),
+      modalFeedback: document.getElementById('template-modal-feedback'),
+      crmCreateBox: document.getElementById('crm-create-box'),
+      aiCreateBox: document.getElementById('ai-create-box'),
+    };
+
+    const state = {
+      templates: [],
+      selectedTemplate: null,
+      templateFilter: 'all',
+      contentStrategy: 'personalized_agent',
+      registry: {},
+      agentOptions: [],
+      profileTemplateOptions: [],
+      workflowBundle: null,
+      nodes: [],
+      deletedNodeIds: [],
+      createMode: 'crm_local',
+    };
+
+    const triggerOptions = [
+      ['questionnaire_submitted', '用户提交问卷后'],
+      ['check_pending_questionnaire', '检查未填问卷'],
+      ['check_low_interaction', '检查低互动用户'],
+      ['audience_entered', '进入社群 / 进入人群'],
+      ['high_intent_matched', '命中高意向标签或问卷高分'],
+      ['manual', '手动触发'],
+    ];
+    const audienceOptions = [
+      ['questionnaire_submitter', '本次提交问卷的人'],
+      ['pending_questionnaire', '未填问卷人群'],
+      ['low_interaction', '低互动用户'],
+      ['entered_group', '入群用户'],
+      ['high_intent', '高意向人群'],
+      ['custom', '指定人群'],
+    ];
+    const sendTimingOptions = [
+      ['immediate', '立即发送'],
+      ['daily_10', '每天 10:00'],
+      ['daily_14', '每天 14:00'],
+      ['day_1_10', '进入人群第 1 天 10:00'],
+      ['day_3_10', '进入人群第 3 天 10:00'],
+      ['manual', '手动触发后发送'],
+    ];
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function withId(base, id) {
+      return String(base || '').replace(/\/0(?=\/|$|\?)/, '/' + encodeURIComponent(String(id)));
+    }
+
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      const rawText = await response.text();
+      let payload = {};
+      if (rawText) {
+        try { payload = JSON.parse(rawText); } catch (error) { payload = {}; }
+      }
+      if (!response.ok || payload.ok === false) {
+        throw new Error(String(payload.error || payload.message || rawText || `HTTP ${response.status}`).trim());
+      }
+      return payload;
+    }
+
+    function showFeedback(target, message, tone) {
+      if (!target) return;
+      if (!message) {
+        target.hidden = true;
+        target.textContent = '';
+        target.className = 'op-feedback';
+        return;
+      }
+      target.hidden = false;
+      target.textContent = message;
+      target.className = 'op-feedback' + (tone === 'error' ? ' is-error' : '');
+    }
+
+    function fillSelect(select, options, selectedValue) {
+      select.innerHTML = options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+      if (selectedValue) select.value = selectedValue;
+    }
+
+    function sourceClass(source) {
+      if (source === 'crm_local') return 'op-badge op-badge--local';
+      if (source === 'ai_generated') return 'op-badge op-badge--ai';
+      return 'op-badge';
+    }
+
+    function sourceLabel(source) {
+      if (source === 'crm_local') return 'CRM 本地';
+      if (source === 'ai_generated') return 'AI 生成';
+      return '系统内置';
+    }
+
+    function behaviorTargets() {
+      const tiers = Array.isArray(state.registry.behavior_tiers) ? state.registry.behavior_tiers : [];
+      return (tiers.length ? tiers : [
+        { tier_code: 'lt_2', label: '消息少于 2' },
+        { tier_code: 'between_2_9', label: '消息 2 ~ 9' },
+        { tier_code: 'gte_10', label: '消息大于等于 10' },
+      ]).map((item) => ({ key: item.tier_code, label: item.label || item.tier_code }));
+    }
+
+    function profileTargets() {
+      const templateId = Number(elements.profileTemplateId.value || 0);
+      const detail = state.profileTemplateDetails[templateId] || {};
+      const categories = Array.isArray(detail.categories) ? detail.categories : [];
+      return categories.filter((item) => item.enabled !== false).map((item) => ({
+        key: item.category_key,
+        label: item.category_name || item.category_key,
+      }));
+    }
+
+    async function ensureProfileTemplateDetail() {
+      const templateId = Number(elements.profileTemplateId.value || 0);
+      if (!templateId || state.profileTemplateDetails[templateId]) return;
+      const payload = await requestJson(withId(apiUrls.profile_segment_template_detail_base, templateId), { credentials: 'same-origin' });
+      state.profileTemplateDetails[templateId] = payload.template_bundle || payload;
+    }
+
+    function renderTemplates() {
+      const keyword = String(elements.templateSearch.value || '').trim();
+      const items = state.templates.filter((item) => {
+        const source = String(item.template_source || '');
+        const sourceOk = state.templateFilter === 'all' || source === state.templateFilter;
+        const keywordOk = !keyword || `${item.template_name || ''} ${item.description || ''}`.includes(keyword);
+        return sourceOk && keywordOk;
+      });
+      elements.templateList.innerHTML = items.map((item) => {
+        const code = item.template_code || '';
+        const active = state.selectedTemplate && state.selectedTemplate.template_code === code;
+        return `
+          <button class="op-template-card ${active ? 'is-active' : ''}" type="button" data-template-code="${escapeHtml(code)}">
+            <strong>${escapeHtml(item.template_name || '未命名模板')}</strong>
+            <span class="${sourceClass(item.template_source)}">${escapeHtml(sourceLabel(item.template_source))}</span>
+            <span class="op-muted">${escapeHtml(item.description || '')}</span>
+          </button>
+        `;
+      }).join('');
+      elements.templateEmpty.hidden = items.length > 0;
+    }
+
+    function setContentStrategy(strategy) {
+      state.contentStrategy = strategy;
+      document.querySelectorAll('[data-content-strategy]').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.contentStrategy === strategy);
+      });
+      document.getElementById('personalized-config').hidden = strategy !== 'personalized_agent';
+      document.getElementById('standard-config').hidden = strategy !== 'standard_content';
+      document.getElementById('layered-config').hidden = strategy !== 'layered_content';
+      renderLayeredContent();
+      renderPreview();
+    }
+
+    function renderLayeredContent() {
+      const basis = elements.layerBasis.value;
+      elements.profileTemplateField.hidden = basis !== 'profile';
+      const targets = basis === 'profile'
+        ? profileTargets()
+        : basis === 'tag'
+        ? [
+            { key: 'tag_low_intent', label: '低互动标签' },
+            { key: 'tag_high_intent', label: '高意向标签' },
+            { key: 'tag_custom', label: '指定标签' },
+          ]
+        : behaviorTargets();
+      elements.layeredContentGrid.innerHTML = targets.map((target) => {
+        const existing = state.nodes.find((node) => Array.isArray(node.content_variants)) || {};
+        const variant = (existing.content_variants || []).find((item) => String(item.segment_key || '') === String(target.key));
+        return `
+          <label class="admin-field">
+            <span>${escapeHtml(target.label)}</span>
+            <textarea rows="5" data-layer-key="${escapeHtml(target.key)}">${escapeHtml((variant || {}).content_text || '')}</textarea>
+          </label>
+        `;
+      }).join('');
+    }
+
+    function defaultNodeFromConfig(templateConfig) {
+      const strategy = String(templateConfig.content_strategy || state.contentStrategy || 'standard_content');
+      const targetAudienceCode = templateConfig.audience_type === 'pending_questionnaire' ? 'pending_questionnaire' : 'operating';
+      const triggerMode = templateConfig.send_timing === 'immediate' ? 'audience_entered' : 'daily_recurring';
+      return {
+        node_name: templateConfig.action_name || '执行节点',
+        target_audience_code: targetAudienceCode,
+        trigger_mode: triggerMode,
+        day_offset: templateConfig.send_timing === 'day_3_10' ? 3 : 1,
+        send_time: templateConfig.send_timing === 'daily_14' ? '14:00' : '10:00',
+        content_source: 'inherit',
+        enabled: true,
+        content_strategy: strategy,
+      };
+    }
+
+    function loadTemplate(template) {
+      state.selectedTemplate = template;
+      const config = template.default_config || {};
+      elements.actionName.value = config.action_name || template.template_name || '';
+      elements.actionStatus.value = config.status || 'draft';
+      elements.actionDescription.value = config.description || template.description || '';
+      fillSelect(elements.triggerType, triggerOptions, config.trigger_type || 'manual');
+      fillSelect(elements.audienceType, audienceOptions, config.audience_type || 'custom');
+      fillSelect(elements.sendTiming, sendTimingOptions, config.send_timing || 'immediate');
+      elements.generationRequirement.value = config.generation_requirement || '基于用户当前状态生成自然、具体、可直接发送的跟进内容。';
+      elements.standardContentText.value = config.standard_content_text || '';
+      elements.layerBasis.value = config.layer_basis === 'profile' ? 'profile' : 'behavior';
+      const firstAgent = (state.agentOptions[0] || {}).agent_code || '';
+      elements.agentCode.value = config.agent_code || config.default_agent_code || firstAgent;
+      const templateNodes = Array.isArray(template.node_blueprints) ? template.node_blueprints : [];
+      state.nodes = templateNodes.length ? templateNodes.map((node, index) => ({
+        ...node,
+        temp_id: `template-${index + 1}`,
+        content_source: node.content_source || 'inherit',
+      })) : [defaultNodeFromConfig(config)];
+      state.deletedNodeIds = [];
+      setContentStrategy(config.content_strategy || 'standard_content');
+      renderNodes();
+      renderTemplates();
+      renderPreview();
+    }
+
+    function labelFor(group, code) {
+      const item = group.find(([value]) => value === code);
+      return item ? item[1] : code || '-';
+    }
+
+    function nodeTimeLabel(node) {
+      if (node.trigger_mode === 'audience_entered') return '立即执行';
+      return `第 ${node.day_offset || 1} 天 ${node.send_time || '10:00'}`;
+    }
+
+    function renderNodes() {
+      elements.nodeList.innerHTML = state.nodes.map((node, index) => `
+        <article class="op-node-card" data-node-index="${index}">
+          <div class="op-node-head">
+            <div>
+              <strong>节点 ${index + 1}</strong>
+              <p class="op-muted">${escapeHtml(node.node_name || '')}</p>
+            </div>
+            <div class="op-node-actions">
+              <button class="admin-button admin-button--ghost" type="button" data-node-remove="${index}">删除</button>
+            </div>
+          </div>
+          <div class="op-field-grid op-field-grid--three">
+            <label class="admin-field">
+              <span>节点名称</span>
+              <input type="text" data-node-field="node_name" value="${escapeHtml(node.node_name || '')}">
+            </label>
+            <label class="admin-field">
+              <span>节点对象</span>
+              <select data-node-field="target_audience_code">
+                <option value="operating" ${node.target_audience_code === 'operating' ? 'selected' : ''}>运营中人群</option>
+                <option value="pending_questionnaire" ${node.target_audience_code === 'pending_questionnaire' ? 'selected' : ''}>未填问卷人群</option>
+                <option value="converted" ${node.target_audience_code === 'converted' ? 'selected' : ''}>已转化人群</option>
+              </select>
+            </label>
+            <label class="admin-field">
+              <span>执行时间</span>
+              <select data-node-field="timing">
+                <option value="immediate" ${node.trigger_mode === 'audience_entered' ? 'selected' : ''}>立即执行</option>
+                <option value="daily_10" ${node.trigger_mode !== 'audience_entered' && (node.send_time || '') !== '14:00' ? 'selected' : ''}>每天 10:00</option>
+                <option value="daily_14" ${node.send_time === '14:00' ? 'selected' : ''}>每天 14:00</option>
+                <option value="day_3_10" ${Number(node.day_offset || 0) === 3 ? 'selected' : ''}>第 3 天 10:00</option>
+              </select>
+            </label>
+          </div>
+          <div class="op-field-grid" style="margin-top:10px;">
+            <label class="admin-field">
+              <span>内容来源</span>
+              <select data-node-field="content_source">
+                <option value="inherit" ${(node.content_source || 'inherit') === 'inherit' ? 'selected' : ''}>继承内容策略</option>
+                <option value="custom" ${node.content_source === 'custom' ? 'selected' : ''}>单独填写内容</option>
+              </select>
+            </label>
+            <label class="admin-checkbox" style="align-self:end;">
+              <input type="checkbox" data-node-field="enabled" ${node.enabled === false ? '' : 'checked'}>
+              <span>启用当前节点</span>
+            </label>
+          </div>
+          <label class="admin-field" style="margin-top:10px;" ${node.content_source === 'custom' ? '' : 'hidden'}>
+            <span>单独填写内容</span>
+            <textarea rows="4" data-node-field="standard_content_text">${escapeHtml(node.standard_content_text || '')}</textarea>
+          </label>
+        </article>
+      `).join('');
+      renderPreview();
+    }
+
+    function collectLayeredVariants() {
+      return Array.from(elements.layeredContentGrid.querySelectorAll('textarea[data-layer-key]')).map((input) => ({
+        segment_key: input.dataset.layerKey || '',
+        content_text: String(input.value || '').trim(),
+      })).filter((item) => item.segment_key);
+    }
+
+    function selectedAudienceCodes() {
+      const audienceType = elements.audienceType.value;
+      if (audienceType === 'pending_questionnaire') return ['pending_questionnaire'];
+      if (audienceType === 'high_intent') return ['operating', 'converted'];
+      return ['operating'];
+    }
+
+    function collectConfig(statusOverride) {
+      const config = {
+        action_name: String(elements.actionName.value || '').trim(),
+        description: String(elements.actionDescription.value || '').trim(),
+        status: statusOverride || elements.actionStatus.value || 'draft',
+        trigger_type: elements.triggerType.value,
+        trigger_label: labelFor(triggerOptions, elements.triggerType.value),
+        audience_type: elements.audienceType.value,
+        audience_label: labelFor(audienceOptions, elements.audienceType.value),
+        send_timing: elements.sendTiming.value,
+        send_timing_label: labelFor(sendTimingOptions, elements.sendTiming.value),
+        content_strategy: state.contentStrategy,
+        layer_basis: state.contentStrategy === 'layered_content' ? elements.layerBasis.value : 'none',
+        content_profile_segment_template_id: Number(elements.profileTemplateId.value || 0) || null,
+        agent_code: elements.agentCode.value,
+        generation_requirement: String(elements.generationRequirement.value || '').trim(),
+        standard_content_text: String(elements.standardContentText.value || '').trim(),
+        content_variants: collectLayeredVariants(),
+        audiences: selectedAudienceCodes(),
+        recipient_behavior_tier_keys: state.contentStrategy === 'layered_content' && elements.layerBasis.value === 'behavior' ? ['lt_2', 'between_2_9'] : [],
+        miniprogram_library_ids: String(elements.miniprogramLibraryIds.value || '').split(',').map((item) => Number(item.trim())).filter(Boolean),
+      };
+      if (!config.action_name) throw new Error('动作名称不能为空');
+      if (config.content_strategy === 'personalized_agent' && !config.agent_code) throw new Error('请先选择智能体');
+      if (config.content_strategy === 'standard_content' && !config.standard_content_text) throw new Error('统一内容不能为空');
+      if (config.content_strategy === 'layered_content' && config.content_variants.some((item) => !item.content_text)) {
+        throw new Error('请补全每个分层的话术');
+      }
+      if (config.content_strategy === 'layered_content' && config.layer_basis === 'profile' && !config.content_profile_segment_template_id) {
+        throw new Error('请先选择画像分层模板');
+      }
+      return config;
+    }
+
+    function collectNodes(config) {
+      return state.nodes.map((node, index) => {
+        const current = { ...node };
+        const card = elements.nodeList.querySelector(`[data-node-index="${index}"]`);
+        if (card) {
+          current.node_name = card.querySelector('[data-node-field="node_name"]').value.trim();
+          current.target_audience_code = card.querySelector('[data-node-field="target_audience_code"]').value;
+          const timing = card.querySelector('[data-node-field="timing"]').value;
+          current.content_source = card.querySelector('[data-node-field="content_source"]').value;
+          current.enabled = card.querySelector('[data-node-field="enabled"]').checked;
+          if (timing === 'immediate') {
+            current.trigger_mode = 'audience_entered';
+            delete current.day_offset;
+            delete current.send_time;
+          } else {
+            current.trigger_mode = timing.startsWith('daily') ? 'daily_recurring' : 'scheduled';
+            current.day_offset = timing === 'day_3_10' ? 3 : 1;
+            current.send_time = timing === 'daily_14' ? '14:00' : '10:00';
+          }
+          const customInput = card.querySelector('[data-node-field="standard_content_text"]');
+          if (current.content_source === 'custom' && customInput) {
+            current.standard_content_text = customInput.value.trim();
+          }
+        }
+        if (config.content_strategy === 'personalized_agent') {
+          current.content_mode = 'personalized_single';
+        } else if (config.content_strategy === 'layered_content') {
+          current.content_mode = 'manual_layered';
+          current.segmentation_basis = config.layer_basis === 'profile' ? 'profile' : 'behavior';
+          current.content_variants = config.content_variants;
+        } else {
+          current.content_mode = 'standard_direct';
+          current.standard_content_text = current.content_source === 'custom' ? current.standard_content_text : config.standard_content_text;
+        }
+        current.position_index = index;
+        current.miniprogram_library_ids = config.miniprogram_library_ids;
+        return current;
+      });
+    }
+
+    function actionPayloadFromConfig(config) {
+      const payload = {
+        workflow_name: config.action_name,
+        description: config.description,
+        status: config.status,
+        audiences: config.audiences,
+        recipient_filter_basis: config.content_strategy === 'layered_content' && config.layer_basis === 'behavior' ? 'behavior' : 'none',
+        recipient_behavior_tier_keys: config.content_strategy === 'layered_content' && config.layer_basis === 'behavior' ? config.recipient_behavior_tier_keys : [],
+        content_segmentation_basis: config.content_strategy === 'layered_content' ? (config.layer_basis === 'profile' ? 'profile' : 'behavior') : 'none',
+        content_profile_segment_template_id: config.content_strategy === 'layered_content' && config.layer_basis === 'profile' ? config.content_profile_segment_template_id : null,
+        generation_mode: config.content_strategy === 'personalized_agent' ? 'personalized_single' : 'manual_layered',
+        agent_bindings: [],
+      };
+      if (config.content_strategy === 'personalized_agent') {
+        payload.agent_bindings = [{ binding_scope: 'personalized', segment_key: 'personalized', agent_code: config.agent_code }];
+      }
+      return payload;
+    }
+
+    function nodePayloadForSave(node, config) {
+      const payload = {
+        node_name: node.node_name,
+        target_audience_code: node.target_audience_code,
+        trigger_mode: node.trigger_mode,
+        enabled: node.enabled,
+      };
+      if (node.trigger_mode !== 'audience_entered') {
+        payload.day_offset = node.day_offset || 1;
+        payload.send_time = node.send_time || '10:00';
+      }
+      if (config.content_strategy === 'personalized_agent') {
+        payload.content_mode = 'personalized_single';
+      } else if (config.content_strategy === 'layered_content') {
+        payload.content_mode = 'manual_layered';
+        payload.segmentation_basis = config.layer_basis === 'profile' ? 'profile' : 'behavior';
+        payload.content_variants = node.content_variants || config.content_variants;
+      } else {
+        payload.content_mode = 'standard_direct';
+        payload.standard_content_text = node.standard_content_text || config.standard_content_text;
+      }
+      payload.standard_content_payload = { miniprogram_library_ids: config.miniprogram_library_ids || [] };
+      return payload;
+    }
+
+    async function saveAction(statusOverride) {
+      try {
+        const config = collectConfig(statusOverride);
+        const nodes = collectNodes(config);
+        let actionId = selectedActionId || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
+        if (!actionId) {
+          const result = await requestJson(apiUrls.action_from_template, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              template_code: (state.selectedTemplate || {}).template_code || 'custom_operation_action',
+              config,
+              nodes,
+            }),
+          });
+          actionId = Number(result.workflow_id || (((result.workflow_bundle || {}).workflow || {}).id) || 0);
+          state.workflowBundle = result.workflow_bundle;
+          showFeedback(elements.feedback, statusOverride === 'active' ? '已保存并启用' : '草稿已保存', '');
+          if (actionId) {
+            window.history.replaceState({}, '', `${entryUrls.action_orchestration || entryUrls.list}?workflow_id=${encodeURIComponent(actionId)}`);
+          }
+          return;
+        }
+        await requestJson(withId(apiUrls.workflow_detail_base, actionId), { credentials: 'same-origin' });
+        await requestJson(withId(apiUrls.workflow_detail_base, actionId), {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(actionPayloadFromConfig(config)),
+        });
+        for (const nodeId of state.deletedNodeIds) {
+          await requestJson(withId(apiUrls.workflow_node_base, nodeId), { method: 'DELETE', credentials: 'same-origin' });
+        }
+        for (const node of nodes) {
+          const nodeId = Number(node.id || 0);
+          await requestJson(nodeId ? withId(apiUrls.workflow_node_base, nodeId) : withId(apiUrls.workflow_nodes_base, actionId), {
+            method: nodeId ? 'PUT' : 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(nodePayloadForSave(node, config)),
+          });
+        }
+        await loadExistingAction(actionId);
+        showFeedback(elements.feedback, statusOverride === 'active' ? '已保存并启用' : '草稿已保存', '');
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '保存失败', 'error');
+      }
+    }
+
+    function renderPreview() {
+      const triggerText = labelFor(triggerOptions, elements.triggerType.value);
+      const audienceText = labelFor(audienceOptions, elements.audienceType.value);
+      const timingText = labelFor(sendTimingOptions, elements.sendTiming.value);
+      const contentText = state.contentStrategy === 'personalized_agent'
+        ? 'Agent 生成定制化内容'
+        : state.contentStrategy === 'layered_content'
+        ? '按分层发送内容'
+        : '发送统一内容';
+      elements.previewFlow.innerHTML = [
+        [triggerText, `命中后进入${audienceText}。`],
+        [contentText, state.contentStrategy === 'personalized_agent' ? '根据用户信息生成。' : state.contentStrategy === 'layered_content' ? '根据消息数、画像或标签分层。' : '使用同一段内容。'],
+        [timingText, `共 ${state.nodes.length || 1} 个执行节点。`],
+      ].map((item, index) => `
+        <div class="op-preview-step">
+          <div class="op-preview-num">${index + 1}</div>
+          <div><strong>${escapeHtml(item[0])}</strong><p class="op-muted">${escapeHtml(item[1])}</p></div>
+        </div>
+      `).join('');
+      if (state.contentStrategy === 'personalized_agent') {
+        elements.contentPreview.textContent = '我看了一下你的情况，接下来最适合先做一个轻量动作：先完成关键入口，再用后续内容把沟通接住。我会根据你的问卷结果给你一条更具体的建议。';
+      } else if (state.contentStrategy === 'layered_content') {
+        const first = collectLayeredVariants().find((item) => item.content_text);
+        elements.contentPreview.textContent = first ? first.content_text : '请先填写分层话术。';
+      } else {
+        elements.contentPreview.textContent = elements.standardContentText.value || '请先填写统一内容。';
+      }
+      const template = state.selectedTemplate || {};
+      elements.templateInfo.textContent = `${sourceLabel(template.template_source)}模板：${template.template_name || '自定义运营动作'}。当前配置可以保存为 CRM 本地模板，供下次复用。`;
+    }
+
+    async function saveAsTemplate() {
+      try {
+        const actionId = selectedActionId || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
+        const templateName = window.prompt('请输入模板名称', `${elements.actionName.value || '运营动作'} 模板`);
+        if (!templateName) return;
+        if (actionId) {
+          const result = await requestJson(apiUrls.action_template_from_workflow, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflow_id: actionId, template_name: templateName, description: elements.actionDescription.value || '' }),
+          });
+          state.templates.push(result.template);
+        } else {
+          const config = collectConfig('draft');
+          const nodes = collectNodes(config);
+          const result = await requestJson(apiUrls.action_templates, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              template_name: templateName,
+              template_source: 'crm_local',
+              category: 'custom',
+              description: config.description,
+              default_config: config,
+              node_blueprints: nodes,
+              workflow_blueprint: actionPayloadFromConfig(config),
+            }),
+          });
+          state.templates.push(result.template);
+        }
+        renderTemplates();
+        showFeedback(elements.feedback, '已保存为 CRM 本地模板', '');
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '保存模板失败', 'error');
+      }
+    }
+
+    async function loadExistingAction(actionId) {
+      const payload = await requestJson(withId(apiUrls.workflow_detail_base, actionId), { credentials: 'same-origin' });
+      const bundle = payload.workflow_bundle || {};
+      state.workflowBundle = bundle;
+      const action = bundle.workflow || {};
+      elements.actionName.value = action.workflow_name || '';
+      elements.actionStatus.value = action.status || 'draft';
+      elements.actionDescription.value = action.description || '';
+      fillSelect(elements.triggerType, triggerOptions, 'manual');
+      fillSelect(elements.audienceType, audienceOptions, (bundle.audiences || []).some((item) => item.audience_code === 'pending_questionnaire') ? 'pending_questionnaire' : 'custom');
+      fillSelect(elements.sendTiming, sendTimingOptions, 'manual');
+      const mode = action.generation_mode;
+      const hasVariants = (bundle.nodes || []).some((node) => (node.content_variants || []).length);
+      const strategy = mode === 'personalized_single' ? 'personalized_agent' : hasVariants ? 'layered_content' : 'standard_content';
+      const binding = (bundle.agent_bindings || [])[0] || {};
+      elements.agentCode.value = binding.agent_code || (state.agentOptions[0] || {}).agent_code || '';
+      const firstNode = (bundle.nodes || [])[0] || {};
+      elements.standardContentText.value = firstNode.standard_content_text || '';
+      const mpIds = (((firstNode.standard_content_payload || {}).miniprogram_library_ids) || []).join(',');
+      elements.miniprogramLibraryIds.value = mpIds;
+      state.nodes = (bundle.nodes || []).map((node) => ({ ...node, content_source: node.standard_content_text ? 'custom' : 'inherit' }));
+      if (!state.nodes.length) state.nodes = [defaultNodeFromConfig({ action_name: action.workflow_name })];
+      state.deletedNodeIds = [];
+      state.selectedTemplate = state.templates.find((item) => item.template_code === (strategy === 'personalized_agent' ? 'questionnaire_submit_followup' : hasVariants ? 'low_interaction_wakeup' : 'custom_operation_action')) || state.templates[0] || null;
+      setContentStrategy(strategy);
+      renderNodes();
+      renderTemplates();
+    }
+
+    async function loadInitialData() {
+      fillSelect(elements.triggerType, triggerOptions, 'manual');
+      fillSelect(elements.audienceType, audienceOptions, 'custom');
+      fillSelect(elements.sendTiming, sendTimingOptions, 'immediate');
+      const [templatesPayload, registryPayload, agentsPayload, profilePayload] = await Promise.all([
+        requestJson(apiUrls.action_templates, { credentials: 'same-origin' }),
+        requestJson(apiUrls.registry, { credentials: 'same-origin' }),
+        requestJson(apiUrls.agents_options, { credentials: 'same-origin' }),
+        requestJson(apiUrls.profile_segment_templates_options, { credentials: 'same-origin' }),
+      ]);
+      state.templates = templatesPayload.items || [];
+      state.registry = registryPayload || {};
+      state.agentOptions = agentsPayload.items || [];
+      state.profileTemplateOptions = profilePayload.items || [];
+      elements.profileTemplateId.innerHTML = state.profileTemplateOptions.length
+        ? '<option value="">请选择画像分层模板</option>' + state.profileTemplateOptions.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.template_name || item.template_code)}</option>`).join('')
+        : '<option value="">暂无可用画像分层模板</option>';
+      elements.agentCode.innerHTML = state.agentOptions.length
+        ? state.agentOptions.map((item) => `<option value="${escapeHtml(item.agent_code)}">${escapeHtml(item.agent_name || item.agent_code)}</option>`).join('')
+        : '<option value="">请先创建智能体</option>';
+      if (selectedActionId) {
+        await loadExistingAction(selectedActionId);
+      } else {
+        loadTemplate(state.templates.find((item) => item.template_code === 'questionnaire_submit_followup') || state.templates[0] || {});
+      }
+      renderTemplates();
+      renderPreview();
+    }
+
+    function openTemplateModal() {
+      elements.modal.hidden = false;
+      showFeedback(elements.modalFeedback, '', '');
+    }
+
+    function closeTemplateModal() {
+      elements.modal.hidden = true;
+    }
+
+    async function createTemplateFromModal() {
+      try {
+        if (state.createMode === 'ai_generated') {
+          const result = await requestJson(apiUrls.action_template_generate, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              business_goal: document.getElementById('ai-business-goal').value,
+              preference: document.getElementById('ai-preference').value,
+            }),
+          });
+          state.templates.push(result.template);
+          closeTemplateModal();
+          loadTemplate(result.template);
+          return;
+        }
+        const name = document.getElementById('crm-template-name').value.trim();
+        const category = document.getElementById('crm-template-category').value;
+        const description = document.getElementById('crm-template-description').value.trim();
+        const base = state.templates.find((item) => item.template_code === 'custom_operation_action') || {};
+        const result = await requestJson(apiUrls.action_templates, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template_name: name,
+            template_source: 'crm_local',
+            category,
+            description,
+            default_config: { ...(base.default_config || {}), action_name: name, description },
+            ui_schema: base.ui_schema || {},
+            workflow_blueprint: base.workflow_blueprint || {},
+            node_blueprints: base.node_blueprints || [],
+          }),
+        });
+        state.templates.push(result.template);
+        closeTemplateModal();
+        loadTemplate(result.template);
+      } catch (error) {
+        showFeedback(elements.modalFeedback, error.message || '创建模板失败', 'error');
+      }
+    }
+
+    document.querySelectorAll('[data-template-filter]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.templateFilter = button.dataset.templateFilter;
+        document.querySelectorAll('[data-template-filter]').forEach((item) => item.classList.toggle('is-active', item === button));
+        renderTemplates();
+      });
+    });
+    document.querySelectorAll('[data-content-strategy]').forEach((button) => {
+      button.addEventListener('click', () => setContentStrategy(button.dataset.contentStrategy));
+    });
+    document.querySelectorAll('[data-create-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.createMode = button.dataset.createMode;
+        document.querySelectorAll('[data-create-mode]').forEach((item) => item.classList.toggle('is-active', item === button));
+        elements.crmCreateBox.hidden = state.createMode !== 'crm_local';
+        elements.aiCreateBox.hidden = state.createMode !== 'ai_generated';
+      });
+    });
+    elements.templateList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-template-code]');
+      if (!button) return;
+      const template = state.templates.find((item) => item.template_code === button.dataset.templateCode);
+      if (template) loadTemplate(template);
+    });
+    elements.templateSearch.addEventListener('input', renderTemplates);
+    [elements.actionName, elements.actionStatus, elements.actionDescription, elements.triggerType, elements.audienceType, elements.sendTiming, elements.standardContentText, elements.layerBasis].forEach((input) => {
+      input.addEventListener('input', renderPreview);
+      input.addEventListener('change', renderPreview);
+    });
+    elements.layeredContentGrid.addEventListener('input', renderPreview);
+    elements.profileTemplateId.addEventListener('change', async () => {
+      try {
+        await ensureProfileTemplateDetail();
+        renderLayeredContent();
+        renderPreview();
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '加载画像分层模板失败', 'error');
+      }
+    });
+    elements.layerBasis.addEventListener('change', async () => {
+      if (elements.layerBasis.value === 'profile') {
+        try { await ensureProfileTemplateDetail(); } catch (error) { showFeedback(elements.feedback, error.message || '加载画像分层模板失败', 'error'); }
+      }
+      renderLayeredContent();
+      renderPreview();
+    });
+    elements.nodeList.addEventListener('input', renderPreview);
+    elements.nodeList.addEventListener('change', (event) => {
+      const card = event.target.closest('[data-node-index]');
+      if (event.target.matches('[data-node-field="content_source"]') && card) {
+        const textareaLabel = card.querySelector('label:has([data-node-field="standard_content_text"])');
+        if (textareaLabel) textareaLabel.hidden = event.target.value !== 'custom';
+      }
+      renderPreview();
+    });
+    elements.nodeList.addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-node-remove]');
+      if (!remove) return;
+      const index = Number(remove.dataset.nodeRemove || 0);
+      const removed = state.nodes.splice(index, 1)[0];
+      if (removed && removed.id) state.deletedNodeIds.push(Number(removed.id));
+      if (!state.nodes.length) state.nodes.push(defaultNodeFromConfig({ action_name: elements.actionName.value || '执行节点' }));
+      renderNodes();
+    });
+    document.getElementById('add-node-button').addEventListener('click', () => {
+      state.nodes.push({
+        node_name: `追加跟进节点 ${state.nodes.length + 1}`,
+        target_audience_code: selectedAudienceCodes()[0] || 'operating',
+        trigger_mode: 'scheduled',
+        day_offset: state.nodes.length + 1,
+        send_time: '10:00',
+        enabled: true,
+        content_source: 'inherit',
+      });
+      renderNodes();
+    });
+    document.getElementById('save-draft-button').addEventListener('click', () => saveAction('draft'));
+    document.getElementById('save-active-button').addEventListener('click', () => saveAction('active'));
+    document.getElementById('save-as-template-button').addEventListener('click', saveAsTemplate);
+    document.getElementById('new-template-button').addEventListener('click', openTemplateModal);
+    document.getElementById('close-template-modal').addEventListener('click', closeTemplateModal);
+    document.getElementById('cancel-template-modal').addEventListener('click', closeTemplateModal);
+    document.getElementById('create-template-submit').addEventListener('click', createTemplateFromModal);
+
+    loadInitialData().catch((error) => showFeedback(elements.feedback, error.message || '加载失败', 'error'));
+  })();
+</script>
+{% endblock %}

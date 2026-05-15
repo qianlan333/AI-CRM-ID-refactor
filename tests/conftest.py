@@ -90,6 +90,7 @@ _TABLES_TO_TRUNCATE = [
     "automation_workflow_node_transition",
     "automation_workflow_node",
     "automation_workflow_goal",
+    "automation_operation_templates",
     "automation_workflow",
     "automation_event",
     "automation_member",

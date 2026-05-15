@@ -121,6 +121,69 @@ def _ensure_postgres_automation_agent_config_tables(db) -> None:
     )
 
 
+def _ensure_postgres_automation_operation_templates(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_operation_templates (
+            id BIGSERIAL PRIMARY KEY,
+            template_code TEXT NOT NULL UNIQUE,
+            template_name TEXT NOT NULL DEFAULT '',
+            template_source TEXT NOT NULL DEFAULT 'crm_local',
+            category TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            default_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ui_schema_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            workflow_blueprint_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            node_blueprints_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            archived_at TIMESTAMPTZ
+        )
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_operation_templates
+        DROP CONSTRAINT IF EXISTS automation_operation_templates_template_source_check
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_operation_templates
+        ADD CONSTRAINT automation_operation_templates_template_source_check
+        CHECK (template_source IN ('builtin', 'crm_local', 'ai_generated'))
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_operation_templates
+        DROP CONSTRAINT IF EXISTS automation_operation_templates_status_check
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_operation_templates
+        ADD CONSTRAINT automation_operation_templates_status_check
+        CHECK (status IN ('active', 'archived'))
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_operation_templates_source
+        ON automation_operation_templates (template_source, status, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_operation_templates_category
+        ON automation_operation_templates (category, status, updated_at DESC, id DESC)
+        """
+    )
+
+
 def _ensure_pending_questionnaire_followup_cadence(db) -> None:
     db.execute(
         """
@@ -1127,6 +1190,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_miniprogram_library_thumb_image_id(db)
     _ensure_postgres_automation_agent_config_tables(db)
+    _ensure_postgres_automation_operation_templates(db)
     db.execute(
         """
         ALTER TABLE IF EXISTS automation_workflow_node

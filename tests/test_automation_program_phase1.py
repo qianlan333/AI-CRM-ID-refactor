@@ -228,3 +228,113 @@ def test_workflow_list_filters_by_program_id(app, client, monkeypatch):
     second_codes = [item["workflow"]["workflow_code"] for item in second_response.get_json()["items"]]
     assert default_codes == ["default_wf"]
     assert second_codes == ["second_wf"]
+
+
+def test_operation_action_templates_and_from_template_create_current_workflow(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+
+    templates_response = client.get("/api/admin/automation-conversion/action-templates")
+    assert templates_response.status_code == 200
+    templates_payload = templates_response.get_json()
+    template_names = {item["template_name"] for item in templates_payload["items"]}
+    assert {"问卷提交后跟进", "未填问卷提醒", "低互动用户唤醒"}.issubset(template_names)
+    assert {item["template_source"] for item in templates_payload["items"]} >= {"builtin"}
+
+    local_response = client.post(
+        "/api/admin/automation-conversion/action-templates",
+        json={
+            "template_name": "本地提醒模板",
+            "template_source": "crm_local",
+            "category": "questionnaire",
+            "description": "用于本地沉淀",
+            "default_config": {
+                "action_name": "本地提醒模板",
+                "content_strategy": "standard_content",
+                "standard_content_text": "请完成问卷",
+            },
+            "workflow_blueprint": {
+                "audiences": ["pending_questionnaire"],
+                "generation_mode": "manual_layered",
+            },
+            "node_blueprints": [
+                {
+                    "node_name": "本地提醒节点",
+                    "target_audience_code": "pending_questionnaire",
+                    "trigger_mode": "daily_recurring",
+                    "day_offset": 1,
+                    "send_time": "10:00",
+                    "content_mode": "standard_direct",
+                    "standard_content_text": "请完成问卷",
+                }
+            ],
+        },
+    )
+    assert local_response.status_code == 201
+    assert local_response.get_json()["template"]["template_source"] == "crm_local"
+
+    create_response = client.post(
+        f"/api/admin/automation-conversion/programs/{program_id}/actions/from-template",
+        json={
+            "template_code": "questionnaire_pending_reminder",
+            "config": {
+                "action_name": "提醒填写问卷动作",
+                "content_strategy": "standard_content",
+                "standard_content_text": "请先完成问卷，我会根据结果给你后续建议。",
+                "status": "draft",
+            },
+        },
+    )
+    assert create_response.status_code == 201
+    created_payload = create_response.get_json()
+    workflow = created_payload["workflow_bundle"]["workflow"]
+    nodes = created_payload["workflow_bundle"]["nodes"]
+    assert workflow["workflow_name"] == "提醒填写问卷动作"
+    assert workflow["generation_mode"] == "manual_layered"
+    assert nodes[0]["node_name"] == "提醒用户填写问卷"
+    assert nodes[0]["standard_content_text"] == "请先完成问卷，我会根据结果给你后续建议。"
+
+    from_workflow_response = client.post(
+        "/api/admin/automation-conversion/action-templates/from-workflow",
+        json={
+            "workflow_id": created_payload["workflow_id"],
+            "template_name": "从动作保存模板",
+            "description": "反向保存",
+        },
+    )
+    assert from_workflow_response.status_code == 201
+    saved_template = from_workflow_response.get_json()["template"]
+    assert saved_template["template_source"] == "crm_local"
+    assert saved_template["template_name"] == "从动作保存模板"
+
+
+def test_action_orchestration_page_is_main_operations_entry(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+
+    response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "运营动作编排" in html
+    assert "运营动作模板" in html
+    assert "触发与对象" in html
+    assert "内容策略" in html
+    assert "执行节点" in html
+    assert "执行预览" in html
+    assert "新建动作模板" in html
+
+
+def test_ai_action_template_generate_returns_chinese_error_when_model_unavailable(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+
+    response = client.post(
+        "/api/admin/automation-conversion/action-templates/generate",
+        json={
+            "business_goal": "用户加入社群后，如果 3 天内没填问卷，就自动发提醒。",
+            "preference": "尽量简单，一个节点优先",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "AI 模板生成失败，请稍后重试或改用 CRM 本地创建"

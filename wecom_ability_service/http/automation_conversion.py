@@ -29,6 +29,13 @@ from ..domains.automation_conversion.manual_send_service import (
     send_stage_manual_message,
 )
 from ..domains.automation_conversion import member_segment_search_service
+from ..domains.automation_conversion.action_template_service import (
+    create_action_from_template,
+    create_action_template,
+    create_action_template_from_workflow,
+    generate_action_template,
+    list_action_templates,
+)
 from ..domains.automation_conversion.message_activity_service import run_message_activity_sync
 from ..domains.automation_conversion.model_infra_service import (
     get_model_infra_payload,
@@ -141,6 +148,7 @@ from ._routes_helpers import (  # noqa: F401  helpers for route handlers — 阶
     _automation_conversion_workspace_tabs,
     _automation_program_workspace_tabs,
     _build_agent_config_workspace,
+    _build_action_orchestration_workspace,
     _build_auto_reply_workspace,
     _build_execution_records_workspace,
     _build_flow_design_workspace,
@@ -176,6 +184,7 @@ from ._routes_helpers import (  # noqa: F401  helpers for route handlers — 阶
     _query_text,
     _redirect_to_program,
     _render_agent_config_page,
+    _render_action_orchestration_page,
     _render_auto_reply_page,
     _render_execution_records_page,
     _render_flow_design_page,
@@ -279,6 +288,12 @@ def admin_automation_program_overview(program_id: int):
 
 
 def admin_automation_program_operations(program_id: int):
+    program = _load_program_or_404(program_id)
+    workflow_id = _query_int("workflow_id", default=0, minimum=0, maximum=100000000) or None
+    return _render_action_orchestration_page(workflow_id=workflow_id, program=program)
+
+
+def admin_automation_program_workflows(program_id: int):
     program = _load_program_or_404(program_id)
     return _render_operations_page(program=program)
 
@@ -1396,6 +1411,57 @@ def api_admin_automation_conversion_workflow_registry():
     return jsonify({"ok": True, **list_conversion_workflow_registry()})
 
 
+def api_admin_automation_conversion_action_templates():
+    if request.method == "GET":
+        try:
+            payload = list_action_templates(
+                template_source=_query_text("source") or _query_text("template_source"),
+                category=_query_text("category"),
+                keyword=_query_text("keyword"),
+                include_archived=_query_bool("include_archived", default=False),
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, **payload})
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = create_action_template(payload, operator_id=_operator_from_request())
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result}), 201
+
+
+def api_admin_automation_conversion_action_template_generate():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = generate_action_template(payload, operator_id=_operator_from_request())
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result}), 201
+
+
+def api_admin_automation_conversion_action_template_from_workflow():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = create_action_template_from_workflow(payload, operator_id=_operator_from_request())
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result}), 201
+
+
+def api_admin_automation_program_action_from_template(program_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = create_action_from_template(int(program_id), payload, operator_id=_operator_from_request())
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result}), 201
+
+
 def api_admin_automation_conversion_workflows():
     payload = list_conversion_workflows(
         include_archived=_query_bool("include_archived", default=False),
@@ -1791,6 +1857,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/programs/<int:program_id>/archive", methods=["POST"])(admin_automation_program_archive)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/overview", methods=["GET"])(admin_automation_program_overview)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations", methods=["GET"])(admin_automation_program_operations)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows", methods=["GET"])(admin_automation_program_workflows)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows/new", methods=["GET"])(admin_automation_program_workflow_new)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows/<int:workflow_id>/edit", methods=["GET"])(admin_automation_program_workflow_edit)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows/<int:workflow_id>/nodes", methods=["GET"])(admin_automation_program_workflow_nodes)
@@ -1849,6 +1916,10 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings_payload)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_settings_save)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_settings_default_channel_generate_qr)
+    bp.route("/api/admin/automation-conversion/action-templates", methods=["GET", "POST"])(api_admin_automation_conversion_action_templates)
+    bp.route("/api/admin/automation-conversion/action-templates/generate", methods=["POST"])(api_admin_automation_conversion_action_template_generate)
+    bp.route("/api/admin/automation-conversion/action-templates/from-workflow", methods=["POST"])(api_admin_automation_conversion_action_template_from_workflow)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/actions/from-template", methods=["POST"])(api_admin_automation_program_action_from_template)
     bp.route("/api/admin/automation-conversion/agent-outputs", methods=["GET"])(api_admin_automation_conversion_agent_outputs)
     bp.route("/api/admin/automation-conversion/agent-outputs/<output_id>", methods=["GET"])(api_admin_automation_conversion_agent_output_detail)
     bp.route("/api/admin/automation-conversion/agent-runs/<run_id>", methods=["GET"])(api_admin_automation_conversion_agent_run_detail)
