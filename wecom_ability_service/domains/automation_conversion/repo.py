@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...db import cast_text, get_db, is_postgres
+from ...db import get_db
 from ._repo_helpers import *  # noqa: F401,F403  helpers + _AUTOMATION_SOP_POOL_LOCK_NAMESPACE constant
 from .agents.repo import *  # noqa: F401,F403  agent_* repo functions extracted in 阶段 4.2
 from ._repo_messaging import *  # noqa: F401,F403  message_activity / archived_messages — 阶段 4.3
@@ -12,7 +12,6 @@ from ._repo_reply_monitor import *  # noqa: F401,F403  reply_monitor_* — 阶�
 from ._repo_laohuang import *  # noqa: F401,F403  laohuang_chat_* — 阶段 4.4
 from ._repo_member import *  # noqa: F401,F403  member/person/stage/segment — 阶段 4.5
 from ._repo_event import *  # noqa: F401,F403  event/ai_push_log/touch_delivery — 阶段 4.5
-
 
 def list_app_setting_rows(keys: list[str]) -> list[dict[str, Any]]:
     normalized_keys = [_normalized_text(item) for item in keys if _normalized_text(item)]
@@ -263,5 +262,3 @@ def list_questionnaire_submission_answers(submission_id: int) -> list[dict[str, 
         """,
         (int(submission_id),),
     )
-
-
