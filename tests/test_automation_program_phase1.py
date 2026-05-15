@@ -317,8 +317,9 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "运营动作列表" in html
-    assert "新增运营动作" in html
+    assert "运营动作" in html
+    assert "新增动作" in html
+    assert "从模板创建" in html
     assert "保存草稿" in html
     assert "触发与对象" in html
     assert "内容策略" in html

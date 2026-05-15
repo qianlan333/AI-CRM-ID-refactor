@@ -1087,10 +1087,12 @@ def _program_form_payload() -> dict[str, object]:
 
 
 def _program_basic_info_payload() -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "program_name": str(request.form.get("program_name") or "").strip(),
-        "description": str(request.form.get("description") or "").strip(),
     }
+    if "description" in request.form:
+        payload["description"] = str(request.form.get("description") or "").strip()
+    return payload
 
 
 def _program_action_redirect(default_path: str = ""):
