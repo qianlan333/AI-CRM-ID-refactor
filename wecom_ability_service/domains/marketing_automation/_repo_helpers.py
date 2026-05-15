@@ -14,6 +14,8 @@ from __future__ import annotations
 from typing import Any
 
 from ...db import get_db
+from ...db.helpers import fetchall_dicts as _db_fetchall_dicts
+from ...db.helpers import fetchone_dict as _db_fetchone_dict
 from ...infra.json_utils import json_dumps
 
 
@@ -22,13 +24,11 @@ def _db_bool(value: bool) -> bool:
 
 
 def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
-    row = get_db().execute(sql, params).fetchone()
-    return dict(row) if row else None
+    return _db_fetchone_dict(get_db(), sql, params)
 
 
 def _fetchall_dicts(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    rows = get_db().execute(sql, params).fetchall()
-    return [dict(row) for row in rows]
+    return _db_fetchall_dicts(get_db(), sql, params)
 
 
 def _normalized_text(value: Any) -> str:
