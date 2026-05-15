@@ -324,6 +324,18 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "触发与对象" in html
     assert "内容策略" in html
     assert "执行节点" in html
+    assert "action-list-feedback" in html
+    assert "正在加载..." in html
+    assert "正在加载运营动作..." in html
+    assert "复制中..." in html
+    assert "minmax(320px, 360px) minmax(0, 1fr)" in html
+    assert ".op-empty-state[hidden]" in html
+    assert "@media (max-width: 960px)" in html
+    assert "这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。" in html
+    assert "当前还没有可用智能体，请先创建或启用一个智能体，再保存 Agent 单人定制化动作。" in html
+    assert "当前内容策略不需要智能体，请移除智能体绑定或切换为「Agent 单人定制化」。" in html
+    assert "当前选择的智能体不可用，请重新选择。" in html
+    assert "@media (max-width: 1280px)" not in html
     assert "保存并启用" not in html
     assert "执行预览" not in html
     assert "在一个页面里维护当前方案下所有运营动作" not in html
