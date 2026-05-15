@@ -23,7 +23,7 @@ DATABASE_URL=postgresql://test:test@localhost:5432/test pytest tests/integration
 docker stop pg-test
 ```
 
-`tests/integration/conftest.py` 的 `app` fixture 必须看到 `DATABASE_URL`；没配时整组 integration test 会 skip。每个 test 跑前 `TRUNCATE` 关键表（FK 反向顺序），保证隔离。
+`tests/integration/conftest.py` 的 `app` fixture 复用顶层 `tests.conftest.build_pg_test_app`；没配 `DATABASE_URL` 时整组 integration test 会 skip。每个 test 跑前由共享 fixture `TRUNCATE` 关键表，保证隔离。
 
 CI 上 GitHub Actions 用 service container 起 postgres:16，自动设 `DATABASE_URL`，每个 PR 必跑。
 
