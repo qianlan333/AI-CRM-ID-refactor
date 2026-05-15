@@ -55,6 +55,37 @@ def test_to_float_handles_decimal():
     assert svc._to_float(None) is None
 
 
+def test_select_hxc_user_rows_keeps_latest_active_user_for_duplicate_phone():
+    rows = [
+        {
+            "phone": "13912345678",
+            "hxc_user_id": "old",
+            "last_login_at": dt.datetime(2026, 5, 1, 10, 0),
+            "last_msg_at": dt.datetime(2026, 5, 10, 10, 0),
+            "hxc_registered_at": dt.datetime(2026, 4, 1, 10, 0),
+        },
+        {
+            "phone": "13912345678",
+            "hxc_user_id": "latest-login",
+            "last_login_at": dt.datetime(2026, 5, 12, 10, 0),
+            "last_msg_at": dt.datetime(2026, 5, 2, 10, 0),
+            "hxc_registered_at": dt.datetime(2026, 3, 1, 10, 0),
+        },
+        {
+            "phone": "13800138000",
+            "hxc_user_id": "other",
+            "last_login_at": None,
+            "last_msg_at": dt.datetime(2026, 5, 9, 10, 0),
+            "hxc_registered_at": dt.datetime(2026, 3, 1, 10, 0),
+        },
+    ]
+
+    selected = svc._select_hxc_user_rows(rows)
+
+    assert selected["13912345678"]["hxc_user_id"] == "latest-login"
+    assert selected["13800138000"]["hxc_user_id"] == "other"
+
+
 def test_qids_sql_list_inlines_constants():
     """白名单常量必须 inline 进 SQL, 不能依赖 placeholder."""
     sql = svc._qids_sql_list()
