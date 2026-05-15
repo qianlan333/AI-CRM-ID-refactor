@@ -382,6 +382,28 @@ def _ensure_postgres_questionnaire_external_push_tables(db) -> None:
     )
 
 
+def _ensure_postgres_questionnaire_scrm_apply_log_columns(db) -> None:
+    for stmt in (
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS questionnaire_id BIGINT NOT NULL DEFAULT 0",
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS openid TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS unionid TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS matched_score_tier_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS matched_score_tier_name TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS matched_dimension_categories JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS add_tag_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "ALTER TABLE IF EXISTS questionnaire_scrm_apply_logs "
+        "ADD COLUMN IF NOT EXISTS wecom_response JSONB NOT NULL DEFAULT '{}'::jsonb",
+    ):
+        db.execute(stmt)
+
+
 def _ensure_postgres_customer_value_segment_tables(db) -> None:
     db.execute(
         """
@@ -1069,6 +1091,18 @@ def _init_postgres(db) -> None:
         "ADD COLUMN IF NOT EXISTS segment_id BIGINT",
         "ALTER TABLE IF EXISTS cloud_broadcast_plans "
         "ADD COLUMN IF NOT EXISTS campaign_id BIGINT",
+        "ALTER TABLE IF EXISTS questionnaires "
+        "ADD COLUMN IF NOT EXISTS assessment_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE IF EXISTS questionnaires "
+        "ADD COLUMN IF NOT EXISTS assessment_config JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE IF EXISTS questionnaire_questions "
+        "ADD COLUMN IF NOT EXISTS assessment_dimension_key TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS questionnaire_options "
+        "ADD COLUMN IF NOT EXISTS assessment_type_key TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS questionnaire_submissions "
+        "ADD COLUMN IF NOT EXISTS assessment_result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE IF EXISTS questionnaire_submissions "
+        "ADD COLUMN IF NOT EXISTS result_token TEXT NOT NULL DEFAULT ''",
     ):
         db.execute(stmt)
 
@@ -1087,6 +1121,7 @@ def _init_postgres(db) -> None:
         """
     )
     _ensure_postgres_questionnaire_external_push_tables(db)
+    _ensure_postgres_questionnaire_scrm_apply_log_columns(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_miniprogram_library_thumb_image_id(db)
     _ensure_postgres_automation_agent_config_tables(db)
@@ -1161,8 +1196,51 @@ def _init_postgres(db) -> None:
     )
     db.execute(
         """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS assessment_enabled BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS assessment_config JSONB NOT NULL DEFAULT '{}'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE questionnaire_questions
+        ADD COLUMN IF NOT EXISTS assessment_dimension_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE questionnaire_options
+        ADD COLUMN IF NOT EXISTS assessment_type_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
         ALTER TABLE questionnaire_submissions
         ADD COLUMN IF NOT EXISTS mobile_snapshot TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE questionnaire_submissions
+        ADD COLUMN IF NOT EXISTS assessment_result_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE questionnaire_submissions
+        ADD COLUMN IF NOT EXISTS result_token TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_questionnaire_submissions_result_token
+        ON questionnaire_submissions (result_token)
+        WHERE result_token <> ''
         """
     )
     db.execute(
