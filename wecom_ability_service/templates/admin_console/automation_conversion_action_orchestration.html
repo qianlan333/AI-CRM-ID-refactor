@@ -8,26 +8,12 @@
     gap: 18px;
   }
 
-  .op-action-hero {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 18px;
-    padding: 20px 22px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 18px;
-    background: #ffffff;
-  }
-
-  .op-action-hero h1,
   .op-action-panel h2,
-  .op-action-section h3,
-  .op-preview-card h3 {
+  .op-action-section h3 {
     margin: 0;
     color: #1f2329;
   }
 
-  .op-action-hero p,
   .op-muted {
     margin: 6px 0 0;
     color: #667085;
@@ -36,14 +22,13 @@
 
   .op-action-grid {
     display: grid;
-    grid-template-columns: 300px minmax(560px, 1fr) 340px;
+    grid-template-columns: 320px minmax(720px, 1fr);
     gap: 16px;
     align-items: start;
   }
 
   .op-action-panel,
-  .op-action-section,
-  .op-preview-card {
+  .op-action-section {
     border: 1px solid rgba(15, 23, 42, 0.08);
     border-radius: 16px;
     background: #ffffff;
@@ -55,8 +40,7 @@
 
   .op-action-panel__head,
   .op-action-panel__body,
-  .op-action-section,
-  .op-preview-card {
+  .op-action-section {
     padding: 16px;
   }
 
@@ -93,9 +77,9 @@
   }
 
   .op-template-list,
+  .op-current-action-list,
   .op-config-stack,
-  .op-node-list,
-  .op-preview-stack {
+  .op-node-list {
     display: grid;
     gap: 12px;
   }
@@ -118,6 +102,62 @@
 
   .op-template-card strong {
     color: #1f2329;
+  }
+
+  .op-current-action-card {
+    display: grid;
+    gap: 9px;
+    width: 100%;
+    padding: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    background: #fff;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .op-current-action-card.is-active {
+    border-color: rgba(51, 112, 255, 0.46);
+    background: #f7fbff;
+    box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.08);
+  }
+
+  .op-current-action-card__top,
+  .op-current-action-card__meta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .op-current-action-card__meta {
+    color: #667085;
+    font-size: 13px;
+  }
+
+  .op-current-action-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .op-current-action-card strong {
+    color: #1f2329;
+  }
+
+  .op-side-tools {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .op-action-savebar {
+    display: flex;
+    justify-content: flex-end;
+    position: fixed;
+    right: 32px;
+    bottom: 26px;
+    z-index: 30;
   }
 
   .op-badge {
@@ -191,39 +231,6 @@
     align-items: flex-start;
   }
 
-  .op-preview-flow {
-    display: grid;
-    gap: 10px;
-  }
-
-  .op-preview-step {
-    display: grid;
-    grid-template-columns: 26px 1fr;
-    gap: 9px;
-  }
-
-  .op-preview-num {
-    width: 26px;
-    height: 26px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    background: #1456f0;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 800;
-  }
-
-  .op-preview-message {
-    white-space: pre-wrap;
-    padding: 12px;
-    border-radius: 14px;
-    background: #f8fafc;
-    color: #344054;
-    line-height: 1.65;
-  }
-
   .op-modal {
     position: fixed;
     inset: 0;
@@ -278,6 +285,14 @@
     display: none;
   }
 
+  .op-empty-state {
+    min-height: 260px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    color: #667085;
+  }
+
   @media (max-width: 1280px) {
     .op-action-grid,
     .op-field-grid,
@@ -302,45 +317,32 @@
   data-entry-urls='{{ (workspace.entry_urls or {})|tojson }}'
   data-action-urls='{{ (workspace.action_urls or {})|tojson }}'
 >
-  <section class="op-action-hero">
-    <div>
-      <h1>运营动作编排</h1>
-      <p>选择一个运营动作模板，在同一页配置触发、对象、内容和执行节点。</p>
-    </div>
-    <div class="op-action-buttons">
-      <a class="admin-button admin-button--secondary" href="{{ (workspace.action_urls or {}).workflow_list or '#' }}">高级列表</a>
-      <a class="admin-button admin-button--secondary" href="{{ (workspace.action_urls or {}).workflow_new or '#' }}">新建任务流</a>
-      <button class="admin-button admin-button--secondary" id="save-as-template-button" type="button">保存为模板</button>
-      <button class="admin-button admin-button--secondary" id="save-draft-button" type="button">保存草稿</button>
-      <button class="admin-button admin-button--primary" id="save-active-button" type="button">保存并启用</button>
-      <button class="admin-button admin-button--primary" id="new-template-button" type="button">新建动作模板</button>
-    </div>
-  </section>
-
   <div class="op-feedback" id="action-feedback" hidden></div>
 
   <main class="op-action-grid">
     <aside class="op-action-panel">
       <div class="op-action-panel__head">
-        <h2>运营动作模板</h2>
-        <p class="op-muted">支持系统内置、CRM 本地和 AI 生成模板。</p>
+        <h2>运营动作</h2>
+        <p class="op-muted">当前方案已有动作、可新增动作，也可删除无效动作。</p>
       </div>
       <div class="op-action-panel__body">
-        <div class="op-template-tabs">
-          <button class="admin-button admin-button--ghost is-active" type="button" data-template-filter="all">全部</button>
-          <button class="admin-button admin-button--ghost" type="button" data-template-filter="crm_local">CRM 本地</button>
-          <button class="admin-button admin-button--ghost" type="button" data-template-filter="ai_generated">AI 生成</button>
+        <div class="op-side-tools">
+          <button class="admin-button admin-button--primary" id="new-action-side-button" type="button">新增动作</button>
+          <button class="admin-button admin-button--secondary" id="from-template-button" type="button">从模板创建</button>
         </div>
-        <label class="admin-field op-template-search">
-          <span>搜索</span>
-          <input type="search" id="template-search" placeholder="搜索动作模板">
-        </label>
-        <div class="op-template-list" id="template-list"></div>
-        <div class="op-empty op-muted" id="template-empty" hidden>没有找到符合条件的模板。</div>
+        <div class="op-current-action-list" id="action-list"></div>
+        <div class="op-empty op-muted" id="action-empty" hidden>当前没有符合条件的运营动作。</div>
       </div>
     </aside>
 
-    <section class="op-config-stack">
+    <section class="op-empty-state op-action-section" id="action-empty-state" hidden>
+      <div>
+        <h3>还没有选中运营动作</h3>
+        <p class="op-muted">请从左侧选择已有动作，或新增一个动作后继续配置。</p>
+      </div>
+    </section>
+
+    <section class="op-config-stack" id="action-config-stack">
       <section class="op-action-section">
         <h3>基础信息</h3>
         <div class="op-field-grid" style="margin-top:12px;">
@@ -457,60 +459,65 @@
         </div>
         <div class="op-node-list" id="node-list" style="margin-top:14px;"></div>
       </section>
+
+      <div class="op-action-savebar">
+        <button class="admin-button admin-button--primary" id="save-draft-button" type="button">保存草稿</button>
+      </div>
     </section>
 
-    <aside class="op-preview-stack">
-      <section class="op-preview-card">
-        <h3>链路摘要</h3>
-        <div class="op-preview-flow" id="preview-flow" style="margin-top:12px;"></div>
-      </section>
-      <section class="op-preview-card">
-        <h3>执行预览</h3>
-        <div class="op-preview-message" id="content-preview" style="margin-top:12px;"></div>
-      </section>
-      <section class="op-preview-card">
-        <h3>模板信息</h3>
-        <p class="op-muted" id="template-info"></p>
-      </section>
-    </aside>
   </main>
+
+  <div class="op-modal" id="action-template-modal" hidden>
+    <div class="op-modal-card">
+      <div class="op-modal-head">
+        <div>
+          <h2>选择运营动作模板</h2>
+          <p class="op-muted">模板只用于新增动作；已有动作会保留在左侧列表里。</p>
+        </div>
+        <button class="admin-button admin-button--ghost" id="close-action-template-modal" type="button">关闭</button>
+      </div>
+      <div class="op-modal-body">
+        <div class="op-template-tabs">
+          <button class="admin-button admin-button--ghost is-active" type="button" data-template-filter="all">全部</button>
+          <button class="admin-button admin-button--ghost" type="button" data-template-filter="crm_local">CRM 本地</button>
+          <button class="admin-button admin-button--ghost" type="button" data-template-filter="ai_generated">AI 生成</button>
+        </div>
+        <label class="admin-field op-template-search">
+          <span>搜索</span>
+          <input type="search" id="template-search" placeholder="搜索动作模板">
+        </label>
+        <div class="op-template-list" id="template-list"></div>
+        <div class="op-empty op-muted" id="template-empty" hidden>没有找到符合条件的模板。</div>
+      </div>
+    </div>
+  </div>
 
   <div class="op-modal" id="template-modal" hidden>
     <div class="op-modal-card">
       <div class="op-modal-head">
         <div>
-          <h2>新建动作模板</h2>
-          <p class="op-muted">选择 CRM 本地创建，或让 AI 根据业务描述生成模板。</p>
+          <h2>新增动作</h2>
+          <p class="op-muted">从本地模板开始，或让 AI 根据业务目标生成一个可编辑草稿。</p>
         </div>
         <button class="admin-button admin-button--ghost" id="close-template-modal" type="button">关闭</button>
       </div>
       <div class="op-modal-body">
         <div class="op-choice-grid">
-          <button class="op-choice is-active" type="button" data-create-mode="crm_local"><b>CRM 本地创建</b><span>先填写名称和说明，再进入配置页继续补齐。</span></button>
-          <button class="op-choice" type="button" data-create-mode="ai_generated"><b>AI 生成模板</b><span>输入业务目标，生成可继续编辑的运营动作模板。</span></button>
+          <button class="op-choice is-active" type="button" data-create-mode="crm_local"><b>CRM 本地创建</b><span>填写动作名称，并选择一个起始模板。</span></button>
+          <button class="op-choice" type="button" data-create-mode="ai_generated"><b>AI 生成动作</b><span>输入业务目标，生成可继续编辑的运营动作草稿。</span></button>
         </div>
 
         <div id="crm-create-box" style="margin-top:14px;">
           <div class="op-field-grid">
             <label class="admin-field">
-              <span>模板名称</span>
-              <input type="text" id="crm-template-name" value="新运营动作模板">
+              <span>动作名称</span>
+              <input type="text" id="crm-action-name" value="新运营动作">
             </label>
             <label class="admin-field">
-              <span>适用场景</span>
-              <select id="crm-template-category">
-                <option value="questionnaire">问卷</option>
-                <option value="community">社群</option>
-                <option value="wakeup">唤醒</option>
-                <option value="closing">成交</option>
-                <option value="custom">自定义</option>
-              </select>
+              <span>起始模板</span>
+              <select id="crm-start-template"></select>
             </label>
           </div>
-          <label class="admin-field" style="margin-top:12px;">
-            <span>模板说明</span>
-            <textarea id="crm-template-description" rows="3">用于沉淀一套可复用的运营动作。</textarea>
-          </label>
         </div>
 
         <div id="ai-create-box" style="margin-top:14px;" hidden>
@@ -531,7 +538,7 @@
         <div class="op-feedback" id="template-modal-feedback" hidden></div>
         <div class="op-inline-actions" style="margin-top:14px;">
           <button class="admin-button admin-button--secondary" id="cancel-template-modal" type="button">取消</button>
-          <button class="admin-button admin-button--primary" id="create-template-submit" type="button">生成并进入配置</button>
+          <button class="admin-button admin-button--primary" id="create-template-submit" type="button">创建并编辑</button>
         </div>
       </div>
     </div>
@@ -553,6 +560,12 @@
 
     const elements = {
       feedback: document.getElementById('action-feedback'),
+      configStack: document.getElementById('action-config-stack'),
+      emptyState: document.getElementById('action-empty-state'),
+      actionList: document.getElementById('action-list'),
+      actionEmpty: document.getElementById('action-empty'),
+      actionSearch: document.getElementById('action-search'),
+      actionStatusFilter: document.getElementById('action-status-filter'),
       templateList: document.getElementById('template-list'),
       templateEmpty: document.getElementById('template-empty'),
       templateSearch: document.getElementById('template-search'),
@@ -571,23 +584,26 @@
       profileTemplateId: document.getElementById('profile-template-id'),
       layeredContentGrid: document.getElementById('layered-content-grid'),
       nodeList: document.getElementById('node-list'),
-      previewFlow: document.getElementById('preview-flow'),
-      contentPreview: document.getElementById('content-preview'),
-      templateInfo: document.getElementById('template-info'),
+      actionTemplateModal: document.getElementById('action-template-modal'),
       modal: document.getElementById('template-modal'),
       modalFeedback: document.getElementById('template-modal-feedback'),
       crmCreateBox: document.getElementById('crm-create-box'),
       aiCreateBox: document.getElementById('ai-create-box'),
+      crmStartTemplate: document.getElementById('crm-start-template'),
     };
 
     const state = {
       templates: [],
+      workflows: [],
+      currentActionId: selectedActionId,
       selectedTemplate: null,
       templateFilter: 'all',
+      actionFilter: 'all',
       contentStrategy: 'personalized_agent',
       registry: {},
       agentOptions: [],
       profileTemplateOptions: [],
+      profileTemplateDetails: {},
       workflowBundle: null,
       nodes: [],
       deletedNodeIds: [],
@@ -673,6 +689,92 @@
       if (source === 'crm_local') return 'CRM 本地';
       if (source === 'ai_generated') return 'AI 生成';
       return '系统内置';
+    }
+
+    function statusLabel(status) {
+      if (status === 'active') return '启用';
+      if (status === 'paused') return '停用';
+      if (status === 'archived') return '已归档';
+      return '草稿';
+    }
+
+    function workflowFromItem(item) {
+      return item && item.workflow ? item.workflow : (item || {});
+    }
+
+    function actionAudienceLabel(bundle) {
+      const audiences = Array.isArray(bundle.audiences) ? bundle.audiences : [];
+      if (audiences.some((item) => item.audience_code === 'pending_questionnaire')) return '未填问卷人群';
+      if (audiences.some((item) => item.audience_code === 'converted')) return '已转化人群';
+      if (audiences.some((item) => item.audience_code === 'operating')) return '运营中人群';
+      return '指定人群';
+    }
+
+    function actionContentLabel(bundle) {
+      const workflow = workflowFromItem(bundle);
+      const nodes = Array.isArray(bundle.nodes) ? bundle.nodes : [];
+      const hasVariants = nodes.some((node) => Array.isArray(node.content_variants) && node.content_variants.length);
+      if (workflow.generation_mode === 'personalized_single') return 'Agent 单人定制化';
+      if (hasVariants) return '按分层发不同内容';
+      return '统一内容';
+    }
+
+    function setEditorEmpty(empty) {
+      elements.emptyState.hidden = !empty;
+      elements.configStack.hidden = empty;
+      if (empty && entryUrls.action_orchestration) {
+        window.history.replaceState({}, '', entryUrls.action_orchestration);
+      }
+    }
+
+    function updateStartTemplateOptions() {
+      if (!elements.crmStartTemplate) return;
+      const preferred = ['custom_operation_action', 'questionnaire_pending_reminder', 'low_interaction_wakeup', 'questionnaire_submit_followup'];
+      const sorted = [...state.templates].sort((a, b) => {
+        const ai = preferred.indexOf(String(a.template_code || ''));
+        const bi = preferred.indexOf(String(b.template_code || ''));
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
+      elements.crmStartTemplate.innerHTML = sorted.map((item) => `
+        <option value="${escapeHtml(item.template_code || item.id || '')}">${escapeHtml(item.template_name || item.template_code || '运营动作模板')}</option>
+      `).join('');
+    }
+
+    function renderActionList() {
+      const keyword = String((elements.actionSearch || {}).value || '').trim();
+      const items = state.workflows.filter((item) => {
+        const workflow = workflowFromItem(item);
+        const status = String(workflow.status || 'draft');
+        const statusOk = state.actionFilter === 'all' || status === state.actionFilter;
+        const text = `${workflow.workflow_name || ''} ${workflow.description || ''} ${actionAudienceLabel(item)} ${actionContentLabel(item)}`;
+        return statusOk && (!keyword || text.includes(keyword));
+      });
+      elements.actionList.innerHTML = items.map((item) => {
+        const workflow = workflowFromItem(item);
+        const id = Number(workflow.id || 0);
+        const nodeCount = Array.isArray(item.nodes) ? item.nodes.length : Number(item.node_count || 0);
+        const isActive = id && id === Number(state.currentActionId || 0);
+        const enabled = workflow.status === 'active';
+        return `
+          <article class="op-current-action-card ${isActive ? 'is-active' : ''}" role="button" tabindex="0" data-action-id="${escapeHtml(id)}">
+            <span class="op-current-action-card__top">
+              <strong>${escapeHtml(workflow.workflow_name || '未命名运营动作')}</strong>
+              <span class="${sourceClass('crm_local')}">${escapeHtml(statusLabel(workflow.status))}</span>
+            </span>
+            <span class="op-current-action-card__meta">
+              <span>${escapeHtml(actionAudienceLabel(item))} · ${escapeHtml(nodeCount || 0)} 个节点</span>
+            </span>
+            <span class="op-muted">${escapeHtml(workflow.description || actionContentLabel(item))}</span>
+            <span class="op-current-action-card__actions">
+              <button class="admin-button admin-button--secondary" type="button" data-action-open="${escapeHtml(id)}">编辑</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-toggle="${escapeHtml(id)}">${enabled ? '停用' : '启用'}</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-copy="${escapeHtml(id)}">复制</button>
+              <button class="admin-button admin-button--ghost" type="button" data-action-delete="${escapeHtml(id)}">删除</button>
+            </span>
+          </article>
+        `;
+      }).join('');
+      elements.actionEmpty.hidden = items.length > 0;
     }
 
     function behaviorTargets() {
@@ -776,6 +878,8 @@
     }
 
     function loadTemplate(template) {
+      state.currentActionId = null;
+      state.workflowBundle = null;
       state.selectedTemplate = template;
       const config = template.default_config || {};
       elements.actionName.value = config.action_name || template.template_name || '';
@@ -799,7 +903,11 @@
       setContentStrategy(config.content_strategy || 'standard_content');
       renderNodes();
       renderTemplates();
-      renderPreview();
+      renderActionList();
+      setEditorEmpty(false);
+      if (entryUrls.action_orchestration) {
+        window.history.replaceState({}, '', entryUrls.action_orchestration);
+      }
     }
 
     function labelFor(group, code) {
@@ -1005,7 +1113,7 @@
       try {
         const config = collectConfig(statusOverride);
         const nodes = collectNodes(config);
-        let actionId = selectedActionId || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
+        let actionId = Number(state.currentActionId || 0) || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
         if (!actionId) {
           const result = await requestJson(apiUrls.action_from_template, {
             method: 'POST',
@@ -1019,7 +1127,11 @@
           });
           actionId = Number(result.workflow_id || (((result.workflow_bundle || {}).workflow || {}).id) || 0);
           state.workflowBundle = result.workflow_bundle;
-          showFeedback(elements.feedback, statusOverride === 'active' ? '已保存并启用' : '草稿已保存', '');
+          state.currentActionId = actionId || null;
+          state.deletedNodeIds = [];
+          await loadActions();
+          if (actionId) await loadExistingAction(actionId);
+          showFeedback(elements.feedback, statusOverride === 'active' ? '已保存' : '草稿已保存', '');
           if (actionId) {
             window.history.replaceState({}, '', `${entryUrls.action_orchestration || entryUrls.list}?workflow_id=${encodeURIComponent(actionId)}`);
           }
@@ -1044,47 +1156,21 @@
             body: JSON.stringify(nodePayloadForSave(node, config)),
           });
         }
+        await loadActions();
         await loadExistingAction(actionId);
-        showFeedback(elements.feedback, statusOverride === 'active' ? '已保存并启用' : '草稿已保存', '');
+        showFeedback(elements.feedback, statusOverride === 'active' ? '已保存' : '草稿已保存', '');
       } catch (error) {
         showFeedback(elements.feedback, error.message || '保存失败', 'error');
       }
     }
 
     function renderPreview() {
-      const triggerText = labelFor(triggerOptions, elements.triggerType.value);
-      const audienceText = labelFor(audienceOptions, elements.audienceType.value);
-      const timingText = labelFor(sendTimingOptions, elements.sendTiming.value);
-      const contentText = state.contentStrategy === 'personalized_agent'
-        ? 'Agent 生成定制化内容'
-        : state.contentStrategy === 'layered_content'
-        ? '按分层发送内容'
-        : '发送统一内容';
-      elements.previewFlow.innerHTML = [
-        [triggerText, `命中后进入${audienceText}。`],
-        [contentText, state.contentStrategy === 'personalized_agent' ? '根据用户信息生成。' : state.contentStrategy === 'layered_content' ? '根据消息数、画像或标签分层。' : '使用同一段内容。'],
-        [timingText, `共 ${state.nodes.length || 1} 个执行节点。`],
-      ].map((item, index) => `
-        <div class="op-preview-step">
-          <div class="op-preview-num">${index + 1}</div>
-          <div><strong>${escapeHtml(item[0])}</strong><p class="op-muted">${escapeHtml(item[1])}</p></div>
-        </div>
-      `).join('');
-      if (state.contentStrategy === 'personalized_agent') {
-        elements.contentPreview.textContent = '我看了一下你的情况，接下来最适合先做一个轻量动作：先完成关键入口，再用后续内容把沟通接住。我会根据你的问卷结果给你一条更具体的建议。';
-      } else if (state.contentStrategy === 'layered_content') {
-        const first = collectLayeredVariants().find((item) => item.content_text);
-        elements.contentPreview.textContent = first ? first.content_text : '请先填写分层话术。';
-      } else {
-        elements.contentPreview.textContent = elements.standardContentText.value || '请先填写统一内容。';
-      }
-      const template = state.selectedTemplate || {};
-      elements.templateInfo.textContent = `${sourceLabel(template.template_source)}模板：${template.template_name || '自定义运营动作'}。当前配置可以保存为 CRM 本地模板，供下次复用。`;
+      renderActionList();
     }
 
     async function saveAsTemplate() {
       try {
-        const actionId = selectedActionId || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
+        const actionId = Number(state.currentActionId || 0) || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
         const templateName = window.prompt('请输入模板名称', `${elements.actionName.value || '运营动作'} 模板`);
         if (!templateName) return;
         if (actionId) {
@@ -1125,6 +1211,8 @@
       const payload = await requestJson(withId(apiUrls.workflow_detail_base, actionId), { credentials: 'same-origin' });
       const bundle = payload.workflow_bundle || {};
       state.workflowBundle = bundle;
+      state.currentActionId = Number(actionId || 0) || null;
+      setEditorEmpty(false);
       const action = bundle.workflow || {};
       elements.actionName.value = action.workflow_name || '';
       elements.actionStatus.value = action.status || 'draft';
@@ -1148,32 +1236,51 @@
       setContentStrategy(strategy);
       renderNodes();
       renderTemplates();
+      renderActionList();
+      if (state.currentActionId && entryUrls.action_orchestration) {
+        window.history.replaceState({}, '', `${entryUrls.action_orchestration}?workflow_id=${encodeURIComponent(state.currentActionId)}`);
+      }
+    }
+
+    async function loadActions() {
+      const payload = await requestJson(apiUrls.workflows, { credentials: 'same-origin' });
+      state.workflows = payload.items || [];
+      renderActionList();
     }
 
     async function loadInitialData() {
       fillSelect(elements.triggerType, triggerOptions, 'manual');
       fillSelect(elements.audienceType, audienceOptions, 'custom');
       fillSelect(elements.sendTiming, sendTimingOptions, 'immediate');
-      const [templatesPayload, registryPayload, agentsPayload, profilePayload] = await Promise.all([
+      const [templatesPayload, registryPayload, agentsPayload, profilePayload, workflowsPayload] = await Promise.all([
         requestJson(apiUrls.action_templates, { credentials: 'same-origin' }),
         requestJson(apiUrls.registry, { credentials: 'same-origin' }),
         requestJson(apiUrls.agents_options, { credentials: 'same-origin' }),
         requestJson(apiUrls.profile_segment_templates_options, { credentials: 'same-origin' }),
+        requestJson(apiUrls.workflows, { credentials: 'same-origin' }),
       ]);
       state.templates = templatesPayload.items || [];
+      updateStartTemplateOptions();
       state.registry = registryPayload || {};
       state.agentOptions = agentsPayload.items || [];
       state.profileTemplateOptions = profilePayload.items || [];
+      state.workflows = workflowsPayload.items || [];
       elements.profileTemplateId.innerHTML = state.profileTemplateOptions.length
         ? '<option value="">请选择画像分层模板</option>' + state.profileTemplateOptions.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.template_name || item.template_code)}</option>`).join('')
         : '<option value="">暂无可用画像分层模板</option>';
       elements.agentCode.innerHTML = state.agentOptions.length
         ? state.agentOptions.map((item) => `<option value="${escapeHtml(item.agent_code)}">${escapeHtml(item.agent_name || item.agent_code)}</option>`).join('')
         : '<option value="">请先创建智能体</option>';
-      if (selectedActionId) {
-        await loadExistingAction(selectedActionId);
+      renderActionList();
+      if (state.currentActionId) {
+        await loadExistingAction(state.currentActionId);
+      } else if (state.workflows.length) {
+        const firstWorkflow = workflowFromItem(state.workflows[0]);
+        await loadExistingAction(Number(firstWorkflow.id || 0));
       } else {
-        loadTemplate(state.templates.find((item) => item.template_code === 'questionnaire_submit_followup') || state.templates[0] || {});
+        state.currentActionId = null;
+        state.workflowBundle = null;
+        setEditorEmpty(true);
       }
       renderTemplates();
       renderPreview();
@@ -1188,7 +1295,175 @@
       elements.modal.hidden = true;
     }
 
-    async function createTemplateFromModal() {
+    function openActionTemplateModal() {
+      elements.actionTemplateModal.hidden = false;
+      renderTemplates();
+    }
+
+    function closeActionTemplateModal() {
+      elements.actionTemplateModal.hidden = true;
+    }
+
+    async function deleteAction(actionId) {
+      if (!actionId) return;
+      const item = state.workflows.find((entry) => Number(workflowFromItem(entry).id || 0) === Number(actionId));
+      if (!window.confirm('确认删除这个运营动作吗？删除后不可恢复。')) return;
+      try {
+        await requestJson(withId(apiUrls.workflow_delete_base, actionId), { method: 'DELETE', credentials: 'same-origin' });
+        if (Number(state.currentActionId || 0) === Number(actionId)) {
+          state.currentActionId = null;
+          state.workflowBundle = null;
+        }
+        await loadActions();
+        const next = state.workflows.length ? workflowFromItem(state.workflows[0]) : null;
+        if (next && next.id) {
+          await loadExistingAction(Number(next.id));
+        } else {
+          state.currentActionId = null;
+          state.workflowBundle = null;
+          setEditorEmpty(true);
+        }
+        showFeedback(elements.feedback, '已删除运营动作', '');
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '删除失败', 'error');
+      }
+    }
+
+    function sendTimingFromNode(node) {
+      if (!node || node.trigger_mode === 'audience_entered') return 'immediate';
+      if (Number(node.day_offset || 0) === 3) return 'day_3_10';
+      if (node.send_time === '14:00') return 'daily_14';
+      return 'daily_10';
+    }
+
+    function audienceTypeFromBundle(bundle) {
+      const audiences = Array.isArray(bundle.audiences) ? bundle.audiences : [];
+      if (audiences.some((item) => item.audience_code === 'pending_questionnaire')) return 'pending_questionnaire';
+      if (audiences.some((item) => item.audience_code === 'converted')) return 'high_intent';
+      return 'custom';
+    }
+
+    function strategyFromBundle(bundle) {
+      const workflow = bundle.workflow || {};
+      const hasVariants = (bundle.nodes || []).some((node) => (node.content_variants || []).length);
+      if (workflow.generation_mode === 'personalized_single') return 'personalized_agent';
+      if (hasVariants) return 'layered_content';
+      return 'standard_content';
+    }
+
+    function copyConfigFromBundle(bundle) {
+      const workflow = bundle.workflow || {};
+      const firstNode = (bundle.nodes || [])[0] || {};
+      const strategy = strategyFromBundle(bundle);
+      const binding = (bundle.agent_bindings || [])[0] || {};
+      const mpIds = ((firstNode.standard_content_payload || {}).miniprogram_library_ids) || [];
+      return {
+        action_name: `${workflow.workflow_name || '运营动作'} 副本`,
+        description: workflow.description || '',
+        status: 'draft',
+        trigger_type: firstNode.trigger_mode === 'audience_entered' ? 'audience_entered' : 'manual',
+        audience_type: audienceTypeFromBundle(bundle),
+        send_timing: sendTimingFromNode(firstNode),
+        content_strategy: strategy,
+        layer_basis: workflow.content_segmentation_basis === 'profile' ? 'profile' : 'behavior',
+        content_profile_segment_template_id: workflow.content_profile_segment_template_id || null,
+        agent_code: binding.agent_code || (state.agentOptions[0] || {}).agent_code || '',
+        generation_requirement: elements.generationRequirement.value || '基于用户当前状态生成自然、具体、可直接发送的跟进内容。',
+        standard_content_text: firstNode.standard_content_text || '',
+        content_variants: firstNode.content_variants || [],
+        audiences: (bundle.audiences || []).map((item) => item.audience_code).filter(Boolean),
+        recipient_behavior_tier_keys: workflow.recipient_behavior_tier_keys || [],
+        miniprogram_library_ids: mpIds,
+      };
+    }
+
+    function copyNodesFromBundle(bundle) {
+      return (bundle.nodes || []).map((node, index) => ({
+        node_name: node.node_name || `执行节点 ${index + 1}`,
+        target_audience_code: node.target_audience_code || 'operating',
+        trigger_mode: node.trigger_mode || 'scheduled',
+        day_offset: node.day_offset || 1,
+        send_time: node.send_time || '10:00',
+        content_source: node.standard_content_text ? 'custom' : 'inherit',
+        enabled: node.enabled !== false,
+        content_mode: node.content_mode,
+        segmentation_basis: node.segmentation_basis,
+        standard_content_text: node.standard_content_text || '',
+        standard_content_payload: node.standard_content_payload || {},
+        content_variants: node.content_variants || [],
+        miniprogram_library_ids: ((node.standard_content_payload || {}).miniprogram_library_ids) || [],
+      }));
+    }
+
+    async function copyAction(actionId) {
+      if (!actionId) return;
+      try {
+        const detail = await requestJson(withId(apiUrls.workflow_detail_base, actionId), { credentials: 'same-origin' });
+        const bundle = detail.workflow_bundle || {};
+        const result = await requestJson(apiUrls.action_from_template, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template_code: 'custom_operation_action',
+            config: copyConfigFromBundle(bundle),
+            nodes: copyNodesFromBundle(bundle),
+          }),
+        });
+        const copiedId = Number(result.workflow_id || (((result.workflow_bundle || {}).workflow || {}).id) || 0);
+        await loadActions();
+        if (copiedId) await loadExistingAction(copiedId);
+        showFeedback(elements.feedback, '已复制运营动作', '');
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '复制失败', 'error');
+      }
+    }
+
+    async function toggleActionStatus(actionId) {
+      if (!actionId) return;
+      const item = state.workflows.find((entry) => Number(workflowFromItem(entry).id || 0) === Number(actionId));
+      const workflow = workflowFromItem(item);
+      const active = workflow.status === 'active';
+      try {
+        await requestJson(withId(active ? apiUrls.workflow_pause_base : apiUrls.workflow_activate_base, actionId), {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+        await loadActions();
+        if (Number(state.currentActionId || 0) === Number(actionId)) await loadExistingAction(actionId);
+        showFeedback(elements.feedback, active ? '已停用运营动作' : '已启用运营动作', '');
+      } catch (error) {
+        showFeedback(elements.feedback, error.message || '状态更新失败', 'error');
+      }
+    }
+
+    async function createDraftActionFromTemplate(template, overrides) {
+      const baseConfig = dictConfig(template);
+      const config = {
+        ...baseConfig,
+        ...(overrides || {}),
+        status: 'draft',
+      };
+      const result = await requestJson(apiUrls.action_from_template, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_code: template.template_code || 'custom_operation_action',
+          config,
+        }),
+      });
+      const actionId = Number(result.workflow_id || (((result.workflow_bundle || {}).workflow || {}).id) || 0);
+      await loadActions();
+      if (actionId) await loadExistingAction(actionId);
+      return result;
+    }
+
+    function dictConfig(template) {
+      return { ...(template.default_config || {}) };
+    }
+
+    async function createActionFromModal() {
       try {
         if (state.createMode === 'ai_generated') {
           const result = await requestJson(apiUrls.action_template_generate, {
@@ -1201,34 +1476,23 @@
             }),
           });
           state.templates.push(result.template);
+          updateStartTemplateOptions();
           closeTemplateModal();
-          loadTemplate(result.template);
+          await createDraftActionFromTemplate(result.template, {
+            action_name: result.template.template_name || 'AI 生成动作',
+            description: result.template.description || '',
+          });
+          showFeedback(elements.feedback, '已创建 AI 生成动作草稿', '');
           return;
         }
-        const name = document.getElementById('crm-template-name').value.trim();
-        const category = document.getElementById('crm-template-category').value;
-        const description = document.getElementById('crm-template-description').value.trim();
-        const base = state.templates.find((item) => item.template_code === 'custom_operation_action') || {};
-        const result = await requestJson(apiUrls.action_templates, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            template_name: name,
-            template_source: 'crm_local',
-            category,
-            description,
-            default_config: { ...(base.default_config || {}), action_name: name, description },
-            ui_schema: base.ui_schema || {},
-            workflow_blueprint: base.workflow_blueprint || {},
-            node_blueprints: base.node_blueprints || [],
-          }),
-        });
-        state.templates.push(result.template);
+        const name = document.getElementById('crm-action-name').value.trim() || '新运营动作';
+        const templateRef = elements.crmStartTemplate.value || 'custom_operation_action';
+        const template = state.templates.find((item) => String(item.template_code || item.id || '') === String(templateRef)) || state.templates[0] || {};
         closeTemplateModal();
-        loadTemplate(result.template);
+        await createDraftActionFromTemplate(template, { action_name: name, description: template.description || '' });
+        showFeedback(elements.feedback, '已创建运营动作草稿', '');
       } catch (error) {
-        showFeedback(elements.modalFeedback, error.message || '创建模板失败', 'error');
+        showFeedback(elements.modalFeedback, error.message || '创建动作失败', 'error');
       }
     }
 
@@ -1254,9 +1518,61 @@
       const button = event.target.closest('[data-template-code]');
       if (!button) return;
       const template = state.templates.find((item) => item.template_code === button.dataset.templateCode);
-      if (template) loadTemplate(template);
+      if (!template) return;
+      closeActionTemplateModal();
+      createDraftActionFromTemplate(template, {
+        action_name: template.template_name || '新运营动作',
+        description: template.description || '',
+      }).then(() => {
+        showFeedback(elements.feedback, '已从模板创建动作草稿', '');
+      }).catch((error) => {
+        showFeedback(elements.feedback, error.message || '创建动作失败', 'error');
+      });
     });
     elements.templateSearch.addEventListener('input', renderTemplates);
+    if (elements.actionSearch) elements.actionSearch.addEventListener('input', renderActionList);
+    if (elements.actionStatusFilter) {
+      elements.actionStatusFilter.addEventListener('change', () => {
+        state.actionFilter = elements.actionStatusFilter.value || 'all';
+        renderActionList();
+      });
+    }
+    elements.actionList.addEventListener('click', async (event) => {
+      const openTarget = event.target.closest('[data-action-open]');
+      if (openTarget) {
+        event.stopPropagation();
+        await loadExistingAction(Number(openTarget.dataset.actionOpen || 0));
+        return;
+      }
+      const toggleTarget = event.target.closest('[data-action-toggle]');
+      if (toggleTarget) {
+        event.stopPropagation();
+        await toggleActionStatus(Number(toggleTarget.dataset.actionToggle || 0));
+        return;
+      }
+      const copyTarget = event.target.closest('[data-action-copy]');
+      if (copyTarget) {
+        event.stopPropagation();
+        await copyAction(Number(copyTarget.dataset.actionCopy || 0));
+        return;
+      }
+      const deleteTarget = event.target.closest('[data-action-delete]');
+      if (deleteTarget) {
+        event.stopPropagation();
+        await deleteAction(Number(deleteTarget.dataset.actionDelete || 0));
+        return;
+      }
+      const card = event.target.closest('[data-action-id]');
+      if (!card) return;
+      await loadExistingAction(Number(card.dataset.actionId || 0));
+    });
+    elements.actionList.addEventListener('keydown', async (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const card = event.target.closest('[data-action-id]');
+      if (!card || event.target.closest('[data-action-delete]')) return;
+      event.preventDefault();
+      await loadExistingAction(Number(card.dataset.actionId || 0));
+    });
     [elements.actionName, elements.actionStatus, elements.actionDescription, elements.triggerType, elements.audienceType, elements.sendTiming, elements.standardContentText, elements.layerBasis].forEach((input) => {
       input.addEventListener('input', renderPreview);
       input.addEventListener('change', renderPreview);
@@ -1309,12 +1625,12 @@
       renderNodes();
     });
     document.getElementById('save-draft-button').addEventListener('click', () => saveAction('draft'));
-    document.getElementById('save-active-button').addEventListener('click', () => saveAction('active'));
-    document.getElementById('save-as-template-button').addEventListener('click', saveAsTemplate);
-    document.getElementById('new-template-button').addEventListener('click', openTemplateModal);
+    document.getElementById('new-action-side-button').addEventListener('click', openTemplateModal);
+    document.getElementById('from-template-button').addEventListener('click', openActionTemplateModal);
+    document.getElementById('close-action-template-modal').addEventListener('click', closeActionTemplateModal);
     document.getElementById('close-template-modal').addEventListener('click', closeTemplateModal);
     document.getElementById('cancel-template-modal').addEventListener('click', closeTemplateModal);
-    document.getElementById('create-template-submit').addEventListener('click', createTemplateFromModal);
+    document.getElementById('create-template-submit').addEventListener('click', createActionFromModal);
 
     loadInitialData().catch((error) => showFeedback(elements.feedback, error.message || '加载失败', 'error'));
   })();
