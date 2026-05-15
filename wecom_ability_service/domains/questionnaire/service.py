@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
+import requests  # noqa: F401 - legacy external-push monkeypatch seam
 from flask import current_app, has_request_context, session
 
 from ...db import get_db
