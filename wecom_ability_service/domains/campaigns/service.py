@@ -25,23 +25,21 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ...db import get_db, get_db_backend
+from ...db import get_db
 from ..segments.service import get_segment, increment_usage
 from ..segments.sql_sandbox import fetch_member_rows
+from .time_helpers import DEFAULT_SEND_TIME as _DEFAULT_SEND_TIME
+from .time_helpers import DEFAULT_TIMEZONE as _DEFAULT_TIMEZONE
+from .time_helpers import campaign_step_due_iso
 
 
 logger = logging.getLogger(__name__)
 
 
 _VALID_ANCHOR_MODES = ("campaign_start_date", "member_joined_at")
-_DEFAULT_SEND_TIME = "09:00"
-_DEFAULT_TIMEZONE = "Asia/Shanghai"
-
-
 def _now_iso() -> str:
     # 同 scheduler._now_iso —— 必须 timezone-aware，否则 PG TIMESTAMPTZ 解读错位
     return datetime.now(timezone.utc).isoformat()
@@ -113,21 +111,12 @@ def _compute_first_step_due_iso(
     TIMESTAMPTZ 字段会按 server timezone（Asia/Shanghai）解读 naive 字符串，
     跨 UTC↔本地的写入会错位 8 小时，cron 立即扫到一个"已过期"的 due。
     """
-    try:
-        tzinfo = ZoneInfo(step_timezone or _DEFAULT_TIMEZONE)
-    except (ZoneInfoNotFoundError, ValueError):
-        tzinfo = ZoneInfo(_DEFAULT_TIMEZONE)
-    try:
-        base = datetime.fromisoformat((anchor_date or "")[:10])
-    except ValueError:
-        base = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    try:
-        hour_str, minute_str = (send_time or _DEFAULT_SEND_TIME).split(":")[:2]
-        base = base.replace(hour=int(hour_str), minute=int(minute_str))
-    except ValueError:
-        pass
-    base = base + timedelta(days=int(day_offset or 0))
-    return base.replace(tzinfo=tzinfo).isoformat()
+    return campaign_step_due_iso(
+        anchor_date=anchor_date,
+        day_offset=day_offset,
+        send_time=send_time,
+        step_timezone=step_timezone,
+    )
 
 
 # ---------- 创建 / 编辑 -----------------------------------------------------

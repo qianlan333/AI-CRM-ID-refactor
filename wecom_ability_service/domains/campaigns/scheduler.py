@@ -18,9 +18,9 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from ...db import get_db
+from .time_helpers import DEFAULT_TIMEZONE, campaign_step_due_iso
 
 
 logger = logging.getLogger(__name__)
@@ -51,21 +51,13 @@ def _due_at_for_step(
     step_timezone: str = "Asia/Shanghai",
 ) -> str:
     """算 step 的 due ISO — 必须输出 tz-aware，防止 PG 二次套时区。"""
-    try:
-        tzinfo = ZoneInfo(step_timezone or "Asia/Shanghai")
-    except Exception:
-        tzinfo = ZoneInfo("Asia/Shanghai")
-    try:
-        base = datetime.fromisoformat((anchor_date or "")[:10])
-    except ValueError:
-        base = datetime.now(tzinfo).replace(hour=0, minute=0, second=0, microsecond=0)
-    try:
-        h, m = (send_time or "09:00").split(":")[:2]
-        base = base.replace(hour=int(h), minute=int(m))
-    except ValueError:
-        pass
-    base = base + timedelta(days=int(day_offset))
-    return base.replace(tzinfo=tzinfo).isoformat()
+    return campaign_step_due_iso(
+        anchor_date=anchor_date,
+        day_offset=day_offset,
+        send_time=send_time,
+        step_timezone=step_timezone or DEFAULT_TIMEZONE,
+        fallback_to_timezone_today=True,
+    )
 
 
 def _has_inbound_since(*, external_userid: str, since_iso: str) -> bool:
