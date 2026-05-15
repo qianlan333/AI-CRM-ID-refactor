@@ -3,16 +3,16 @@ from __future__ import annotations
 from typing import Any
 
 from ...db import get_db, get_db_backend
+from ...db.helpers import fetchall_dicts, fetchone_dict
 from ...infra.json_utils import safe_json_loads as _json_loads
 
 
 def _fetchall_dict(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    return [dict(row) for row in get_db().execute(sql, params).fetchall()]
+    return fetchall_dicts(get_db(), sql, params)
 
 
 def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
-    row = get_db().execute(sql, params).fetchone()
-    return dict(row) if row else None
+    return fetchone_dict(get_db(), sql, params)
 
 
 def list_recent_customer_messages(external_userid: str, *, limit: int = 20) -> list[dict[str, Any]]:

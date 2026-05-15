@@ -1,5 +1,25 @@
 from __future__ import annotations
 
+from typing import Any, Iterable
+
+
+def fetchone_dict(db, sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    row = db.execute(sql, params).fetchone()
+    return dict(row) if row else None
+
+
+def fetchall_dicts(db, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    return [dict(row) for row in db.execute(sql, params).fetchall()]
+
+
+def fetch_inserted_id(cursor) -> int:
+    row = cursor.fetchone() or {}
+    return int((row or {}).get("id") or 0)
+
+
+def placeholders(values: Iterable[object]) -> str:
+    return ",".join("?" for _ in values)
+
 
 def _sqlite_table_columns(db, table_name: str) -> set[str]:
     """PG-only：用 information_schema 列出表的列名（前缀仍叫 _sqlite_ 是因为
