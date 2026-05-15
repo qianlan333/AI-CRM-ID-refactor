@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import os
 
-from script_runtime import ensure_repo_root_on_path
+try:
+    from scripts.script_runtime import ensure_repo_root_on_path
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from script_runtime import ensure_repo_root_on_path
 
 
 def main() -> None:

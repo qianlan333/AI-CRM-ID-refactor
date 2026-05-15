@@ -6,7 +6,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from script_runtime import ensure_repo_root_on_path, print_json
+try:
+    from scripts.script_runtime import ensure_repo_root_on_path, print_json
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from script_runtime import ensure_repo_root_on_path, print_json
 
 ensure_repo_root_on_path()
 

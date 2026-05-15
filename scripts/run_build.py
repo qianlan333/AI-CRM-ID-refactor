@@ -5,7 +5,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from script_runtime import ensure_repo_root_on_path
+try:
+    from scripts.script_runtime import ensure_repo_root_on_path
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from script_runtime import ensure_repo_root_on_path
 
 ROOT = ensure_repo_root_on_path()
 

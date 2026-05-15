@@ -4,7 +4,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from script_runtime import REPO_ROOT
+try:
+    from scripts.script_runtime import REPO_ROOT
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from script_runtime import REPO_ROOT
 
 ROOT = REPO_ROOT
 PYTHON_TARGETS = [
