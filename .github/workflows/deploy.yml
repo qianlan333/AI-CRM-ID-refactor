@@ -39,5 +39,10 @@ jobs:
             # 2) alembic 版本对齐 — 让后续可以走标准 upgrade 路径
             python3 -m alembic stamp head || true
             sudo systemctl restart openclaw-wecom-postgres.service
-            sleep 3
+            for _ in $(seq 1 20); do
+              if curl -sSf http://127.0.0.1:5001/health; then
+                break
+              fi
+              sleep 0.5
+            done
             curl -sSf http://127.0.0.1:5001/health

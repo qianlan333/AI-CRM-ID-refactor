@@ -39,6 +39,17 @@ def test_production_deploy_installs_dependencies_only_when_requirements_change()
     assert "requirements.txt unchanged; skipping pip install" in workflow
 
 
+def test_production_deploy_polls_health_after_restart_instead_of_fixed_sleep():
+    workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+
+    restart_index = workflow.index("sudo systemctl restart openclaw-wecom-postgres.service")
+    poll_index = workflow.index("for _ in $(seq 1 20); do")
+    health_index = workflow.index("curl -sSf http://127.0.0.1:5001/health")
+
+    assert restart_index < poll_index < health_index
+    assert "sleep 3" not in workflow
+
+
 def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert not (ROOT / "scripts" / "backup_sqlite.sh").exists()
 
