@@ -4,10 +4,9 @@ Extracted from service.py — line 51-629 helper region. Module-level
 imports complete copy (heavy import header) so helpers can call any
 application command/query / Flask util / outbound_webhook service.
 
-Note: tests only monkeypatch ``service.requests`` and ``service.domains``
-module attributes (not datetime). Helpers in this file do NOT call
-``requests.*`` directly (verified) — only main service.py uses requests
-for external push, so the requests.post monkeypatch keeps working.
+Note: helpers in this file intentionally keep the legacy underscore-prefixed
+names so the large questionnaire service can keep importing them without a
+wide behavior rewrite.
 """
 
 from __future__ import annotations
@@ -29,6 +28,7 @@ from ...application.identity_contact.queries import (
     ResolvePersonIdentityQuery,
 )
 from ...db import get_db
+from ...db.helpers import fetchall_dicts, fetchone_dict, placeholders
 from ...infra.json_utils import (
     json_array as _json_array,
     json_dumps as _json_dumps,
@@ -439,7 +439,8 @@ def _normalize_questionnaire_payload(
 
 
 def _get_questionnaire_row(questionnaire_id: int) -> dict[str, Any] | None:
-    return get_db().execute(
+    return fetchone_dict(
+        get_db(),
         """
         SELECT id, slug, name, title, description, is_disabled, redirect_url,
                answer_display_mode,
@@ -481,7 +482,9 @@ def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_questionnaire_questions(questionnaire_id: int) -> list[dict[str, Any]]:
-    question_rows = get_db().execute(
+    db = get_db()
+    question_rows = fetchall_dicts(
+        db,
         """
         SELECT id, questionnaire_id, type, title, placeholder_text, assessment_dimension_key,
                required, sort_order, created_at, updated_at
@@ -494,16 +497,17 @@ def _load_questionnaire_questions(questionnaire_id: int) -> list[dict[str, Any]]
     if not question_rows:
         return []
     question_ids = [int(row["id"]) for row in question_rows]
-    placeholders = ",".join("?" for _ in question_ids)
-    option_rows = get_db().execute(
+    question_placeholders = placeholders(question_ids)
+    option_rows = fetchall_dicts(
+        db,
         f"""
         SELECT id, question_id, option_text, score, assessment_type_key, tag_codes, sort_order, created_at, updated_at
         FROM questionnaire_options
-        WHERE question_id IN ({placeholders})
+        WHERE question_id IN ({question_placeholders})
         ORDER BY sort_order ASC, id ASC
         """,
         tuple(question_ids),
-    ).fetchall()
+    )
     options_by_question: dict[int, list[dict[str, Any]]] = {}
     for row in option_rows:
         options_by_question.setdefault(int(row["question_id"]), []).append(
@@ -538,7 +542,8 @@ def _load_questionnaire_questions(questionnaire_id: int) -> list[dict[str, Any]]
 
 
 def _load_questionnaire_score_rules(questionnaire_id: int) -> list[dict[str, Any]]:
-    rows = get_db().execute(
+    rows = fetchall_dicts(
+        get_db(),
         """
         SELECT id, questionnaire_id, min_score, max_score, tag_codes, sort_order, created_at, updated_at
         FROM questionnaire_score_rules
@@ -546,7 +551,7 @@ def _load_questionnaire_score_rules(questionnaire_id: int) -> list[dict[str, Any
         ORDER BY sort_order ASC, id ASC
         """,
         (int(questionnaire_id),),
-    ).fetchall()
+    )
     return [
         {
             "id": int(row["id"]),
@@ -563,14 +568,15 @@ def _load_questionnaire_score_rules(questionnaire_id: int) -> list[dict[str, Any
 
 
 def _questionnaire_submission_stats(questionnaire_id: int) -> dict[str, Any]:
-    row = get_db().execute(
+    row = fetchone_dict(
+        get_db(),
         """
         SELECT COUNT(*) AS submission_count, MAX(submitted_at) AS last_submitted_at
         FROM questionnaire_submissions
         WHERE questionnaire_id = ?
         """,
         (int(questionnaire_id),),
-    ).fetchone()
+    )
     return {
         "submission_count": int(row["submission_count"] or 0) if row else 0,
         "last_submitted_at": row.get("last_submitted_at", "") if row else "",
