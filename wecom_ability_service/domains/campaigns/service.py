@@ -241,7 +241,7 @@ def add_step_to_campaign(
 ) -> dict[str, Any]:
     db = get_db()
     cur = db.cursor()
-    # 用 ON CONFLICT 兼容 PG/SQLite（SQLite 3.24+），代替 SQLite-only 的 INSERT OR REPLACE
+    # PG-only upsert; keep this explicit and avoid legacy replace semantics.
     cur.execute(
         """
         INSERT INTO campaign_steps
@@ -740,7 +740,7 @@ def update_campaign_step(
     if not existing:
         raise LookupError(f"step {step_index} not found in campaign {campaign_id}")
 
-    # PG: jsonb 自动反序列化为 dict；SQLite: 是字符串。统一处理
+    # PG jsonb is already a dict; legacy JSON text is still accepted defensively.
     payload = parse_step_payload(dict(existing).get("content_payload_json"))
 
     sets: list[str] = []

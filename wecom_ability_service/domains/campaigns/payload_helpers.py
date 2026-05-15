@@ -6,7 +6,7 @@ from typing import Any
 
 
 def parse_step_payload(raw: Any) -> dict[str, Any]:
-    """Return a mutable payload dict from PG jsonb dicts or SQLite JSON strings."""
+    """Return a mutable payload dict from PG jsonb dicts or legacy JSON strings."""
     if isinstance(raw, dict):
         return dict(raw)
     if isinstance(raw, str):

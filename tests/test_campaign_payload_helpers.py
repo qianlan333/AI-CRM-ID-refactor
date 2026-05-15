@@ -17,7 +17,7 @@ def test_parse_step_payload_accepts_pg_jsonb_dict_copy():
     assert parsed is not raw
 
 
-def test_parse_step_payload_accepts_sqlite_json_string():
+def test_parse_step_payload_accepts_legacy_json_string():
     assert parse_step_payload('{"image_library_ids":[1, "2"]}') == {
         "image_library_ids": [1, "2"]
     }

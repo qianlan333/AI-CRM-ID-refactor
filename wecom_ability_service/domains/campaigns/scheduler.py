@@ -38,8 +38,7 @@ def _now_iso() -> str:
 def _empty_ts() -> None:
     """``campaign_members.next_due_at / last_step_sent_at`` 的"未设置"占位值。
 
-    历史上是 PG/SQLite 双语义；2026-05 砍 SQLite 后统一返回 ``None`` (PG NULL)。
-    保留函数名让 N 处 caller 不用改。
+    PG-only 后统一返回 ``None`` (PG NULL)。保留函数名让 N 处 caller 不用改。
     """
     return None
 
