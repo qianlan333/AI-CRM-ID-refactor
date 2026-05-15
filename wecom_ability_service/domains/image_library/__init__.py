@@ -103,9 +103,6 @@ def list_images(
     - ``only_unlabeled``：只返回 description / tags / category 任一为空的记录，
       给批量打标场景用
     """
-    from ...db import get_db_backend
-
-    is_pg = get_db_backend() == "postgres"
     db = get_db()
     cur = db.cursor()
     where: list[str] = []
@@ -117,29 +114,19 @@ def list_images(
     q_clean = (q or "").strip()
     if q_clean:
         like = f"%{q_clean}%"
-        where.append("(name ILIKE ? OR description ILIKE ?)" if is_pg
-                     else "(LOWER(name) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?))")
+        where.append("(name ILIKE ? OR description ILIKE ?)")
         params.extend([like, like])
 
     tag_filters = _normalize_tags(tags)
     if tag_filters:
-        if is_pg:
-            # 不用 JSONB 的 ``?|`` 操作符 —— cursor adapter 会把 ``?`` 翻译成
-            # ``%s`` 占位符，跟它撞车。改用 jsonb_array_elements_text 展开后
-            # ``= ANY(?)``，psycopg 会把 list 适配成 text[]。
-            where.append(
-                "EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) AS tt "
-                "WHERE tt = ANY(?))"
-            )
-            params.append(tag_filters)
-        else:
-            # SQLite: tags 是 JSON 字符串，对每个 tag 用 LIKE 匹配带引号的文本
-            sub: list[str] = []
-            for t in tag_filters:
-                sub.append("tags LIKE ?")
-                # JSON 数组里 tag 值带双引号，不会跟 description 混
-                params.append(f'%"{t}"%')
-            where.append("(" + " OR ".join(sub) + ")")
+        # 不用 JSONB 的 ``?|`` 操作符 —— cursor adapter 会把 ``?`` 翻译成
+        # ``%s`` 占位符，跟它撞车。改用 jsonb_array_elements_text 展开后
+        # ``= ANY(?)``，psycopg 会把 list 适配成 text[]。
+        where.append(
+            "EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) AS tt "
+            "WHERE tt = ANY(?))"
+        )
+        params.append(tag_filters)
 
     cat_clean = (category or "").strip()
     if cat_clean:
@@ -147,17 +134,10 @@ def list_images(
         params.append(cat_clean)
 
     if only_unlabeled:
-        if is_pg:
-            where.append(
-                "(description = '' OR category = '' "
-                "OR jsonb_array_length(tags) = 0)"
-            )
-        else:
-            # SQLite: tags 是 TEXT，'[]' 表示空数组
-            where.append(
-                "(description = '' OR category = '' "
-                "OR tags = '' OR tags = '[]')"
-            )
+        where.append(
+            "(description = '' OR category = '' "
+            "OR jsonb_array_length(tags) = 0)"
+        )
 
     sql = f"SELECT {_LIST_COLUMNS} FROM image_library"
     if where:
@@ -420,9 +400,6 @@ def find_image_references(image_id: int) -> dict[str, list[dict[str, Any]]]:
 
     只要任一非空，硬删就要么拒绝，要么 force 走 cascade 清理。
     """
-    from ...db import get_db_backend
-
-    is_pg = get_db_backend() == "postgres"
     image_id = int(image_id)
     db = get_db()
     cur = db.cursor()
@@ -435,43 +412,17 @@ def find_image_references(image_id: int) -> dict[str, list[dict[str, Any]]]:
     )
     minis = [dict(r) for r in (cur.fetchall() or [])]
 
-    # 2) campaign_steps：JSONB 数组 contains 整数。PG 用 @> '[id]'::jsonb；
-    # SQLite 是 TEXT，含 ``"image_library_ids"`` 数组的 JSON 串，用 LIKE 凑合
-    if is_pg:
-        # 直接用 JSONB 的 ``@>`` / ``?`` / ``?|`` 操作符会跟 cursor adapter
-        # 的 ``?`` → ``%s`` 翻译冲突。改写成 EXISTS + jsonb_array_elements_text
-        # 拆数组逐个比较，干净不踩坑。
-        cur.execute(
-            "SELECT id, campaign_id, step_index FROM campaign_steps "
-            "WHERE EXISTS ("
-            "  SELECT 1 FROM jsonb_array_elements_text("
-            "    COALESCE(content_payload_json -> 'image_library_ids', '[]'::jsonb)"
-            "  ) AS iid WHERE iid = ?"
-            ")",
-            (str(image_id),),
-        )
-    else:
-        # SQLite: content_payload_json 是 TEXT；image_library_ids 在 JSON 里
-        # 形如 ``"image_library_ids": [1, 2, 3]``。用 LIKE 配合两端 [, ] 边界
-        # 防止 12 误中 1。粗糙但够用（dev 用）。
-        like_a = f'%"image_library_ids":%[%, {image_id},%'
-        like_b = f'%"image_library_ids":%[ {image_id},%'
-        like_c = f'%"image_library_ids":%[ {image_id}]%'
-        like_d = f'%"image_library_ids":%[{image_id},%'
-        like_e = f'%"image_library_ids":%[{image_id}]%'
-        like_f = f'%"image_library_ids":%, {image_id}]%'
-        like_g = f'%"image_library_ids":%,{image_id}]%'
-        like_h = f'%"image_library_ids":%, {image_id},%'
-        like_i = f'%"image_library_ids":%,{image_id},%'
-        cur.execute(
-            "SELECT id, campaign_id, step_index FROM campaign_steps WHERE "
-            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
-            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
-            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
-            "content_payload_json LIKE ? OR content_payload_json LIKE ? OR "
-            "content_payload_json LIKE ?",
-            (like_a, like_b, like_c, like_d, like_e, like_f, like_g, like_h, like_i),
-        )
+    # 2) campaign_steps：拆开 JSONB 数组逐个比较。直接用 JSONB 的 ``@>`` /
+    # ``?`` / ``?|`` 操作符会跟 cursor adapter 的 ``?`` → ``%s`` 翻译冲突。
+    cur.execute(
+        "SELECT id, campaign_id, step_index FROM campaign_steps "
+        "WHERE EXISTS ("
+        "  SELECT 1 FROM jsonb_array_elements_text("
+        "    COALESCE(content_payload_json -> 'image_library_ids', '[]'::jsonb)"
+        "  ) AS iid WHERE iid = ?"
+        ")",
+        (str(image_id),),
+    )
     steps = [dict(r) for r in (cur.fetchall() or [])]
 
     return {"miniprograms": minis, "campaign_steps": steps}
@@ -488,9 +439,6 @@ def _cascade_clear_references(image_id: int) -> dict[str, int]:
 
     返回每张表清理的行数，给上游汇报用。
     """
-    from ...db import get_db_backend
-
-    is_pg = get_db_backend() == "postgres"
     image_id = int(image_id)
     db = get_db()
     cur = db.cursor()
@@ -502,54 +450,26 @@ def _cascade_clear_references(image_id: int) -> dict[str, int]:
     )
     minis_cleared = cur.rowcount or 0
 
-    if is_pg:
-        # PG: 用 jsonb_set + 过滤掉等于 image_id 的元素
-        cur.execute(
-            "UPDATE campaign_steps SET "
-            "content_payload_json = jsonb_set("
-            "  content_payload_json, "
-            "  '{image_library_ids}', "
-            "  COALESCE("
-            "    (SELECT jsonb_agg(elem) FROM jsonb_array_elements("
-            "      content_payload_json -> 'image_library_ids'"
-            "    ) AS elem WHERE elem::text::int <> ?),"
-            "    '[]'::jsonb"
-            "  )"
-            "), updated_at = CURRENT_TIMESTAMP "
-            "WHERE EXISTS ("
-            "  SELECT 1 FROM jsonb_array_elements_text("
-            "    COALESCE(content_payload_json -> 'image_library_ids', '[]'::jsonb)"
-            "  ) AS iid WHERE iid = ?"
-            ")",
-            (image_id, str(image_id)),
-        )
-        steps_cleared = cur.rowcount or 0
-    else:
-        # SQLite: 拉出来 Python 端改 + 写回，简单可靠
-        refs = find_image_references(image_id)
-        steps_cleared = 0
-        for step in refs["campaign_steps"]:
-            step_id = int(step["id"])
-            cur2 = db.cursor()
-            cur2.execute(
-                "SELECT content_payload_json FROM campaign_steps WHERE id = ?",
-                (step_id,),
-            )
-            row = cur2.fetchone()
-            if not row:
-                continue
-            payload = _decode_jsonb(dict(row).get("content_payload_json"), default={})
-            if not isinstance(payload, dict):
-                continue
-            ids = payload.get("image_library_ids") or []
-            new_ids = [int(x) for x in ids if int(x) != image_id]
-            payload["image_library_ids"] = new_ids
-            cur2.execute(
-                "UPDATE campaign_steps SET content_payload_json = ?, "
-                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (_to_jsonb_text(payload, default="{}"), step_id),
-            )
-            steps_cleared += 1
+    cur.execute(
+        "UPDATE campaign_steps SET "
+        "content_payload_json = jsonb_set("
+        "  content_payload_json, "
+        "  '{image_library_ids}', "
+        "  COALESCE("
+        "    (SELECT jsonb_agg(elem) FROM jsonb_array_elements("
+        "      content_payload_json -> 'image_library_ids'"
+        "    ) AS elem WHERE elem::text::int <> ?),"
+        "    '[]'::jsonb"
+        "  )"
+        "), updated_at = CURRENT_TIMESTAMP "
+        "WHERE EXISTS ("
+        "  SELECT 1 FROM jsonb_array_elements_text("
+        "    COALESCE(content_payload_json -> 'image_library_ids', '[]'::jsonb)"
+        "  ) AS iid WHERE iid = ?"
+        ")",
+        (image_id, str(image_id)),
+    )
+    steps_cleared = cur.rowcount or 0
 
     db.commit()
     return {"miniprograms_cleared": minis_cleared, "campaign_steps_cleared": steps_cleared}

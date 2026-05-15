@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import base64
-import json
 
 import pytest
 
@@ -401,13 +400,12 @@ def test_ai_metadata_roundtrip_complex_dict(app):
             ai_metadata=payload,
         )
         assert created["ai_metadata"] == payload
-        # 直接 SQL 看一下底层存的是合法 JSON 字符串（SQLite 路径）
-        from wecom_ability_service.db import get_db, get_db_backend
-        if get_db_backend() == "sqlite":
-            cur = get_db().cursor()
-            cur.execute(
-                "SELECT ai_metadata FROM image_library WHERE id = ?",
-                (created["id"],),
-            )
-            row = cur.fetchone()
-            assert json.loads(row["ai_metadata"]) == payload
+        from wecom_ability_service.db import get_db
+
+        cur = get_db().cursor()
+        cur.execute(
+            "SELECT ai_metadata FROM image_library WHERE id = ?",
+            (created["id"],),
+        )
+        row = cur.fetchone()
+        assert dict(row)["ai_metadata"] == payload
