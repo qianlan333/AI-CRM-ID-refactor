@@ -282,6 +282,30 @@ def test_postgres_init_adds_program_id_columns_before_schema_indexes():
         assert table_index < schema_replay_index
 
 
+def test_postgres_init_keeps_index_prerequisite_alters_before_schema_replay_only():
+    db_path = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "db" / "migrations" / "postgres_migrations.py"
+    source = db_path.read_text(encoding="utf-8")
+    init_postgres_source = source[source.index("def _init_postgres") :]
+    schema_replay_index = init_postgres_source.index("schema_path = Path(current_app.root_path) / \"schema_postgres.sql\"")
+    before_schema = init_postgres_source[:schema_replay_index]
+    after_schema = init_postgres_source[schema_replay_index:]
+
+    for fragment in (
+        "ADD COLUMN IF NOT EXISTS scenario_code TEXT NOT NULL DEFAULT 'one_to_one'",
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved'",
+        "ADD COLUMN IF NOT EXISTS created_by_agent TEXT NOT NULL DEFAULT ''",
+        "ADD COLUMN IF NOT EXISTS last_error_text TEXT NOT NULL DEFAULT ''",
+        "ADD COLUMN IF NOT EXISTS last_error_at TEXT NOT NULL DEFAULT ''",
+        "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+        "ADD COLUMN IF NOT EXISTS next_node_id BIGINT",
+        "ADD COLUMN IF NOT EXISTS segment_id BIGINT",
+        "ADD COLUMN IF NOT EXISTS campaign_id BIGINT",
+    ):
+        assert fragment in before_schema
+        assert fragment not in after_schema
+
+
 def test_postgres_init_backfills_miniprogram_thumb_image_id_column():
     db_path = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "db" / "migrations" / "postgres_migrations.py"
     source = db_path.read_text(encoding="utf-8")
