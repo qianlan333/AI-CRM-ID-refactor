@@ -10,7 +10,6 @@ from typing import Any
 import requests
 
 from ...db import get_db
-from ..archive.service import get_recent_messages_by_user
 from . import orchestration_service as orchestration_seams
 from . import repo
 from .orchestration_service import (
@@ -299,7 +298,12 @@ def run_agent_router_shadow_decision(
     now_text = _iso_now()
     request_id = f"router-shadow-{uuid.uuid4().hex}"
     run_id = f"arun-{uuid.uuid4().hex}"
-    history_messages = list(recent_messages or get_recent_messages_by_user(external_contact_id, limit=20))
+    history_messages = list(
+        recent_messages
+        # Keep the orchestration/service facade seam so callers get the default
+        # archive group-chat loader and tests can monkeypatch the legacy path.
+        or orchestration_seams.get_recent_messages_by_user(external_contact_id, limit=20)
+    )
     request_payload = {
         "request_id": request_id,
         "external_contact_id": _normalized_text(external_contact_id),
