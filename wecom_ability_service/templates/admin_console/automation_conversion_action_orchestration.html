@@ -11,6 +11,23 @@
     min-width: 0;
   }
 
+  .admin-page-hero--program-compact {
+    padding: 14px 18px;
+  }
+
+  .admin-page-hero--program-compact .admin-page-hero__head {
+    margin-bottom: 2px;
+  }
+
+  .admin-page-hero--program-compact .ac-workspace-tabs--program-hero {
+    justify-content: flex-start;
+  }
+
+  .admin-page-hero--program-compact .ac-workspace-tab {
+    min-height: 0;
+    padding: 10px 14px;
+  }
+
   .op-action-panel h2,
   .op-action-section h3 {
     margin: 0;
@@ -165,6 +182,16 @@
     opacity: 0.72;
   }
 
+  .op-current-action-card__desc {
+    color: #667085;
+    font-size: 13px;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .op-card-feedback {
     border-radius: 10px;
     padding: 8px 10px;
@@ -257,6 +284,50 @@
     background: #fbfcff;
   }
 
+  .op-node-content,
+  .op-node-materials {
+    display: grid;
+    gap: 10px;
+  }
+
+  .op-strategy-note {
+    border: 1px solid rgba(51, 112, 255, 0.18);
+    border-radius: 12px;
+    padding: 12px;
+    background: #f7fbff;
+    color: #475467;
+    line-height: 1.6;
+  }
+
+  .op-layer-chip-list,
+  .op-selected-materials,
+  .op-asset-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .op-layer-chip,
+  .op-material-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: #eef5ff;
+    color: #1456f0;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .op-material-chip button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-weight: 800;
+  }
+
   .op-node-head {
     display: flex;
     justify-content: space-between;
@@ -292,6 +363,10 @@
     box-shadow: 0 24px 70px rgba(15, 23, 42, 0.25);
   }
 
+  .op-modal-card--assets {
+    width: min(920px, 100%);
+  }
+
   .op-modal-head,
   .op-modal-body {
     padding: 18px;
@@ -302,6 +377,32 @@
     justify-content: space-between;
     gap: 16px;
     border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  }
+
+  .op-asset-card {
+    display: grid;
+    gap: 6px;
+    width: calc(50% - 4px);
+    min-width: 220px;
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    border-radius: 12px;
+    padding: 12px;
+    background: #fff;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .op-asset-card.is-selected {
+    border-color: rgba(51, 112, 255, 0.56);
+    background: #eef5ff;
+  }
+
+  .op-asset-card img {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: 10px;
+    background: #f2f4f7;
   }
 
   .op-feedback {
@@ -368,6 +469,7 @@
 
 {% block content %}
 {% set workspace = operations_workspace or {} %}
+{% set compact_program_context = true %}
 {% include "admin_console/_automation_program_context.html" %}
 {% include "admin_console/_automation_conversion_workspace_tabs.html" %}
 
@@ -385,7 +487,7 @@
     <aside class="op-action-panel">
       <div class="op-action-panel__head">
         <h2>运营动作</h2>
-        <p class="op-muted">当前方案已有动作、可新增动作，也可删除无效动作。</p>
+        <p class="op-muted">已有动作、新增、复制、启停和删除都在这里。</p>
       </div>
       <div class="op-action-panel__body">
         <div class="op-side-tools">
@@ -465,36 +567,12 @@
         </div>
 
         <div class="op-config-box" id="personalized-config" style="margin-top:14px;">
-          <div class="op-field-grid">
-            <label class="admin-field">
-              <span>智能体选择</span>
-              <select id="agent-code"></select>
-            </label>
-            <label class="admin-field">
-              <span>附带内容</span>
-              <select id="personalized-context">
-                <option value="questionnaire_result">问卷结果 / 推荐课程</option>
-                <option value="profile_tags">标签和画像</option>
-                <option value="none">不附带额外内容</option>
-              </select>
-            </label>
-          </div>
-          <label class="admin-field" style="margin-top:12px;">
-            <span>生成要求</span>
-            <textarea id="generation-requirement" rows="4"></textarea>
-          </label>
+          <div class="op-strategy-note">已选择 Agent 单人定制化。每个执行节点里单独选择节点 Agent、生成方式和素材。</div>
           <div class="op-inline-warning" id="agent-binding-warning" hidden></div>
         </div>
 
         <div class="op-config-box" id="standard-config" style="margin-top:14px;" hidden>
-          <label class="admin-field">
-            <span>发送内容</span>
-            <textarea id="standard-content-text" rows="5"></textarea>
-          </label>
-          <label class="admin-field" style="margin-top:12px;">
-            <span>小程序卡片</span>
-            <input type="text" id="miniprogram-library-ids" placeholder="填写素材 ID，多个用逗号分隔；留空则不附带">
-          </label>
+          <div class="op-strategy-note">已选择统一内容。具体发送内容和素材在每个执行节点里填写。</div>
         </div>
 
         <div class="op-config-box" id="layered-config" style="margin-top:14px;" hidden>
@@ -510,7 +588,7 @@
             <span>画像分层模板</span>
             <select id="profile-template-id"></select>
           </label>
-          <div class="op-field-grid op-field-grid--three" id="layered-content-grid" style="margin-top:12px;"></div>
+          <div class="op-layer-chip-list" id="layered-content-grid" style="margin-top:12px;"></div>
         </div>
       </section>
 
@@ -608,6 +686,23 @@
       </div>
     </div>
   </div>
+
+  <div class="op-modal" id="asset-picker-modal" hidden>
+    <div class="op-modal-card op-modal-card--assets">
+      <div class="op-modal-head">
+        <div>
+          <h2 id="asset-picker-title">选择素材</h2>
+          <p class="op-muted" id="asset-picker-copy">从素材库中选择，选中后会回填到当前节点。</p>
+        </div>
+        <button class="admin-button admin-button--ghost" id="asset-picker-close" type="button">关闭</button>
+      </div>
+      <div class="op-modal-body">
+        <div class="op-feedback" id="asset-picker-feedback" hidden></div>
+        <div class="op-asset-list" id="asset-picker-list"></div>
+        <div class="op-empty op-muted" id="asset-picker-empty" hidden>暂无可选素材。</div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -643,11 +738,7 @@
       triggerType: document.getElementById('trigger-type'),
       audienceType: document.getElementById('audience-type'),
       sendTiming: document.getElementById('send-timing'),
-      agentCode: document.getElementById('agent-code'),
       agentBindingWarning: document.getElementById('agent-binding-warning'),
-      generationRequirement: document.getElementById('generation-requirement'),
-      standardContentText: document.getElementById('standard-content-text'),
-      miniprogramLibraryIds: document.getElementById('miniprogram-library-ids'),
       layerBasis: document.getElementById('layer-basis'),
       profileTemplateField: document.getElementById('profile-template-field'),
       profileTemplateId: document.getElementById('profile-template-id'),
@@ -661,6 +752,12 @@
       crmStartTemplate: document.getElementById('crm-start-template'),
       saveDraftButton: document.getElementById('save-draft-button'),
       emptyNewActionButton: document.getElementById('empty-new-action-button'),
+      assetPickerModal: document.getElementById('asset-picker-modal'),
+      assetPickerTitle: document.getElementById('asset-picker-title'),
+      assetPickerCopy: document.getElementById('asset-picker-copy'),
+      assetPickerFeedback: document.getElementById('asset-picker-feedback'),
+      assetPickerList: document.getElementById('asset-picker-list'),
+      assetPickerEmpty: document.getElementById('asset-picker-empty'),
     };
 
     const state = {
@@ -682,6 +779,9 @@
       actionOperations: {},
       actionErrors: {},
       loadingActionId: null,
+      miniprogramItems: [],
+      imageItems: [],
+      assetPicker: { type: '', nodeIndex: null },
     };
 
     const triggerOptions = [
@@ -821,24 +921,16 @@
 
     function ensureAgentOption(agentCode) {
       const code = String(agentCode || '').trim();
-      if (!code || !elements.agentCode) return;
-      const exists = Array.from(elements.agentCode.options).some((option) => option.value === code);
-      if (exists) return;
-      const option = document.createElement('option');
-      option.value = code;
-      option.dataset.agentCode = code;
-      option.textContent = `${code}（需确认是否可用）`;
-      elements.agentCode.appendChild(option);
+      if (!code) return;
+      const exists = state.agentOptions.some((item) => normalizedAgentCode(item) === code);
+      if (!exists) {
+        state.agentOptions.push({ agent_code: code, agent_name: `${code}（需确认是否可用）` });
+      }
     }
 
     function selectedAgentCode() {
-      const option = elements.agentCode ? elements.agentCode.selectedOptions[0] : null;
-      return String(
-        (elements.agentCode || {}).value ||
-        (option || {}).dataset?.agentCode ||
-        (option || {}).value ||
-        ''
-      ).trim();
+      const node = firstEnabledNodeAgent(state.nodes);
+      return String(node || '').trim();
     }
 
     function sourceClass(source) {
@@ -941,6 +1033,7 @@
             <span class="op-current-action-card__meta">
               <span>${escapeHtml(actionAudienceLabel(item))} · ${escapeHtml(nodeCount || 0)} 个节点</span>
             </span>
+            ${workflow.description ? `<span class="op-current-action-card__desc">${escapeHtml(workflow.description)}</span>` : ''}
             <span class="op-current-action-card__actions">
               <button class="admin-button admin-button--secondary" type="button" data-action-open="${escapeHtml(id)}" ${disabled}>${operation === 'open' ? '加载中...' : '编辑'}</button>
               <button class="admin-button admin-button--ghost" type="button" data-action-toggle="${escapeHtml(id)}" ${disabled}>${operation === 'toggle' ? '处理中...' : (enabled ? '停用' : '启用')}</button>
@@ -997,6 +1090,21 @@
       }));
     }
 
+    function tagTargets() {
+      return [
+        { key: 'tag_low_intent', label: '低互动标签' },
+        { key: 'tag_high_intent', label: '高意向标签' },
+        { key: 'tag_custom', label: '指定标签' },
+      ];
+    }
+
+    function currentLayerTargets() {
+      const basis = elements.layerBasis.value;
+      if (basis === 'profile') return profileTargets();
+      if (basis === 'tag') return tagTargets();
+      return behaviorTargets();
+    }
+
     async function ensureProfileTemplateDetail() {
       const templateId = Number(elements.profileTemplateId.value || 0);
       if (!templateId || state.profileTemplateDetails[templateId]) return;
@@ -1036,31 +1144,17 @@
       document.getElementById('layered-config').hidden = strategy !== 'layered_content';
       if (strategy !== 'personalized_agent') setAgentWarning('');
       renderLayeredContent();
+      renderNodes();
       renderPreview();
     }
 
     function renderLayeredContent() {
       const basis = elements.layerBasis.value;
       elements.profileTemplateField.hidden = basis !== 'profile';
-      const targets = basis === 'profile'
-        ? profileTargets()
-        : basis === 'tag'
-        ? [
-            { key: 'tag_low_intent', label: '低互动标签' },
-            { key: 'tag_high_intent', label: '高意向标签' },
-            { key: 'tag_custom', label: '指定标签' },
-          ]
-        : behaviorTargets();
-      elements.layeredContentGrid.innerHTML = targets.map((target) => {
-        const existing = state.nodes.find((node) => Array.isArray(node.content_variants)) || {};
-        const variant = (existing.content_variants || []).find((item) => String(item.segment_key || '') === String(target.key));
-        return `
-          <label class="admin-field">
-            <span>${escapeHtml(target.label)}</span>
-            <textarea rows="5" data-layer-key="${escapeHtml(target.key)}">${escapeHtml((variant || {}).content_text || '')}</textarea>
-          </label>
-        `;
-      }).join('');
+      const targets = currentLayerTargets();
+      elements.layeredContentGrid.innerHTML = targets.length
+        ? targets.map((target) => `<span class="op-layer-chip">${escapeHtml(target.label)}</span>`).join('')
+        : '<span class="op-muted">请选择画像分层模板后查看分层标签。</span>';
     }
 
     function defaultNodeFromConfig(templateConfig) {
@@ -1090,20 +1184,19 @@
       fillSelect(elements.triggerType, triggerOptions, config.trigger_type || 'manual');
       fillSelect(elements.audienceType, audienceOptions, config.audience_type || 'custom');
       fillSelect(elements.sendTiming, sendTimingOptions, config.send_timing || 'immediate');
-      elements.generationRequirement.value = config.generation_requirement || '基于用户当前状态生成自然、具体、可直接发送的跟进内容。';
-      elements.standardContentText.value = config.standard_content_text || '';
       elements.layerBasis.value = config.layer_basis === 'profile' ? 'profile' : 'behavior';
       const firstAgent = normalizedAgentCode(state.agentOptions[0]);
       const configuredAgent = config.agent_code || config.default_agent_code || firstAgent;
       ensureAgentOption(configuredAgent);
-      elements.agentCode.value = configuredAgent;
       setAgentWarning('');
       const templateNodes = Array.isArray(template.node_blueprints) ? template.node_blueprints : [];
       state.nodes = templateNodes.length ? templateNodes.map((node, index) => ({
         ...node,
         temp_id: `template-${index + 1}`,
-        content_source: node.content_source || 'inherit',
-      })) : [defaultNodeFromConfig(config)];
+        agent_code: node.agent_code || configuredAgent || '',
+        standard_content_text: node.standard_content_text || config.standard_content_text || '',
+        standard_content_payload: nodePayload(node),
+      })) : [{ ...defaultNodeFromConfig(config), agent_code: configuredAgent || '', standard_content_text: config.standard_content_text || '' }];
       state.deletedNodeIds = [];
       setContentStrategy(config.content_strategy || 'standard_content');
       renderNodes();
@@ -1125,7 +1218,146 @@
       return `第 ${node.day_offset || 1} 天 ${node.send_time || '10:00'}`;
     }
 
+    function agentOptionsHtml(selected) {
+      const selectedCode = String(selected || '').trim();
+      if (!state.agentOptions.length) return '<option value="">请先创建智能体</option>';
+      const options = state.agentOptions.map((item) => {
+        const code = normalizedAgentCode(item);
+        return `<option value="${escapeHtml(code)}" data-agent-code="${escapeHtml(code)}" ${code === selectedCode ? 'selected' : ''}>${escapeHtml(agentDisplayName(item) || code)}</option>`;
+      });
+      if (selectedCode && !state.agentOptions.some((item) => normalizedAgentCode(item) === selectedCode)) {
+        options.push(`<option value="${escapeHtml(selectedCode)}" data-agent-code="${escapeHtml(selectedCode)}" selected>${escapeHtml(selectedCode)}（需确认是否可用）</option>`);
+      }
+      return options.join('');
+    }
+
+    function nodePayload(node) {
+      const payload = node.standard_content_payload && typeof node.standard_content_payload === 'object' ? node.standard_content_payload : {};
+      const mpIds = Array.isArray(payload.miniprogram_library_ids)
+        ? payload.miniprogram_library_ids
+        : Array.isArray(node.miniprogram_library_ids)
+        ? node.miniprogram_library_ids
+        : [];
+      const imageIds = Array.isArray(payload.image_library_ids)
+        ? payload.image_library_ids
+        : Array.isArray(node.image_library_ids)
+        ? node.image_library_ids
+        : [];
+      return {
+        ...payload,
+        miniprogram_library_ids: mpIds.map(Number).filter(Boolean),
+        image_library_ids: imageIds.map(Number).filter(Boolean),
+      };
+    }
+
+    function assetName(type, id) {
+      const source = type === 'image' ? state.imageItems : state.miniprogramItems;
+      const item = source.find((entry) => Number(entry.id || entry.library_id || 0) === Number(id));
+      if (!item) return `${type === 'image' ? '图片' : '小程序'}素材 #${id}`;
+      return item.name || item.title || item.file_name || item.path || `${type === 'image' ? '图片' : '小程序'}素材 #${id}`;
+    }
+
+    function selectedMaterialHtml(node, index) {
+      const payload = nodePayload(node);
+      const chips = [];
+      payload.miniprogram_library_ids.forEach((id) => {
+        chips.push(`<span class="op-material-chip">小程序：${escapeHtml(assetName('miniprogram', id))}<button type="button" aria-label="移除小程序素材" data-material-remove="miniprogram" data-material-id="${escapeHtml(id)}" data-material-node="${escapeHtml(index)}">×</button></span>`);
+      });
+      payload.image_library_ids.forEach((id) => {
+        chips.push(`<span class="op-material-chip">图片：${escapeHtml(assetName('image', id))}<button type="button" aria-label="移除图片素材" data-material-remove="image" data-material-id="${escapeHtml(id)}" data-material-node="${escapeHtml(index)}">×</button></span>`);
+      });
+      return chips.length ? chips.join('') : '<span class="op-muted">当前节点未选择素材。</span>';
+    }
+
+    function variantText(node, key) {
+      const variants = Array.isArray(node.content_variants) ? node.content_variants : [];
+      const match = variants.find((item) => String(item.segment_key || '') === String(key));
+      return String((match || {}).content_text || '');
+    }
+
+    function personalizedNodeFields(node) {
+      return `
+        <div class="op-field-grid">
+          <label class="admin-field">
+            <span>节点 Agent</span>
+            <select data-node-field="agent_code">${agentOptionsHtml(node.agent_code)}</select>
+          </label>
+          <label class="admin-field">
+            <span>生成方式</span>
+            <select data-node-field="generation_method">
+              <option value="questionnaire_result" ${(node.generation_method || 'questionnaire_result') === 'questionnaire_result' ? 'selected' : ''}>结合问卷结果生成</option>
+              <option value="profile_tags" ${node.generation_method === 'profile_tags' ? 'selected' : ''}>结合标签和画像生成</option>
+              <option value="simple_followup" ${node.generation_method === 'simple_followup' ? 'selected' : ''}>生成轻量跟进内容</option>
+            </select>
+          </label>
+        </div>
+      `;
+    }
+
+    function standardNodeFields(node) {
+      return `
+        <label class="admin-field">
+          <span>发送内容</span>
+          <textarea rows="4" data-node-field="standard_content_text">${escapeHtml(node.standard_content_text || '')}</textarea>
+        </label>
+      `;
+    }
+
+    function layeredNodeFields(node) {
+      const targets = currentLayerTargets();
+      if (!targets.length) return '<div class="op-inline-warning">请先选择分层依据和分层模板。</div>';
+      return `<div class="op-field-grid">${targets.map((target) => `
+        <label class="admin-field">
+          <span>${escapeHtml(target.label)}话术</span>
+          <textarea rows="4" data-node-layer-key="${escapeHtml(target.key)}">${escapeHtml(variantText(node, target.key))}</textarea>
+        </label>
+      `).join('')}</div>`;
+    }
+
+    function nodeContentFields(node) {
+      if (state.contentStrategy === 'personalized_agent') return personalizedNodeFields(node);
+      if (state.contentStrategy === 'layered_content') return layeredNodeFields(node);
+      return standardNodeFields(node);
+    }
+
+    function syncNodesFromDom() {
+      if (!elements.nodeList) return;
+      elements.nodeList.querySelectorAll('[data-node-index]').forEach((card) => {
+        const index = Number(card.dataset.nodeIndex || 0);
+        const current = state.nodes[index];
+        if (!current) return;
+        current.node_name = (card.querySelector('[data-node-field="node_name"]') || {}).value || current.node_name || '';
+        current.target_audience_code = (card.querySelector('[data-node-field="target_audience_code"]') || {}).value || current.target_audience_code || 'operating';
+        current.enabled = !!((card.querySelector('[data-node-field="enabled"]') || {}).checked);
+        const timing = (card.querySelector('[data-node-field="timing"]') || {}).value || 'daily_10';
+        if (timing === 'immediate') {
+          current.trigger_mode = 'audience_entered';
+          delete current.day_offset;
+          delete current.send_time;
+        } else {
+          current.trigger_mode = timing.startsWith('daily') ? 'daily_recurring' : 'scheduled';
+          current.day_offset = timing === 'day_3_10' ? 3 : 1;
+          current.send_time = timing === 'daily_14' ? '14:00' : '10:00';
+        }
+        const agentInput = card.querySelector('[data-node-field="agent_code"]');
+        if (agentInput) current.agent_code = String(agentInput.value || '').trim();
+        const methodInput = card.querySelector('[data-node-field="generation_method"]');
+        if (methodInput) current.generation_method = methodInput.value;
+        const contentInput = card.querySelector('[data-node-field="standard_content_text"]');
+        if (contentInput) current.standard_content_text = String(contentInput.value || '').trim();
+        const layerInputs = Array.from(card.querySelectorAll('[data-node-layer-key]'));
+        if (layerInputs.length) {
+          current.content_variants = layerInputs.map((input) => ({
+            segment_key: input.dataset.nodeLayerKey || '',
+            content_text: String(input.value || '').trim(),
+          })).filter((item) => item.segment_key);
+        }
+        current.standard_content_payload = nodePayload(current);
+      });
+    }
+
     function renderNodes() {
+      syncNodesFromDom();
       elements.nodeList.innerHTML = state.nodes.map((node, index) => `
         <article class="op-node-card" data-node-index="${index}">
           <div class="op-node-head">
@@ -1161,32 +1393,28 @@
             </label>
           </div>
           <div class="op-field-grid" style="margin-top:10px;">
-            <label class="admin-field">
-              <span>内容来源</span>
-              <select data-node-field="content_source">
-                <option value="inherit" ${(node.content_source || 'inherit') === 'inherit' ? 'selected' : ''}>继承内容策略</option>
-                <option value="custom" ${node.content_source === 'custom' ? 'selected' : ''}>单独填写内容</option>
-              </select>
-            </label>
             <label class="admin-checkbox" style="align-self:end;">
               <input type="checkbox" data-node-field="enabled" ${node.enabled === false ? '' : 'checked'}>
               <span>启用当前节点</span>
             </label>
           </div>
-          <label class="admin-field" style="margin-top:10px;" ${node.content_source === 'custom' ? '' : 'hidden'}>
-            <span>单独填写内容</span>
-            <textarea rows="4" data-node-field="standard_content_text">${escapeHtml(node.standard_content_text || '')}</textarea>
-          </label>
+          <div class="op-node-content">
+            ${nodeContentFields(node)}
+          </div>
+          <div class="op-node-materials">
+            <div class="op-inline-actions">
+              <button class="admin-button admin-button--secondary" type="button" data-material-pick="miniprogram" data-material-node="${index}">选择小程序素材</button>
+              <button class="admin-button admin-button--secondary" type="button" data-material-pick="image" data-material-node="${index}">选择图片素材</button>
+            </div>
+            <div class="op-selected-materials">${selectedMaterialHtml(node, index)}</div>
+          </div>
         </article>
       `).join('');
       renderPreview();
     }
 
     function collectLayeredVariants() {
-      return Array.from(elements.layeredContentGrid.querySelectorAll('textarea[data-layer-key]')).map((input) => ({
-        segment_key: input.dataset.layerKey || '',
-        content_text: String(input.value || '').trim(),
-      })).filter((item) => item.segment_key);
+      return [];
     }
 
     function selectedAudienceCodes() {
@@ -1194,6 +1422,19 @@
       if (audienceType === 'pending_questionnaire') return ['pending_questionnaire'];
       if (audienceType === 'high_intent') return ['operating', 'converted'];
       return ['operating'];
+    }
+
+    function enabledNodes(nodes) {
+      return (Array.isArray(nodes) ? nodes : []).filter((node) => node.enabled !== false);
+    }
+
+    function firstEnabledNodeAgent(nodes) {
+      const match = enabledNodes(nodes).find((node) => String(node.agent_code || '').trim());
+      return match ? String(match.agent_code || '').trim() : '';
+    }
+
+    function uniqueEnabledNodeAgents(nodes) {
+      return Array.from(new Set(enabledNodes(nodes).map((node) => String(node.agent_code || '').trim()).filter(Boolean)));
     }
 
     function collectConfig(statusOverride) {
@@ -1210,26 +1451,15 @@
         content_strategy: state.contentStrategy,
         layer_basis: state.contentStrategy === 'layered_content' ? elements.layerBasis.value : 'none',
         content_profile_segment_template_id: Number(elements.profileTemplateId.value || 0) || null,
-        agent_code: selectedAgentCode(),
-        generation_requirement: String(elements.generationRequirement.value || '').trim(),
-        standard_content_text: String(elements.standardContentText.value || '').trim(),
         content_variants: collectLayeredVariants(),
         audiences: selectedAudienceCodes(),
         recipient_behavior_tier_keys: state.contentStrategy === 'layered_content' && elements.layerBasis.value === 'behavior' ? ['lt_2', 'between_2_9'] : [],
-        miniprogram_library_ids: String(elements.miniprogramLibraryIds.value || '').split(',').map((item) => Number(item.trim())).filter(Boolean),
       };
       if (!config.action_name) throw new Error('动作名称不能为空。');
       if (config.content_strategy === 'personalized_agent' && state.agentOptions.length === 0) {
         throw new Error('当前还没有可用智能体，请先创建或启用一个智能体，再保存 Agent 单人定制化动作。');
       }
-      if (config.content_strategy === 'personalized_agent' && !config.agent_code) {
-        throw new Error('这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。');
-      }
-      if (config.content_strategy === 'standard_content' && !config.standard_content_text) throw new Error('统一内容不能为空');
       if (config.content_strategy === 'layered_content' && !config.layer_basis) throw new Error('请先选择分层依据。');
-      if (config.content_strategy === 'layered_content' && config.content_variants.some((item) => !item.content_text)) {
-        throw new Error('请补全每个分层的话术');
-      }
       if (config.content_strategy === 'layered_content' && config.layer_basis === 'profile' && !config.content_profile_segment_template_id) {
         throw new Error('请先选择画像分层模板');
       }
@@ -1237,6 +1467,8 @@
     }
 
     function collectNodes(config) {
+      syncNodesFromDom();
+      const layerTargets = currentLayerTargets();
       return state.nodes.map((node, index) => {
         const current = { ...node };
         const card = elements.nodeList.querySelector(`[data-node-index="${index}"]`);
@@ -1244,7 +1476,6 @@
           current.node_name = card.querySelector('[data-node-field="node_name"]').value.trim();
           current.target_audience_code = card.querySelector('[data-node-field="target_audience_code"]').value;
           const timing = card.querySelector('[data-node-field="timing"]').value;
-          current.content_source = card.querySelector('[data-node-field="content_source"]').value;
           current.enabled = card.querySelector('[data-node-field="enabled"]').checked;
           if (timing === 'immediate') {
             current.trigger_mode = 'audience_entered';
@@ -1255,9 +1486,20 @@
             current.day_offset = timing === 'day_3_10' ? 3 : 1;
             current.send_time = timing === 'daily_14' ? '14:00' : '10:00';
           }
-          const customInput = card.querySelector('[data-node-field="standard_content_text"]');
-          if (current.content_source === 'custom' && customInput) {
-            current.standard_content_text = customInput.value.trim();
+          const agentInput = card.querySelector('[data-node-field="agent_code"]');
+          if (agentInput) current.agent_code = String(agentInput.value || '').trim();
+          const methodInput = card.querySelector('[data-node-field="generation_method"]');
+          if (methodInput) current.generation_method = methodInput.value;
+          const contentInput = card.querySelector('[data-node-field="standard_content_text"]');
+          if (contentInput) {
+            current.standard_content_text = contentInput.value.trim();
+          }
+          const layerInputs = Array.from(card.querySelectorAll('[data-node-layer-key]'));
+          if (layerInputs.length) {
+            current.content_variants = layerInputs.map((input) => ({
+              segment_key: input.dataset.nodeLayerKey || '',
+              content_text: String(input.value || '').trim(),
+            })).filter((item) => item.segment_key);
           }
         }
         if (config.content_strategy === 'personalized_agent') {
@@ -1265,18 +1507,18 @@
         } else if (config.content_strategy === 'layered_content') {
           current.content_mode = 'manual_layered';
           current.segmentation_basis = config.layer_basis === 'profile' ? 'profile' : 'behavior';
-          current.content_variants = config.content_variants;
+          current.content_variants = (current.content_variants || []).filter((item) => layerTargets.some((target) => String(target.key) === String(item.segment_key)));
         } else {
           current.content_mode = 'standard_direct';
-          current.standard_content_text = current.content_source === 'custom' ? current.standard_content_text : config.standard_content_text;
         }
         current.position_index = index;
-        current.miniprogram_library_ids = config.miniprogram_library_ids;
+        current.standard_content_payload = nodePayload(current);
         return current;
       });
     }
 
-    function actionPayloadFromConfig(config) {
+    function actionPayloadFromConfig(config, nodes) {
+      const personalizedAgents = uniqueEnabledNodeAgents(nodes);
       const payload = {
         workflow_name: config.action_name,
         description: config.description,
@@ -1290,7 +1532,9 @@
         agent_bindings: [],
       };
       if (config.content_strategy === 'personalized_agent') {
-        payload.agent_bindings = [{ binding_scope: 'personalized', segment_key: 'personalized', agent_code: config.agent_code }];
+        payload.agent_bindings = personalizedAgents.length === 1
+          ? [{ binding_scope: 'personalized', segment_key: 'personalized', agent_code: personalizedAgents[0] }]
+          : [];
       }
       return payload;
     }
@@ -1301,24 +1545,27 @@
         if (state.agentOptions.length === 0) {
           throw new Error('当前还没有可用智能体，请先创建或启用一个智能体，再保存 Agent 单人定制化动作。');
         }
-        if (!config.agent_code) {
+        const activeNodes = enabledNodes(nodes);
+        if (activeNodes.some((node) => !String(node.agent_code || '').trim())) {
+          throw new Error('当前节点还没有选择智能体，请先选择后再保存。');
+        }
+        const agents = uniqueEnabledNodeAgents(nodes);
+        if (!agents.length) {
           throw new Error('这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。');
+        }
+        if (agents.length > 1) {
+          throw new Error('当前版本暂不支持多个节点使用不同智能体，请先选择同一个智能体。');
         }
         const bindings = Array.isArray(payload.agent_bindings) ? payload.agent_bindings : [];
         if (payload.generation_mode !== 'personalized_single' || bindings.length !== 1 || bindings[0].binding_scope !== 'personalized' || bindings[0].segment_key !== 'personalized' || !bindings[0].agent_code) {
           throw new Error('这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。');
         }
       }
-      if (config.content_strategy === 'standard_content' && !config.standard_content_text) {
-        throw new Error('统一内容不能为空。');
-      }
       if (config.content_strategy === 'layered_content') {
         if (!config.layer_basis) throw new Error('请先选择分层依据。');
         if (config.layer_basis === 'profile' && !config.content_profile_segment_template_id) {
           throw new Error('请先选择画像分层模板。');
         }
-        if (!config.content_variants.length) throw new Error('请至少填写一个分层话术。');
-        if (config.content_variants.some((item) => !item.content_text)) throw new Error('请补全每个分层的话术。');
       }
       nodes.forEach((node, index) => {
         const position = `第 ${index + 1} 个节点`;
@@ -1327,6 +1574,20 @@
         if (!String(node.trigger_mode || '').trim()) throw new Error(`${position} 的执行时间不能为空。`);
         if (node.trigger_mode !== 'audience_entered' && !String(node.send_time || '').trim()) {
           throw new Error(`${position} 的执行时间不能为空。`);
+        }
+        if (node.enabled === false) return;
+        if (config.content_strategy === 'standard_content' && !String(node.standard_content_text || '').trim()) {
+          throw new Error('当前节点还没有填写发送内容，请补充后再保存。');
+        }
+        if (config.content_strategy === 'layered_content') {
+          const variants = Array.isArray(node.content_variants) ? node.content_variants : [];
+          const targets = currentLayerTargets();
+          if (!targets.length) throw new Error('当前节点还有分层话术未填写，请补齐后再保存。');
+          const missing = targets.some((target) => {
+            const variant = variants.find((item) => String(item.segment_key || '') === String(target.key));
+            return !variant || !String(variant.content_text || '').trim();
+          });
+          if (missing) throw new Error('当前节点还有分层话术未填写，请补齐后再保存。');
         }
       });
     }
@@ -1344,15 +1605,19 @@
       }
       if (config.content_strategy === 'personalized_agent') {
         payload.content_mode = 'personalized_single';
+        const nodeAgentCode = node.agent_code || config.agent_code || '';
+        payload.agent_bindings = nodeAgentCode
+          ? [{ binding_scope: 'personalized', segment_key: 'personalized', agent_code: nodeAgentCode }]
+          : [];
       } else if (config.content_strategy === 'layered_content') {
         payload.content_mode = 'manual_layered';
         payload.segmentation_basis = config.layer_basis === 'profile' ? 'profile' : 'behavior';
-        payload.content_variants = node.content_variants || config.content_variants;
+        payload.content_variants = node.content_variants || [];
       } else {
         payload.content_mode = 'standard_direct';
-        payload.standard_content_text = node.standard_content_text || config.standard_content_text;
+        payload.standard_content_text = node.standard_content_text || (node.enabled === false ? '未启用节点内容待补充' : '');
       }
-      payload.standard_content_payload = { miniprogram_library_ids: config.miniprogram_library_ids || [] };
+      payload.standard_content_payload = nodePayload(node);
       return payload;
     }
 
@@ -1366,8 +1631,11 @@
         showFeedback(elements.feedback, '', '');
         const config = collectConfig(statusOverride);
         const nodes = collectNodes(config);
-        const workflowPayload = actionPayloadFromConfig(config);
+        const workflowPayload = actionPayloadFromConfig(config, nodes);
         validateActionPayload(config, nodes, workflowPayload);
+        if (config.content_strategy === 'personalized_agent') {
+          config.agent_code = uniqueEnabledNodeAgents(nodes)[0] || '';
+        }
         let actionId = Number(state.currentActionId || 0) || Number(((state.workflowBundle || {}).workflow || {}).id || 0);
         if (!actionId) {
           const result = await requestJson(apiUrls.action_from_template, {
@@ -1455,7 +1723,7 @@
               description: config.description,
               default_config: config,
               node_blueprints: nodes,
-              workflow_blueprint: actionPayloadFromConfig(config),
+              workflow_blueprint: actionPayloadFromConfig(config, nodes),
             }),
           });
           state.templates.push(result.template);
@@ -1499,18 +1767,20 @@
       const binding = findPersonalizedBinding(bundle);
       if (strategy === 'personalized_agent') {
         ensureAgentOption((binding || {}).agent_code);
-        elements.agentCode.value = (binding || {}).agent_code || '';
         setAgentWarning(binding && binding.agent_code ? '' : '当前动作为 Agent 单人定制化，但缺少智能体绑定，请补充后保存。');
       } else {
         ensureAgentOption((binding || {}).agent_code);
-        elements.agentCode.value = (binding || {}).agent_code || normalizedAgentCode(state.agentOptions[0]) || '';
         setAgentWarning('');
       }
-      const firstNode = (bundle.nodes || [])[0] || {};
-      elements.standardContentText.value = firstNode.standard_content_text || '';
-      const mpIds = (((firstNode.standard_content_payload || {}).miniprogram_library_ids) || []).join(',');
-      elements.miniprogramLibraryIds.value = mpIds;
-      state.nodes = (bundle.nodes || []).map((node) => ({ ...node, content_source: node.standard_content_text ? 'custom' : 'inherit' }));
+      state.nodes = (bundle.nodes || []).map((node) => {
+        const nodeBinding = findPersonalizedBinding({ agent_bindings: node.agent_bindings || [], nodes: [] }) || {};
+        return {
+          ...node,
+          agent_code: nodeBinding.agent_code || ((binding || {}).agent_code) || node.agent_code || '',
+          generation_method: node.generation_method || 'questionnaire_result',
+          standard_content_payload: nodePayload(node),
+        };
+      });
       if (!state.nodes.length) state.nodes = [defaultNodeFromConfig({ action_name: action.workflow_name })];
       state.deletedNodeIds = [];
       state.selectedTemplate = state.templates.find((item) => item.template_code === (strategy === 'personalized_agent' ? 'questionnaire_submit_followup' : hasVariants ? 'low_interaction_wakeup' : 'custom_operation_action')) || state.templates[0] || null;
@@ -1588,12 +1858,6 @@
       elements.profileTemplateId.innerHTML = state.profileTemplateOptions.length
         ? '<option value="">请选择画像分层模板</option>' + state.profileTemplateOptions.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.template_name || item.template_code)}</option>`).join('')
         : '<option value="">暂无可用画像分层模板</option>';
-      elements.agentCode.innerHTML = state.agentOptions.length
-        ? state.agentOptions.map((item) => {
-            const code = normalizedAgentCode(item);
-            return `<option value="${escapeHtml(code)}" data-agent-code="${escapeHtml(code)}">${escapeHtml(agentDisplayName(item) || code)}</option>`;
-          }).join('')
-        : '<option value="">请先创建智能体</option>';
       renderActionList();
       if (state.currentActionId) {
         const requestedId = Number(state.currentActionId || 0);
@@ -1696,7 +1960,6 @@
       const strategy = strategyFromBundle(bundle);
       const binding = findPersonalizedBinding(bundle) || {};
       const fallbackAgentCode = normalizedAgentCode(state.agentOptions[0]);
-      const mpIds = ((firstNode.standard_content_payload || {}).miniprogram_library_ids) || [];
       return {
         action_name: `${workflow.workflow_name || '运营动作'} 副本`,
         description: workflow.description || '',
@@ -1708,12 +1971,10 @@
         layer_basis: workflow.content_segmentation_basis === 'profile' ? 'profile' : 'behavior',
         content_profile_segment_template_id: workflow.content_profile_segment_template_id || null,
         agent_code: binding.agent_code || fallbackAgentCode || '',
-        generation_requirement: elements.generationRequirement.value || '基于用户当前状态生成自然、具体、可直接发送的跟进内容。',
         standard_content_text: firstNode.standard_content_text || '',
         content_variants: firstNode.content_variants || [],
         audiences: (bundle.audiences || []).map((item) => item.audience_code).filter(Boolean),
         recipient_behavior_tier_keys: workflow.recipient_behavior_tier_keys || [],
-        miniprogram_library_ids: mpIds,
       };
     }
 
@@ -1732,6 +1993,8 @@
         standard_content_payload: node.standard_content_payload || {},
         content_variants: node.content_variants || [],
         miniprogram_library_ids: ((node.standard_content_payload || {}).miniprogram_library_ids) || [],
+        image_library_ids: ((node.standard_content_payload || {}).image_library_ids) || [],
+        agent_code: ((node.agent_bindings || []).find((item) => item.binding_scope === 'personalized' || item.segment_key === 'personalized') || {}).agent_code || (findPersonalizedBinding(bundle) || {}).agent_code || '',
       }));
     }
 
@@ -1790,6 +2053,86 @@
       } finally {
         setActionOperation(actionId, '');
       }
+    }
+
+    async function ensureAssetItems(type) {
+      if (type === 'image') {
+        if (state.imageItems.length) return state.imageItems;
+        const payload = await requestJson('/api/admin/image-library?enabled_only=false&limit=200', { credentials: 'same-origin' });
+        state.imageItems = payload.items || [];
+        return state.imageItems;
+      }
+      if (state.miniprogramItems.length) return state.miniprogramItems;
+      const payload = await requestJson('/api/admin/miniprogram-library?enabled_only=false', { credentials: 'same-origin' });
+      state.miniprogramItems = payload.items || [];
+      return state.miniprogramItems;
+    }
+
+    function assetId(item) {
+      return Number(item.id || item.library_id || 0);
+    }
+
+    function assetThumb(item) {
+      return item.preview_url || item.url || item.image_url || item.thumb_url || item.thumb_image_url || item.data_url || '';
+    }
+
+    function selectedAssetIds(type, nodeIndex) {
+      const node = state.nodes[nodeIndex] || {};
+      const payload = nodePayload(node);
+      return type === 'image' ? payload.image_library_ids : payload.miniprogram_library_ids;
+    }
+
+    function renderAssetPickerItems(type, items) {
+      const selected = new Set(selectedAssetIds(type, state.assetPicker.nodeIndex).map(Number));
+      elements.assetPickerList.innerHTML = items.map((item) => {
+        const id = assetId(item);
+        const title = item.name || item.title || item.file_name || `素材 #${id}`;
+        const desc = item.description || item.path || item.category || '';
+        const thumb = type === 'image' ? assetThumb(item) : '';
+        return `
+          <button class="op-asset-card ${selected.has(id) ? 'is-selected' : ''}" type="button" data-asset-id="${escapeHtml(id)}">
+            ${thumb ? `<img src="${escapeHtml(thumb)}" alt="">` : ''}
+            <strong>${escapeHtml(title)}</strong>
+            ${desc ? `<span class="op-muted">${escapeHtml(desc)}</span>` : ''}
+            <span class="op-badge">${selected.has(id) ? '已选择' : '选择'}</span>
+          </button>
+        `;
+      }).join('');
+      elements.assetPickerEmpty.hidden = items.length > 0;
+    }
+
+    async function openAssetPicker(type, nodeIndex) {
+      syncNodesFromDom();
+      state.assetPicker = { type, nodeIndex };
+      elements.assetPickerTitle.textContent = type === 'image' ? '选择图片素材' : '选择小程序素材';
+      elements.assetPickerCopy.textContent = '从素材库中选择，选中后会回填到当前节点。';
+      elements.assetPickerModal.hidden = false;
+      showFeedback(elements.assetPickerFeedback, '', '');
+      elements.assetPickerList.innerHTML = '';
+      try {
+        const items = await ensureAssetItems(type);
+        renderAssetPickerItems(type, items);
+      } catch (error) {
+        showFeedback(elements.assetPickerFeedback, userFacingErrorMessage(error, '素材库加载失败，请稍后重试。'), 'error');
+      }
+    }
+
+    function closeAssetPicker() {
+      elements.assetPickerModal.hidden = true;
+      state.assetPicker = { type: '', nodeIndex: null };
+    }
+
+    function toggleNodeAsset(type, nodeIndex, id) {
+      const node = state.nodes[nodeIndex];
+      if (!node || !id) return;
+      const payload = nodePayload(node);
+      const field = type === 'image' ? 'image_library_ids' : 'miniprogram_library_ids';
+      const ids = new Set((payload[field] || []).map(Number));
+      if (ids.has(Number(id))) ids.delete(Number(id));
+      else ids.add(Number(id));
+      payload[field] = Array.from(ids);
+      node.standard_content_payload = payload;
+      renderNodes();
     }
 
     async function createDraftActionFromTemplate(template, overrides) {
@@ -1928,21 +2271,15 @@
       event.preventDefault();
       await selectAction(Number(card.dataset.actionId || 0));
     });
-    [elements.actionName, elements.actionStatus, elements.actionDescription, elements.triggerType, elements.audienceType, elements.sendTiming, elements.standardContentText, elements.layerBasis].forEach((input) => {
+    [elements.actionName, elements.actionStatus, elements.actionDescription, elements.triggerType, elements.audienceType, elements.sendTiming, elements.layerBasis].forEach((input) => {
       input.addEventListener('input', renderPreview);
       input.addEventListener('change', renderPreview);
     });
-    elements.agentCode.addEventListener('change', () => {
-      if (elements.agentCode.value) setAgentWarning('');
-      if (isAgentSelectionError(elements.feedback.textContent)) showFeedback(elements.feedback, '', '');
-      if (isAgentSelectionError(elements.listFeedback.textContent)) showFeedback(elements.listFeedback, '', '');
-      renderPreview();
-    });
-    elements.layeredContentGrid.addEventListener('input', renderPreview);
     elements.profileTemplateId.addEventListener('change', async () => {
       try {
         await ensureProfileTemplateDetail();
         renderLayeredContent();
+        renderNodes();
         renderPreview();
       } catch (error) {
         showFeedback(elements.feedback, error.message || '加载画像分层模板失败', 'error');
@@ -1953,18 +2290,30 @@
         try { await ensureProfileTemplateDetail(); } catch (error) { showFeedback(elements.feedback, error.message || '加载画像分层模板失败', 'error'); }
       }
       renderLayeredContent();
+      renderNodes();
       renderPreview();
     });
     elements.nodeList.addEventListener('input', renderPreview);
     elements.nodeList.addEventListener('change', (event) => {
-      const card = event.target.closest('[data-node-index]');
-      if (event.target.matches('[data-node-field="content_source"]') && card) {
-        const textareaLabel = card.querySelector('label:has([data-node-field="standard_content_text"])');
-        if (textareaLabel) textareaLabel.hidden = event.target.value !== 'custom';
+      if (event.target.matches('[data-node-field="agent_code"]')) {
+        if (event.target.value) setAgentWarning('');
+        if (isAgentSelectionError(elements.feedback.textContent)) showFeedback(elements.feedback, '', '');
+        if (isAgentSelectionError(elements.listFeedback.textContent)) showFeedback(elements.listFeedback, '', '');
       }
+      syncNodesFromDom();
       renderPreview();
     });
     elements.nodeList.addEventListener('click', (event) => {
+      const picker = event.target.closest('[data-material-pick]');
+      if (picker) {
+        openAssetPicker(picker.dataset.materialPick, Number(picker.dataset.materialNode || 0));
+        return;
+      }
+      const materialRemove = event.target.closest('[data-material-remove]');
+      if (materialRemove) {
+        toggleNodeAsset(materialRemove.dataset.materialRemove, Number(materialRemove.dataset.materialNode || 0), Number(materialRemove.dataset.materialId || 0));
+        return;
+      }
       const remove = event.target.closest('[data-node-remove]');
       if (!remove) return;
       const index = Number(remove.dataset.nodeRemove || 0);
@@ -1972,6 +2321,14 @@
       if (removed && removed.id) state.deletedNodeIds.push(Number(removed.id));
       if (!state.nodes.length) state.nodes.push(defaultNodeFromConfig({ action_name: elements.actionName.value || '执行节点' }));
       renderNodes();
+    });
+    elements.assetPickerList.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-asset-id]');
+      if (!card) return;
+      const id = Number(card.dataset.assetId || 0);
+      toggleNodeAsset(state.assetPicker.type, Number(state.assetPicker.nodeIndex || 0), id);
+      const items = state.assetPicker.type === 'image' ? state.imageItems : state.miniprogramItems;
+      renderAssetPickerItems(state.assetPicker.type, items);
     });
     document.getElementById('add-node-button').addEventListener('click', () => {
       state.nodes.push({
@@ -1981,7 +2338,8 @@
         day_offset: state.nodes.length + 1,
         send_time: '10:00',
         enabled: true,
-        content_source: 'inherit',
+        agent_code: state.contentStrategy === 'personalized_agent' ? firstEnabledNodeAgent(state.nodes) : '',
+        standard_content_payload: { miniprogram_library_ids: [], image_library_ids: [] },
       });
       renderNodes();
     });
@@ -1993,6 +2351,7 @@
     document.getElementById('close-template-modal').addEventListener('click', closeTemplateModal);
     document.getElementById('cancel-template-modal').addEventListener('click', closeTemplateModal);
     document.getElementById('create-template-submit').addEventListener('click', createActionFromModal);
+    document.getElementById('asset-picker-close').addEventListener('click', closeAssetPicker);
 
     loadInitialData().catch((error) => {
       showFeedback(elements.feedback, userFacingErrorMessage(error, '运营动作加载失败，请刷新页面后重试。'), 'error');

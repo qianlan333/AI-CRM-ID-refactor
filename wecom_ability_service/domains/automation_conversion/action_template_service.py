@@ -642,11 +642,33 @@ def _node_payload_from_blueprint(
     elif content_mode == NODE_CONTENT_MODE_MANUAL_LAYERED:
         payload["segmentation_basis"] = SEGMENTATION_BASIS_BEHAVIOR if layer_basis == "behavior" else SEGMENTATION_BASIS_PROFILE if layer_basis == "profile" else SEGMENTATION_BASIS_BEHAVIOR
         payload["content_variants"] = list(node.get("content_variants") or config.get("content_variants") or _behavior_variants())
-    miniprogram_ids = node.get("miniprogram_library_ids") or config.get("miniprogram_library_ids") or []
+    elif content_mode == NODE_CONTENT_MODE_PERSONALIZED_SINGLE:
+        node_agent_code = _normalized_text(node.get("agent_code"))
+        payload["agent_bindings"] = [
+            {
+                **binding,
+                "agent_code": node_agent_code or binding.get("agent_code"),
+            }
+            for binding in _agent_binding_for_strategy(config, CONTENT_STRATEGY_PERSONALIZED_AGENT, layer_basis)
+        ]
+    material_payload = dict(node.get("standard_content_payload") or {})
+    miniprogram_ids = node.get("miniprogram_library_ids") or material_payload.get("miniprogram_library_ids") or config.get("miniprogram_library_ids") or []
+    image_ids = node.get("image_library_ids") or material_payload.get("image_library_ids") or config.get("image_library_ids") or []
+    normalized_material_payload: dict[str, Any] = {}
     if miniprogram_ids:
-        payload["standard_content_payload"] = {
-            "miniprogram_library_ids": [_normalize_int(item, default=0, minimum=0) for item in miniprogram_ids if _normalize_int(item, default=0, minimum=0) > 0]
-        }
+        normalized_material_payload["miniprogram_library_ids"] = [
+            _normalize_int(item, default=0, minimum=0)
+            for item in miniprogram_ids
+            if _normalize_int(item, default=0, minimum=0) > 0
+        ]
+    if image_ids:
+        normalized_material_payload["image_library_ids"] = [
+            _normalize_int(item, default=0, minimum=0)
+            for item in image_ids
+            if _normalize_int(item, default=0, minimum=0) > 0
+        ]
+    if normalized_material_payload:
+        payload["standard_content_payload"] = normalized_material_payload
     return payload
 
 

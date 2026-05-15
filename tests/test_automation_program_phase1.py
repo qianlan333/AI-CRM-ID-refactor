@@ -324,6 +324,11 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "触发与对象" in html
     assert "内容策略" in html
     assert "执行节点" in html
+    assert "节点 Agent" in html
+    assert "生成方式" in html
+    assert "选择小程序素材" in html
+    assert "选择图片素材" in html
+    assert "asset-picker-modal" in html
     assert "action-list-feedback" in html
     assert "正在加载..." in html
     assert "正在加载运营动作..." in html
@@ -340,8 +345,15 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "data-agent-code" in html
     assert "isAgentSelectionError" in html
     assert "@media (max-width: 1280px)" not in html
+    assert 'id="agent-code"' not in html
+    assert 'id="standard-content-text"' not in html
+    assert 'id="generation-requirement"' not in html
+    assert 'id="miniprogram-library-ids"' not in html
     assert "保存并启用" not in html
     assert "执行预览" not in html
+    assert "默认自动化转化方案" not in html
+    assert "编辑方案" not in html
+    assert "复制方案" not in html
     assert "在一个页面里维护当前方案下所有运营动作" not in html
 
 
