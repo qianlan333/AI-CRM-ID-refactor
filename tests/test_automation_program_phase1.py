@@ -317,12 +317,13 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
 
     assert response.status_code == 200
     assert "运营动作编排" in html
-    assert "运营动作模板" in html
+    assert "运营动作列表" in html
+    assert "新增运营动作" in html
     assert "触发与对象" in html
     assert "内容策略" in html
     assert "执行节点" in html
-    assert "执行预览" in html
     assert "新建动作模板" in html
+    assert "执行预览" not in html
 
 
 def test_ai_action_template_generate_returns_chinese_error_when_model_unavailable(app, client, monkeypatch):
