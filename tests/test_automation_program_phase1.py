@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.admin_auth import save_admin_user
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture()
@@ -833,6 +837,11 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "当前选择的智能体不可用，请重新选择。" in html
     assert "function normalizedAgentCode" in html
     assert "function selectedAgentCode" in html
+    assert "function businessConfigFromBundle" in html
+    assert "operation_config: operationConfigPayload(config)" in html
+    assert "fillSelect(elements.triggerType, triggerOptions, config.trigger_type || 'manual');" in html
+    assert "fillSelect(elements.audienceType, audienceOptions, config.audience_type || 'custom');" in html
+    assert "fillSelect(elements.sendTiming, sendTimingOptions, config.send_timing || 'manual');" in html
     assert "data-agent-code" in html
     assert "isAgentSelectionError" in html
     assert "@media (max-width: 1280px)" not in html
@@ -846,6 +855,24 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "编辑方案" not in html
     assert "复制方案" not in html
     assert "在一个页面里维护当前方案下所有运营动作" not in html
+
+
+def test_action_orchestration_reload_uses_saved_business_config():
+    html = (
+        REPO_ROOT
+        / "wecom_ability_service/templates/admin_console/_automation_operation_orchestration_panel.html"
+    ).read_text(encoding="utf-8")
+
+    load_existing_match = re.search(r"async function loadExistingAction\(actionId\) \{(?P<body>.*?)\n    async function selectAction", html, re.S)
+    assert load_existing_match
+    load_existing_body = load_existing_match.group("body")
+    assert "const config = businessConfigFromBundle(bundle);" in load_existing_body
+    assert "fillSelect(elements.triggerType, triggerOptions, config.trigger_type || 'manual');" in load_existing_body
+    assert "fillSelect(elements.audienceType, audienceOptions, config.audience_type || 'custom');" in load_existing_body
+    assert "fillSelect(elements.sendTiming, sendTimingOptions, config.send_timing || 'manual');" in load_existing_body
+    assert "fillSelect(elements.triggerType, triggerOptions, 'manual');" not in load_existing_body
+    assert "fillSelect(elements.sendTiming, sendTimingOptions, 'manual');" not in load_existing_body
+    assert "operation_config: operationConfigPayload(config)" in html
 
 
 def test_ai_action_template_generate_returns_chinese_error_when_model_unavailable(app, client, monkeypatch):
