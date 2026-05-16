@@ -71,28 +71,43 @@ def _normalize_status(
     return normalized if normalized in allowed else default
 
 
+def _legacy_bool_filter_status(
+    value: Any,
+    *,
+    true_status: str,
+    false_status: str,
+    default: str = "all",
+) -> str:
+    normalized = _normalize_str(value).lower()
+    if normalized in {"1", "true", "yes"}:
+        return true_status
+    if normalized in {"0", "false", "no"}:
+        return false_status
+    return default
+
+
 def _normalize_filter_payload(filters: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, str]:
     payload = dict(filters or {})
     payload.update({key: value for key, value in kwargs.items() if value is not None})
 
     wecom_status = _normalize_status(payload.get("wecom_status"), allowed={"all", "added", "not_added"})
     if wecom_status == "all":
-        legacy_wecom = _normalize_str(payload.get("is_wecom_added")).lower()
-        if legacy_wecom in {"1", "true", "yes"}:
-            wecom_status = "added"
-        elif legacy_wecom in {"0", "false", "no"}:
-            wecom_status = "not_added"
+        wecom_status = _legacy_bool_filter_status(
+            payload.get("is_wecom_added"),
+            true_status="added",
+            false_status="not_added",
+        )
 
     mobile_binding_status = _normalize_status(
         payload.get("mobile_binding_status"),
         allowed={"all", "bound", "unbound"},
     )
     if mobile_binding_status == "all":
-        legacy_mobile_bound = _normalize_str(payload.get("is_mobile_bound")).lower()
-        if legacy_mobile_bound in {"1", "true", "yes"}:
-            mobile_binding_status = "bound"
-        elif legacy_mobile_bound in {"0", "false", "no"}:
-            mobile_binding_status = "unbound"
+        mobile_binding_status = _legacy_bool_filter_status(
+            payload.get("is_mobile_bound"),
+            true_status="bound",
+            false_status="unbound",
+        )
 
     activation_bucket = _normalize_status(
         payload.get("activation_bucket"),

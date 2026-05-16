@@ -59,6 +59,27 @@ def _lead_pool_filters_dto_from_request_args() -> LeadPoolFiltersDTO:
     return LeadPoolFiltersDTO(**_page_filters_from_request_args())
 
 
+def _deprecated_internal_only_response(message: str):
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": "deprecated_internal_only",
+                "message": message,
+            }
+        ),
+        410,
+    )
+
+
+def _pasted_text_from_request() -> str:
+    if request.is_json:
+        return str((request.get_json(silent=True) or {}).get("pasted_text") or "").strip()
+    if request.mimetype == "text/plain":
+        return request.get_data(as_text=True).strip()
+    return str(request.form.get("pasted_text") or "").strip()
+
+
 def _parse_json_form_field(field_name: str, default):
     raw = str(request.form.get(field_name) or "").strip()
     if not raw:
@@ -143,28 +164,14 @@ def admin_user_ops_history():
 
 
 def admin_user_ops_reload():
-    return (
-        jsonify(
-            {
-                "ok": False,
-                "error": "deprecated_internal_only",
-                "message": "legacy user-ops reload is no longer part of admin V2; use internal maintenance helpers only",
-            }
-        ),
-        410,
+    return _deprecated_internal_only_response(
+        "legacy user-ops reload is no longer part of admin V2; use internal maintenance helpers only"
     )
 
 
 def admin_user_ops_import_experience_leads():
-    return (
-        jsonify(
-            {
-                "ok": False,
-                "error": "deprecated_internal_only",
-                "message": "legacy experience-leads import is no longer exposed by admin V2",
-            }
-        ),
-        410,
+    return _deprecated_internal_only_response(
+        "legacy experience-leads import is no longer exposed by admin V2"
     )
 
 
@@ -183,12 +190,7 @@ def admin_user_ops_import_mobile_class_terms():
             return jsonify({"ok": False, "error": str(exc)}), 400
         return jsonify(payload)
 
-    if request.is_json:
-        pasted_text = str((request.get_json(silent=True) or {}).get("pasted_text") or "").strip()
-    elif request.mimetype == "text/plain":
-        pasted_text = request.get_data(as_text=True).strip()
-    else:
-        pasted_text = str(request.form.get("pasted_text") or "").strip()
+    pasted_text = _pasted_text_from_request()
     if not pasted_text:
         return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
     try:
@@ -215,12 +217,7 @@ def admin_user_ops_import_activation_status():
             return jsonify({"ok": False, "error": str(exc)}), 400
         return jsonify(payload)
 
-    if request.is_json:
-        pasted_text = str((request.get_json(silent=True) or {}).get("pasted_text") or "").strip()
-    elif request.mimetype == "text/plain":
-        pasted_text = request.get_data(as_text=True).strip()
-    else:
-        pasted_text = str(request.form.get("pasted_text") or "").strip()
+    pasted_text = _pasted_text_from_request()
     if not pasted_text:
         return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
     try:
@@ -233,15 +230,8 @@ def admin_user_ops_import_activation_status():
 
 
 def admin_user_ops_backfill_class_term():
-    return (
-        jsonify(
-            {
-                "ok": False,
-                "error": "deprecated_internal_only",
-                "message": "legacy class-term backfill is no longer exposed by admin V2",
-            }
-        ),
-        410,
+    return _deprecated_internal_only_response(
+        "legacy class-term backfill is no longer exposed by admin V2"
     )
 
 
