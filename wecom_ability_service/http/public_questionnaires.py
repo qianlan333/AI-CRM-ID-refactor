@@ -325,14 +325,15 @@ def h5_wechat_oauth_start():
     slug = request.args.get("slug", "").strip()
     if not slug:
         return jsonify({"ok": False, "error": "slug is required"}), 400
-    state = _encode_oauth_state({"slug": slug, **_questionnaire_source_params()})
+    source_params = _questionnaire_source_params()
+    state = _encode_oauth_state({"slug": slug, **source_params})
     redirect_uri = _wechat_oauth_callback_url()
     _questionnaire_logger().info(
         "oauth start slug=%s source_channel=%s campaign_id=%s staff_id=%s redirect_uri=%s",
         slug,
-        request.args.get("source_channel", "").strip(),
-        request.args.get("campaign_id", "").strip(),
-        request.args.get("staff_id", "").strip(),
+        source_params.get("source_channel", ""),
+        source_params.get("campaign_id", ""),
+        source_params.get("staff_id", ""),
         redirect_uri,
     )
     authorize_url = _wechat_oauth_authorize_url(

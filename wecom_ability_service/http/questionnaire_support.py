@@ -10,15 +10,18 @@ from flask import current_app, jsonify, render_template, request, session, url_f
 
 from ..infra.wechat_oauth import fetch_wechat_userinfo
 
-QUESTIONNAIRE_META_FIELDS = (
+QUESTIONNAIRE_IDENTITY_HINT_FIELDS = (
     "respondent_key",
     "openid",
     "unionid",
     "external_userid",
+)
+QUESTIONNAIRE_SOURCE_PARAM_FIELDS = (
     "source_channel",
     "campaign_id",
     "staff_id",
 )
+QUESTIONNAIRE_META_FIELDS = QUESTIONNAIRE_IDENTITY_HINT_FIELDS + QUESTIONNAIRE_SOURCE_PARAM_FIELDS
 
 
 def _questionnaire_public_path(slug: str) -> str:
@@ -62,7 +65,7 @@ def _wechat_oauth_is_configured() -> bool:
 
 def _questionnaire_source_params() -> dict[str, str]:
     payload = {}
-    for key in ["source_channel", "campaign_id", "staff_id"]:
+    for key in QUESTIONNAIRE_SOURCE_PARAM_FIELDS:
         value = request.args.get(key, "").strip()
         if value:
             payload[key] = value
@@ -107,10 +110,8 @@ def _questionnaire_session_identity() -> dict[str, str]:
 
 def _questionnaire_request_identity_hints() -> dict[str, str]:
     return {
-        "respondent_key": request.args.get("respondent_key", "").strip(),
-        "openid": request.args.get("openid", "").strip(),
-        "unionid": request.args.get("unionid", "").strip(),
-        "external_userid": request.args.get("external_userid", "").strip(),
+        key: request.args.get(key, "").strip()
+        for key in QUESTIONNAIRE_IDENTITY_HINT_FIELDS
     }
 
 
