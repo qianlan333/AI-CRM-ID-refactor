@@ -486,6 +486,9 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
             respondent_key TEXT NOT NULL DEFAULT '',
             unionid TEXT NOT NULL DEFAULT '',
             external_userid TEXT NOT NULL DEFAULT '',
+            userid_snapshot TEXT NOT NULL DEFAULT '',
+            mobile_snapshot TEXT NOT NULL DEFAULT '',
+            payer_name_snapshot TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'created',
             trade_state TEXT NOT NULL DEFAULT '',
             transaction_id TEXT NOT NULL DEFAULT '',
@@ -498,6 +501,8 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
             request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             response_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             notify_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            refunded_amount_total INTEGER NOT NULL DEFAULT 0,
+            refund_status TEXT NOT NULL DEFAULT '',
             last_error TEXT NOT NULL DEFAULT '',
             expires_at TIMESTAMPTZ,
             paid_at TIMESTAMPTZ,
@@ -506,10 +511,19 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
         )
         """
     )
+    for stmt in (
+        "ALTER TABLE IF EXISTS wechat_pay_orders ADD COLUMN IF NOT EXISTS userid_snapshot TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS wechat_pay_orders ADD COLUMN IF NOT EXISTS mobile_snapshot TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS wechat_pay_orders ADD COLUMN IF NOT EXISTS payer_name_snapshot TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS wechat_pay_orders ADD COLUMN IF NOT EXISTS refunded_amount_total INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE IF EXISTS wechat_pay_orders ADD COLUMN IF NOT EXISTS refund_status TEXT NOT NULL DEFAULT ''",
+        "UPDATE wechat_pay_orders SET product_name = product_code WHERE COALESCE(product_name, '') = ''",
+    ):
+        db.execute(stmt)
     db.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_status_created
-        ON wechat_pay_orders (status, created_at DESC)
+        ON wechat_pay_orders (status, created_at DESC, id DESC)
         """
     )
     db.execute(
@@ -521,7 +535,39 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
     db.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_product
-        ON wechat_pay_orders (product_code, created_at DESC)
+        ON wechat_pay_orders (product_code, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_created
+        ON wechat_pay_orders (created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_product_created
+        ON wechat_pay_orders (product_code, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_external_created
+        ON wechat_pay_orders (external_userid, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_orders_mobile_created
+        ON wechat_pay_orders (mobile_snapshot, created_at DESC, id DESC)
+        WHERE mobile_snapshot <> ''
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_wechat_pay_orders_transaction_id
+        ON wechat_pay_orders (transaction_id)
+        WHERE transaction_id <> ''
         """
     )
     db.execute(
@@ -542,6 +588,67 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_wechat_pay_order_events_order
         ON wechat_pay_order_events (out_trade_no, created_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS wechat_pay_refunds (
+            id BIGSERIAL PRIMARY KEY,
+            order_id BIGINT NOT NULL REFERENCES wechat_pay_orders(id) ON DELETE CASCADE,
+            out_trade_no TEXT NOT NULL DEFAULT '',
+            transaction_id TEXT NOT NULL DEFAULT '',
+            out_refund_no TEXT UNIQUE NOT NULL,
+            refund_id TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            refund_amount_total INTEGER NOT NULL DEFAULT 0,
+            order_amount_total INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            status TEXT NOT NULL DEFAULT 'requested',
+            requested_by TEXT NOT NULL DEFAULT '',
+            request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_refunds_order
+        ON wechat_pay_refunds (order_id, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_refunds_status
+        ON wechat_pay_refunds (status, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS wechat_pay_order_export_jobs (
+            id BIGSERIAL PRIMARY KEY,
+            job_id TEXT UNIQUE NOT NULL,
+            requested_by TEXT NOT NULL DEFAULT '',
+            filters_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            scope TEXT NOT NULL DEFAULT 'filtered',
+            file_format TEXT NOT NULL DEFAULT 'xlsx',
+            status TEXT NOT NULL DEFAULT 'queued',
+            exported_count INTEGER NOT NULL DEFAULT 0,
+            file_name TEXT NOT NULL DEFAULT '',
+            file_path TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_order_export_jobs_status
+        ON wechat_pay_order_export_jobs (status, created_at DESC, id DESC)
         """
     )
 

@@ -79,8 +79,8 @@ class WeChatPayClient:
     """Thin WeChat Pay API v3 client for JSAPI payment.
 
     It intentionally keeps a narrow surface: create JSAPI order, query by
-    out_trade_no, sign frontend pay params, and verify/decrypt payment
-    notifications. Product and business order rules stay in service.py.
+    out_trade_no, submit refunds, sign frontend pay params, and verify/decrypt
+    payment notifications. Product and business order rules stay in service.py.
     """
 
     def __init__(self, config: WeChatPayClientConfig, *, http_client: OutboundHttpClient | None = None) -> None:
@@ -148,6 +148,9 @@ class WeChatPayClient:
         if not trade_no:
             raise WeChatPayClientError("out_trade_no is required")
         return self._request_json("GET", f"/v3/pay/transactions/out-trade-no/{trade_no}?mchid={self.config.mch_id}")
+
+    def create_refund(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request_json("POST", "/v3/refund/domestic/refunds", payload=payload)
 
     def build_jsapi_pay_params(self, prepay_id: str) -> dict[str, str]:
         package_value = f"prepay_id={_normalized_text(prepay_id)}"

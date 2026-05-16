@@ -126,6 +126,51 @@ def test_wechat_pay_client_does_not_send_platform_certificate_serial_header():
     assert "Wechatpay-Serial" not in captured["headers"]
 
 
+def test_wechat_pay_client_creates_refund_request():
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"status":"SUCCESS","refund_id":"503000000020260516"}'
+
+        def json(self):
+            return {"status": "SUCCESS", "refund_id": "503000000020260516"}
+
+    class FakeHttpClient:
+        def request(self, method, url, *, data, headers):
+            captured["method"] = method
+            captured["url"] = url
+            captured["data"] = data.decode("utf-8")
+            captured["headers"] = headers
+            return FakeResponse()
+
+    pay_client = WeChatPayClient(
+        WeChatPayClientConfig(
+            app_id="wx-app",
+            mch_id="1900000001",
+            api_v3_key="12345678901234567890123456789012",
+            private_key_path="",
+            merchant_serial_no="merchant-serial",
+        ),
+        http_client=FakeHttpClient(),
+    )
+    pay_client._merchant_signature = lambda message: "signed"  # type: ignore[method-assign]
+
+    result = pay_client.create_refund(
+        {
+            "transaction_id": "420000REALREFUND",
+            "out_refund_no": "WXRTEST0001",
+            "reason": "客户主动申请退款",
+            "amount": {"refund": 1000, "total": 9900, "currency": "CNY"},
+        }
+    )
+
+    assert result["status"] == "SUCCESS"
+    assert captured["method"] == "POST"
+    assert captured["url"].endswith("/v3/refund/domestic/refunds")
+    assert json.loads(captured["data"])["out_refund_no"] == "WXRTEST0001"
+
+
 def test_wechat_pay_client_verifies_notify_signature_with_platform_certificate(tmp_path):
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = issuer = x509.Name(
