@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 
 import requests
 
-from flask import Response, abort, current_app, jsonify, redirect, request, url_for
+from flask import Response, current_app, jsonify, redirect, request, url_for
 
 from ..domains.automation_conversion.channel_service import (
     generate_default_channel_qr,
@@ -15,7 +14,6 @@ from ..domains.automation_conversion.channel_service import (
 from ..domains.automation_conversion.focus_send_service import (
     create_focus_send_batch,
     get_focus_send_batch_detail,
-    get_focus_send_batches_payload,
     run_due_focus_send_batches,
 )
 from ..domains.automation_conversion.laohuang_chat_service import (
@@ -47,19 +45,15 @@ from ..domains.automation_conversion.orchestration_service import (
     create_agent_config,
     create_agent_output_export_job,
     delete_agent_config,
-    diff_agent_prompt,
     get_agent_config_detail,
-    get_agent_orchestration_payload,
     get_agent_output_detail,
     get_agent_output_export_file,
     get_agent_output_export_job,
     get_agent_replay_payload,
     get_agent_run_detail,
     handle_agent_router_callback,
-    list_agent_configs,
     list_agent_outputs,
     list_pending_agent_prompt_publish_requests,
-    list_recent_reviewable_agent_outputs,
     list_router_pending_callbacks,
     publish_agent_config,
     replay_agent_run,
@@ -67,16 +61,11 @@ from ..domains.automation_conversion.orchestration_service import (
     review_agent_reply_output,
     run_router_pending_callback_check,
     save_agent_config_draft,
-    submit_agent_prompt_for_publish,
     validate_router_callback_signature,
 )
 from ..domains.automation_conversion.program_service import (
     copy_automation_program,
     create_automation_program,
-    get_automation_program,
-    get_default_automation_program,
-    get_default_automation_program_id,
-    list_automation_programs,
     update_automation_program_basic_info,
     update_automation_program_status,
 )
@@ -87,11 +76,9 @@ from ..domains.automation_conversion.reply_monitor_service import (
     save_reply_monitor_enabled,
 )
 from ..domains.automation_conversion.service import (
-    get_debug_payload,
     get_member_detail,
     get_overview_payload,
     get_settings_payload,
-    get_stage_detail_payload,
     mark_won,
     put_in_pool,
     push_openclaw,
@@ -103,10 +90,8 @@ from ..domains.automation_conversion.service import (
 )
 from ..domains.automation_conversion.sop_service import (
     delete_sop_v1_template_day,
-    get_sop_v1_batches_payload,
     get_sop_v1_config_payload,
     get_sop_v1_templates_payload,
-    run_due_sop,
     save_sop_v1_pool_config,
     save_sop_v1_template,
 )
@@ -140,8 +125,7 @@ from ..domains.automation_conversion.workflow_service import (
     update_conversion_workflow,
     update_conversion_workflow_node,
 )
-from .admin_console import _breadcrumb_items, _render_admin_template
-from .internal_auth import ensure_admin_console_action_token, require_internal_api_token, validate_admin_console_action_token
+from .internal_auth import require_internal_api_token, validate_admin_console_action_token
 
 
 from ._routes_helpers import (  # noqa: F401  helpers for route handlers — 阶段 7.1
