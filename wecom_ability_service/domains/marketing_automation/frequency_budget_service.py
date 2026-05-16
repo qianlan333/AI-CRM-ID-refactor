@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 from typing import Any, Iterable, Sequence
 
 from ...db import get_db
@@ -64,6 +65,10 @@ _RETIRED_BUDGET_CODES: tuple[str, ...] = (
     "global_per_member_weekly",
     "global_per_member_daily",
 )
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def ensure_default_budgets() -> None:
@@ -182,9 +187,8 @@ def _count_consumption(
     exclude_source_ids: Sequence[str] = (),
 ) -> int:
     db = get_db()
-    from datetime import datetime, timedelta
 
-    cutoff_iso = (datetime.utcnow() - timedelta(seconds=int(window_seconds))).isoformat()
+    cutoff_iso = (_utc_now_naive() - timedelta(seconds=int(window_seconds))).isoformat()
 
     # 同 campaign 续推排除：不计入同来源的历史消耗
     exclude_clause = ""
@@ -327,9 +331,7 @@ def cleanup_expired_consumption(*, batch_size: int = 5000) -> int:
     一条记录对哪个 budget 还有效，取决于该 budget 的 window_seconds；只要超过
     所有 enabled budget 中最大的 window，就可以删。这里取一个保守的 90 天硬上限。
     """
-    from datetime import datetime, timedelta
-
-    cutoff_iso = (datetime.utcnow() - timedelta(days=90)).isoformat()
+    cutoff_iso = (_utc_now_naive() - timedelta(days=90)).isoformat()
     db = get_db()
     cur = db.cursor()
     cur.execute(
