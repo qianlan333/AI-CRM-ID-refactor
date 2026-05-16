@@ -150,6 +150,8 @@ _TABLES_TO_TRUNCATE = [
     "questionnaire_questions",
     "questionnaire_score_rules",
     "questionnaires",
+    "wechat_pay_order_events",
+    "wechat_pay_orders",
     # — admin / auth
     "admin_users",
     # admin_wecom_directory_member 不在 PG schema 中（WeCom 目录走 admin_users）

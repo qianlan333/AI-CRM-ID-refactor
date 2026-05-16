@@ -36,6 +36,7 @@ from .group_chats import register_routes as register_group_chat_routes
 from .identity import register_routes as register_identity_routes
 from .ops import register_routes as register_ops_routes
 from .public_questionnaires import register_routes as register_public_questionnaire_routes
+from .wechat_pay import register_routes as register_wechat_pay_routes
 from .settings_ops import register_routes as register_settings_routes
 from .sidebar import register_routes as register_sidebar_routes
 from .setup_wizard import register_routes as register_setup_wizard_routes
@@ -82,6 +83,7 @@ HTTP_ROUTE_MODULES = {
     "admin_wecom_tags": "wecom_ability_service.http.admin_wecom_tags",
     "wecom_customer_acquisition": "wecom_ability_service.http.wecom_customer_acquisition",
     "public_questionnaires": "wecom_ability_service.http.public_questionnaires",
+    "wechat_pay": "wecom_ability_service.http.wechat_pay",
     "setup_wizard": "wecom_ability_service.http.setup_wizard",
     "system_health": "wecom_ability_service.http.system_health",
 }
@@ -155,6 +157,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("customer_automation", register_customer_automation_routes),
     ("customer_timeline", register_customer_timeline_routes),
     ("public_questionnaires", register_public_questionnaire_routes),
+    ("wechat_pay", register_wechat_pay_routes),
     ("archive", register_archive_routes),
     ("contacts", register_contacts_routes),
     ("group_chats", register_group_chat_routes),

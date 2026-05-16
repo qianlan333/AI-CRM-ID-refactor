@@ -107,6 +107,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         WECHAT_MP_APP_ID=os.getenv("WECHAT_MP_APP_ID", ""),
         WECHAT_MP_APP_SECRET=os.getenv("WECHAT_MP_APP_SECRET", ""),
         WECHAT_MP_OAUTH_SCOPE=os.getenv("WECHAT_MP_OAUTH_SCOPE", "snsapi_base"),
+        WECHAT_PAY_ENABLED=os.getenv("WECHAT_PAY_ENABLED", "false"),
+        WECHAT_PAY_APP_ID=os.getenv("WECHAT_PAY_APP_ID", ""),
+        WECHAT_PAY_MCH_ID=os.getenv("WECHAT_PAY_MCH_ID", ""),
+        WECHAT_PAY_API_V3_KEY=os.getenv("WECHAT_PAY_API_V3_KEY", ""),
+        WECHAT_PAY_PRIVATE_KEY_PATH=os.getenv("WECHAT_PAY_PRIVATE_KEY_PATH", ""),
+        WECHAT_PAY_CERT_SERIAL_NO=os.getenv("WECHAT_PAY_CERT_SERIAL_NO", ""),
+        WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH=os.getenv("WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH", ""),
+        WECHAT_PAY_PLATFORM_CERT_SERIAL_NO=os.getenv("WECHAT_PAY_PLATFORM_CERT_SERIAL_NO", ""),
+        WECHAT_PAY_NOTIFY_URL=os.getenv("WECHAT_PAY_NOTIFY_URL", ""),
+        WECHAT_PAY_API_BASE=os.getenv("WECHAT_PAY_API_BASE", "https://api.mch.weixin.qq.com"),
+        WECHAT_PAY_TIMEOUT_SECONDS=int(os.getenv("WECHAT_PAY_TIMEOUT_SECONDS", "10")),
+        WECHAT_PAY_PRODUCT_CATALOG_JSON=os.getenv("WECHAT_PAY_PRODUCT_CATALOG_JSON", ""),
         ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API=(
             explicit_debug_session_api.lower() in {"1", "true", "yes"} if explicit_debug_session_api else None
         ),

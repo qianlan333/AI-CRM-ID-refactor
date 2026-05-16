@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -192,6 +193,90 @@ APP_SETTING_DEFINITIONS = (
         "mode": "editable",
         "input_type": "text",
         "description": "微信授权时使用的范围设置。",
+    },
+    {
+        "key": "WECHAT_PAY_ENABLED",
+        "label": "微信支付已启用",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "填写 true / false 或 1 / 0。开启后微信内 H5 JSAPI 支付接口才允许下单。",
+    },
+    {
+        "key": "WECHAT_PAY_APP_ID",
+        "label": "微信支付 AppID",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "JSAPI 支付使用的公众号 AppID；为空时复用 WECHAT_MP_APP_ID。",
+    },
+    {
+        "key": "WECHAT_PAY_MCH_ID",
+        "label": "微信支付商户号",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "微信支付商户平台分配的商户号 mchid。",
+    },
+    {
+        "key": "WECHAT_PAY_PRIVATE_KEY_PATH",
+        "label": "微信支付商户私钥路径",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "APIv3 请求签名使用的商户 API 证书私钥 PEM 文件路径。",
+    },
+    {
+        "key": "WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH",
+        "label": "微信支付平台证书/公钥路径",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "支付通知验签使用的微信支付平台证书 PEM 或平台公钥 PEM 文件路径。",
+    },
+    {
+        "key": "WECHAT_PAY_PLATFORM_CERT_SERIAL_NO",
+        "label": "微信支付平台证书序列号",
+        "mode": "editable",
+        "input_type": "text",
+        "description": "支付通知请求头 Wechatpay-Serial 的期望序列号；为空时只用证书/公钥验签。",
+    },
+    {
+        "key": "WECHAT_PAY_NOTIFY_URL",
+        "label": "微信支付通知地址",
+        "mode": "editable",
+        "input_type": "url",
+        "description": "微信支付异步通知 URL，例如 https://www.youcangogogo.com/api/h5/wechat-pay/notify。",
+    },
+    {
+        "key": "WECHAT_PAY_API_BASE",
+        "label": "微信支付 API Base",
+        "mode": "editable",
+        "input_type": "url",
+        "description": "默认 https://api.mch.weixin.qq.com。",
+    },
+    {
+        "key": "WECHAT_PAY_TIMEOUT_SECONDS",
+        "label": "微信支付请求超时",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "调用微信支付 API 的超时时间（秒）。",
+    },
+    {
+        "key": "WECHAT_PAY_PRODUCT_CATALOG_JSON",
+        "label": "微信支付商品目录",
+        "mode": "editable",
+        "input_type": "textarea",
+        "description": "服务端商品白名单 JSON；每个商品需配置 product_code、name、description、amount_total。",
+    },
+    {
+        "key": "WECHAT_PAY_API_V3_KEY",
+        "label": "微信支付 APIv3 密钥",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "32 字节 APIv3 密钥，用于回调报文解密。页面不会显示完整内容；留空表示保持原值。",
+    },
+    {
+        "key": "WECHAT_PAY_CERT_SERIAL_NO",
+        "label": "微信支付商户证书序列号",
+        "mode": "masked",
+        "input_type": "password",
+        "description": "商户 API 证书序列号，用于请求签名 Authorization。页面不会显示完整内容；留空表示保持原值。",
     },
     {
         "key": "WECOM_SECRET",
@@ -749,6 +834,7 @@ def _validate_known_setting(key: str, value: str) -> str:
         "DEEPSEEK_TIMEOUT_SECONDS",
         "OPENCLAW_FOCUS_MESSAGE_WEBHOOK_TIMEOUT_SECONDS",
         "LAOHUANG_CHAT_TIMEOUT_SECONDS",
+        "WECHAT_PAY_TIMEOUT_SECONDS",
         "OUTBOUND_WEBHOOK_RETRY_MAX_ATTEMPTS",
         "OUTBOUND_WEBHOOK_RETRY_INTERVAL_SECONDS",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_TIMEOUT_SECONDS",
@@ -758,6 +844,7 @@ def _validate_known_setting(key: str, value: str) -> str:
         "OUTBOUND_WEBHOOK_RETRY_ENABLED",
         "DEEPSEEK_ENABLED",
         "LAOHUANG_CHAT_ENABLED",
+        "WECHAT_PAY_ENABLED",
     }:
         return "true" if normalized.lower() in {"1", "true", "yes", "y", "on"} else "false"
     if key == "LAOHUANG_CHAT_SEND_CHANNEL":
@@ -770,8 +857,15 @@ def _validate_known_setting(key: str, value: str) -> str:
         "OPENCLAW_WEBHOOK_URL",
         "LAOHUANG_CHAT_WEBHOOK_URL",
         "QUESTIONNAIRE_SUBMIT_WEBHOOK_URL",
+        "WECHAT_PAY_NOTIFY_URL",
+        "WECHAT_PAY_API_BASE",
     } and normalized and not normalized.startswith(("http://", "https://")):
         raise ValueError(f"{key} 必须以 http:// 或 https:// 开头")
+    if key == "WECHAT_PAY_PRODUCT_CATALOG_JSON" and normalized:
+        try:
+            json.loads(normalized)
+        except ValueError as exc:
+            raise ValueError("WECHAT_PAY_PRODUCT_CATALOG_JSON 必须是合法 JSON") from exc
     return normalized
 
 
