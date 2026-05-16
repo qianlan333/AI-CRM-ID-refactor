@@ -118,6 +118,19 @@ def test_alembic_0003_is_pg_only():
     assert "DROP COLUMN IF EXISTS" in migration
 
 
+def test_alembic_0007_is_pg_only():
+    migration = (
+        ROOT / "migrations" / "versions" / "0007_image_library.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_is_postgres" not in migration
+    assert "PRAGMA" not in migration
+    assert "AUTOINCREMENT" not in migration
+    assert "BIGSERIAL PRIMARY KEY" in migration
+    assert "thumb_image_id BIGINT" in migration
+    assert "TIMESTAMPTZ" in migration
+
+
 def test_alembic_0009_is_pg_only():
     migration = (
         ROOT / "migrations" / "versions" / "0009_image_library_semantic.py"
