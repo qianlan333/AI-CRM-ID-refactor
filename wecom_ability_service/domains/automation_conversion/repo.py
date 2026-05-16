@@ -12,6 +12,7 @@ from ._repo_reply_monitor import *  # noqa: F401,F403  reply_monitor_* — 阶�
 from ._repo_laohuang import *  # noqa: F401,F403  laohuang_chat_* — 阶段 4.4
 from ._repo_member import *  # noqa: F401,F403  member/person/stage/segment — 阶段 4.5
 from ._repo_event import *  # noqa: F401,F403  event/ai_push_log/touch_delivery — 阶段 4.5
+from ._repo_customer_acquisition import *  # noqa: F401,F403  WeCom 获客助手链接绑定
 
 def list_app_setting_rows(keys: list[str]) -> list[dict[str, Any]]:
     normalized_keys = [_normalized_text(item) for item in keys if _normalized_text(item)]

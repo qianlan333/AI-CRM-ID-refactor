@@ -384,6 +384,27 @@ def _resolve_member_conversion_audience(member: dict[str, Any]) -> dict[str, Any
     current_audience_code = _normalized_text(member.get("current_audience_code"))
     current_audience_entered_at = _normalized_text(member.get("current_audience_entered_at"))
     if (
+        _normalized_text(member.get("source_type")) == "wecom_customer_acquisition"
+        and current_audience_code in {AUDIENCE_PENDING_QUESTIONNAIRE, AUDIENCE_OPERATING, AUDIENCE_CONVERTED}
+        and questionnaire_status != "submitted"
+        and not bool((marketing_state or {}).get("converted"))
+        and _normalized_text((marketing_state or {}).get("main_stage")) != "converted"
+    ):
+        return {
+            "audience_code": current_audience_code,
+            "entered_at": current_audience_entered_at
+            or _normalized_text(member.get("joined_at"))
+            or _normalized_text(member.get("updated_at"))
+            or _iso_now(),
+            "entry_source": "wecom_customer_acquisition",
+            "entry_reason": "customer_acquisition_initial_audience",
+            "source_snapshot_json": _current_audience_source_snapshot(
+                member,
+                marketing_state,
+                questionnaire_state=questionnaire_state,
+            ),
+        }
+    if (
         bool((marketing_state or {}).get("converted"))
         or _normalized_text((marketing_state or {}).get("main_stage")) == "converted"
         or _normalized_text(member.get("current_pool")) in {"won", "converted"}
