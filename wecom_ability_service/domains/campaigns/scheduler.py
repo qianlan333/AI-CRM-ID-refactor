@@ -25,6 +25,9 @@ from .time_helpers import DEFAULT_TIMEZONE, campaign_step_due_iso
 
 
 logger = logging.getLogger(__name__)
+CAMPAIGN_QUEUE_SOURCE_TYPE = "campaign"
+CAMPAIGN_QUEUE_SOURCE_TABLE = "campaign_members"
+CAMPAIGN_QUEUE_CONTENT_TYPE = "private_message"
 _OPEN_JOB_STATUSES = ["waiting_approval", "queued", "claimed"]
 
 
@@ -108,13 +111,17 @@ def _campaign_job_source_ids(*, campaign_id: int, campaign_segment_id: int, step
 def _open_campaign_job_exists(*, queue_repo: Any, source_ids: tuple[str, ...]) -> bool:
     return any(
         queue_repo.fetch_job_by_source(
-            source_type="campaign",
-            source_table="campaign_members",
+            source_type=CAMPAIGN_QUEUE_SOURCE_TYPE,
+            source_table=CAMPAIGN_QUEUE_SOURCE_TABLE,
             source_id=str(source_id or ""),
             statuses=_OPEN_JOB_STATUSES,
         )
         for source_id in source_ids
     )
+
+
+def _campaign_queue_target_summary(*, campaign: dict[str, Any], step: dict[str, Any]) -> str:
+    return f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}"
 
 
 def _resolve_automation_member_id(
@@ -522,13 +529,13 @@ def _pre_enqueue_next_step(
         return
 
     queue_service.enqueue_job(
-        source_type="campaign",
+        source_type=CAMPAIGN_QUEUE_SOURCE_TYPE,
         source_id=source_ids[0],
-        source_table="campaign_members",
+        source_table=CAMPAIGN_QUEUE_SOURCE_TABLE,
         scheduled_for=next_due,
         target_external_userids=externals,
-        target_summary=f"campaign={campaign.get('campaign_code')} step={next_step.get('step_index')}",
-        content_type="private_message",
+        target_summary=_campaign_queue_target_summary(campaign=campaign, step=next_step),
+        content_type=CAMPAIGN_QUEUE_CONTENT_TYPE,
         content_payload={
             "campaign": campaign,
             "step": next_step,
@@ -877,13 +884,13 @@ def process_due_campaign_members(*, batch_size: int = 200) -> dict[str, Any]:
         request_payload = dict(resolved["base_request"])
         request_payload["external_userid"] = externals
         queue_service.enqueue_job(
-            source_type="campaign",
+            source_type=CAMPAIGN_QUEUE_SOURCE_TYPE,
             source_id=source_ids[0],
-            source_table="campaign_members",
+            source_table=CAMPAIGN_QUEUE_SOURCE_TABLE,
             scheduled_for=datetime.now(timezone.utc),
             target_external_userids=externals,
-            target_summary=f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}",
-            content_type="private_message",
+            target_summary=_campaign_queue_target_summary(campaign=campaign, step=step),
+            content_type=CAMPAIGN_QUEUE_CONTENT_TYPE,
             content_payload={
                 "request_payload": request_payload,
                 "campaign": campaign,
@@ -1004,13 +1011,13 @@ def _pre_enqueue_future_campaign_steps(
         campaign = group["campaign"]
         step = group["step"]
         queue_service.enqueue_job(
-            source_type="campaign",
+            source_type=CAMPAIGN_QUEUE_SOURCE_TYPE,
             source_id=source_id,
-            source_table="campaign_members",
+            source_table=CAMPAIGN_QUEUE_SOURCE_TABLE,
             scheduled_for=group["next_due"],
             target_external_userids=externals,
-            target_summary=f"campaign={campaign.get('campaign_code')} step={step.get('step_index')}",
-            content_type="private_message",
+            target_summary=_campaign_queue_target_summary(campaign=campaign, step=step),
+            content_type=CAMPAIGN_QUEUE_CONTENT_TYPE,
             content_payload={
                 "campaign": campaign,
                 "step": step,

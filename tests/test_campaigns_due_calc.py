@@ -20,6 +20,10 @@ from wecom_ability_service.domains.campaigns.service import (
     _compute_first_step_due_iso,
 )
 from wecom_ability_service.domains.campaigns.scheduler import (
+    CAMPAIGN_QUEUE_CONTENT_TYPE,
+    CAMPAIGN_QUEUE_SOURCE_TABLE,
+    CAMPAIGN_QUEUE_SOURCE_TYPE,
+    _campaign_queue_target_summary,
     _due_at_for_step,
     _dispatch_private_message_payload,
 )
@@ -132,6 +136,16 @@ def test_due_at_for_step_day_offset():
     parsed = datetime.fromisoformat(iso)
     assert parsed.day == 13
     assert parsed.hour == 19
+
+
+def test_campaign_queue_contract_constants_and_summary():
+    assert CAMPAIGN_QUEUE_SOURCE_TYPE == "campaign"
+    assert CAMPAIGN_QUEUE_SOURCE_TABLE == "campaign_members"
+    assert CAMPAIGN_QUEUE_CONTENT_TYPE == "private_message"
+    assert _campaign_queue_target_summary(
+        campaign={"campaign_code": "obs_invite"},
+        step={"step_index": 2},
+    ) == "campaign=obs_invite step=2"
 
 
 def test_scheduler_retry_at_is_tz_aware():
