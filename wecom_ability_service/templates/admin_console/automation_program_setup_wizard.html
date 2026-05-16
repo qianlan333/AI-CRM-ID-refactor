@@ -38,13 +38,16 @@
   .setup-qrcode-preview img { width: min(220px, 100%); aspect-ratio: 1; object-fit: contain; border-radius: 10px; }
   .setup-empty-hint { display: grid; place-items: center; min-height: 180px; padding: 18px; border: 1px dashed rgba(15,23,42,.14); border-radius: 14px; background: #fff; color: #667085; text-align: center; }
   .setup-chip-list { display: flex; gap: 8px; flex-wrap: wrap; }
-  .setup-chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 6px 10px; background: #eef4ff; color: #1456f0; font-weight: 800; }
+  .setup-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 10px; background: #eef4ff; color: #1456f0; font-weight: 800; }
   .setup-category-grid { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr); gap: 14px; align-items: start; }
-  .setup-option-preview, .setup-category-list { display: grid; gap: 10px; }
+  .setup-unassigned-panel, .setup-category-list { display: grid; gap: 10px; }
+  .setup-unassigned-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .setup-count { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; border-radius: 999px; background: #e0edff; color: #1456f0; font-weight: 900; }
   .setup-category-card { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 14px; background: #fff; }
-  .setup-option-checks { display: flex; flex-wrap: wrap; gap: 8px; }
-  .setup-option-check { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(15,23,42,.10); border-radius: 999px; padding: 7px 10px; background: #f8fafc; color: #344054; font-weight: 700; }
-  .setup-option-check input { width: auto; }
+  .setup-option-pool { display: flex; flex-wrap: wrap; gap: 8px; min-height: 36px; }
+  .setup-option-pill { border: 1px solid rgba(15,23,42,.10); border-radius: 999px; padding: 7px 10px; background: #f8fafc; color: #344054; font-weight: 800; cursor: pointer; }
+  .setup-option-pill:hover { border-color: rgba(20,86,240,.34); color: #1456f0; background: #eef4ff; }
+  .setup-chip-remove { border: 0; border-radius: 999px; width: 20px; height: 20px; background: rgba(20,86,240,.12); color: #1456f0; cursor: pointer; font-weight: 900; line-height: 1; }
   .setup-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .setup-check-item { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: #f8fafc; }
   .setup-check-item.is-pass { background: #ecfdf3; color: #166534; }
@@ -254,21 +257,15 @@
       </div>
       {% endif %}
       <div class="setup-category-grid" data-normal-category-editor>
-        <aside class="setup-result-card">
-          <h3>当前题目选项</h3>
-          <div class="setup-option-preview" data-question-option-preview>
-            {% for option in selected_question.options or [] %}
-            <span class="setup-chip" data-option-id="{{ option.id }}">{{ option.option_text }}{% if option.id in (normal.unassigned_options | map(attribute='id') | list) %} · 未分配{% else %} · 已分配{% endif %}</span>
-            {% else %}
-            <p class="setup-muted">请选择包含选项的分层题目。</p>
-            {% endfor %}
+        <aside class="setup-result-card setup-unassigned-panel">
+          <div class="setup-unassigned-head">
+            <h3>未分配选项</h3>
+            <span class="setup-count" data-unassigned-count>{{ (normal.unassigned_options or [])|length }}</span>
           </div>
-          <div class="setup-result-card">
-            <strong>未分配选项</strong>
-            <div class="setup-chip-list" data-unassigned-options>
-              {% for option in normal.unassigned_options or [] %}<span class="setup-chip">{{ option.option_text }}</span>{% else %}<span class="setup-muted">暂无未分配选项</span>{% endfor %}
-            </div>
+          <div class="setup-option-pool" data-unassigned-options>
+            {% for option in normal.unassigned_options or [] %}<span class="setup-chip" data-option-id="{{ option.id }}">{{ option.option_text }}</span>{% else %}<span class="setup-muted">所有选项都已分配。需要调整时，先从右侧分类中移除选项。</span>{% endfor %}
           </div>
+          <p class="setup-muted">未分配选项是唯一可加入分类的选项池；已加入某个分类后，会从这里和其他分类的可选列表中移除。</p>
         </aside>
         <div class="setup-category-list" data-category-body>
           {% for category in normal.category_rows or [] %}
@@ -276,13 +273,14 @@
             <label class="setup-field"><span>分类名称</span><input name="category_name" value="{{ category.category_name }}" placeholder="例如：入门用户"></label>
             <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选">{{ category.description }}</textarea></label>
             <div class="setup-field">
-              <span>选择选项</span>
-              <div class="setup-option-checks" data-category-options>
-                {% for option in selected_question.options or [] %}
-                <label class="setup-option-check"><input type="checkbox" value="{{ option.id }}" data-option-text="{{ option.option_text }}" {% if option.id in category.option_ids %}checked{% endif %}>{{ option.option_text }}</label>
-                {% endfor %}
+              <span>已选择选项</span>
+              <div class="setup-chip-list" data-selected-options>
+                {% for option in category.option_snapshots or [] %}
+                <span class="setup-chip" data-selected-option data-option-id="{{ option.id }}" data-option-text="{{ option.option_text }}">{{ option.option_text }}<button class="setup-chip-remove" type="button" data-remove-option aria-label="移除选项">×</button></span>
+                {% else %}<span class="setup-muted" data-empty-selected>还没有选择选项</span>{% endfor %}
               </div>
             </div>
+            <div class="setup-field"><span>可加入此分类的未分配选项</span><div class="setup-option-pool" data-available-options></div></div>
             <div class="setup-actions"><button class="setup-button" type="button" data-remove-category>删除分类</button></div>
           </article>
           {% else %}
@@ -290,13 +288,10 @@
             <label class="setup-field"><span>分类名称</span><input name="category_name" placeholder="例如：入门用户"></label>
             <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选"></textarea></label>
             <div class="setup-field">
-              <span>选择选项</span>
-              <div class="setup-option-checks" data-category-options>
-                {% for option in selected_question.options or [] %}
-                <label class="setup-option-check"><input type="checkbox" value="{{ option.id }}" data-option-text="{{ option.option_text }}">{{ option.option_text }}</label>
-                {% endfor %}
-              </div>
+              <span>已选择选项</span>
+              <div class="setup-chip-list" data-selected-options><span class="setup-muted" data-empty-selected>还没有选择选项</span></div>
             </div>
+            <div class="setup-field"><span>可加入此分类的未分配选项</span><div class="setup-option-pool" data-available-options></div></div>
             <div class="setup-actions"><button class="setup-button" type="button" data-remove-category>删除分类</button></div>
           </article>
           {% endfor %}
@@ -371,11 +366,11 @@
   <footer class="setup-footer">
     <div class="setup-footer__side">
       {% if nav[current_step].prev %}<a class="setup-button" href="{{ urls.base }}?step={{ nav[current_step].prev }}">上一步</a>{% endif %}
-      {% if current_step != 'publish' and current_step != 'operations' %}<button class="setup-button is-primary" type="button" data-save-current>保存草稿</button>{% endif %}
+      {% if current_step != 'publish' %}<button class="setup-button is-primary" type="button" data-save-current>保存草稿</button>{% endif %}
     </div>
     <div class="setup-footer__side">
-      {% if current_step != 'publish' %}<a class="setup-button" href="{{ urls.base }}?step=publish">去检查发布</a>{% endif %}
-      {% if nav[current_step].next %}<a class="setup-button is-primary" href="{{ urls.base }}?step={{ nav[current_step].next }}">下一步</a>{% endif %}
+      {% if current_step != 'publish' %}<button class="setup-button" type="button" data-save-and-publish>去检查发布</button>{% endif %}
+      {% if nav[current_step].next %}<button class="setup-button is-primary" type="button" data-save-and-next data-next-step="{{ nav[current_step].next }}">保存并下一步</button>{% endif %}
     </div>
   </footer>
 </section>
@@ -385,6 +380,7 @@
   const root = document.querySelector("[data-setup-root]");
   if (!root) return;
   const urls = JSON.parse(root.dataset.urls || "{}");
+  const currentStep = "{{ current_step }}";
   const feedback = root.querySelector("[data-setup-feedback]");
   const showFeedback = (message, ok = false) => {
     if (!feedback) return;
@@ -454,35 +450,44 @@
     const selected = questionSelect?.selectedOptions?.[0];
     try { return JSON.parse(selected?.dataset.options || "[]"); } catch { return []; }
   };
-  const renderOptionChecks = (card, options, selectedIds = []) => {
-    const target = card.querySelector("[data-category-options]");
-    if (!target) return;
-    const selected = new Set(selectedIds.map((item) => String(item)));
-    target.innerHTML = options.map((option) => {
-      const checked = selected.has(String(option.id)) ? " checked" : "";
-      const text = escapeHtml(option.option_text || "");
-      return `<label class="setup-option-check"><input type="checkbox" value="${option.id}" data-option-text="${text}"${checked}>${text}</label>`;
-    }).join("");
-  };
   const categoryKey = (index) => `category_${String.fromCharCode(97 + Math.min(index, 25))}`;
+  const selectedOptionIds = (card) => [...card.querySelectorAll("[data-selected-option]")].map((item) => String(item.dataset.optionId || ""));
+  const allAssignedOptionIds = () => new Set([...root.querySelectorAll("[data-selected-option]")].map((item) => String(item.dataset.optionId || "")));
+  const selectedChipHtml = (option) => `<span class="setup-chip" data-selected-option data-option-id="${option.id}" data-option-text="${escapeHtml(option.option_text)}">${escapeHtml(option.option_text)}<button class="setup-chip-remove" type="button" data-remove-option aria-label="移除选项">×</button></span>`;
+  const availableOptionHtml = (option) => `<button class="setup-option-pill" type="button" data-add-option data-option-id="${option.id}" data-option-text="${escapeHtml(option.option_text)}">${escapeHtml(option.option_text)}</button>`;
+  const ensureSelectedEmptyState = (card) => {
+    const selectedBox = card.querySelector("[data-selected-options]");
+    if (!selectedBox) return;
+    const hasSelected = Boolean(selectedBox.querySelector("[data-selected-option]"));
+    selectedBox.querySelector("[data-empty-selected]")?.remove();
+    if (!hasSelected) selectedBox.innerHTML = `<span class="setup-muted" data-empty-selected>还没有选择选项</span>`;
+  };
   const updateOptionState = () => {
     const options = currentQuestionOptions();
-    const assigned = new Set([...root.querySelectorAll("[data-category-card] input[type='checkbox']:checked")].map((input) => String(input.value)));
-    const preview = root.querySelector("[data-question-option-preview]");
-    if (preview) {
-      preview.innerHTML = options.length
-        ? options.map((option) => `<span class="setup-chip" data-option-id="${option.id}">${escapeHtml(option.option_text)} · ${assigned.has(String(option.id)) ? "已分配" : "未分配"}</span>`).join("")
-        : `<p class="setup-muted">请选择包含选项的分层题目。</p>`;
-    }
+    const assigned = allAssignedOptionIds();
+    const unassignedRows = options.filter((option) => !assigned.has(String(option.id)));
     const unassigned = root.querySelector("[data-unassigned-options]");
     if (unassigned) {
-      const rows = options.filter((option) => !assigned.has(String(option.id)));
-      unassigned.innerHTML = rows.length ? rows.map((option) => `<span class="setup-chip">${escapeHtml(option.option_text)}</span>`).join("") : `<span class="setup-muted">暂无未分配选项</span>`;
+      unassigned.innerHTML = unassignedRows.length
+        ? unassignedRows.map((option) => `<span class="setup-chip" data-option-id="${option.id}">${escapeHtml(option.option_text)}</span>`).join("")
+        : `<span class="setup-muted">所有选项都已分配。需要调整时，先从右侧分类中移除选项。</span>`;
     }
+    const count = root.querySelector("[data-unassigned-count]");
+    if (count) count.textContent = String(unassignedRows.length);
+    root.querySelectorAll("[data-category-card]").forEach((card) => {
+      ensureSelectedEmptyState(card);
+      const available = card.querySelector("[data-available-options]");
+      if (!available) return;
+      available.innerHTML = unassignedRows.length
+        ? unassignedRows.map((option) => availableOptionHtml(option)).join("")
+        : `<span class="setup-muted">暂无可加入选项</span>`;
+    });
   };
   const addCategoryCard = (name = "", selectedIds = [], key = "") => {
     if (!categoryBody) return;
     const index = categoryBody.querySelectorAll("[data-category-card]").length;
+    const selected = new Set(selectedIds.map((item) => String(item)));
+    const selectedOptions = currentQuestionOptions().filter((option) => selected.has(String(option.id)));
     const card = document.createElement("article");
     card.className = "setup-category-card";
     card.dataset.categoryCard = "";
@@ -490,10 +495,10 @@
     card.innerHTML = `
       <label class="setup-field"><span>分类名称</span><input name="category_name" value="${escapeHtml(name)}" placeholder="例如：入门用户"></label>
       <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选"></textarea></label>
-      <div class="setup-field"><span>选择选项</span><div class="setup-option-checks" data-category-options></div></div>
+      <div class="setup-field"><span>已选择选项</span><div class="setup-chip-list" data-selected-options>${selectedOptions.map((option) => selectedChipHtml(option)).join("")}</div></div>
+      <div class="setup-field"><span>可加入此分类的未分配选项</span><div class="setup-option-pool" data-available-options></div></div>
       <div class="setup-actions"><button class="setup-button" type="button" data-remove-category>删除分类</button></div>
     `;
-    renderOptionChecks(card, currentQuestionOptions(), selectedIds);
     categoryBody.appendChild(card);
     updateOptionState();
   };
@@ -508,13 +513,27 @@
     addCategoryCard("专家用户", options.slice(chunk * 2).map((item) => item.id), "category_c");
   });
   questionSelect?.addEventListener("change", () => {
-    root.querySelectorAll("[data-category-card]").forEach((card) => renderOptionChecks(card, currentQuestionOptions(), []));
+    root.querySelectorAll("[data-selected-options]").forEach((box) => box.innerHTML = `<span class="setup-muted" data-empty-selected>还没有选择选项</span>`);
     updateOptionState();
   });
-  root.addEventListener("change", (event) => {
-    if (event.target.matches("[data-category-options] input[type='checkbox']")) updateOptionState();
-  });
   root.addEventListener("click", (event) => {
+    const addOption = event.target.closest("[data-add-option]");
+    if (addOption) {
+      const card = addOption.closest("[data-category-card]");
+      const selectedBox = card?.querySelector("[data-selected-options]");
+      if (selectedBox && addOption.dataset.optionId) {
+        selectedBox.querySelector("[data-empty-selected]")?.remove();
+        selectedBox.insertAdjacentHTML("beforeend", selectedChipHtml({ id: addOption.dataset.optionId, option_text: addOption.textContent || addOption.dataset.optionText || "" }));
+        updateOptionState();
+      }
+    }
+    const removeOption = event.target.closest("[data-remove-option]");
+    if (removeOption) {
+      const card = removeOption.closest("[data-category-card]");
+      removeOption.closest("[data-selected-option]")?.remove();
+      if (card) ensureSelectedEmptyState(card);
+      updateOptionState();
+    }
     const removeCategory = event.target.closest("[data-remove-category]");
     if (removeCategory) {
       removeCategory.closest("[data-category-card]")?.remove();
@@ -543,7 +562,7 @@
     const selectedOptions = new Map(currentQuestionOptions().map((option) => [String(option.id), option.option_text || ""]));
     const seenOptions = new Set();
     const categories = [...form.querySelectorAll("[data-category-card]")].map((card, index) => {
-      const optionIds = [...card.querySelectorAll("[data-category-options] input[type='checkbox']:checked")].map((input) => Number(input.value)).filter(Boolean);
+      const optionIds = [...card.querySelectorAll("[data-selected-option]")].map((item) => Number(item.dataset.optionId)).filter(Boolean);
       optionIds.forEach((optionId) => {
         const key = String(optionId);
         if (seenOptions.has(key)) throw new Error("同一个选项不能同时属于多个分类");
@@ -596,14 +615,38 @@
     });
     await postJson(urls.audience_entry_rule, { cards });
   };
+  const saveCurrentStep = async () => {
+    const target = activeForm();
+    if (currentStep === "operations") {
+      if (typeof window.__automationOperationSaveDraft === "function") {
+        await window.__automationOperationSaveDraft();
+      } else {
+        throw new Error("运营编排保存能力未加载，请刷新页面后重试");
+      }
+      return;
+    }
+    if (target?.dataset.endpoint) await saveSimpleForm(target);
+    else if (target?.hasAttribute("data-segmentation-form")) await saveSegmentation();
+    else if (target?.hasAttribute("data-audience-rule-form")) await saveAudienceRules();
+  };
   root.querySelector("[data-save-current]")?.addEventListener("click", async () => {
     try {
-      const target = activeForm();
-      if (target?.dataset.endpoint) await saveSimpleForm(target);
-      else if (target?.hasAttribute("data-segmentation-form")) await saveSegmentation();
-      else if (target?.hasAttribute("data-audience-rule-form")) await saveAudienceRules();
+      await saveCurrentStep();
       showFeedback("草稿已保存", true);
     } catch (error) { showFeedback(error.message || "保存失败，请稍后重试"); }
+  });
+  root.querySelector("[data-save-and-next]")?.addEventListener("click", async (event) => {
+    try {
+      await saveCurrentStep();
+      const nextStep = event.currentTarget.dataset.nextStep || "";
+      if (nextStep) window.location.href = `${urls.base}?step=${encodeURIComponent(nextStep)}`;
+    } catch (error) { showFeedback(error.message || "保存失败，请先处理当前页面配置"); }
+  });
+  root.querySelector("[data-save-and-publish]")?.addEventListener("click", async () => {
+    try {
+      await saveCurrentStep();
+      window.location.href = `${urls.base}?step=publish`;
+    } catch (error) { showFeedback(error.message || "保存失败，请先处理当前页面配置"); }
   });
   root.querySelectorAll("[data-publish]").forEach((button) => {
     button.addEventListener("click", async () => {

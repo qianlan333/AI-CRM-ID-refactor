@@ -1609,7 +1609,7 @@
       return payload;
     }
 
-    async function saveAction(statusOverride) {
+    async function saveAction(statusOverride, throwOnError = false) {
       const originalSaveLabel = elements.saveDraftButton ? elements.saveDraftButton.textContent : '';
       try {
         if (elements.saveDraftButton) {
@@ -1672,6 +1672,7 @@
         showFeedback(elements.feedback, statusOverride === 'active' ? '已保存' : '草稿已保存', '');
       } catch (error) {
         showSaveError(error);
+        if (throwOnError) throw error;
       } finally {
         if (elements.saveDraftButton) {
           elements.saveDraftButton.disabled = false;
@@ -1679,6 +1680,7 @@
         }
       }
     }
+    window.__automationOperationSaveDraft = () => saveAction('draft', true);
 
     function renderPreview() {
       renderActionList();

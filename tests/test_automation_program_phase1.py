@@ -324,8 +324,29 @@ def test_setup_segmentation_shows_question_and_option_text_without_option_id_fie
     assert "请补充你的业务背景" not in html
     assert "新增分类" in html
     assert "分类名称" in html
+    assert "未分配选项" in html
+    assert "可加入此分类的未分配选项" in html
+    assert "已选择选项" in html
+    assert "分配概览" not in html
+    assert "当前题目选项" not in html
+    assert "setup-option-checks" not in html
     assert "命中选项 ID" not in html
     assert "hit_option_ids" not in html
+
+
+def test_setup_footer_saves_before_navigation(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+
+    html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=segmentation").get_data(as_text=True)
+
+    assert ">下一步</a>" not in html
+    assert ">下一步</button>" not in html
+    assert "保存并下一步" in html
+    assert "data-save-and-next" in html
+    assert "data-next-step=\"entry-rule\"" in html
+    assert "data-save-and-publish" in html
+    assert "saveCurrentStep" in html
 
 
 def test_program_basic_info_edit_updates_list_and_context_header(app, client, monkeypatch):
@@ -794,6 +815,7 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "选择小程序素材" in html
     assert "选择图片素材" in html
     assert "asset-picker-modal" in html
+    assert "window.__automationOperationSaveDraft" in html
     assert "action-list-feedback" in html
     assert "正在加载..." in html
     assert "正在加载运营动作..." in html
