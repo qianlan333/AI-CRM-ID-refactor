@@ -66,11 +66,14 @@ ENTRY_CONDITION_LABELS = {
 }
 
 QUESTIONNAIRE_CONDITION_LABELS = {
-    "questionnaire_id_matched": "绑定问卷提交成功",
+    "questionnaire_id_matched": "问卷提交后",
     "normal_question_rule_hit": "命中普通问卷规则",
     "score_segment_hit": "命中总分分层",
     "any_submission": "任意提交",
 }
+
+QUESTION_OPTION_CATEGORY_MODE = "single_question_option_category"
+QUESTION_CHOICE_TYPES = {"single_choice", "multi_choice"}
 
 
 def _program_code(value: Any) -> str:
@@ -219,16 +222,23 @@ def _questionnaire_questions(questionnaire_id: int | None) -> list[dict[str, Any
         options_by_question.setdefault(int(row["question_id"]), []).append(
             {"id": int(row["id"]), "option_text": _normalized_text(row["option_text"])}
         )
-    return [
-        {
+    questions: list[dict[str, Any]] = []
+    for row in question_rows:
+        question_type = _normalized_text(row["type"])
+        if question_type not in QUESTION_CHOICE_TYPES:
+            continue
+        question_id = int(row["id"])
+        options = options_by_question.get(question_id, [])
+        if not options:
+            continue
+        questions.append({
             "id": int(row["id"]),
             "title": _normalized_text(row["title"]),
-            "question_type": _normalized_text(row["type"]),
+            "question_type": question_type,
             "sort_order": int(row["sort_order"] or 0),
-            "options": options_by_question.get(int(row["id"]), []),
-        }
-        for row in question_rows
-    ]
+            "options": options,
+        })
+    return questions
 
 
 def _normalize_normal_rule_row(item: dict[str, Any], *, index: int = 0) -> dict[str, Any]:
@@ -260,6 +270,53 @@ def _normalize_score_range_row(item: dict[str, Any], *, index: int = 0) -> dict[
     }
 
 
+def _category_key_for_index(index: int) -> str:
+    if 0 <= index < 26:
+        return f"category_{chr(ord('a') + index)}"
+    return f"category_{index + 1}"
+
+
+def _question_option_lookup(question_rows: list[dict[str, Any]], question_id: int | None) -> dict[int, dict[str, Any]]:
+    normalized_question_id = int(question_id or 0)
+    question = next((item for item in question_rows if int(item.get("id") or 0) == normalized_question_id), {})
+    return {int(option.get("id") or 0): dict(option) for option in list(question.get("options") or []) if int(option.get("id") or 0)}
+
+
+def _normalize_option_category_row(item: dict[str, Any], *, option_lookup: dict[int, dict[str, Any]], index: int = 0) -> dict[str, Any]:
+    raw_option_ids = item.get("option_ids") or []
+    if isinstance(raw_option_ids, str):
+        raw_option_ids = [value.strip() for value in raw_option_ids.split(",")]
+    option_ids = []
+    for value in list(raw_option_ids or []):
+        try:
+            option_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if option_id:
+            option_ids.append(option_id)
+    snapshots_by_id = {
+        int(snapshot.get("id") or 0): dict(snapshot)
+        for snapshot in list(item.get("option_snapshots") or [])
+        if int(snapshot.get("id") or 0)
+    }
+    option_snapshots = []
+    for option_id in option_ids:
+        option = option_lookup.get(option_id) or snapshots_by_id.get(option_id) or {}
+        option_snapshots.append(
+            {
+                "id": option_id,
+                "option_text": _normalized_text(option.get("option_text")) or f"选项 {option_id}",
+            }
+        )
+    return {
+        "category_key": _normalized_text(item.get("category_key")) or _category_key_for_index(index),
+        "category_name": _normalized_text(item.get("category_name")) or f"分类 {index + 1}",
+        "description": _normalized_text(item.get("description")),
+        "option_ids": option_ids,
+        "option_snapshots": option_snapshots,
+    }
+
+
 def _profile_templates_payload(program_id: int) -> list[dict[str, Any]]:
     try:
         payload = list_conversion_profile_segment_templates(enabled_only=False, program_id=int(program_id))
@@ -284,18 +341,41 @@ def _normalize_segmentation_payload(payload: dict[str, Any], *, program_id: int)
     normal = dict(strategies.get("normal_question_rules") or {})
     score = dict(strategies.get("score_segments") or {})
     profile = dict(strategies.get("profile_dimension") or {})
+    questionnaire_id = int(payload.get("questionnaire_id") or 0) or None
+    question_rows = _questionnaire_questions(questionnaire_id)
     normal_rows = payload.get("normal_question_rules_rows")
     if normal_rows is None:
         normal_rows = normal.get("rules") or []
+    category_rows = payload.get("normal_question_categories")
+    if category_rows is None:
+        category_rows = normal.get("categories") or []
+    segmentation_question_id = (
+        int(payload.get("segmentation_question_id") or normal.get("segmentation_question_id") or 0)
+        or (int(question_rows[0]["id"]) if question_rows else None)
+    )
+    selected_question = next((item for item in question_rows if int(item.get("id") or 0) == int(segmentation_question_id or 0)), {})
+    option_lookup = _question_option_lookup(question_rows, segmentation_question_id)
+    normal_mode = (
+        _normalized_text(payload.get("normal_question_mode"))
+        or _normalized_text(normal.get("mode"))
+        or (QUESTION_OPTION_CATEGORY_MODE if category_rows or segmentation_question_id else "legacy_hit_rules")
+    )
     score_rows = payload.get("score_segment_rows")
     if score_rows is None:
         score_rows = score.get("ranges") or []
     return {
-        "questionnaire_id": int(payload.get("questionnaire_id") or 0) or None,
+        "questionnaire_id": questionnaire_id,
         "default_strategy": _normalized_text(payload.get("default_strategy")) or "normal_question_rules",
         "strategies": {
             "normal_question_rules": {
                 "enabled": bool(normal.get("enabled", payload.get("default_strategy") != "manual")),
+                "mode": normal_mode,
+                "segmentation_question_id": segmentation_question_id,
+                "segmentation_question_title": _normalized_text(selected_question.get("title")),
+                "categories": [
+                    _normalize_option_category_row(dict(item or {}), option_lookup=option_lookup, index=index)
+                    for index, item in enumerate(list(category_rows or []))
+                ],
                 "core_threshold": int(normal.get("core_threshold") or payload.get("core_threshold") or 2),
                 "rules": [
                     _normalize_normal_rule_row(dict(item or {}), index=index)
@@ -324,7 +404,15 @@ def _segmentation_view_model(payload: dict[str, Any], *, program_id: int) -> dic
         "questionnaire_id": None,
         "default_strategy": "normal_question_rules",
         "strategies": {
-            "normal_question_rules": {"enabled": True, "core_threshold": 2, "rules": []},
+            "normal_question_rules": {
+                "enabled": True,
+                "mode": QUESTION_OPTION_CATEGORY_MODE,
+                "core_threshold": 2,
+                "rules": [],
+                "categories": [],
+                "segmentation_question_id": None,
+                "segmentation_question_title": "",
+            },
             "score_segments": {"enabled": False, "ranges": []},
             "profile_dimension": {"enabled": False, "template_id": None, "usage": "content_variable_only"},
         },
@@ -332,15 +420,49 @@ def _segmentation_view_model(payload: dict[str, Any], *, program_id: int) -> dic
     }
     available = _list_available_questionnaires()
     questionnaire_id = normalized.get("questionnaire_id")
+    question_rows = _questionnaire_questions(questionnaire_id)
+    selected_questionnaire = _selected_questionnaire(questionnaire_id, available)
+    if selected_questionnaire:
+        selected_questionnaire["questions"] = question_rows
+    normal_strategy = dict(normalized["strategies"]["normal_question_rules"])
+    selected_question_id = int(normal_strategy.get("segmentation_question_id") or 0) or (int(question_rows[0]["id"]) if question_rows else None)
+    selected_question = next((item for item in question_rows if int(item.get("id") or 0) == int(selected_question_id or 0)), {})
+    assigned_option_ids = {
+        int(option_id)
+        for category in list(normal_strategy.get("categories") or [])
+        for option_id in list(category.get("option_ids") or [])
+        if int(option_id or 0)
+    }
+    unassigned_options = [
+        dict(option)
+        for option in list(selected_question.get("options") or [])
+        if int(option.get("id") or 0) not in assigned_option_ids
+    ]
+    normal_view = {
+        "mode": _normalized_text(normal_strategy.get("mode")) or QUESTION_OPTION_CATEGORY_MODE,
+        "core_threshold": int(normal_strategy.get("core_threshold") or 2),
+        "segmentation_question_id": selected_question_id,
+        "segmentation_question_title": _normalized_text(selected_question.get("title")),
+        "selected_question": selected_question,
+        "category_rows": list(normal_strategy.get("categories") or []),
+        "unassigned_options": unassigned_options,
+        "legacy_rows": list(normal_strategy.get("rules") or []),
+        "rows": list(normal_strategy.get("rules") or []),
+    }
+    segmentation_ui = {
+        "available_questionnaires": available,
+        "selected_questionnaire": selected_questionnaire,
+        "selected_segmentation_question": selected_question,
+        "category_rows": normal_view["category_rows"],
+        "unassigned_options": unassigned_options,
+    }
     return {
         **normalized,
         "available_questionnaires": available,
-        "selected_questionnaire": _selected_questionnaire(questionnaire_id, available),
-        "question_rows": _questionnaire_questions(questionnaire_id),
-        "normal_question_rules": {
-            "core_threshold": int((normalized["strategies"]["normal_question_rules"]).get("core_threshold") or 2),
-            "rows": list((normalized["strategies"]["normal_question_rules"]).get("rules") or []),
-        },
+        "selected_questionnaire": selected_questionnaire,
+        "question_rows": question_rows,
+        "segmentation_ui": segmentation_ui,
+        "normal_question_rules": normal_view,
         "score_segments": {
             "enabled": bool((normalized["strategies"]["score_segments"]).get("enabled")),
             "rows": list((normalized["strategies"]["score_segments"]).get("ranges") or []),
@@ -362,7 +484,7 @@ def _audience_rule_view_model(payload: dict[str, Any], *, program_id: int) -> di
         "normalized_cards": {
             "channel_enter": {
                 "event": "channel_enter",
-                "event_label": "用户通过入口进入",
+                "event_label": "入口进入后",
                 "condition_type": _normalized_text(entry_rule.get("condition_type") or entry_rule.get("condition")) or "any_entry_channel",
                 "condition_options": ENTRY_CONDITION_LABELS,
                 "target_audience_code": _normalized_text(entry_rule.get("target_audience_code")) or "pending_questionnaire",
@@ -371,7 +493,7 @@ def _audience_rule_view_model(payload: dict[str, Any], *, program_id: int) -> di
             },
             "questionnaire_submitted": {
                 "event": "questionnaire_submitted",
-                "event_label": "绑定问卷提交成功",
+                "event_label": "问卷提交后",
                 "condition_type": _normalized_text(submit_rule.get("condition_type") or submit_rule.get("condition")) or "questionnaire_id_matched",
                 "condition_options": QUESTIONNAIRE_CONDITION_LABELS,
                 "target_audience_code": _normalized_text(submit_rule.get("target_audience_code")) or "operating",
@@ -539,6 +661,42 @@ def validate_score_ranges(payload: dict[str, Any]) -> None:
             raise ValueError("总分分层区间不能重叠")
 
 
+def validate_option_categories(payload: dict[str, Any]) -> None:
+    if _normalized_text(payload.get("default_strategy")) != "normal_question_rules":
+        return
+    strategies = dict(payload.get("strategies") or {})
+    normal = dict(strategies.get("normal_question_rules") or {})
+    if not normal.get("enabled", True):
+        return
+    if _normalized_text(normal.get("mode")) not in {"", QUESTION_OPTION_CATEGORY_MODE}:
+        return
+    if not int(payload.get("questionnaire_id") or 0):
+        raise ValueError("请先选择问卷")
+    if not int(normal.get("segmentation_question_id") or 0):
+        raise ValueError("请先选择分层题目")
+    question_rows = _questionnaire_questions(int(payload.get("questionnaire_id") or 0))
+    valid_option_ids = set(_question_option_lookup(question_rows, int(normal.get("segmentation_question_id") or 0)).keys())
+    if not valid_option_ids:
+        raise ValueError("当前分层题目没有可用选项")
+    categories = list(normal.get("categories") or [])
+    if not categories:
+        raise ValueError("启用普通问卷选项分类时，至少需要一个分类")
+    seen: dict[int, str] = {}
+    for category in categories:
+        category_name = _normalized_text(category.get("category_name"))
+        option_ids = [int(option_id) for option_id in list(category.get("option_ids") or []) if int(option_id or 0)]
+        if not category_name:
+            raise ValueError("分类名称不能为空")
+        if not option_ids:
+            raise ValueError("每个分类至少需要选择一个选项")
+        for option_id in option_ids:
+            if option_id not in valid_option_ids:
+                raise ValueError("分类选项不属于当前分层题目")
+            if option_id in seen:
+                raise ValueError("同一个选项不能同时属于多个分类")
+            seen[option_id] = category_name
+
+
 def match_score_segment(payload: dict[str, Any], total_score: float) -> dict[str, Any] | None:
     for item in _score_ranges(payload):
         min_score = float(item.get("min_score"))
@@ -550,6 +708,7 @@ def match_score_segment(payload: dict[str, Any], total_score: float) -> dict[str
 
 def save_segmentation(program_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     payload = _normalize_segmentation_payload(dict(payload or {}), program_id=int(program_id))
+    validate_option_categories(payload)
     validate_score_ranges(payload)
     block = program_repo.upsert_config_block_row(
         int(program_id),
@@ -601,7 +760,7 @@ def _has_segmentation(payload: dict[str, Any]) -> bool:
     strategies = dict(payload.get("strategies") or {})
     normal = dict(strategies.get("normal_question_rules") or {})
     score = dict(strategies.get("score_segments") or {})
-    return bool(normal.get("enabled") and normal.get("rules")) or bool(score.get("enabled") and score.get("ranges"))
+    return bool(normal.get("enabled") and (normal.get("categories") or normal.get("rules"))) or bool(score.get("enabled") and score.get("ranges"))
 
 
 def build_publish_check(program_id: int) -> dict[str, Any]:
