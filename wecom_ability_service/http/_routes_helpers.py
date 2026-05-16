@@ -8,145 +8,47 @@ via __all__ so callers can `from ._routes_helpers import (a, b, ...)`.
 from __future__ import annotations
 
 import base64
-import json
 
-import requests
 
-from flask import Response, abort, current_app, jsonify, redirect, request, url_for
+from flask import abort, redirect, request, url_for
 
-from ..domains.automation_conversion.channel_service import (
-    generate_default_channel_qr,
-    get_default_channel_settings_payload,
-    save_default_channel_settings,
-)
 from ..domains.automation_conversion.focus_send_service import (
-    create_focus_send_batch,
     get_focus_send_batch_detail,
     get_focus_send_batches_payload,
-    run_due_focus_send_batches,
 )
-from ..domains.automation_conversion.laohuang_chat_service import (
-    handle_laohuang_chat_result_callback,
-    list_recent_laohuang_review_outputs,
-    send_laohuang_review_output_via_webhook,
-    send_laohuang_review_output_via_wecom,
-)
-from ..domains.automation_conversion.manual_send_service import (
-    preview_stage_manual_send,
-    send_stage_manual_message,
-)
-from ..domains.automation_conversion import member_segment_search_service
-from ..domains.automation_conversion.message_activity_service import run_message_activity_sync
 from ..domains.automation_conversion.model_infra_service import (
     get_model_infra_payload,
-    save_model_infra_settings,
-    test_model_infra_connection,
 )
 from ..domains.automation_conversion.orchestration_service import (
-    build_rejected_feedback_clipboard_payload,
-    create_agent_config,
-    create_agent_output_export_job,
-    delete_agent_config,
-    diff_agent_prompt,
-    get_agent_config_detail,
     get_agent_orchestration_payload,
-    get_agent_output_detail,
-    get_agent_output_export_file,
-    get_agent_output_export_job,
     get_agent_replay_payload,
-    get_agent_run_detail,
-    handle_agent_router_callback,
     list_agent_configs,
-    list_agent_outputs,
-    list_pending_agent_prompt_publish_requests,
-    list_recent_reviewable_agent_outputs,
-    list_router_pending_callbacks,
-    publish_agent_config,
-    replay_agent_run,
-    replay_router_callback,
-    review_agent_reply_output,
-    run_router_pending_callback_check,
-    save_agent_config_draft,
-    submit_agent_prompt_for_publish,
-    validate_router_callback_signature,
 )
 from ..domains.automation_conversion.program_service import (
-    copy_automation_program,
-    create_automation_program,
     get_automation_program,
-    get_default_automation_program,
     get_default_automation_program_id,
     list_automation_programs,
-    update_automation_program_basic_info,
-    update_automation_program_status,
-)
-from ..domains.automation_conversion.reply_monitor_service import (
-    run_due_reply_monitor,
-    run_reply_monitor_capture,
-    run_router_test_dispatch,
-    save_reply_monitor_enabled,
 )
 from ..domains.automation_conversion.service import (
     get_debug_payload,
-    get_member_detail,
     get_overview_payload,
     get_settings_payload,
     get_stage_detail_payload,
-    mark_won,
-    put_in_pool,
-    push_openclaw,
-    remove_from_pool,
-    run_registered_due_jobs,
-    save_settings,
-    set_follow_type,
-    unmark_won,
 )
 from ..domains.wecom_media_limits import (
     detect_wecom_image_mime_type,
     validate_wecom_image_upload,
 )
 from ..domains.automation_conversion.sop_service import (
-    delete_sop_v1_template_day,
     get_sop_v1_batches_payload,
-    get_sop_v1_config_payload,
-    get_sop_v1_templates_payload,
-    run_due_sop,
-    save_sop_v1_pool_config,
-    save_sop_v1_template,
 )
 from ..domains.automation_conversion.workflow_service import (
-    activate_conversion_workflow,
-    apply_dashboard_signup_tag,
-    create_conversion_profile_segment_template,
-    create_conversion_workflow,
-    create_conversion_workflow_node,
-    delete_conversion_workflow,
-    delete_conversion_workflow_node,
-    get_conversion_dashboard_payload,
-    get_conversion_profile_segment_template_bundle,
-    get_conversion_workflow_detail_summary,
-    get_conversion_workflow_execution_detail,
-    get_conversion_workflow_execution_item_detail,
-    get_conversion_workflow_model_bundle,
     list_conversion_agent_options,
     list_conversion_profile_segment_catalog,
-    list_conversion_profile_segment_template_options,
     list_conversion_profile_segment_templates,
-    list_conversion_workflow_execution_items,
-    list_conversion_workflow_execution_records,
-    list_conversion_workflow_nodes,
-    list_conversion_workflow_registry,
-    list_conversion_workflows,
-    pause_conversion_workflow,
-    send_agent_reply_output_via_bazhuayu,
-    send_conversion_execution_item_via_bazhuayu,
-    update_conversion_profile_segment_template,
-    update_conversion_workflow,
-    update_conversion_workflow_node,
 )
 from .admin_console import _breadcrumb_items, _render_admin_template
-from .internal_auth import ensure_admin_console_action_token, require_internal_api_token, validate_admin_console_action_token
-
+from .internal_auth import ensure_admin_console_action_token
 
 
 def _query_text(name: str) -> str:
@@ -272,6 +174,8 @@ _AUTOMATION_CONVERSION_WORKSPACE_TABS = (
         "params": {},
     },
 )
+
+
 def _coerce_program_id(program_id: object) -> int | None:
     try:
         normalized_program_id = int(program_id or 0)
@@ -574,12 +478,16 @@ def _build_flow_design_workspace(*, page_input: dict[str, object] | None = None,
         **dict(settings_payload.get("default_channel") or {}),
         "welcome_message": str(input_payload.get("welcome_message") or dict(settings_payload.get("default_channel") or {}).get("welcome_message") or ""),
     }
+
     def _flow_href(section_key: str, anchor: str) -> str:
-        return _program_route_or_main(
-            "api.admin_automation_program_flow_design",
-            program_id=program_id,
-            section=section_key,
-        ) + anchor
+        return (
+            _program_route_or_main(
+                "api.admin_automation_program_flow_design",
+                program_id=program_id,
+                section=section_key,
+            )
+            + anchor
+        )
 
     return {
         "section": section,
@@ -819,7 +727,10 @@ def _render_operations_page(*, page_error: str = "", program: dict[str, object] 
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
-            ((program or {}).get("program_name") or "自动化运营", url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None),
+            (
+                (program or {}).get("program_name") or "自动化运营",
+                url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None,
+            ),
             ("运营编排", None),
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "operations") if program_id else _automation_conversion_workspace_tabs("operations"),
@@ -984,11 +895,16 @@ def _render_flow_design_page(*, page_error: str = "", page_input: dict[str, obje
         "automation_conversion_flow_design_workspace.html",
         active_nav="automation_conversion",
         page_title="基础配置",
-        page_summary="当前方案内维护问卷分层、欢迎语、扫码标签和入口二维码；共享层只保留智能体与大模型底座。" if program else "兼容旧后台设置入口，当前统一映射到问卷分层、欢迎语、扫码标签和入口二维码配置。",
+        page_summary="当前方案内维护问卷分层、欢迎语、扫码标签和入口二维码；共享层只保留智能体与大模型底座。"
+        if program
+        else "兼容旧后台设置入口，当前统一映射到问卷分层、欢迎语、扫码标签和入口二维码配置。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
-            ((program or {}).get("program_name") or "自动化转化", url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None),
+            (
+                (program or {}).get("program_name") or "自动化转化",
+                url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None,
+            ),
             ("基础配置", None),
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "flow_design") if program_id else [],
@@ -1009,7 +925,10 @@ def _render_member_ops_page(*, page_error: str = "", program: dict[str, object] 
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
             ("自动化运营方案", url_for("api.admin_automation_conversion")),
-            ((program or {}).get("program_name") or "自动化转化", url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None),
+            (
+                (program or {}).get("program_name") or "自动化转化",
+                url_for("api.admin_automation_program_overview", program_id=program_id) if program_id else None,
+            ),
             ("成员运营", None),
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "member_ops") if program_id else [],
@@ -1100,10 +1019,6 @@ def _program_action_redirect(default_path: str = ""):
     if not target.startswith("/admin/automation-conversion") or target.startswith("//"):
         target = default_path or url_for("api.admin_automation_conversion")
     return redirect(target, code=302)
-
-
-
-
 
 
 __all__ = [
