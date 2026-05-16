@@ -41,15 +41,17 @@ def _seed_demo_customers(*, corp_id: str) -> None:
     for item in DEMO_CUSTOMERS:
         db.execute(
             """
-            INSERT OR IGNORE INTO owner_role_map (userid, display_name, role, active)
+            INSERT INTO owner_role_map (userid, display_name, role, active)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT (userid) DO NOTHING
             """,
             (item["owner_userid"], item["owner_userid"], "sales", 1),
         )
         db.execute(
             """
-            INSERT OR IGNORE INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
+            INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description, updated_at)
             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT (external_userid) DO NOTHING
             """,
             (
                 item["external_userid"],
@@ -61,8 +63,9 @@ def _seed_demo_customers(*, corp_id: str) -> None:
         )
         db.execute(
             """
-            INSERT OR IGNORE INTO people (mobile, third_party_user_id, created_at, updated_at)
+            INSERT INTO people (mobile, third_party_user_id, created_at, updated_at)
             VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (mobile) DO NOTHING
             """,
             (item["mobile"], f"tp-{item['external_userid']}"),
         )
@@ -70,10 +73,11 @@ def _seed_demo_customers(*, corp_id: str) -> None:
         person_id = int(person["id"])
         db.execute(
             """
-            INSERT OR IGNORE INTO external_contact_bindings (
+            INSERT INTO external_contact_bindings (
                 external_userid, person_id, first_bound_by_userid, first_owner_userid, last_owner_userid, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (external_userid) DO NOTHING
             """,
             (
                 item["external_userid"],
@@ -85,11 +89,23 @@ def _seed_demo_customers(*, corp_id: str) -> None:
         )
         db.execute(
             """
-            INSERT OR REPLACE INTO class_user_status_current (
+            INSERT INTO class_user_status_current (
                 external_userid, signup_status, signup_label_name, customer_name_snapshot, owner_userid_snapshot,
                 mobile_snapshot, set_by_userid, set_at, wecom_tag_sync_status, wecom_tag_sync_error, status_flags_json
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+            ON CONFLICT (external_userid) DO UPDATE SET
+                signup_status = EXCLUDED.signup_status,
+                signup_label_name = EXCLUDED.signup_label_name,
+                customer_name_snapshot = EXCLUDED.customer_name_snapshot,
+                owner_userid_snapshot = EXCLUDED.owner_userid_snapshot,
+                mobile_snapshot = EXCLUDED.mobile_snapshot,
+                set_by_userid = EXCLUDED.set_by_userid,
+                set_at = EXCLUDED.set_at,
+                wecom_tag_sync_status = EXCLUDED.wecom_tag_sync_status,
+                wecom_tag_sync_error = EXCLUDED.wecom_tag_sync_error,
+                status_flags_json = EXCLUDED.status_flags_json,
+                updated_at = CURRENT_TIMESTAMP
             """,
             (
                 item["external_userid"],
@@ -106,10 +122,19 @@ def _seed_demo_customers(*, corp_id: str) -> None:
         )
         db.execute(
             """
-            INSERT OR REPLACE INTO wecom_external_contact_identity_map (
+            INSERT INTO wecom_external_contact_identity_map (
                 corp_id, external_userid, unionid, openid, follow_user_userid, name, status, raw_profile
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (corp_id, external_userid) DO UPDATE SET
+                unionid = EXCLUDED.unionid,
+                openid = EXCLUDED.openid,
+                follow_user_userid = EXCLUDED.follow_user_userid,
+                name = EXCLUDED.name,
+                status = EXCLUDED.status,
+                raw_profile = EXCLUDED.raw_profile,
+                last_seen_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
             """,
             (
                 corp_id,

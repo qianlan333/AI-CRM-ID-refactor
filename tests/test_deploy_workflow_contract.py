@@ -62,6 +62,7 @@ def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     alembic_env = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
 
     assert "--database-path" not in seed_demo
+    assert "INSERT OR " not in seed_demo
     assert "DATABASE_PATH`` / ``DATABASE_URL" not in campaign_scheduler
     assert "DATABASE_PATH`` / ``DATABASE_URL" not in broadcast_worker
     assert "sqlite_path" not in ops_runtime
