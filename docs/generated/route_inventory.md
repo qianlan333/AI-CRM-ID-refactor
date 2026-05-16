@@ -2,7 +2,7 @@
 
 Source: `wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()`
 
-Route rows: `383`
+Route rows: `384`
 
 | Rule | Methods | Endpoint | Arguments | Auth hint | Module hint |
 | --- | --- | --- | --- | --- | --- |
@@ -63,7 +63,7 @@ Route rows: `383`
 | `/admin/config/login-access/save` | `POST` | `api.admin_config_save_login_access` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
 | `/admin/config/mcp-tools` | `GET` | `api.admin_config_mcp_tools` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
 | `/admin/config/mcp-tools/save` | `POST` | `api.admin_config_save_mcp_tool` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
-| `/admin/config/wecom-tags` | `GET` | `api.admin_config_wecom_tags` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
+| `/admin/config/wecom-tags` | `GET` | `api.admin_config_wecom_tags_redirect` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
 | `/admin/customers` | `GET` | `api.admin_console_customers` | `` | `admin_session` | `wecom_ability_service.http.admin_customers` |
 | `/admin/customers/<external_userid>` | `GET` | `api.admin_console_customer_detail` | `external_userid` | `admin_session` | `wecom_ability_service.http.admin_customers` |
 | `/admin/customers/<external_userid>/tags` | `POST` | `api.admin_console_customer_tag_action` | `external_userid` | `admin_session` | `wecom_ability_service.http.admin_customers` |
@@ -94,6 +94,7 @@ Route rows: `383`
 | `/admin/user-ops/actions` | `POST` | `api.admin_console_operations_action` | `` | `admin_session` | `wecom_ability_service.http.admin_operations` |
 | `/admin/user-ops/ui` | `GET` | `api.admin_user_ops_ui` | `` | `admin_session` | `wecom_ability_service.http.admin_user_ops` |
 | `/admin/wecom-customer-acquisition-links/ui` | `GET` | `api.admin_wecom_customer_acquisition_links_ui` | `` | `admin_session` | `wecom_ability_service.http.wecom_customer_acquisition` |
+| `/admin/wecom-tags` | `GET` | `api.admin_wecom_tags_page` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
 | `/api/admin/audit/logs` | `GET` | `api.api_admin_audit_logs` | `` | `admin_session` | `wecom_ability_service.http.admin_audit` |
 | `/api/admin/automation-conversion/action-templates` | `GET` | `api.api_admin_automation_conversion_action_templates` | `` | `admin_session` | `wecom_ability_service.http.automation_conversion` |
 | `/api/admin/automation-conversion/action-templates` | `POST` | `api.api_admin_automation_conversion_action_templates` | `` | `admin_session` | `wecom_ability_service.http.automation_conversion` |

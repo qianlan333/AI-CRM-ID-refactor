@@ -102,26 +102,28 @@ def admin_config_home():
         "config_overview.html",
         active_tab="overview",
         page_title="配置中心",
-        page_summary="在这里维护企微标签、系统设置、登录与权限，以及配置检查清单。",
+        page_summary="在这里维护系统设置、登录与权限，以及配置检查清单。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("配置中心", None)),
         overview_cards=payload["cards"],
     )
 
 
-def admin_config_wecom_tags():
-    return _render_config_template(
+def admin_wecom_tags_page():
+    return _render_admin_template(
         "config_wecom_tags.html",
-        active_tab="wecom_tags",
         page_title="企微标签管理",
         page_summary="集中管理企业客户标签：同步、搜索、新增、编辑、删除和复制 tag_id。",
         breadcrumbs=_breadcrumb_items(
             ("客户管理后台", url_for("api.admin_console_home")),
-            ("配置中心", url_for("api.admin_config_home")),
             ("企微标签管理", None),
         ),
         show_shell_meta=False,
         active_nav="wecom_tags",
     )
+
+
+def admin_config_wecom_tags_redirect():
+    return redirect(url_for("api.admin_wecom_tags_page"), code=302)
 
 
 def _app_settings_page(*, page_error: str = ""):
@@ -474,7 +476,8 @@ def api_admin_config_save_signup_conversion():
 
 def register_routes(bp):
     bp.route("/admin/config", methods=["GET"])(admin_config_home)
-    bp.route("/admin/config/wecom-tags", methods=["GET"])(admin_config_wecom_tags)
+    bp.route("/admin/wecom-tags", methods=["GET"])(admin_wecom_tags_page)
+    bp.route("/admin/config/wecom-tags", methods=["GET"])(admin_config_wecom_tags_redirect)
     bp.route("/admin/marketing-automation/ui", methods=["GET"])(admin_marketing_automation_ui)
     bp.route("/admin/config/app-settings", methods=["GET"])(admin_config_app_settings)
     bp.route("/admin/config/app-settings/save", methods=["POST"])(admin_config_save_app_settings)

@@ -1,6 +1,6 @@
 {
   "source": "wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()",
-  "route_count": 383,
+  "route_count": 384,
   "routes": [
     {
       "rule": "/<path:filename>",
@@ -619,7 +619,7 @@
     },
     {
       "rule": "/admin/config/wecom-tags",
-      "endpoint": "api.admin_config_wecom_tags",
+      "endpoint": "api.admin_config_wecom_tags_redirect",
       "methods": [
         "GET"
       ],
@@ -947,6 +947,16 @@
       "arguments": [],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.wecom_customer_acquisition"
+    },
+    {
+      "rule": "/admin/wecom-tags",
+      "endpoint": "api.admin_wecom_tags_page",
+      "methods": [
+        "GET"
+      ],
+      "arguments": [],
+      "auth_hint": "admin_session",
+      "module_hint": "wecom_ability_service.http.admin_config"
     },
     {
       "rule": "/api/admin/audit/logs",

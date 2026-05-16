@@ -445,7 +445,7 @@ def _contains_standalone_token(text: str, token: str) -> bool:
 def test_admin_config_pages_render(client):
     expected = {
         "/admin/config": "配置中心",
-        "/admin/config/wecom-tags": "企微标签管理",
+        "/admin/wecom-tags": "企微标签管理",
         "/admin/automation-conversion": "自动化转化",
         "/admin/config/app-settings": "系统设置",
         "/admin/config/login-access": "登录与权限",
@@ -458,7 +458,16 @@ def test_admin_config_pages_render(client):
         if path.startswith("/admin/config"):
             assert "配置中心" in html
 
+    tags_html = client.get("/admin/wecom-tags").get_data(as_text=True)
+    assert "统一后台配置模式" not in tags_html
+    assert "/admin/config/wecom-tags" not in client.get("/admin/config").get_data(as_text=True)
+
+    legacy_response = client.get("/admin/config/wecom-tags")
+    assert legacy_response.status_code == 302
+    assert legacy_response.headers["Location"].endswith("/admin/wecom-tags")
+
     overview_html = client.get("/admin/config").get_data(as_text=True)
+    assert "企微标签管理" in overview_html
     assert "渠道 / 分配规则" not in overview_html
     assert "报名标签规则" not in overview_html
     assert "班期标签规则" not in overview_html

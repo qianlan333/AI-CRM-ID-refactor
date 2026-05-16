@@ -536,7 +536,6 @@ def _recent_audit_entries(target_type: str, limit: int = 8) -> list[dict[str, An
 def config_tabs(active_key: str) -> list[dict[str, Any]]:
     items = [
         {"key": "overview", "label": "概览", "href": "/admin/config"},
-        {"key": "wecom_tags", "label": "企微标签管理", "href": "/admin/config/wecom-tags"},
         {"key": "app_settings", "label": "系统设置", "href": "/admin/config/app-settings"},
         {"key": "login_access", "label": "登录与权限", "href": "/admin/config/login-access"},
         {"key": "checklist", "label": "配置检查清单", "href": "/admin/config/checklist"},
@@ -548,12 +547,6 @@ def build_config_home_payload() -> dict[str, Any]:
     app_rows = list_admin_app_settings(query="", scope="")
     return {
         "cards": [
-            {
-                "label": "企微标签管理",
-                "value": "同步",
-                "description": "同步、搜索、新增、编辑、删除和复制 tag_id",
-                "href": "/admin/config/wecom-tags",
-            },
             {
                 "label": "系统设置",
                 "value": len(app_rows["rows"]),
