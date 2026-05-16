@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from ...db import get_db
@@ -41,7 +41,11 @@ def _new_plan_id() -> str:
 
 
 def _expires_at(hours: int = _DEFAULT_TTL_HOURS) -> str:
-    return (datetime.utcnow() + timedelta(hours=int(hours))).isoformat()
+    return (_utc_now_naive() + timedelta(hours=int(hours))).isoformat()
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _enforce_max_recipients(requested: int) -> int:
@@ -431,7 +435,7 @@ def simulate_broadcast(*, plan_id: str) -> dict[str, Any]:
         "skipped_count": len(blocked),
         "skipped_by_reason": skipped_by_reason,
         "frequency_budget": budget_overview,
-        "checked_at": datetime.utcnow().isoformat(),
+        "checked_at": _utc_now_naive().isoformat(),
     }
 
     _update_plan(
@@ -497,7 +501,7 @@ def commit_broadcast_plan(
         plan_id,
         {
             "status": "committed",
-            "committed_at": datetime.utcnow().isoformat(),
+            "committed_at": _utc_now_naive().isoformat(),
             "committed_by": str(human_approver),
             "approval_token_hash": "consumed",
         },
