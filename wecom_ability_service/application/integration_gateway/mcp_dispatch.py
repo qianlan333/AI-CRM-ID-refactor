@@ -64,9 +64,7 @@ from ...services import (
     get_openclaw_customer_marketing_profile,
     get_pending_conversion_batches,
     get_recent_messages_by_user,
-    get_routing_config,
     get_signup_conversion_batch,
-    get_signup_tag_rules_config,
     list_message_batches,
     list_owner_role_map,
     list_signup_conversion_batches,
@@ -1102,10 +1100,6 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 "items": list_owner_role_map(active_only=bool(arguments.get("active_only", False))),
             }
         )
-    if name == "get_signup_tag_rules":
-        return _tool_result(get_signup_tag_rules_config())
-    if name == "get_routing_config":
-        return _tool_result(get_routing_config())
     if name == "get_owner_recent_chat_dump":
         return _tool_result(_build_owner_recent_chat_dump(arguments))
     if name == "get_pending_message_batches":

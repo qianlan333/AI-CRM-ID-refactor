@@ -312,24 +312,6 @@ TOOL_DEFS = [
         },
     },
     {
-        "name": "get_signup_tag_rules",
-        "description": "Read signup tag rules used for pre/post-signup routing validation.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "active_only": {"type": "boolean"},
-            },
-        },
-    },
-    {
-        "name": "get_routing_config",
-        "description": "Read both owner role map and signup tag rules in one call.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
         "name": "get_pending_message_batches",
         "description": "List pending 3-minute message batches for OpenClaw to judge.",
         "inputSchema": {

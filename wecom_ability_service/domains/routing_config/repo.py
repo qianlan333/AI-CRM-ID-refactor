@@ -28,27 +28,6 @@ def list_owner_role_map(active_only: bool = False):
     return get_db().execute(sql, tuple(params)).fetchall()
 
 
-def upsert_owner_role_map_item(*, userid: str, display_name: str, role: str, active: bool) -> None:
-    get_db().execute(
-        """
-        INSERT INTO owner_role_map (userid, display_name, role, active, updated_at)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(userid) DO UPDATE SET
-            display_name = excluded.display_name,
-            role = excluded.role,
-            active = excluded.active,
-            updated_at = CURRENT_TIMESTAMP
-        """,
-        (
-            str(userid or "").strip(),
-            str(display_name or "").strip(),
-            str(role or "").strip(),
-            db_bool(active),
-        ),
-    )
-    get_db().commit()
-
-
 def get_routing_rule(rule_key: str):
     return get_db().execute(
         """

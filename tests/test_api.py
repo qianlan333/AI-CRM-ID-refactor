@@ -2339,8 +2339,8 @@ def test_mcp_tools_and_message_batches(client, app, monkeypatch):
     assert "get_contact" in tool_names
     assert "get_pending_message_batches" in tool_names
     assert "get_owner_role_map" in tool_names
-    assert "get_signup_tag_rules" in tool_names
-    assert "get_routing_config" in tool_names
+    assert "get_signup_tag_rules" not in tool_names
+    assert "get_routing_config" not in tool_names
 
     contact_resp = client.post(
         "/mcp",
@@ -2357,22 +2357,6 @@ def test_mcp_tools_and_message_batches(client, app, monkeypatch):
     assert contact_payload["tags"][0]["tag_id"] == "tag-999"
     assert contact_payload["signup_status"] == "signed_999"
     assert contact_payload["routing_context"]["routing_target"] == "sales_handle"
-
-    routing_resp = client.post(
-        "/mcp",
-        headers=headers,
-        json={
-            "jsonrpc": "2.0",
-            "id": 22,
-            "method": "tools/call",
-            "params": {"name": "get_routing_config", "arguments": {}},
-        },
-    )
-    routing_payload = routing_resp.get_json()["result"]["structuredContent"]
-    assert routing_payload["owner_role_map"][0]["userid"] == "sales_01"
-    assert routing_payload["signup_tag_rules"]["tag_group_name"] == "AI 产品报名情况"
-    assert routing_payload["signup_tag_rules"]["items"][0]["tag_id"] in {"tag-999", "tag-3999"}
-    assert routing_payload["routing_rules"]["signed_3999"]["when_owner_role_sales"] == "delivery_redirect"
 
     pending_resp = client.post(
         "/mcp",
