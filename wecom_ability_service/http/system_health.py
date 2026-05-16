@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-from flask import current_app, jsonify
+from flask import jsonify
 
 from ..domains.callbacks.service import (
     count_failed_events_since,
@@ -12,7 +12,6 @@ from ..domains.callbacks.service import (
     mark_event_dead_letter,
     mark_external_contact_event_processing,
 )
-from ..infra.circuit_breaker import CircuitBreaker
 from ..infra.task_queue import get_queue_depth, is_rq_active
 from .background_jobs import _dispatch_background_task, _process_external_contact_event
 from .common import APP_STARTED_AT_TEXT

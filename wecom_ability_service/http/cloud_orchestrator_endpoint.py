@@ -12,7 +12,6 @@ CRM 不做 LLM 调用；外部 Agent（Claude Code）通过 MCP HTTP 连。
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from flask import Response, jsonify, render_template, request
 
