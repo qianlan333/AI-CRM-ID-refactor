@@ -116,3 +116,15 @@ def test_alembic_0003_is_pg_only():
     assert "PRAGMA" not in migration
     assert "information_schema.columns" in migration
     assert "DROP COLUMN IF EXISTS" in migration
+
+
+def test_alembic_0009_is_pg_only():
+    migration = (
+        ROOT / "migrations" / "versions" / "0009_image_library_semantic.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_is_postgres" not in migration
+    assert "PRAGMA" not in migration
+    assert "TEXT NOT NULL DEFAULT '[]'" not in migration
+    assert "JSONB NOT NULL DEFAULT '[]'::jsonb" in migration
+    assert "USING GIN (tags)" in migration
