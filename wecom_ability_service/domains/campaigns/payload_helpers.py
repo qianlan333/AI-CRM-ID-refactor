@@ -18,9 +18,17 @@ def parse_step_payload(raw: Any) -> dict[str, Any]:
     return {}
 
 
+def _iter_payload_values(values: Any) -> list[Any]:
+    if values in (None, ""):
+        return []
+    if isinstance(values, list | tuple | set):
+        return list(values)
+    return [values]
+
+
 def normalize_int_list(values: Any, *, limit: int | None = None) -> list[int]:
     items: list[int] = []
-    for raw in values or []:
+    for raw in _iter_payload_values(values):
         try:
             items.append(int(raw))
         except (TypeError, ValueError):
@@ -30,7 +38,7 @@ def normalize_int_list(values: Any, *, limit: int | None = None) -> list[int]:
 
 def normalize_str_list(values: Any, *, limit: int | None = None) -> list[str]:
     items: list[str] = []
-    for raw in values or []:
+    for raw in _iter_payload_values(values):
         if raw is None:
             continue
         item = str(raw).strip()

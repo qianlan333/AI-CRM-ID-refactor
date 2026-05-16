@@ -31,7 +31,11 @@ def test_parse_step_payload_rejects_bad_or_non_object_payloads():
 
 def test_normalize_int_list_drops_invalid_values_and_applies_limit():
     assert normalize_int_list(["1", 2, "", None, "bad", 3.0], limit=3) == [1, 2, 3]
+    assert normalize_int_list("4") == [4]
+    assert normalize_int_list(5) == [5]
 
 
 def test_normalize_str_list_strips_blanks_and_applies_limit():
     assert normalize_str_list([" a ", "", None, "b", " c "], limit=2) == ["a", "b"]
+    assert normalize_str_list("media-id") == ["media-id"]
+    assert normalize_str_list(123) == ["123"]
