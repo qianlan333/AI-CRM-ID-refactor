@@ -655,6 +655,9 @@ def _node_payload_from_blueprint(
     miniprogram_ids = node.get("miniprogram_library_ids") or material_payload.get("miniprogram_library_ids") or config.get("miniprogram_library_ids") or []
     image_ids = node.get("image_library_ids") or material_payload.get("image_library_ids") or config.get("image_library_ids") or []
     normalized_material_payload: dict[str, Any] = {}
+    operation_config = material_payload.get("operation_config")
+    if isinstance(operation_config, dict):
+        normalized_material_payload["operation_config"] = dict(operation_config)
     if miniprogram_ids:
         normalized_material_payload["miniprogram_library_ids"] = [
             _normalize_int(item, default=0, minimum=0)

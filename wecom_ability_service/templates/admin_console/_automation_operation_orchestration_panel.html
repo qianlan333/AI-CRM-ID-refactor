@@ -1226,6 +1226,27 @@
       };
     }
 
+    function operationConfigPayload(config) {
+      return {
+        trigger_type: config.trigger_type || 'manual',
+        trigger_label: config.trigger_label || labelFor(triggerOptions, config.trigger_type || 'manual'),
+        audience_type: config.audience_type || 'custom',
+        audience_label: config.audience_label || labelFor(audienceOptions, config.audience_type || 'custom'),
+        send_timing: config.send_timing || 'manual',
+        send_timing_label: config.send_timing_label || labelFor(sendTimingOptions, config.send_timing || 'manual'),
+        content_strategy: config.content_strategy || state.contentStrategy || 'standard_content',
+        layer_basis: config.layer_basis || 'none',
+        content_profile_segment_template_id: config.content_profile_segment_template_id || null,
+      };
+    }
+
+    function nodePayloadWithOperationConfig(node, config) {
+      return {
+        ...nodePayload(node),
+        operation_config: operationConfigPayload(config),
+      };
+    }
+
     function assetName(type, id) {
       const source = type === 'image' ? state.imageItems : state.miniprogramItems;
       const item = source.find((entry) => Number(entry.id || entry.library_id || 0) === Number(id));
@@ -1488,7 +1509,7 @@
           current.content_mode = 'standard_direct';
         }
         current.position_index = index;
-        current.standard_content_payload = nodePayload(current);
+        current.standard_content_payload = nodePayloadWithOperationConfig(current, config);
         return current;
       });
     }
@@ -1593,7 +1614,7 @@
         payload.content_mode = 'standard_direct';
         payload.standard_content_text = node.standard_content_text || (node.enabled === false ? '未启用节点内容待补充' : '');
       }
-      payload.standard_content_payload = nodePayload(node);
+      payload.standard_content_payload = nodePayloadWithOperationConfig(node, config);
       return payload;
     }
 
@@ -1733,15 +1754,16 @@
       state.currentActionId = Number(actionId || 0) || null;
       setEditorEmpty(false);
       const action = bundle.workflow || {};
+      const config = businessConfigFromBundle(bundle);
       elements.actionName.value = action.workflow_name || '';
       elements.actionStatus.value = action.status || 'draft';
       elements.actionDescription.value = action.description || '';
-      fillSelect(elements.triggerType, triggerOptions, 'manual');
-      fillSelect(elements.audienceType, audienceOptions, (bundle.audiences || []).some((item) => item.audience_code === 'pending_questionnaire') ? 'pending_questionnaire' : 'custom');
-      fillSelect(elements.sendTiming, sendTimingOptions, 'manual');
+      fillSelect(elements.triggerType, triggerOptions, config.trigger_type || 'manual');
+      fillSelect(elements.audienceType, audienceOptions, config.audience_type || 'custom');
+      fillSelect(elements.sendTiming, sendTimingOptions, config.send_timing || 'manual');
       const mode = action.generation_mode;
       const hasVariants = (bundle.nodes || []).some((node) => (node.content_variants || []).length);
-      const strategy = mode === 'personalized_single' ? 'personalized_agent' : hasVariants ? 'layered_content' : 'standard_content';
+      const strategy = config.content_strategy || (mode === 'personalized_single' ? 'personalized_agent' : hasVariants ? 'layered_content' : 'standard_content');
       const binding = findPersonalizedBinding(bundle);
       if (strategy === 'personalized_agent') {
         ensureAgentOption((binding || {}).agent_code);
@@ -1932,22 +1954,78 @@
       return 'standard_content';
     }
 
-    function copyConfigFromBundle(bundle) {
-      const workflow = bundle.workflow || {};
-      const firstNode = (bundle.nodes || [])[0] || {};
-      const strategy = strategyFromBundle(bundle);
-      const binding = findPersonalizedBinding(bundle) || {};
+    function validOptionValue(options, value, fallback) {
+      const normalized = String(value || '');
+      return options.some((item) => item[0] === normalized) ? normalized : fallback;
+    }
+
+    function savedOperationConfigFromBundle(bundle) {
+      const nodes = Array.isArray((bundle || {}).nodes) ? bundle.nodes : [];
+      for (const node of nodes) {
+        const payload = node && node.standard_content_payload && typeof node.standard_content_payload === 'object'
+          ? node.standard_content_payload
+          : {};
+        const config = payload.operation_config && typeof payload.operation_config === 'object' ? payload.operation_config : null;
+        if (config) return config;
+      }
+      return {};
+    }
+
+    function fallbackBusinessConfigFromBundle(bundle) {
+      const workflow = (bundle || {}).workflow || {};
+      const firstNode = ((bundle || {}).nodes || [])[0] || {};
+      const strategy = strategyFromBundle(bundle || {});
+      const binding = findPersonalizedBinding(bundle || {}) || {};
       const fallbackAgentCode = normalizedAgentCode(state.agentOptions[0]);
+      const descriptionText = `${workflow.workflow_name || ''} ${workflow.description || ''}`;
+      const looksLikeQuestionnaireSubmit = strategy === 'personalized_agent'
+        && (descriptionText.includes('问卷提交') || descriptionText.includes('提交问卷后') || descriptionText.includes('填写问卷自动化'));
       return {
-        action_name: `${workflow.workflow_name || '运营动作'} 副本`,
+        action_name: workflow.workflow_name || '',
         description: workflow.description || '',
-        status: 'draft',
-        trigger_type: firstNode.trigger_mode === 'audience_entered' ? 'audience_entered' : 'manual',
-        audience_type: audienceTypeFromBundle(bundle),
-        send_timing: sendTimingFromNode(firstNode),
+        status: workflow.status || 'draft',
+        trigger_type: looksLikeQuestionnaireSubmit ? 'questionnaire_submitted' : (firstNode.trigger_mode === 'audience_entered' ? 'audience_entered' : 'manual'),
+        audience_type: looksLikeQuestionnaireSubmit ? 'questionnaire_submitter' : audienceTypeFromBundle(bundle || {}),
+        send_timing: looksLikeQuestionnaireSubmit ? 'immediate' : sendTimingFromNode(firstNode),
         content_strategy: strategy,
         layer_basis: workflow.content_segmentation_basis === 'profile' ? 'profile' : 'behavior',
         content_profile_segment_template_id: workflow.content_profile_segment_template_id || null,
+        agent_code: binding.agent_code || fallbackAgentCode || '',
+        standard_content_text: firstNode.standard_content_text || '',
+        content_variants: firstNode.content_variants || [],
+        audiences: ((bundle || {}).audiences || []).map((item) => item.audience_code).filter(Boolean),
+        recipient_behavior_tier_keys: workflow.recipient_behavior_tier_keys || [],
+      };
+    }
+
+    function businessConfigFromBundle(bundle) {
+      const fallback = fallbackBusinessConfigFromBundle(bundle || {});
+      const saved = savedOperationConfigFromBundle(bundle || {});
+      return {
+        ...fallback,
+        trigger_type: validOptionValue(triggerOptions, saved.trigger_type, fallback.trigger_type),
+        trigger_label: saved.trigger_label || labelFor(triggerOptions, validOptionValue(triggerOptions, saved.trigger_type, fallback.trigger_type)),
+        audience_type: validOptionValue(audienceOptions, saved.audience_type, fallback.audience_type),
+        audience_label: saved.audience_label || labelFor(audienceOptions, validOptionValue(audienceOptions, saved.audience_type, fallback.audience_type)),
+        send_timing: validOptionValue(sendTimingOptions, saved.send_timing, fallback.send_timing),
+        send_timing_label: saved.send_timing_label || labelFor(sendTimingOptions, validOptionValue(sendTimingOptions, saved.send_timing, fallback.send_timing)),
+        content_strategy: saved.content_strategy || fallback.content_strategy,
+        layer_basis: saved.layer_basis || fallback.layer_basis,
+        content_profile_segment_template_id: saved.content_profile_segment_template_id || fallback.content_profile_segment_template_id,
+      };
+    }
+
+    function copyConfigFromBundle(bundle) {
+      const workflow = bundle.workflow || {};
+      const firstNode = (bundle.nodes || [])[0] || {};
+      const binding = findPersonalizedBinding(bundle) || {};
+      const fallbackAgentCode = normalizedAgentCode(state.agentOptions[0]);
+      const config = businessConfigFromBundle(bundle);
+      return {
+        ...config,
+        action_name: `${workflow.workflow_name || '运营动作'} 副本`,
+        description: workflow.description || '',
+        status: 'draft',
         agent_code: binding.agent_code || fallbackAgentCode || '',
         standard_content_text: firstNode.standard_content_text || '',
         content_variants: firstNode.content_variants || [],
