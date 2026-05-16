@@ -105,3 +105,14 @@ def test_alembic_0002_is_pg_only():
     assert "AUTOINCREMENT" not in migration
     assert "BIGSERIAL PRIMARY KEY" in migration
     assert "TIMESTAMPTZ" in migration
+
+
+def test_alembic_0003_is_pg_only():
+    migration = (
+        ROOT / "migrations" / "versions" / "0003_member_segment_columns.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_is_postgres" not in migration
+    assert "PRAGMA" not in migration
+    assert "information_schema.columns" in migration
+    assert "DROP COLUMN IF EXISTS" in migration
