@@ -380,7 +380,7 @@ def update_image(
         params.append(str(name).strip()[:200])
     if enabled is not None:
         sets.append("enabled = ?")
-        params.append(bool(enabled))  # PG BOOLEAN / SQLite truthy
+        params.append(bool(enabled))
     if description is not None:
         sets.append("description = ?")
         params.append(str(description).strip()[:4000])

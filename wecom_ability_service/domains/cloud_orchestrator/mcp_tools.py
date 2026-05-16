@@ -634,7 +634,7 @@ _TOOL_SPECS: list[dict[str, Any]] = [
         "name": "query_table_schema",
         "side_effect": "read",
         "description": (
-            "查一张表的列定义（PG/SQLite 都支持），便于 Agent 写 SQL 前确认列名/类型。"
+            "查一张表的 PG 列定义，便于 Agent 写 SQL 前确认列名/类型。"
             "比让用户截图 schema 文件高效得多。"
         ),
         "input_schema": {

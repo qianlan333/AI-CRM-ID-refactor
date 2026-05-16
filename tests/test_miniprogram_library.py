@@ -12,8 +12,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from wecom_ability_service import create_app
-from wecom_ability_service.db import init_db
 from wecom_ability_service.domains import miniprogram_library
 from wecom_ability_service.domains.tasks.private_message import (
     MAX_PRIVATE_MESSAGE_ATTACHMENTS,

@@ -104,7 +104,7 @@ def ensure_default_budgets() -> None:
                     spec["window_seconds"],
                     spec["max_count"],
                     spec["description"],
-                    True,  # PG: BOOLEAN; SQLite: 1（自动当 truthy）
+                    True,
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive

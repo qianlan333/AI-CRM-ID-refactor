@@ -7,7 +7,7 @@
 - ``cast_text(expr)`` 加 ``::timestamp::text``
 - ``coalesce_text(...)`` 按 PG 写法 cast
 - ``nonempty(col)`` 改用 ``IS NOT NULL``（PG TIMESTAMPTZ 不能跟 '' 比）
-- ``upsert_clause(...)`` PG/SQLite 共享 ON CONFLICT 语法不变
+- ``upsert_clause(...)`` 生成 PG 的 ON CONFLICT 子句
 """
 from __future__ import annotations
 
