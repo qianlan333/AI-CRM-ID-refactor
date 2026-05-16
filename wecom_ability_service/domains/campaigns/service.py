@@ -158,7 +158,7 @@ def create_campaign_draft(
         raise ValueError(f"campaign_code already exists: {code}")
     effective_anchor = (anchor_date or "").strip()
     if not effective_anchor and anchor_mode == "campaign_start_date":
-        effective_anchor = datetime.utcnow().date().isoformat()
+        effective_anchor = datetime.now(timezone.utc).date().isoformat()
     cur.execute(
         """
         INSERT INTO campaigns
@@ -467,7 +467,7 @@ def start_campaign(
     # 给所有 campaign_member 计算 anchor_date + 第一步 next_due_at
     anchor_mode = str(camp.get("anchor_mode") or "campaign_start_date")
     if anchor_mode == "campaign_start_date":
-        anchor_date = str(camp.get("anchor_date") or "") or datetime.utcnow().date().isoformat()
+        anchor_date = str(camp.get("anchor_date") or "") or datetime.now(timezone.utc).date().isoformat()
         cur.execute(
             "UPDATE campaign_members SET anchor_date = ?, joined_at = ? WHERE campaign_id = ?",
             (anchor_date, started_at, int(campaign_id)),

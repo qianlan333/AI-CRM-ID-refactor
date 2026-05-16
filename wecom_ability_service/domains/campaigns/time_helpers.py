@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -27,7 +27,13 @@ def campaign_step_due_iso(
         if fallback_to_timezone_today:
             base = datetime.now(tzinfo).replace(hour=0, minute=0, second=0, microsecond=0)
         else:
-            base = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            base = datetime.now(timezone.utc).replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+                tzinfo=None,
+            )
     try:
         hour_str, minute_str = (send_time or DEFAULT_SEND_TIME).split(":")[:2]
         base = base.replace(hour=int(hour_str), minute=int(minute_str))
