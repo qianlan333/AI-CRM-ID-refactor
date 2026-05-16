@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import current_app
 
@@ -26,7 +26,7 @@ def build_ops_status_payload() -> dict:
         "request_id": get_request_id(),
         "release_sha": str(current_app.config.get("RELEASE_SHA", "") or "").strip(),
         "app_started_at": APP_STARTED_AT_TEXT,
-        "uptime_seconds": max(int((datetime.utcnow() - APP_STARTED_AT).total_seconds()), 0),
+        "uptime_seconds": max(int((datetime.now(timezone.utc).replace(tzinfo=None) - APP_STARTED_AT).total_seconds()), 0),
         "background_async_enabled": bool(current_app.config.get("CALLBACK_ASYNC_ENABLED", True)),
         "archived_messages_count": count_archived_messages(),
         "contacts_count": count_contacts(),

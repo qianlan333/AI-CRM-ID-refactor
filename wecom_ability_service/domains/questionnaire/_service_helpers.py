@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -188,7 +188,7 @@ def _validate_tag_codes_payload(value: Any, field_name: str) -> list[str]:
 def _slugify_questionnaire(value: str) -> str:
     base = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
     if not base:
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         suffix = uuid4().hex[:6]
         base = f"q-{timestamp}-{suffix}"
     return base[:120]
@@ -212,7 +212,7 @@ def _dedupe_questionnaire_slug(slug: str, *, exclude_id: int | None = None) -> s
     while True:
         suffix = uuid4().hex[:6]
         prefix = candidate[: max(120 - len(suffix) - 1, 1)].rstrip("-")
-        fallback_prefix = datetime.utcnow().strftime("q-%Y%m%d%H%M%S")
+        fallback_prefix = datetime.now(timezone.utc).strftime("q-%Y%m%d%H%M%S")
         deduped = f"{prefix or fallback_prefix}-{suffix}"[:120]
         if not _questionnaire_exists_by_slug(deduped, exclude_id=exclude_id):
             return deduped
