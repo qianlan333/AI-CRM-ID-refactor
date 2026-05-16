@@ -1570,9 +1570,10 @@ def handle_qrcode_enter_from_callback(
 
 
 # === Re-exports for backward compatibility (modules split off) ===
-# These imports are at the end to avoid circular imports with sub-services
+# These imports are at the end to avoid circular imports with sub-services.
+# F401 is intentionally suppressed here because this module is a legacy facade.
 
-from .sop_service import (  # noqa: E402
+from .sop_service import (  # noqa: E402,F401
     _upsert_sop_progress_entry,
     _validate_sop_pool_key,
     delete_sop_v1_template_day,
@@ -1586,7 +1587,7 @@ from .sop_service import (  # noqa: E402
     save_sop_v1_pool_config,
     save_sop_v1_template,
 )
-from .reply_monitor_service import (  # noqa: E402
+from .reply_monitor_service import (  # noqa: E402,F401
     _dispatch_reply_monitor_queue_item,
     _reply_monitor_status_payload,
     _serialize_reply_monitor_queue_item,
@@ -1595,7 +1596,7 @@ from .reply_monitor_service import (  # noqa: E402
     run_router_test_dispatch,
     save_reply_monitor_enabled,
 )
-from .focus_send_service import (  # noqa: E402
+from .focus_send_service import (  # noqa: E402,F401
     _focus_batch_detail_payload,
     _focus_batch_item_status_label,
     _focus_batch_status_label,
@@ -1607,7 +1608,7 @@ from .focus_send_service import (  # noqa: E402
     get_focus_send_batches_payload,
     run_due_focus_send_batches,
 )
-from .channel_service import (  # noqa: E402
+from .channel_service import (  # noqa: E402,F401
     _channel_status_is_generated,
     _default_channel_field_statuses,
     _effective_channel_entry_tag_payload,
@@ -1616,7 +1617,7 @@ from .channel_service import (  # noqa: E402
     get_default_channel_settings_payload,
     save_default_channel_settings,
 )
-from .model_infra_service import (  # noqa: E402
+from .model_infra_service import (  # noqa: E402,F401
     _deepseek_settings_payload,
     _serialize_agent_llm_call_log,
     _serialize_agent_prompt_row,
@@ -1626,7 +1627,7 @@ from .model_infra_service import (  # noqa: E402
     save_model_infra_settings,
     test_model_infra_connection,
 )
-from .message_activity_service import (  # noqa: E402
+from .message_activity_service import (  # noqa: E402,F401
     _message_activity_item_status_label,
     _message_activity_pool,
     _message_activity_sync_run_status_label,
@@ -1635,11 +1636,11 @@ from .message_activity_service import (  # noqa: E402
     _serialize_message_activity_sync_run,
     run_message_activity_sync,
 )
-from .due_jobs_service import (  # noqa: E402
+from .due_jobs_service import (  # noqa: E402,F401
     list_registered_due_jobs,
     run_registered_due_jobs,
 )
-from .manual_send_service import (  # noqa: E402
+from .manual_send_service import (  # noqa: E402,F401
     _finalize_stage_manual_touch_deliveries,
     _manual_send_allowed_route_keys,
     _manual_send_stage_definition,
