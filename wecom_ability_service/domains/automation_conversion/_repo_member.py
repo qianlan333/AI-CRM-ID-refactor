@@ -174,6 +174,8 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("joined_at")),
         _normalized_text(payload.get("last_ai_push_at")),
         _normalized_text(payload.get("ai_cooldown_until")),
+        _normalized_text(payload.get("current_audience_code")),
+        _normalized_text(payload.get("current_audience_entered_at")),
     )
     row = db.execute(
         """
@@ -193,10 +195,12 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
             joined_at,
             last_ai_push_at,
             ai_cooldown_until,
+            current_audience_code,
+            current_audience_entered_at,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """,
         params,
@@ -222,6 +226,8 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("joined_at")),
         _normalized_text(payload.get("last_ai_push_at")),
         _normalized_text(payload.get("ai_cooldown_until")),
+        _normalized_text(payload.get("current_audience_code")),
+        _normalized_text(payload.get("current_audience_entered_at")),
         int(member_id),
     )
     row = db.execute(
@@ -242,6 +248,8 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             joined_at = ?,
             last_ai_push_at = ?,
             ai_cooldown_until = ?,
+            current_audience_code = ?,
+            current_audience_entered_at = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         RETURNING *

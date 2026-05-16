@@ -94,6 +94,7 @@ _TABLES_TO_TRUNCATE = [
     "automation_workflow",
     "automation_event",
     "automation_member",
+    "wecom_customer_acquisition_links",
     "automation_program",
     "automation_channel",
     "automation_sop_progress",

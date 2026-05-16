@@ -112,6 +112,7 @@ DECISION_SOURCE_SYSTEM = "system"
 
 SOURCE_TYPE_MANUAL = "manual"
 SOURCE_TYPE_QRCODE = "qrcode"
+SOURCE_TYPE_WECOM_CUSTOMER_ACQUISITION = "wecom_customer_acquisition"
 SOURCE_TYPE_IMPORT = "import"
 SOURCE_TYPE_QUESTIONNAIRE = "questionnaire"
 SOURCE_TYPE_SYSTEM = "system"
@@ -658,6 +659,8 @@ def _member_payload_from_context(
         "updated_at": _normalized_text(existing_row.get("updated_at")),
         "last_ai_push_at": _normalized_text(existing_row.get("last_ai_push_at")),
         "ai_cooldown_until": _normalized_text(existing_row.get("ai_cooldown_until")),
+        "current_audience_code": _normalized_text(existing_row.get("current_audience_code")),
+        "current_audience_entered_at": _normalized_text(existing_row.get("current_audience_entered_at")),
     }
     return base_payload
 

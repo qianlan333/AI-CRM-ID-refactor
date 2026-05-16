@@ -1405,6 +1405,46 @@ def _init_postgres(db) -> None:
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS wecom_customer_acquisition_links (
+            id BIGSERIAL PRIMARY KEY,
+            corp_id TEXT NOT NULL DEFAULT '',
+            automation_channel_id BIGINT NOT NULL REFERENCES automation_channel(id) ON DELETE CASCADE,
+            program_id BIGINT,
+            workflow_id BIGINT,
+            initial_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'
+                CHECK (initial_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            link_id TEXT NOT NULL DEFAULT '',
+            link_name TEXT NOT NULL DEFAULT '',
+            link_url TEXT NOT NULL DEFAULT '',
+            customer_channel TEXT NOT NULL DEFAULT '',
+            final_url TEXT NOT NULL DEFAULT '',
+            skip_verify BOOLEAN NOT NULL DEFAULT FALSE,
+            range_user_list JSONB NOT NULL DEFAULT '[]'::jsonb,
+            range_department_list JSONB NOT NULL DEFAULT '[]'::jsonb,
+            priority_option JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'disabled')),
+            last_sync_at TIMESTAMPTZ,
+            last_event_at TIMESTAMPTZ,
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_wecom_customer_acquisition_links_corp_link UNIQUE (corp_id, link_id),
+            CONSTRAINT uq_wecom_customer_acquisition_links_corp_channel UNIQUE (corp_id, customer_channel)
+        )
+        """
+    )
+    for stmt in (
+        "ALTER TABLE IF EXISTS wecom_customer_acquisition_links "
+        "ADD COLUMN IF NOT EXISTS initial_audience_code TEXT NOT NULL DEFAULT 'pending_questionnaire'",
+        "CREATE INDEX IF NOT EXISTS idx_wecom_customer_acquisition_links_channel "
+        "ON wecom_customer_acquisition_links (automation_channel_id)",
+        "CREATE INDEX IF NOT EXISTS idx_wecom_customer_acquisition_links_status "
+        "ON wecom_customer_acquisition_links (status, updated_at DESC, id DESC)",
+    ):
+        db.execute(stmt)
+    db.execute(
+        """
         ALTER TABLE IF EXISTS automation_agent_output
         ADD COLUMN IF NOT EXISTS adopted_by TEXT NOT NULL DEFAULT ''
         """

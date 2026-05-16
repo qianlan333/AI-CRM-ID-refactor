@@ -24,6 +24,7 @@ from .service import (
     QUESTIONNAIRE_SUBMITTED,
     SOURCE_TYPE_MANUAL,
     SOURCE_TYPE_QRCODE,
+    SOURCE_TYPE_WECOM_CUSTOMER_ACQUISITION,
     SOURCE_TYPE_SYSTEM,
     _automation_action_label,
     _json_loads,
@@ -567,20 +568,31 @@ def _apply_channel_entry_tag(
     }
 
 
-def handle_qrcode_enter_from_callback(
+def handle_channel_enter_from_callback(
     *,
     external_contact_id: str,
     phone: str = "",
     payload_json: dict[str, Any] | None = None,
     operator_id: str = "",
+    channel: dict[str, Any] | None = None,
+    source_type: str = SOURCE_TYPE_QRCODE,
+    follow_user_userid: str = "",
+    initial_audience_code: str = "",
+    event_action: str = "qrcode_enter",
     send_welcome_message: bool = False,
 ) -> dict[str, Any]:
-    channel_scene = _extract_channel_scene(payload_json or {})
-    if not channel_scene:
-        return {"handled": False, "reason": "missing_channel_scene"}
-    channel = repo.find_channel_by_scene_value(channel_scene)
     if not channel:
-        return {"handled": False, "reason": "channel_not_found"}
+        channel_scene = _extract_channel_scene(payload_json or {})
+        if not channel_scene:
+            return {"handled": False, "reason": "missing_channel_scene"}
+        channel = repo.find_channel_by_scene_value(channel_scene)
+        if not channel:
+            return {"handled": False, "reason": "channel_not_found"}
+    if (
+        source_type == SOURCE_TYPE_WECOM_CUSTOMER_ACQUISITION
+        and _normalized_text(channel.get("status")) != "active"
+    ):
+        return {"handled": False, "reason": "channel_disabled"}
     member = _resolve_existing_member(external_contact_id=external_contact_id, phone=phone)
     context = service_seams._build_live_context(external_contact_id, phone)
     before = _serialize_member(
@@ -590,22 +602,32 @@ def handle_qrcode_enter_from_callback(
     current = _member_payload_from_context(
         member,
         {**context, "settings": get_signup_conversion_config()},
-        source_type=SOURCE_TYPE_QRCODE,
+        source_type=source_type,
         source_channel_id=int(channel["id"]),
         in_pool=True,
     )
-    current["owner_staff_id"] = DEFAULT_OWNER_STAFF_ID
+    current["owner_staff_id"] = _normalized_text(follow_user_userid) or DEFAULT_OWNER_STAFF_ID
     current["joined_at"] = current.get("joined_at") or service_seams._iso_now()
+    normalized_initial_audience = _normalized_text(initial_audience_code)
+    if (
+        source_type == SOURCE_TYPE_WECOM_CUSTOMER_ACQUISITION
+        and normalized_initial_audience in {POOL_PENDING_QUESTIONNAIRE, POOL_OPERATING, POOL_CONVERTED}
+    ):
+        current["current_audience_code"] = normalized_initial_audience
     if before["current_pool"] == POOL_WON:
         saved = _persist_member(member, {**current, "in_pool": False, "current_pool": POOL_WON})
         _write_event(
             member_id=int(saved["id"]),
-            action="qrcode_enter",
+            action=event_action,
             operator_type="system",
             operator_id=_normalized_text(operator_id) or "wecom_callback",
             before_snapshot=_member_snapshot(before),
             after_snapshot=_member_snapshot(saved),
-            remark="member already won; qrcode entry only recorded",
+            remark=(
+                "member already won; qrcode entry only recorded"
+                if source_type == SOURCE_TYPE_QRCODE
+                else "member already won; channel entry only recorded"
+            ),
         )
         welcome_result = (
             _send_channel_welcome_message(
@@ -632,12 +654,12 @@ def handle_qrcode_enter_from_callback(
     current["current_pool"] = recompute_pool(
         current,
         {**context, "settings": get_signup_conversion_config()},
-        action="qrcode_enter",
+        action=event_action,
     )
     saved = _persist_member(member, current)
     _write_event(
         member_id=int(saved["id"]),
-        action="qrcode_enter",
+        action=event_action,
         operator_type="system",
         operator_id=_normalized_text(operator_id) or "wecom_callback",
         before_snapshot=_member_snapshot(before),
@@ -666,6 +688,25 @@ def handle_qrcode_enter_from_callback(
     }
 
 
+def handle_qrcode_enter_from_callback(
+    *,
+    external_contact_id: str,
+    phone: str = "",
+    payload_json: dict[str, Any] | None = None,
+    operator_id: str = "",
+    send_welcome_message: bool = False,
+) -> dict[str, Any]:
+    return handle_channel_enter_from_callback(
+        external_contact_id=external_contact_id,
+        phone=phone,
+        payload_json=payload_json,
+        operator_id=operator_id,
+        source_type=SOURCE_TYPE_QRCODE,
+        event_action="qrcode_enter",
+        send_welcome_message=send_welcome_message,
+    )
+
+
 __all__ = [
     "_apply_channel_entry_tag",
     "_extract_channel_scene",
@@ -675,6 +716,7 @@ __all__ = [
     "_send_channel_welcome_message",
     "apply_router_target_pool",
     "get_member_detail",
+    "handle_channel_enter_from_callback",
     "handle_qrcode_enter_from_callback",
     "mark_won",
     "put_in_pool",
