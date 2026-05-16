@@ -73,6 +73,65 @@ def _program_row(html: str, program_id: int) -> str:
     return match.group(0)
 
 
+def _seed_choice_questionnaire(app, *, slug: str = "segmentation-choice-case") -> dict[str, object]:
+    with app.app_context():
+        db = get_db()
+        qid = int(
+            db.execute(
+                """
+                INSERT INTO questionnaires (slug, name, title, description)
+                VALUES (?, ?, ?, '')
+                RETURNING id
+                """,
+                (slug, slug, "黄小璨AI内测申请"),
+            ).fetchone()["id"]
+        )
+        question_id = int(
+            db.execute(
+                """
+                INSERT INTO questionnaire_questions (questionnaire_id, type, title, sort_order)
+                VALUES (?, 'single_choice', '以下哪个选项更贴合你目前的状态？', 1)
+                RETURNING id
+                """,
+                (qid,),
+            ).fetchone()["id"]
+        )
+        text_question_id = int(
+            db.execute(
+                """
+                INSERT INTO questionnaire_questions (questionnaire_id, type, title, sort_order)
+                VALUES (?, 'textarea', '请补充你的业务背景', 2)
+                RETURNING id
+                """,
+                (qid,),
+            ).fetchone()["id"]
+        )
+        option_ids = []
+        for sort_order, option_text in enumerate(
+            ["刚开始了解 AI", "已经尝试过几个工具", "已经在实际业务中使用"],
+            start=1,
+        ):
+            option_ids.append(
+                int(
+                    db.execute(
+                        """
+                        INSERT INTO questionnaire_options (question_id, option_text, sort_order)
+                        VALUES (?, ?, ?)
+                        RETURNING id
+                        """,
+                        (question_id, option_text, sort_order),
+                    ).fetchone()["id"]
+                )
+            )
+        db.commit()
+    return {
+        "id": qid,
+        "question_id": question_id,
+        "text_question_id": text_question_id,
+        "option_ids": option_ids,
+    }
+
+
 def test_default_program_bootstraps_and_automation_entry_lists_programs(app, client, monkeypatch):
     _login(client, app, monkeypatch)
     response = client.get("/admin/automation-conversion")
@@ -164,8 +223,109 @@ def test_setup_segmentation_and_entry_rule_hide_raw_json_inputs(app, client, mon
     assert "规则 JSON" not in segmentation_html
     assert "总分区间 JSON" not in segmentation_html
     assert "规则 JSON" not in entry_rule_html
-    assert "用户通过入口进入" in entry_rule_html
-    assert "绑定问卷提交成功" in entry_rule_html
+    assert "命中选项 ID" not in segmentation_html
+    assert "hit_option_ids" not in segmentation_html
+    assert "入口进入后" in entry_rule_html
+    assert "问卷提交后" in entry_rule_html
+
+
+def test_setup_page_hides_inner_program_header(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+
+    response = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=entry")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "setup-program-head" not in html
+    assert html.count("<h1>自动化运营方案</h1>") <= 1
+    assert "第 2 步" in html
+    assert "入口渠道" in html
+
+
+def test_setup_entry_channel_renders_qrcode_image(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import repo
+
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+    qr_url = "https://wework.qpic.cn/wwpic/current-program-qr.png"
+    with app.app_context():
+        repo.save_channel(
+            {
+                "program_id": program_id,
+                "channel_code": "program_qr_image_case",
+                "channel_name": "图片二维码",
+                "qr_url": qr_url,
+                "scene_value": "scene-current-program",
+                "status": "active",
+            }
+        )
+        get_db().commit()
+
+    html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=entry").get_data(as_text=True)
+
+    assert '<img src="https://wework.qpic.cn/wwpic/current-program-qr.png" alt="当前方案渠道二维码"' in html
+    assert "复制链接" in html
+    assert "打开链接" in html
+    assert "scene-current-program" in html
+
+
+def test_blank_setup_entry_does_not_show_default_qrcode(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import repo
+    from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program
+
+    _login(client, app, monkeypatch)
+    default_program_id = _default_program_id(app)
+    default_qr_url = "https://wework.qpic.cn/wwpic/default-program-qr.png"
+    with app.app_context():
+        repo.save_channel(
+            {
+                "program_id": default_program_id,
+                "channel_code": "default_qr_isolation_case",
+                "channel_name": "默认二维码",
+                "qr_url": default_qr_url,
+                "scene_value": "default-scene",
+                "status": "active",
+            }
+        )
+        blank = create_automation_program(
+            {"program_name": "二维码空白隔离方案", "program_code": "blank_qr_isolation_case", "status": "draft"},
+            operator_id="test",
+        )["program"]
+        get_db().commit()
+
+    html = client.get(f"/admin/automation-conversion/programs/{blank['id']}/setup?step=entry").get_data(as_text=True)
+
+    assert default_qr_url not in html
+    assert "尚未生成二维码" in html or "还没有二维码配置" in html
+
+
+def test_setup_segmentation_shows_question_and_option_text_without_option_id_field(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import program_repo
+
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+    questionnaire = _seed_choice_questionnaire(app, slug="segmentation-ui-choice-case")
+    with app.app_context():
+        program_repo.upsert_config_block_row(
+            program_id,
+            "questionnaire_segmentation",
+            {"questionnaire_id": questionnaire["id"], "default_strategy": "normal_question_rules"},
+            status="saved",
+        )
+        get_db().commit()
+
+    html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=segmentation").get_data(as_text=True)
+
+    assert "以下哪个选项更贴合你目前的状态？" in html
+    assert "刚开始了解 AI" in html
+    assert "已经尝试过几个工具" in html
+    assert "已经在实际业务中使用" in html
+    assert "请补充你的业务背景" not in html
+    assert "新增分类" in html
+    assert "分类名称" in html
+    assert "命中选项 ID" not in html
+    assert "hit_option_ids" not in html
 
 
 def test_program_basic_info_edit_updates_list_and_context_header(app, client, monkeypatch):
@@ -474,6 +634,65 @@ def test_setup_score_segmentation_validation_and_match():
     }
     with pytest.raises(ValueError, match="不能重叠"):
         validate_score_ranges(overlap)
+
+
+def test_save_normal_question_option_categories(app):
+    from wecom_ability_service.domains.automation_conversion import program_repo
+    from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import save_segmentation
+
+    questionnaire = _seed_choice_questionnaire(app, slug="save-option-category-case")
+    with app.app_context():
+        program = create_automation_program(
+            {"program_name": "选项分类方案", "program_code": "option_category_case", "status": "draft"},
+            operator_id="test",
+        )["program"]
+        option_ids = questionnaire["option_ids"]
+        save_segmentation(
+            int(program["id"]),
+            {
+                "questionnaire_id": questionnaire["id"],
+                "default_strategy": "normal_question_rules",
+                "normal_question_mode": "single_question_option_category",
+                "segmentation_question_id": questionnaire["question_id"],
+                "normal_question_categories": [
+                    {
+                        "category_key": "category_a",
+                        "category_name": "入门用户",
+                        "option_ids": option_ids[:2],
+                    },
+                    {
+                        "category_key": "category_b",
+                        "category_name": "进阶用户",
+                        "option_ids": option_ids[2:],
+                    },
+                ],
+            },
+        )
+        block = program_repo.get_config_block_row(int(program["id"]), "questionnaire_segmentation")
+
+    payload = block["payload_json"]
+    normal = payload["strategies"]["normal_question_rules"]
+    assert normal["segmentation_question_id"] == questionnaire["question_id"]
+    assert normal["mode"] == "single_question_option_category"
+    assert normal["categories"][0]["category_name"] == "入门用户"
+    assert normal["categories"][0]["option_ids"] == option_ids[:2]
+    assert normal["categories"][0]["option_snapshots"][0]["option_text"] == "刚开始了解 AI"
+
+    with app.app_context(), pytest.raises(ValueError, match="不能同时属于多个分类"):
+        save_segmentation(
+            int(program["id"]),
+            {
+                "questionnaire_id": questionnaire["id"],
+                "default_strategy": "normal_question_rules",
+                "normal_question_mode": "single_question_option_category",
+                "segmentation_question_id": questionnaire["question_id"],
+                "normal_question_categories": [
+                    {"category_name": "A", "option_ids": [option_ids[0]]},
+                    {"category_name": "B", "option_ids": [option_ids[0]]},
+                ],
+            },
+        )
 
 
 def test_operation_action_templates_and_from_template_create_current_workflow(app, client, monkeypatch):

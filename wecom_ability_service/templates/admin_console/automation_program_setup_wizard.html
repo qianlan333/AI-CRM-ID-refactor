@@ -4,10 +4,6 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='admin_console/automation_conversion_workspace.css') }}">
 <style>
   .setup-shell { display: grid; gap: 16px; min-width: 0; }
-  .setup-program-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px; border: 1px solid rgba(15,23,42,.08); border-radius: 16px; background: #fff; }
-  .setup-program-head h1 { margin: 4px 0 0; color: #1f2329; font-size: 28px; line-height: 1.2; }
-  .setup-breadcrumb { color: #667085; font-size: 13px; }
-  .setup-status { display: inline-flex; align-items: center; border-radius: 999px; padding: 6px 10px; background: #ecfdf3; color: #166534; font-weight: 700; }
   .setup-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
   .setup-step { display: grid; gap: 4px; padding: 12px; border: 1px solid rgba(20,86,240,.12); border-radius: 12px; background: #fff; color: #344054; text-decoration: none; }
   .setup-step.is-active { background: #ebf2ff; color: #1456f0; border-color: rgba(20,86,240,.32); box-shadow: 0 0 0 3px rgba(37,99,235,.08); }
@@ -38,8 +34,17 @@
   .setup-table input, .setup-table select, .setup-table textarea { width: 100%; border: 1px solid rgba(15,23,42,.12); border-radius: 8px; padding: 8px 9px; }
   .setup-result-card, .setup-rule-card { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 14px; background: #f8fbff; }
   .setup-result-row { display: flex; justify-content: space-between; gap: 12px; color: #344054; word-break: break-all; }
+  .setup-qrcode-preview { display: grid; place-items: center; min-height: 220px; border: 1px dashed rgba(20,86,240,.22); border-radius: 14px; background: #fff; }
+  .setup-qrcode-preview img { width: min(220px, 100%); aspect-ratio: 1; object-fit: contain; border-radius: 10px; }
+  .setup-empty-hint { display: grid; place-items: center; min-height: 180px; padding: 18px; border: 1px dashed rgba(15,23,42,.14); border-radius: 14px; background: #fff; color: #667085; text-align: center; }
   .setup-chip-list { display: flex; gap: 8px; flex-wrap: wrap; }
   .setup-chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 6px 10px; background: #eef4ff; color: #1456f0; font-weight: 800; }
+  .setup-category-grid { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr); gap: 14px; align-items: start; }
+  .setup-option-preview, .setup-category-list { display: grid; gap: 10px; }
+  .setup-category-card { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 14px; background: #fff; }
+  .setup-option-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .setup-option-check { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(15,23,42,.10); border-radius: 999px; padding: 7px 10px; background: #f8fafc; color: #344054; font-weight: 700; }
+  .setup-option-check input { width: auto; }
   .setup-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .setup-check-item { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: #f8fafc; }
   .setup-check-item.is-pass { background: #ecfdf3; color: #166534; }
@@ -50,8 +55,8 @@
   .setup-footer { position: sticky; bottom: 14px; z-index: 20; display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(15,23,42,.08); border-radius: 14px; background: rgba(255,255,255,.94); box-shadow: 0 16px 32px rgba(15,23,42,.10); backdrop-filter: blur(10px); }
   .setup-footer__side { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (max-width: 960px) {
-    .setup-steps, .setup-form-grid, .setup-form-grid--three, .setup-checks, .setup-two-col { grid-template-columns: 1fr; }
-    .setup-program-head, .setup-footer { align-items: stretch; flex-direction: column; }
+    .setup-steps, .setup-form-grid, .setup-form-grid--three, .setup-checks, .setup-two-col, .setup-category-grid { grid-template-columns: 1fr; }
+    .setup-footer { align-items: stretch; flex-direction: column; }
   }
 </style>
 {% endblock %}
@@ -71,14 +76,6 @@
   'publish': {'prev': 'operations'}
 } %}
 <section class="setup-shell" data-setup-root data-urls='{{ urls|tojson }}' data-program-id="{{ program.id or '' }}">
-  <header class="setup-program-head">
-    <div>
-      <div class="setup-breadcrumb">客户管理后台 / 自动化运营方案 / {{ program.program_name or "未命名方案" }}</div>
-      <h1>自动化运营方案</h1>
-    </div>
-    <span class="setup-status">{{ status_label }}</span>
-  </header>
-
   {% if workspace_tabs %}
   <nav class="ac-workspace-tabs ac-workspace-tabs--program-hero" aria-label="自动化运营方案导航">
     {% for item in workspace_tabs %}
@@ -165,10 +162,24 @@
         </form>
         <aside class="setup-result-card">
           <h3>二维码结果</h3>
+          {% if qrcode.qr_url %}
+          <div class="setup-qrcode-preview">
+            <img src="{{ qrcode.qr_url }}" alt="当前方案渠道二维码" loading="lazy">
+          </div>
+          {% elif qrcode.id %}
+          <div class="setup-empty-hint">二维码配置已保存，尚未生成二维码</div>
+          {% else %}
+          <div class="setup-empty-hint">还没有二维码配置，保存后可生成当前方案二维码</div>
+          {% endif %}
           <div class="setup-result-row"><strong>当前状态</strong><span>{{ "已生成可投放" if qrcode.qr_url else "已保存未生成" if qrcode.id else "未配置" }}</span></div>
           <div class="setup-result-row"><strong>二维码链接</strong><span>{{ qrcode.qr_url or "-" }}</span></div>
           <div class="setup-result-row"><strong>scene_value</strong><span>{{ qrcode.scene_value or "-" }}</span></div>
-          <div class="setup-actions"><button class="setup-button" type="button" data-copy-text="{{ qrcode.qr_url or '' }}">复制链接</button><a class="setup-button" href="{{ qrcode.qr_url or '#' }}" target="_blank" rel="noreferrer">打开链接</a></div>
+          <div class="setup-actions">
+            {% if not qrcode.qr_url and qrcode.id %}<button class="setup-button" type="button" data-generate-qrcode>生成二维码</button>{% endif %}
+            <button class="setup-button" type="button" data-copy-text="{{ qrcode.qr_url or '' }}">复制链接</button>
+            <a class="setup-button" href="{{ qrcode.qr_url or '#' }}" target="_blank" rel="noreferrer">打开链接</a>
+            {% if qrcode.qr_url %}<a class="setup-button" href="{{ qrcode.qr_url }}" download target="_blank" rel="noreferrer">下载二维码</a>{% endif %}
+          </div>
           {% if not qrcode.qr_url and qrcode.id %}<p class="setup-muted">复制方案不会复制二维码票据，请重新生成当前方案二维码。</p>{% endif %}
         </aside>
       </div>
@@ -223,17 +234,75 @@
       <button class="setup-tab" type="button" data-setup-tab="profile">多维画像</button>
     </div>
     <div class="setup-tab-panel" data-setup-tab-panel="normal">
-      <div class="setup-form-grid"><label class="setup-field"><span>命中多少题后判为重点</span><input name="core_threshold" type="number" min="1" value="{{ normal.core_threshold or 2 }}"></label></div>
-      <div class="setup-table-wrap">
-        <table class="setup-table"><thead><tr><th>题目</th><th>命中选项 ID</th><th>命中后归类</th><th>排序</th><th>说明</th><th>操作</th></tr></thead><tbody data-normal-rule-body>
-          {% for row in normal.rows or [] %}
-          <tr data-normal-rule-row><td><select name="question_id">{% for question in segmentation.question_rows or [] %}<option value="{{ question.id }}" {% if question.id == row.questionnaire_question_id %}selected{% endif %}>{{ question.title }}</option>{% endfor %}</select></td><td><input name="hit_option_ids" value="{{ (row.hit_option_ids_json or [])|join(',') }}" placeholder="例如：1,2"></td><td><select name="segment_name"><option value="普通" {% if row.segment_name == '普通' %}selected{% endif %}>普通</option><option value="重点" {% if row.segment_name != '普通' %}selected{% endif %}>重点</option></select></td><td><input name="sort_order" type="number" value="{{ row.sort_order or loop.index }}"></td><td><input name="rule_note" value="{{ row.rule_note or '' }}"></td><td><button class="setup-button" type="button" data-remove-row>删除</button></td></tr>
-          {% else %}
-          <tr data-normal-rule-row><td><select name="question_id">{% for question in segmentation.question_rows or [] %}<option value="{{ question.id }}">{{ question.title }}</option>{% endfor %}</select></td><td><input name="hit_option_ids" placeholder="例如：1,2"></td><td><select name="segment_name"><option value="重点">重点</option><option value="普通">普通</option></select></td><td><input name="sort_order" type="number" value="1"></td><td><input name="rule_note"></td><td><button class="setup-button" type="button" data-remove-row>删除</button></td></tr>
-          {% endfor %}
-        </tbody></table>
+      {% set selected_question = normal.selected_question or {} %}
+      <div class="setup-form-grid">
+        <label class="setup-field">
+          <span>分层题目</span>
+          <select name="segmentation_question_id" data-segmentation-question-select>
+            {% if not segmentation.question_rows %}<option value="">当前问卷没有可用于分层的单选或多选题</option>{% endif %}
+            {% for question in segmentation.question_rows or [] %}
+            <option value="{{ question.id }}" data-options='{{ (question.options or [])|tojson|forceescape }}' {% if question.id == normal.segmentation_question_id %}selected{% endif %}>{{ question.title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="setup-result-card"><strong>默认方式</strong><span>普通问卷选项分类</span></div>
       </div>
-      <button class="setup-button" type="button" data-add-normal-rule>新增规则</button>
+      {% if normal.legacy_rows %}
+      <div class="setup-result-card">
+        <strong>旧规则已兼容</strong>
+        <span>当前方案存在旧版普通问卷规则，运行时仍会保留；新的编辑方式请使用下方选项分类。</span>
+      </div>
+      {% endif %}
+      <div class="setup-category-grid" data-normal-category-editor>
+        <aside class="setup-result-card">
+          <h3>当前题目选项</h3>
+          <div class="setup-option-preview" data-question-option-preview>
+            {% for option in selected_question.options or [] %}
+            <span class="setup-chip" data-option-id="{{ option.id }}">{{ option.option_text }}{% if option.id in (normal.unassigned_options | map(attribute='id') | list) %} · 未分配{% else %} · 已分配{% endif %}</span>
+            {% else %}
+            <p class="setup-muted">请选择包含选项的分层题目。</p>
+            {% endfor %}
+          </div>
+          <div class="setup-result-card">
+            <strong>未分配选项</strong>
+            <div class="setup-chip-list" data-unassigned-options>
+              {% for option in normal.unassigned_options or [] %}<span class="setup-chip">{{ option.option_text }}</span>{% else %}<span class="setup-muted">暂无未分配选项</span>{% endfor %}
+            </div>
+          </div>
+        </aside>
+        <div class="setup-category-list" data-category-body>
+          {% for category in normal.category_rows or [] %}
+          <article class="setup-category-card" data-category-card data-category-key="{{ category.category_key }}">
+            <label class="setup-field"><span>分类名称</span><input name="category_name" value="{{ category.category_name }}" placeholder="例如：入门用户"></label>
+            <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选">{{ category.description }}</textarea></label>
+            <div class="setup-field">
+              <span>选择选项</span>
+              <div class="setup-option-checks" data-category-options>
+                {% for option in selected_question.options or [] %}
+                <label class="setup-option-check"><input type="checkbox" value="{{ option.id }}" data-option-text="{{ option.option_text }}" {% if option.id in category.option_ids %}checked{% endif %}>{{ option.option_text }}</label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="setup-actions"><button class="setup-button" type="button" data-remove-category>删除分类</button></div>
+          </article>
+          {% else %}
+          <article class="setup-category-card" data-category-card data-category-key="category_a">
+            <label class="setup-field"><span>分类名称</span><input name="category_name" placeholder="例如：入门用户"></label>
+            <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选"></textarea></label>
+            <div class="setup-field">
+              <span>选择选项</span>
+              <div class="setup-option-checks" data-category-options>
+                {% for option in selected_question.options or [] %}
+                <label class="setup-option-check"><input type="checkbox" value="{{ option.id }}" data-option-text="{{ option.option_text }}">{{ option.option_text }}</label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="setup-actions"><button class="setup-button" type="button" data-remove-category>删除分类</button></div>
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="setup-actions"><button class="setup-button" type="button" data-add-category>新增分类</button><button class="setup-button" type="button" data-apply-category-presets>应用示例三档</button></div>
     </div>
     <div class="setup-tab-panel" data-setup-tab-panel="score" hidden>
       <label class="setup-field"><span>是否启用总分分层</span><select name="score_enabled"><option value="1" {% if score.enabled %}selected{% endif %}>启用</option><option value="0" {% if not score.enabled %}selected{% endif %}>停用</option></select></label>
@@ -330,6 +399,7 @@
     if (!response.ok || data.ok === false) throw new Error(data.error || "保存失败，请稍后重试");
     return data;
   };
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const activeForm = () => root.querySelector("[data-setup-form]:not([hidden])") || root.querySelector("[data-segmentation-form]") || root.querySelector("[data-audience-rule-form]");
   root.querySelectorAll("[data-setup-tab]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -357,14 +427,16 @@
     payload.range_department_list = String(payload.range_department_list || "").split(",").map((item) => item.trim()).filter(Boolean);
     try { await postJson(urls.customer_acquisition_links, payload); showFeedback("已创建获客助手入口", true); window.location.reload(); } catch (error) { showFeedback(error.message || "创建失败，请稍后重试"); }
   });
-  root.querySelector("[data-generate-qrcode]")?.addEventListener("click", async () => {
-    const form = root.querySelector("[data-endpoint='entry_channel']");
-    try {
-      if (form) await saveSimpleForm(form);
-      await postJson(urls.entry_channel_generate_qr, { program_id: Number(root.dataset.programId || 0) });
-      showFeedback("二维码已生成", true);
-      window.location.reload();
-    } catch (error) { showFeedback(error.message || "二维码生成失败，请稍后重试"); }
+  root.querySelectorAll("[data-generate-qrcode]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const form = root.querySelector("[data-endpoint='entry_channel']");
+      try {
+        if (form) await saveSimpleForm(form);
+        await postJson(urls.entry_channel_generate_qr, { program_id: Number(root.dataset.programId || 0) });
+        showFeedback("二维码已生成", true);
+        window.location.reload();
+      } catch (error) { showFeedback(error.message || "二维码生成失败，请稍后重试"); }
+    });
   });
   root.addEventListener("click", async (event) => {
     const copy = event.target.closest("[data-copy-text]");
@@ -376,11 +448,80 @@
     const remove = event.target.closest("[data-remove-row]");
     if (remove) remove.closest("tr")?.remove();
   });
-  const normalBody = root.querySelector("[data-normal-rule-body]");
-  root.querySelector("[data-add-normal-rule]")?.addEventListener("click", () => {
-    const first = normalBody?.querySelector("[data-normal-rule-row]");
-    if (first) normalBody.appendChild(first.cloneNode(true));
+  const questionSelect = root.querySelector("[data-segmentation-question-select]");
+  const categoryBody = root.querySelector("[data-category-body]");
+  const currentQuestionOptions = () => {
+    const selected = questionSelect?.selectedOptions?.[0];
+    try { return JSON.parse(selected?.dataset.options || "[]"); } catch { return []; }
+  };
+  const renderOptionChecks = (card, options, selectedIds = []) => {
+    const target = card.querySelector("[data-category-options]");
+    if (!target) return;
+    const selected = new Set(selectedIds.map((item) => String(item)));
+    target.innerHTML = options.map((option) => {
+      const checked = selected.has(String(option.id)) ? " checked" : "";
+      const text = escapeHtml(option.option_text || "");
+      return `<label class="setup-option-check"><input type="checkbox" value="${option.id}" data-option-text="${text}"${checked}>${text}</label>`;
+    }).join("");
+  };
+  const categoryKey = (index) => `category_${String.fromCharCode(97 + Math.min(index, 25))}`;
+  const updateOptionState = () => {
+    const options = currentQuestionOptions();
+    const assigned = new Set([...root.querySelectorAll("[data-category-card] input[type='checkbox']:checked")].map((input) => String(input.value)));
+    const preview = root.querySelector("[data-question-option-preview]");
+    if (preview) {
+      preview.innerHTML = options.length
+        ? options.map((option) => `<span class="setup-chip" data-option-id="${option.id}">${escapeHtml(option.option_text)} · ${assigned.has(String(option.id)) ? "已分配" : "未分配"}</span>`).join("")
+        : `<p class="setup-muted">请选择包含选项的分层题目。</p>`;
+    }
+    const unassigned = root.querySelector("[data-unassigned-options]");
+    if (unassigned) {
+      const rows = options.filter((option) => !assigned.has(String(option.id)));
+      unassigned.innerHTML = rows.length ? rows.map((option) => `<span class="setup-chip">${escapeHtml(option.option_text)}</span>`).join("") : `<span class="setup-muted">暂无未分配选项</span>`;
+    }
+  };
+  const addCategoryCard = (name = "", selectedIds = [], key = "") => {
+    if (!categoryBody) return;
+    const index = categoryBody.querySelectorAll("[data-category-card]").length;
+    const card = document.createElement("article");
+    card.className = "setup-category-card";
+    card.dataset.categoryCard = "";
+    card.dataset.categoryKey = key || categoryKey(index);
+    card.innerHTML = `
+      <label class="setup-field"><span>分类名称</span><input name="category_name" value="${escapeHtml(name)}" placeholder="例如：入门用户"></label>
+      <label class="setup-field"><span>分类说明</span><textarea name="description" placeholder="可选"></textarea></label>
+      <div class="setup-field"><span>选择选项</span><div class="setup-option-checks" data-category-options></div></div>
+      <div class="setup-actions"><button class="setup-button" type="button" data-remove-category>删除分类</button></div>
+    `;
+    renderOptionChecks(card, currentQuestionOptions(), selectedIds);
+    categoryBody.appendChild(card);
+    updateOptionState();
+  };
+  root.querySelector("[data-add-category]")?.addEventListener("click", () => addCategoryCard());
+  root.querySelector("[data-apply-category-presets]")?.addEventListener("click", () => {
+    if (!categoryBody) return;
+    const options = currentQuestionOptions();
+    const chunk = Math.ceil(Math.max(options.length, 1) / 3);
+    categoryBody.innerHTML = "";
+    addCategoryCard("入门用户", options.slice(0, chunk).map((item) => item.id), "category_a");
+    addCategoryCard("进阶用户", options.slice(chunk, chunk * 2).map((item) => item.id), "category_b");
+    addCategoryCard("专家用户", options.slice(chunk * 2).map((item) => item.id), "category_c");
   });
+  questionSelect?.addEventListener("change", () => {
+    root.querySelectorAll("[data-category-card]").forEach((card) => renderOptionChecks(card, currentQuestionOptions(), []));
+    updateOptionState();
+  });
+  root.addEventListener("change", (event) => {
+    if (event.target.matches("[data-category-options] input[type='checkbox']")) updateOptionState();
+  });
+  root.addEventListener("click", (event) => {
+    const removeCategory = event.target.closest("[data-remove-category]");
+    if (removeCategory) {
+      removeCategory.closest("[data-category-card]")?.remove();
+      updateOptionState();
+    }
+  });
+  updateOptionState();
   const scoreBody = root.querySelector("[data-score-body]");
   const scoreRowHtml = (min = "", max = "", key = "", name = "") => `<tr data-score-row><td><input name="min_score" type="number" value="${min}"></td><td><input name="max_score" type="number" value="${max}"></td><td><input name="segment_key" value="${key}"></td><td><input name="segment_name" value="${name}"></td><td><textarea name="diagnosis_text"></textarea></td><td><textarea name="recommended_action"></textarea></td><td><button class="setup-button" type="button" data-remove-row>删除</button></td></tr>`;
   root.querySelector("[data-add-score-row]")?.addEventListener("click", () => scoreBody?.insertAdjacentHTML("beforeend", scoreRowHtml()));
@@ -396,18 +537,26 @@
   const saveSegmentation = async () => {
     const form = root.querySelector("[data-segmentation-form]");
     const questionnaireId = Number(form.querySelector("[name='questionnaire_id']")?.value || 0) || null;
-    const normalRows = [...form.querySelectorAll("[data-normal-rule-row]")].map((row, index) => {
-      const questionSelect = row.querySelector("[name='question_id']");
+    const segmentationQuestion = form.querySelector("[name='segmentation_question_id']");
+    const selectedQuestionId = Number(segmentationQuestion?.value || 0) || null;
+    const selectedQuestionTitle = segmentationQuestion?.selectedOptions?.[0]?.textContent || "";
+    const selectedOptions = new Map(currentQuestionOptions().map((option) => [String(option.id), option.option_text || ""]));
+    const seenOptions = new Set();
+    const categories = [...form.querySelectorAll("[data-category-card]")].map((card, index) => {
+      const optionIds = [...card.querySelectorAll("[data-category-options] input[type='checkbox']:checked")].map((input) => Number(input.value)).filter(Boolean);
+      optionIds.forEach((optionId) => {
+        const key = String(optionId);
+        if (seenOptions.has(key)) throw new Error("同一个选项不能同时属于多个分类");
+        seenOptions.add(key);
+      });
       return {
-        questionnaire_id: questionnaireId,
-        questionnaire_question_id: Number(questionSelect?.value || 0) || null,
-        question_title: questionSelect?.selectedOptions?.[0]?.textContent || "",
-        hit_option_ids_json: String(row.querySelector("[name='hit_option_ids']")?.value || "").split(",").map((item) => Number(item.trim())).filter(Boolean),
-        segment_name: row.querySelector("[name='segment_name']")?.value || "重点",
-        sort_order: Number(row.querySelector("[name='sort_order']")?.value || index + 1),
-        rule_note: row.querySelector("[name='rule_note']")?.value || "",
+        category_key: card.dataset.categoryKey || categoryKey(index),
+        category_name: card.querySelector("[name='category_name']")?.value || "",
+        description: card.querySelector("[name='description']")?.value || "",
+        option_ids: optionIds,
+        option_snapshots: optionIds.map((optionId) => ({ id: optionId, option_text: selectedOptions.get(String(optionId)) || "" })),
       };
-    }).filter((row) => row.questionnaire_question_id || row.hit_option_ids_json.length || row.rule_note);
+    }).filter((row) => row.category_name || row.option_ids.length || row.description);
     const scoreRows = [...form.querySelectorAll("[data-score-row]")].map((row) => ({
       min_score: Number(row.querySelector("[name='min_score']")?.value),
       max_score: Number(row.querySelector("[name='max_score']")?.value),
@@ -419,10 +568,18 @@
     await postJson(urls.segmentation, {
       questionnaire_id: questionnaireId,
       default_strategy: form.querySelector("[name='default_strategy']")?.value || "normal_question_rules",
-      core_threshold: Number(form.querySelector("[name='core_threshold']")?.value || 2),
-      normal_question_rules_rows: normalRows,
+      normal_question_mode: "single_question_option_category",
+      segmentation_question_id: selectedQuestionId,
+      normal_question_categories: categories,
       score_segment_rows: scoreRows,
       strategies: {
+        normal_question_rules: {
+          enabled: (form.querySelector("[name='default_strategy']")?.value || "normal_question_rules") !== "manual",
+          mode: "single_question_option_category",
+          segmentation_question_id: selectedQuestionId,
+          segmentation_question_title: selectedQuestionTitle,
+          categories,
+        },
         score_segments: { enabled: form.querySelector("[name='score_enabled']")?.value === "1" },
         profile_dimension: { enabled: Boolean(form.querySelector("[name='profile_template_id']")?.value), template_id: Number(form.querySelector("[name='profile_template_id']")?.value || 0) || null, usage: "content_variable_only" },
       },
