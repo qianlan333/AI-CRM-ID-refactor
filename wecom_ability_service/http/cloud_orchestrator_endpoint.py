@@ -134,12 +134,13 @@ def cloud_orchestrator_audit() -> Response:
 
 def cloud_orchestrator_observability() -> Response:
     """监控数据汇总：plan 漏斗 / 审计错误 / Cloud 调用延迟分位。"""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     from ..db import get_db
 
-    cutoff_7d = (datetime.utcnow() - timedelta(days=7)).isoformat()
-    cutoff_1d = (datetime.utcnow() - timedelta(days=1)).isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff_7d = (now - timedelta(days=7)).isoformat()
+    cutoff_1d = (now - timedelta(days=1)).isoformat()
 
     db = get_db()
     cur = db.cursor()
