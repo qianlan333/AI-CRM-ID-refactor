@@ -57,8 +57,12 @@ def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     campaign_scheduler = (ROOT / "scripts" / "run_campaign_scheduler.py").read_text(encoding="utf-8")
     broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(encoding="utf-8")
     ops_runtime = (ROOT / "wecom_ability_service" / "http" / "ops_runtime.py").read_text(encoding="utf-8")
+    alembic_env = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
 
     assert "--database-path" not in seed_demo
     assert "DATABASE_PATH`` / ``DATABASE_URL" not in campaign_scheduler
     assert "DATABASE_PATH`` / ``DATABASE_URL" not in broadcast_worker
     assert "sqlite_path" not in ops_runtime
+    assert "DATABASE_PATH" not in alembic_env
+    assert "data.sqlite3" not in alembic_env
+    assert "sqlite:///" not in alembic_env
