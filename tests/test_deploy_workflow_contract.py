@@ -71,6 +71,15 @@ def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert "sqlite:///" not in alembic_env
 
 
+def test_makefile_check_uses_existing_quality_gate_targets():
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "check: lint typecheck build" in makefile
+    assert "customer-pulse-quality" not in makefile
+    assert "scripts/run_customer_pulse_quality_gates.py" not in makefile
+    assert "tests/test_customer_pulse_inbox.py" not in makefile
+    assert "tests/test_customer_pulse_quality_gates.py" not in makefile
+
+
 def test_postgres_backup_restore_share_database_url_guard():
     helper = (ROOT / "scripts" / "_postgres_env.sh").read_text(encoding="utf-8")
     backup = (ROOT / "scripts" / "backup_postgres.sh").read_text(encoding="utf-8")
