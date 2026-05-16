@@ -80,6 +80,23 @@ def _initial_audience_code(payload: Mapping[str, Any]) -> str:
     return code
 
 
+def _owner_staff_id_from_link_payload(payload: Mapping[str, Any]) -> str:
+    explicit_owner = _normalized_text(payload.get("owner_staff_id"))
+    if explicit_owner:
+        return explicit_owner
+    range_user_list = payload.get("range_user_list") or []
+    if isinstance(range_user_list, str):
+        range_user_list = [item.strip() for item in range_user_list.split(",")]
+    for item in list(range_user_list or []):
+        if isinstance(item, Mapping):
+            owner = _normalized_text(item.get("userid") or item.get("user_id") or item.get("id"))
+        else:
+            owner = _normalized_text(item)
+        if owner:
+            return owner
+    return DEFAULT_OWNER_STAFF_ID
+
+
 def create_customer_acquisition_link(payload: Mapping[str, Any]) -> dict[str, Any]:
     link_id = _normalized_text(payload.get("link_id"))
     link_url = _normalized_text(payload.get("link_url"))
@@ -92,6 +109,7 @@ def create_customer_acquisition_link(payload: Mapping[str, Any]) -> dict[str, An
     workflow_id = int(payload.get("workflow_id") or 0) or None
     link_name = _normalized_text(payload.get("link_name")) or link_id
     initial_audience_code = _initial_audience_code(payload)
+    owner_staff_id = _owner_staff_id_from_link_payload(payload)
     customer_channel = generate_customer_channel(corp_id=corp_id, program_id=program_id, link_id=link_id)
     final_url = build_customer_acquisition_final_url(link_url, customer_channel)
 
@@ -110,7 +128,7 @@ def create_customer_acquisition_link(payload: Mapping[str, Any]) -> dict[str, An
                 "entry_tag_id": "",
                 "entry_tag_name": "",
                 "entry_tag_group_name": "",
-                "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
+                "owner_staff_id": owner_staff_id,
                 "status": "active",
             }
         )

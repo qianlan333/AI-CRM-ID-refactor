@@ -213,6 +213,11 @@ def save_default_channel_settings(payload: dict[str, Any], *, program_id: int | 
         if "auto_accept_friend" in payload
         else _normalize_bool(existing.get("auto_accept_friend"))
     )
+    next_owner_staff_id = (
+        _normalized_text(payload.get("owner_staff_id"))
+        or _normalized_text(existing.get("owner_staff_id"))
+        or DEFAULT_OWNER_STAFF_ID
+    )
     current_channel_name = _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
     current_welcome_message = _normalized_text(existing.get("welcome_message"))
     current_auto_accept_friend = _normalize_bool(existing.get("auto_accept_friend"))
@@ -237,7 +242,7 @@ def save_default_channel_settings(payload: dict[str, Any], *, program_id: int | 
             "entry_tag_id": entry_tag_payload["entry_tag_id"],
             "entry_tag_name": entry_tag_payload["entry_tag_name"],
             "entry_tag_group_name": entry_tag_payload["entry_tag_group_name"],
-            "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
+            "owner_staff_id": next_owner_staff_id,
             "status": (
                 CHANNEL_STATUS_CONFIGURED
                 if channel_settings_changed
@@ -272,9 +277,10 @@ def generate_default_channel_qr(*, operator: str = "", program_id: int | None = 
     entry_tag_id = _normalized_text(existing.get("entry_tag_id"))
     entry_tag_name = _normalized_text(existing.get("entry_tag_name"))
     entry_tag_group_name = _normalized_text(existing.get("entry_tag_group_name"))
+    owner_staff_id = _normalized_text(existing.get("owner_staff_id")) or DEFAULT_OWNER_STAFF_ID
     try:
         channel_payload = provider.create_default_channel(
-            owner_staff_id=DEFAULT_OWNER_STAFF_ID,
+            owner_staff_id=owner_staff_id,
             welcome_message=welcome_message,
             auto_accept_friend=auto_accept_friend,
         )
@@ -292,7 +298,7 @@ def generate_default_channel_qr(*, operator: str = "", program_id: int | None = 
                 "entry_tag_id": entry_tag_id,
                 "entry_tag_name": entry_tag_name,
                 "entry_tag_group_name": entry_tag_group_name,
-                "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
+                "owner_staff_id": owner_staff_id,
                 "status": "generation_failed",
             }
         )
@@ -327,7 +333,7 @@ def generate_default_channel_qr(*, operator: str = "", program_id: int | None = 
                 "entry_tag_id": entry_tag_id,
                 "entry_tag_name": entry_tag_name,
                 "entry_tag_group_name": entry_tag_group_name,
-                "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
+                "owner_staff_id": owner_staff_id,
                 "status": "config_incomplete" if "not configured" in str(exc).lower() else "generation_failed",
             }
         )
@@ -365,7 +371,7 @@ def generate_default_channel_qr(*, operator: str = "", program_id: int | None = 
             "entry_tag_id": entry_tag_id,
             "entry_tag_name": entry_tag_name,
             "entry_tag_group_name": entry_tag_group_name,
-            "owner_staff_id": DEFAULT_OWNER_STAFF_ID,
+            "owner_staff_id": owner_staff_id,
             "status": _normalized_text(channel_payload.get("status")) or CHANNEL_STATUS_ACTIVE,
         }
     )
@@ -385,5 +391,3 @@ def generate_default_channel_qr(*, operator: str = "", program_id: int | None = 
             )
         ),
     }
-
-

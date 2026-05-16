@@ -1679,6 +1679,124 @@ def _init_postgres(db) -> None:
         db.execute(stmt)
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS automation_operation_task_group (
+            id BIGSERIAL PRIMARY KEY,
+            program_id BIGINT NOT NULL REFERENCES automation_program(id) ON DELETE CASCADE,
+            group_name TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            archived_at TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_operation_task_group_program
+        ON automation_operation_task_group (program_id, sort_order ASC, id ASC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_operation_task (
+            id BIGSERIAL PRIMARY KEY,
+            program_id BIGINT NOT NULL REFERENCES automation_program(id) ON DELETE CASCADE,
+            group_id BIGINT REFERENCES automation_operation_task_group(id) ON DELETE SET NULL,
+            task_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+            send_time TEXT NOT NULL DEFAULT '10:00',
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+            target_audience_code TEXT NOT NULL DEFAULT 'operating'
+                CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            audience_day_offset INTEGER NOT NULL DEFAULT 1,
+            behavior_filter TEXT NOT NULL DEFAULT 'none'
+                CHECK (behavior_filter IN ('none', 'lt_2', 'between_2_9', 'gte_10')),
+            content_mode TEXT NOT NULL DEFAULT 'unified'
+                CHECK (content_mode IN ('unified', 'profile_layered', 'behavior_layered', 'agent')),
+            profile_segment_template_id BIGINT REFERENCES automation_profile_segment_template(id) ON DELETE SET NULL,
+            unified_content_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            segment_contents_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            agent_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_by TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            published_at TIMESTAMPTZ
+        )
+        """
+    )
+    for stmt in (
+        "CREATE INDEX IF NOT EXISTS idx_automation_operation_task_program "
+        "ON automation_operation_task (program_id, status, send_time, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_automation_operation_task_group "
+        "ON automation_operation_task (group_id, status, updated_at DESC, id DESC)",
+    ):
+        db.execute(stmt)
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_operation_task_execution (
+            id BIGSERIAL PRIMARY KEY,
+            execution_id TEXT NOT NULL UNIQUE,
+            program_id BIGINT NOT NULL REFERENCES automation_program(id) ON DELETE CASCADE,
+            task_id BIGINT NOT NULL REFERENCES automation_operation_task(id) ON DELETE CASCADE,
+            scheduled_for TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL DEFAULT 'running',
+            target_count INTEGER NOT NULL DEFAULT 0,
+            enqueued_count INTEGER NOT NULL DEFAULT 0,
+            sent_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at TIMESTAMPTZ
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_operation_task_execution_task
+        ON automation_operation_task_execution (task_id, scheduled_for DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_operation_task_execution_item (
+            id BIGSERIAL PRIMARY KEY,
+            execution_id TEXT NOT NULL REFERENCES automation_operation_task_execution(execution_id) ON DELETE CASCADE,
+            task_id BIGINT NOT NULL REFERENCES automation_operation_task(id) ON DELETE CASCADE,
+            member_id BIGINT NOT NULL REFERENCES automation_member(id) ON DELETE CASCADE,
+            audience_entry_id BIGINT REFERENCES automation_member_audience_entry(id) ON DELETE SET NULL,
+            external_contact_id TEXT NOT NULL DEFAULT '',
+            segment_key TEXT NOT NULL DEFAULT '',
+            rendered_content_text TEXT NOT NULL DEFAULT '',
+            content_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            send_record_id BIGINT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error_message TEXT NOT NULL DEFAULT '',
+            sent_at TIMESTAMPTZ
+        )
+        """
+    )
+    for stmt in (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_operation_task_item_entry "
+        "ON automation_operation_task_execution_item (task_id, audience_entry_id) WHERE audience_entry_id IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_automation_operation_task_item_execution "
+        "ON automation_operation_task_execution_item (execution_id, status, id ASC)",
+    ):
+        db.execute(stmt)
+    db.execute("ALTER TABLE IF EXISTS broadcast_jobs DROP CONSTRAINT IF EXISTS broadcast_jobs_source_type_check")
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS broadcast_jobs
+        ADD CONSTRAINT broadcast_jobs_source_type_check
+        CHECK (source_type IN ('campaign', 'sop', 'workflow', 'operation_task', 'cloud_plan', 'focus_send', 'deferred', 'manual'))
+        """
+    )
+    db.execute(
+        """
         ALTER TABLE IF EXISTS automation_agent_output
         ADD COLUMN IF NOT EXISTS adopted_by TEXT NOT NULL DEFAULT ''
         """

@@ -9,8 +9,8 @@ cron 例（每分钟）：
 每次跑：
 1. claim_due_jobs(limit=N) — 原子地把到期 queued 任务标 claimed
 2. 对每个 job：
-   - 解析 content_payload = {fn_name, wecom_payload}
-   - 调 tasks.dispatch_wecom_task(task_type, fn_name, payload) → 真发企微
+   - 按 source_type 路由到对应 handler
+   - handler 负责现场计算收件人、组装企微 payload、真发并写回业务执行明细
    - 成功：mark_sent(job_id, outbound_task_id, sent_count)
    - 失败：mark_failed(job_id, error)（v1 不自动重试，由运营手动 retry）
 3. 输出结构化 summary

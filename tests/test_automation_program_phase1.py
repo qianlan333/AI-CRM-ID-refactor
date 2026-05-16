@@ -136,6 +136,36 @@ def _seed_choice_questionnaire(app, *, slug: str = "segmentation-choice-case") -
     }
 
 
+def test_operation_task_panel_uses_single_task_language():
+    source = (REPO_ROOT / "wecom_ability_service/templates/admin_console/_automation_operation_orchestration_panel.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "运营任务" in source
+    assert "新增分组" in source
+    assert "新增任务" in source
+    assert "所属分组" in source
+    assert "每天触发时间" in source
+    assert "目标人群" in source
+    assert "进入人群第 N 天" in source
+    assert "行为过滤" in source
+    assert "刷新人群预览" in source
+    assert "统一内容" in source
+    assert "按画像分层群发" in source
+    assert "按消息数分层群发" in source
+    assert "Agent 改写 / 个性化" in source
+    assert "分层话术" in source
+    assert "绑定图片" in source
+    assert "绑定小程序" in source
+    assert "执行节点" not in source
+    assert "节点配置" not in source
+    assert "任务流" not in source
+    assert "入口来源" not in source
+    assert "发送去重" not in source
+    assert "检查与执行" not in source
+    assert "从当前任务复制" not in source
+
+
 def test_default_program_bootstraps_and_automation_entry_lists_programs(app, client, monkeypatch):
     _login(client, app, monkeypatch)
     response = client.get("/admin/automation-conversion")
@@ -375,7 +405,11 @@ def test_program_basic_info_edit_updates_list_and_context_header(app, client, mo
 
     updated_list = client.get("/admin/automation-conversion").get_data(as_text=True)
     assert "默认自动化转化方案 UI 已编辑" in updated_list
-    assert "列表页编辑后的方案说明" in updated_list
+    assert "列表页编辑后的方案说明" not in updated_list
+
+    updated_setup = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=basic").get_data(as_text=True)
+    assert "默认自动化转化方案 UI 已编辑" in updated_setup
+    assert "列表页编辑后的方案说明" in updated_setup
 
     updated_context = client.get(f"/admin/automation-conversion/programs/{program_id}/overview").get_data(as_text=True)
     assert "默认自动化转化方案 UI 已编辑" in updated_context
@@ -809,70 +843,460 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
 
     assert response.status_code == 200
     assert "<iframe" not in html
-    assert "运营动作" in html
-    assert "新增动作" in html
-    assert "从模板创建" in html
+    assert "运营任务" in html
+    assert "新增任务" in html
+    assert "新增分组" in html
+    assert "搜索任务标题" in html
     assert "保存草稿" in html
-    assert "op-action-savebar" not in html
-    assert 'id="save-draft-button"' not in html
+    assert "保存并发布" in html
+    assert "保存并下一步" not in html
+    assert "去检查发布" not in html
     assert "触发与对象" in html
-    assert "内容策略" in html
-    assert "执行节点" in html
-    assert "节点 Agent" in html
-    assert "生成方式" in html
-    assert "选择小程序素材" in html
-    assert "选择图片素材" in html
-    assert "asset-picker-modal" in html
+    assert "发送策略" in html
+    assert "分层话术" in html
+    assert "每天触发时间" in html
+    assert "进入人群第 N 天" in html
+    assert "行为过滤" in html
+    assert "刷新人群预览" in html
+    assert "统一内容" in html
+    assert "按画像分层群发" in html
+    assert "按消息数分层群发" in html
+    assert "Agent 改写 / 个性化" in html
+    assert "绑定图片" in html
+    assert "绑定小程序" in html
     assert "window.__automationOperationSaveDraft" in html
-    assert "action-list-feedback" in html
-    assert "正在加载..." in html
-    assert "正在加载运营动作..." in html
-    assert "复制中..." in html
-    assert "minmax(320px, 360px) minmax(0, 1fr)" in html
-    assert ".op-empty-state[hidden]" in html
+    assert "window.__automationOperationPublish" in html
+    assert "task-groups" in html
+    assert "preview-audience" in html
+    assert "minmax(300px, 360px) minmax(0, 1fr)" in html
     assert "@media (max-width: 960px)" in html
-    assert "这个动作选择了「Agent 单人定制化」，必须先选择 1 个智能体后才能保存。" in html
-    assert "当前还没有可用智能体，请先创建或启用一个智能体，再保存 Agent 单人定制化动作。" in html
-    assert "当前内容策略不需要智能体，请移除智能体绑定或切换为「Agent 单人定制化」。" in html
-    assert "当前选择的智能体不可用，请重新选择。" in html
-    assert "function normalizedAgentCode" in html
-    assert "function selectedAgentCode" in html
-    assert "function businessConfigFromBundle" in html
-    assert "operation_config: operationConfigPayload(config)" in html
-    assert "fillSelect(elements.triggerType, triggerOptions, config.trigger_type || 'manual');" in html
-    assert "fillSelect(elements.audienceType, audienceOptions, config.audience_type || 'custom');" in html
-    assert "fillSelect(elements.sendTiming, sendTimingOptions, config.send_timing || 'manual');" in html
-    assert "data-agent-code" in html
-    assert "isAgentSelectionError" in html
+    assert "执行节点" not in html
+    assert "节点配置" not in html
+    assert "任务流" not in html
+    assert "入口来源" not in html
+    assert "发送去重" not in html
+    assert "检查与执行" not in html
     assert "@media (max-width: 1280px)" not in html
-    assert 'id="agent-code"' not in html
-    assert 'id="standard-content-text"' not in html
-    assert 'id="generation-requirement"' not in html
-    assert 'id="miniprogram-library-ids"' not in html
-    assert "保存并启用" not in html
-    assert "执行预览" not in html
-    assert "默认自动化转化方案" not in html
-    assert "编辑方案" not in html
-    assert "复制方案" not in html
-    assert "在一个页面里维护当前方案下所有运营动作" not in html
 
 
-def test_action_orchestration_reload_uses_saved_business_config():
+def test_operation_task_group_create_copy_filter_and_preview(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+    with app.app_context():
+        db = get_db()
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, ?, '测试渠道', 'channel_sender_preview', 'active')
+                RETURNING id
+                """,
+                (program_id, f"program_{program_id}_operation_task_preview"),
+            ).fetchone()["id"]
+        )
+        member_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, current_audience_code,
+                    current_audience_entered_at, behavior_tier_key, source_channel_id
+                )
+                VALUES ('ext-operation-task-preview', '13800000000', 'operating', CURRENT_DATE::text, 'lt_2', ?)
+                RETURNING id
+                """,
+                (channel_id,),
+            ).fetchone()["id"]
+        )
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, is_current, entry_source
+            )
+            VALUES (?, 'operating', CURRENT_DATE::text, TRUE, 'test')
+            """,
+            (member_id,),
+        )
+        db.commit()
+
+    group_response = client.post(
+        f"/api/admin/automation-conversion/task-groups?program_id={program_id}",
+        json={"group_name": "激活任务"},
+    )
+    assert group_response.status_code == 201
+    group_id = group_response.get_json()["group"]["id"]
+
+    create_response = client.post(
+        f"/api/admin/automation-conversion/tasks?program_id={program_id}",
+        json={
+            "group_id": group_id,
+            "task_name": "消息少于 2 次用户促活",
+            "status": "draft",
+            "send_time": "14:00",
+            "target_audience_code": "operating",
+            "audience_day_offset": 1,
+            "behavior_filter": "lt_2",
+            "content_mode": "behavior_layered",
+            "segment_contents_json": [
+                {"segment_key": "lt_2", "segment_name": "消息少于 2", "content_text": "回来看看新的资料吧"},
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+    task = create_response.get_json()["task"]
+    assert task["group_id"] == group_id
+
+    list_response = client.get(f"/api/admin/automation-conversion/tasks?program_id={program_id}&group_id={group_id}")
+    assert [item["task_name"] for item in list_response.get_json()["tasks"]] == ["消息少于 2 次用户促活"]
+
+    preview_response = client.post(
+        f"/api/admin/automation-conversion/tasks/{task['id']}/preview-audience?program_id={program_id}",
+        json=task,
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.get_json()["preview"]
+    assert preview["target_count"] == 1
+    assert preview["segment_counts"]["lt_2"] == 1
+
+    copy_response = client.post(f"/api/admin/automation-conversion/tasks/{task['id']}/copy")
+    assert copy_response.status_code == 201
+    copied = copy_response.get_json()["task"]
+    assert copied["group_id"] == group_id
+    assert copied["status"] == "draft"
+    assert copied["task_name"].endswith("/ 复制")
+
+
+def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkeypatch):
+    from datetime import datetime
+
+    from wecom_ability_service.domains.automation_conversion.operation_task_service import (
+        create_operation_task,
+        run_due_operation_tasks,
+    )
+    from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+    from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
+
+    program_id = _default_program_id(app)
+    captured: dict[str, object] = {}
+
+    def fake_dispatch(task_type, fn_name, payload):
+        captured["task_type"] = task_type
+        captured["fn_name"] = fn_name
+        captured["payload"] = payload
+        return {"task_id": 7788, "wecom_result": {"errcode": 0, "fail_list": []}}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.sync_all_conversion_member_audiences",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
+        fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task",
+        fake_dispatch,
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute("DELETE FROM automation_channel WHERE program_id = ?", (program_id,))
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, ?, '群发渠道', 'channel_sender', 'active')
+                RETURNING id
+                """,
+                (program_id, f"program_{program_id}_default_qrcode"),
+            ).fetchone()["id"]
+        )
+        db.execute(
+            """
+            INSERT INTO automation_channel (
+                program_id, channel_code, channel_name, owner_staff_id, status
+            )
+            VALUES (?, ?, '获客助手入口', 'other_channel_sender', 'active')
+            """,
+            (program_id, f"wecom_customer_acquisition_{program_id}_other"),
+        )
+        member_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, current_audience_code,
+                    current_audience_entered_at, behavior_tier_key, source_channel_id
+                )
+                VALUES ('ext-operation-task-send', '13800000001', 'member_owner_should_not_send', 'operating', CURRENT_DATE::text, 'lt_2', ?)
+                RETURNING id
+                """,
+                (channel_id,),
+            ).fetchone()["id"]
+        )
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, is_current, entry_source
+            )
+            VALUES (?, 'operating', CURRENT_DATE::text, TRUE, 'test')
+            """,
+            (member_id,),
+        )
+        task = create_operation_task(
+            program_id,
+            {
+                "task_name": "到点群发测试",
+                "status": "active",
+                "send_time": "14:00",
+                "target_audience_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "lt_2",
+                "content_mode": "unified",
+                "unified_content_json": {"content_text": "今天记得回来看看"},
+            },
+            operator_id="pytest",
+        )["task"]
+
+        scheduled_now = datetime.now().replace(hour=14, minute=1, second=0, microsecond=0)
+        due_result = run_due_operation_tasks(
+            program_id=program_id,
+            now=scheduled_now,
+            operator_id="pytest-runner",
+        )
+        assert due_result["ok"] is True
+        assert due_result["enqueued_count"] >= 1
+        second_due_result = run_due_operation_tasks(
+            program_id=program_id,
+            now=scheduled_now,
+            operator_id="pytest-runner",
+        )
+        assert second_due_result["ok"] is True
+        assert second_due_result["enqueued_count"] == 0
+
+        claimed = queue_service.claim_due_jobs(limit=10, now=scheduled_now.replace(minute=2))
+        operation_jobs = [item for item in claimed if item["source_type"] == "operation_task"]
+        assert len(operation_jobs) == 1
+        job = operation_jobs[0]
+        assert job["content_payload"]["pre_scheduled"] is True
+        assert job["trace_id"].startswith(f"actask-{task['id']}-")
+        assert job["content_payload"].get("fn_name") != "send_text"
+
+        outcome = execute_job(job)
+        assert outcome["ok"] is True, outcome
+        assert outcome["sent_count"] == 1
+        assert captured["fn_name"] == "create_private_message_task"
+        assert captured["task_type"] == "private_message"
+        assert captured["payload"]["sender"] == "channel_sender"
+        assert captured["payload"]["external_userid"] == ["ext-operation-task-send"]
+        assert captured["payload"]["text"]["content"] == "今天记得回来看看"
+
+        item = db.execute(
+            """
+            SELECT status, send_record_id, error_message
+            FROM automation_operation_task_execution_item
+            WHERE task_id = ?
+            LIMIT 1
+            """,
+            (task["id"],),
+        ).fetchone()
+        assert item["status"] == "sent"
+        assert int(item["send_record_id"] or 0) > 0
+        assert item["error_message"] == ""
+
+
+def test_multiple_operation_tasks_due_at_same_time_send_independently(app, monkeypatch):
+    from datetime import datetime
+
+    from wecom_ability_service.domains.automation_conversion.operation_task_service import (
+        create_operation_task,
+        run_due_operation_tasks,
+    )
+    from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+    from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
+
+    program_id = _default_program_id(app)
+    dispatched_payloads: list[dict[str, object]] = []
+
+    def fake_dispatch(task_type, fn_name, payload):
+        dispatched_payloads.append({"task_type": task_type, "fn_name": fn_name, "payload": payload})
+        return {"task_id": 8800 + len(dispatched_payloads), "wecom_result": {"errcode": 0, "fail_list": []}}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.sync_all_conversion_member_audiences",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
+        fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task",
+        fake_dispatch,
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute("DELETE FROM automation_channel WHERE program_id = ?", (program_id,))
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, ?, '并发群发渠道', 'concurrent_channel_sender', 'active')
+                RETURNING id
+                """,
+                (program_id, f"program_{program_id}_default_qrcode"),
+            ).fetchone()["id"]
+        )
+        member_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, current_audience_code,
+                    current_audience_entered_at, behavior_tier_key, source_channel_id
+                )
+                VALUES ('ext-operation-task-concurrent', '13800000002', 'member_owner_ignored', 'operating', CURRENT_DATE::text, 'lt_2', ?)
+                RETURNING id
+                """,
+                (channel_id,),
+            ).fetchone()["id"]
+        )
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, is_current, entry_source
+            )
+            VALUES (?, 'operating', CURRENT_DATE::text, TRUE, 'test')
+            """,
+            (member_id,),
+        )
+        task_a = create_operation_task(
+            program_id,
+            {
+                "task_name": "同点任务 A",
+                "status": "active",
+                "send_time": "14:00",
+                "target_audience_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "lt_2",
+                "content_mode": "unified",
+                "unified_content_json": {"content_text": "A 内容"},
+            },
+            operator_id="pytest",
+        )["task"]
+        task_b = create_operation_task(
+            program_id,
+            {
+                "task_name": "同点任务 B",
+                "status": "active",
+                "send_time": "14:00",
+                "target_audience_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "lt_2",
+                "content_mode": "unified",
+                "unified_content_json": {"content_text": "B 内容"},
+            },
+            operator_id="pytest",
+        )["task"]
+
+        scheduled_now = datetime.now().replace(hour=14, minute=1, second=0, microsecond=0)
+        queue_service.enqueue_job(
+            source_type="manual",
+            source_id="manual-same-time",
+            source_table="manual_test",
+            scheduled_for=scheduled_now.replace(minute=0),
+            target_external_userids=["ext-manual-same-time"],
+            target_summary="1 人",
+            content_type="private_message",
+            content_payload={
+                "fn_name": "create_private_message_task",
+                "wecom_payload": {
+                    "sender": "manual_sender",
+                    "external_userid": ["ext-manual-same-time"],
+                    "text": {"content": "手动队列内容"},
+                },
+            },
+            content_summary="手动队列内容",
+        )
+        due_result = run_due_operation_tasks(program_id=program_id, now=scheduled_now, operator_id="pytest-runner")
+        assert due_result["ok"] is True
+        assert due_result["enqueued_count"] >= 2
+
+        claimed = queue_service.claim_due_jobs(limit=10, now=scheduled_now.replace(minute=2))
+        operation_jobs = [item for item in claimed if item["source_type"] == "operation_task"]
+        manual_jobs = [item for item in claimed if item["source_type"] == "manual"]
+        assert len(operation_jobs) == 2
+        assert len(manual_jobs) == 1
+        outcomes = [execute_job(job) for job in operation_jobs + manual_jobs]
+        assert all(item["ok"] is True for item in outcomes)
+        assert [item["sent_count"] for item in outcomes] == [1, 1, 1]
+
+        rows = db.execute(
+            """
+            SELECT task_id, status, send_record_id
+            FROM automation_operation_task_execution_item
+            WHERE task_id IN (?, ?)
+            ORDER BY task_id ASC
+            """,
+            (task_a["id"], task_b["id"]),
+        ).fetchall()
+        assert [dict(row)["task_id"] for row in rows] == [task_a["id"], task_b["id"]]
+        assert all(dict(row)["status"] == "sent" for row in rows)
+        assert all(int(dict(row)["send_record_id"] or 0) > 0 for row in rows)
+
+    sent_texts = [
+        dict(dict(item["payload"])["text"])["content"]
+        for item in dispatched_payloads
+    ]
+    assert sorted(sent_texts) == ["A 内容", "B 内容", "手动队列内容"]
+    operation_senders = {
+        dict(item["payload"])["sender"]
+        for item in dispatched_payloads
+        if dict(dict(item["payload"])["text"])["content"] in {"A 内容", "B 内容"}
+    }
+    assert operation_senders == {"concurrent_channel_sender"}
+
+
+def test_registered_due_jobs_include_operation_task(monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import due_jobs_service
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.operation_task_service.run_due_operation_tasks",
+        lambda operator_id: {"ok": True, "ran": 1, "enqueued_count": 2, "failed_count": 0, "results": []},
+    )
+
+    codes = [item["job_code"] for item in due_jobs_service.list_registered_due_jobs()]
+    assert "operation_task" in codes
+    result = due_jobs_service.run_registered_due_jobs(job_codes=["operation_task"], operator_id="pytest")
+    assert result["ok"] is True
+    assert result["total_success_count"] == 2
+
+
+def test_operation_task_panel_saves_single_task_payload():
     html = (
         REPO_ROOT
         / "wecom_ability_service/templates/admin_console/_automation_operation_orchestration_panel.html"
     ).read_text(encoding="utf-8")
 
-    load_existing_match = re.search(r"async function loadExistingAction\(actionId\) \{(?P<body>.*?)\n    async function selectAction", html, re.S)
-    assert load_existing_match
-    load_existing_body = load_existing_match.group("body")
-    assert "const config = businessConfigFromBundle(bundle);" in load_existing_body
-    assert "fillSelect(elements.triggerType, triggerOptions, config.trigger_type || 'manual');" in load_existing_body
-    assert "fillSelect(elements.audienceType, audienceOptions, config.audience_type || 'custom');" in load_existing_body
-    assert "fillSelect(elements.sendTiming, sendTimingOptions, config.send_timing || 'manual');" in load_existing_body
-    assert "fillSelect(elements.triggerType, triggerOptions, 'manual');" not in load_existing_body
-    assert "fillSelect(elements.sendTiming, sendTimingOptions, 'manual');" not in load_existing_body
-    assert "operation_config: operationConfigPayload(config)" in html
+    assert "function collectPayload" in html
+    assert "group_id" in html
+    assert "send_time" in html
+    assert "target_audience_code" in html
+    assert "audience_day_offset" in html
+    assert "behavior_filter" in html
+    assert "content_mode" in html
+    assert "unified_content_json" in html
+    assert "segment_contents_json" in html
+    assert "agent_config_json" in html
+    assert "withId(apiUrls.task_base, currentId())" in html
+    assert "withId(apiUrls.task_copy_base, taskId)" in html
+    assert "withId(apiUrls.task_preview_base, currentId())" in html
+    assert "operation_config" not in html
+    assert "loadExistingAction" not in html
 
 
 def test_ai_action_template_generate_returns_chinese_error_when_model_unavailable(app, client, monkeypatch):

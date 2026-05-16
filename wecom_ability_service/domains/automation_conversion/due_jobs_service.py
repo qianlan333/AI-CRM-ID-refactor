@@ -21,6 +21,12 @@ def list_registered_due_jobs() -> list[dict[str, Any]]:
             "frequency_minutes": 15,
             "description": "轮询启用中的自动化转化任务流节点，到点后按当前大人群和第 N 天执行发送。",
         },
+        {
+            "job_code": "operation_task",
+            "label": "自动化运营任务",
+            "frequency_minutes": 15,
+            "description": "轮询启用中的运营任务，到点后按任务条件筛选人群并写入群发队列。",
+        },
     ]
 
 
@@ -34,6 +40,10 @@ def _run_due_job(job_code: str, *, operator_id: str, operator_type: str) -> dict
         from .workflow_runtime import run_due_conversion_workflows
 
         return run_due_conversion_workflows(operator_id=normalized_operator, operator_type=operator_type)
+    if job_code == "operation_task":
+        from .operation_task_service import run_due_operation_tasks
+
+        return run_due_operation_tasks(operator_id=normalized_operator)
     raise ValueError(f"unsupported due job runner: {job_code}")
 
 
@@ -42,6 +52,9 @@ def _summarize_due_job_payload(payload: dict[str, Any]) -> dict[str, int]:
     skipped_count = int(payload.get("total_skipped_count") or 0)
     failed_count = int(payload.get("total_failed_count") or 0)
     if not success_count and not skipped_count and not failed_count:
+        success_count += int(payload.get("enqueued_count") or 0)
+        skipped_count += int(payload.get("skipped_count") or 0)
+        failed_count += int(payload.get("failed_count") or 0)
         for execution_result in payload.get("executions") or []:
             execution_row = dict((execution_result or {}).get("execution") or {})
             success_count += int(execution_row.get("success_count") or 0)

@@ -364,6 +364,13 @@
   {% endif %}
 
   <footer class="setup-footer">
+    {% if current_step == 'operations' %}
+    <div class="setup-footer__side"></div>
+    <div class="setup-footer__side">
+      <button class="setup-button" type="button" data-save-current>保存草稿</button>
+      <button class="setup-button is-primary" type="button" data-operation-save-publish>保存并发布</button>
+    </div>
+    {% else %}
     <div class="setup-footer__side">
       {% if nav[current_step].prev %}<a class="setup-button" href="{{ urls.base }}?step={{ nav[current_step].prev }}">上一步</a>{% endif %}
       {% if current_step != 'publish' %}<button class="setup-button is-primary" type="button" data-save-current>保存草稿</button>{% endif %}
@@ -372,6 +379,7 @@
       {% if current_step != 'publish' %}<button class="setup-button" type="button" data-save-and-publish>去检查发布</button>{% endif %}
       {% if nav[current_step].next %}<button class="setup-button is-primary" type="button" data-save-and-next data-next-step="{{ nav[current_step].next }}">保存并下一步</button>{% endif %}
     </div>
+    {% endif %}
   </footer>
 </section>
 
@@ -647,6 +655,16 @@
       await saveCurrentStep();
       window.location.href = `${urls.base}?step=publish`;
     } catch (error) { showFeedback(error.message || "保存失败，请先处理当前页面配置"); }
+  });
+  root.querySelector("[data-operation-save-publish]")?.addEventListener("click", async () => {
+    try {
+      if (typeof window.__automationOperationPublish === "function") {
+        await window.__automationOperationPublish();
+        showFeedback("已保存并发布", true);
+      } else {
+        throw new Error("运营任务发布能力未加载，请刷新页面后重试");
+      }
+    } catch (error) { showFeedback(error.message || "保存并发布失败"); }
   });
   root.querySelectorAll("[data-publish]").forEach((button) => {
     button.addEventListener("click", async () => {
