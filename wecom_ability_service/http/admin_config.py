@@ -22,16 +22,9 @@ from ..domains.admin_config import (
     build_config_home_payload,
     config_tabs,
     list_admin_app_settings,
-    list_class_term_tag_mappings,
     list_mcp_tool_settings,
-    list_owner_routing_settings,
-    list_signup_tag_settings,
     save_admin_app_settings,
-    save_class_term_tag_mapping,
     save_mcp_tool_setting,
-    save_owner_role_setting,
-    save_routing_rule_setting,
-    save_signup_tag_setting,
 )
 from .internal_auth import (
     current_admin_session_user,
@@ -109,107 +102,10 @@ def admin_config_home():
         "config_overview.html",
         active_tab="overview",
         page_title="配置中心",
-        page_summary="在这里维护渠道与分配规则、标签班期规则、系统设置，以及登录与权限。",
+        page_summary="在这里维护企微标签、系统设置、登录与权限，以及配置检查清单。",
         breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("配置中心", None)),
         overview_cards=payload["cards"],
     )
-
-
-def _routing_page(*, page_error: str = ""):
-    query = _query_text("q")
-    active_only = _query_bool("active_only")
-    payload = list_owner_routing_settings(query=query, active_only=active_only)
-    edit_owner = _query_text("edit_owner")
-    edit_rule = _query_text("edit_rule")
-    owner_form = next((row for row in payload["owner_rows"] if row["userid"] == edit_owner), {"active": True, "role": "sales"})
-    routing_form = next(
-        (row for row in payload["routing_rows"] if row["rule_key"] == edit_rule),
-        {"active": True, "routing_target": "manual_review"},
-    )
-    return _render_config_template(
-        "config_routing.html",
-        active_tab="routing",
-        page_title="负责人 / 分配规则",
-        page_summary="在这里维护负责人角色和客户分配规则。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("配置中心", url_for("api.admin_config_home")),
-            ("负责人 / 分配规则", None),
-        ),
-        page_notice="保存成功" if _query_bool("saved") else "",
-        page_error=page_error,
-        filters={"q": query, "active_only": active_only},
-        owner_rows=payload["owner_rows"],
-        routing_rows=payload["routing_rows"],
-        summary_cards=payload["summary_cards"],
-        audit_entries=payload["audit_entries"],
-        role_options=payload["role_options"],
-        routing_target_options=payload["routing_target_options"],
-        owner_form=owner_form,
-        routing_form=routing_form,
-    )
-
-
-def admin_config_routing():
-    return _routing_page()
-
-
-def admin_config_save_owner_role():
-    token_error = validate_admin_console_action_token()
-    if token_error:
-        return _routing_page(page_error=token_error)
-    payload = dict(request.form)
-    try:
-        saved = save_owner_role_setting(payload, operator=_operator_from_request())
-    except ValueError as exc:
-        return _routing_page(page_error=str(exc))
-    return redirect(url_for("api.admin_config_routing", saved=1, edit_owner=saved.get("userid", "")), code=302)
-
-
-def admin_config_save_routing_rule():
-    token_error = validate_admin_console_action_token()
-    if token_error:
-        return _routing_page(page_error=token_error)
-    payload = dict(request.form)
-    try:
-        saved = save_routing_rule_setting(payload, operator=_operator_from_request())
-    except ValueError as exc:
-        return _routing_page(page_error=str(exc))
-    return redirect(url_for("api.admin_config_routing", saved=1, edit_rule=saved.get("rule_key", "")), code=302)
-
-
-def _signup_tags_page(*, page_error: str = ""):
-    query = _query_text("q")
-    active_only = _query_bool("active_only")
-    payload = list_signup_tag_settings(query=query, active_only=active_only)
-    edit_tag = _query_text("edit_tag")
-    form_row = next((row for row in payload["rows"] if row["tag_id"] == edit_tag), {"active": True})
-    return _render_config_template(
-        "config_signup_tags.html",
-        active_tab="signup_tags",
-        page_title="报名标签规则",
-        page_summary="在这里维护报名标签和业务状态之间的对应关系。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("配置中心", url_for("api.admin_config_home")),
-            ("报名标签规则", None),
-        ),
-        page_notice="保存成功" if _query_bool("saved") else "",
-        page_error=page_error,
-        filters={"q": query, "active_only": active_only},
-        rows=payload["rows"],
-        definitions=payload["definitions"],
-        tag_group_name=payload["tag_group_name"],
-        missing_statuses=payload["missing_statuses"],
-        bootstrap_initialized=payload["bootstrap_initialized"],
-        summary_cards=payload["summary_cards"],
-        audit_entries=payload["audit_entries"],
-        form_row=form_row,
-    )
-
-
-def admin_config_signup_tags():
-    return _signup_tags_page()
 
 
 def admin_config_wecom_tags():
@@ -226,64 +122,6 @@ def admin_config_wecom_tags():
         show_shell_meta=False,
         active_nav="wecom_tags",
     )
-
-
-def admin_config_save_signup_tag():
-    token_error = validate_admin_console_action_token()
-    if token_error:
-        return _signup_tags_page(page_error=token_error)
-    payload = dict(request.form)
-    try:
-        saved = save_signup_tag_setting(payload, operator=_operator_from_request())
-    except ValueError as exc:
-        return _signup_tags_page(page_error=str(exc))
-    return redirect(url_for("api.admin_config_signup_tags", saved=1, edit_tag=saved.get("tag_id", "")), code=302)
-
-
-def _class_term_tags_page(*, page_error: str = ""):
-    query = _query_text("q")
-    active_only = _query_bool("active_only")
-    payload = list_class_term_tag_mappings(query=query, active_only=active_only)
-    edit_mapping = _query_text("edit_mapping")
-    form_row = next(
-        (row for row in payload["rows"] if str(row["id"]) == edit_mapping),
-        {"is_active": True, "tag_group_name": payload["bootstrap_group_name"]},
-    )
-    return _render_config_template(
-        "config_class_term_tags.html",
-        active_tab="class_term_tags",
-        page_title="班期标签规则",
-        page_summary="在这里维护班期和标签之间的对应关系。",
-        breadcrumbs=_breadcrumb_items(
-            ("客户管理后台", url_for("api.admin_console_home")),
-            ("配置中心", url_for("api.admin_config_home")),
-            ("班期标签规则", None),
-        ),
-        page_notice="保存成功" if _query_bool("saved") else "",
-        page_error=page_error,
-        filters={"q": query, "active_only": active_only},
-        rows=payload["rows"],
-        bootstrap_group_name=payload["bootstrap_group_name"],
-        summary_cards=payload["summary_cards"],
-        audit_entries=payload["audit_entries"],
-        form_row=form_row,
-    )
-
-
-def admin_config_class_term_tags():
-    return _class_term_tags_page()
-
-
-def admin_config_save_class_term_tag():
-    token_error = validate_admin_console_action_token()
-    if token_error:
-        return _class_term_tags_page(page_error=token_error)
-    payload = dict(request.form)
-    try:
-        saved = save_class_term_tag_mapping(payload, operator=_operator_from_request())
-    except ValueError as exc:
-        return _class_term_tags_page(page_error=str(exc))
-    return redirect(url_for("api.admin_config_class_term_tags", saved=1, edit_mapping=saved.get("id", "")), code=302)
 
 
 def _app_settings_page(*, page_error: str = ""):
@@ -526,54 +364,6 @@ def api_admin_config_overview():
     return jsonify({"ok": True, "overview": build_config_home_payload()})
 
 
-def api_admin_config_routing():
-    return jsonify({"ok": True, "config": list_owner_routing_settings(query=_query_text("q"), active_only=_query_bool("active_only"))})
-
-
-def api_admin_config_save_owner_role():
-    payload = request.get_json(silent=True) or {}
-    try:
-        saved = save_owner_role_setting(payload, operator=_operator_from_request())
-        return jsonify({"ok": True, "item": saved})
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
-
-def api_admin_config_save_routing_rule():
-    payload = request.get_json(silent=True) or {}
-    try:
-        saved = save_routing_rule_setting(payload, operator=_operator_from_request())
-        return jsonify({"ok": True, "item": saved})
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
-
-def api_admin_config_signup_tags():
-    return jsonify({"ok": True, "config": list_signup_tag_settings(query=_query_text("q"), active_only=_query_bool("active_only"))})
-
-
-def api_admin_config_save_signup_tag():
-    payload = request.get_json(silent=True) or {}
-    try:
-        saved = save_signup_tag_setting(payload, operator=_operator_from_request())
-        return jsonify({"ok": True, "item": saved})
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
-
-def api_admin_config_class_term_tags():
-    return jsonify({"ok": True, "config": list_class_term_tag_mappings(query=_query_text("q"), active_only=_query_bool("active_only"))})
-
-
-def api_admin_config_save_class_term_tag():
-    payload = request.get_json(silent=True) or {}
-    try:
-        saved = save_class_term_tag_mapping(payload, operator=_operator_from_request())
-        return jsonify({"ok": True, "item": saved})
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
-
 def api_admin_config_app_settings():
     return jsonify({"ok": True, "config": list_admin_app_settings(query=_query_text("q"), scope=_query_text("scope"))})
 
@@ -684,14 +474,7 @@ def api_admin_config_save_signup_conversion():
 
 def register_routes(bp):
     bp.route("/admin/config", methods=["GET"])(admin_config_home)
-    bp.route("/admin/config/routing", methods=["GET"])(admin_config_routing)
-    bp.route("/admin/config/routing/owner-role", methods=["POST"])(admin_config_save_owner_role)
-    bp.route("/admin/config/routing/rule", methods=["POST"])(admin_config_save_routing_rule)
     bp.route("/admin/config/wecom-tags", methods=["GET"])(admin_config_wecom_tags)
-    bp.route("/admin/config/signup-tags", methods=["GET"])(admin_config_signup_tags)
-    bp.route("/admin/config/signup-tags/save", methods=["POST"])(admin_config_save_signup_tag)
-    bp.route("/admin/config/class-term-tags", methods=["GET"])(admin_config_class_term_tags)
-    bp.route("/admin/config/class-term-tags/save", methods=["POST"])(admin_config_save_class_term_tag)
     bp.route("/admin/marketing-automation/ui", methods=["GET"])(admin_marketing_automation_ui)
     bp.route("/admin/config/app-settings", methods=["GET"])(admin_config_app_settings)
     bp.route("/admin/config/app-settings/save", methods=["POST"])(admin_config_save_app_settings)
@@ -702,13 +485,6 @@ def register_routes(bp):
     bp.route("/admin/config/mcp-tools/save", methods=["POST"])(admin_config_save_mcp_tool)
 
     bp.route("/api/admin/config/overview", methods=["GET"])(api_admin_config_overview)
-    bp.route("/api/admin/config/routing", methods=["GET"])(api_admin_config_routing)
-    bp.route("/api/admin/config/routing/owner-role", methods=["POST"])(api_admin_config_save_owner_role)
-    bp.route("/api/admin/config/routing/rule", methods=["POST"])(api_admin_config_save_routing_rule)
-    bp.route("/api/admin/config/signup-tags", methods=["GET"])(api_admin_config_signup_tags)
-    bp.route("/api/admin/config/signup-tags", methods=["POST"])(api_admin_config_save_signup_tag)
-    bp.route("/api/admin/config/class-term-tags", methods=["GET"])(api_admin_config_class_term_tags)
-    bp.route("/api/admin/config/class-term-tags", methods=["POST"])(api_admin_config_save_class_term_tag)
     bp.route("/api/admin/config/app-settings", methods=["GET"])(api_admin_config_app_settings)
     bp.route("/api/admin/config/app-settings", methods=["PUT"])(api_admin_config_save_app_settings)
     bp.route("/api/admin/config/mcp-tools", methods=["GET"])(api_admin_config_mcp_tools)
