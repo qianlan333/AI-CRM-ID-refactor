@@ -90,7 +90,8 @@ def test_default_program_bootstraps_and_automation_entry_lists_programs(app, cli
     assert "新建方案" in html
     assert "默认自动化转化方案" in html
     assert "方案列表" in html
-    assert f'href="/admin/automation-conversion/programs/{program_id}/overview">编辑</a>' in default_row
+    assert f'href="/admin/automation-conversion/programs/{program_id}/setup?step=basic">编辑</a>' in default_row
+    assert "配置向导" not in default_row
     assert ">进入</a>" not in default_row
     assert "edit_program_id" not in default_row
     assert "复制" in html
@@ -114,10 +115,12 @@ def test_program_routes_render_and_removed_legacy_routes_404(app, client, monkey
     legacy_member_ops = client.get("/admin/automation-conversion/member-ops", follow_redirects=False)
 
     assert overview_response.status_code == 200
-    assert operations_response.status_code == 200
-    assert flow_design_response.status_code == 200
+    assert operations_response.status_code == 302
+    assert operations_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
+    assert flow_design_response.status_code == 302
+    assert flow_design_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=segmentation")
     assert member_ops_response.status_code == 200
-    assert workflow_new_response.status_code == 200
+    assert workflow_new_response.status_code == 302
     assert executions_response.status_code == 200
     assert "默认自动化转化方案" in overview_response.get_data(as_text=True)
     assert legacy_overview.status_code == 404
@@ -129,6 +132,40 @@ def test_program_routes_render_and_removed_legacy_routes_404(app, client, monkey
     assert client.get("/admin/automation-conversion/operations/workflows/1/edit").status_code == 404
     assert client.get("/admin/automation-conversion/operations/workflows/1/nodes").status_code == 404
     assert client.get("/admin/automation-conversion/operations/executions").status_code == 404
+
+
+def test_setup_navigation_is_the_only_program_edit_entry(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+
+    setup_response = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=basic")
+    html = setup_response.get_data(as_text=True)
+
+    assert setup_response.status_code == 200
+    assert "配置向导" in html
+    assert "概览" in html
+    assert "成员运营" in html
+    assert "执行记录" in html
+    assert "基础配置" not in html
+    assert f"/admin/automation-conversion/programs/{program_id}/flow-design" not in html
+    assert f"/admin/automation-conversion/programs/{program_id}/operations" not in html
+
+
+def test_setup_segmentation_and_entry_rule_hide_raw_json_inputs(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+
+    segmentation_html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=segmentation").get_data(as_text=True)
+    entry_rule_html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=entry-rule").get_data(as_text=True)
+
+    assert "普通问卷规则" in segmentation_html
+    assert "总分分层" in segmentation_html
+    assert "多维画像" in segmentation_html
+    assert "规则 JSON" not in segmentation_html
+    assert "总分区间 JSON" not in segmentation_html
+    assert "规则 JSON" not in entry_rule_html
+    assert "用户通过入口进入" in entry_rule_html
+    assert "绑定问卷提交成功" in entry_rule_html
 
 
 def test_program_basic_info_edit_updates_list_and_context_header(app, client, monkeypatch):
@@ -257,7 +294,8 @@ def test_setup_blank_program_does_not_read_default_config_block(app, client, mon
     response = client.get(f"/api/admin/automation-conversion/programs/{blank['id']}/setup?step=segmentation")
     assert response.status_code == 200
     segmentation = response.get_json()["setup"]["segmentation"]
-    assert segmentation == {}
+    assert segmentation["questionnaire_id"] is None
+    assert segmentation["normal_question_rules"]["rows"] == []
 
 
 def test_copy_program_copies_config_blocks_not_channels_or_links(app):
@@ -275,6 +313,20 @@ def test_copy_program_copies_config_blocks_not_channels_or_links(app):
             int(source["id"]),
             "questionnaire_segmentation",
             {"questionnaire_id": 321, "strategies": {"score_segments": {"enabled": True, "ranges": []}}},
+            status="saved",
+        )
+        program_repo.upsert_config_block_row(
+            int(source["id"]),
+            "entry_channel",
+            {
+                "qrcode": {
+                    "channel_name": "源渠道配置",
+                    "qr_ticket": "ticket-from-source",
+                    "qr_url": "https://example.com/source-qr",
+                    "scene_value": "source-scene",
+                },
+                "customer_acquisition_link_ids": [999],
+            },
             status="saved",
         )
         repo.save_channel(
@@ -300,11 +352,19 @@ def test_copy_program_copies_config_blocks_not_channels_or_links(app):
             operator_id="test",
         )["program"]
         copied_block = program_repo.get_config_block_row(int(copied["id"]), "questionnaire_segmentation")
+        copied_entry_block = program_repo.get_config_block_row(int(copied["id"]), "entry_channel")
         target_channels = repo.list_channels_by_program(int(copied["id"]))
         target_links = repo.list_customer_acquisition_links(program_id=int(copied["id"]))
 
     assert copied_block
     assert copied_block["payload_json"]["questionnaire_id"] == 321
+    assert copied_entry_block
+    copied_qrcode = copied_entry_block["payload_json"]["qrcode"]
+    assert copied_qrcode["channel_name"] == "源渠道配置"
+    assert "qr_ticket" not in copied_qrcode
+    assert "qr_url" not in copied_qrcode
+    assert "scene_value" not in copied_qrcode
+    assert "customer_acquisition_link_ids" not in copied_entry_block["payload_json"]
     assert target_channels == []
     assert target_links == []
 
@@ -498,10 +558,11 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     _login(client, app, monkeypatch)
     program_id = _default_program_id(app)
 
-    response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations")
+    response = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
+    assert "<iframe" not in html
     assert "运营动作" in html
     assert "新增动作" in html
     assert "从模板创建" in html

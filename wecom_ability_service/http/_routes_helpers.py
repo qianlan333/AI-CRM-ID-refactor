@@ -644,9 +644,7 @@ def _automation_program_workspace_tabs(program_id: int, active_key: str) -> list
     tabs = (
         ("setup", "配置向导", "api.admin_automation_program_setup"),
         ("overview", "概览", "api.admin_automation_program_overview"),
-        ("flow_design", "基础配置", "api.admin_automation_program_flow_design"),
         ("member_ops", "成员运营", "api.admin_automation_program_member_ops"),
-        ("operations", "运营编排", "api.admin_automation_program_operations"),
         ("executions", "执行记录", "api.admin_automation_program_executions"),
     )
     return [
@@ -941,7 +939,12 @@ def _render_member_ops_page(*, page_error: str = "", program: dict[str, object] 
     )
 
 
-def _build_program_setup_workspace(program_id: int, *, step: str = "basic") -> dict[str, object]:
+def _setup_step_url(program_id: int, step: str, **params: object) -> str:
+    query = {"step": step, **{key: value for key, value in params.items() if value not in {None, ""}}}
+    return url_for("api.admin_automation_program_setup", program_id=int(program_id), **query)
+
+
+def _build_program_setup_workspace(program_id: int, *, step: str = "basic", workflow_id: int | None = None) -> dict[str, object]:
     normalized_step = normalize_setup_step(step)
     payload = get_program_setup_payload(int(program_id), step=normalized_step)
     base_url = url_for("api.admin_automation_program_setup", program_id=int(program_id))
@@ -949,19 +952,26 @@ def _build_program_setup_workspace(program_id: int, *, step: str = "basic") -> d
         "base": base_url,
         "basic": url_for("api.api_admin_automation_program_setup_basic", program_id=int(program_id)),
         "entry_channel": url_for("api.api_admin_automation_program_setup_entry_channel", program_id=int(program_id)),
+        "entry_channel_generate_qr": url_for("api.api_admin_automation_conversion_default_channel_generate_qr"),
         "segmentation": url_for("api.api_admin_automation_program_setup_segmentation", program_id=int(program_id)),
         "audience_entry_rule": url_for("api.api_admin_automation_program_setup_audience_entry_rule", program_id=int(program_id)),
         "publish_check": url_for("api.api_admin_automation_program_setup_publish_check", program_id=int(program_id)),
         "publish_entry": url_for("api.api_admin_automation_program_publish_entry", program_id=int(program_id)),
         "publish_full": url_for("api.api_admin_automation_program_publish_full", program_id=int(program_id)),
         "customer_acquisition_links": url_for("api.api_admin_automation_program_customer_acquisition_links", program_id=int(program_id)),
-        "operations": url_for("api.admin_automation_program_operations", program_id=int(program_id)),
+        "operations": _setup_step_url(int(program_id), "operations", workflow_id=workflow_id or None),
+        "flow_design_redirect": _setup_step_url(int(program_id), "segmentation"),
     }
+    payload["operations_workspace"] = _build_action_orchestration_workspace(workflow_id=workflow_id, program_id=int(program_id))
+    payload["operations_workspace"]["entry_urls"]["list"] = _setup_step_url(int(program_id), "operations")
+    payload["operations_workspace"]["entry_urls"]["action_orchestration"] = _setup_step_url(int(program_id), "operations")
+    payload["operations_workspace"]["entry_urls"]["workflow_list"] = _setup_step_url(int(program_id), "operations")
     return payload
 
 
 def _render_program_setup_page(*, page_error: str = "", program: dict[str, object] | None = None, step: str = "basic"):
     program_id = int((program or {}).get("id") or 0)
+    workflow_id = _query_int("workflow_id", default=0, minimum=0, maximum=100000000) or None
     return _render_admin_template(
         "automation_program_setup_wizard.html",
         active_nav="automation_conversion",
@@ -974,7 +984,7 @@ def _render_program_setup_page(*, page_error: str = "", program: dict[str, objec
         ),
         workspace_tabs=_automation_program_workspace_tabs(program_id, "setup") if program_id else [],
         program_context=_program_context(program, active_key="setup") if program else None,
-        setup_workspace=_build_program_setup_workspace(program_id, step=step) if program_id else {},
+        setup_workspace=_build_program_setup_workspace(program_id, step=step, workflow_id=workflow_id) if program_id else {},
         admin_action_token=ensure_admin_console_action_token(),
         page_error=page_error,
         show_shell_meta=False,
