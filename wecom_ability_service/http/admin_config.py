@@ -87,11 +87,12 @@ def _render_config_template(
     breadcrumbs: list[dict[str, str]],
     page_notice: str = "",
     page_error: str = "",
+    active_nav: str = "config",
     **extra,
 ):
     return _render_admin_template(
         template_name,
-        active_nav="config",
+        active_nav=active_nav,
         page_title=page_title,
         page_summary=page_summary,
         breadcrumbs=breadcrumbs,
@@ -223,6 +224,7 @@ def admin_config_wecom_tags():
             ("企微标签管理", None),
         ),
         show_shell_meta=False,
+        active_nav="wecom_tags",
     )
 
 
