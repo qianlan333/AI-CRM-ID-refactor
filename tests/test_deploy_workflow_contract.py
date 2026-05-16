@@ -70,6 +70,19 @@ def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert "sqlite:///" not in alembic_env
 
 
+def test_postgres_backup_restore_share_database_url_guard():
+    helper = (ROOT / "scripts" / "_postgres_env.sh").read_text(encoding="utf-8")
+    backup = (ROOT / "scripts" / "backup_postgres.sh").read_text(encoding="utf-8")
+    restore = (ROOT / "scripts" / "restore_postgres.sh").read_text(encoding="utf-8")
+
+    assert "require_database_url()" in helper
+    assert 'echo "DATABASE_URL is required" >&2' in helper
+    assert 'source "${SCRIPT_DIR}/_postgres_env.sh"' in backup
+    assert 'source "${SCRIPT_DIR}/_postgres_env.sh"' in restore
+    assert "require_database_url" in backup
+    assert "require_database_url" in restore
+
+
 def _calls_utcnow(path: Path) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in ast.walk(tree):
