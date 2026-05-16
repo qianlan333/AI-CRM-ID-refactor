@@ -5,6 +5,7 @@ import os
 import urllib.request
 
 from scripts import internal_http
+from scripts.script_runtime import read_int_env
 
 
 DEFAULT_OPERATOR = "automation_conversion_due_runner"
@@ -62,8 +63,11 @@ def run(*, jobs: list[str] | None = None) -> str:
     port = os.getenv("APP_PORT", "5000").strip() or "5000"
     token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "").strip()
     operator = os.getenv("AUTOMATION_CONVERSION_DUE_OPERATOR", DEFAULT_OPERATOR).strip() or DEFAULT_OPERATOR
-    retry_count = int((os.getenv("AUTOMATION_CONVERSION_DUE_RETRY_COUNT") or DEFAULT_RETRY_COUNT))
-    retry_interval_seconds = int((os.getenv("AUTOMATION_CONVERSION_DUE_RETRY_INTERVAL_SECONDS") or DEFAULT_RETRY_INTERVAL_SECONDS))
+    retry_count = read_int_env("AUTOMATION_CONVERSION_DUE_RETRY_COUNT", DEFAULT_RETRY_COUNT)
+    retry_interval_seconds = read_int_env(
+        "AUTOMATION_CONVERSION_DUE_RETRY_INTERVAL_SECONDS",
+        DEFAULT_RETRY_INTERVAL_SECONDS,
+    )
 
     selected_jobs = jobs or list(JOB_DEFINITIONS.keys())
     invalid_jobs = [job_code for job_code in selected_jobs if job_code not in JOB_DEFINITIONS]

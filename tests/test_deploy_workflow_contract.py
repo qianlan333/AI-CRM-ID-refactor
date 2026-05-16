@@ -99,6 +99,20 @@ def test_batch_scripts_share_int_env_reader():
     assert "int(os.environ.get" not in broadcast_worker
 
 
+def test_due_runner_scripts_share_int_env_reader():
+    due_runner = (ROOT / "scripts" / "run_automation_conversion_due_jobs.py").read_text(
+        encoding="utf-8"
+    )
+    sop_runner = (ROOT / "scripts" / "run_automation_sop.py").read_text(encoding="utf-8")
+
+    assert 'read_int_env("AUTOMATION_CONVERSION_DUE_RETRY_COUNT"' in due_runner
+    assert "AUTOMATION_CONVERSION_DUE_RETRY_INTERVAL_SECONDS" in due_runner
+    assert 'read_int_env("AUTOMATION_SOP_RETRY_COUNT"' in sop_runner
+    assert "AUTOMATION_SOP_RETRY_INTERVAL_SECONDS" in sop_runner
+    assert "int((os.getenv" not in due_runner
+    assert "int((os.getenv" not in sop_runner
+
+
 def _calls_utcnow(path: Path) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in ast.walk(tree):

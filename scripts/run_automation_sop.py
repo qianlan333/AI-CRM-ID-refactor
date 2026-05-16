@@ -5,6 +5,7 @@ import os
 import urllib.request
 
 from scripts import internal_http
+from scripts.script_runtime import read_int_env
 
 
 DEFAULT_OPERATOR = "automation_sop_runner"
@@ -29,8 +30,11 @@ def run() -> str:
     token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "").strip()
     operator = os.getenv("AUTOMATION_SOP_OPERATOR", DEFAULT_OPERATOR).strip() or DEFAULT_OPERATOR
     path = os.getenv("AUTOMATION_SOP_RUNNER_PATH", DEFAULT_PATH).strip() or DEFAULT_PATH
-    retry_count = int((os.getenv("AUTOMATION_SOP_RETRY_COUNT") or DEFAULT_RETRY_COUNT))
-    retry_interval_seconds = int((os.getenv("AUTOMATION_SOP_RETRY_INTERVAL_SECONDS") or DEFAULT_RETRY_INTERVAL_SECONDS))
+    retry_count = read_int_env("AUTOMATION_SOP_RETRY_COUNT", DEFAULT_RETRY_COUNT)
+    retry_interval_seconds = read_int_env(
+        "AUTOMATION_SOP_RETRY_INTERVAL_SECONDS",
+        DEFAULT_RETRY_INTERVAL_SECONDS,
+    )
     payload = internal_http.post_json(
         host=host,
         port=port,
