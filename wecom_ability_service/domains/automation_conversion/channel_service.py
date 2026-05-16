@@ -2,13 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import current_app
-
 from ...db import get_db
-from ...infra.wecom_runtime import get_contact_runtime_client
 from ...wecom_client import WeComClientError
 from ..questionnaire.service import list_available_wecom_tags
-from ..tags import repo as tags_repo
 from . import repo
 from .provider import load_channel_provider
 from .service import (
@@ -357,6 +353,5 @@ def generate_default_channel_qr(*, operator: str = "", program_id: int | None = 
             )
         ),
     }
-
 
 

@@ -809,9 +809,7 @@ def run_due_sop(
     ]
     batch_ids: list[int] = []
     batches_payload: list[dict[str, Any]] = []
-    total_success_count = 0
     total_skipped_count = 0
-    total_failed_count = 0
     created_batch_count = 0
 
     for pool_config in enabled_configs:
@@ -875,10 +873,7 @@ def run_due_sop(
             sendable_targets: list[dict[str, Any]] = []
             sendable_candidates: list[dict[str, Any]] = []
             skipped_count = 0
-            failed_count = 0
-            success_count = 0
             skipped_reasons: dict[str, int] = {}
-            success_record_ids: list[int] = []
 
             for candidate in candidates:
                 member = dict(candidate.get("member") or {})
@@ -1090,4 +1085,3 @@ def run_sop_batch(*, batch_data: dict[str, Any]) -> dict[str, Any]:
         "sent_count": success_count,
         "failed_count": failed_count,
     }
-
