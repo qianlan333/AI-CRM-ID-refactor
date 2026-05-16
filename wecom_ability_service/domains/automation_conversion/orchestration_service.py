@@ -7,7 +7,7 @@ import hmac
 import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape as xml_escape
 from typing import Any
 
@@ -222,6 +222,10 @@ def _normalize_float(value: Any, *, default: float = 0.0) -> float:
 
 def _iso_now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _parse_datetime_text(value: Any) -> datetime | None:
@@ -3082,7 +3086,7 @@ def _complete_export_job(job_id: str) -> None:
 
 def create_agent_output_export_job(filters: dict[str, Any], *, requested_by: str, async_threshold: int = 500) -> dict[str, Any]:
     ensure_agent_orchestration_defaults()
-    window_start = (datetime.utcnow() - timedelta(minutes=_EXPORT_RATE_LIMIT_WINDOW_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+    window_start = (_utc_now_naive() - timedelta(minutes=_EXPORT_RATE_LIMIT_WINDOW_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
     recent_count = repo.count_recent_agent_output_export_jobs(requested_by, since_text=window_start)
     if recent_count >= _EXPORT_RATE_LIMIT_COUNT:
         raise ValueError("export rate limited, please retry later")
