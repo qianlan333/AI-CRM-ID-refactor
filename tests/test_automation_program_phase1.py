@@ -890,6 +890,195 @@ def test_setup_option_categories_feed_overview_profile_segments(app, client, mon
         assert row["profile_segment_key"] == "workplace"
 
 
+def test_setup_score_segments_feed_overview_and_member_ops(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+    questionnaire = _seed_choice_questionnaire(app, slug="overview-score-segment-case")
+    with app.app_context():
+        db = get_db()
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, ?, '总分分层渠道', 'score-owner', 'active')
+                RETURNING id
+                """,
+                (program_id, f"program_{program_id}_score_segment_channel"),
+            ).fetchone()["id"]
+        )
+        member_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, current_audience_code,
+                    current_audience_entered_at, source_channel_id
+                )
+                VALUES ('ext-score-profile-segment', '13900000002', 'owner-score', 'operating',
+                        CURRENT_TIMESTAMP, ?)
+                RETURNING id
+                """,
+                (channel_id,),
+            ).fetchone()["id"]
+        )
+        db.execute(
+            """
+            INSERT INTO automation_member_audience_entry (
+                member_id, audience_code, entered_at, is_current, entry_source
+            )
+            VALUES (?, 'operating', CURRENT_TIMESTAMP, TRUE, 'test')
+            """,
+            (member_id,),
+        )
+        db.execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                questionnaire_id, respondent_key, external_userid, mobile_snapshot,
+                total_score, final_tags, redirect_url_snapshot, submitted_at
+            )
+            VALUES (?, 'resp-score-profile-segment', 'ext-score-profile-segment', '13900000002',
+                    72, '[]', '', CURRENT_TIMESTAMP)
+            """,
+            (questionnaire["id"],),
+        )
+        db.commit()
+
+    save_response = client.post(
+        f"/api/admin/automation-conversion/programs/{program_id}/setup/segmentation",
+        json={
+            "questionnaire_id": questionnaire["id"],
+            "default_strategy": "score_segments",
+            "strategies": {
+                "score_segments": {
+                    "enabled": True,
+                    "ranges": [
+                        {"min_score": 0, "max_score": 64, "segment_key": "warm", "segment_name": "普通意向"},
+                        {"min_score": 65, "max_score": 84, "segment_key": "hot", "segment_name": "高意向"},
+                    ],
+                }
+            },
+        },
+    )
+    assert save_response.status_code == 200
+
+    dashboard_response = client.get(
+        "/api/admin/automation-conversion/dashboard",
+        query_string={"program_id": program_id},
+    )
+    assert dashboard_response.status_code == 200
+    dashboard = dashboard_response.get_json()["dashboard"]
+    items = [
+        item
+        for group in dashboard["audience_member_details"]["groups"]
+        for item in group["items"]
+        if item["external_contact_id"] == "ext-score-profile-segment"
+    ]
+    assert items
+    assert items[0]["profile_segment_key"] == "hot"
+    assert items[0]["profile_segment_label"] == "高意向"
+
+    search_response = client.post(
+        f"/api/admin/automation-conversion/programs/{program_id}/members/segment-search",
+        json={"profile_keys": ["hot"], "pool_keys": ["operating"]},
+    )
+    assert search_response.status_code == 200
+    search_payload = search_response.get_json()
+    assert any(item["key"] == "hot" and item["label"] == "高意向" for item in search_payload["metadata"]["profiles"])
+    assert any(item["external_contact_id"] == "ext-score-profile-segment" for item in search_payload["items"])
+
+
+def test_program_overview_and_member_ops_are_program_scoped(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program
+
+    _login(client, app, monkeypatch)
+    with app.app_context():
+        db = get_db()
+        program_a = create_automation_program(
+            {"program_name": "概览隔离 A", "program_code": "overview_scope_a", "status": "draft"},
+            operator_id="pytest",
+        )["program"]
+        program_b = create_automation_program(
+            {"program_name": "概览隔离 B", "program_code": "overview_scope_b", "status": "draft"},
+            operator_id="pytest",
+        )["program"]
+        channel_a = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, 'overview_scope_a_channel', 'A 渠道', 'owner-a', 'active')
+                RETURNING id
+                """,
+                (int(program_a["id"]),),
+            ).fetchone()["id"]
+        )
+        channel_b = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, 'overview_scope_b_channel', 'B 渠道', 'owner-b', 'active')
+                RETURNING id
+                """,
+                (int(program_b["id"]),),
+            ).fetchone()["id"]
+        )
+        for external_id, phone, channel_id in (
+            ("ext-overview-scope-a", "13900001001", channel_a),
+            ("ext-overview-scope-b", "13900001002", channel_b),
+        ):
+            member_id = int(
+                db.execute(
+                    """
+                    INSERT INTO automation_member (
+                        external_contact_id, phone, owner_staff_id, current_audience_code,
+                        current_audience_entered_at, source_channel_id, profile_segment_key
+                    )
+                    VALUES (?, ?, 'owner', 'operating', CURRENT_TIMESTAMP, ?, 'program_scope')
+                    RETURNING id
+                    """,
+                    (external_id, phone, channel_id),
+                ).fetchone()["id"]
+            )
+            db.execute(
+                """
+                INSERT INTO automation_member_audience_entry (
+                    member_id, audience_code, entered_at, is_current, entry_source
+                )
+                VALUES (?, 'operating', CURRENT_TIMESTAMP, TRUE, 'test')
+                """,
+                (member_id,),
+            )
+        db.commit()
+
+    dashboard_response = client.get(
+        "/api/admin/automation-conversion/dashboard",
+        query_string={"program_id": int(program_b["id"])},
+    )
+    assert dashboard_response.status_code == 200
+    dashboard = dashboard_response.get_json()["dashboard"]
+    assert dashboard["audience_overview"]["operating_count"] == 1
+    detail_ids = [
+        item["external_contact_id"]
+        for group in dashboard["audience_member_details"]["groups"]
+        for item in group["items"]
+    ]
+    assert "ext-overview-scope-b" in detail_ids
+    assert "ext-overview-scope-a" not in detail_ids
+
+    search_response = client.post(
+        f"/api/admin/automation-conversion/programs/{int(program_b['id'])}/members/segment-search",
+        json={"pool_keys": ["operating"]},
+    )
+    assert search_response.status_code == 200
+    search_ids = [item["external_contact_id"] for item in search_response.get_json()["items"]]
+    assert "ext-overview-scope-b" in search_ids
+    assert "ext-overview-scope-a" not in search_ids
+
+
 def test_operation_action_templates_and_from_template_create_current_workflow(app, client, monkeypatch):
     _login(client, app, monkeypatch)
     program_id = _default_program_id(app)
