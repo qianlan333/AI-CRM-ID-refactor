@@ -13,16 +13,6 @@ DEFAULT_RETRY_COUNT = 6
 DEFAULT_RETRY_INTERVAL_SECONDS = 10
 
 
-def build_request(*, host: str, port: str, token: str, operator: str, path: str = DEFAULT_PATH) -> urllib.request.Request:
-    return internal_http.build_json_post_request(
-        host=host,
-        port=port,
-        token=token,
-        path=path,
-        payload={"operator": operator, "jobs": ["sop"]},
-    )
-
-
 def run() -> str:
     host = read_app_host()
     port = read_app_port()

@@ -24,16 +24,6 @@ JOB_DEFINITIONS = {
 }
 
 
-def build_request(*, host: str, port: str, token: str, operator: str, path: str, payload: dict[str, object] | None = None) -> urllib.request.Request:
-    return internal_http.build_json_post_request(
-        host=host,
-        port=port,
-        token=token,
-        path=path,
-        payload={"operator": operator, **dict(payload or {})},
-    )
-
-
 def _post_json(
     *,
     host: str,
