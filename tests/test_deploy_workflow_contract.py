@@ -118,6 +118,24 @@ def test_alembic_0003_is_pg_only():
     assert "DROP COLUMN IF EXISTS" in migration
 
 
+def test_alembic_0004_is_pg_only():
+    migration = (
+        ROOT / "migrations" / "versions" / "0004_cloud_orchestrator.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_is_postgres" not in migration
+    assert "PRAGMA" not in migration
+    assert "AUTOINCREMENT" not in migration
+    assert "datetime('now'" not in migration
+    assert "BIGSERIAL PRIMARY KEY" in migration
+    assert "workflow_id BIGINT NOT NULL" in migration
+    assert "JSONB NOT NULL DEFAULT '[]'::jsonb" in migration
+    assert "BOOLEAN NOT NULL DEFAULT TRUE" in migration
+    assert "TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP" in migration
+    assert "next_node_id BIGINT" in migration
+    assert "DROP COLUMN IF EXISTS" in migration
+
+
 def test_alembic_0005_is_pg_only():
     migration = (
         ROOT / "migrations" / "versions" / "0005_segments_and_campaigns.py"
