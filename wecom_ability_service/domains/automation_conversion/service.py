@@ -8,16 +8,9 @@ from flask import current_app
 
 from ...db import get_db
 from ...infra.settings import (
-    DEFAULT_DEEPSEEK_BASE_URL,
-    DEFAULT_DEEPSEEK_EXECUTION_MODEL,
-    DEFAULT_DEEPSEEK_REASONER_MODEL,
-    DEFAULT_DEEPSEEK_ROUTER_MODEL,
-    DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
     get_setting,
-    mask_value,
-    set_settings,
 )
-from ...infra.wecom_runtime import get_app_runtime_client, get_contact_runtime_client
+from ...infra.wecom_runtime import get_app_runtime_client, get_contact_runtime_client  # noqa: F401 - service_seams monkeypatch path
 from ...wecom_client import WeComClientError
 from ..automation_state.renderer import business_pool_label
 from ..automation_state.state_defs import (
@@ -26,20 +19,9 @@ from ..automation_state.state_defs import (
 )
 from ..marketing_automation.service import get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
-from ..questionnaire.service import get_questionnaire_detail, list_available_wecom_tags, list_questionnaires
-from ..tags import repo as tags_repo
+from ..questionnaire.service import get_questionnaire_detail, list_questionnaires
 from ..tasks.service import dispatch_wecom_task  # noqa: F401 - legacy monkeypatch seam
-from .agents import (
-    AGENT_PROMPT_DEFINITION_MAP,
-    AGENT_PROMPT_ORDER,
-    CHILD_AGENT_CONFIG_MAP,
-    DeepSeekClientError,
-    call_deepseek_agent,
-    default_agent_prompt_payloads,
-    get_deepseek_runtime_config,
-    test_deepseek_connection,
-)
-from .message_activity_client import get_message_activity_db_status, query_message_activity_counts
+from .message_activity_client import query_message_activity_counts  # noqa: F401 - legacy monkeypatch seam
 from . import local_projection
 from . import repo
 from .private_message_dispatch import _dispatch_private_message_batch  # noqa: F401
