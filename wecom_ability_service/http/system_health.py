@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import jsonify
 
@@ -21,6 +21,10 @@ health_logger = logging.getLogger("system_health")
 _COMPENSATE_AGE_SECONDS = 120
 _COMPENSATE_MAX_RETRY = 5
 _COMPENSATE_BATCH_LIMIT = 50
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _get_circuit_breaker_state() -> str:
@@ -53,7 +57,7 @@ def _pending_event_stats() -> dict:
         if oldest and pending_count > 0:
             try:
                 oldest_dt = datetime.fromisoformat(str(oldest))
-                oldest_age = (datetime.utcnow() - oldest_dt).total_seconds()
+                oldest_age = (_utc_now_naive() - oldest_dt).total_seconds()
             except (ValueError, TypeError):
                 pass
         return {"pending_events": pending_count, "oldest_pending_age_seconds": oldest_age}
@@ -63,7 +67,7 @@ def _pending_event_stats() -> dict:
 
 def _failed_event_count_24h() -> int | None:
     try:
-        since = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+        since = (_utc_now_naive() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
         return count_failed_events_since(since)
     except Exception:
         return None
