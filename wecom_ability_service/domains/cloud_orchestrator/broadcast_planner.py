@@ -21,7 +21,6 @@ from ...db import get_db
 from .. import miniprogram_library
 from ..automation_conversion import (
     copy_workorder_service,
-    interaction_stats_service,
     member_segment_search_service,
 )
 from ..marketing_automation import frequency_budget_service

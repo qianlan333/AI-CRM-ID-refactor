@@ -17,7 +17,6 @@ from typing import Any, Iterable
 from ...db import get_db
 from .sql_sandbox import (
     SqlSandboxError,
-    fetch_member_ids,
     run_segment_query,
     validate_segment_sql,
 )
