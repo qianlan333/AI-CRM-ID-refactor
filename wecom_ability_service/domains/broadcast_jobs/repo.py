@@ -19,6 +19,7 @@ VALID_SOURCE_TYPES = (
     "campaign",
     "sop",
     "workflow",
+    "operation_task",
     "cloud_plan",
     "focus_send",
     "deferred",

@@ -7,6 +7,7 @@ from ...db import get_db
 from . import program_repo, repo
 from .channel_service import save_default_channel_settings
 from .customer_acquisition_service import create_customer_acquisition_link, list_customer_acquisition_links
+from .operation_task_service import list_operation_tasks
 from .program_service import (
     PROGRAM_STATUS_ACTIVE,
     get_automation_program,
@@ -14,7 +15,7 @@ from .program_service import (
     update_automation_program_status,
 )
 from .service import _normalized_text, get_settings_payload
-from .workflow_service import list_conversion_profile_segment_templates, list_conversion_workflows
+from .workflow_service import list_conversion_profile_segment_templates
 
 BLOCK_BASIC = "basic"
 BLOCK_ENTRY_CHANNEL = "entry_channel"
@@ -533,7 +534,7 @@ def get_program_setup_payload(program_id: int, *, step: str = "basic") -> dict[s
         legacy_fallback_used = True
     segmentation_view = _segmentation_view_model(segmentation, program_id=int(program_id))
     audience_payload = _payload_from_block(blocks, BLOCK_AUDIENCE_ENTRY_RULE)
-    operations = list_conversion_workflows(program_id=int(program_id))
+    operations = list_operation_tasks(program_id=int(program_id))
     return {
         "program": program,
         "step": normalize_setup_step(step),
@@ -546,7 +547,7 @@ def get_program_setup_payload(program_id: int, *, step: str = "basic") -> dict[s
         "entry": _program_entry_payload(int(program_id)),
         "segmentation": segmentation_view,
         "audience_entry_rule": _audience_rule_view_model(audience_payload, program_id=int(program_id)),
-        "operations": {"workflows": [dict((item.get("workflow") or item or {})) for item in operations.get("items") or []]},
+        "operations": {"tasks": [dict(item or {}) for item in operations.get("tasks") or []]},
         "publish_state": _payload_from_block(blocks, BLOCK_PUBLISH_STATE),
         "publish_check": build_publish_check(program_id),
     }
@@ -769,7 +770,7 @@ def build_publish_check(program_id: int) -> dict[str, Any]:
     segmentation = _payload_from_block(setup, BLOCK_SEGMENTATION)
     if not segmentation and _is_default_program(int(program_id)):
         segmentation = _legacy_segmentation_payload()
-    workflows = list_conversion_workflows(status="active", program_id=int(program_id))
+    active_tasks = list_operation_tasks(program_id=int(program_id), status="active")
     entry_ok = (
         _normalized_text(program.get("status")) != "archived"
         and (_is_default_program(int(program_id)) or bool(setup))
@@ -781,7 +782,7 @@ def build_publish_check(program_id: int) -> dict[str, Any]:
         and bool(segmentation.get("questionnaire_id"))
         and _has_segmentation(segmentation)
         and bool(audience_rules)
-        and bool(workflows.get("items"))
+        and bool(active_tasks.get("tasks"))
     )
     def item(label: str, passed: bool, message: str, fix_step: str) -> dict[str, Any]:
         return {
@@ -812,7 +813,7 @@ def build_publish_check(program_id: int) -> dict[str, Any]:
                 item("已绑定问卷", bool(segmentation.get("questionnaire_id")), "请选择当前方案使用的问卷", "segmentation"),
                 item("已配置分层策略", _has_segmentation(segmentation), "请配置普通问卷规则或总分分层", "segmentation"),
                 item("入池规则完整", bool(audience_rules), "请保存入池规则", "entry-rule"),
-                item("存在启用中的运营动作", bool(workflows.get("items")), "请至少启用一个运营动作", "operations"),
+                item("存在启用中的运营任务", bool(active_tasks.get("tasks")), "请至少启用一个运营任务", "operations"),
             ],
         },
     }

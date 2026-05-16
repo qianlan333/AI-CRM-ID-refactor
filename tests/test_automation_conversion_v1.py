@@ -11176,6 +11176,10 @@ def test_due_jobs_api_defaults_to_all_registered_jobs(app, client, monkeypatch):
         "wecom_ability_service.domains.automation_conversion.workflow_runtime.run_due_conversion_workflows",
         lambda **kwargs: {"ok": True, "total_success_count": 2, "batch_ids": [22]},
     )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.operation_task_service.run_due_operation_tasks",
+        lambda **kwargs: {"ok": True, "enqueued_count": 3, "failed_count": 0, "results": []},
+    )
 
     response = client.post(
         "/api/admin/automation-conversion/jobs/run-due",
@@ -11186,10 +11190,10 @@ def test_due_jobs_api_defaults_to_all_registered_jobs(app, client, monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["ok"] is True
-    assert payload["requested_job_codes"] == ["sop", "conversion_workflow"]
-    assert [item["job_code"] for item in payload["jobs"]] == ["sop", "conversion_workflow"]
-    assert payload["executed_job_count"] == 2
-    assert payload["total_success_count"] == 2
+    assert payload["requested_job_codes"] == ["sop", "conversion_workflow", "operation_task"]
+    assert [item["job_code"] for item in payload["jobs"]] == ["sop", "conversion_workflow", "operation_task"]
+    assert payload["executed_job_count"] == 3
+    assert payload["total_success_count"] == 5
     assert payload["batch_ids"] == [11, 22]
 
 
