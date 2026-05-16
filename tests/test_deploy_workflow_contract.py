@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_DIR = ROOT / "wecom_ability_service"
 
 
 def test_production_deploy_loads_postgres_env_before_init_db():
@@ -66,3 +68,28 @@ def test_pg_only_ops_tools_do_not_expose_sqlite_entrypoints():
     assert "DATABASE_PATH" not in alembic_env
     assert "data.sqlite3" not in alembic_env
     assert "sqlite:///" not in alembic_env
+
+
+def _calls_utcnow(path: Path) -> bool:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "utcnow":
+            return True
+        if isinstance(node.func, ast.Name) and node.func.id == "utcnow":
+            return True
+    return False
+
+
+def test_runtime_code_does_not_use_deprecated_utcnow():
+    offenders = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in RUNTIME_DIR.rglob("*.py")
+        if "__pycache__" not in path.parts and _calls_utcnow(path)
+    )
+
+    assert not offenders, (
+        "Runtime code must use explicit timezone-aware UTC helpers instead of datetime.utcnow(). "
+        f"Offenders: {offenders}"
+    )
