@@ -144,6 +144,19 @@ def test_alembic_0007_is_pg_only():
     assert "TIMESTAMPTZ" in migration
 
 
+def test_alembic_0008_is_pg_only():
+    migration = (
+        ROOT / "migrations" / "versions" / "0008_broadcast_jobs.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_is_postgres" not in migration
+    assert "AUTOINCREMENT" not in migration
+    assert "BIGSERIAL PRIMARY KEY" in migration
+    assert "BOOLEAN NOT NULL DEFAULT FALSE" in migration
+    assert "JSONB NOT NULL DEFAULT '[]'::jsonb" in migration
+    assert "WHERE source_id <> ''" in migration
+
+
 def test_alembic_0009_is_pg_only():
     migration = (
         ROOT / "migrations" / "versions" / "0009_image_library_semantic.py"
