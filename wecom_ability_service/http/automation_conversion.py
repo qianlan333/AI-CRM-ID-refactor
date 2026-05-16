@@ -846,9 +846,14 @@ def api_admin_automation_conversion_stage_manual_send(stage_key: str):
     return jsonify(result)
 
 
-def _request_segment_broadcast_keys(field: str) -> list[str]:
-    """Read multi-select keys from JSON body (preferred) or form/query."""
+def _segment_broadcast_payload() -> dict:
     payload = request.get_json(silent=True) if request.is_json else None
+    return payload if isinstance(payload, dict) else {}
+
+
+def _request_segment_broadcast_keys(field: str, payload: dict | None = None) -> list[str]:
+    """Read multi-select keys from JSON body (preferred) or form/query."""
+    payload = _segment_broadcast_payload() if payload is None else payload
     if isinstance(payload, dict):
         raw = payload.get(field) or payload.get(f"{field}[]")
         if isinstance(raw, list):
@@ -862,19 +867,20 @@ def _request_segment_broadcast_keys(field: str) -> list[str]:
     return [str(item).strip() for item in raw_list if str(item).strip()]
 
 
-def _request_segment_broadcast_keyword() -> str:
-    payload = request.get_json(silent=True) if request.is_json else None
-    if isinstance(payload, dict) and payload.get("keyword") is not None:
+def _request_segment_broadcast_keyword(payload: dict | None = None) -> str:
+    payload = _segment_broadcast_payload() if payload is None else payload
+    if payload.get("keyword") is not None:
         return str(payload.get("keyword") or "").strip()
     return str(request.values.get("keyword") or "").strip()
 
 
 def api_admin_automation_program_member_segment_search(program_id: int):
     """List members by multi-dim segment filter + return chip metadata."""
-    pool_keys = _request_segment_broadcast_keys("pool_keys")
-    profile_keys = _request_segment_broadcast_keys("profile_keys")
-    behavior_keys = _request_segment_broadcast_keys("behavior_keys")
-    keyword = _request_segment_broadcast_keyword()
+    payload = _segment_broadcast_payload()
+    pool_keys = _request_segment_broadcast_keys("pool_keys", payload)
+    profile_keys = _request_segment_broadcast_keys("profile_keys", payload)
+    behavior_keys = _request_segment_broadcast_keys("behavior_keys", payload)
+    keyword = _request_segment_broadcast_keyword(payload)
     page = int(request.values.get("page") or 1)
     page_size = int(request.values.get("page_size") or 50)
     try:
@@ -908,13 +914,11 @@ def api_admin_automation_program_member_segment_broadcast(program_id: int):
     action_token_error = validate_admin_console_action_token()
     if action_token_error:
         return jsonify({"ok": False, "error": action_token_error}), 400
-    payload = request.get_json(silent=True) if request.is_json else None
-    if not isinstance(payload, dict):
-        payload = {}
-    pool_keys = _request_segment_broadcast_keys("pool_keys")
-    profile_keys = _request_segment_broadcast_keys("profile_keys")
-    behavior_keys = _request_segment_broadcast_keys("behavior_keys")
-    keyword = _request_segment_broadcast_keyword()
+    payload = _segment_broadcast_payload()
+    pool_keys = _request_segment_broadcast_keys("pool_keys", payload)
+    profile_keys = _request_segment_broadcast_keys("profile_keys", payload)
+    behavior_keys = _request_segment_broadcast_keys("behavior_keys", payload)
+    keyword = _request_segment_broadcast_keyword(payload)
     content = str(payload.get("content") or request.values.get("content") or "").strip()
     images = list(payload.get("images") or [])
     try:
