@@ -636,9 +636,9 @@
     } catch (error) { showFeedback(error.message || "保存失败，请稍后重试"); }
   });
   root.querySelector("[data-save-and-next]")?.addEventListener("click", async (event) => {
+    const nextStep = event.currentTarget?.dataset.nextStep || "";
     try {
       await saveCurrentStep();
-      const nextStep = event.currentTarget.dataset.nextStep || "";
       if (nextStep) window.location.href = `${urls.base}?step=${encodeURIComponent(nextStep)}`;
     } catch (error) { showFeedback(error.message || "保存失败，请先处理当前页面配置"); }
   });

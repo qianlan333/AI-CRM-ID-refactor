@@ -347,6 +347,8 @@ def test_setup_footer_saves_before_navigation(app, client, monkeypatch):
     assert "data-next-step=\"entry-rule\"" in html
     assert "data-save-and-publish" in html
     assert "saveCurrentStep" in html
+    assert "const nextStep = event.currentTarget?.dataset.nextStep || \"\";" in html
+    assert "const nextStep = event.currentTarget.dataset.nextStep || \"\";" not in html
 
 
 def test_program_basic_info_edit_updates_list_and_context_header(app, client, monkeypatch):
