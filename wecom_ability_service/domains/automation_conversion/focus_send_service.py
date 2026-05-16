@@ -16,6 +16,11 @@ from .service import (
     _serialize_member,
 )
 
+FOCUS_SEND_QUEUE_SOURCE_TYPE = "focus_send"
+FOCUS_SEND_QUEUE_SOURCE_TABLE = "automation_focus_send_batch"
+FOCUS_SEND_QUEUE_HANDLER = "focus_send"
+FOCUS_SEND_OPEN_QUEUE_STATUSES = ("waiting_approval", "queued", "claimed")
+
 
 def push_openclaw(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Lazy proxy to service.push_openclaw so monkeypatch on service.push_openclaw propagates here."""
@@ -28,6 +33,21 @@ def _iso_now() -> str:
     """Lazy proxy to service._iso_now so monkeypatch on service._iso_now propagates here."""
     from . import service as _svc
     return _svc._iso_now()
+
+
+def _focus_send_queue_payload(batch_id: int) -> dict[str, int | str]:
+    return {"handler": FOCUS_SEND_QUEUE_HANDLER, "batch_id": int(batch_id)}
+
+
+def _fetch_open_focus_send_queue_job(batch_id: int) -> dict[str, Any] | None:
+    from ..broadcast_jobs import repo as queue_repo
+
+    return queue_repo.fetch_job_by_source(
+        source_type=FOCUS_SEND_QUEUE_SOURCE_TYPE,
+        source_id=str(int(batch_id)),
+        source_table=FOCUS_SEND_QUEUE_SOURCE_TABLE,
+        statuses=list(FOCUS_SEND_OPEN_QUEUE_STATUSES),
+    )
 
 
 def get_focus_send_batches_payload(*, limit: int = 20) -> dict[str, Any]:
@@ -256,9 +276,9 @@ def create_focus_send_batch(
     if items:
         from ..broadcast_jobs import service as queue_service
         queue_service.enqueue_job(
-            source_type="focus_send",
+            source_type=FOCUS_SEND_QUEUE_SOURCE_TYPE,
             source_id=str(batch.get("id") or ""),
-            source_table="automation_focus_send_batch",
+            source_table=FOCUS_SEND_QUEUE_SOURCE_TABLE,
             scheduled_for=now_text,
             target_external_userids=[
                 _normalized_text(it.get("external_contact_id"))
@@ -266,7 +286,7 @@ def create_focus_send_batch(
             ],
             target_summary=f"{pool_key} 池 {len(items)} 人",
             content_type="openclaw_push",
-            content_payload={"handler": "focus_send", "batch_id": int(batch.get("id") or 0)},
+            content_payload=_focus_send_queue_payload(int(batch.get("id") or 0)),
             content_summary=f"focus_send/{_normalized_text(route_key)}",
             created_by=_normalized_text(operator_id) or "crm_console",
         )
@@ -376,17 +396,11 @@ def run_due_focus_send_batches(
     now_dt = _parse_timestamp(now_text) or datetime.now()
     processed_count = 0
     batches_payload: list[dict[str, Any]] = []
-    from ..broadcast_jobs import repo as queue_repo
 
     for row in repo.list_due_focus_send_batches(due_at=now_text, limit=max(1, int(limit))):
         batch = _serialize_focus_send_batch(row)
         batch_id = int(batch.get("id") or 0)
-        existing_job = queue_repo.fetch_job_by_source(
-            source_type="focus_send",
-            source_id=str(batch_id),
-            source_table="automation_focus_send_batch",
-            statuses=["waiting_approval", "queued", "claimed"],
-        )
+        existing_job = _fetch_open_focus_send_queue_job(batch_id)
         if existing_job:
             batches_payload.append(
                 {

@@ -8292,6 +8292,24 @@ def test_focus_send_batch_can_be_created_for_inactive_focus_stage(app, client):
     assert payload["batch"]["remaining_count"] == 1
     assert payload["items"][0]["status"] == "pending"
 
+    with app.app_context():
+        job_row = get_db().execute(
+            """
+            SELECT source_type, source_id, source_table, status, content_payload
+            FROM broadcast_jobs
+            WHERE source_type = 'focus_send'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    assert job_row is not None
+    job = dict(job_row)
+    job_payload = job["content_payload"] if isinstance(job["content_payload"], (dict, list)) else json.loads(job["content_payload"])
+    assert job["source_id"] == str(payload["batch"]["id"])
+    assert job["source_table"] == "automation_focus_send_batch"
+    assert job["status"] == "queued"
+    assert job_payload == {"handler": "focus_send", "batch_id": payload["batch"]["id"]}
+
     detail = client.get(f"/api/admin/automation-conversion/focus-send-batches/{payload['batch']['id']}")
     detail_payload = detail.get_json()
     assert detail.status_code == 200
