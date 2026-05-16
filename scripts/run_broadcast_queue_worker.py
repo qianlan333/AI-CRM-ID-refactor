@@ -22,12 +22,11 @@ cron 例（每分钟）：
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 from typing import Any
 
-from script_runtime import ensure_repo_root_on_path, print_json
+from script_runtime import ensure_repo_root_on_path, print_json, read_int_env
 
 ensure_repo_root_on_path()
 
@@ -95,7 +94,7 @@ def run(batch_size: int) -> dict[str, Any]:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    batch_size = int(os.environ.get("BROADCAST_QUEUE_BATCH_SIZE", "50"))
+    batch_size = read_int_env("BROADCAST_QUEUE_BATCH_SIZE", 50)
     from wecom_ability_service import create_app
 
     app = create_app()

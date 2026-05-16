@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -17,3 +18,7 @@ def ensure_repo_root_on_path() -> Path:
 
 def print_json(payload: Any, *, indent: int | None = None) -> None:
     print(json.dumps(payload, ensure_ascii=False, default=str, indent=indent))
+
+
+def read_int_env(name: str, default: int) -> int:
+    return int(os.environ.get(name, str(default)))

@@ -14,12 +14,10 @@ cron 例（每 5 分钟跑一次）：
 """
 from __future__ import annotations
 
-import os
-
 try:
-    from scripts.script_runtime import ensure_repo_root_on_path
+    from scripts.script_runtime import ensure_repo_root_on_path, read_int_env
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from script_runtime import ensure_repo_root_on_path
+    from script_runtime import ensure_repo_root_on_path, read_int_env
 
 
 def main() -> None:
@@ -27,7 +25,7 @@ def main() -> None:
     from wecom_ability_service import create_app
     from wecom_ability_service.domains.campaigns.scheduler import process_due_campaign_members
 
-    batch_size = int(os.environ.get("CAMPAIGN_SCHEDULER_BATCH_SIZE", "200"))
+    batch_size = read_int_env("CAMPAIGN_SCHEDULER_BATCH_SIZE", 200)
 
     app = create_app()
     with app.app_context():

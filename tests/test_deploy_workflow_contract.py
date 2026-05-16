@@ -83,6 +83,22 @@ def test_postgres_backup_restore_share_database_url_guard():
     assert "require_database_url" in restore
 
 
+def test_batch_scripts_share_int_env_reader():
+    runtime = (ROOT / "scripts" / "script_runtime.py").read_text(encoding="utf-8")
+    campaign_scheduler = (ROOT / "scripts" / "run_campaign_scheduler.py").read_text(
+        encoding="utf-8"
+    )
+    broadcast_worker = (ROOT / "scripts" / "run_broadcast_queue_worker.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "def read_int_env" in runtime
+    assert 'read_int_env("CAMPAIGN_SCHEDULER_BATCH_SIZE", 200)' in campaign_scheduler
+    assert 'read_int_env("BROADCAST_QUEUE_BATCH_SIZE", 50)' in broadcast_worker
+    assert "int(os.environ.get" not in campaign_scheduler
+    assert "int(os.environ.get" not in broadcast_worker
+
+
 def _calls_utcnow(path: Path) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in ast.walk(tree):
