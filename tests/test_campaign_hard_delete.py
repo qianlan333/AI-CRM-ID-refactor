@@ -63,13 +63,13 @@ def _seed_member(campaign_id: int, segment_id: int, member_id: int) -> None:
     db.commit()
 
 
-def _seed_broadcast_job(campaign_id: int, step_index: int = 0) -> None:
+def _seed_broadcast_job(campaign_id: int, campaign_segment_id: int = 99, step_index: int = 0) -> None:
     db = get_db()
     cur = db.cursor()
     cur.execute(
         "INSERT INTO broadcast_jobs (source_type, source_id, source_table, status) "
         "VALUES ('campaign', ?, 'campaign_members', 'queued')",
-        (f"{campaign_id}:{step_index}",),
+        (f"{campaign_id}:{campaign_segment_id}:{step_index}",),
     )
     db.commit()
 
@@ -155,18 +155,18 @@ def test_delete_campaign_clears_broadcast_jobs(app):
 
 
 def test_delete_campaign_id_substring_safety(app):
-    """campaign_id=1 删除时不能误中 source_id='12:0' 的 job（LIKE '1:%' 不会匹配 '12:0'）。"""
+    """campaign_id=1 删除时不能误中 source_id='12:99:0' 的 job。"""
     with app.app_context():
-        # 用 raw SQL 直接造两个不同 id 的 broadcast_job：source_id 分别是 '1:0' 和 '12:0'
+        # 用 raw SQL 直接造两个不同 id 的 broadcast_job。
         db = get_db()
         cur = db.cursor()
         cur.execute(
             "INSERT INTO broadcast_jobs (source_type, source_id, source_table, status) "
-            "VALUES ('campaign', '1:0', 'campaign_members', 'queued')"
+            "VALUES ('campaign', '1:99:0', 'campaign_members', 'queued')"
         )
         cur.execute(
             "INSERT INTO broadcast_jobs (source_type, source_id, source_table, status) "
-            "VALUES ('campaign', '12:0', 'campaign_members', 'queued')"
+            "VALUES ('campaign', '12:99:0', 'campaign_members', 'queued')"
         )
         db.commit()
         # 造一个真的 id=1 的 campaign 才能删
@@ -179,8 +179,8 @@ def test_delete_campaign_id_substring_safety(app):
 
         result = campaign_service.delete_campaign(campaign_id=1)
         assert result["rows_cleared"]["broadcast_jobs"] == 1
-        # source_id='12:0' 必须保留
-        assert _row_count("broadcast_jobs", "source_id = '12:0'") == 1
+        # source_id='12:99:0' 必须保留
+        assert _row_count("broadcast_jobs", "source_id = '12:99:0'") == 1
 
 
 # ---------- active 不能删 ----------

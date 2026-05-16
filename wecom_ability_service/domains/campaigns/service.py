@@ -581,8 +581,9 @@ def delete_campaign(*, campaign_id: int) -> dict[str, Any]:
     db = get_db()
     cur = db.cursor()
     cid = int(campaign_id)
-    # broadcast_jobs.source_id 是 "{campaign_id}:{step_index}" 形式（见 scheduler.py），
-    # 用 LIKE '{cid}:%' 精确匹配；不能用 source_id = str(cid) 因为格式不一样
+    # broadcast_jobs.source_id 是 "{campaign_id}:{campaign_segment_id}:{step_index}"
+    # 形式（见 scheduler.py）。旧队列里可能还有 "{campaign_id}:{step_index}"，
+    # 两者都用 LIKE '{cid}:%' 精确匹配；不能用 source_id = str(cid)。
     cur.execute(
         "DELETE FROM broadcast_jobs WHERE source_type = 'campaign' AND source_id LIKE ?",
         (f"{cid}:%",),
