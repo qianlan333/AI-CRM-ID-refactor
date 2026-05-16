@@ -20,6 +20,7 @@ from .admin_class_user import register_routes as register_admin_class_user_route
 from .admin_hxc_dashboard import register_routes as register_admin_hxc_dashboard_routes
 from .admin_questionnaires import register_routes as register_admin_questionnaires_routes
 from .admin_user_ops import register_routes as register_admin_user_ops_routes
+from .admin_wechat_pay import register_routes as register_admin_wechat_pay_routes
 from .admin_wecom_tags import register_routes as register_admin_wecom_tags_routes
 from .wecom_customer_acquisition import register_routes as register_wecom_customer_acquisition_routes
 from .automation_conversion import register_routes as register_automation_conversion_routes
@@ -78,6 +79,7 @@ HTTP_ROUTE_MODULES = {
     "admin_config": "wecom_ability_service.http.admin_config",
     "admin_dashboard": "wecom_ability_service.http.admin_dashboard",
     "admin_user_ops": "wecom_ability_service.http.admin_user_ops",
+    "admin_wechat_pay": "wecom_ability_service.http.admin_wechat_pay",
     "admin_class_user": "wecom_ability_service.http.admin_class_user",
     "admin_questionnaires": "wecom_ability_service.http.admin_questionnaires",
     "admin_wecom_tags": "wecom_ability_service.http.admin_wecom_tags",
@@ -112,6 +114,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_class_user.py for /api/admin/class-user-management*",
         "admin_questionnaires.py for /api/admin/questionnaires* and /admin/questionnaires/ui",
         "admin_wecom_tags.py for /api/admin/wecom/tags* enterprise customer tag management",
+        "admin_wechat_pay.py for /admin/wechat-pay/transactions* and /api/admin/wechat-pay* transaction management",
         "wecom_customer_acquisition.py for /api/admin/wecom-customer-acquisition-links* and /admin/wecom-customer-acquisition-links/ui",
     ),
     "callbacks": (
@@ -144,6 +147,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_config", register_admin_config_routes),
     ("admin_dashboard", register_admin_dashboard_routes),
     ("admin_user_ops", register_admin_user_ops_routes),
+    ("admin_wechat_pay", register_admin_wechat_pay_routes),
     ("admin_hxc_dashboard", register_admin_hxc_dashboard_routes),
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_wecom_tags", register_admin_wecom_tags_routes),
