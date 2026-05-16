@@ -211,6 +211,21 @@ def admin_config_signup_tags():
     return _signup_tags_page()
 
 
+def admin_config_wecom_tags():
+    return _render_config_template(
+        "config_wecom_tags.html",
+        active_tab="wecom_tags",
+        page_title="企微标签管理",
+        page_summary="集中管理企业客户标签：同步、搜索、新增、编辑、删除和复制 tag_id。",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("配置中心", url_for("api.admin_config_home")),
+            ("企微标签管理", None),
+        ),
+        show_shell_meta=False,
+    )
+
+
 def admin_config_save_signup_tag():
     token_error = validate_admin_console_action_token()
     if token_error:
@@ -670,6 +685,7 @@ def register_routes(bp):
     bp.route("/admin/config/routing", methods=["GET"])(admin_config_routing)
     bp.route("/admin/config/routing/owner-role", methods=["POST"])(admin_config_save_owner_role)
     bp.route("/admin/config/routing/rule", methods=["POST"])(admin_config_save_routing_rule)
+    bp.route("/admin/config/wecom-tags", methods=["GET"])(admin_config_wecom_tags)
     bp.route("/admin/config/signup-tags", methods=["GET"])(admin_config_signup_tags)
     bp.route("/admin/config/signup-tags/save", methods=["POST"])(admin_config_save_signup_tag)
     bp.route("/admin/config/class-term-tags", methods=["GET"])(admin_config_class_term_tags)

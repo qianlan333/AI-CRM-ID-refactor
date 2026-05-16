@@ -316,6 +316,10 @@ def fake_wecom_post(url, params=None, json=None, timeout=None, files=None):
         )
     if url.endswith("/cgi-bin/externalcontact/add_corp_tag"):
         return FakeResponse({"errcode": 0, "errmsg": "ok", "tag_group": {"group_id": "g1"}})
+    if url.endswith("/cgi-bin/externalcontact/edit_corp_tag"):
+        return FakeResponse({"errcode": 0, "errmsg": "ok"})
+    if url.endswith("/cgi-bin/externalcontact/del_corp_tag"):
+        return FakeResponse({"errcode": 0, "errmsg": "ok"})
     if url.endswith("/cgi-bin/externalcontact/mark_tag"):
         return FakeResponse({"errcode": 0, "errmsg": "ok"})
     if url.endswith("/cgi-bin/externalcontact/remark"):
@@ -1261,6 +1265,102 @@ def test_admin_list_wecom_tags(client, monkeypatch):
         {"tag_id": "et-tag-003", "tag_name": "低意向", "group_name": "客户分层", "group_id": "group-001"},
         {"tag_id": "et-tag-001", "tag_name": "高意向", "group_name": "客户分层", "group_id": "group-001"},
     ]
+    assert data["total_tags"] == 3
+    assert data["tag_limit"] == 1000
+    assert [group["group_name"] for group in data["groups"]] == ["业务标签", "客户分层"]
+    assert data["groups"][1]["tags"][0]["tag_id"] == "et-tag-003"
+
+
+def test_admin_wecom_tag_management_crud_payloads(client, monkeypatch):
+    state = {"created": [], "edited": [], "deleted": []}
+
+    def fake_admin_tag_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/get_corp_tag_list"):
+            return FakeResponse(
+                {
+                    "errcode": 0,
+                    "errmsg": "ok",
+                    "tag_group": [
+                        {
+                            "group_id": "group-001",
+                            "group_name": "客户分层",
+                            "tag": [{"id": "tag-001", "name": "高意向"}],
+                        }
+                    ],
+                }
+            )
+        if url.endswith("/cgi-bin/externalcontact/add_corp_tag"):
+            state["created"].append(json or {})
+            return FakeResponse({"errcode": 0, "errmsg": "ok", "tag_group": {"group_id": "group-new"}})
+        if url.endswith("/cgi-bin/externalcontact/edit_corp_tag"):
+            state["edited"].append(json or {})
+            return FakeResponse({"errcode": 0, "errmsg": "ok"})
+        if url.endswith("/cgi-bin/externalcontact/del_corp_tag"):
+            state["deleted"].append(json or {})
+            return FakeResponse({"errcode": 0, "errmsg": "ok"})
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+    monkeypatch.setattr("requests.post", fake_admin_tag_post)
+
+    group_response = client.post(
+        "/api/admin/wecom/tag-groups",
+        json={"group_name": "新标签组", "first_tag_name": "首个标签"},
+    )
+    assert group_response.status_code == 200
+    assert state["created"][-1] == {"group_name": "新标签组", "tag": [{"name": "首个标签"}]}
+
+    tag_response = client.post(
+        "/api/admin/wecom/tags",
+        json={"group_id": "group-001", "tag_name": "中意向"},
+    )
+    assert tag_response.status_code == 200
+    assert state["created"][-1] == {"group_id": "group-001", "tag": [{"name": "中意向"}]}
+
+    group_update = client.put("/api/admin/wecom/tag-groups/group-001", json={"group_name": "客户阶段"})
+    assert group_update.status_code == 200
+    assert state["edited"][-1] == {"id": "group-001", "name": "客户阶段"}
+
+    tag_update = client.put("/api/admin/wecom/tags/tag-001", json={"tag_name": "高意向客户"})
+    assert tag_update.status_code == 200
+    assert state["edited"][-1] == {"id": "tag-001", "name": "高意向客户"}
+
+    group_delete = client.delete("/api/admin/wecom/tag-groups/group-001")
+    assert group_delete.status_code == 200
+    assert state["deleted"][-1] == {"group_id": ["group-001"]}
+
+    tag_delete = client.delete("/api/admin/wecom/tags/tag-001")
+    assert tag_delete.status_code == 200
+    assert state["deleted"][-1] == {"tag_id": ["tag-001"]}
+
+
+def test_admin_wecom_tag_management_blocks_create_when_limit_reached(client, monkeypatch):
+    def fake_full_tag_post(url, params=None, json=None, timeout=None, files=None):
+        if url.endswith("/cgi-bin/externalcontact/get_corp_tag_list"):
+            return FakeResponse(
+                {
+                    "errcode": 0,
+                    "errmsg": "ok",
+                    "tag_group": [
+                        {
+                            "group_id": "group-full",
+                            "group_name": "满额标签组",
+                            "tag": [{"id": f"tag-{index}", "name": f"标签{index}"} for index in range(1000)],
+                        }
+                    ],
+                }
+            )
+        if url.endswith("/cgi-bin/externalcontact/add_corp_tag"):
+            raise AssertionError("add_corp_tag should not be called when tag limit is reached")
+        return fake_wecom_post(url, params=params, json=json, timeout=timeout, files=files)
+
+    monkeypatch.setattr("requests.get", fake_wecom_get)
+    monkeypatch.setattr("requests.post", fake_full_tag_post)
+
+    response = client.post("/api/admin/wecom/tags", json={"group_id": "group-full", "tag_name": "超限标签"})
+    data = response.get_json()
+    assert response.status_code == 400
+    assert data["error"] == "标签数量已达到 1000 上限，不能继续新增标签。"
 
 
 def test_class_user_management_bootstrap_creates_missing_lead_tag(client, app, monkeypatch):

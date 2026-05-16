@@ -450,6 +450,7 @@ def test_admin_config_pages_render(client):
     expected = {
         "/admin/config": "配置中心",
         "/admin/config/routing": "渠道 / 分配规则",
+        "/admin/config/wecom-tags": "企微标签管理",
         "/admin/config/signup-tags": "报名标签规则",
         "/admin/config/class-term-tags": "班期标签规则",
         "/admin/automation-conversion": "自动化转化",

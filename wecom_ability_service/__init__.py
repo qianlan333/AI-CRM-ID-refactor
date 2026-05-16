@@ -113,6 +113,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         WECOM_ARCHIVE_TIMEOUT=int(os.getenv("WECOM_ARCHIVE_TIMEOUT", "15")),
         WECOM_SYNC_BATCH_SIZE=int(os.getenv("WECOM_SYNC_BATCH_SIZE", "100")),
         WECOM_SYNC_RETRY_LIMIT=int(os.getenv("WECOM_SYNC_RETRY_LIMIT", "3")),
+        WECOM_CORP_TAG_LIMIT=int(os.getenv("WECOM_CORP_TAG_LIMIT", "1000")),
         AUTOMATION_CONVERSION_CHANNEL_PROVIDER=os.getenv("AUTOMATION_CONVERSION_CHANNEL_PROVIDER", "wecom_contact_way"),
         MCP_BEARER_TOKEN=os.getenv("MCP_BEARER_TOKEN", ""),
         ACCESS_TOKEN_CACHE_SECONDS=int(os.getenv("ACCESS_TOKEN_CACHE_SECONDS", "7000")),

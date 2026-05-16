@@ -97,6 +97,7 @@ def list_settings_snapshot(config: dict[str, Any]) -> dict[str, str]:
         "WECOM_DEFAULT_OWNER_USERID",
         "WECOM_CALLBACK_TOKEN",
         "WECOM_CALLBACK_AES_KEY",
+        "WECOM_CORP_TAG_LIMIT",
         "WECOM_ARCHIVE_TIMEOUT",
         "ADMIN_AUTH_MODE",
         "ADMIN_LOGIN_REDIRECT_URI",

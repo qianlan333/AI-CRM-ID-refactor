@@ -258,6 +258,18 @@ class WeComClient:
     def create_tag(self, payload: dict) -> dict:
         return self.post("/cgi-bin/externalcontact/add_corp_tag", payload)
 
+    def update_tag(self, payload: dict) -> dict:
+        return self.post("/cgi-bin/externalcontact/edit_corp_tag", payload)
+
+    def delete_tag(self, payload: dict) -> dict:
+        return self.post("/cgi-bin/externalcontact/del_corp_tag", payload)
+
+    def update_tag_group(self, payload: dict) -> dict:
+        return self.update_tag(payload)
+
+    def delete_tag_group(self, payload: dict) -> dict:
+        return self.delete_tag(payload)
+
     def mark_tag(self, payload: dict) -> dict:
         return self.post("/cgi-bin/externalcontact/mark_tag", payload)
 

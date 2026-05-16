@@ -198,6 +198,13 @@ APP_SETTING_DEFINITIONS = (
         "description": "会话存档相关请求的超时时间（秒）。",
     },
     {
+        "key": "WECOM_CORP_TAG_LIMIT",
+        "label": "企微客户标签上限",
+        "mode": "editable",
+        "input_type": "number",
+        "description": "企微标签管理页面使用的容量提示上限；未配置时默认 1000。",
+    },
+    {
         "key": "WECHAT_MP_APP_ID",
         "label": "微信公众号 App ID",
         "mode": "editable",
@@ -555,6 +562,7 @@ def config_tabs(active_key: str) -> list[dict[str, Any]]:
     items = [
         {"key": "overview", "label": "概览", "href": "/admin/config"},
         {"key": "routing", "label": "渠道 / 分配规则", "href": "/admin/config/routing"},
+        {"key": "wecom_tags", "label": "企微标签管理", "href": "/admin/config/wecom-tags"},
         {"key": "signup_tags", "label": "报名标签规则", "href": "/admin/config/signup-tags"},
         {"key": "class_term_tags", "label": "班期标签规则", "href": "/admin/config/class-term-tags"},
         {"key": "app_settings", "label": "系统设置", "href": "/admin/config/app-settings"},
@@ -584,6 +592,12 @@ def build_config_home_payload() -> dict[str, Any]:
                 "value": len(signup_rules.get("items") or []),
                 "description": f"待补齐 {len(signup_rules.get('status_definitions') or []) - len(signup_rules.get('items') or [])} 项",
                 "href": "/admin/config/signup-tags",
+            },
+            {
+                "label": "企微标签管理",
+                "value": "同步",
+                "description": "同步、搜索、新增、编辑、删除和复制 tag_id",
+                "href": "/admin/config/wecom-tags",
             },
             {
                 "label": "班期标签规则",
