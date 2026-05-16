@@ -208,15 +208,6 @@
     margin-bottom: 12px;
   }
 
-  .op-action-savebar {
-    display: flex;
-    justify-content: flex-end;
-    position: fixed;
-    right: 32px;
-    bottom: 26px;
-    z-index: 30;
-  }
-
   .op-badge {
     display: inline-flex;
     width: fit-content;
@@ -594,9 +585,6 @@
         <div class="op-node-list" id="node-list" style="margin-top:14px;"></div>
       </section>
 
-      <div class="op-action-savebar">
-        <button class="admin-button admin-button--primary" id="save-draft-button" type="button">保存草稿</button>
-      </div>
     </section>
 
   </main>
@@ -2333,7 +2321,7 @@
       });
       renderNodes();
     });
-    document.getElementById('save-draft-button').addEventListener('click', () => saveAction('draft'));
+    document.getElementById('save-draft-button')?.addEventListener('click', () => saveAction('draft'));
     document.getElementById('new-action-side-button').addEventListener('click', openTemplateModal);
     if (elements.emptyNewActionButton) elements.emptyNewActionButton.addEventListener('click', openTemplateModal);
     document.getElementById('from-template-button').addEventListener('click', openActionTemplateModal);

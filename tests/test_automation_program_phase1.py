@@ -809,6 +809,8 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "新增动作" in html
     assert "从模板创建" in html
     assert "保存草稿" in html
+    assert "op-action-savebar" not in html
+    assert 'id="save-draft-button"' not in html
     assert "触发与对象" in html
     assert "内容策略" in html
     assert "执行节点" in html
