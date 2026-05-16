@@ -4,12 +4,11 @@ from pathlib import Path
 
 from flask import current_app
 
-from ..helpers import pg_table_columns
+from ..helpers import _postgres_table_columns
 from . import (
     _ensure_automation_agent_prompt_defaults,
     _ensure_automation_sop_v1_seed_data,
 )
-from .schema_runner import run_schema_with_forward_fk_retries
 
 
 _LEGACY_AUTOMATION_MEMBER_FOLLOWUP_DECISION_COLUMN = "questionnaire" "_result"
@@ -26,13 +25,27 @@ def _run_schema_with_forward_fk_retries(db, script: str, *, max_passes: int = 4)
     fresh PG 上的 ``init_db`` 整个崩。多 pass 重试容错：每轮跑通能跑通的，把
     ``UndefinedTable`` 失败的留到下一轮 —— 等被引用表建好后再补。
     """
-    run_schema_with_forward_fk_retries(
-        script,
-        execute=db.execute,
-        commit=db.commit,
-        rollback=db.rollback,
-        max_passes=max_passes,
-    )
+    statements = [s.strip() for s in script.split(";") if s.strip()]
+    pending = statements
+    for _ in range(max_passes):
+        if not pending:
+            return
+        next_pending: list[str] = []
+        for stmt in pending:
+            try:
+                db.execute(stmt)
+                db.commit()
+            except Exception:
+                db.rollback()
+                next_pending.append(stmt)
+        if len(next_pending) == len(pending):
+            # 没进展：剩下的就是真坏掉的，让最后一条原样抛出来便于 debug。
+            for stmt in next_pending:
+                db.execute(stmt)
+            return
+        pending = next_pending
+    for stmt in pending:
+        db.execute(stmt)
 
 
 def _ensure_postgres_user_ops_page_tables(db) -> None:
@@ -621,7 +634,7 @@ def _ensure_postgres_admin_auth_tables(db) -> None:
         ADD COLUMN IF NOT EXISTS updated_by TEXT NOT NULL DEFAULT ''
         """
     )
-    admin_user_columns = pg_table_columns(db, "admin_users")
+    admin_user_columns = _postgres_table_columns(db, "admin_users")
     if "username" in admin_user_columns:
         db.execute(
             """
@@ -853,6 +866,30 @@ def _ensure_postgres_automation_program_tables(db) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_automation_program_status
         ON automation_program (status, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_program_config_block (
+            id BIGSERIAL PRIMARY KEY,
+            program_id BIGINT NOT NULL REFERENCES automation_program(id) ON DELETE CASCADE,
+            block_key TEXT NOT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'saved', 'published', 'archived')),
+            version INTEGER NOT NULL DEFAULT 1,
+            copied_from_program_id BIGINT REFERENCES automation_program(id) ON DELETE SET NULL,
+            copied_from_block_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_automation_program_config_block_program_key UNIQUE (program_id, block_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_automation_program_config_block_program
+        ON automation_program_config_block (program_id, block_key)
         """
     )
     db.execute(
@@ -1441,6 +1478,8 @@ def _init_postgres(db) -> None:
         "ON wecom_customer_acquisition_links (automation_channel_id)",
         "CREATE INDEX IF NOT EXISTS idx_wecom_customer_acquisition_links_status "
         "ON wecom_customer_acquisition_links (status, updated_at DESC, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_wecom_customer_acquisition_links_program "
+        "ON wecom_customer_acquisition_links (program_id, status, updated_at DESC, id DESC)",
     ):
         db.execute(stmt)
     db.execute(
@@ -1485,4 +1524,36 @@ def _init_postgres(db) -> None:
         ON automation_agent_output (outcome_status, created_at DESC, id DESC)
         """
     )
+    # ----- 0004 / 0005 迁移的字段 ALTER（兼容 init-db 走 schema 路径） -------
+    # 让既有 PG 库通过 init-db 升级时也能拿到 trace_id / scenario_code / review_status
+    # 等新字段；schema_postgres.sql 的 CREATE TABLE IF NOT EXISTS 不会改老表。
+    for stmt in (
+        "ALTER TABLE IF EXISTS automation_agent_config "
+        "ADD COLUMN IF NOT EXISTS scenario_code TEXT NOT NULL DEFAULT 'one_to_one'",
+        "ALTER TABLE IF EXISTS automation_agent_run "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS outbound_tasks "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_touch_delivery_log "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow "
+        "ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved'",
+        "ALTER TABLE IF EXISTS automation_workflow "
+        "ADD COLUMN IF NOT EXISTS created_by_agent TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS last_error_text TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS last_error_at TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS automation_workflow_execution_item "
+        "ADD COLUMN IF NOT EXISTS next_node_id BIGINT",
+        "ALTER TABLE IF EXISTS cloud_broadcast_plans "
+        "ADD COLUMN IF NOT EXISTS segment_id BIGINT",
+        "ALTER TABLE IF EXISTS cloud_broadcast_plans "
+        "ADD COLUMN IF NOT EXISTS campaign_id BIGINT",
+    ):
+        db.execute(stmt)
     db.commit()

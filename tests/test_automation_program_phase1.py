@@ -231,6 +231,191 @@ def test_workflow_list_filters_by_program_id(app, client, monkeypatch):
     assert second_codes == ["second_wf"]
 
 
+def test_setup_blank_program_does_not_read_default_config_block(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import program_repo
+    from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program
+
+    _login(client, app, monkeypatch)
+    default_program_id = _default_program_id(app)
+    with app.app_context():
+        program_repo.upsert_config_block_row(
+            default_program_id,
+            "questionnaire_segmentation",
+            {
+                "questionnaire_id": 99,
+                "strategies": {
+                    "normal_question_rules": {"enabled": True, "rules": [{"rule_name": "默认规则"}]},
+                },
+            },
+            status="saved",
+        )
+        blank = create_automation_program(
+            {"program_name": "空白隔离方案", "program_code": "blank_isolation_case", "status": "draft"},
+            operator_id="test",
+        )["program"]
+
+    response = client.get(f"/api/admin/automation-conversion/programs/{blank['id']}/setup?step=segmentation")
+    assert response.status_code == 200
+    segmentation = response.get_json()["setup"]["segmentation"]
+    assert segmentation == {}
+
+
+def test_copy_program_copies_config_blocks_not_channels_or_links(app):
+    from wecom_ability_service.domains.automation_conversion import program_repo, repo
+    from wecom_ability_service.domains.automation_conversion.customer_acquisition_service import create_customer_acquisition_link
+    from wecom_ability_service.domains.automation_conversion.program_service import copy_automation_program, create_automation_program
+
+    app.config["WECOM_CORP_ID"] = "ww-test"
+    with app.app_context():
+        source = create_automation_program(
+            {"program_name": "源方案", "program_code": "copy_source_case", "status": "draft"},
+            operator_id="test",
+        )["program"]
+        program_repo.upsert_config_block_row(
+            int(source["id"]),
+            "questionnaire_segmentation",
+            {"questionnaire_id": 321, "strategies": {"score_segments": {"enabled": True, "ranges": []}}},
+            status="saved",
+        )
+        repo.save_channel(
+            {
+                "program_id": int(source["id"]),
+                "channel_code": "program_source_channel",
+                "channel_name": "源渠道",
+                "status": "active",
+            }
+        )
+        create_customer_acquisition_link(
+            {
+                "program_id": int(source["id"]),
+                "link_id": "copy-source-link",
+                "link_name": "源获客链接",
+                "link_url": "https://work.weixin.qq.com/ca/copy-source",
+            }
+        )
+
+        copied = copy_automation_program(
+            int(source["id"]),
+            {"program_name": "复制方案", "program_code": "copy_target_case"},
+            operator_id="test",
+        )["program"]
+        copied_block = program_repo.get_config_block_row(int(copied["id"]), "questionnaire_segmentation")
+        target_channels = repo.list_channels_by_program(int(copied["id"]))
+        target_links = repo.list_customer_acquisition_links(program_id=int(copied["id"]))
+
+    assert copied_block
+    assert copied_block["payload_json"]["questionnaire_id"] == 321
+    assert target_channels == []
+    assert target_links == []
+
+
+def test_entry_publish_minimum_available_without_full_automation(app):
+    from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import (
+        build_publish_check,
+        publish_entry,
+        save_entry_channel,
+        save_setup_basic,
+    )
+
+    with app.app_context():
+        program = create_automation_program(
+            {"program_name": "入口发布方案", "program_code": "entry_publish_case", "status": "draft"},
+            operator_id="test",
+        )["program"]
+        save_setup_basic(int(program["id"]), {"program_name": "入口发布方案", "program_code": "entry_publish_case"}, operator_id="test")
+        save_entry_channel(int(program["id"]), {"channel_name": "入口二维码", "welcome_message": "欢迎"})
+        check = build_publish_check(int(program["id"]))
+        result = publish_entry(int(program["id"]), operator_id="test")
+
+    assert check["entry"]["passed"] is True
+    assert check["full"]["passed"] is False
+    assert result["program"]["status"] == "active"
+
+
+def test_program_scoped_customer_acquisition_link(app, client, monkeypatch):
+    _login(client, app, monkeypatch)
+    app.config["WECOM_CORP_ID"] = "ww-test"
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO automation_program (program_code, program_name, status, config_json)
+            VALUES ('ca_program_a', '获客方案 A', 'draft', '{}'),
+                   ('ca_program_b', '获客方案 B', 'draft', '{}')
+            """
+        )
+        program_a = int(db.execute("SELECT id FROM automation_program WHERE program_code = 'ca_program_a'").fetchone()["id"])
+        program_b = int(db.execute("SELECT id FROM automation_program WHERE program_code = 'ca_program_b'").fetchone()["id"])
+        db.commit()
+
+    response = client.post(
+        f"/api/admin/automation-conversion/programs/{program_a}/customer-acquisition-links",
+        json={
+            "link_id": "program-ca-a",
+            "link_name": "方案 A 获客",
+            "link_url": "https://work.weixin.qq.com/ca/program-a",
+            "initial_audience_code": "pending_questionnaire",
+        },
+    )
+    assert response.status_code == 201
+    link = response.get_json()["link"]
+    assert int(link["program_id"]) == program_a
+    assert "customer_channel=" in link["final_url"]
+
+    a_links = client.get(f"/api/admin/automation-conversion/programs/{program_a}/customer-acquisition-links").get_json()["links"]
+    b_links = client.get(f"/api/admin/automation-conversion/programs/{program_b}/customer-acquisition-links").get_json()["links"]
+    assert [item["link_id"] for item in a_links] == ["program-ca-a"]
+    assert b_links == []
+    with app.app_context():
+        row = get_db().execute(
+            """
+            SELECT l.program_id AS link_program_id, c.program_id AS channel_program_id
+            FROM wecom_customer_acquisition_links l
+            INNER JOIN automation_channel c ON c.id = l.automation_channel_id
+            WHERE l.id = ?
+            """,
+            (int(link["id"]),),
+        ).fetchone()
+    assert int(row["link_program_id"]) == program_a
+    assert int(row["channel_program_id"]) == program_a
+
+
+def test_setup_score_segmentation_validation_and_match():
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import (
+        match_score_segment,
+        validate_score_ranges,
+    )
+
+    payload = {
+        "strategies": {
+            "score_segments": {
+                "enabled": True,
+                "ranges": [
+                    {"min_score": 45, "max_score": 64, "segment_key": "warm"},
+                    {"min_score": 65, "max_score": 84, "segment_key": "hot"},
+                ],
+            }
+        }
+    }
+    validate_score_ranges(payload)
+    assert match_score_segment(payload, 72)["segment_key"] == "hot"
+
+    overlap = {
+        "strategies": {
+            "score_segments": {
+                "enabled": True,
+                "ranges": [
+                    {"min_score": 0, "max_score": 50, "segment_key": "a"},
+                    {"min_score": 50, "max_score": 80, "segment_key": "b"},
+                ],
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="不能重叠"):
+        validate_score_ranges(overlap)
+
+
 def test_operation_action_templates_and_from_template_create_current_workflow(app, client, monkeypatch):
     _login(client, app, monkeypatch)
     program_id = _default_program_id(app)

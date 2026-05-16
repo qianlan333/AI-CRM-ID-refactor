@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from flask import current_app
+
 from ...db import get_db
+from ...infra.wecom_runtime import get_contact_runtime_client
 from ...wecom_client import WeComClientError
 from ..questionnaire.service import list_available_wecom_tags
+from ..tags import repo as tags_repo
 from . import repo
 from .provider import load_channel_provider
 from .service import (
@@ -158,11 +162,33 @@ def _effective_channel_entry_tag_payload(payload: dict[str, Any], existing: dict
     }
 
 
+def _allow_legacy_channel_fallback(program_id: int | None) -> bool:
+    if program_id is None:
+        return True
+    try:
+        from .program_service import get_default_automation_program_id
+
+        return int(program_id) == int(get_default_automation_program_id())
+    except Exception:
+        return False
+
+
 
 def get_default_channel_settings_payload(*, program_id: int | None = None) -> dict[str, Any]:
+    normalized_program_id = int(program_id or 0) or None
+    if normalized_program_id is not None and not _allow_legacy_channel_fallback(normalized_program_id):
+        provider = load_channel_provider()
+        return {
+            "default_channel": repo.get_default_channel(
+                program_id=normalized_program_id,
+                allow_legacy_fallback=False,
+            )
+            or {},
+            "provider_available": bool(provider),
+        }
     from .service import get_settings_payload
 
-    payload = get_settings_payload(program_id=program_id)
+    payload = get_settings_payload(program_id=normalized_program_id)
     return {
         "default_channel": dict(payload.get("default_channel") or {}),
         "provider_available": bool(payload.get("provider_available")),
@@ -171,7 +197,10 @@ def get_default_channel_settings_payload(*, program_id: int | None = None) -> di
 
 def save_default_channel_settings(payload: dict[str, Any], *, program_id: int | None = None) -> dict[str, Any]:
     normalized_program_id = int(program_id or payload.get("program_id") or 0) or None
-    existing = repo.get_default_channel(program_id=normalized_program_id) or {}
+    existing = repo.get_default_channel(
+        program_id=normalized_program_id,
+        allow_legacy_fallback=_allow_legacy_channel_fallback(normalized_program_id),
+    ) or {}
     entry_tag_payload = _effective_channel_entry_tag_payload(payload, existing)
     next_channel_name = _normalized_text(payload.get("channel_name")) or _normalized_text(existing.get("channel_name")) or DEFAULT_CHANNEL_NAME
     next_welcome_message = (
@@ -224,7 +253,10 @@ def save_default_channel_settings(payload: dict[str, Any], *, program_id: int | 
 def generate_default_channel_qr(*, operator: str = "", program_id: int | None = None) -> dict[str, Any]:
     provider = load_channel_provider()
     normalized_program_id = int(program_id or 0) or None
-    existing = repo.get_default_channel(program_id=normalized_program_id) or {}
+    existing = repo.get_default_channel(
+        program_id=normalized_program_id,
+        allow_legacy_fallback=_allow_legacy_channel_fallback(normalized_program_id),
+    ) or {}
     if provider is None:
         return {
             "generated": False,

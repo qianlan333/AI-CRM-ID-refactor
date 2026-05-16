@@ -69,6 +69,17 @@ from ..domains.automation_conversion.program_service import (
     update_automation_program_basic_info,
     update_automation_program_status,
 )
+from ..domains.automation_conversion.program_setup_service import (
+    build_publish_check,
+    create_program_customer_acquisition_link,
+    get_program_setup_payload,
+    publish_entry,
+    publish_full,
+    save_audience_entry_rule,
+    save_entry_channel,
+    save_segmentation,
+    save_setup_basic,
+)
 from ..domains.automation_conversion.reply_monitor_service import (
     run_due_reply_monitor,
     run_reply_monitor_capture,
@@ -176,6 +187,7 @@ from ._routes_helpers import (  # noqa: F401  helpers for route handlers — 阶
     _render_operations_page,
     _render_overview_page,
     _render_program_list_page,
+    _render_program_setup_page,
     _render_run_center_page,
     _render_workflow_editor_page,
     _render_workflow_nodes_page,
@@ -205,7 +217,7 @@ def admin_automation_program_create():
     except ValueError as exc:
         return _render_program_list_page(page_error=str(exc), show_create_form=True)
     return redirect(
-        url_for("api.admin_automation_program_overview", program_id=int((result.get("program") or {}).get("id") or 0)),
+        url_for("api.admin_automation_program_setup", program_id=int((result.get("program") or {}).get("id") or 0)),
         code=302,
     )
 
@@ -234,7 +246,7 @@ def admin_automation_program_copy(program_id: int):
     except (LookupError, ValueError) as exc:
         return _render_program_list_page(page_error=str(exc))
     return redirect(
-        url_for("api.admin_automation_program_overview", program_id=int((result.get("program") or {}).get("id") or 0)),
+        url_for("api.admin_automation_program_setup", program_id=int((result.get("program") or {}).get("id") or 0)),
         code=302,
     )
 
@@ -269,6 +281,11 @@ def admin_automation_conversion_auto_reply():
 def admin_automation_program_overview(program_id: int):
     program = _load_program_or_404(program_id)
     return _render_overview_page(program=program)
+
+
+def admin_automation_program_setup(program_id: int):
+    program = _load_program_or_404(program_id)
+    return _render_program_setup_page(program=program, step=_query_text("step") or "basic")
 
 
 def admin_automation_program_operations(program_id: int):
@@ -1314,6 +1331,90 @@ def api_admin_automation_conversion_settings_default_channel_generate_qr():
     return jsonify({"ok": bool(result.get("generated")), **result}), status_code
 
 
+def api_admin_automation_program_setup(program_id: int):
+    try:
+        payload = get_program_setup_payload(int(program_id), step=_query_text("step") or "basic")
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, "setup": payload})
+
+
+def api_admin_automation_program_setup_basic(program_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_setup_basic(int(program_id), payload, operator_id=_operator_from_request())
+    except (LookupError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_program_setup_entry_channel(program_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_entry_channel(int(program_id), payload)
+    except (LookupError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_program_setup_segmentation(program_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_segmentation(int(program_id), payload)
+    except (LookupError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_program_setup_audience_entry_rule(program_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = save_audience_entry_rule(int(program_id), payload)
+    except (LookupError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_program_setup_publish_check(program_id: int):
+    try:
+        result = build_publish_check(int(program_id))
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    return jsonify({"ok": True, "publish_check": result})
+
+
+def api_admin_automation_program_publish_entry(program_id: int):
+    try:
+        result = publish_entry(int(program_id), operator_id=_operator_from_request())
+    except (LookupError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_program_publish_full(program_id: int):
+    try:
+        result = publish_full(int(program_id), operator_id=_operator_from_request())
+    except (LookupError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **result})
+
+
+def api_admin_automation_program_customer_acquisition_links(program_id: int):
+    if request.method == "GET":
+        from ..domains.automation_conversion.customer_acquisition_service import list_customer_acquisition_links
+
+        status = str(request.args.get("status") or "").strip()
+        return jsonify({"ok": True, "links": list_customer_acquisition_links(status=status, program_id=int(program_id))})
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = create_program_customer_acquisition_link(int(program_id), payload)
+    except (LookupError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, **result}), 201
+
+
 def api_admin_automation_conversion_model_settings():
     return jsonify({"ok": True, **get_model_infra_payload(limit_logs=10)})
 
@@ -1839,6 +1940,7 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/programs/<int:program_id>/activate", methods=["POST"])(admin_automation_program_activate)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/pause", methods=["POST"])(admin_automation_program_pause)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/archive", methods=["POST"])(admin_automation_program_archive)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/setup", methods=["GET"])(admin_automation_program_setup)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/overview", methods=["GET"])(admin_automation_program_overview)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations", methods=["GET"])(admin_automation_program_operations)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows", methods=["GET"])(admin_automation_program_workflows)
@@ -1900,6 +2002,15 @@ def register_routes(bp):
     bp.route("/api/admin/automation-conversion/settings", methods=["GET"])(api_admin_automation_conversion_settings_payload)
     bp.route("/api/admin/automation-conversion/settings", methods=["POST"])(api_admin_automation_conversion_settings_save)
     bp.route("/api/admin/automation-conversion/settings/default-channel/generate", methods=["POST"])(api_admin_automation_conversion_settings_default_channel_generate_qr)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup", methods=["GET"])(api_admin_automation_program_setup)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/basic", methods=["POST"])(api_admin_automation_program_setup_basic)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/entry-channel", methods=["POST"])(api_admin_automation_program_setup_entry_channel)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/segmentation", methods=["POST"])(api_admin_automation_program_setup_segmentation)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/audience-entry-rule", methods=["POST"])(api_admin_automation_program_setup_audience_entry_rule)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/setup/publish-check", methods=["GET"])(api_admin_automation_program_setup_publish_check)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/publish-entry", methods=["POST"])(api_admin_automation_program_publish_entry)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/publish-full", methods=["POST"])(api_admin_automation_program_publish_full)
+    bp.route("/api/admin/automation-conversion/programs/<int:program_id>/customer-acquisition-links", methods=["GET", "POST"])(api_admin_automation_program_customer_acquisition_links)
     bp.route("/api/admin/automation-conversion/action-templates", methods=["GET", "POST"])(api_admin_automation_conversion_action_templates)
     bp.route("/api/admin/automation-conversion/action-templates/generate", methods=["POST"])(api_admin_automation_conversion_action_template_generate)
     bp.route("/api/admin/automation-conversion/action-templates/from-workflow", methods=["POST"])(api_admin_automation_conversion_action_template_from_workflow)

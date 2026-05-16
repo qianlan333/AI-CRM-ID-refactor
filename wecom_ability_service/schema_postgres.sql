@@ -1219,6 +1219,9 @@ ON wecom_customer_acquisition_links (automation_channel_id);
 CREATE INDEX IF NOT EXISTS idx_wecom_customer_acquisition_links_status
 ON wecom_customer_acquisition_links (status, updated_at DESC, id DESC);
 
+CREATE INDEX IF NOT EXISTS idx_wecom_customer_acquisition_links_program
+ON wecom_customer_acquisition_links (program_id, status, updated_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS automation_member (
     id BIGSERIAL PRIMARY KEY,
     external_contact_id TEXT NOT NULL DEFAULT '',
@@ -1768,6 +1771,24 @@ CREATE TABLE IF NOT EXISTS automation_program (
 
 CREATE INDEX IF NOT EXISTS idx_automation_program_status
 ON automation_program (status, updated_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS automation_program_config_block (
+    id BIGSERIAL PRIMARY KEY,
+    program_id BIGINT NOT NULL REFERENCES automation_program(id) ON DELETE CASCADE,
+    block_key TEXT NOT NULL,
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'saved', 'published', 'archived')),
+    version INTEGER NOT NULL DEFAULT 1,
+    copied_from_program_id BIGINT REFERENCES automation_program(id) ON DELETE SET NULL,
+    copied_from_block_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_automation_program_config_block_program_key UNIQUE (program_id, block_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_program_config_block_program
+ON automation_program_config_block (program_id, block_key);
 
 CREATE TABLE IF NOT EXISTS automation_workflow (
     id BIGSERIAL PRIMARY KEY,

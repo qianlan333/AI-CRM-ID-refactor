@@ -12,6 +12,13 @@ PROGRAM_STATUS_ACTIVE = "active"
 PROGRAM_STATUS_PAUSED = "paused"
 PROGRAM_STATUS_ARCHIVED = "archived"
 PROGRAM_STATUSES = {PROGRAM_STATUS_DRAFT, PROGRAM_STATUS_ACTIVE, PROGRAM_STATUS_PAUSED, PROGRAM_STATUS_ARCHIVED}
+PROGRAM_CONFIG_BLOCK_KEYS = (
+    "basic",
+    "entry_channel",
+    "questionnaire_segmentation",
+    "audience_entry_rule",
+    "publish_state",
+)
 
 
 def _normalized_text(value: Any) -> str:
@@ -113,6 +120,11 @@ def create_automation_program(payload: dict[str, Any], *, operator_id: str) -> d
             "updated_by": operator_id,
         }
     )
+    if source_program:
+        program_repo.copy_config_blocks(int(source_program["id"]), int(program["id"]))
+    else:
+        for block_key in PROGRAM_CONFIG_BLOCK_KEYS:
+            program_repo.upsert_config_block_row(int(program["id"]), block_key, {}, status=PROGRAM_STATUS_DRAFT)
     get_db().commit()
     return {"program": program, "summary": program_repo.get_program_summary(int(program["id"]))}
 
@@ -132,6 +144,7 @@ def copy_automation_program(program_id: int, payload: dict[str, Any], *, operato
             "description": _normalized_text(payload.get("description")) or source.get("description") or "",
             "status": PROGRAM_STATUS_DRAFT,
             "config_json": dict(source.get("config_json") or {}),
+            "copy_source_program_id": int(program_id),
         },
         operator_id=operator_id,
     )

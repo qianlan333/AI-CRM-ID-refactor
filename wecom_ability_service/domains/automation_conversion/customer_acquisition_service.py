@@ -140,8 +140,8 @@ def create_customer_acquisition_link(payload: Mapping[str, Any]) -> dict[str, An
     return {"link": repo.get_customer_acquisition_link(int(link["id"])) or link, "channel": channel}
 
 
-def list_customer_acquisition_links(*, status: str = "") -> list[dict[str, Any]]:
-    return [dict(row) for row in repo.list_customer_acquisition_links(status=status)]
+def list_customer_acquisition_links(*, status: str = "", program_id: int | None = None) -> list[dict[str, Any]]:
+    return [dict(row) for row in repo.list_customer_acquisition_links(status=status, program_id=program_id)]
 
 
 def set_customer_acquisition_link_enabled(link_row_id: int, *, enabled: bool) -> dict[str, Any]:

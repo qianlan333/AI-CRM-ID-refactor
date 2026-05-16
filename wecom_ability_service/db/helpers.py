@@ -32,3 +32,8 @@ def pg_table_columns(db, table_name: str) -> set[str]:
         (table_name,),
     ).fetchall()
     return {row["name"] for row in rows}
+
+
+def _postgres_table_columns(db, table_name: str) -> set[str]:
+    """Backward-compatible alias for older migration helpers."""
+    return pg_table_columns(db, table_name)

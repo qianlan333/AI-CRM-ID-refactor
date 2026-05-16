@@ -29,6 +29,7 @@ from ..domains.automation_conversion.program_service import (
     get_default_automation_program_id,
     list_automation_programs,
 )
+from ..domains.automation_conversion.program_setup_service import get_program_setup_payload, normalize_setup_step
 from ..domains.automation_conversion.service import (
     get_debug_payload,
     get_overview_payload,
@@ -641,6 +642,7 @@ def _automation_conversion_workspace_tabs(active_key: str) -> list[dict[str, obj
 def _automation_program_workspace_tabs(program_id: int, active_key: str) -> list[dict[str, object]]:
     normalized_program_id = int(program_id)
     tabs = (
+        ("setup", "配置向导", "api.admin_automation_program_setup"),
         ("overview", "概览", "api.admin_automation_program_overview"),
         ("flow_design", "基础配置", "api.admin_automation_program_flow_design"),
         ("member_ops", "成员运营", "api.admin_automation_program_member_ops"),
@@ -939,6 +941,46 @@ def _render_member_ops_page(*, page_error: str = "", program: dict[str, object] 
     )
 
 
+def _build_program_setup_workspace(program_id: int, *, step: str = "basic") -> dict[str, object]:
+    normalized_step = normalize_setup_step(step)
+    payload = get_program_setup_payload(int(program_id), step=normalized_step)
+    base_url = url_for("api.admin_automation_program_setup", program_id=int(program_id))
+    payload["urls"] = {
+        "base": base_url,
+        "basic": url_for("api.api_admin_automation_program_setup_basic", program_id=int(program_id)),
+        "entry_channel": url_for("api.api_admin_automation_program_setup_entry_channel", program_id=int(program_id)),
+        "segmentation": url_for("api.api_admin_automation_program_setup_segmentation", program_id=int(program_id)),
+        "audience_entry_rule": url_for("api.api_admin_automation_program_setup_audience_entry_rule", program_id=int(program_id)),
+        "publish_check": url_for("api.api_admin_automation_program_setup_publish_check", program_id=int(program_id)),
+        "publish_entry": url_for("api.api_admin_automation_program_publish_entry", program_id=int(program_id)),
+        "publish_full": url_for("api.api_admin_automation_program_publish_full", program_id=int(program_id)),
+        "customer_acquisition_links": url_for("api.api_admin_automation_program_customer_acquisition_links", program_id=int(program_id)),
+        "operations": url_for("api.admin_automation_program_operations", program_id=int(program_id)),
+    }
+    return payload
+
+
+def _render_program_setup_page(*, page_error: str = "", program: dict[str, object] | None = None, step: str = "basic"):
+    program_id = int((program or {}).get("id") or 0)
+    return _render_admin_template(
+        "automation_program_setup_wizard.html",
+        active_nav="automation_conversion",
+        page_title="自动化运营方案",
+        page_summary="",
+        breadcrumbs=_breadcrumb_items(
+            ("客户管理后台", url_for("api.admin_console_home")),
+            ("自动化运营方案", url_for("api.admin_automation_conversion")),
+            ((program or {}).get("program_name") or "方案配置向导", None),
+        ),
+        workspace_tabs=_automation_program_workspace_tabs(program_id, "setup") if program_id else [],
+        program_context=_program_context(program, active_key="setup") if program else None,
+        setup_workspace=_build_program_setup_workspace(program_id, step=step) if program_id else {},
+        admin_action_token=ensure_admin_console_action_token(),
+        page_error=page_error,
+        show_shell_meta=False,
+    )
+
+
 def _render_run_center_page(*, page_error: str = "", page_notice: str = "", page_input: dict[str, object] | None = None):
     return _render_admin_template(
         "automation_conversion_run_center_workspace.html",
@@ -1033,6 +1075,7 @@ __all__ = [
     "_build_operations_list_workspace",
     "_build_overview_workspace",
     "_build_profile_segment_workspace",
+    "_build_program_setup_workspace",
     "_build_run_center_workspace",
     "_build_workflow_editor_workspace",
     "_build_workflow_nodes_workspace",
@@ -1069,6 +1112,7 @@ __all__ = [
     "_render_operations_page",
     "_render_overview_page",
     "_render_program_list_page",
+    "_render_program_setup_page",
     "_render_run_center_page",
     "_render_workflow_editor_page",
     "_render_workflow_nodes_page",

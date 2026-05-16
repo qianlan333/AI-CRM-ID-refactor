@@ -172,6 +172,7 @@
             <td>{{ program.updated_at or "-" }}</td>
             <td>
               <div class="program-row-actions">
+                <a class="admin-button admin-button--primary" href="{{ url_for('api.admin_automation_program_setup', program_id=program.id) }}">配置向导</a>
                 <a class="admin-button admin-button--primary" href="{{ url_for('api.admin_automation_program_overview', program_id=program.id) }}">编辑</a>
                 <form method="post" action="{{ url_for('api.admin_automation_program_copy', program_id=program.id) }}">
                   <input type="hidden" name="admin_action_token" value="{{ admin_action_token }}">

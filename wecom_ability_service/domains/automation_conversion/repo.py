@@ -30,7 +30,7 @@ def list_app_setting_rows(keys: list[str]) -> list[dict[str, Any]]:
     )
 
 
-def get_default_channel(*, program_id: int | None = None) -> dict[str, Any] | None:
+def get_default_channel(*, program_id: int | None = None, allow_legacy_fallback: bool = True) -> dict[str, Any] | None:
     if program_id is not None:
         row = _fetchone_dict(
             """
@@ -44,6 +44,8 @@ def get_default_channel(*, program_id: int | None = None) -> dict[str, Any] | No
         )
         if row:
             return row
+        if not allow_legacy_fallback:
+            return None
         return _fetchone_dict(
             """
             SELECT *
@@ -62,6 +64,19 @@ def get_default_channel(*, program_id: int | None = None) -> dict[str, Any] | No
         LIMIT 1
         """
     )
+
+
+def list_channels_by_program(program_id: int, *, include_inactive: bool = True) -> list[dict[str, Any]]:
+    sql = """
+        SELECT *
+        FROM automation_channel
+        WHERE program_id = ?
+    """
+    params: list[Any] = [int(program_id)]
+    if not include_inactive:
+        sql += " AND status IN ('active', 'configured')"
+    sql += " ORDER BY updated_at DESC, id DESC"
+    return _fetchall_dicts(sql, tuple(params))
 
 
 def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
@@ -100,7 +115,7 @@ def save_channel(payload: dict[str, Any]) -> dict[str, Any]:
     is_default_channel_code = channel_code == "default_qrcode" or bool(
         program_id and channel_code == f"program_{program_id}_default_qrcode"
     )
-    existing = get_default_channel(program_id=program_id) if is_default_channel_code else None
+    existing = get_default_channel(program_id=program_id, allow_legacy_fallback=False) if is_default_channel_code else None
     db = get_db()
     params = (
         program_id,

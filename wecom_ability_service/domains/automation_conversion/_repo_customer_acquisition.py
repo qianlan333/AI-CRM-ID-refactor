@@ -19,13 +19,18 @@ def get_customer_acquisition_link(link_row_id: int) -> dict[str, Any] | None:
     )
 
 
-def list_customer_acquisition_links(*, status: str = "") -> list[dict[str, Any]]:
+def list_customer_acquisition_links(*, status: str = "", program_id: int | None = None) -> list[dict[str, Any]]:
     normalized_status = _normalized_text(status)
     params: list[Any] = []
-    where = ""
+    where_parts: list[str] = []
+    normalized_program_id = int(program_id or 0) or None
+    if normalized_program_id is not None:
+        where_parts.append("l.program_id = ?")
+        params.append(normalized_program_id)
     if normalized_status:
-        where = "WHERE l.status = ?"
+        where_parts.append("l.status = ?")
         params.append(normalized_status)
+    where = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
     return _fetchall_dicts(
         f"""
         SELECT l.*, c.channel_code, c.scene_value, c.status AS channel_status
