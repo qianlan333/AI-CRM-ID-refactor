@@ -25,7 +25,6 @@ from ...domains.automation_conversion import (
     diff_agent_prompt,
     get_agent_config_detail,
     get_agent_output_detail,
-    get_agent_output_export_job,
     get_agent_outputs_by_request,
     get_agent_outputs_by_user,
     get_all_agent_prompts,
@@ -193,6 +192,10 @@ def _normalize_string_list(value: Any) -> list[str]:
     return normalized
 
 
+def _sender_argument(arguments: dict[str, Any]) -> list[str]:
+    return _normalize_string_list(arguments.get("userid") or arguments.get("sender"))
+
+
 def _normalize_limit(value: Any, *, default: int, minimum: int, maximum: int) -> int:
     try:
         limit = int(value if value is not None else default)
@@ -273,9 +276,9 @@ def _resolve_customers(arguments: dict[str, Any], *, allow_multiple: bool) -> li
 
 
 def _resolve_sender_userids(customers: list[dict[str, Any]], explicit_userid: Any = "") -> list[str]:
-    explicit = str(explicit_userid or "").strip()
-    if explicit:
-        return [explicit]
+    explicit_userids = _normalize_string_list(explicit_userid)
+    if explicit_userids:
+        return explicit_userids
 
     userids: list[str] = []
     seen: set[str] = set()
@@ -478,7 +481,7 @@ def _run_tag_operation(operation: Any) -> dict[str, Any]:
 def _update_customer_tags(arguments: dict[str, Any]) -> dict[str, Any]:
     resolved = _resolve_customers(arguments, allow_multiple=False)[0]
     add_tags, remove_tags = _normalize_tag_arguments(arguments)
-    sender_userid = _resolve_sender_userids([resolved], arguments.get("userid"))[0]
+    sender_userid = _resolve_sender_userids([resolved], _sender_argument(arguments))[0]
     external_userid = resolved["external_userid"]
     client = WeComClient.from_app()
 
@@ -743,7 +746,7 @@ def _call_business_task(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     content = _require_text(arguments.get("content"), field_name="content")
     if name == "create_private_message_task":
         customers = _resolve_customers(arguments, allow_multiple=False)
-        payload, sender_userids = _build_private_message_payload(customers, content=content, userid=arguments.get("userid"))
+        payload, sender_userids = _build_private_message_payload(customers, content=content, userid=_sender_argument(arguments))
         if dry_run:
             return _tool_result(
                 _build_task_preview_result(
@@ -757,7 +760,7 @@ def _call_business_task(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return _tool_result(_build_task_result(task_result, task_type="private_message", customers=customers, sender_userids=sender_userids))
     if name == "create_group_message_task":
         customers = _resolve_customers(arguments, allow_multiple=True)
-        payload, sender_userids = _build_group_message_payload(customers, content=content, userid=arguments.get("userid"))
+        payload, sender_userids = _build_group_message_payload(customers, content=content, userid=_sender_argument(arguments))
         if dry_run:
             return _tool_result(
                 _build_task_preview_result(
@@ -771,7 +774,7 @@ def _call_business_task(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return _tool_result(_build_task_result(task_result, task_type="group_message", customers=customers, sender_userids=sender_userids))
     if name == "create_moment_task":
         customers = _resolve_customers(arguments, allow_multiple=True)
-        payload, sender_userids = _build_moment_payload(customers, content=content, userid=arguments.get("userid"))
+        payload, sender_userids = _build_moment_payload(customers, content=content, userid=_sender_argument(arguments))
         if dry_run:
             return _tool_result(
                 _build_task_preview_result(
