@@ -1043,7 +1043,7 @@ def test_start_campaign_rejects_active_external_conflict(app):
 
 
 # ----------------------------------------------------------------------------
-# image_library / miniprogram_library — PG/SQLite 跨库
+# image_library / miniprogram_library — PG-only library smoke
 # ----------------------------------------------------------------------------
 
 def test_pg_image_library_crud_smoke(app):
