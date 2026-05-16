@@ -203,11 +203,18 @@ def upsert_config_block_row(
 def copy_config_blocks(source_program_id: int, target_program_id: int) -> list[dict[str, Any]]:
     copied: list[dict[str, Any]] = []
     for block in list_config_block_rows(int(source_program_id)):
+        payload = dict(block.get("payload_json") or {})
+        if str(block.get("block_key") or "") == "entry_channel":
+            qrcode = dict(payload.get("qrcode") or {})
+            for key in ("qr_ticket", "qr_url", "scene_value", "config_id", "wecom_response"):
+                qrcode.pop(key, None)
+            payload["qrcode"] = qrcode
+            payload.pop("customer_acquisition_link_ids", None)
         copied.append(
             upsert_config_block_row(
                 int(target_program_id),
                 str(block.get("block_key") or ""),
-                dict(block.get("payload_json") or {}),
+                payload,
                 status=str(block.get("status") or "draft"),
                 copied_from_program_id=int(source_program_id),
                 copied_from_block_id=int(block.get("id") or 0),
@@ -333,7 +340,17 @@ def get_program_summary(program_id: int) -> dict[str, Any]:
         """,
         (int(program_id),),
     ) or {}
+    channel_count_row = _fetchone_dict(
+        """
+        SELECT COUNT(*) AS total
+        FROM automation_channel
+        WHERE program_id = ?
+          AND status <> 'archived'
+        """,
+        (int(program_id),),
+    ) or {}
     return {
         "workflow_count": int(workflow_count_row.get("total") or 0),
+        "channel_count": int(channel_count_row.get("total") or 0),
         "latest_execution_at": _normalized_text(execution_row.get("latest_execution_at")),
     }
