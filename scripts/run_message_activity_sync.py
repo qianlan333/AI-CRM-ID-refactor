@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import json
-import os
 import urllib.request
 
 from scripts import internal_http
+from scripts.script_runtime import emit_json, read_app_host, read_app_port, read_internal_api_token
 
 
 DEFAULT_PATH = "/api/admin/automation-conversion/message-activity-sync/run"
 
 
 def run() -> str:
-    host = os.getenv("APP_HOST", "127.0.0.1")
-    port = os.getenv("APP_PORT", "5000")
-    token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "").strip()
+    host = read_app_host()
+    port = read_app_port()
+    token = read_internal_api_token()
     payload = {
         "trigger_source": "scheduled",
         "operator": "cron_message_activity_sync",
@@ -27,9 +26,7 @@ def run() -> str:
         timeout_seconds=180,
         urlopen=urllib.request.urlopen,
     )
-    body = json.dumps(response_payload, ensure_ascii=False)
-    print(body)
-    return body
+    return emit_json(response_payload)
 
 
 def main() -> None:

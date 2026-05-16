@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
 import urllib.request
 
 from scripts import internal_http
-from scripts.script_runtime import read_int_env
+from scripts.script_runtime import emit_json, read_app_host, read_app_port, read_int_env, read_internal_api_token
 
 
 DEFAULT_OPERATOR = "automation_sop_runner"
@@ -25,9 +24,9 @@ def build_request(*, host: str, port: str, token: str, operator: str, path: str 
 
 
 def run() -> str:
-    host = os.getenv("APP_HOST", "127.0.0.1").strip() or "127.0.0.1"
-    port = os.getenv("APP_PORT", "5000").strip() or "5000"
-    token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "").strip()
+    host = read_app_host()
+    port = read_app_port()
+    token = read_internal_api_token()
     operator = os.getenv("AUTOMATION_SOP_OPERATOR", DEFAULT_OPERATOR).strip() or DEFAULT_OPERATOR
     path = os.getenv("AUTOMATION_SOP_RUNNER_PATH", DEFAULT_PATH).strip() or DEFAULT_PATH
     retry_count = read_int_env("AUTOMATION_SOP_RETRY_COUNT", DEFAULT_RETRY_COUNT)
@@ -45,9 +44,7 @@ def run() -> str:
         retry_interval_seconds=retry_interval_seconds,
         urlopen=urllib.request.urlopen,
     )
-    body = json.dumps(payload, ensure_ascii=False)
-    print(body)
-    return body
+    return emit_json(payload)
 
 
 def main() -> None:
