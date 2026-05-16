@@ -118,6 +118,21 @@ def test_alembic_0003_is_pg_only():
     assert "DROP COLUMN IF EXISTS" in migration
 
 
+def test_alembic_0005_is_pg_only():
+    migration = (
+        ROOT / "migrations" / "versions" / "0005_segments_and_campaigns.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_is_postgres" not in migration
+    assert "PRAGMA" not in migration
+    assert "AUTOINCREMENT" not in migration
+    assert "BIGSERIAL PRIMARY KEY" in migration
+    assert "sql_dialect TEXT NOT NULL DEFAULT 'postgres'" in migration
+    assert "JSONB NOT NULL DEFAULT '[]'::jsonb" in migration
+    assert "BOOLEAN NOT NULL DEFAULT TRUE" in migration
+    assert "ADD COLUMN IF NOT EXISTS segment_id BIGINT" in migration
+
+
 def test_alembic_0006_is_pg_only():
     migration = (
         ROOT / "migrations" / "versions" / "0006_miniprogram_library.py"
