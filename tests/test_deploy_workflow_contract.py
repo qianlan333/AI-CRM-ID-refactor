@@ -93,3 +93,15 @@ def test_runtime_code_does_not_use_deprecated_utcnow():
         "Runtime code must use explicit timezone-aware UTC helpers instead of datetime.utcnow(). "
         f"Offenders: {offenders}"
     )
+
+
+def test_alembic_0002_is_pg_only():
+    migration = (
+        ROOT / "migrations" / "versions" / "0002_perf_indexes_and_trace.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_is_postgres" not in migration
+    assert "PRAGMA" not in migration
+    assert "AUTOINCREMENT" not in migration
+    assert "BIGSERIAL PRIMARY KEY" in migration
+    assert "TIMESTAMPTZ" in migration
