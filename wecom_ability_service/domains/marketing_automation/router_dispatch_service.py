@@ -113,7 +113,8 @@ def _build_disabled_batch_result(
         }
     )
     skipped_customers = [
-        {"external_userid": external_userid, "reason": "automation_disabled"} for external_userid in external_userids
+        _candidate_skip_entry(external_userid, "automation_disabled")
+        for external_userid in external_userids
     ]
     return {
         "scenario_key": scenario_key,
