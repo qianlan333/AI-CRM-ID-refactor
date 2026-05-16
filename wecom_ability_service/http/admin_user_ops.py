@@ -140,6 +140,22 @@ def _batch_send_payload_from_request() -> dict:
     return payload
 
 
+def _run_user_ops_text_or_file_import(command_cls, dto_cls) -> dict:
+    uploaded_file = request.files.get("file")
+    if uploaded_file and uploaded_file.filename:
+        return command_cls()(
+            dto_cls(
+                file_name=uploaded_file.filename,
+                file_bytes=uploaded_file.read(),
+            )
+        )
+
+    pasted_text = _pasted_text_from_request()
+    if not pasted_text:
+        raise ValueError("file or pasted_text is required")
+    return command_cls()(dto_cls(pasted_text=pasted_text))
+
+
 def admin_user_ops_overview():
     payload = GetUserOpsOverviewQuery()(
         GetUserOpsOverviewQueryDTO(filters=_lead_pool_filters_dto_from_request_args())
@@ -176,26 +192,10 @@ def admin_user_ops_import_experience_leads():
 
 
 def admin_user_ops_import_mobile_class_terms():
-    uploaded_file = request.files.get("file")
-    pasted_text = ""
-    if uploaded_file and uploaded_file.filename:
-        try:
-            payload = ImportMobileClassTermCommand()(
-                ImportMobileClassTermCommandDTO(
-                    file_name=uploaded_file.filename,
-                    file_bytes=uploaded_file.read(),
-                )
-            )
-        except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
-        return jsonify(payload)
-
-    pasted_text = _pasted_text_from_request()
-    if not pasted_text:
-        return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
     try:
-        payload = ImportMobileClassTermCommand()(
-            ImportMobileClassTermCommandDTO(pasted_text=pasted_text)
+        payload = _run_user_ops_text_or_file_import(
+            ImportMobileClassTermCommand,
+            ImportMobileClassTermCommandDTO,
         )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -203,26 +203,10 @@ def admin_user_ops_import_mobile_class_terms():
 
 
 def admin_user_ops_import_activation_status():
-    uploaded_file = request.files.get("file")
-    pasted_text = ""
-    if uploaded_file and uploaded_file.filename:
-        try:
-            payload = ImportActivationStatusCommand()(
-                ImportActivationStatusCommandDTO(
-                    file_name=uploaded_file.filename,
-                    file_bytes=uploaded_file.read(),
-                )
-            )
-        except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
-        return jsonify(payload)
-
-    pasted_text = _pasted_text_from_request()
-    if not pasted_text:
-        return jsonify({"ok": False, "error": "file or pasted_text is required"}), 400
     try:
-        payload = ImportActivationStatusCommand()(
-            ImportActivationStatusCommandDTO(pasted_text=pasted_text)
+        payload = _run_user_ops_text_or_file_import(
+            ImportActivationStatusCommand,
+            ImportActivationStatusCommandDTO,
         )
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
