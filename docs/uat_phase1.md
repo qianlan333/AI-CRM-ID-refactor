@@ -60,7 +60,7 @@
 | 验收项 | 操作步骤 | 预期结果 |
 | --- | --- | --- |
 | 配置入口 | 登录后访问 `/admin/config` | 页面正常渲染 |
-| 配置 tabs | 查看 `/admin/config` 的配置导航 | 只包含“概览、企微标签管理、系统设置、登录与权限、配置检查清单” |
+| 配置 tabs | 查看 `/admin/config` 的配置导航 | 只包含“概览、系统设置、登录与权限、配置检查清单” |
 | 移除 MCP 工具配置 | 检查 `/admin/config` 页面源码或文本 | 不出现 `mcp_tools`、`/admin/config/mcp-tools`、“AI 工具设置” |
 | MCP 工具配置兼容入口 | 访问 `/admin/config/mcp-tools` | 返回 `302`，跳转到 `/admin/api-docs` |
 | 登录与权限页 | 访问 `/admin/config/login-access` | 页面管理企微成员授权、角色分配、启停状态和登录审计 |

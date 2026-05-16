@@ -36,7 +36,7 @@
 | 路由 | 模板文件 | 当前用途 | 所属端 | 推荐 UI 模板类型 |
 | --- | --- | --- | --- | --- |
 | `/admin/config` | `wecom_ability_service/templates/admin_console/config_overview.html` | 配置中心总览 | admin | Overview cards + quick links |
-| `/admin/config/wecom-tags` | `wecom_ability_service/templates/admin_console/config_wecom_tags.html` | 企微标签管理 | admin | Two-column management table |
+| `/admin/wecom-tags` | `wecom_ability_service/templates/admin_console/config_wecom_tags.html` | 企微标签管理 | admin | Two-column management table |
 | `/admin/config/app-settings` | `wecom_ability_service/templates/admin_console/config_app_settings.html` | 系统设置和敏感参数掩码展示 | admin | Snapshot list + settings editor |
 | `/admin/config/login-access` | `wecom_ability_service/templates/admin_console/config_login_access.html` | 企微成员授权、角色与登录审计 | admin | Member list + authorization editor |
 | `/admin/config/mcp-tools` | 无独立模板，302 到 `/admin/api-docs` | MCP 工具配置旧入口 | admin | Redirect only，不单独设计 |
