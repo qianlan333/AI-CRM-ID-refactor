@@ -16,6 +16,7 @@ from wecom_ability_service.services import (
 from wecom_ability_service.domains.marketing_automation._repo_helpers import (
     _normalize_bool,
     _normalize_int,
+    _normalized_json_text_list,
 )
 
 
@@ -38,6 +39,9 @@ def test_marketing_normalizers_are_shared_package_helpers():
     assert _normalize_int("5", "limit", minimum=1, maximum=9) == 5
     with pytest.raises(ValueError, match="limit must be <= 9"):
         _normalize_int(10, "limit", maximum=9)
+    assert _normalized_json_text_list('[" wm_a ", "", null, "wm_b"]') == ["wm_a", "wm_b"]
+    assert _normalized_json_text_list([" wm_c ", "", None]) == ["wm_c"]
+    assert _normalized_json_text_list("not-json") == []
 
 
 @pytest.fixture()

@@ -54,8 +54,8 @@ from .presenter import business_marketing_display
 from ._repo_helpers import (
     _normalize_bool,
     _normalize_int,
+    _normalized_json_text_list,
     _normalized_text,
-    _normalized_text_list,
     _nullable_timestamp_text,
 )
 from . import repo
@@ -1314,13 +1314,6 @@ def _is_signup_success(signup_status: str) -> bool:
     return any(normalized.startswith(prefix) for prefix in _EXIT_SIGNUP_PREFIXES)
 
 
-def _normalize_text_list(value: Any) -> list[str]:
-    raw_items = value if isinstance(value, list) else _json_loads(value, default=[])
-    if not isinstance(raw_items, list):
-        return []
-    return _normalized_text_list(raw_items)
-
-
 def _latest_timestamp(*values: Any) -> str:
     candidates = [_normalized_text(value) for value in values if _normalized_text(value)]
     return max(candidates) if candidates else ""
@@ -1336,7 +1329,7 @@ def _serialize_current_customer_marketing_state(row: dict[str, Any] | None) -> d
     resolved_external_userid = _normalized_text(payload.get("resolved_external_userid"))
     if not resolved_external_userid:
         resolved_external_userid = stored_external_userid
-    bound_external_userids = _normalize_text_list(payload.get("bound_external_userids"))
+    bound_external_userids = _normalized_json_text_list(payload.get("bound_external_userids"))
     if not bound_external_userids and resolved_external_userid:
         bound_external_userids = [resolved_external_userid]
     person_id = _normalize_int(
@@ -1394,7 +1387,7 @@ def _customer_marketing_state_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         "person_id": _normalize_int(row.get("person_id"), "person_id", allow_none=True),
         "storage_external_userid": _normalized_text(row.get("storage_external_userid")),
         "external_userid": _normalized_text(row.get("external_userid")),
-        "bound_external_userids": _normalize_text_list(row.get("bound_external_userids")),
+        "bound_external_userids": _normalized_json_text_list(row.get("bound_external_userids")),
         "main_stage": _normalized_text(row.get("main_stage")),
         "sub_stage": _normalized_text(row.get("sub_stage")),
         "activated": bool(row.get("activated")),
@@ -1656,7 +1649,7 @@ def evaluate_customer_marketing_state(
         "person_id": target.get("person_id"),
         "mobile": _normalized_text(target.get("mobile")),
         "resolved_external_userid": _normalized_text(target.get("external_userid")),
-        "bound_external_userids": sorted(_normalize_text_list(target.get("external_userids") or [])),
+        "bound_external_userids": sorted(_normalized_json_text_list(target.get("external_userids") or [])),
         "activated_signal_source": _normalized_text((activation_signal or {}).get("signal_source")),
         "activated_signal_external_userid": _normalized_text((activation_signal or {}).get("external_userid")),
         "converted_external_userid": _normalized_text((converted_signal or {}).get("external_userid")),

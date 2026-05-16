@@ -18,7 +18,7 @@ from ...db.helpers import fetchall_dicts as _db_fetchall_dicts
 from ...db.helpers import fetchone_dict as _db_fetchone_dict
 from ...db.helpers import placeholders as _db_placeholders
 from ...infra.helpers import db_bool as _db_bool
-from ...infra.json_utils import json_dumps
+from ...infra.json_utils import json_array, json_dumps
 
 
 def _fetchone_dict(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
@@ -35,6 +35,10 @@ def _normalized_text(value: Any) -> str:
 
 def _normalized_text_list(values: list[Any] | tuple[Any, ...] | None) -> list[str]:
     return [text for item in values or () if (text := _normalized_text(item))]
+
+
+def _normalized_json_text_list(value: Any) -> list[str]:
+    return _normalized_text_list(json_array(value))
 
 
 def _normalize_bool(value: Any, *, default: bool = False) -> bool:
@@ -94,6 +98,7 @@ __all__ = [
     "_fetchall_dicts",
     "_normalize_bool",
     "_normalize_int",
+    "_normalized_json_text_list",
     "_normalized_text",
     "_normalized_text_list",
     "_placeholders",
