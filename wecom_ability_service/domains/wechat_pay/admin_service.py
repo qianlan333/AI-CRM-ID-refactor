@@ -12,6 +12,7 @@ from typing import Any
 
 from flask import current_app
 
+from ...db import get_db
 from ...infra.json_utils import safe_json_loads
 from ..admin_audit import record_audit
 from . import repo
@@ -312,6 +313,7 @@ def create_refund_request(
             payload={"out_refund_no": out_refund_no, "amount_total": amount_total, "error": str(exc)},
             headers={},
         )
+        get_db().commit()
         raise WeChatPayAdminError(f"微信支付退款申请失败：{exc}") from exc
 
     refund_status = _normalized_text(response_payload.get("status")) or "PROCESSING"
@@ -338,6 +340,7 @@ def create_refund_request(
         },
         headers={},
     )
+    get_db().commit()
     record_audit(
         operator=_normalized_text(operator) or "crm_console",
         action_type="wechat_pay_refund_requested",
@@ -423,15 +426,18 @@ def create_export_job(
             "file_format": normalized_format,
         }
     )
+    get_db().commit()
     try:
         _run_export_job(job_id=job_id, filters=normalized_filters, scope=normalized_scope, file_format=normalized_format, cursor=cursor, limit=limit)
     except Exception as exc:  # pragma: no cover - defensive envelope
         repo.update_export_job(job_id, status="failed", error_message=str(exc)[:500], finished_at=_dt_text(datetime.now(timezone.utc)))
+        get_db().commit()
     return {"job_id": job_id, "status": "queued", "created_at": _dt_text(job.get("created_at"))}
 
 
 def _run_export_job(*, job_id: str, filters: dict[str, str], scope: str, file_format: str, cursor: str, limit: Any) -> None:
     repo.update_export_job(job_id, status="running")
+    get_db().commit()
     export_limit = normalize_limit(limit) if scope == "current_page" else EXPORT_MAX_ROWS
     query_cursor = _normalized_text(cursor) if scope == "current_page" else ""
     payload = list_orders(filters=filters, limit=export_limit if export_limit in ALLOWED_LIMITS else 100, cursor=query_cursor)
@@ -457,6 +463,7 @@ def _run_export_job(*, job_id: str, filters: dict[str, str], scope: str, file_fo
         error_message="",
         finished_at=_dt_text(datetime.now(timezone.utc)),
     )
+    get_db().commit()
 
 
 def _export_row(row: dict[str, Any]) -> list[str]:
