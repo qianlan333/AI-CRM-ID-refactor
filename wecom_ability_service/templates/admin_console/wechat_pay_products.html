@@ -330,6 +330,10 @@
       return (Number(cents || 0) / 100).toFixed(2);
     }
 
+    function dateOnly(value) {
+      return String(value || "").slice(0, 10);
+    }
+
     function toast(text) {
       const el = $("wpToast");
       if (!el) return;
@@ -373,7 +377,7 @@
             '<div class="wp-title">' + escapeHtml(item.name) + '</div>' +
             '<div class="wp-price wp-cell--center"><small>¥</small>' + money(item.amount_total) + '</div>' +
             '<div class="wp-cell--center"><span class="wp-status wp-status--' + (statusClass[item.status] || "draft") + '">' + escapeHtml(statusLabel[item.status] || item.status) + '</span></div>' +
-            '<div class="wp-muted wp-updated-at wp-cell--center">' + escapeHtml(item.updated_at || "") + '</div>' +
+            '<div class="wp-muted wp-updated-at wp-cell--center">' + escapeHtml(dateOnly(item.updated_at)) + '</div>' +
             '<div class="wp-actions">' +
               '<a class="wp-button wp-button--small" href="/admin/wechat-pay/products/' + item.id + '/edit">编辑</a>' +
               '<button class="wp-button wp-button--small js-share" type="button" data-id="' + item.id + '">分享</button>' +
