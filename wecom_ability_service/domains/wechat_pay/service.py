@@ -35,7 +35,7 @@ PRODUCT_STATUS_DRAFT = "draft"
 PRODUCT_STATUS_ACTIVE = "active"
 PRODUCT_STATUS_DISABLED = "disabled"
 PRODUCT_STATUSES = {PRODUCT_STATUS_DRAFT, PRODUCT_STATUS_ACTIVE, PRODUCT_STATUS_DISABLED}
-PRODUCT_SLICE_LIMIT = 20
+PRODUCT_SLICE_LIMIT = 10
 
 
 def _normalized_text(value: Any) -> str:
@@ -510,7 +510,7 @@ def add_admin_product_slice(product_id: int, payload: dict[str, Any]) -> dict[st
         raise WeChatPayProductError("商品不存在")
     current_count = len(repo.list_product_slices(int(product_id), enabled_only=False, include_image_data=False))
     if current_count >= PRODUCT_SLICE_LIMIT:
-        raise WeChatPayProductError("全景贴图最多 20 张")
+        raise WeChatPayProductError("全景贴图最多 10 张")
     image_library_id = int(payload.get("image_library_id") or 0)
     if image_library_id <= 0:
         raise WeChatPayProductError("请选择图片切片")

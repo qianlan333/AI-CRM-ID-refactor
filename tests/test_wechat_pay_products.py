@@ -132,6 +132,8 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert 'id="editorSharePreview"' in edit_html
     assert 'id="copyEditorShareUrl"' in edit_html
     assert "加载中" in edit_html
+    assert "最多 10 张" in edit_html
+    assert "最多 20 张" not in edit_html
     assert "手机端预览" not in edit_html
     assert "引流计划列表加载失败" not in edit_html
 
@@ -254,6 +256,29 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 
     public_html = client.get(f"/p/{product['product_code']}").get_data(as_text=True)
     assert public_html.index("YWFhYWFh") < public_html.index("YmJiYmJi")
+
+
+def test_product_slices_limit_is_ten(app, client):
+    token = _login_admin(client)
+    images = [_create_image(PNG_A, f"slice-limit-{index}") for index in range(11)]
+    product = _create_product(
+        client,
+        token,
+        slices=[
+            {"image_library_id": item["id"], "sort_order": index + 1}
+            for index, item in enumerate(images)
+        ],
+    )
+
+    detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
+    assert len(detail["slices"]) == 10
+
+    response = client.post(
+        f"/api/admin/wechat-pay/products/{product['id']}/slices",
+        json={"admin_action_token": token, "image_library_id": images[-1]["id"]},
+    )
+    assert response.status_code == 400
+    assert "最多 10 张" in response.get_json()["error"]
 
 
 def test_image_library_upload_limits_are_reused(app, client):

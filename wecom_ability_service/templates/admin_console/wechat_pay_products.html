@@ -42,10 +42,11 @@
   .wp-button--small { min-height: 32px; padding: 0 10px; border-radius: 10px; font-size: 12px; }
   .wp-list { display: grid; gap: 12px; }
   .wp-row {
-    display: grid; grid-template-columns: minmax(320px,1fr) 140px 120px 220px minmax(300px,auto);
+    display: grid; grid-template-columns: minmax(320px,1fr) 140px 120px 220px 320px;
     gap: 14px; align-items: center; padding: 18px; border: 1px solid var(--pay-line);
     border-radius: 18px; background: #fff; box-shadow: 0 8px 24px rgba(21,42,80,.04);
   }
+  .wp-row > * { min-width: 0; }
   .wp-row--head { box-shadow: none; background: #fbfcff; color: #53647d; font-size: 13px; font-weight: 850; }
   .wp-title { font-size: 17px; font-weight: 900; line-height: 1.35; }
   .wp-price { font-size: 22px; font-weight: 950; letter-spacing: 0; color: #172033; white-space: nowrap; }
@@ -59,7 +60,7 @@
   .wp-status--active { background: var(--pay-green-bg); color: var(--pay-green); }
   .wp-status--draft { background: var(--pay-orange-bg); color: var(--pay-orange); }
   .wp-status--disabled { background: #eef1f6; color: #5f6f87; }
-  .wp-actions { display: flex; gap: 7px; justify-content: flex-end; flex-wrap: wrap; }
+  .wp-actions { display: flex; gap: 7px; justify-content: flex-start; flex-wrap: wrap; }
   .wp-empty {
     border: 1px dashed #cbd6e8; border-radius: 18px; padding: 32px; text-align: center;
     background: #fbfcff; color: var(--pay-muted);
@@ -243,7 +244,7 @@
         <div class="wp-upload">
           <div>
             <div class="wp-upload-title">选择图片切片</div>
-            <div class="wp-upload-limit">限制：JPG / PNG；每张 ≤ 2MB；建议宽 750px；单张高度建议 ≤ 3000px；最多 20 张。</div>
+            <div class="wp-upload-limit">限制：JPG / PNG；每张 ≤ 2MB；建议宽 750px；单张高度建议 ≤ 3000px；最多 10 张。</div>
           </div>
           <label class="wp-button wp-button--warning">
             上传切片
@@ -567,7 +568,8 @@
     }
 
     async function uploadSlices(files) {
-      const available = 20 - draft.slices.length;
+      const available = 10 - draft.slices.length;
+      if (available <= 0) throw new Error("全景贴图最多 10 张");
       for (const file of Array.from(files || []).slice(0, available)) {
         const form = new FormData();
         form.append("image", file);
