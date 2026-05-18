@@ -180,6 +180,7 @@
   }
   .wxpay-pill--pending { color: #8a5a00; background: #fff4d6; }
   .wxpay-pill--paid { color: #0f7a43; background: #e7f8ee; }
+  .wxpay-pill--refund_processing { color: #9333ea; background: #f3e8ff; }
   .wxpay-pill--partial_refunded { color: #1d4ed8; background: #e7efff; }
   .wxpay-pill--full_refunded { color: #475569; background: #eef2f7; }
   .wxpay-empty {
@@ -449,6 +450,7 @@
             <option value="">全部</option>
             <option value="pending">待支付</option>
             <option value="paid">已支付</option>
+            <option value="refund_processing">退款处理中</option>
             <option value="partial_refunded">部分退款</option>
             <option value="full_refunded">全额退款</option>
           </select>
@@ -702,7 +704,7 @@
     created_from: "创建开始", created_to: "创建结束", product_code: "商品编码", status: "状态",
     mobile: "手机号", identity: "客户身份", transaction_id: "微信单号"
   };
-  const statusLabels = {pending: "待支付", paid: "已支付", partial_refunded: "部分退款", full_refunded: "全额退款"};
+  const statusLabels = {pending: "待支付", paid: "已支付", refund_processing: "退款处理中", partial_refunded: "部分退款", full_refunded: "全额退款"};
   document.getElementById("wxpayExport").addEventListener("click", () => {
     const currentFilters = filters();
     summary.innerHTML = Object.entries(filterLabels).map(([key, label]) => {

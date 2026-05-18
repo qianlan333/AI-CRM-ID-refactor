@@ -23,6 +23,7 @@ from .service import _create_wechat_pay_client, list_products
 ADMIN_ORDER_STATUSES = {
     "pending": "待支付",
     "paid": "已支付",
+    "refund_processing": "退款处理中",
     "partial_refunded": "部分退款",
     "full_refunded": "全额退款",
 }
@@ -87,9 +88,12 @@ def _encode_cursor(row: dict[str, Any]) -> str:
 def _merge_order_status(order: dict[str, Any]) -> str:
     amount_total = _normalized_int(order.get("amount_total"))
     refunded = _normalized_int(order.get("refunded_amount_total"))
+    active_refunding = _normalized_int(order.get("active_refund_amount_total"))
     refund_status = _normalized_text(order.get("refund_status"))
     if refund_status == "full_refunded" or (amount_total > 0 and refunded >= amount_total):
         return "full_refunded"
+    if active_refunding > 0:
+        return "refund_processing"
     if refund_status == "partial_refunded" or refunded > 0:
         return "partial_refunded"
     if _normalized_text(order.get("status")) == "paid" or _normalized_text(order.get("trade_state")) == "SUCCESS":
@@ -110,8 +114,8 @@ def _present_order(order: dict[str, Any], *, include_refund: bool = False) -> di
     status = _merge_order_status(order)
     amount_total = _normalized_int(order.get("amount_total"))
     refunded = max(0, _normalized_int(order.get("refunded_amount_total")))
-    active_refunding = 0
-    if include_refund and int(order.get("id") or 0) > 0:
+    active_refunding = max(0, _normalized_int(order.get("active_refund_amount_total")))
+    if not active_refunding and include_refund and int(order.get("id") or 0) > 0:
         active_refunding = max(0, repo.sum_active_refund_amount(int(order.get("id") or 0)))
     refundable = max(0, amount_total - refunded - active_refunding)
     product_code = _normalized_text(order.get("product_code"))

@@ -120,6 +120,36 @@ def test_wechat_pay_admin_status_mapping(app):
     assert status_by_tx["4200000003"] == "全额退款"
 
 
+def test_wechat_pay_admin_status_mapping_shows_refund_processing(app):
+    order = _insert_order(
+        out_trade_no="WXP_REFUNDING_STATUS",
+        amount_total=990,
+        status="paid",
+        trade_state="SUCCESS",
+        transaction_id="420000REFUNDINGSTATUS",
+    )
+    wechat_pay_repo.insert_refund_request(
+        {
+            "order_id": order["id"],
+            "out_trade_no": "WXP_REFUNDING_STATUS",
+            "transaction_id": "420000REFUNDINGSTATUS",
+            "out_refund_no": "WXR_REFUNDING_STATUS",
+            "reason": "客户主动申请退款",
+            "refund_amount_total": 990,
+            "order_amount_total": 990,
+            "currency": "CNY",
+            "requested_by": "tester",
+            "request_payload": {},
+        }
+    )
+
+    payload = wechat_pay_admin_service.list_orders(filters={"status": "refund_processing"}, limit=20)
+
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["status"] == "refund_processing"
+    assert payload["items"][0]["status_label"] == "退款处理中"
+
+
 def test_wechat_pay_admin_cursor_pagination(app, client):
     _login_admin(client)
     base = datetime(2026, 5, 16, 12, 0, 0)
