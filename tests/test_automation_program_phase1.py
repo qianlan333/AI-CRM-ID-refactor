@@ -2180,6 +2180,7 @@ def test_operation_task_panel_saves_single_task_payload():
     assert "unified_content_json" in html
     assert "segment_contents_json" in html
     assert "agent_config_json" in html
+    assert r"replace(/\/0(?=\/|\?|$)/" in html
     assert "withId(apiUrls.task_detail_base, currentId())" in html
     assert "withId(apiUrls.task_copy_base, taskId)" in html
     assert "withId(apiUrls.task_delete_base, taskId)" in html
