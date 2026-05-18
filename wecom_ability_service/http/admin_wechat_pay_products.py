@@ -7,6 +7,7 @@ from flask import jsonify, request, url_for
 from ..domains.wechat_pay import (
     WeChatPayProductError,
     add_admin_product_slice,
+    build_admin_product_share,
     copy_admin_product,
     create_admin_product,
     delete_admin_product,
@@ -183,6 +184,24 @@ def api_admin_wechat_pay_product_lead_plans():
     return jsonify({"ok": True, "items": list_lead_plan_options()})
 
 
+def api_admin_wechat_pay_product_share(product_id: int):
+    try:
+        product = get_admin_product(int(product_id))
+        product_url = url_for(
+            "api.h5_wechat_pay_product_page",
+            product_code=product["product_code"],
+            _external=True,
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "share": build_admin_product_share(int(product_id), product_url=product_url),
+            }
+        )
+    except WeChatPayProductError as exc:
+        return _error_response(exc, status_code=404)
+
+
 def register_routes(bp) -> None:
     bp.route("/admin/wechat-pay/products", methods=["GET"])(admin_wechat_pay_products_page)
     bp.route("/admin/wechat-pay/products/new", methods=["GET"])(admin_wechat_pay_product_new_page)
@@ -190,6 +209,7 @@ def register_routes(bp) -> None:
     bp.route("/api/admin/wechat-pay/products", methods=["GET", "POST"])(api_admin_wechat_pay_products)
     bp.route("/api/admin/wechat-pay/products/lead-plans", methods=["GET"])(api_admin_wechat_pay_product_lead_plans)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>", methods=["GET", "PUT", "DELETE"])(api_admin_wechat_pay_product)
+    bp.route("/api/admin/wechat-pay/products/<int:product_id>/share", methods=["GET"])(api_admin_wechat_pay_product_share)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/enable", methods=["POST"])(api_admin_wechat_pay_product_enable)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/disable", methods=["POST"])(api_admin_wechat_pay_product_disable)
     bp.route("/api/admin/wechat-pay/products/<int:product_id>/copy", methods=["POST"])(api_admin_wechat_pay_product_copy)

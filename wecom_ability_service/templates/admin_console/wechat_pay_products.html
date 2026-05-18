@@ -63,6 +63,10 @@
     border: 1px dashed #cbd6e8; border-radius: 18px; padding: 32px; text-align: center;
     background: #fbfcff; color: var(--pay-muted);
   }
+  .wp-inline-error {
+    margin: 18px 22px 0; border: 1px solid #ffd0d0; border-radius: 14px;
+    background: var(--pay-red-bg); color: #9d1d1d; padding: 12px 14px; font-weight: 750;
+  }
   .wp-editor { display: grid; grid-template-columns: minmax(0,1fr) 430px; gap: 18px; align-items: start; }
   .wp-card {
     border: 1px solid var(--pay-line); border-radius: 18px; background: #fff;
@@ -126,6 +130,32 @@
   .wp-footer { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--pay-line); background: rgba(255,255,255,.92); backdrop-filter: blur(14px); }
   .wp-toast { position: fixed; right: 26px; bottom: 26px; background: #10203a; color: #fff; border-radius: 14px; padding: 12px 16px; box-shadow: var(--pay-shadow); opacity: 0; transform: translateY(8px); transition: .18s ease; z-index: 30; }
   .wp-toast.show { opacity: 1; transform: translateY(0); }
+  .wp-share-modal {
+    position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center;
+    padding: 22px; background: rgba(16,32,58,.34);
+  }
+  .wp-share-modal.show { display: flex; }
+  .wp-share-panel {
+    width: min(520px, 100%); border-radius: 18px; background: #fff; border: 1px solid var(--pay-line);
+    box-shadow: 0 22px 70px rgba(16,32,58,.22); overflow: hidden;
+  }
+  .wp-share-head {
+    height: 58px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--pay-line); font-weight: 900; font-size: 18px;
+  }
+  .wp-share-close { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--pay-line); background: #fff; cursor: pointer; font-size: 20px; line-height: 1; }
+  .wp-share-body { padding: 18px; display: grid; gap: 18px; }
+  .wp-share-label { color: #53647d; font-weight: 850; font-size: 13px; margin-bottom: 8px; }
+  .wp-share-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+  .wp-share-input {
+    height: 42px; border: 1px solid var(--pay-line); border-radius: 12px; padding: 0 12px;
+    color: var(--pay-text); background: #fbfcff; min-width: 0;
+  }
+  .wp-share-qr-wrap { display: grid; justify-items: center; gap: 10px; }
+  .wp-share-qr {
+    width: 220px; height: 220px; object-fit: contain; border: 1px solid var(--pay-line);
+    border-radius: 16px; padding: 12px; background: #fff;
+  }
   @media (max-width: 1180px) {
     .wp-editor { grid-template-columns: 1fr; }
     .wp-preview { position: relative; top: auto; }
@@ -153,6 +183,7 @@
   {% else %}
   <div class="wp-editor">
     <main class="wp-card">
+      <div class="wp-inline-error" id="editorLoadError" hidden></div>
       <section class="wp-section">
         <h2>商品基础信息</h2>
         <div class="wp-grid wp-grid--three">
@@ -228,6 +259,30 @@
   {% endif %}
 </section>
 <div class="wp-toast" id="wpToast">已保存</div>
+<div class="wp-share-modal" id="shareModal" aria-hidden="true">
+  <div class="wp-share-panel">
+    <div class="wp-share-head">
+      <span>分享商品</span>
+      <button class="wp-share-close" id="shareClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="wp-share-body">
+      <div>
+        <div class="wp-share-label">商品链接</div>
+        <div class="wp-share-row">
+          <input class="wp-share-input" id="shareUrl" readonly>
+          <button class="wp-button wp-button--small" id="copyShareUrl" type="button">复制链接</button>
+        </div>
+      </div>
+      <div>
+        <div class="wp-share-label">商品二维码</div>
+        <div class="wp-share-qr-wrap">
+          <img class="wp-share-qr" id="shareQrImage" alt="商品二维码">
+          <a class="wp-button wp-button--small" id="shareQrDownload" href="#" download="商品二维码.svg">保存二维码</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts_extra %}
@@ -252,6 +307,7 @@
     };
     let leadPlans = [];
     let dragId = "";
+    let activeShareUrl = "";
 
     function escapeHtml(value) {
       return String(value == null ? "" : value).replace(/[&<>'"]/g, function (char) {
@@ -274,7 +330,13 @@
 
     async function api(url, options) {
       const response = await fetch(url, Object.assign({ credentials: "same-origin" }, options || {}));
-      const payload = await response.json();
+      const text = await response.text();
+      let payload = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch (err) {
+        throw new Error(response.ok ? "响应格式异常" : "请求失败");
+      }
       if (!response.ok || !payload.ok) throw new Error(payload.error || "请求失败");
       return payload;
     }
@@ -304,6 +366,7 @@
             '<div class="wp-muted">' + escapeHtml(item.updated_at || "") + '</div>' +
             '<div class="wp-actions">' +
               '<a class="wp-button wp-button--small" href="/admin/wechat-pay/products/' + item.id + '/edit">编辑</a>' +
+              '<button class="wp-button wp-button--small js-share" type="button" data-id="' + item.id + '">分享</button>' +
               '<button class="wp-button wp-button--small js-' + toggleClass + '" type="button" data-id="' + item.id + '">' + toggleAction + '</button>' +
               '<button class="wp-button wp-button--small js-copy" type="button" data-id="' + item.id + '">复制</button>' +
               '<button class="wp-button wp-button--small wp-button--danger js-delete" type="button" data-id="' + item.id + '">删除</button>' +
@@ -335,10 +398,30 @@
       $("leadPlan").value = String(draft.lead_program_id || 0);
     }
 
+    function showEditorError(message) {
+      const target = $("editorLoadError");
+      if (!target) return;
+      if (!message) {
+        target.hidden = true;
+        target.textContent = "";
+        return;
+      }
+      target.hidden = false;
+      target.textContent = message;
+    }
+
     function renderLeadPlans() {
       const select = $("leadPlan");
       if (!select) return;
-      select.innerHTML = leadPlans.map(function (plan) {
+      const plans = leadPlans.slice();
+      if (draft.lead_program_id && !plans.some(function (plan) { return Number(plan.program_id || 0) === Number(draft.lead_program_id); })) {
+        plans.push({
+          program_id: Number(draft.lead_program_id),
+          program_name: "已配置引流计划",
+          selectable: true
+        });
+      }
+      select.innerHTML = plans.map(function (plan) {
         const disabled = plan.selectable ? "" : " disabled";
         const suffix = plan.selectable ? "" : " · 未配置二维码";
         return '<option value="' + Number(plan.program_id || 0) + '"' + disabled + '>' + escapeHtml(plan.program_name + suffix) + '</option>';
@@ -402,16 +485,61 @@
     }
 
     async function loadEditor() {
-      const plansPayload = await api("/api/admin/wechat-pay/products/lead-plans");
-      leadPlans = plansPayload.items || [];
-      renderLeadPlans();
+      showEditorError("");
+      leadPlans = [{ program_id: 0, program_name: "不配置引流计划", selectable: true }];
       if (productId > 0) {
         const payload = await api("/api/admin/wechat-pay/products/" + productId);
         draft = payload.product;
       }
+      try {
+        const plansPayload = await api("/api/admin/wechat-pay/products/lead-plans");
+        leadPlans = plansPayload.items || leadPlans;
+      } catch (err) {
+        showEditorError("商品已加载，引流计划列表加载失败：" + (err.message || "请求失败"));
+      }
+      renderLeadPlans();
       fillFields();
       renderSlices();
       renderPreview();
+    }
+
+    async function copyText(text) {
+      const value = String(text || "");
+      if (!value) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(value);
+        return;
+      }
+      const input = document.createElement("textarea");
+      input.value = value;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+
+    function openShareModal(share) {
+      const modal = $("shareModal");
+      const urlInput = $("shareUrl");
+      const qrImage = $("shareQrImage");
+      const qrDownload = $("shareQrDownload");
+      activeShareUrl = share.url || "";
+      if (urlInput) urlInput.value = activeShareUrl;
+      if (qrImage) qrImage.src = share.qr_data_url || "";
+      if (qrDownload) qrDownload.href = share.qr_data_url || "#";
+      if (modal) {
+        modal.classList.add("show");
+        modal.setAttribute("aria-hidden", "false");
+      }
+    }
+
+    function closeShareModal() {
+      const modal = $("shareModal");
+      if (!modal) return;
+      modal.classList.remove("show");
+      modal.setAttribute("aria-hidden", "true");
     }
 
     async function uploadSlices(files) {
@@ -484,6 +612,10 @@
           toast("已复制");
           renderList();
         }
+        if (button.classList.contains("js-share")) {
+          const payload = await api("/api/admin/wechat-pay/products/" + id + "/share");
+          openShareModal(payload.share || {});
+        }
         if (button.classList.contains("js-delete")) {
           await api("/api/admin/wechat-pay/products/" + id, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: mutationBody({}) });
           toast("已删除");
@@ -497,10 +629,27 @@
         if (button.id === "saveProductBtn") {
           await saveProduct();
         }
+        if (button.id === "shareClose") {
+          closeShareModal();
+        }
+        if (button.id === "copyShareUrl") {
+          await copyText(activeShareUrl);
+          toast("链接已复制");
+        }
       } catch (err) {
         toast(err.message || "操作失败");
       }
     });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeShareModal();
+    });
+    const shareModal = $("shareModal");
+    if (shareModal) {
+      shareModal.addEventListener("click", function (event) {
+        if (event.target === shareModal) closeShareModal();
+      });
+    }
 
     document.addEventListener("input", function (event) {
       if (["productName", "productPrice", "ctaText"].includes(event.target.id)) syncDraftFromFields();
@@ -514,7 +663,15 @@
     });
 
     if (pageMode === "list") renderList().catch(function (err) { toast(err.message || "加载失败"); });
-    if (pageMode === "edit") loadEditor().catch(function (err) { toast(err.message || "加载失败"); });
+    if (pageMode === "edit") {
+      fillFields();
+      renderSlices();
+      renderPreview();
+      loadEditor().catch(function (err) {
+        showEditorError("商品加载失败：" + (err.message || "请求失败"));
+        toast(err.message || "加载失败");
+      });
+    }
   })();
 </script>
 {% endblock %}

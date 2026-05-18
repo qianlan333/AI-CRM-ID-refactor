@@ -107,6 +107,8 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     html = page.get_data(as_text=True)
     assert "商品管理" in html
     assert "创建商品" in html
+    assert "分享商品" in html
+    assert "/share" in html
     assert "商品编码" not in html
     assert "商品简介" not in html
     assert "介绍页路径" not in html
@@ -148,6 +150,23 @@ def test_product_enable_disable_copy_and_delete(app, client):
         json={"admin_action_token": token},
     )
     assert deleted.status_code == 200
+
+
+def test_admin_product_share_returns_public_link_and_qr(app, client):
+    token = _login_admin(client)
+    product = _create_product(client, token, name="可分享商品")
+
+    response = client.get(
+        f"/api/admin/wechat-pay/products/{product['id']}/share",
+        base_url="https://crm.example.test",
+    )
+
+    assert response.status_code == 200
+    share = response.get_json()["share"]
+    assert share["url"] == f"https://crm.example.test/p/{product['product_code']}"
+    assert share["product_name"] == "可分享商品"
+    assert share["qr_data_url"].startswith("data:image/svg+xml;charset=UTF-8,")
+    assert "%3Csvg" in share["qr_data_url"]
 
 
 def test_product_slices_sort_and_public_page_render_order(app, client):
