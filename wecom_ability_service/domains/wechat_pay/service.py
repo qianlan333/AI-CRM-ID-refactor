@@ -5,6 +5,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 from flask import current_app
 
@@ -402,6 +403,28 @@ def get_admin_product(product_id: int) -> dict[str, Any]:
     if not product:
         raise WeChatPayProductError("商品不存在")
     return _present_admin_product(product, include_slices=True)
+
+
+def _product_share_qr_data_url(product_url: str) -> str:
+    import segno
+
+    qr = segno.make(_normalized_text(product_url), error="m", micro=False)
+    svg = qr.svg_inline(scale=6)
+    return "data:image/svg+xml;charset=UTF-8," + quote(svg)
+
+
+def build_admin_product_share(product_id: int, *, product_url: str) -> dict[str, Any]:
+    product = get_admin_product(int(product_id))
+    url = _normalized_text(product_url)
+    if not url:
+        raise WeChatPayProductError("商品链接生成失败")
+    return {
+        "product_id": int(product["id"]),
+        "product_code": product["product_code"],
+        "product_name": product["name"],
+        "url": url,
+        "qr_data_url": _product_share_qr_data_url(url),
+    }
 
 
 def create_admin_product(payload: dict[str, Any], *, operator: str = "") -> dict[str, Any]:
