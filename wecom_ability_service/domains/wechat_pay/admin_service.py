@@ -110,7 +110,10 @@ def _present_order(order: dict[str, Any], *, include_refund: bool = False) -> di
     status = _merge_order_status(order)
     amount_total = _normalized_int(order.get("amount_total"))
     refunded = max(0, _normalized_int(order.get("refunded_amount_total")))
-    refundable = max(0, amount_total - refunded)
+    active_refunding = 0
+    if include_refund and int(order.get("id") or 0) > 0:
+        active_refunding = max(0, repo.sum_active_refund_amount(int(order.get("id") or 0)))
+    refundable = max(0, amount_total - refunded - active_refunding)
     product_code = _normalized_text(order.get("product_code"))
     product_name = _normalized_text(order.get("product_name")) or product_code
     presented = {
@@ -137,6 +140,8 @@ def _present_order(order: dict[str, Any], *, include_refund: bool = False) -> di
             {
                 "refunded_amount_total": refunded,
                 "refunded_amount_yuan": _money_text(refunded),
+                "active_refund_amount_total": active_refunding,
+                "active_refund_amount_yuan": _money_text(active_refunding),
                 "refundable_amount_total": refundable,
                 "refundable_amount_yuan": _money_text(refundable),
                 "can_refund": status in {"paid", "partial_refunded"} and refundable > 0,
