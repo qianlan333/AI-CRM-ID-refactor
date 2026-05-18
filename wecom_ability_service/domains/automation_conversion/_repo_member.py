@@ -18,6 +18,19 @@ from ._repo_helpers import (
 )
 
 
+_VALID_AUDIENCE_CODES = ("pending_questionnaire", "operating", "converted")
+
+
+def _audience_code_from_payload(payload: dict[str, Any]) -> str:
+    code = _normalized_text(payload.get("current_audience_code"))
+    if code in _VALID_AUDIENCE_CODES:
+        return code
+    current_pool = _normalized_text(payload.get("current_pool"))
+    if current_pool in _VALID_AUDIENCE_CODES:
+        return current_pool
+    return "pending_questionnaire"
+
+
 def lookup_person_id_by_external_contact_id(external_contact_id: str) -> int | None:
     row = _fetchone_dict(
         """
@@ -174,7 +187,7 @@ def insert_member(payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("joined_at")),
         _normalized_text(payload.get("last_ai_push_at")),
         _normalized_text(payload.get("ai_cooldown_until")),
-        _normalized_text(payload.get("current_audience_code")),
+        _audience_code_from_payload(payload),
         _normalized_text(payload.get("current_audience_entered_at")),
     )
     row = db.execute(
@@ -226,7 +239,7 @@ def update_member(member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         _normalized_text(payload.get("joined_at")),
         _normalized_text(payload.get("last_ai_push_at")),
         _normalized_text(payload.get("ai_cooldown_until")),
-        _normalized_text(payload.get("current_audience_code")),
+        _audience_code_from_payload(payload),
         _normalized_text(payload.get("current_audience_entered_at")),
         int(member_id),
     )
