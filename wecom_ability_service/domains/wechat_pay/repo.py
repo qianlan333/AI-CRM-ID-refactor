@@ -450,6 +450,47 @@ def get_order(out_trade_no: str) -> dict[str, Any] | None:
     )
 
 
+def get_paid_order_for_product_identity(
+    *,
+    product_code: str,
+    payer_openid: str = "",
+    unionid: str = "",
+    external_userid: str = "",
+) -> dict[str, Any] | None:
+    identity_clauses: list[str] = []
+    params: list[Any] = [_normalized_text(product_code)]
+    openid = _normalized_text(payer_openid)
+    if openid:
+        identity_clauses.append("payer_openid = ?")
+        params.append(openid)
+    normalized_unionid = _normalized_text(unionid)
+    if normalized_unionid:
+        identity_clauses.append("unionid = ?")
+        params.append(normalized_unionid)
+    normalized_external_userid = _normalized_text(external_userid)
+    if normalized_external_userid:
+        identity_clauses.append("external_userid = ?")
+        params.append(normalized_external_userid)
+    if not identity_clauses:
+        return None
+    return _fetchone_dict(
+        f"""
+        SELECT *
+        FROM wechat_pay_orders
+        WHERE product_code = ?
+          AND (status = 'paid' OR trade_state = 'SUCCESS')
+          AND NOT (
+            COALESCE(refund_status, '') = 'full_refunded'
+            OR (amount_total > 0 AND COALESCE(refunded_amount_total, 0) >= amount_total)
+          )
+          AND ({" OR ".join(identity_clauses)})
+        ORDER BY paid_at DESC NULLS LAST, updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        tuple(params),
+    )
+
+
 def update_order_from_transaction(transaction: dict[str, Any]) -> dict[str, Any]:
     out_trade_no = _normalized_text(transaction.get("out_trade_no"))
     trade_state = _normalized_text(transaction.get("trade_state"))

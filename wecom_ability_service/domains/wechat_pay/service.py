@@ -611,6 +611,16 @@ def _order_public_payload(order: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _existing_paid_order_for_product(product: dict[str, Any], identity: dict[str, Any]) -> dict[str, Any] | None:
+    order = repo.get_paid_order_for_product_identity(
+        product_code=_normalized_text(product.get("product_code")),
+        payer_openid=_normalized_text(identity.get("openid")),
+        unionid=_normalized_text(identity.get("unionid")),
+        external_userid=_normalized_text(identity.get("external_userid")),
+    )
+    return _order_public_payload(order) if order else None
+
+
 def _normalize_order_mobile(*, product: dict[str, Any], mobile: str) -> str:
     text = _normalized_text(mobile)
     if not text:
@@ -702,6 +712,12 @@ def create_jsapi_order(
     amount_total = int(product.get("amount_total") or 0)
     if amount_total <= 0:
         raise WeChatPayOrderError("product_amount_invalid")
+    existing_paid_order = _existing_paid_order_for_product(
+        product,
+        {"openid": openid, "unionid": unionid, "external_userid": external_userid},
+    )
+    if existing_paid_order:
+        raise WeChatPayOrderError("already_paid")
     normalized_mobile = _normalize_order_mobile(product=product, mobile=mobile)
     request_meta_payload = dict(request_meta or {})
     if normalized_mobile:
@@ -821,6 +837,7 @@ def build_checkout_page_state(
     if not product:
         raise WeChatPayOrderError("product_not_configured")
     identity_payload = dict(identity or {})
+    paid_order = _existing_paid_order_for_product(product, identity_payload) if identity_payload else None
     return {
         "product": product,
         "identity_ready": bool(_normalized_text(identity_payload.get("openid"))),
@@ -831,4 +848,5 @@ def build_checkout_page_state(
         "require_mobile": bool(product.get("require_mobile")),
         "cta_text": _normalized_text(product.get("cta_text")) or "确认支付",
         "lead_plan_configured": bool(product.get("lead_plan_configured")),
+        "paid_order": paid_order,
     }
