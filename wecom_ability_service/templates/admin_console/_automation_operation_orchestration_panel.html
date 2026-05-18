@@ -380,7 +380,7 @@
   async function saveTask(statusOverride = "", silent = false) {
     if (!state.currentTask) throw new Error("请先选择一个运营任务");
     const payload = collectPayload(statusOverride);
-    const data = await requestJson(withId(apiUrls.task_base, currentId()), { method: "PUT", body: JSON.stringify(payload) });
+    const data = await requestJson(withId(apiUrls.task_detail_base, currentId()), { method: "PUT", body: JSON.stringify(payload) });
     const task = data.task;
     const index = state.tasks.findIndex((item) => Number(item.id) === Number(task.id));
     if (index >= 0) state.tasks[index] = task;
@@ -431,7 +431,7 @@
 
   async function previewAudience() {
     if (!state.currentTask) return;
-    const data = await requestJson(withId(apiUrls.task_preview_base, currentId()), { method: "POST", body: JSON.stringify(collectPayload()) });
+    const data = await requestJson(withId(apiUrls.task_preview_audience_base, currentId()), { method: "POST", body: JSON.stringify(collectPayload()) });
     state.preview = data.preview || {};
     dom.previewTotal.textContent = String(state.preview.target_count ?? 0);
     renderSegments();
@@ -482,7 +482,7 @@
         }
         if (action === "delete") {
           if (!window.confirm("确认删除这个运营任务吗？删除后不可恢复。")) return;
-          await requestJson(withId(apiUrls.task_base, taskId), { method: "DELETE" });
+          await requestJson(withId(apiUrls.task_delete_base, taskId), { method: "DELETE" });
           state.tasks = state.tasks.filter((item) => Number(item.id) !== taskId);
           setCurrentTask(currentId() === taskId ? (state.tasks[0] || null) : state.currentTask);
           showFeedback(dom.listFeedback, "已删除运营任务", true);
