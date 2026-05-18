@@ -571,7 +571,7 @@ def update_recovered_order_context(
             END,
             updated_at = CURRENT_TIMESTAMP
         WHERE out_trade_no = ?
-          AND order_source LIKE 'recovered_%'
+          AND order_source LIKE ?
         RETURNING *
         """,
         (
@@ -582,6 +582,7 @@ def update_recovered_order_context(
             _normalized_text(created_at),
             _normalized_text(created_at),
             _normalized_text(out_trade_no),
+            "recovered_%",
         ),
     ).fetchone()
     return dict(row) if row else {}
