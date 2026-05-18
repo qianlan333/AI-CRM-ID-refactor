@@ -144,6 +144,16 @@
         <input type="hidden" name="miniprogram_library_ids" id="node-miniprogram-ids" value="[]">
       </div>
 
+      <div class="admin-field" id="node-attachment-field">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span>文件附件（从附件素材库选；执行时自动换 media_id）</span>
+          <button type="button" class="admin-button admin-button--ghost" id="node-attachment-pick" style="font-size:12px;">选择附件</button>
+          <span class="ac-ops-muted" id="node-attachment-summary" style="font-size:12px;">已选 0 个</span>
+        </div>
+        <div id="node-attachment-list" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;"></div>
+        <input type="hidden" name="attachment_library_ids" id="node-attachment-ids" value="[]">
+      </div>
+
       <label class="admin-checkbox">
         <input type="checkbox" name="enabled" value="1" checked>
         <span>启用当前节点</span>
@@ -487,6 +497,9 @@
         const existingMpIds = (node.standard_content_payload && Array.isArray(node.standard_content_payload.miniprogram_library_ids))
           ? node.standard_content_payload.miniprogram_library_ids : [];
         elements.nodeForm.elements.miniprogram_library_ids.value = JSON.stringify(existingMpIds);
+        const existingAttachmentIds = (node.standard_content_payload && Array.isArray(node.standard_content_payload.attachment_library_ids))
+          ? node.standard_content_payload.attachment_library_ids : [];
+        elements.nodeForm.elements.attachment_library_ids.value = JSON.stringify(existingAttachmentIds);
       } else {
         elements.nodeFormTitle.textContent = '新增节点';
         elements.nodeForm.elements.node_id.value = '';
@@ -495,10 +508,12 @@
         elements.nodeForm.elements.send_time.value = '09:00';
         elements.nodeForm.elements.enabled.checked = true;
         elements.nodeForm.elements.miniprogram_library_ids.value = '[]';
+        elements.nodeForm.elements.attachment_library_ids.value = '[]';
       }
       syncNodeTriggerModeFields();
       syncNodeContentFields(node || null);
       renderNodeMiniprogramList();
+      renderNodeAttachmentList();
       elements.nodeForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
@@ -570,6 +585,77 @@
         elements.nodeForm.elements.miniprogram_library_ids.value = JSON.stringify(picked);
         wrap.remove();
         renderNodeMiniprogramList();
+      });
+    }
+
+    let _nodeAttachmentCache = null;
+    async function loadNodeAttachmentLibrary() {
+      if (_nodeAttachmentCache) return _nodeAttachmentCache;
+      try {
+        const resp = await fetch('/api/admin/attachment-library?enabled_only=1&limit=200', { credentials: 'same-origin' });
+        const data = await resp.json();
+        _nodeAttachmentCache = data.ok ? (data.items || []) : [];
+      } catch { _nodeAttachmentCache = []; }
+      return _nodeAttachmentCache;
+    }
+    function getNodeAttachmentIds() {
+      try { return JSON.parse(elements.nodeForm.elements.attachment_library_ids.value || '[]'); }
+      catch { return []; }
+    }
+    async function renderNodeAttachmentList() {
+      const listEl = document.getElementById('node-attachment-list');
+      const summaryEl = document.getElementById('node-attachment-summary');
+      if (!listEl || !summaryEl) return;
+      const ids = getNodeAttachmentIds();
+      summaryEl.textContent = '已选 ' + ids.length + ' 个';
+      if (!ids.length) { listEl.innerHTML = '<div class="ac-ops-muted" style="font-size:12px;">暂未选择附件</div>'; return; }
+      const items = await loadNodeAttachmentLibrary();
+      listEl.innerHTML = ids.map(function (id, idx) {
+        const it = items.find(function (x) { return Number(x.id) === Number(id); }) || { name: '#' + id, file_name: '' };
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border:1px solid #e5e7eb;border-radius:4px;font-size:12px;">'
+          + '<span><strong>' + (it.name || ('#' + id)) + '</strong> <span style="color:#888;">' + (it.file_name || '') + '</span></span>'
+          + '<button type="button" class="admin-button admin-button--ghost" data-attachment-remove="' + idx + '" style="font-size:11px;">移除</button>'
+          + '</div>';
+      }).join('');
+      listEl.querySelectorAll('[data-attachment-remove]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          const cur = getNodeAttachmentIds();
+          cur.splice(Number(b.getAttribute('data-attachment-remove')), 1);
+          elements.nodeForm.elements.attachment_library_ids.value = JSON.stringify(cur);
+          renderNodeAttachmentList();
+        });
+      });
+    }
+    async function openNodeAttachmentPicker() {
+      const items = await loadNodeAttachmentLibrary();
+      if (!items.length) { alert('附件素材库还是空的，先到 /admin/attachment-library 上传文件。'); return; }
+      const existing = new Set(getNodeAttachmentIds());
+      const choices = items.map(function (it) {
+        const checked = existing.has(it.id) ? 'checked' : '';
+        return '<label style="display:flex;gap:8px;align-items:center;padding:8px;border:1px solid #ddd;border-radius:6px;margin-bottom:6px;">'
+          + '<input type="checkbox" data-attachment-pick="' + it.id + '" ' + checked + '>'
+          + '<span><strong>' + (it.name || it.file_name) + '</strong>'
+          + '<br><small>' + (it.file_name || '') + ' · ' + Math.ceil(Number(it.file_size || 0) / 1024) + 'KB</small></span>'
+          + '</label>';
+      }).join('');
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      wrap.innerHTML = '<div style="background:#fff;padding:16px;border-radius:8px;max-width:480px;width:90%;max-height:80vh;overflow:auto;">'
+        + '<h3 style="margin:0 0 12px;">选择附件</h3>' + choices
+        + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
+        + '<button class="admin-button admin-button--ghost" type="button" data-attachment-cancel>取消</button>'
+        + '<button class="admin-button admin-button--primary" type="button" data-attachment-confirm>确定</button>'
+        + '</div></div>';
+      document.body.appendChild(wrap);
+      wrap.querySelector('[data-attachment-cancel]').addEventListener('click', function () { wrap.remove(); });
+      wrap.querySelector('[data-attachment-confirm]').addEventListener('click', function () {
+        const picked = [];
+        wrap.querySelectorAll('[data-attachment-pick]:checked').forEach(function (cb) {
+          picked.push(Number(cb.getAttribute('data-attachment-pick')));
+        });
+        elements.nodeForm.elements.attachment_library_ids.value = JSON.stringify(picked.slice(0, 9));
+        wrap.remove();
+        renderNodeAttachmentList();
       });
     }
 
@@ -653,9 +739,13 @@
 
       try {
         const miniprogramIds = JSON.parse(elements.nodeForm.elements.miniprogram_library_ids?.value || '[]');
+        const attachmentIds = JSON.parse(elements.nodeForm.elements.attachment_library_ids?.value || '[]');
         payload.standard_content_payload = Object.assign({},
           payload.standard_content_payload || {},
-          { miniprogram_library_ids: Array.isArray(miniprogramIds) ? miniprogramIds.map(Number).filter(Boolean) : [] }
+          {
+            miniprogram_library_ids: Array.isArray(miniprogramIds) ? miniprogramIds.map(Number).filter(Boolean) : [],
+            attachment_library_ids: Array.isArray(attachmentIds) ? attachmentIds.map(Number).filter(Boolean).slice(0, 9) : [],
+          }
         );
       } catch { /* ignore malformed */ }
 
@@ -723,6 +813,7 @@
     elements.nodeForm.addEventListener('submit', saveNode);
     elements.nodeForm.elements.trigger_mode.addEventListener('change', syncNodeTriggerModeFields);
     document.getElementById('node-miniprogram-pick')?.addEventListener('click', openNodeMiniprogramPicker);
+    document.getElementById('node-attachment-pick')?.addEventListener('click', openNodeAttachmentPicker);
     elements.nodeTableBody.addEventListener('click', async (event) => {
       const button = event.target.closest('button[data-node-action]');
       if (!button) return;

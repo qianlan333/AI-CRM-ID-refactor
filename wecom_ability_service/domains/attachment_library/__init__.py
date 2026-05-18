@@ -328,11 +328,42 @@ def materialize_file_attachment(attachment_id: int, *, upload_file: Any | None =
     }
 
 
+def expand_attachments_with_library(attachments: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    expanded: list[dict[str, Any]] = []
+    for item in list(attachments or []):
+        if not isinstance(item, dict):
+            expanded.append(item)
+            continue
+        msgtype = str(item.get("msgtype") or "").strip().lower()
+        if msgtype != "file":
+            expanded.append(item)
+            continue
+        file_payload = item.get("file") or {}
+        if not isinstance(file_payload, dict):
+            expanded.append(item)
+            continue
+        raw_library_id = (
+            file_payload.get("library_id")
+            or file_payload.get("attachment_library_id")
+            or item.get("attachment_library_id")
+        )
+        if not raw_library_id:
+            expanded.append(item)
+            continue
+        try:
+            library_id = int(raw_library_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("file attachment library_id must be integer") from exc
+        expanded.append(materialize_file_attachment(library_id))
+    return expanded
+
+
 __all__ = [
     "WECOM_ATTACHMENT_ALLOWED_EXTENSIONS",
     "WECOM_ATTACHMENT_MAX_MB",
     "create_attachment_from_upload",
     "delete_attachment",
+    "expand_attachments_with_library",
     "find_attachment_references",
     "get_attachment",
     "list_attachments",

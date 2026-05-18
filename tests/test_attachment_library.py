@@ -72,6 +72,39 @@ def test_attachment_library_upload_endpoint_accepts_pdf(app, client):
     assert payload["item"]["tags"] == ["欢迎语", "PDF"]
 
 
+def test_private_message_payload_expands_attachment_library_ids(app):
+    from wecom_ability_service.domains.user_ops import page_service
+
+    with app.app_context():
+        item = attachment_library.create_attachment_from_upload(
+            file_bytes=PDF_BYTES,
+            file_name="pool-guide.pdf",
+            mime_type="application/pdf",
+            name="群发资料 PDF",
+        )
+        get_db().execute(
+            """
+            UPDATE attachment_library
+            SET media_id = ?, media_id_expires_at = ?
+            WHERE id = ?
+            """,
+            (
+                "file-media-pool-guide",
+                (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+                item["id"],
+            ),
+        )
+        get_db().commit()
+
+        payload, content_preview, image_count = page_service._build_private_message_payload(
+            {"content": "", "attachment_library_ids": [item["id"]]}
+        )
+
+    assert content_preview == ""
+    assert image_count == 0
+    assert payload == {"attachments": [{"msgtype": "file", "file": {"media_id": "file-media-pool-guide"}}]}
+
+
 def test_qrcode_callback_welcome_message_sends_pdf_attachment(app, monkeypatch):
     from wecom_ability_service.domains.automation_conversion import member_state_service
     from wecom_ability_service.domains.automation_conversion import service as automation_service

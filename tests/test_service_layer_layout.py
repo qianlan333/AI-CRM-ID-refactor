@@ -9,7 +9,7 @@ from wecom_ability_service.domains import DOMAIN_LAYOUTS
 # Domains that exist as directories but don't yet follow the standard
 # service.py / repo.py layout convention. Excluded from both registry-match
 # and file-mode checks until they are fleshed out.
-_STUB_DOMAINS = {"image_library", "miniprogram_library", "media_library", "campaigns", "cloud_orchestrator", "segments", "admin_auth", "broadcast_jobs"}
+_STUB_DOMAINS = {"image_library", "miniprogram_library", "attachment_library", "media_library", "campaigns", "cloud_orchestrator", "segments", "admin_auth", "broadcast_jobs"}
 
 
 def test_domain_layout_registry_matches_domain_directories():

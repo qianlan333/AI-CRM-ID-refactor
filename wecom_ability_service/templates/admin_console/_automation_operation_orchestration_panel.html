@@ -310,6 +310,7 @@
         <div class="op-task-segment-assets">
           <button class="op-task-button is-soft" type="button" data-bind-asset="image">绑定图片</button>
           <button class="op-task-button is-soft" type="button" data-bind-asset="miniprogram">绑定小程序</button>
+          <button class="op-task-button is-soft" type="button" data-bind-asset="attachment">绑定附件</button>
           <span data-asset-list>${assetChips(content)}</span>
         </div>
       </article>`;
@@ -319,7 +320,8 @@
   function assetChips(content) {
     const images = (content.image_library_ids || []).map((id) => `<span class="op-task-chip" data-image-id="${id}">图片 ${id}</span>`);
     const minis = (content.miniprogram_library_ids || []).map((id) => `<span class="op-task-chip" data-miniprogram-id="${id}">小程序 ${id}</span>`);
-    return images.concat(minis).join("");
+    const attachments = (content.attachment_library_ids || []).map((id) => `<span class="op-task-chip" data-attachment-id="${id}">附件 ${id}</span>`);
+    return images.concat(minis, attachments).join("");
   }
 
   function setMode(mode, updateTask = true) {
@@ -333,6 +335,7 @@
     return {
       image_library_ids: [...segment.querySelectorAll("[data-image-id]")].map((item) => Number(item.dataset.imageId)).filter(Boolean),
       miniprogram_library_ids: [...segment.querySelectorAll("[data-miniprogram-id]")].map((item) => Number(item.dataset.miniprogramId)).filter(Boolean),
+      attachment_library_ids: [...segment.querySelectorAll("[data-attachment-id]")].map((item) => Number(item.dataset.attachmentId)).filter(Boolean).slice(0, 9),
     };
   }
 
@@ -439,10 +442,18 @@
     if (modeButton) setMode(modeButton.dataset.mode || "unified");
     const asset = event.target.closest("[data-bind-asset]");
     if (asset) {
-      const id = Number(window.prompt(asset.dataset.bindAsset === "image" ? "请输入图片素材编号" : "请输入小程序素材编号", "") || 0);
+      const labels = { image: "请输入图片素材编号", miniprogram: "请输入小程序素材编号", attachment: "请输入附件素材编号" };
+      const id = Number(window.prompt(labels[asset.dataset.bindAsset] || "请输入素材编号", "") || 0);
       if (!id) return;
       const list = asset.closest("[data-segment-key]")?.querySelector("[data-asset-list]");
-      if (list) list.insertAdjacentHTML("beforeend", asset.dataset.bindAsset === "image" ? `<span class="op-task-chip" data-image-id="${id}">图片 ${id}</span>` : `<span class="op-task-chip" data-miniprogram-id="${id}">小程序 ${id}</span>`);
+      if (list) {
+        const html = asset.dataset.bindAsset === "image"
+          ? `<span class="op-task-chip" data-image-id="${id}">图片 ${id}</span>`
+          : asset.dataset.bindAsset === "miniprogram"
+            ? `<span class="op-task-chip" data-miniprogram-id="${id}">小程序 ${id}</span>`
+            : `<span class="op-task-chip" data-attachment-id="${id}">附件 ${id}</span>`;
+        list.insertAdjacentHTML("beforeend", html);
+      }
     }
     if (event.target.closest("[data-create-task]")) await createTask().catch((error) => showFeedback(dom.listFeedback, error.message || "新增失败"));
     if (event.target.closest("[data-create-group]")) await createGroup().catch((error) => showFeedback(dom.listFeedback, error.message || "新增失败"));

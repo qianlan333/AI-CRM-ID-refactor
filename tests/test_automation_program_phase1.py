@@ -1547,7 +1547,29 @@ def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkey
     )
 
     with app.app_context():
+        from datetime import timedelta, timezone
+
+        from wecom_ability_service.domains import attachment_library
+
         db = get_db()
+        attachment = attachment_library.create_attachment_from_upload(
+            file_bytes=b"%PDF-1.4\n%%EOF\n",
+            file_name="operation-task.pdf",
+            mime_type="application/pdf",
+            name="运营任务附件",
+        )
+        db.execute(
+            """
+            UPDATE attachment_library
+            SET media_id = ?, media_id_expires_at = ?
+            WHERE id = ?
+            """,
+            (
+                "file-media-operation-task",
+                (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+                attachment["id"],
+            ),
+        )
         db.execute("DELETE FROM automation_channel WHERE program_id = ?", (program_id,))
         channel_id = int(
             db.execute(
@@ -1603,7 +1625,10 @@ def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkey
                 "audience_day_offset": 1,
                 "behavior_filter": "lt_2",
                 "content_mode": "unified",
-                "unified_content_json": {"content_text": "今天记得回来看看"},
+                "unified_content_json": {
+                    "content_text": "今天记得回来看看",
+                    "attachment_library_ids": [attachment["id"]],
+                },
             },
             operator_id="pytest",
         )["task"]
@@ -1640,6 +1665,7 @@ def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkey
         assert captured["payload"]["sender"] == "channel_sender"
         assert captured["payload"]["external_userid"] == ["ext-operation-task-send"]
         assert captured["payload"]["text"]["content"] == "今天记得回来看看"
+        assert captured["payload"]["attachments"] == [{"msgtype": "file", "file": {"media_id": "file-media-operation-task"}}]
 
         item = db.execute(
             """
