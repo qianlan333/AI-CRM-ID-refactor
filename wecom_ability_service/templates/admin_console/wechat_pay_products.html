@@ -86,7 +86,7 @@
     border: 1px solid #ffd0d0; background: var(--pay-red-bg); color: #9d1d1d;
   }
   @keyframes wp-spin { to { transform: rotate(360deg); } }
-  .wp-editor { display: grid; grid-template-columns: minmax(0,1fr) 430px; gap: 18px; align-items: start; }
+  .wp-editor { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 18px; align-items: start; }
   .wp-editor[hidden] { display: none; }
   .wp-card {
     border: 1px solid var(--pay-line); border-radius: 18px; background: #fff;
@@ -119,61 +119,19 @@
   .wp-upload-limit { font-size: 13px; color: #7f6a4a; }
   .wp-slices { display: flex; flex-direction: column; gap: 10px; }
   .wp-slice {
-    display: grid; grid-template-columns: 34px 72px minmax(0,1fr) auto; align-items: center; gap: 12px;
+    display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 12px;
     border: 1px solid var(--pay-line); border-radius: 16px; background: #fff; padding: 10px;
   }
   .wp-slice.is-dragging { opacity: .55; transform: scale(.992); }
   .wp-drag { height: 34px; border: 1px solid var(--pay-line); border-radius: 10px; background: #f7f9fe; display: flex; align-items: center; justify-content: center; color: #8a98ad; cursor: grab; font-weight: 900; }
-  .wp-thumb { height: 54px; border-radius: 12px; overflow: hidden; background: #fff4d4; border: 1px solid #e6edf6; }
-  .wp-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .wp-slice-name { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wp-slice-sub { font-size: 12px; color: var(--pay-muted); }
   .wp-preview { border: 1px solid var(--pay-line); border-radius: 24px; background: #fff; box-shadow: 0 14px 34px rgba(21,42,80,.07); padding: 18px; position: sticky; top: 18px; }
   .wp-preview h2 { font-size: 20px; margin: 0 0 14px; font-weight: 900; }
-  .wp-phone { width: 360px; max-width: 100%; height: 760px; margin: 0 auto; border: 9px solid #17201c; border-radius: 42px; background: #fff; overflow: hidden; position: relative; box-shadow: 0 22px 60px rgba(13,25,47,.18); }
-  .wp-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 110px; height: 24px; background: #17201c; border-radius: 0 0 16px 16px; z-index: 5; }
-  .wp-phone-head { height: 50px; border-bottom: 1px solid rgba(20,32,58,.08); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #fffdf8; position: relative; z-index: 4; }
-  .wp-phone-title { font-weight: 900; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wp-phone-share { color: var(--pay-cta-deep); font-weight: 850; font-size: 13px; }
-  .wp-phone-scroll { height: 100%; overflow: auto; padding-bottom: 88px; background: #fff; }
-  .wp-preview-slice {
-    height: var(--slice-height, 156px); background:
-      linear-gradient(135deg, rgba(255,246,220,.94), rgba(252,227,164,.78)),
-      linear-gradient(90deg, rgba(47,109,246,.08), rgba(244,179,69,.14));
-    position: relative; overflow: hidden; border-bottom: 1px solid rgba(228,234,244,.72);
-  }
-  .wp-preview-slice::before {
-    content: ""; position: absolute; inset: 14px 18px; border-radius: 18px;
-    background:
-      linear-gradient(90deg, rgba(255,255,255,.70), rgba(255,255,255,.24)),
-      radial-gradient(circle at 18% 30%, rgba(255,255,255,.72), transparent 35%),
-      radial-gradient(circle at 76% 68%, rgba(255,207,119,.42), transparent 34%);
-    filter: blur(10px); transform: scale(1.04);
-  }
-  .wp-preview-slice::after {
-    content: ""; position: absolute; left: 22px; right: 22px; bottom: 18px; height: 36px;
-    border-radius: 999px; background: rgba(255,255,255,.46); filter: blur(7px);
-  }
-  .wp-preview-slice:nth-child(3n + 2) {
-    background:
-      linear-gradient(135deg, rgba(239,246,255,.88), rgba(255,240,195,.72)),
-      linear-gradient(90deg, rgba(47,109,246,.10), rgba(244,179,69,.10));
-  }
-  .wp-preview-slice:nth-child(3n) {
-    background:
-      linear-gradient(135deg, rgba(255,251,235,.92), rgba(233,248,239,.78)),
-      linear-gradient(90deg, rgba(18,138,69,.08), rgba(244,179,69,.14));
-  }
-  .wp-preview-blank { min-height: 520px; background: linear-gradient(135deg,#fff3c8,#ffe6a2); filter: blur(.2px); }
-  .wp-sticky-buy {
-    position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; padding: 10px 14px 12px;
-    background: rgba(255,253,248,.96); backdrop-filter: blur(12px); border-top: 1px solid rgba(236,217,184,.86);
-    box-shadow: 0 -10px 34px rgba(26,32,48,.12); display: grid; grid-template-columns: minmax(0,1fr) 124px; gap: 12px; align-items: center;
-  }
-  .wp-sticky-title { font-size: 12px; font-weight: 900; color: #5a5146; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wp-sticky-price { font-size: 22px; font-weight: 950; color: #c56e00; letter-spacing: 0; }
-  .wp-sticky-price small { font-size: 12px; margin-right: 2px; }
-  .wp-cta { height: 52px; border: 0; border-radius: 999px; background: var(--pay-cta); color: #2a1c07; font-weight: 950; font-size: 15px; box-shadow: 0 8px 18px rgba(244,179,69,.34); cursor: pointer; }
+  .wp-share-preview { border-radius: 18px; border: 1px solid var(--pay-line); background: #fbfcff; padding: 18px; display: grid; gap: 14px; justify-items: stretch; }
+  .wp-share-preview-empty { min-height: 220px; display: grid; place-items: center; text-align: center; color: var(--pay-muted); font-weight: 850; line-height: 1.6; }
+  .wp-share-preview-qr { width: 220px; height: 220px; justify-self: center; border-radius: 18px; border: 1px solid var(--pay-line); background: #fff; padding: 12px; object-fit: contain; }
+  .wp-share-preview-link { height: 40px; border: 1px solid var(--pay-line); border-radius: 12px; background: #fff; padding: 0 11px; color: var(--pay-text); min-width: 0; }
+  .wp-share-preview-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
   .wp-footer { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--pay-line); background: rgba(255,255,255,.92); backdrop-filter: blur(14px); }
   .wp-toast { position: fixed; right: 26px; bottom: 26px; background: #10203a; color: #fff; border-radius: 14px; padding: 12px 16px; box-shadow: var(--pay-shadow); opacity: 0; transform: translateY(8px); transition: .18s ease; z-index: 30; }
   .wp-toast.show { opacity: 1; transform: translateY(0); }
@@ -302,11 +260,8 @@
     </main>
 
     <aside class="wp-preview">
-      <h2>手机端预览</h2>
-      <div class="wp-phone">
-        <div class="wp-notch"></div>
-        <div id="phonePreview"></div>
-      </div>
+      <h2>扫码预览</h2>
+      <div class="wp-share-preview" id="editorSharePreview"></div>
     </aside>
   </div>
   {% endif %}
@@ -361,6 +316,7 @@
     let leadPlans = [];
     let dragId = "";
     let activeShareUrl = "";
+    let editorShare = null;
 
     function escapeHtml(value) {
       return String(value == null ? "" : value).replace(/[&<>'"]/g, function (char) {
@@ -436,7 +392,6 @@
       draft.cta_text = $("ctaText").value.trim() || "立即报名";
       draft.require_mobile = document.querySelector('input[name="requireMobile"]:checked')?.value === "yes";
       draft.lead_program_id = Number($("leadPlan").value || 0);
-      renderPreview();
     }
 
     function fillFields() {
@@ -501,21 +456,16 @@
       if (!target) return;
       if (!draft.slices.length) {
         target.innerHTML = '<div class="wp-empty">暂无切片。</div>';
-        renderPreview();
         return;
       }
       target.innerHTML = draft.slices.map(function (slice, index) {
-        const img = slice.image_url ? '<img src="' + escapeHtml(slice.image_url) + '" alt="">' : "";
         return '<div class="wp-slice" draggable="true" data-id="' + escapeHtml(slice.local_id || slice.id || slice.image_library_id) + '">' +
           '<div class="wp-drag">⋮⋮</div>' +
-          '<div class="wp-thumb">' + img + '</div>' +
-          '<div><div class="wp-slice-name">' + (index + 1) + '. ' + escapeHtml(slice.name || slice.file_name || "图片切片") + '</div>' +
-          '<div class="wp-slice-sub">' + Math.round(Number(slice.file_size || 0) / 1024) + ' KB</div></div>' +
+          '<div class="wp-slice-name">' + (index + 1) + '. ' + escapeHtml(slice.name || slice.file_name || "图片切片") + '</div>' +
           '<button class="wp-button wp-button--small wp-button--danger js-remove-slice" type="button" data-id="' + escapeHtml(slice.local_id || slice.id || slice.image_library_id) + '">删除</button>' +
         '</div>';
       }).join("");
       bindDrag();
-      renderPreview();
     }
 
     function bindDrag() {
@@ -536,21 +486,20 @@
       });
     }
 
-    function renderPreview() {
-      const target = $("phonePreview");
+    function renderEditorSharePreview() {
+      const target = $("editorSharePreview");
       if (!target) return;
-      const sliceHtml = draft.slices.length
-        ? draft.slices.map(function (slice, index) {
-            const height = 128 + ((index % 3) * 34);
-            return '<div class="wp-preview-slice" style="--slice-height:' + height + 'px"></div>';
-          }).join("")
-        : '<div class="wp-preview-blank"></div>';
+      if (!editorShare || !editorShare.url || !editorShare.qr_data_url) {
+        target.innerHTML = '<div class="wp-share-preview-empty">保存商品后生成扫码预览</div>';
+        return;
+      }
       target.innerHTML =
-        '<div class="wp-phone-head"><div class="wp-phone-title">' + escapeHtml(draft.name || "商品名称") + '</div><div class="wp-phone-share">分享</div></div>' +
-        '<div class="wp-phone-scroll">' + sliceHtml + '</div>' +
-        '<div class="wp-sticky-buy"><div><div class="wp-sticky-title">' + escapeHtml(draft.name || "商品名称") + '</div>' +
-        '<div class="wp-sticky-price"><small>¥</small>' + money(draft.amount_total) + '</div></div>' +
-        '<button class="wp-cta" type="button">' + escapeHtml(draft.cta_text || "立即报名") + '</button></div>';
+        '<img class="wp-share-preview-qr" src="' + escapeHtml(editorShare.qr_data_url) + '" alt="商品二维码">' +
+        '<input class="wp-share-preview-link" id="editorShareUrl" value="' + escapeHtml(editorShare.url) + '" readonly>' +
+        '<div class="wp-share-preview-actions">' +
+          '<button class="wp-button wp-button--small" id="copyEditorShareUrl" type="button">复制链接</button>' +
+          '<a class="wp-button wp-button--small" href="' + escapeHtml(editorShare.url) + '" target="_blank" rel="noreferrer">打开页面</a>' +
+        '</div>';
     }
 
     async function loadEditor() {
@@ -561,15 +510,20 @@
         ? api("/api/admin/wechat-pay/products/" + productId)
         : Promise.resolve({ product: draft });
       const plansRequest = api("/api/admin/wechat-pay/products/lead-plans");
-      const results = await Promise.all([productRequest, plansRequest]);
+      const shareRequest = productId > 0
+        ? api("/api/admin/wechat-pay/products/" + productId + "/share")
+            .catch(function () { return { share: null }; })
+        : Promise.resolve({ share: null });
+      const results = await Promise.all([productRequest, plansRequest, shareRequest]);
       if (productId > 0) {
         draft = results[0].product || draft;
       }
       leadPlans = results[1].items || leadPlans;
+      editorShare = results[2].share || null;
       renderLeadPlans();
       fillFields();
       renderSlices();
-      renderPreview();
+      renderEditorSharePreview();
       showEditorContent();
     }
 
@@ -626,8 +580,7 @@
           image_library_id: payload.item.id,
           name: payload.item.name || file.name,
           file_name: payload.item.file_name || file.name,
-          file_size: payload.item.file_size || file.size,
-          image_url: URL.createObjectURL(file)
+          file_size: payload.item.file_size || file.size
         });
       }
       renderSlices();
@@ -659,6 +612,14 @@
         draft = payload.product;
         fillFields();
         renderSlices();
+        if (productId > 0) {
+          api("/api/admin/wechat-pay/products/" + productId + "/share")
+            .then(function (sharePayload) {
+              editorShare = sharePayload.share || null;
+              renderEditorSharePreview();
+            })
+            .catch(function () {});
+        }
       }
     }
 
@@ -704,6 +665,10 @@
         }
         if (button.id === "copyShareUrl") {
           await copyText(activeShareUrl);
+          toast("链接已复制");
+        }
+        if (button.id === "copyEditorShareUrl") {
+          await copyText((editorShare || {}).url || "");
           toast("链接已复制");
         }
       } catch (err) {

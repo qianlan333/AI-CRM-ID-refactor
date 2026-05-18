@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from urllib.parse import unquote
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains import image_library
@@ -109,8 +110,10 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "创建商品" in html
     assert "分享商品" in html
     assert "/share" in html
-    assert "wp-preview-slice" in html
+    assert "wp-preview-slice" not in html
     assert "wp-preview-img" not in html
+    assert "wp-phone" not in html
+    assert "wp-thumb" not in html
     assert "全景贴图数量" not in html
     assert "商品编码" not in html
     assert "商品简介" not in html
@@ -125,7 +128,11 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     edit_html = edit_page.get_data(as_text=True)
     assert 'id="editorLoading"' in edit_html
     assert 'id="editorShell" hidden' in edit_html
+    assert "扫码预览" in edit_html
+    assert 'id="editorSharePreview"' in edit_html
+    assert 'id="copyEditorShareUrl"' in edit_html
     assert "加载中" in edit_html
+    assert "手机端预览" not in edit_html
     assert "引流计划列表加载失败" not in edit_html
 
 
@@ -178,6 +185,7 @@ def test_admin_product_share_returns_public_link_and_qr(app, client):
     assert share["product_name"] == "可分享商品"
     assert share["qr_data_url"].startswith("data:image/svg+xml;charset=UTF-8,")
     assert "%3Csvg" in share["qr_data_url"]
+    assert 'xmlns="http://www.w3.org/2000/svg"' in unquote(share["qr_data_url"])
 
 
 def test_lead_plan_options_skip_program_summary_dependency(app, client, monkeypatch):
@@ -232,6 +240,7 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 
     detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
     assert [item["image_library_id"] for item in detail["slices"]] == [second["id"], first["id"]]
+    assert all("image_url" not in item for item in detail["slices"])
 
     reordered = client.put(
         f"/api/admin/wechat-pay/products/{product['id']}/slices/reorder",

@@ -201,8 +201,8 @@ def _image_data_url(slice_row: dict[str, Any]) -> str:
     return f"data:{mime_type};base64,{data_base64}"
 
 
-def _present_slice(slice_row: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _present_slice(slice_row: dict[str, Any], *, include_image_url: bool = True) -> dict[str, Any]:
+    item = {
         "id": int(slice_row.get("id") or 0),
         "product_id": int(slice_row.get("product_id") or 0),
         "image_library_id": int(slice_row.get("image_library_id") or 0),
@@ -213,9 +213,11 @@ def _present_slice(slice_row: dict[str, Any]) -> dict[str, Any]:
         "file_name": _normalized_text(slice_row.get("file_name")),
         "mime_type": _normalized_text(slice_row.get("mime_type")) or "image/png",
         "file_size": int(slice_row.get("file_size") or 0),
-        "image_url": _image_data_url(slice_row),
         "enabled": bool(slice_row.get("enabled")),
     }
+    if include_image_url:
+        item["image_url"] = _image_data_url(slice_row)
+    return item
 
 
 def _lead_qr_from_channel(channel: dict[str, Any] | None) -> dict[str, Any]:
@@ -314,10 +316,13 @@ def get_product(product_code: str) -> dict[str, Any] | None:
     return dict(product)
 
 
-def get_product_slices(product_id: int) -> list[dict[str, Any]]:
+def get_product_slices(product_id: int, *, include_image_url: bool = True) -> list[dict[str, Any]]:
     if int(product_id or 0) <= 0:
         return []
-    return [_present_slice(row) for row in repo.list_product_slices(int(product_id))]
+    return [
+        _present_slice(row, include_image_url=include_image_url)
+        for row in repo.list_product_slices(int(product_id), include_image_data=include_image_url)
+    ]
 
 
 def get_public_product_page_state(product_code: str) -> dict[str, Any]:
@@ -385,12 +390,12 @@ def _normalize_product_payload(payload: dict[str, Any], *, existing: dict[str, A
 def _present_admin_product(product: dict[str, Any], *, include_slices: bool = False) -> dict[str, Any]:
     item = _present_db_product(product)
     item["price_yuan"] = f"{item['amount_total'] / 100:.2f}"
-    item["slice_count"] = int(product.get("slice_count") or len(get_product_slices(item["id"])))
+    item["slice_count"] = int(product.get("slice_count") or len(get_product_slices(item["id"], include_image_url=False)))
     item.pop("description", None)
     item.pop("success_url", None)
     item.pop("lead_qr", None)
     if include_slices:
-        item["slices"] = get_product_slices(item["id"])
+        item["slices"] = get_product_slices(item["id"], include_image_url=False)
     return item
 
 
@@ -406,10 +411,14 @@ def get_admin_product(product_id: int) -> dict[str, Any]:
 
 
 def _product_share_qr_data_url(product_url: str) -> str:
+    from io import BytesIO
+
     import segno
 
     qr = segno.make(_normalized_text(product_url), error="m", micro=False)
-    svg = qr.svg_inline(scale=6)
+    buffer = BytesIO()
+    qr.save(buffer, kind="svg", scale=6, xmldecl=False, svgns=True, nl=False)
+    svg = buffer.getvalue().decode("utf-8")
     return "data:image/svg+xml;charset=UTF-8," + quote(svg)
 
 
@@ -481,7 +490,7 @@ def copy_admin_product(product_id: int, *, operator: str = "") -> dict[str, Any]
     product = repo.insert_product({"product_code": _generate_product_code(), **payload})
     source_slices = [
         {"image_library_id": item["image_library_id"], "sort_order": item["sort_order"]}
-        for item in repo.list_product_slices(int(product_id), enabled_only=False)
+        for item in repo.list_product_slices(int(product_id), enabled_only=False, include_image_data=False)
     ]
     repo.replace_product_slices(int(product["id"]), source_slices)
     get_db().commit()
@@ -499,7 +508,7 @@ def delete_admin_product(product_id: int, *, operator: str = "") -> None:
 def add_admin_product_slice(product_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     if not repo.get_product_by_id(int(product_id)):
         raise WeChatPayProductError("商品不存在")
-    current_count = len(repo.list_product_slices(int(product_id), enabled_only=False))
+    current_count = len(repo.list_product_slices(int(product_id), enabled_only=False, include_image_data=False))
     if current_count >= PRODUCT_SLICE_LIMIT:
         raise WeChatPayProductError("全景贴图最多 20 张")
     image_library_id = int(payload.get("image_library_id") or 0)

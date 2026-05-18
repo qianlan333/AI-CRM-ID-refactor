@@ -210,12 +210,22 @@ def delete_product(product_id: int) -> None:
     get_db().execute("DELETE FROM wechat_pay_products WHERE id = ?", (int(product_id),))
 
 
-def list_product_slices(product_id: int, *, enabled_only: bool = True) -> list[dict[str, Any]]:
+def list_product_slices(
+    product_id: int,
+    *,
+    enabled_only: bool = True,
+    include_image_data: bool = True,
+) -> list[dict[str, Any]]:
     where = ["s.product_id = ?"]
     params: list[Any] = [int(product_id)]
     if enabled_only:
         where.append("s.enabled = TRUE")
         where.append("image.enabled = TRUE")
+    image_data_columns = (
+        "image.source_url,\n            image.data_base64"
+        if include_image_data
+        else "'' AS source_url,\n            '' AS data_base64"
+    )
     rows = _fetchall_dicts(
         f"""
         SELECT
@@ -228,8 +238,7 @@ def list_product_slices(product_id: int, *, enabled_only: bool = True) -> list[d
             s.updated_at,
             image.name AS image_name,
             image.file_name,
-            image.source_url,
-            image.data_base64,
+            {image_data_columns},
             image.mime_type,
             image.file_size
         FROM wechat_pay_product_page_slices s
@@ -263,7 +272,7 @@ def replace_product_slices(product_id: int, slices: list[dict[str, Any]]) -> lis
             """,
             (int(product_id), image_library_id, int(item.get("sort_order") or index + 1)),
         )
-    return list_product_slices(int(product_id), enabled_only=False)
+    return list_product_slices(int(product_id), enabled_only=False, include_image_data=False)
 
 
 def add_product_slice(product_id: int, image_library_id: int, *, sort_order: int | None = None) -> dict[str, Any]:
@@ -304,7 +313,7 @@ def reorder_product_slices(product_id: int, slice_ids: list[int]) -> list[dict[s
             """,
             (index + 1, int(slice_id), int(product_id)),
         )
-    return list_product_slices(int(product_id), enabled_only=False)
+    return list_product_slices(int(product_id), enabled_only=False, include_image_data=False)
 
 
 def delete_product_slice(product_id: int, slice_id: int) -> None:
