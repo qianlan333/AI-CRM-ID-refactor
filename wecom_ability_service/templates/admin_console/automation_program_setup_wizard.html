@@ -63,6 +63,7 @@
   .setup-modal__panel { width: min(720px, 100%); max-height: min(720px, 86vh); display: grid; gap: 14px; padding: 18px; overflow: auto; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.22); }
   .setup-modal__head { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
   .setup-modal__head h3 { margin: 0; }
+  .setup-picker-grid[hidden] { display: none !important; }
   .setup-result-row { display: flex; justify-content: space-between; gap: 12px; color: #344054; word-break: break-all; }
   .setup-qrcode-preview { display: grid; place-items: center; min-height: 220px; border: 1px dashed rgba(20,86,240,.22); border-radius: 14px; background: #fff; }
   .setup-qrcode-preview img { width: min(220px, 100%); aspect-ratio: 1; object-fit: contain; border-radius: 10px; }
@@ -984,7 +985,9 @@
     if (!pickerModal) return;
     if (pickerTitle) pickerTitle.textContent = pickerTitles[picker] || "选择";
     root.querySelectorAll("[data-picker-panel]").forEach((panel) => {
-      panel.hidden = panel.dataset.pickerPanel !== picker;
+      const active = panel.dataset.pickerPanel === picker;
+      panel.hidden = !active;
+      panel.style.display = active ? "" : "none";
     });
     pickerModal.hidden = false;
   };
