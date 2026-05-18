@@ -678,6 +678,21 @@ def _order_query_where(filters: dict[str, Any], params: list[Any]) -> list[str]:
             "COALESCE(refunded_amount_total, 0) = 0 "
             "AND (COALESCE(status, '') = 'paid' OR COALESCE(trade_state, '') = 'SUCCESS')"
         )
+        clauses.append(
+            "NOT EXISTS ("
+            "SELECT 1 FROM wechat_pay_refunds r "
+            "WHERE r.order_id = wechat_pay_orders.id "
+            "AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')"
+            ")"
+        )
+    elif status == "refund_processing":
+        clauses.append(
+            "EXISTS ("
+            "SELECT 1 FROM wechat_pay_refunds r "
+            "WHERE r.order_id = wechat_pay_orders.id "
+            "AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')"
+            ")"
+        )
     elif status == "partial_refunded":
         clauses.append("COALESCE(refunded_amount_total, 0) > 0 AND COALESCE(refunded_amount_total, 0) < amount_total")
     elif status == "full_refunded":
@@ -716,7 +731,13 @@ def list_admin_orders(*, filters: dict[str, Any], limit: int, cursor: str = "") 
             status,
             trade_state,
             refunded_amount_total,
-            refund_status
+            refund_status,
+            (
+                SELECT COALESCE(SUM(r.refund_amount_total), 0)
+                FROM wechat_pay_refunds r
+                WHERE r.order_id = wechat_pay_orders.id
+                  AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')
+            ) AS active_refund_amount_total
         FROM wechat_pay_orders
         WHERE {" AND ".join(clauses)}
         ORDER BY created_at DESC, id DESC
