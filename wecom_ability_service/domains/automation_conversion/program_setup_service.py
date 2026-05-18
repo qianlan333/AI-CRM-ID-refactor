@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from ...db import get_db
+from ..tags import service as tags_domain_service
 from ..wechat_pay.service import list_products as list_wechat_pay_products
 from . import program_repo, repo, workflow_repo
 from .channel_service import save_default_channel_settings
@@ -721,6 +722,60 @@ def _program_entry_payload(program_id: int) -> dict[str, Any]:
         "channels": channels,
         "qrcode_channel": qrcode_channels[0] if qrcode_channels else {},
         "customer_acquisition_links": list_customer_acquisition_links(program_id=int(program_id)),
+        "wecom_tag_catalog": _program_entry_wecom_tag_catalog(),
+    }
+
+
+def _program_entry_wecom_tag_catalog() -> dict[str, Any]:
+    try:
+        catalog = tags_domain_service.list_wecom_tag_catalog()
+    except Exception:
+        return {
+            "items": [],
+            "groups": [],
+            "total_tags": 0,
+            "tag_limit": 1000,
+            "synced_at": "",
+            "error": "企微标签加载失败，请先同步企微标签或检查企微配置。",
+        }
+    groups: list[dict[str, Any]] = []
+    for group in list(catalog.get("groups") or []):
+        tags = [
+            {
+                "tag_id": _normalized_text(tag.get("tag_id")),
+                "tag_name": _normalized_text(tag.get("tag_name")),
+                "group_id": _normalized_text(tag.get("group_id")),
+                "group_name": _normalized_text(tag.get("group_name")),
+            }
+            for tag in list(group.get("tags") or [])
+            if _normalized_text(tag.get("tag_id")) and _normalized_text(tag.get("tag_name"))
+        ]
+        if not tags:
+            continue
+        groups.append(
+            {
+                "group_id": _normalized_text(group.get("group_id")),
+                "group_name": _normalized_text(group.get("group_name")) or "未命名标签组",
+                "tags": tags,
+            }
+        )
+    items = [
+        {
+            "tag_id": _normalized_text(item.get("tag_id")),
+            "tag_name": _normalized_text(item.get("tag_name")),
+            "group_id": _normalized_text(item.get("group_id")),
+            "group_name": _normalized_text(item.get("group_name")),
+        }
+        for item in list(catalog.get("items") or [])
+        if _normalized_text(item.get("tag_id")) and _normalized_text(item.get("tag_name"))
+    ]
+    return {
+        "items": items,
+        "groups": groups,
+        "total_tags": int(catalog.get("total_tags") or len(items)),
+        "tag_limit": int(catalog.get("tag_limit") or 1000),
+        "synced_at": _normalized_text(catalog.get("synced_at")),
+        "error": "",
     }
 
 

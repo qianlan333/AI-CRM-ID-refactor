@@ -308,6 +308,64 @@ def test_setup_entry_channel_renders_qrcode_image(app, client, monkeypatch):
     assert "scene-current-program" in html
 
 
+def test_setup_entry_channel_uses_wecom_tag_selector(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import program_setup_service
+
+    _login(client, app, monkeypatch)
+    program_id = _default_program_id(app)
+    monkeypatch.setattr(
+        program_setup_service.tags_domain_service,
+        "list_wecom_tag_catalog",
+        lambda: {
+            "items": [
+                {"tag_id": "tag-high", "tag_name": "高意向", "group_name": "客户分层", "group_id": "group-tier"},
+                {"tag_id": "tag-source", "tag_name": "二维码进入", "group_name": "渠道来源", "group_id": "group-source"},
+            ],
+            "groups": [
+                {
+                    "group_id": "group-source",
+                    "group_name": "渠道来源",
+                    "tags": [
+                        {
+                            "tag_id": "tag-source",
+                            "tag_name": "二维码进入",
+                            "group_id": "group-source",
+                            "group_name": "渠道来源",
+                        }
+                    ],
+                },
+                {
+                    "group_id": "group-tier",
+                    "group_name": "客户分层",
+                    "tags": [
+                        {
+                            "tag_id": "tag-high",
+                            "tag_name": "高意向",
+                            "group_id": "group-tier",
+                            "group_name": "客户分层",
+                        }
+                    ],
+                },
+            ],
+            "total_tags": 2,
+            "tag_limit": 1000,
+            "synced_at": "2026-05-18T10:00:00+08:00",
+        },
+    )
+
+    html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=entry").get_data(as_text=True)
+
+    assert 'data-entry-tag-select' in html
+    assert "渠道来源" in html
+    assert "二维码进入" in html
+    assert "客户分层" in html
+    assert "高意向" in html
+    assert '<input name="entry_tag_group_name"' not in html
+    assert '<input name="entry_tag_name"' not in html
+    assert 'type="hidden" name="entry_tag_group_name"' in html
+    assert 'type="hidden" name="entry_tag_name"' in html
+
+
 def test_blank_setup_entry_does_not_show_default_qrcode(app, client, monkeypatch):
     from wecom_ability_service.domains.automation_conversion import repo
     from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program
