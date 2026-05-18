@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from urllib.parse import unquote
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains import image_library
@@ -109,8 +110,10 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "创建商品" in html
     assert "分享商品" in html
     assert "/share" in html
-    assert "wp-preview-slice" in html
+    assert "wp-preview-slice" not in html
     assert "wp-preview-img" not in html
+    assert "wp-phone" not in html
+    assert "wp-thumb" not in html
     assert "全景贴图数量" not in html
     assert "商品编码" not in html
     assert "商品简介" not in html
@@ -119,6 +122,20 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     items = client.get("/api/admin/wechat-pay/products").get_json()["items"]
     assert items[0]["name"] == "私域成交动作拆解课"
     assert {"name", "amount_total", "status", "updated_at"}.issubset(items[0])
+
+    edit_page = client.get(f"/admin/wechat-pay/products/{product['id']}/edit")
+    assert edit_page.status_code == 200
+    edit_html = edit_page.get_data(as_text=True)
+    assert 'id="editorLoading"' in edit_html
+    assert 'id="editorShell" hidden' in edit_html
+    assert "扫码预览" in edit_html
+    assert 'id="editorSharePreview"' in edit_html
+    assert 'id="copyEditorShareUrl"' in edit_html
+    assert "加载中" in edit_html
+    assert "最多 10 张" in edit_html
+    assert "最多 20 张" not in edit_html
+    assert "手机端预览" not in edit_html
+    assert "引流计划列表加载失败" not in edit_html
 
 
 def test_product_enable_disable_copy_and_delete(app, client):
@@ -170,6 +187,44 @@ def test_admin_product_share_returns_public_link_and_qr(app, client):
     assert share["product_name"] == "可分享商品"
     assert share["qr_data_url"].startswith("data:image/svg+xml;charset=UTF-8,")
     assert "%3Csvg" in share["qr_data_url"]
+    assert 'xmlns="http://www.w3.org/2000/svg"' in unquote(share["qr_data_url"])
+
+
+def test_lead_plan_options_skip_program_summary_dependency(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import program_service
+
+    _login_admin(client)
+    program = get_db().execute(
+        """
+        INSERT INTO automation_program (program_code, program_name, status, config_json)
+        VALUES ('lead_plan_direct_options', '直接读取的引流计划', 'active', '{}'::jsonb)
+        RETURNING *
+        """
+    ).fetchone()
+    get_db().execute(
+        """
+        INSERT INTO automation_channel (
+            program_id, channel_code, channel_name, qr_url, status
+        )
+        VALUES (?, 'program_direct_options', '默认渠道', 'https://example.com/direct-qr.png', 'active')
+        """,
+        (program["id"],),
+    )
+    get_db().commit()
+
+    def fail_summary_loader(**kwargs):
+        raise AssertionError("lead plan options must not depend on program summaries")
+
+    monkeypatch.setattr(program_service, "list_automation_programs", fail_summary_loader)
+
+    response = client.get("/api/admin/wechat-pay/products/lead-plans")
+
+    assert response.status_code == 200
+    items = response.get_json()["items"]
+    option = next(item for item in items if item["program_id"] == program["id"])
+    assert option["program_name"] == "直接读取的引流计划"
+    assert option["qr_url"] == "https://example.com/direct-qr.png"
+    assert option["selectable"] is True
 
 
 def test_product_slices_sort_and_public_page_render_order(app, client):
@@ -187,6 +242,7 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 
     detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
     assert [item["image_library_id"] for item in detail["slices"]] == [second["id"], first["id"]]
+    assert all("image_url" not in item for item in detail["slices"])
 
     reordered = client.put(
         f"/api/admin/wechat-pay/products/{product['id']}/slices/reorder",
@@ -200,6 +256,29 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 
     public_html = client.get(f"/p/{product['product_code']}").get_data(as_text=True)
     assert public_html.index("YWFhYWFh") < public_html.index("YmJiYmJi")
+
+
+def test_product_slices_limit_is_ten(app, client):
+    token = _login_admin(client)
+    images = [_create_image(PNG_A, f"slice-limit-{index}") for index in range(11)]
+    product = _create_product(
+        client,
+        token,
+        slices=[
+            {"image_library_id": item["id"], "sort_order": index + 1}
+            for index, item in enumerate(images)
+        ],
+    )
+
+    detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
+    assert len(detail["slices"]) == 10
+
+    response = client.post(
+        f"/api/admin/wechat-pay/products/{product['id']}/slices",
+        json={"admin_action_token": token, "image_library_id": images[-1]["id"]},
+    )
+    assert response.status_code == 400
+    assert "最多 10 张" in response.get_json()["error"]
 
 
 def test_image_library_upload_limits_are_reused(app, client):
