@@ -702,6 +702,7 @@ def _sync_sop_progress_for_transition_non_blocking(before: dict[str, Any], after
 
 def _persist_member(member: dict[str, Any] | None, payload: dict[str, Any]) -> dict[str, Any]:
     db = get_db()
+    audience_sync_result: dict[str, Any] = {}
     try:
         before = _serialize_member(member or {})
         if member and member.get("id"):
@@ -710,12 +711,35 @@ def _persist_member(member: dict[str, Any] | None, payload: dict[str, Any]) -> d
             saved = repo.insert_member(payload)
         from .workflow_runtime import sync_conversion_member_audience
 
-        sync_conversion_member_audience(saved)
+        audience_sync_result = sync_conversion_member_audience(saved)
         saved = repo.get_member_by_id(int(saved["id"])) or saved
         db.commit()
     except Exception:
         db.rollback()
         raise
+    if bool(audience_sync_result.get("updated")):
+        try:
+            from .operation_task_service import run_audience_entered_operation_tasks
+
+            run_audience_entered_operation_tasks(
+                member_id=int(audience_sync_result.get("member_id") or 0),
+                audience_code=_normalized_text(audience_sync_result.get("audience_code")),
+                audience_entry_id=int(audience_sync_result.get("audience_entry_id") or 0),
+                operator_id="audience_entered",
+            )
+        except Exception:
+            try:
+                get_db().rollback()
+            except Exception:
+                pass
+            try:
+                current_app.logger.exception(
+                    "automation operation task audience-entered trigger failed member_id=%s audience=%s",
+                    audience_sync_result.get("member_id"),
+                    audience_sync_result.get("audience_code"),
+                )
+            except Exception:
+                pass
     _sync_sop_progress_for_transition_non_blocking(before, _serialize_member(saved))
     return repo.get_member_by_id(int(saved["id"])) or saved
 
@@ -1486,12 +1510,19 @@ def get_debug_payload(*, external_contact_id: str = "", phone: str = "") -> dict
     }
 
 
-def sync_member_from_questionnaire_submission(*, external_contact_id: str = "", phone: str = "", operator_id: str = "system") -> dict[str, Any]:
+def sync_member_from_questionnaire_submission(
+    *,
+    external_contact_id: str = "",
+    phone: str = "",
+    questionnaire_id: int | None = None,
+    operator_id: str = "system",
+) -> dict[str, Any]:
     from . import member_state_service
 
     return member_state_service.sync_member_from_questionnaire_submission(
         external_contact_id=external_contact_id,
         phone=phone,
+        questionnaire_id=questionnaire_id,
         operator_id=operator_id,
     )
 

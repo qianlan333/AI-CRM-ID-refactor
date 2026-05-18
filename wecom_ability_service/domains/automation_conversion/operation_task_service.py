@@ -24,6 +24,7 @@ AUDIENCE_CODES = {AUDIENCE_PENDING_QUESTIONNAIRE, AUDIENCE_OPERATING, AUDIENCE_C
 TASK_STATUSES = {"draft", "active", "paused", "archived"}
 BEHAVIOR_FILTERS = {"none", "lt_2", "between_2_9", "gte_10"}
 CONTENT_MODES = {"unified", "profile_layered", "behavior_layered", "agent"}
+TRIGGER_TYPES = {"scheduled_daily", "audience_entered"}
 
 
 def _text(value: Any) -> str:
@@ -86,6 +87,10 @@ def _execution_id_for_task(task_id: int, scheduled_for: datetime) -> str:
     return f"actask-{int(task_id)}-{scheduled_for.strftime('%Y%m%d%H%M')}"
 
 
+def _event_execution_id_for_task(task_id: int, audience_entry_id: int) -> str:
+    return f"actask-event-{int(task_id)}-{int(audience_entry_id)}"
+
+
 def _normalize_content_item(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "content_text": _text(payload.get("content_text")),
@@ -119,6 +124,9 @@ def _normalize_task_payload(payload: dict[str, Any], *, program_id: int, operato
     status = _text(source.get("status") if "status" in source else current.get("status")) or "draft"
     if status not in TASK_STATUSES:
         raise ValueError("任务状态不正确")
+    trigger_type = _text(source.get("trigger_type") if "trigger_type" in source else current.get("trigger_type")) or "scheduled_daily"
+    if trigger_type not in TRIGGER_TYPES:
+        raise ValueError("触发方式不正确")
     audience_code = _text(source.get("target_audience_code") if "target_audience_code" in source else current.get("target_audience_code")) or AUDIENCE_OPERATING
     if audience_code not in AUDIENCE_CODES:
         raise ValueError("目标人群不正确")
@@ -144,6 +152,7 @@ def _normalize_task_payload(payload: dict[str, Any], *, program_id: int, operato
         "task_name": task_name,
         "description": _text(source.get("description") if "description" in source else current.get("description")),
         "status": status,
+        "trigger_type": trigger_type,
         "send_time": _parse_time(source.get("send_time") if "send_time" in source else current.get("send_time")),
         "timezone": _text(source.get("timezone") if "timezone" in source else current.get("timezone")) or "Asia/Shanghai",
         "target_audience_code": audience_code,
@@ -319,7 +328,11 @@ def _candidate_entries(task: dict[str, Any], *, now: datetime | None = None) -> 
         member = dict(entry.get("member") or {})
         if not _member_in_program_channels(member, program_channel_ids):
             continue
-        if not _entry_due(entry, day_offset=_int(task.get("audience_day_offset"), default=1, minimum=1), now=current_time):
+        if _text(task.get("trigger_type")) != "audience_entered" and not _entry_due(
+            entry,
+            day_offset=_int(task.get("audience_day_offset"), default=1, minimum=1),
+            now=current_time,
+        ):
             continue
         behavior_filter = _text(task.get("behavior_filter")) or "none"
         if behavior_filter != "none" and _behavior_key(member) != behavior_filter:
@@ -477,8 +490,11 @@ def _materialize_operation_task_execution(
     task: dict[str, Any],
     scheduled_for: datetime,
     operator_id: str,
+    entries: list[dict[str, Any]] | None = None,
+    execution_id: str = "",
+    summary_extra: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    execution_id = _execution_id_for_task(int(task["id"]), scheduled_for)
+    execution_id = _text(execution_id) or _execution_id_for_task(int(task["id"]), scheduled_for)
     execution = repo.insert_execution(
         {
             "execution_id": execution_id,
@@ -493,7 +509,7 @@ def _materialize_operation_task_execution(
     if existing_items:
         return execution, existing_items
 
-    entries = _candidate_entries(task, now=scheduled_for)
+    entries = list(entries) if entries is not None else _candidate_entries(task, now=scheduled_for)
     created_items: list[dict[str, Any]] = []
     failed_count = 0
     for entry in entries:
@@ -529,10 +545,146 @@ def _materialize_operation_task_execution(
             "summary_json": {
                 "created_item_count": len(created_items),
                 "materialized_by": _text(operator_id) or "operation_task_runner",
+                **dict(summary_extra or {}),
             },
         },
     )
     return execution, created_items
+
+
+def _entry_matches_event_task(task: dict[str, Any], entry: dict[str, Any]) -> bool:
+    if _text(task.get("status")) != "active":
+        return False
+    if _text(task.get("trigger_type")) != "audience_entered":
+        return False
+    if _text(task.get("target_audience_code")) != _text(entry.get("audience_code")):
+        return False
+    member = dict(entry.get("member") or {})
+    if not _member_in_program_channels(member, _program_channel_ids(int(task.get("program_id") or 0))):
+        return False
+    behavior_filter = _text(task.get("behavior_filter")) or "none"
+    if behavior_filter != "none" and _behavior_key(member) != behavior_filter:
+        return False
+    return True
+
+
+def _entry_bundle_for_event(*, member_id: int, audience_entry_id: int = 0, audience_code: str = "") -> dict[str, Any] | None:
+    member = workflow_repo.get_automation_member_row(int(member_id))
+    if not member:
+        return None
+    entries = workflow_repo.list_member_audience_entry_rows(int(member_id), current_only=True)
+    selected: dict[str, Any] | None = None
+    for entry in entries:
+        if audience_entry_id and int(entry.get("id") or 0) == int(audience_entry_id):
+            selected = dict(entry)
+            break
+    if selected is None:
+        for entry in entries:
+            if not _text(audience_code) or _text(entry.get("audience_code")) == _text(audience_code):
+                selected = dict(entry)
+                break
+    if selected is None:
+        return None
+    selected["member"] = dict(member)
+    return selected
+
+
+def run_audience_entered_operation_tasks(
+    *,
+    member_id: int,
+    audience_code: str,
+    audience_entry_id: int = 0,
+    now: datetime | None = None,
+    operator_id: str = "operation_task_event",
+) -> dict[str, Any]:
+    entry = _entry_bundle_for_event(
+        member_id=int(member_id),
+        audience_entry_id=int(audience_entry_id or 0),
+        audience_code=_text(audience_code),
+    )
+    if not entry:
+        return {"ok": True, "ran": 0, "enqueued_count": 0, "results": [], "reason": "audience_entry_not_found"}
+    current_time = now or _now()
+    member = dict(entry.get("member") or {})
+    source_channel_id = _int(member.get("source_channel_id"), minimum=0)
+    if source_channel_id <= 0:
+        return {"ok": True, "ran": 0, "enqueued_count": 0, "results": [], "reason": "source_channel_missing"}
+    channel_row = get_db().execute(
+        "SELECT program_id FROM automation_channel WHERE id = ? LIMIT 1",
+        (source_channel_id,),
+    ).fetchone()
+    if not channel_row or not int(channel_row["program_id"] or 0):
+        return {"ok": True, "ran": 0, "enqueued_count": 0, "results": [], "reason": "program_channel_missing"}
+    program_id = int(channel_row["program_id"])
+    tasks = repo.list_tasks(program_id, status="active")
+    results: list[dict[str, Any]] = []
+    for task in tasks:
+        if not _entry_matches_event_task(task, entry):
+            continue
+        execution_id = _event_execution_id_for_task(int(task["id"]), int(entry.get("id") or 0))
+        source_id = f"{int(task['id'])}:audience_entered:{int(entry.get('id') or 0)}"
+        if repo.get_execution(execution_id) or broadcast_queue_repo.fetch_job_by_source(
+            source_type="operation_task",
+            source_id=source_id,
+            source_table="automation_operation_task_execution",
+        ):
+            continue
+        execution, items = _materialize_operation_task_execution(
+            task=task,
+            scheduled_for=current_time,
+            operator_id=operator_id,
+            entries=[entry],
+            execution_id=execution_id,
+            summary_extra={
+                "trigger_type": "audience_entered",
+                "audience_entry_id": int(entry.get("id") or 0),
+            },
+        )
+        if not items:
+            results.append(
+                {
+                    "task_id": int(task["id"]),
+                    "execution_id": execution_id,
+                    "enqueued_count": 0,
+                    "status": _text(execution.get("status")),
+                }
+            )
+            continue
+        broadcast_queue.enqueue_job(
+            source_type="operation_task",
+            source_id=source_id,
+            source_table="automation_operation_task_execution",
+            scheduled_for=current_time,
+            target_external_userids=[],
+            target_summary=f"{task.get('task_name')} 入池即触发",
+            content_type="private_message",
+            content_payload={
+                "trigger_type": "audience_entered",
+                "scheduled_for": current_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "execution_id": execution_id,
+                "task_id": int(task["id"]),
+                "operator_id": operator_id,
+            },
+            content_summary=_text(task.get("task_name"))[:100],
+            trace_id=execution_id,
+            created_by=operator_id,
+            allow_empty_targets=True,
+        )
+        results.append(
+            {
+                "task_id": int(task["id"]),
+                "execution_id": execution_id,
+                "enqueued_count": 1,
+                "scheduled_for": current_time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+    get_db().commit()
+    return {
+        "ok": True,
+        "ran": len(results),
+        "enqueued_count": sum(int(item.get("enqueued_count") or 0) for item in results),
+        "results": results,
+    }
 
 
 def run_operation_task_broadcast_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -696,6 +848,8 @@ def run_due_operation_tasks(*, program_id: int | None = None, now: datetime | No
             tasks.extend(repo.list_tasks(int(row["program_id"]), status="active"))
     results: list[dict[str, Any]] = []
     for task in tasks:
+        if _text(task.get("trigger_type")) == "audience_entered":
+            continue
         schedule_dates = [
             current_time,
             current_time + timedelta(days=1),
