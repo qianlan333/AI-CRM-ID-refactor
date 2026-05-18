@@ -571,6 +571,8 @@ def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, mo
     assert 'data-next-step="operating">结束</strong>' in html
     assert "本项已关闭" in html
     assert "data-audience-modal" in html
+    assert ".setup-picker-grid[hidden]" in html
+    assert 'panel.style.display = active ? "" : "none";' in html
     assert 'data-open-picker="order_product"' in html
     assert 'data-open-picker="questionnaire"' in html
     assert 'data-open-picker="conversion_product"' in html
@@ -584,6 +586,7 @@ def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, mo
     assert "AI 测评报告" in html
     assert "AI 测评报告" in picker_html
     assert "¥99.00" in picker_html
+    assert questionnaire["title"] not in picker_html
     for forbidden in ["product_code", "out_trade_no", "external_userid", "unionid", "respondent_key", "client_order_ref"]:
         assert forbidden not in html
         assert forbidden not in picker_html
