@@ -26,6 +26,7 @@
   .op-task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .op-task-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .op-task-field { display: grid; gap: 6px; min-width: 0; }
+  .op-task-field[hidden] { display: none; }
   .op-task-field > span { color: #667085; font-size: 13px; font-weight: 900; }
   .op-task-field input, .op-task-field select, .op-task-field textarea { width: 100%; padding: 11px 12px; border: 1px solid rgba(15,23,42,.12); border-radius: 10px; background: #fff; }
   .op-task-field textarea { min-height: 110px; resize: vertical; }
@@ -81,9 +82,10 @@
       <section class="op-task-section">
         <h3>触发与对象</h3>
         <div class="op-task-grid op-task-grid--three">
-          <label class="op-task-field"><span>每天触发时间</span><input data-field="send_time" type="time"></label>
+          <label class="op-task-field"><span>触发方式</span><select data-field="trigger_type"><option value="scheduled_daily">每天固定时间触发</option><option value="audience_entered">进入人群后立即触发</option></select></label>
+          <label class="op-task-field" data-scheduled-trigger-field><span>每天触发时间</span><input data-field="send_time" type="time"></label>
           <label class="op-task-field"><span>目标人群</span><select data-field="target_audience_code"><option value="pending_questionnaire">待填问卷</option><option value="operating">运营中</option><option value="converted">已转化</option></select></label>
-          <label class="op-task-field"><span>进入人群第 N 天</span><input data-field="audience_day_offset" type="number" min="1" step="1"></label>
+          <label class="op-task-field" data-scheduled-trigger-field><span>进入人群第 N 天</span><input data-field="audience_day_offset" type="number" min="1" step="1"></label>
           <label class="op-task-field" style="grid-column: 1 / -1;"><span>行为过滤</span><select data-field="behavior_filter"><option value="none">不过滤</option><option value="lt_2">消息少于 2 次</option><option value="between_2_9">消息 2-9 次</option><option value="gte_10">消息大于等于 10 次</option></select></label>
         </div>
         <div class="op-task-actions">
@@ -120,6 +122,7 @@
   const state = { groups: [], tasks: [], currentTask: null, profileTemplates: [], profileSegments: [], agents: [], preview: {} };
   const labels = {
     status: { draft: "草稿", active: "启用", paused: "停用", archived: "归档" },
+    trigger: { scheduled_daily: "每天固定时间", audience_entered: "进入人群后立即触发" },
     behavior: { lt_2: "消息少于 2", between_2_9: "消息 2 ~ 9", gte_10: "消息大于等于 10" },
   };
   const behaviorSegments = [
@@ -226,16 +229,25 @@
     setValue("group_id", task.group_id || "");
     setValue("status", task.status || "draft");
     setValue("description", task.description || "");
+    setValue("trigger_type", task.trigger_type || "scheduled_daily");
     setValue("send_time", task.send_time || "10:00");
     setValue("target_audience_code", task.target_audience_code || "operating");
     setValue("audience_day_offset", task.audience_day_offset || 1);
     setValue("behavior_filter", task.behavior_filter || "none");
     setValue("profile_segment_template_id", task.profile_segment_template_id || "");
     setMode(task.content_mode || "unified", false);
+    syncTriggerFields();
     if (String(task.content_mode || "") === "profile_layered" && task.profile_segment_template_id) {
       loadProfileSegments(task.profile_segment_template_id).then(renderSegments).catch(() => {});
     }
     renderList();
+  }
+
+  function syncTriggerFields() {
+    const isAudienceEntered = String(getValue("trigger_type") || "scheduled_daily") === "audience_entered";
+    root.querySelectorAll("[data-scheduled-trigger-field]").forEach((field) => {
+      field.hidden = isAudienceEntered;
+    });
   }
 
   async function loadProfileTemplates() {
@@ -331,6 +343,7 @@
       task_name: String(getValue("task_name") || "").trim(),
       description: String(getValue("description") || "").trim(),
       status: statusOverride || getValue("status") || "draft",
+      trigger_type: getValue("trigger_type") || "scheduled_daily",
       send_time: getValue("send_time") || "10:00",
       timezone: "Asia/Shanghai",
       target_audience_code: getValue("target_audience_code") || "operating",
@@ -390,6 +403,7 @@
         task_name: "新运营任务",
         group_id: defaultGroup,
         status: "draft",
+        trigger_type: "scheduled_daily",
         send_time: "10:00",
         target_audience_code: "operating",
         audience_day_offset: 1,
@@ -481,10 +495,12 @@
     field.addEventListener("input", () => {
       if (!state.currentTask) return;
       state.currentTask[field.dataset.field] = field.value;
+      if (field.dataset.field === "trigger_type") syncTriggerFields();
     });
     field.addEventListener("change", () => {
       if (!state.currentTask) return;
       state.currentTask[field.dataset.field] = field.value;
+      if (field.dataset.field === "trigger_type") syncTriggerFields();
     });
   });
 

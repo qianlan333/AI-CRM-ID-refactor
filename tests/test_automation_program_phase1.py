@@ -1373,6 +1373,7 @@ def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkey
             {
                 "task_name": "到点群发测试",
                 "status": "active",
+                "trigger_type": "scheduled_daily",
                 "send_time": "14:00",
                 "target_audience_code": "operating",
                 "audience_day_offset": 1,
@@ -1428,6 +1429,137 @@ def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkey
         assert item["status"] == "sent"
         assert int(item["send_record_id"] or 0) > 0
         assert item["error_message"] == ""
+
+
+def test_operation_task_audience_entered_trigger_enqueues_immediate_broadcast(app, monkeypatch):
+    from datetime import datetime
+
+    from wecom_ability_service.domains.automation_conversion.operation_task_service import (
+        create_operation_task,
+        run_audience_entered_operation_tasks,
+        run_due_operation_tasks,
+    )
+    from wecom_ability_service.domains.broadcast_jobs import service as queue_service
+    from wecom_ability_service.domains.broadcast_jobs.handlers import execute_job
+
+    program_id = _default_program_id(app)
+    captured: dict[str, object] = {}
+
+    def fake_dispatch(task_type, fn_name, payload):
+        captured["task_type"] = task_type
+        captured["fn_name"] = fn_name
+        captured["payload"] = payload
+        return {"task_id": 8877, "wecom_result": {"errcode": 0, "fail_list": []}}
+
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.workflow_runtime.sync_all_conversion_member_audiences",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.automation_conversion.private_message_dispatch.dispatch_wecom_task",
+        fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task",
+        fake_dispatch,
+    )
+
+    with app.app_context():
+        db = get_db()
+        db.execute("DELETE FROM automation_channel WHERE program_id = ?", (program_id,))
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, ?, '入池触发渠道', 'audience_event_sender', 'active')
+                RETURNING id
+                """,
+                (program_id, f"program_{program_id}_default_qrcode"),
+            ).fetchone()["id"]
+        )
+        member_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, current_audience_code,
+                    current_audience_entered_at, behavior_tier_key, source_channel_id
+                )
+                VALUES ('ext-operation-task-event', '13800000009', 'ignored_member_owner', 'operating', CURRENT_TIMESTAMP::text, 'lt_2', ?)
+                RETURNING id
+                """,
+                (channel_id,),
+            ).fetchone()["id"]
+        )
+        entry_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_member_audience_entry (
+                    member_id, audience_code, entered_at, is_current, entry_source, entry_reason
+                )
+                VALUES (?, 'operating', CURRENT_TIMESTAMP::text, TRUE, 'questionnaire_submission', 'questionnaire_submitted')
+                RETURNING id
+                """,
+                (member_id,),
+            ).fetchone()["id"]
+        )
+        task = create_operation_task(
+            program_id,
+            {
+                "task_name": "提交问卷后立即反馈",
+                "status": "active",
+                "trigger_type": "audience_entered",
+                "send_time": "10:00",
+                "target_audience_code": "operating",
+                "audience_day_offset": 1,
+                "behavior_filter": "none",
+                "content_mode": "unified",
+                "unified_content_json": {"content_text": "收到你的问卷了，这是下一步建议"},
+            },
+            operator_id="pytest",
+        )["task"]
+
+        now = datetime.now().replace(second=0, microsecond=0)
+        due_result = run_due_operation_tasks(program_id=program_id, now=now, operator_id="pytest-runner")
+        assert due_result["ok"] is True
+        assert due_result["enqueued_count"] == 0
+
+        event_result = run_audience_entered_operation_tasks(
+            member_id=member_id,
+            audience_code="operating",
+            audience_entry_id=entry_id,
+            now=now,
+            operator_id="pytest-event",
+        )
+        assert event_result["ok"] is True
+        assert event_result["enqueued_count"] == 1
+        assert event_result["results"][0]["execution_id"] == f"actask-event-{task['id']}-{entry_id}"
+
+        second_event_result = run_audience_entered_operation_tasks(
+            member_id=member_id,
+            audience_code="operating",
+            audience_entry_id=entry_id,
+            now=now,
+            operator_id="pytest-event",
+        )
+        assert second_event_result["ok"] is True
+        assert second_event_result["enqueued_count"] == 0
+
+        claimed = queue_service.claim_due_jobs(limit=10, now=now)
+        operation_jobs = [item for item in claimed if item["source_type"] == "operation_task"]
+        assert len(operation_jobs) == 1
+        job = operation_jobs[0]
+        assert job["content_payload"]["trigger_type"] == "audience_entered"
+        assert job["trace_id"] == f"actask-event-{task['id']}-{entry_id}"
+
+        outcome = execute_job(job)
+        assert outcome["ok"] is True, outcome
+        assert outcome["sent_count"] == 1
+        assert captured["fn_name"] == "create_private_message_task"
+        assert captured["payload"]["sender"] == "audience_event_sender"
+        assert captured["payload"]["external_userid"] == ["ext-operation-task-event"]
+        assert captured["payload"]["text"]["content"] == "收到你的问卷了，这是下一步建议"
 
 
 def test_multiple_operation_tasks_due_at_same_time_send_independently(app, monkeypatch):
@@ -1502,6 +1634,7 @@ def test_multiple_operation_tasks_due_at_same_time_send_independently(app, monke
             {
                 "task_name": "同点任务 A",
                 "status": "active",
+                "trigger_type": "scheduled_daily",
                 "send_time": "14:00",
                 "target_audience_code": "operating",
                 "audience_day_offset": 1,
@@ -1516,6 +1649,7 @@ def test_multiple_operation_tasks_due_at_same_time_send_independently(app, monke
             {
                 "task_name": "同点任务 B",
                 "status": "active",
+                "trigger_type": "scheduled_daily",
                 "send_time": "14:00",
                 "target_audience_code": "operating",
                 "audience_day_offset": 1,
@@ -1607,6 +1741,8 @@ def test_operation_task_panel_saves_single_task_payload():
 
     assert "function collectPayload" in html
     assert "group_id" in html
+    assert "trigger_type" in html
+    assert "进入人群后立即触发" in html
     assert "send_time" in html
     assert "target_audience_code" in html
     assert "audience_day_offset" in html

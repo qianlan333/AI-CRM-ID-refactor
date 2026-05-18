@@ -467,8 +467,20 @@ def sync_conversion_member_audience(member: dict[str, Any]) -> dict[str, Any]:
                 audience_code=target_code,
                 entered_at=_normalized_text(current_entry.get("entered_at")) or target_entered_at,
             )
-            return {"updated": True, "member_id": member_id, "audience_code": target_code, "entered_at": _normalized_text(current_entry.get("entered_at")) or target_entered_at}
-        return {"updated": False, "member_id": member_id, "audience_code": target_code, "entered_at": _normalized_text(current_entry.get("entered_at")) or target_entered_at}
+            return {
+                "updated": True,
+                "member_id": member_id,
+                "audience_code": target_code,
+                "entered_at": _normalized_text(current_entry.get("entered_at")) or target_entered_at,
+                "audience_entry_id": int(current_entry.get("id") or 0),
+            }
+        return {
+            "updated": False,
+            "member_id": member_id,
+            "audience_code": target_code,
+            "entered_at": _normalized_text(current_entry.get("entered_at")) or target_entered_at,
+            "audience_entry_id": int(current_entry.get("id") or 0),
+        }
 
     if current_entry:
         workflow_repo.close_current_member_audience_entries(
@@ -478,7 +490,7 @@ def sync_conversion_member_audience(member: dict[str, Any]) -> dict[str, Any]:
             source_snapshot_json=dict(resolved.get("source_snapshot_json") or {}),
         )
 
-    workflow_repo.insert_member_audience_entry_row(
+    inserted_entry = workflow_repo.insert_member_audience_entry_row(
         {
             "member_id": member_id,
             "audience_code": target_code,
@@ -495,7 +507,13 @@ def sync_conversion_member_audience(member: dict[str, Any]) -> dict[str, Any]:
         audience_code=target_code,
         entered_at=target_entered_at,
     )
-    return {"updated": True, "member_id": member_id, "audience_code": target_code, "entered_at": target_entered_at}
+    return {
+        "updated": True,
+        "member_id": member_id,
+        "audience_code": target_code,
+        "entered_at": target_entered_at,
+        "audience_entry_id": int((inserted_entry or {}).get("id") or 0),
+    }
 
 
 def sync_all_conversion_member_audiences() -> dict[str, Any]:

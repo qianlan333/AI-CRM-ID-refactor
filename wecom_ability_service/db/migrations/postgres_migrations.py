@@ -1708,6 +1708,8 @@ def _init_postgres(db) -> None:
             description TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'draft'
                 CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+            trigger_type TEXT NOT NULL DEFAULT 'scheduled_daily'
+                CHECK (trigger_type IN ('scheduled_daily', 'audience_entered')),
             send_time TEXT NOT NULL DEFAULT '10:00',
             timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
             target_audience_code TEXT NOT NULL DEFAULT 'operating'
@@ -1730,6 +1732,8 @@ def _init_postgres(db) -> None:
         """
     )
     for stmt in (
+        "ALTER TABLE IF EXISTS automation_operation_task "
+        "ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'scheduled_daily'",
         "CREATE INDEX IF NOT EXISTS idx_automation_operation_task_program "
         "ON automation_operation_task (program_id, status, send_time, id DESC)",
         "CREATE INDEX IF NOT EXISTS idx_automation_operation_task_group "

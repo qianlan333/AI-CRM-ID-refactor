@@ -2115,6 +2115,8 @@ CREATE TABLE IF NOT EXISTS automation_operation_task (
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'draft'
         CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+    trigger_type TEXT NOT NULL DEFAULT 'scheduled_daily'
+        CHECK (trigger_type IN ('scheduled_daily', 'audience_entered')),
     send_time TEXT NOT NULL DEFAULT '10:00',
     timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
     target_audience_code TEXT NOT NULL DEFAULT 'operating'
