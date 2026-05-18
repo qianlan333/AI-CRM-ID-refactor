@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import NameOID
 
-from wecom_ability_service.db import get_db
+from wecom_ability_service.db import close_db, get_db
 from wecom_ability_service.domains.wechat_pay.client import WeChatPayClient, WeChatPayClientConfig
 from wecom_ability_service.domains.wechat_pay import repo as wechat_pay_repo
 from wecom_ability_service.domains.wechat_pay import service as wechat_pay_service
@@ -264,6 +264,7 @@ def test_create_jsapi_order_uses_session_openid_and_server_catalog(app, client, 
     assert calls["transaction_payload"]["payer"]["openid"] == "op_test"
     assert calls["transaction_payload"]["amount"]["total"] == 9900
 
+    close_db()
     row = get_db().execute(
         "SELECT * FROM wechat_pay_orders WHERE out_trade_no = ?",
         (payload["order"]["out_trade_no"],),

@@ -763,8 +763,10 @@ def create_jsapi_order(
             response_payload=response_payload,
         )
         pay_params = client.build_jsapi_pay_params(prepay_id)
+        get_db().commit()
     except Exception as exc:
         repo.mark_order_failed(out_trade_no, error_message=str(exc))
+        get_db().commit()
         raise
     return {
         "order": _order_public_payload(order),
@@ -787,6 +789,7 @@ def _apply_transaction(transaction: dict[str, Any], *, event_type: str, headers:
         payload=transaction,
         headers=headers or {},
     )
+    get_db().commit()
     return order
 
 
