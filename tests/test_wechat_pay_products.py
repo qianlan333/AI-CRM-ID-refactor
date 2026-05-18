@@ -358,6 +358,65 @@ def test_require_mobile_order_validation_and_mobile_snapshot(app, client, tmp_pa
     assert calls["transaction_payload"]["amount"]["total"] == 19900
 
 
+def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(app, client, tmp_path, monkeypatch):
+    _configure_pay(app, tmp_path)
+    token = _login_admin(client)
+    program = get_db().execute(
+        """
+        INSERT INTO automation_program (program_code, program_name, status, config_json)
+        VALUES ('lead_plan_paid_refresh', '0元引流用户', 'active', '{}'::jsonb)
+        RETURNING *
+        """
+    ).fetchone()
+    channel = get_db().execute(
+        """
+        INSERT INTO automation_channel (
+            program_id, channel_code, channel_name, qr_url, status
+        )
+        VALUES (?, 'program_paid_refresh', '默认渠道', 'https://example.com/paid-refresh-qr.png', 'active')
+        RETURNING *
+        """,
+        (program["id"],),
+    ).fetchone()
+    get_db().commit()
+    product = _create_product(client, token, lead_program_id=program["id"])
+    assert product["lead_channel_id"] == channel["id"]
+
+    class FakeClient:
+        def create_jsapi_transaction(self, payload):
+            return {"prepay_id": "wx-prepay-id"}
+
+        def build_jsapi_pay_params(self, prepay_id):
+            return {"package": f"prepay_id={prepay_id}"}
+
+        def query_order_by_out_trade_no(self, out_trade_no):
+            return {
+                "out_trade_no": out_trade_no,
+                "transaction_id": "420000000020260518",
+                "trade_state": "SUCCESS",
+                "bank_type": "OTHERS",
+                "success_time": "2026-05-18T19:06:00+08:00",
+                "amount": {"total": product["amount_total"], "payer_total": product["amount_total"]},
+                "payer": {"openid": "op_test"},
+            }
+
+    monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
+    with client.session_transaction() as sess:
+        sess["wechat_pay_h5_identity"] = {"openid": "op_test", "unionid": "un_test"}
+
+    created = client.post(
+        "/api/h5/wechat-pay/jsapi/orders",
+        json={"product_code": product["product_code"], "order_source": "product_checkout"},
+        headers=_wechat_headers(),
+    )
+    assert created.status_code == 200
+    out_trade_no = created.get_json()["order"]["out_trade_no"]
+
+    paid = client.get(f"/api/h5/wechat-pay/orders/{out_trade_no}?refresh=1").get_json()["order"]
+    assert paid["status"] == "paid"
+    assert paid["lead_qr"]["qr_url"] == "https://example.com/paid-refresh-qr.png"
+
+
 def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
     token = _login_admin(client)
     program = get_db().execute(
