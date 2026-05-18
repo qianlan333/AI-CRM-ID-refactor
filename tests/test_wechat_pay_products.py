@@ -109,13 +109,14 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "创建商品" in html
     assert "分享商品" in html
     assert "/share" in html
+    assert "全景贴图数量" not in html
     assert "商品编码" not in html
     assert "商品简介" not in html
     assert "介绍页路径" not in html
 
     items = client.get("/api/admin/wechat-pay/products").get_json()["items"]
     assert items[0]["name"] == "私域成交动作拆解课"
-    assert {"name", "amount_total", "status", "slice_count", "updated_at"}.issubset(items[0])
+    assert {"name", "amount_total", "status", "updated_at"}.issubset(items[0])
 
 
 def test_product_enable_disable_copy_and_delete(app, client):

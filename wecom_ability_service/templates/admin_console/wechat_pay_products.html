@@ -42,15 +42,16 @@
   .wp-button--small { min-height: 32px; padding: 0 10px; border-radius: 10px; font-size: 12px; }
   .wp-list { display: grid; gap: 12px; }
   .wp-row {
-    display: grid; grid-template-columns: minmax(260px,1.3fr) 150px 120px 140px 170px auto;
+    display: grid; grid-template-columns: minmax(320px,1fr) 140px 120px 220px minmax(300px,auto);
     gap: 14px; align-items: center; padding: 18px; border: 1px solid var(--pay-line);
     border-radius: 18px; background: #fff; box-shadow: 0 8px 24px rgba(21,42,80,.04);
   }
   .wp-row--head { box-shadow: none; background: #fbfcff; color: #53647d; font-size: 13px; font-weight: 850; }
   .wp-title { font-size: 17px; font-weight: 900; line-height: 1.35; }
-  .wp-price { font-size: 22px; font-weight: 950; letter-spacing: 0; color: #172033; }
+  .wp-price { font-size: 22px; font-weight: 950; letter-spacing: 0; color: #172033; white-space: nowrap; }
   .wp-price small { font-size: 13px; margin-right: 1px; color: #51627b; }
   .wp-muted { color: var(--pay-muted); font-size: 13px; }
+  .wp-updated-at { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
   .wp-status {
     display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 999px;
     font-size: 12px; font-weight: 850;
@@ -159,7 +160,7 @@
   @media (max-width: 1180px) {
     .wp-editor { grid-template-columns: 1fr; }
     .wp-preview { position: relative; top: auto; }
-    .wp-row { grid-template-columns: 1fr 120px 90px; }
+    .wp-row { grid-template-columns: minmax(0,1fr) 120px 90px; }
     .wp-row--head { display: none; }
     .wp-actions { grid-column: 1 / -1; justify-content: flex-start; }
     .wp-grid, .wp-grid--three { grid-template-columns: 1fr; }
@@ -354,7 +355,7 @@
         return;
       }
       target.innerHTML = [
-        '<div class="wp-row wp-row--head"><div>商品名称</div><div>价格</div><div>状态</div><div>全景贴图数量</div><div>更新时间</div><div>操作</div></div>',
+        '<div class="wp-row wp-row--head"><div>商品名称</div><div>价格</div><div>状态</div><div>更新时间</div><div>操作</div></div>',
         payload.items.map(function (item) {
           const toggleAction = item.status === "active" ? "下架" : "上架";
           const toggleClass = item.status === "active" ? "disable" : "enable";
@@ -362,8 +363,7 @@
             '<div class="wp-title">' + escapeHtml(item.name) + '</div>' +
             '<div class="wp-price"><small>¥</small>' + money(item.amount_total) + '</div>' +
             '<div><span class="wp-status wp-status--' + (statusClass[item.status] || "draft") + '">' + escapeHtml(statusLabel[item.status] || item.status) + '</span></div>' +
-            '<div class="wp-muted">' + Number(item.slice_count || 0) + ' 张</div>' +
-            '<div class="wp-muted">' + escapeHtml(item.updated_at || "") + '</div>' +
+            '<div class="wp-muted wp-updated-at">' + escapeHtml(item.updated_at || "") + '</div>' +
             '<div class="wp-actions">' +
               '<a class="wp-button wp-button--small" href="/admin/wechat-pay/products/' + item.id + '/edit">编辑</a>' +
               '<button class="wp-button wp-button--small js-share" type="button" data-id="' + item.id + '">分享</button>' +
