@@ -498,6 +498,29 @@ def _send_channel_welcome_message(
         if welcome_attachments:
             request_payload["attachments"] = welcome_attachments
     try:
+        raw_attachment_ids = channel.get("welcome_attachment_library_ids") or []
+        if raw_attachment_ids:
+            from .. import attachment_library as _attachment_library
+
+            welcome_attachments = list(request_payload.get("attachments") or [])
+            for aid in _attachment_library._normalize_id_list(raw_attachment_ids):
+                welcome_attachments.append(_attachment_library.materialize_file_attachment(aid))
+            if len(welcome_attachments) > 9:
+                raise ValueError("welcome message supports at most 9 attachments")
+            if welcome_attachments:
+                request_payload["attachments"] = welcome_attachments
+    except (ValueError, RuntimeError) as exc:
+        _write_event(
+            member_id=int(member["id"]),
+            action="qrcode_welcome_failed",
+            operator_type="system",
+            operator_id=_normalized_text(operator_id) or "wecom_callback",
+            before_snapshot=_member_snapshot(serialized_member),
+            after_snapshot=_member_snapshot(serialized_member),
+            remark=str(exc),
+        )
+        return {"attempted": True, "sent": False, "error": str(exc)}
+    try:
         wecom_result = service_seams.get_contact_runtime_client().send_welcome_msg(request_payload)
     except (WeComClientError, AttributeError, ValueError) as exc:
         _write_event(

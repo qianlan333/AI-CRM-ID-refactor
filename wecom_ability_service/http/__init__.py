@@ -34,6 +34,7 @@ from .automation_conversion import register_routes as register_automation_conver
 from .cloud_orchestrator_endpoint import register_routes as register_cloud_orchestrator_routes
 from .miniprogram_library_endpoint import register_routes as register_miniprogram_library_routes
 from .image_library_endpoint import register_routes as register_image_library_routes
+from .attachment_library_endpoint import register_routes as register_attachment_library_routes
 from .archive import register_routes as register_archive_routes
 from .callbacks import register_routes as register_callback_routes
 from .contacts import register_routes as register_contacts_routes
@@ -130,6 +131,7 @@ HTTP_ROUTE_MODULES = {
     "cloud_orchestrator_segments": "wecom_ability_service.http.cloud_orchestrator_segments",
     "image_library_create": "wecom_ability_service.http.image_library_create",
     "image_library": "wecom_ability_service.http.image_library_endpoint",
+    "attachment_library": "wecom_ability_service.http.attachment_library_endpoint",
     "miniprogram_library": "wecom_ability_service.http.miniprogram_library_endpoint",
     "public_questionnaire_oauth": "wecom_ability_service.http.public_questionnaire_oauth",
     "public_questionnaire_diagnostics": "wecom_ability_service.http.public_questionnaire_diagnostics",
@@ -208,6 +210,7 @@ HTTP_ROUTE_PLACEMENT = {
         "cloud_orchestrator_segments.py for Cloud Orchestrator segment handlers registered by cloud_orchestrator_endpoint.py",
         "image_library_create.py for /api/admin/image-library upload/from-url/from-base64 handlers registered by image_library_endpoint.py",
         "image_library_endpoint.py for /admin/image-library and /api/admin/image-library* controllers",
+        "attachment_library_endpoint.py for /admin/attachment-library and /api/admin/attachment-library*",
         "miniprogram_library_endpoint.py for /admin/miniprogram-library and /api/admin/miniprogram-library* controllers",
         "wechat_pay.py for WeChat-internal H5 JSAPI checkout, order status, OAuth, and notify callbacks",
     ),
@@ -259,6 +262,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("cloud_orchestrator", register_cloud_orchestrator_routes),
     ("miniprogram_library", register_miniprogram_library_routes),
     ("image_library", register_image_library_routes),
+    ("attachment_library", register_attachment_library_routes),
     ("customer_center", register_customer_center_routes),
     ("customer_automation", register_customer_automation_routes),
     ("customer_timeline", register_customer_timeline_routes),

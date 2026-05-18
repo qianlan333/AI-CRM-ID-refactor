@@ -98,6 +98,9 @@ def _normalize_content_item(payload: dict[str, Any]) -> dict[str, Any]:
         "miniprogram_library_ids": [
             _int(item, minimum=1) for item in list(payload.get("miniprogram_library_ids") or []) if _int(item, minimum=0) > 0
         ],
+        "attachment_library_ids": [
+            _int(item, minimum=1) for item in list(payload.get("attachment_library_ids") or []) if _int(item, minimum=0) > 0
+        ][:9],
     }
 
 
@@ -382,7 +385,7 @@ def _render_for_member(task: dict[str, Any], member: dict[str, Any]) -> tuple[st
     if mode == "agent":
         config = dict(task.get("agent_config_json") or {})
         content_text = _text(config.get("fallback_content")) or _text(config.get("requirement")) or _text(task.get("description"))
-        return "agent", content_text, {"agent_config": config}
+        return "agent", content_text, {**config, "agent_config": config}
     content = dict(task.get("unified_content_json") or {})
     return "unified", _text(content.get("content_text")), content
 
@@ -406,6 +409,20 @@ def _content_image_media_ids(content: dict[str, Any]) -> list[str]:
 
 def _content_miniprogram_library_ids(content: dict[str, Any]) -> list[int]:
     return [_int(item, minimum=1) for item in list(content.get("miniprogram_library_ids") or []) if _int(item, minimum=0) > 0]
+
+
+def _content_attachment_library_ids(content: dict[str, Any]) -> list[int]:
+    return [_int(item, minimum=1) for item in list(content.get("attachment_library_ids") or []) if _int(item, minimum=0) > 0][:9]
+
+
+def _content_has_send_body(content_text: str, content: dict[str, Any]) -> bool:
+    return bool(
+        _text(content_text)
+        or [_text(item) for item in list(content.get("image_media_ids") or []) if _text(item)]
+        or [_int(item, minimum=1) for item in list(content.get("image_library_ids") or []) if _int(item, minimum=0) > 0]
+        or _content_miniprogram_library_ids(content)
+        or _content_attachment_library_ids(content)
+    )
 
 
 def _program_channel_ids(program_id: int) -> set[int]:
@@ -515,7 +532,7 @@ def _materialize_operation_task_execution(
     for entry in entries:
         member = dict(entry.get("member") or {})
         segment_key, content_text, content = _render_for_member(task, member)
-        if not content_text or not _text(member.get("external_contact_id")):
+        if not _content_has_send_body(content_text, content) or not _text(member.get("external_contact_id")):
             failed_count += 1
             continue
         item = repo.insert_execution_item(
@@ -728,13 +745,14 @@ def run_operation_task_broadcast_job(job: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "sent_count": 0, "failed_count": 0, "status": "already_processed"}
 
     task_sender_userid = _program_channel_sender_userid(int(task.get("program_id") or 0))
-    prepared_groups: dict[tuple[str, str, tuple[str, ...], tuple[int, ...]], list[dict[str, Any]]] = {}
+    prepared_groups: dict[tuple[str, str, tuple[str, ...], tuple[int, ...], tuple[int, ...]], list[dict[str, Any]]] = {}
     failed_before_send = 0
     for item in selected_items:
         member = workflow_repo.get_automation_member_row(int(item.get("member_id") or 0)) or {}
         external_userid = _text(item.get("external_contact_id") or member.get("external_contact_id"))
         content_text = _text(item.get("rendered_content_text"))
-        if not member or not external_userid or not content_text:
+        content = dict(item.get("content_snapshot_json") or {})
+        if not member or not external_userid or not _content_has_send_body(content_text, content):
             repo.update_execution_item(
                 int(item["id"]),
                 {
@@ -747,9 +765,9 @@ def run_operation_task_broadcast_job(job: dict[str, Any]) -> dict[str, Any]:
             )
             failed_before_send += 1
             continue
-        content = dict(item.get("content_snapshot_json") or {})
         image_media_ids = tuple(_content_image_media_ids(content))
         miniprogram_library_ids = tuple(_content_miniprogram_library_ids(content))
+        attachment_library_ids = tuple(_content_attachment_library_ids(content))
         sender_userid = task_sender_userid
         prepared = {
             "item": item,
@@ -760,8 +778,9 @@ def run_operation_task_broadcast_job(job: dict[str, Any]) -> dict[str, Any]:
             "content": content,
             "image_media_ids": list(image_media_ids),
             "miniprogram_library_ids": list(miniprogram_library_ids),
+            "attachment_library_ids": list(attachment_library_ids),
         }
-        prepared_groups.setdefault((sender_userid, content_text, image_media_ids, miniprogram_library_ids), []).append(prepared)
+        prepared_groups.setdefault((sender_userid, content_text, image_media_ids, miniprogram_library_ids, attachment_library_ids), []).append(prepared)
 
     sent_count = 0
     failed_count = failed_before_send
@@ -780,6 +799,7 @@ def run_operation_task_broadcast_job(job: dict[str, Any]) -> dict[str, Any]:
             content=_text(first.get("content_text")),
             image_media_ids=list(first.get("image_media_ids") or []),
             miniprogram_library_ids=list(first.get("miniprogram_library_ids") or []),
+            attachment_library_ids=list(first.get("attachment_library_ids") or []),
             operator_id=_text(payload.get("operator_id")) or "operation_task_runner",
             filter_snapshot={
                 "selection_mode": "automation_operation_task",

@@ -175,6 +175,46 @@ def _ensure_postgres_miniprogram_library_thumb_image_id(db) -> None:
     )
 
 
+def _ensure_postgres_attachment_library(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS automation_channel
+        ADD COLUMN IF NOT EXISTS welcome_attachment_library_ids JSONB NOT NULL DEFAULT '[]'::jsonb
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attachment_library (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT '',
+            file_name TEXT NOT NULL DEFAULT '',
+            mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+            file_size INTEGER NOT NULL DEFAULT 0,
+            data_base64 TEXT NOT NULL DEFAULT '',
+            media_id TEXT NOT NULL DEFAULT '',
+            media_id_expires_at TIMESTAMPTZ,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            description TEXT NOT NULL DEFAULT '',
+            tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_attachment_library_enabled
+        ON attachment_library (enabled, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_attachment_library_tags_gin
+        ON attachment_library USING GIN (tags)
+        """
+    )
+
+
 def _ensure_postgres_automation_agent_config_tables(db) -> None:
     db.execute(
         """
@@ -1562,6 +1602,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_hxc_dashboard_v6_columns(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_miniprogram_library_thumb_image_id(db)
+    _ensure_postgres_attachment_library(db)
     _ensure_postgres_automation_agent_config_tables(db)
     _ensure_postgres_automation_operation_templates(db)
     db.execute(

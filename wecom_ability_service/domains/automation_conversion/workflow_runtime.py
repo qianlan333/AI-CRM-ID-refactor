@@ -1067,6 +1067,25 @@ def _node_miniprogram_library_ids(*, node: dict[str, Any], workflow_bundle: dict
     return miniprogram_library_ids
 
 
+def _node_attachment_library_ids(*, node: dict[str, Any], workflow_bundle: dict[str, Any]) -> list[int]:
+    raw_node_attachments = node.get("attachment_library_ids") or []
+    if not raw_node_attachments:
+        scp = node.get("standard_content_payload")
+        if isinstance(scp, dict):
+            raw_node_attachments = scp.get("attachment_library_ids") or []
+    if not raw_node_attachments:
+        raw_node_attachments = workflow_bundle.get("attachment_library_ids") or []
+    attachment_library_ids: list[int] = []
+    for value in raw_node_attachments:
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            continue
+        if normalized > 0 and normalized not in attachment_library_ids:
+            attachment_library_ids.append(normalized)
+    return attachment_library_ids[:9]
+
+
 def _render_node_content(
     *,
     member: dict[str, Any],
