@@ -62,6 +62,9 @@
   .setup-qrcode-preview { display: grid; place-items: center; min-height: 220px; border: 1px dashed rgba(20,86,240,.22); border-radius: 14px; background: #fff; }
   .setup-qrcode-preview img { width: min(220px, 100%); aspect-ratio: 1; object-fit: contain; border-radius: 10px; }
   .setup-empty-hint { display: grid; place-items: center; min-height: 180px; padding: 18px; border: 1px dashed rgba(15,23,42,.14); border-radius: 14px; background: #fff; color: #667085; text-align: center; }
+  .setup-tag-select-card { grid-column: 1 / -1; display: grid; gap: 10px; }
+  .setup-tag-preview { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 36px; padding: 8px 10px; border: 1px solid rgba(15,23,42,.08); border-radius: 10px; background: #f8fbff; color: #344054; font-weight: 800; }
+  .setup-tag-preview.is-empty { color: #98a2b3; }
   .setup-chip-list { display: flex; gap: 8px; flex-wrap: wrap; }
   .setup-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 10px; background: #eef4ff; color: #1456f0; font-weight: 800; }
   .setup-category-grid { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr); gap: 14px; align-items: start; }
@@ -173,6 +176,8 @@
   {% elif current_step == 'entry' %}
   {% set entry = workspace.entry or {} %}
   {% set qrcode = entry.qrcode_channel or {} %}
+  {% set tag_catalog = entry.wecom_tag_catalog or {} %}
+  {% set tag_state = namespace(selected_known=false) %}
   <section class="setup-card">
     <div>
       <h2>入口渠道</h2>
@@ -188,9 +193,45 @@
           <h3>二维码配置</h3>
           <div class="setup-form-grid">
             <label class="setup-field"><span>渠道名称</span><input name="channel_name" value="{{ qrcode.channel_name or '' }}"></label>
-            <label class="setup-field"><span>标签组</span><input name="entry_tag_group_name" value="{{ qrcode.entry_tag_group_name or '' }}"></label>
-            <label class="setup-field"><span>扫码自动标签</span><input name="entry_tag_name" value="{{ qrcode.entry_tag_name or '' }}"><input type="hidden" name="entry_tag_id" value="{{ qrcode.entry_tag_id or '' }}"></label>
             <label class="setup-field"><span>是否免验证</span><select name="auto_accept_friend"><option value="1" {% if qrcode.auto_accept_friend %}selected{% endif %}>是</option><option value="0" {% if not qrcode.auto_accept_friend %}selected{% endif %}>否</option></select></label>
+            <div class="setup-tag-select-card">
+              <label class="setup-field">
+                <span>扫码自动标签</span>
+                <select name="entry_tag_selector" data-entry-tag-select>
+                  <option value="" data-tag-name="" data-group-name="" data-group-id="">不自动打标签</option>
+                  {% for group in tag_catalog.groups or [] %}
+                  <optgroup label="{{ group.group_name }}">
+                    {% for tag in group.tags or [] %}
+                    {% if qrcode.entry_tag_id and qrcode.entry_tag_id == tag.tag_id %}{% set tag_state.selected_known = true %}{% endif %}
+                    <option value="{{ tag.tag_id }}" data-tag-name="{{ tag.tag_name }}" data-group-name="{{ tag.group_name or group.group_name }}" data-group-id="{{ tag.group_id or group.group_id }}" {% if qrcode.entry_tag_id and qrcode.entry_tag_id == tag.tag_id %}selected{% endif %}>{{ tag.tag_name }}</option>
+                    {% endfor %}
+                  </optgroup>
+                  {% endfor %}
+                  {% if qrcode.entry_tag_id and not tag_state.selected_known %}
+                  <optgroup label="已配置标签">
+                    <option value="{{ qrcode.entry_tag_id }}" data-tag-name="{{ qrcode.entry_tag_name or qrcode.entry_tag_id }}" data-group-name="{{ qrcode.entry_tag_group_name or '已配置标签' }}" data-group-id="" selected>{{ qrcode.entry_tag_group_name or '已配置标签' }} / {{ qrcode.entry_tag_name or qrcode.entry_tag_id }}</option>
+                  </optgroup>
+                  {% endif %}
+                </select>
+              </label>
+              <input type="hidden" name="entry_tag_id" value="{{ qrcode.entry_tag_id or '' }}" data-entry-tag-id>
+              <input type="hidden" name="entry_tag_name" value="{{ qrcode.entry_tag_name or '' }}" data-entry-tag-name>
+              <input type="hidden" name="entry_tag_group_name" value="{{ qrcode.entry_tag_group_name or '' }}" data-entry-tag-group-name>
+              <div class="setup-tag-preview{% if not qrcode.entry_tag_id %} is-empty{% endif %}" data-entry-tag-preview>
+                {% if qrcode.entry_tag_id %}
+                已选择：{{ qrcode.entry_tag_group_name or '标签' }} / {{ qrcode.entry_tag_name or qrcode.entry_tag_id }}
+                {% elif tag_catalog.error %}
+                {{ tag_catalog.error }}
+                {% elif not tag_catalog.items %}
+                当前没有可选企微标签，请先到企微标签管理同步或创建标签。
+                {% else %}
+                未选择标签
+                {% endif %}
+              </div>
+              {% if tag_catalog.error or not tag_catalog.items %}
+              <div class="setup-actions" style="justify-content:flex-start;"><a class="setup-button" href="{{ url_for('api.admin_wecom_tags_page') }}" target="_blank" rel="noreferrer">打开企微标签管理</a></div>
+              {% endif %}
+            </div>
             <label class="setup-field" style="grid-column: 1 / -1;"><span>欢迎语</span><textarea name="welcome_message">{{ qrcode.welcome_message or '' }}</textarea></label>
           </div>
           <div class="setup-actions"><button class="setup-button is-primary" type="submit">保存二维码配置</button><button class="setup-button" type="button" data-generate-qrcode>生成 / 重新生成二维码</button></div>
@@ -572,6 +613,26 @@
     payload.auto_accept_friend = String(payload.auto_accept_friend || "") === "1";
     await postJson(urls[form.dataset.endpoint], payload);
   };
+  const entryTagSelect = root.querySelector("[data-entry-tag-select]");
+  const syncEntryTagFields = () => {
+    if (!entryTagSelect) return;
+    const option = entryTagSelect.selectedOptions?.[0];
+    const tagId = entryTagSelect.value || "";
+    const tagName = option?.dataset.tagName || "";
+    const groupName = option?.dataset.groupName || "";
+    const tagIdInput = root.querySelector("[data-entry-tag-id]");
+    const tagNameInput = root.querySelector("[data-entry-tag-name]");
+    const groupNameInput = root.querySelector("[data-entry-tag-group-name]");
+    const preview = root.querySelector("[data-entry-tag-preview]");
+    if (tagIdInput) tagIdInput.value = tagId;
+    if (tagNameInput) tagNameInput.value = tagName;
+    if (groupNameInput) groupNameInput.value = groupName;
+    if (preview) {
+      preview.textContent = tagId ? `已选择：${groupName || "标签"} / ${tagName || tagId}` : "未选择标签";
+      preview.classList.toggle("is-empty", !tagId);
+    }
+  };
+  entryTagSelect?.addEventListener("change", syncEntryTagFields);
   root.querySelectorAll("[data-setup-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
