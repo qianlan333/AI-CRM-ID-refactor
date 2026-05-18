@@ -105,6 +105,13 @@ def test_build_crm_sql_no_placeholders():
         assert str(qid) in sql
 
 
+def test_phone_aux_sql_normalizes_phone_collation():
+    sql = svc._HXC_PHONE_AUX_SQL
+
+    assert "phone COLLATE utf8mb4_unicode_ci AS phone" in sql
+    assert "GROUP BY phone COLLATE utf8mb4_unicode_ci" in sql
+
+
 def test_build_snapshot_row_funnel_only_member():
     """memberships 命中但 users 未命中 → 仅激活未打开."""
     crm = _crm_row(mobile="13912345678", customer_name="张三")

@@ -383,23 +383,27 @@ SELECT
   cj.last_crm_chat_job_at,
   cj.last_crm_chat_callback_status
 FROM (
-  SELECT phone FROM new_version_webhook_questionnaires WHERE phone IS NOT NULL AND phone <> ''
+  SELECT phone COLLATE utf8mb4_unicode_ci AS phone
+  FROM new_version_webhook_questionnaires
+  WHERE phone IS NOT NULL AND phone <> ''
   UNION
-  SELECT phone FROM new_version_crm_chat_jobs WHERE phone IS NOT NULL AND phone <> ''
+  SELECT phone COLLATE utf8mb4_unicode_ci AS phone
+  FROM new_version_crm_chat_jobs
+  WHERE phone IS NOT NULL AND phone <> ''
 ) phones
 LEFT JOIN (
   SELECT
-    phone,
+    phone COLLATE utf8mb4_unicode_ci AS phone,
     COUNT(*) AS webhook_questionnaire_count,
     MAX(submitted_at) AS last_webhook_questionnaire_at,
     SUBSTRING_INDEX(GROUP_CONCAT(status ORDER BY COALESCE(submitted_at, updated_at, created_at) DESC SEPARATOR '||'), '||', 1) AS last_webhook_questionnaire_status
   FROM new_version_webhook_questionnaires
   WHERE phone IS NOT NULL AND phone <> ''
-  GROUP BY phone
+  GROUP BY phone COLLATE utf8mb4_unicode_ci
 ) wq ON wq.phone = phones.phone
 LEFT JOIN (
   SELECT
-    phone,
+    phone COLLATE utf8mb4_unicode_ci AS phone,
     COUNT(*) AS crm_chat_job_count,
     SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS crm_chat_done_count,
     SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS crm_chat_failed_count,
@@ -408,7 +412,7 @@ LEFT JOIN (
     SUBSTRING_INDEX(GROUP_CONCAT(callback_status ORDER BY COALESCE(finished_at, updated_at, created_at) DESC SEPARATOR '||'), '||', 1) AS last_crm_chat_callback_status
   FROM new_version_crm_chat_jobs
   WHERE phone IS NOT NULL AND phone <> ''
-  GROUP BY phone
+  GROUP BY phone COLLATE utf8mb4_unicode_ci
 ) cj ON cj.phone = phones.phone
 """
 
