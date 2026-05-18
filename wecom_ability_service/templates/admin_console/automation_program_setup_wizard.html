@@ -34,13 +34,12 @@
   .setup-table input, .setup-table select, .setup-table textarea { width: 100%; border: 1px solid rgba(15,23,42,.12); border-radius: 8px; padding: 8px 9px; }
   .setup-result-card, .setup-rule-card { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 14px; background: #f8fbff; }
   .setup-audience-line { display: grid; gap: 12px; }
-  .setup-audience-row { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(360px, 1.35fr) minmax(210px, .8fr) minmax(160px, .55fr); gap: 16px; align-items: center; padding: 16px; border: 1px solid rgba(15,23,42,.10); border-radius: 14px; background: #fff; }
+  .setup-audience-row { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(360px, 1.35fr) minmax(160px, .55fr); gap: 16px; align-items: center; padding: 16px; border: 1px solid rgba(15,23,42,.10); border-radius: 14px; background: #fff; }
   .setup-audience-row.is-muted { color: #98a2b3; background: #fbfcfe; }
   .setup-audience-row h3 { margin: 0; font-size: 16px; }
   .setup-audience-title { display: grid; gap: 8px; align-content: start; }
   .setup-audience-title p { margin: 0; color: #667085; font-size: 13px; font-weight: 700; }
   .setup-audience-meta { color: #667085; font-size: 14px; font-weight: 800; }
-  .setup-audience-fixed { color: #667085; font-weight: 800; }
   .setup-audience-next { display: grid; gap: 4px; color: #667085; font-size: 13px; font-weight: 800; }
   .setup-audience-next strong { display: flex; gap: 8px; align-items: center; color: #1f2329; font-size: 16px; }
   .setup-audience-next strong::before { content: "→"; color: #98a2b3; font-size: 18px; }
@@ -55,8 +54,6 @@
   .setup-selection-summary { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: #344054; font-size: 14px; font-weight: 800; }
   .setup-selection-summary.is-empty { color: #98a2b3; font-weight: 700; }
   .setup-selection-ok { color: #188038; font-weight: 900; }
-  .setup-skip-note { display: grid; gap: 4px; color: #98a2b3; font-size: 13px; font-weight: 800; }
-  .setup-skip-note strong { color: #667085; font-size: 14px; }
   .setup-picker-grid { display: grid; gap: 10px; }
   .setup-picker-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 12px 14px; border: 1px solid rgba(15,23,42,.10); border-radius: 12px; background: #fff; }
   .setup-picker-title { display: grid; gap: 4px; color: #1f2329; font-weight: 900; }
@@ -87,7 +84,6 @@
   .setup-footer__side { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (max-width: 960px) {
     .setup-steps, .setup-form-grid, .setup-form-grid--three, .setup-checks, .setup-two-col, .setup-category-grid, .setup-audience-row { grid-template-columns: 1fr; }
-    .setup-audience-fixed { text-align: left; }
     .setup-footer { align-items: stretch; flex-direction: column; }
   }
 </style>
@@ -410,7 +406,6 @@
           <span class="setup-choice-label">入口来源</span>
           <div class="setup-choice-box"><span class="setup-selection-summary">当前方案入口</span></div>
         </div>
-        <div class="setup-audience-fixed">必填</div>
         <div class="setup-audience-next"><span>下一步</span><strong data-next-step="scan_enter">{{ next_steps.scan_enter }}</strong></div>
       </article>
       <article class="setup-audience-row{% if not order.enabled %} is-muted{% endif %}" data-audience-row="order_review">
@@ -430,7 +425,10 @@
             <a class="setup-button" data-select-link="order_review" href="{{ urls.base }}?step=entry-rule&audience_picker=order_product">去选择商品</a>
           </div>
         </div>
-        <div class="setup-skip-note" data-skip-note="order_review" {% if order.enabled %}style="display:none"{% endif %}><span>未启用时无需选择</span><strong>本项已跳过</strong></div>
+        <div class="setup-choice-field" data-disabled-area="order_review" {% if order.enabled %}style="display:none"{% endif %}>
+          <span class="setup-choice-label">选择商品</span>
+          <div class="setup-choice-box"><span class="setup-selection-summary is-empty">未启用时无需选择</span></div>
+        </div>
         <div class="setup-audience-next"><span>下一步</span><strong data-next-step="order_review">{{ next_steps.order_review }}</strong></div>
       </article>
       <article class="setup-audience-row{% if not questionnaire.enabled %} is-muted{% endif %}" data-audience-row="questionnaire_review">
@@ -450,7 +448,10 @@
             <a class="setup-button" data-select-link="questionnaire_review" href="{{ urls.base }}?step=entry-rule&audience_picker=questionnaire">去选择问卷</a>
           </div>
         </div>
-        <div class="setup-skip-note" data-skip-note="questionnaire_review" {% if questionnaire.enabled %}style="display:none"{% endif %}><span>未启用时无需选择</span><strong>本项已跳过</strong></div>
+        <div class="setup-choice-field" data-disabled-area="questionnaire_review" {% if questionnaire.enabled %}style="display:none"{% endif %}>
+          <span class="setup-choice-label">选择问卷</span>
+          <div class="setup-choice-box"><span class="setup-selection-summary is-empty">未启用时无需选择</span></div>
+        </div>
         <div class="setup-audience-next"><span>下一步</span><strong data-next-step="questionnaire_review">{{ next_steps.questionnaire_review }}</strong></div>
       </article>
       <article class="setup-audience-row" data-audience-row="operating">
@@ -459,7 +460,6 @@
           <span class="setup-choice-label">状态</span>
           <div class="setup-choice-box"><span class="setup-selection-summary">进入后开始后续运营</span></div>
         </div>
-        <div class="setup-audience-fixed">不可关闭</div>
         <div class="setup-audience-next"><span>下一步</span><strong data-next-step="operating">{{ next_steps.operating }}</strong></div>
       </article>
       <article class="setup-audience-row{% if not conversion.enabled %} is-muted{% endif %}" data-audience-row="conversion_review">
@@ -479,7 +479,10 @@
             <a class="setup-button" data-select-link="conversion_review" href="{{ urls.base }}?step=entry-rule&audience_picker=conversion_product">去选择商品</a>
           </div>
         </div>
-        <div class="setup-skip-note" data-skip-note="conversion_review" {% if conversion.enabled %}style="display:none"{% endif %}><span>未启用时不做成交判定</span><strong>本项已关闭</strong></div>
+        <div class="setup-choice-field" data-disabled-area="conversion_review" {% if conversion.enabled %}style="display:none"{% endif %}>
+          <span class="setup-choice-label">选择商品</span>
+          <div class="setup-choice-box"><span class="setup-selection-summary is-empty">未启用时不做成交判定</span></div>
+        </div>
         <div class="setup-audience-next"><span>下一步</span><strong data-next-step="conversion_review">{{ next_steps.conversion_review }}</strong></div>
       </article>
     </div>
@@ -541,7 +544,6 @@
   const urls = JSON.parse(root.dataset.urls || "{}");
   const currentStep = "{{ current_step }}";
   const audienceInitialState = {{ (workspace.audience_entry_rule or {})|tojson }};
-  const audienceDraftKey = `audience-entry-rule-draft:${urls.base || location.pathname}`;
   const feedback = root.querySelector("[data-setup-feedback]");
   const showFeedback = (message, ok = false) => {
     if (!feedback) return;
@@ -555,26 +557,6 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) throw new Error(data.error || "保存失败，请稍后重试");
     return data;
-  };
-  const readAudienceDraft = () => {
-    try {
-      const parsed = JSON.parse(sessionStorage.getItem(audienceDraftKey) || "{}");
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch (_) {
-      return {};
-    }
-  };
-  const audienceBaseState = () => {
-    const initial = audienceInitialState || {};
-    const draft = readAudienceDraft();
-    return {
-      ...initial,
-      ...draft,
-      order_review: { ...(initial.order_review || {}), ...(draft.order_review || {}) },
-      questionnaire_review: { ...(initial.questionnaire_review || {}), ...(draft.questionnaire_review || {}) },
-      operating: { enabled: true, fixed: true },
-      conversion_review: { ...(initial.conversion_review || {}), ...(draft.conversion_review || {}) },
-    };
   };
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const activeForm = () => root.querySelector("[data-setup-form]:not([hidden])") || root.querySelector("[data-segmentation-form]") || root.querySelector("[data-audience-rule-form]");
@@ -797,7 +779,7 @@
   const audienceBool = (value) => String(value || "") === "1" || value === true;
   const audienceStateFromForm = () => {
     const form = root.querySelector("[data-audience-rule-form]");
-    const initial = audienceBaseState();
+    const initial = audienceInitialState || {};
     if (!form) return initial;
     return {
       entry_source: "both",
@@ -840,8 +822,8 @@
       row?.classList.toggle("is-muted", !enabled);
       const area = form.querySelector(`[data-enabled-area="${key}"]`);
       if (area) area.style.display = enabled ? "" : "none";
-      const note = form.querySelector(`[data-skip-note="${key}"]`);
-      if (note) note.style.display = enabled ? "none" : "";
+      const disabledArea = form.querySelector(`[data-disabled-area="${key}"]`);
+      if (disabledArea) disabledArea.style.display = enabled ? "none" : "";
       form.querySelectorAll(`[data-toggle-group="${key}"] button`).forEach((button) => {
         button.classList.toggle("is-enabled", enabled && button.dataset.toggleValue === "1");
         button.classList.toggle("is-disabled", !enabled && button.dataset.toggleValue === "0");
@@ -863,17 +845,23 @@
     });
   });
   root.querySelectorAll("[data-select-link]").forEach((link) => {
-    link.addEventListener("click", (event) => {
+    link.addEventListener("click", async (event) => {
       const form = root.querySelector("[data-audience-rule-form]");
       if (!form) return;
       event.preventDefault();
-      sessionStorage.setItem(audienceDraftKey, JSON.stringify(currentAudiencePayload()));
-      window.location.href = link.href;
+      const payload = currentAudiencePayload();
+      payload._allow_incomplete = true;
+      try {
+        await postJson(urls.audience_entry_rule, payload);
+        window.location.href = link.href;
+      } catch (error) {
+        showFeedback(error.message || "进入选择页失败，请稍后重试");
+      }
     });
   });
   root.querySelectorAll("[data-pick-audience-item]").forEach((button) => {
     button.addEventListener("click", async () => {
-      const payload = JSON.parse(JSON.stringify(audienceBaseState() || {}));
+      const payload = JSON.parse(JSON.stringify(audienceInitialState || {}));
       payload.entry_source = payload.entry_source || "both";
       payload.order_review = payload.order_review || { enabled: false };
       payload.questionnaire_review = payload.questionnaire_review || { enabled: false };
@@ -896,7 +884,6 @@
       payload._allow_incomplete = true;
       try {
         await postJson(urls.audience_entry_rule, payload);
-        sessionStorage.removeItem(audienceDraftKey);
         window.location.href = `${urls.base}?step=entry-rule&selected=${encodeURIComponent(picker)}`;
       } catch (error) { showFeedback(error.message || "选择失败，请稍后重试"); }
     });
