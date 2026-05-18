@@ -471,3 +471,55 @@ def test_wechat_pay_status_refresh_recovers_missing_paid_order(app, client, tmp_
         ("WXP_MISSING_QUERY",),
     ).fetchone()
     assert dict(row) == {"transaction_id": "420000MISSINGQUERY", "product_name": "AI 测评报告"}
+
+
+def test_wechat_pay_status_refresh_enriches_existing_recovered_order(app, client, tmp_path, monkeypatch):
+    _configure_pay(app, tmp_path)
+    order = wechat_pay_repo.insert_order(
+        {
+            "out_trade_no": "WXP260518110609ABCDEF",
+            "order_source": "recovered_query",
+            "product_code": "recovered_wechat_pay",
+            "product_name": "微信支付恢复订单",
+            "description": "微信支付恢复订单",
+            "amount_total": 9900,
+            "payer_openid": "op_missing",
+            "status": "paid",
+            "metadata": {"recovered": True},
+            "request_meta": {},
+        }
+    )
+
+    class FakeClient:
+        def query_order_by_out_trade_no(self, out_trade_no):
+            assert out_trade_no == order["out_trade_no"]
+            return {
+                "out_trade_no": order["out_trade_no"],
+                "transaction_id": "420000RECOVEREDENRICH",
+                "trade_state": "SUCCESS",
+                "bank_type": "OTHERS",
+                "success_time": "2026-05-18T19:06:14+08:00",
+                "amount": {"total": 9900, "payer_total": 9900, "currency": "CNY"},
+                "payer": {"openid": "op_missing"},
+            }
+
+    monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
+
+    response = client.get(
+        f"/api/h5/wechat-pay/orders/{order['out_trade_no']}?refresh=1",
+        headers=_wechat_headers(),
+    )
+
+    assert response.status_code == 200
+    row = get_db().execute(
+        """
+        SELECT product_code, product_name, transaction_id, created_at
+        FROM wechat_pay_orders
+        WHERE out_trade_no = ?
+        """,
+        (order["out_trade_no"],),
+    ).fetchone()
+    assert row["product_code"] == "assessment_report_v1"
+    assert row["product_name"] == "AI 测评报告"
+    assert row["transaction_id"] == "420000RECOVEREDENRICH"
+    assert row["created_at"].strftime("%Y-%m-%d %H:%M:%S") == "2026-05-18 11:06:09"
