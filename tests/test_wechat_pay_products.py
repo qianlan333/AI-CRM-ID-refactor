@@ -120,6 +120,14 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert items[0]["name"] == "私域成交动作拆解课"
     assert {"name", "amount_total", "status", "updated_at"}.issubset(items[0])
 
+    edit_page = client.get(f"/admin/wechat-pay/products/{product['id']}/edit")
+    assert edit_page.status_code == 200
+    edit_html = edit_page.get_data(as_text=True)
+    assert 'id="editorLoading"' in edit_html
+    assert 'id="editorShell" hidden' in edit_html
+    assert "加载中" in edit_html
+    assert "引流计划列表加载失败" not in edit_html
+
 
 def test_product_enable_disable_copy_and_delete(app, client):
     token = _login_admin(client)
@@ -170,6 +178,43 @@ def test_admin_product_share_returns_public_link_and_qr(app, client):
     assert share["product_name"] == "可分享商品"
     assert share["qr_data_url"].startswith("data:image/svg+xml;charset=UTF-8,")
     assert "%3Csvg" in share["qr_data_url"]
+
+
+def test_lead_plan_options_skip_program_summary_dependency(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import program_service
+
+    _login_admin(client)
+    program = get_db().execute(
+        """
+        INSERT INTO automation_program (program_code, program_name, status, config_json)
+        VALUES ('lead_plan_direct_options', '直接读取的引流计划', 'active', '{}'::jsonb)
+        RETURNING *
+        """
+    ).fetchone()
+    get_db().execute(
+        """
+        INSERT INTO automation_channel (
+            program_id, channel_code, channel_name, qr_url, status
+        )
+        VALUES (?, 'program_direct_options', '默认渠道', 'https://example.com/direct-qr.png', 'active')
+        """,
+        (program["id"],),
+    )
+    get_db().commit()
+
+    def fail_summary_loader(**kwargs):
+        raise AssertionError("lead plan options must not depend on program summaries")
+
+    monkeypatch.setattr(program_service, "list_automation_programs", fail_summary_loader)
+
+    response = client.get("/api/admin/wechat-pay/products/lead-plans")
+
+    assert response.status_code == 200
+    items = response.get_json()["items"]
+    option = next(item for item in items if item["program_id"] == program["id"])
+    assert option["program_name"] == "直接读取的引流计划"
+    assert option["qr_url"] == "https://example.com/direct-qr.png"
+    assert option["selectable"] is True
 
 
 def test_product_slices_sort_and_public_page_render_order(app, client):

@@ -68,7 +68,26 @@
     margin: 18px 22px 0; border: 1px solid #ffd0d0; border-radius: 14px;
     background: var(--pay-red-bg); color: #9d1d1d; padding: 12px 14px; font-weight: 750;
   }
+  .wp-loading {
+    min-height: calc(100vh - 180px); border-radius: 18px; background: #fff;
+    display: grid; place-items: center; border: 1px solid var(--pay-line);
+    box-shadow: 0 10px 30px rgba(21,42,80,.05);
+  }
+  .wp-loading[hidden] { display: none; }
+  .wp-loading-box { display: grid; justify-items: center; gap: 12px; color: var(--pay-muted); font-weight: 850; }
+  .wp-spinner {
+    width: 36px; height: 36px; border-radius: 999px;
+    border: 3px solid #dce5f5; border-top-color: var(--pay-blue);
+    animation: wp-spin .82s linear infinite;
+  }
+  .wp-loading.is-error .wp-spinner { display: none; }
+  .wp-loading.is-error .wp-loading-box {
+    max-width: 520px; padding: 18px 20px; border-radius: 14px;
+    border: 1px solid #ffd0d0; background: var(--pay-red-bg); color: #9d1d1d;
+  }
+  @keyframes wp-spin { to { transform: rotate(360deg); } }
   .wp-editor { display: grid; grid-template-columns: minmax(0,1fr) 430px; gap: 18px; align-items: start; }
+  .wp-editor[hidden] { display: none; }
   .wp-card {
     border: 1px solid var(--pay-line); border-radius: 18px; background: #fff;
     box-shadow: 0 10px 30px rgba(21,42,80,.05); overflow: hidden;
@@ -209,7 +228,13 @@
   </div>
   <div class="wp-list" id="productList"></div>
   {% else %}
-  <div class="wp-editor">
+  <div class="wp-loading" id="editorLoading">
+    <div class="wp-loading-box">
+      <div class="wp-spinner"></div>
+      <div id="editorLoadingText">加载中</div>
+    </div>
+  </div>
+  <div class="wp-editor" id="editorShell" hidden>
     <main class="wp-card">
       <div class="wp-inline-error" id="editorLoadError" hidden></div>
       <section class="wp-section">
@@ -437,6 +462,22 @@
       target.textContent = message;
     }
 
+    function setEditorLoading(message, isError) {
+      const loading = $("editorLoading");
+      const text = $("editorLoadingText");
+      if (!loading) return;
+      loading.hidden = false;
+      loading.classList.toggle("is-error", Boolean(isError));
+      if (text) text.textContent = message || "加载中";
+    }
+
+    function showEditorContent() {
+      const loading = $("editorLoading");
+      const editor = $("editorShell");
+      if (loading) loading.hidden = true;
+      if (editor) editor.hidden = false;
+    }
+
     function renderLeadPlans() {
       const select = $("leadPlan");
       if (!select) return;
@@ -514,21 +555,22 @@
 
     async function loadEditor() {
       showEditorError("");
+      setEditorLoading("加载中");
       leadPlans = [{ program_id: 0, program_name: "不配置引流计划", selectable: true }];
+      const productRequest = productId > 0
+        ? api("/api/admin/wechat-pay/products/" + productId)
+        : Promise.resolve({ product: draft });
+      const plansRequest = api("/api/admin/wechat-pay/products/lead-plans");
+      const results = await Promise.all([productRequest, plansRequest]);
       if (productId > 0) {
-        const payload = await api("/api/admin/wechat-pay/products/" + productId);
-        draft = payload.product;
+        draft = results[0].product || draft;
       }
-      try {
-        const plansPayload = await api("/api/admin/wechat-pay/products/lead-plans");
-        leadPlans = plansPayload.items || leadPlans;
-      } catch (err) {
-        showEditorError("商品已加载，引流计划列表加载失败：" + (err.message || "请求失败"));
-      }
+      leadPlans = results[1].items || leadPlans;
       renderLeadPlans();
       fillFields();
       renderSlices();
       renderPreview();
+      showEditorContent();
     }
 
     async function copyText(text) {
@@ -692,11 +734,8 @@
 
     if (pageMode === "list") renderList().catch(function (err) { toast(err.message || "加载失败"); });
     if (pageMode === "edit") {
-      fillFields();
-      renderSlices();
-      renderPreview();
       loadEditor().catch(function (err) {
-        showEditorError("商品加载失败：" + (err.message || "请求失败"));
+        setEditorLoading("加载失败：" + (err.message || "请求失败"), true);
         toast(err.message || "加载失败");
       });
     }

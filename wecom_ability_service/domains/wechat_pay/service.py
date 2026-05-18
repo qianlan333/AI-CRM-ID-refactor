@@ -526,9 +526,8 @@ def delete_admin_product_slice(product_id: int, slice_id: int) -> dict[str, Any]
 
 
 def list_lead_plan_options() -> list[dict[str, Any]]:
-    from ..automation_conversion import program_service
+    from ..automation_conversion import program_repo
 
-    payload = program_service.list_automation_programs(include_archived=False)
     options = [
         {
             "program_id": 0,
@@ -540,8 +539,10 @@ def list_lead_plan_options() -> list[dict[str, Any]]:
             "selectable": True,
         }
     ]
-    for item in payload.get("items") or []:
-        program = dict(item.get("program") or {})
+    # The product editor only needs program rows and channel QR URLs. Avoid
+    # program_service.list_automation_programs(), which also computes workflow
+    # summaries and can fail when unrelated runtime summary tables lag behind.
+    for program in program_repo.list_program_rows(include_archived=False):
         status = _normalized_text(program.get("status"))
         if status not in {"active", "draft", "paused"}:
             continue
