@@ -472,6 +472,66 @@ def _ensure_postgres_questionnaire_scrm_apply_log_columns(db) -> None:
 def _ensure_postgres_wechat_pay_tables(db) -> None:
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS wechat_pay_products (
+            id BIGSERIAL PRIMARY KEY,
+            product_code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL DEFAULT '',
+            amount_total INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'active', 'disabled')),
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            cta_text TEXT NOT NULL DEFAULT '立即报名',
+            require_mobile BOOLEAN NOT NULL DEFAULT FALSE,
+            lead_program_id BIGINT,
+            lead_channel_id BIGINT,
+            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    for stmt in (
+        "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS cta_text TEXT NOT NULL DEFAULT '立即报名'",
+        "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS require_mobile BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS lead_program_id BIGINT",
+        "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS lead_channel_id BIGINT",
+        "ALTER TABLE IF EXISTS wechat_pay_products ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+    ):
+        db.execute(stmt)
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_wechat_pay_products_code
+        ON wechat_pay_products (product_code)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_products_status_updated
+        ON wechat_pay_products (status, updated_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS wechat_pay_product_page_slices (
+            id BIGSERIAL PRIMARY KEY,
+            product_id BIGINT NOT NULL REFERENCES wechat_pay_products(id) ON DELETE CASCADE,
+            image_library_id BIGINT NOT NULL REFERENCES image_library(id) ON DELETE RESTRICT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_wechat_pay_product_slices_product_order
+        ON wechat_pay_product_page_slices (product_id, sort_order ASC, id ASC)
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS wechat_pay_orders (
             id BIGSERIAL PRIMARY KEY,
             out_trade_no TEXT NOT NULL UNIQUE,

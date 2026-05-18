@@ -36,12 +36,14 @@ ADMIN_AUTH_EXEMPT_PATHS = {
 ADMIN_API_MODULE_PREFIXES = (
     ("/api/admin/config", "config"),
     ("/api/admin/marketing-automation", "config"),
+    ("/api/admin/wechat-pay/products", "wechat_pay_products"),
     ("/api/admin/wechat-pay", "wechat_pay_transactions"),
 )
 ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin/automation-conversion", "automation_conversion"),
     ("/admin/customers", "customers"),
     ("/admin/questionnaires", "questionnaires"),
+    ("/admin/wechat-pay/products", "wechat_pay_products"),
     ("/admin/wechat-pay", "wechat_pay_transactions"),
     ("/admin/config", "config"),
     ("/admin/api-docs", "api_docs"),

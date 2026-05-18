@@ -27,6 +27,7 @@ from .admin_questionnaires import register_routes as register_admin_questionnair
 from .admin_user_ops import register_routes as register_admin_user_ops_routes
 from .admin_user_ops_delivery import register_routes as register_admin_user_ops_delivery_routes
 from .admin_wechat_pay import register_routes as register_admin_wechat_pay_routes
+from .admin_wechat_pay_products import register_routes as register_admin_wechat_pay_products_routes
 from .admin_wecom_tags import register_routes as register_admin_wecom_tags_routes
 from .wecom_customer_acquisition import register_routes as register_wecom_customer_acquisition_routes
 from .automation_conversion import register_routes as register_automation_conversion_routes
@@ -115,6 +116,7 @@ HTTP_ROUTE_MODULES = {
     "admin_user_ops": "wecom_ability_service.http.admin_user_ops",
     "admin_user_ops_delivery": "wecom_ability_service.http.admin_user_ops_delivery",
     "admin_wechat_pay": "wecom_ability_service.http.admin_wechat_pay",
+    "admin_wechat_pay_products": "wecom_ability_service.http.admin_wechat_pay_products",
     "admin_class_user": "wecom_ability_service.http.admin_class_user",
     "admin_questionnaires": "wecom_ability_service.http.admin_questionnaires",
     "admin_wecom_tags": "wecom_ability_service.http.admin_wecom_tags",
@@ -195,6 +197,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_questionnaires.py for /api/admin/questionnaires* and /admin/questionnaires/ui",
         "admin_wecom_tags.py for /api/admin/wecom/tags* enterprise customer tag management",
         "admin_wechat_pay.py for /admin/wechat-pay/transactions* and /api/admin/wechat-pay* transaction management",
+        "admin_wechat_pay_products.py for /admin/wechat-pay/products* and /api/admin/wechat-pay/products* product management",
         "wecom_customer_acquisition.py for /api/admin/wecom-customer-acquisition-links* and /admin/wecom-customer-acquisition-links/ui",
         "cloud_orchestrator_endpoint.py for /admin/cloud-orchestrator* and /api/admin/cloud-orchestrator* route aggregation",
         "cloud_orchestrator_campaigns.py for Cloud Orchestrator campaign JSON handlers registered by cloud_orchestrator_endpoint.py",
@@ -248,6 +251,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_hxc_dashboard", register_admin_hxc_dashboard_routes),
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_wechat_pay", register_admin_wechat_pay_routes),
+    ("admin_wechat_pay_products", register_admin_wechat_pay_products_routes),
     ("admin_wecom_tags", register_admin_wecom_tags_routes),
     ("wecom_customer_acquisition", register_wecom_customer_acquisition_routes),
     ("admin_questionnaires", register_admin_questionnaires_routes),

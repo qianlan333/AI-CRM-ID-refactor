@@ -1,0 +1,520 @@
+{% extends "admin_console/base.html" %}
+
+{% block head_extra %}
+<style>
+  :root {
+    --pay-bg: #f6f8fc;
+    --pay-panel: #ffffff;
+    --pay-line: #e4eaf4;
+    --pay-line-strong: #c8d5ee;
+    --pay-text: #10203a;
+    --pay-muted: #687891;
+    --pay-subtle: #8a98ad;
+    --pay-blue: #2f6df6;
+    --pay-blue-weak: #edf3ff;
+    --pay-green: #128a45;
+    --pay-green-bg: #e9f8ef;
+    --pay-orange: #aa6a00;
+    --pay-orange-bg: #fff3d8;
+    --pay-red: #e23030;
+    --pay-red-bg: #fff0f0;
+    --pay-cta: #f4b345;
+    --pay-cta-deep: #d88700;
+    --pay-shadow: 0 18px 50px rgba(23,42,76,.08);
+  }
+  .wp-shell { display: grid; gap: 18px; color: var(--pay-text); }
+  .wp-toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 18px 20px; border: 1px solid var(--pay-line); border-radius: 18px;
+    background: linear-gradient(180deg,#fff,#fbfcff); box-shadow: var(--pay-shadow);
+  }
+  .wp-toolbar-title { font-size: 20px; font-weight: 850; }
+  .wp-button {
+    border: 1px solid var(--pay-line); border-radius: 12px; background: #fff; color: var(--pay-text);
+    min-height: 36px; padding: 0 13px; font-weight: 750; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none;
+  }
+  .wp-button:hover { border-color: var(--pay-line-strong); }
+  .wp-button--primary { background: var(--pay-blue); border-color: var(--pay-blue); color: #fff; }
+  .wp-button--ghost { background: #f7f9fe; }
+  .wp-button--warning { background: var(--pay-orange-bg); border-color: #f1cf8e; color: var(--pay-orange); }
+  .wp-button--danger { color: var(--pay-red); background: #fff; }
+  .wp-button--small { min-height: 32px; padding: 0 10px; border-radius: 10px; font-size: 12px; }
+  .wp-list { display: grid; gap: 12px; }
+  .wp-row {
+    display: grid; grid-template-columns: minmax(260px,1.3fr) 150px 120px 140px 170px auto;
+    gap: 14px; align-items: center; padding: 18px; border: 1px solid var(--pay-line);
+    border-radius: 18px; background: #fff; box-shadow: 0 8px 24px rgba(21,42,80,.04);
+  }
+  .wp-row--head { box-shadow: none; background: #fbfcff; color: #53647d; font-size: 13px; font-weight: 850; }
+  .wp-title { font-size: 17px; font-weight: 900; line-height: 1.35; }
+  .wp-price { font-size: 22px; font-weight: 950; letter-spacing: 0; color: #172033; }
+  .wp-price small { font-size: 13px; margin-right: 1px; color: #51627b; }
+  .wp-muted { color: var(--pay-muted); font-size: 13px; }
+  .wp-status {
+    display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 999px;
+    font-size: 12px; font-weight: 850;
+  }
+  .wp-status--active { background: var(--pay-green-bg); color: var(--pay-green); }
+  .wp-status--draft { background: var(--pay-orange-bg); color: var(--pay-orange); }
+  .wp-status--disabled { background: #eef1f6; color: #5f6f87; }
+  .wp-actions { display: flex; gap: 7px; justify-content: flex-end; flex-wrap: wrap; }
+  .wp-empty {
+    border: 1px dashed #cbd6e8; border-radius: 18px; padding: 32px; text-align: center;
+    background: #fbfcff; color: var(--pay-muted);
+  }
+  .wp-editor { display: grid; grid-template-columns: minmax(0,1fr) 430px; gap: 18px; align-items: start; }
+  .wp-card {
+    border: 1px solid var(--pay-line); border-radius: 18px; background: #fff;
+    box-shadow: 0 10px 30px rgba(21,42,80,.05); overflow: hidden;
+  }
+  .wp-section { padding: 22px; border-bottom: 1px solid var(--pay-line); }
+  .wp-section:last-child { border-bottom: 0; }
+  .wp-section h2 { margin: 0 0 15px; font-size: 19px; font-weight: 850; letter-spacing: 0; }
+  .wp-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+  .wp-grid--three { grid-template-columns: 1.1fr .7fr .7fr; }
+  .wp-field label { display: flex; align-items: center; color: #53647d; font-weight: 850; font-size: 13px; margin-bottom: 7px; }
+  .wp-field input, .wp-field select {
+    width: 100%; height: 44px; border: 1px solid var(--pay-line); border-radius: 13px;
+    background: #fff; color: var(--pay-text); outline: none; padding: 0 13px;
+  }
+  .wp-field input:focus, .wp-field select:focus { border-color: #9bb8ff; box-shadow: 0 0 0 3px rgba(47,109,246,.12); }
+  .wp-radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wp-radio-pill {
+    height: 44px; padding: 0 16px; border: 1px solid var(--pay-line); border-radius: 13px;
+    background: #fff; display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    font-weight: 800; color: #41526d;
+  }
+  .wp-radio-pill input { width: auto; height: auto; accent-color: var(--pay-blue); }
+  .wp-radio-pill:has(input:checked) { border-color: #8fb0ff; background: var(--pay-blue-weak); color: #1d4ed8; }
+  .wp-upload {
+    border: 1px dashed #f0b55b; border-radius: 18px; background: #fffaf0;
+    padding: 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px;
+  }
+  .wp-upload-title { font-size: 17px; font-weight: 900; margin-bottom: 3px; }
+  .wp-upload-limit { font-size: 13px; color: #7f6a4a; }
+  .wp-slices { display: flex; flex-direction: column; gap: 10px; }
+  .wp-slice {
+    display: grid; grid-template-columns: 34px 72px minmax(0,1fr) auto; align-items: center; gap: 12px;
+    border: 1px solid var(--pay-line); border-radius: 16px; background: #fff; padding: 10px;
+  }
+  .wp-slice.is-dragging { opacity: .55; transform: scale(.992); }
+  .wp-drag { height: 34px; border: 1px solid var(--pay-line); border-radius: 10px; background: #f7f9fe; display: flex; align-items: center; justify-content: center; color: #8a98ad; cursor: grab; font-weight: 900; }
+  .wp-thumb { height: 54px; border-radius: 12px; overflow: hidden; background: #fff4d4; border: 1px solid #e6edf6; }
+  .wp-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .wp-slice-name { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wp-slice-sub { font-size: 12px; color: var(--pay-muted); }
+  .wp-preview { border: 1px solid var(--pay-line); border-radius: 24px; background: #fff; box-shadow: 0 14px 34px rgba(21,42,80,.07); padding: 18px; position: sticky; top: 18px; }
+  .wp-preview h2 { font-size: 20px; margin: 0 0 14px; font-weight: 900; }
+  .wp-phone { width: 360px; max-width: 100%; height: 760px; margin: 0 auto; border: 9px solid #17201c; border-radius: 42px; background: #fff; overflow: hidden; position: relative; box-shadow: 0 22px 60px rgba(13,25,47,.18); }
+  .wp-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 110px; height: 24px; background: #17201c; border-radius: 0 0 16px 16px; z-index: 5; }
+  .wp-phone-head { height: 50px; border-bottom: 1px solid rgba(20,32,58,.08); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #fffdf8; position: relative; z-index: 4; }
+  .wp-phone-title { font-weight: 900; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wp-phone-share { color: var(--pay-cta-deep); font-weight: 850; font-size: 13px; }
+  .wp-phone-scroll { height: 100%; overflow: auto; padding-bottom: 88px; background: #fff; }
+  .wp-preview-img { width: 100%; display: block; background: #fff; }
+  .wp-preview-blank { min-height: 520px; background: linear-gradient(135deg,#fff3c8,#ffe6a2); }
+  .wp-sticky-buy {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; padding: 10px 14px 12px;
+    background: rgba(255,253,248,.96); backdrop-filter: blur(12px); border-top: 1px solid rgba(236,217,184,.86);
+    box-shadow: 0 -10px 34px rgba(26,32,48,.12); display: grid; grid-template-columns: minmax(0,1fr) 124px; gap: 12px; align-items: center;
+  }
+  .wp-sticky-title { font-size: 12px; font-weight: 900; color: #5a5146; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wp-sticky-price { font-size: 22px; font-weight: 950; color: #c56e00; letter-spacing: 0; }
+  .wp-sticky-price small { font-size: 12px; margin-right: 2px; }
+  .wp-cta { height: 52px; border: 0; border-radius: 999px; background: var(--pay-cta); color: #2a1c07; font-weight: 950; font-size: 15px; box-shadow: 0 8px 18px rgba(244,179,69,.34); cursor: pointer; }
+  .wp-footer { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--pay-line); background: rgba(255,255,255,.92); backdrop-filter: blur(14px); }
+  .wp-toast { position: fixed; right: 26px; bottom: 26px; background: #10203a; color: #fff; border-radius: 14px; padding: 12px 16px; box-shadow: var(--pay-shadow); opacity: 0; transform: translateY(8px); transition: .18s ease; z-index: 30; }
+  .wp-toast.show { opacity: 1; transform: translateY(0); }
+  @media (max-width: 1180px) {
+    .wp-editor { grid-template-columns: 1fr; }
+    .wp-preview { position: relative; top: auto; }
+    .wp-row { grid-template-columns: 1fr 120px 90px; }
+    .wp-row--head { display: none; }
+    .wp-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    .wp-grid, .wp-grid--three { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section
+  class="wp-shell"
+  data-page-mode="{{ page_mode }}"
+  data-product-id="{{ product_id or 0 }}"
+  data-action-token="{{ admin_action_token }}"
+>
+  {% if page_mode == "list" %}
+  <div class="wp-toolbar">
+    <div class="wp-toolbar-title">商品管理</div>
+    <a class="wp-button wp-button--primary" href="{{ url_for('api.admin_wechat_pay_product_new_page') }}">创建商品</a>
+  </div>
+  <div class="wp-list" id="productList"></div>
+  {% else %}
+  <div class="wp-editor">
+    <main class="wp-card">
+      <section class="wp-section">
+        <h2>商品基础信息</h2>
+        <div class="wp-grid wp-grid--three">
+          <div class="wp-field">
+            <label>商品名称</label>
+            <input id="productName" maxlength="120">
+          </div>
+          <div class="wp-field">
+            <label>价格</label>
+            <input id="productPrice" type="number" min="0" step="0.01">
+          </div>
+          <div class="wp-field">
+            <label>状态</label>
+            <select id="productStatus">
+              <option value="active">上架</option>
+              <option value="draft">草稿</option>
+              <option value="disabled">下架</option>
+            </select>
+          </div>
+        </div>
+        <div class="wp-grid" style="margin-top:14px">
+          <div class="wp-field">
+            <label>磁吸按钮话术</label>
+            <input id="ctaText" maxlength="24">
+          </div>
+          <div class="wp-field">
+            <label>是否要求填写手机号</label>
+            <div class="wp-radio-group">
+              <label class="wp-radio-pill"><input type="radio" name="requireMobile" value="yes"> 是</label>
+              <label class="wp-radio-pill"><input type="radio" name="requireMobile" value="no"> 否</label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="wp-section">
+        <h2>支付后引流计划</h2>
+        <div class="wp-field">
+          <label>引流计划</label>
+          <select id="leadPlan"></select>
+        </div>
+      </section>
+
+      <section class="wp-section">
+        <h2>全景贴图长图切片</h2>
+        <div class="wp-upload">
+          <div>
+            <div class="wp-upload-title">选择图片切片</div>
+            <div class="wp-upload-limit">限制：JPG / PNG；每张 ≤ 2MB；建议宽 750px；单张高度建议 ≤ 3000px；最多 20 张。</div>
+          </div>
+          <label class="wp-button wp-button--warning">
+            上传切片
+            <input id="sliceInput" type="file" accept="image/png,image/jpeg" multiple style="display:none">
+          </label>
+        </div>
+        <div class="wp-slices" id="sliceList"></div>
+      </section>
+
+      <div class="wp-footer">
+        <a class="wp-button wp-button--ghost" href="{{ url_for('api.admin_wechat_pay_products_page') }}">返回列表</a>
+        <button class="wp-button wp-button--primary" id="saveProductBtn" type="button">保存商品</button>
+      </div>
+    </main>
+
+    <aside class="wp-preview">
+      <h2>手机端预览</h2>
+      <div class="wp-phone">
+        <div class="wp-notch"></div>
+        <div id="phonePreview"></div>
+      </div>
+    </aside>
+  </div>
+  {% endif %}
+</section>
+<div class="wp-toast" id="wpToast">已保存</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  (function () {
+    const root = document.querySelector(".wp-shell");
+    if (!root) return;
+    const pageMode = root.dataset.pageMode || "list";
+    const productId = Number(root.dataset.productId || 0);
+    const actionToken = root.dataset.actionToken || "";
+    const $ = (id) => document.getElementById(id);
+    const statusLabel = { active: "上架", draft: "草稿", disabled: "下架" };
+    const statusClass = { active: "active", draft: "draft", disabled: "disabled" };
+    let draft = {
+      name: "",
+      amount_total: 19900,
+      status: "draft",
+      cta_text: "立即报名",
+      require_mobile: true,
+      lead_program_id: 0,
+      slices: []
+    };
+    let leadPlans = [];
+    let dragId = "";
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value).replace(/[&<>'"]/g, function (char) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" }[char];
+      });
+    }
+
+    function money(cents) {
+      return (Number(cents || 0) / 100).toFixed(2);
+    }
+
+    function toast(text) {
+      const el = $("wpToast");
+      if (!el) return;
+      el.textContent = text;
+      el.classList.add("show");
+      window.clearTimeout(window.__wpToastTimer);
+      window.__wpToastTimer = window.setTimeout(function () { el.classList.remove("show"); }, 1600);
+    }
+
+    async function api(url, options) {
+      const response = await fetch(url, Object.assign({ credentials: "same-origin" }, options || {}));
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "请求失败");
+      return payload;
+    }
+
+    function mutationBody(data) {
+      return JSON.stringify(Object.assign({}, data || {}, { admin_action_token: actionToken }));
+    }
+
+    async function renderList() {
+      const target = $("productList");
+      if (!target) return;
+      const payload = await api("/api/admin/wechat-pay/products");
+      if (!payload.items.length) {
+        target.innerHTML = '<div class="wp-empty">还没有商品，点击右上角创建商品。</div>';
+        return;
+      }
+      target.innerHTML = [
+        '<div class="wp-row wp-row--head"><div>商品名称</div><div>价格</div><div>状态</div><div>全景贴图数量</div><div>更新时间</div><div>操作</div></div>',
+        payload.items.map(function (item) {
+          const toggleAction = item.status === "active" ? "下架" : "上架";
+          const toggleClass = item.status === "active" ? "disable" : "enable";
+          return '<div class="wp-row" data-id="' + item.id + '">' +
+            '<div class="wp-title">' + escapeHtml(item.name) + '</div>' +
+            '<div class="wp-price"><small>¥</small>' + money(item.amount_total) + '</div>' +
+            '<div><span class="wp-status wp-status--' + (statusClass[item.status] || "draft") + '">' + escapeHtml(statusLabel[item.status] || item.status) + '</span></div>' +
+            '<div class="wp-muted">' + Number(item.slice_count || 0) + ' 张</div>' +
+            '<div class="wp-muted">' + escapeHtml(item.updated_at || "") + '</div>' +
+            '<div class="wp-actions">' +
+              '<a class="wp-button wp-button--small" href="/admin/wechat-pay/products/' + item.id + '/edit">编辑</a>' +
+              '<button class="wp-button wp-button--small js-' + toggleClass + '" type="button" data-id="' + item.id + '">' + toggleAction + '</button>' +
+              '<button class="wp-button wp-button--small js-copy" type="button" data-id="' + item.id + '">复制</button>' +
+              '<button class="wp-button wp-button--small wp-button--danger js-delete" type="button" data-id="' + item.id + '">删除</button>' +
+            '</div>' +
+          '</div>';
+        }).join("")
+      ].join("");
+    }
+
+    function syncDraftFromFields() {
+      if (!$("productName")) return;
+      draft.name = $("productName").value.trim();
+      draft.amount_total = Math.round(Number($("productPrice").value || 0) * 100);
+      draft.status = $("productStatus").value;
+      draft.cta_text = $("ctaText").value.trim() || "立即报名";
+      draft.require_mobile = document.querySelector('input[name="requireMobile"]:checked')?.value === "yes";
+      draft.lead_program_id = Number($("leadPlan").value || 0);
+      renderPreview();
+    }
+
+    function fillFields() {
+      $("productName").value = draft.name || "";
+      $("productPrice").value = money(draft.amount_total);
+      $("productStatus").value = draft.status || "draft";
+      $("ctaText").value = draft.cta_text || "立即报名";
+      document.querySelectorAll('input[name="requireMobile"]').forEach(function (input) {
+        input.checked = (input.value === "yes") === Boolean(draft.require_mobile);
+      });
+      $("leadPlan").value = String(draft.lead_program_id || 0);
+    }
+
+    function renderLeadPlans() {
+      const select = $("leadPlan");
+      if (!select) return;
+      select.innerHTML = leadPlans.map(function (plan) {
+        const disabled = plan.selectable ? "" : " disabled";
+        const suffix = plan.selectable ? "" : " · 未配置二维码";
+        return '<option value="' + Number(plan.program_id || 0) + '"' + disabled + '>' + escapeHtml(plan.program_name + suffix) + '</option>';
+      }).join("");
+    }
+
+    function renderSlices() {
+      const target = $("sliceList");
+      if (!target) return;
+      if (!draft.slices.length) {
+        target.innerHTML = '<div class="wp-empty">暂无切片。</div>';
+        renderPreview();
+        return;
+      }
+      target.innerHTML = draft.slices.map(function (slice, index) {
+        const img = slice.image_url ? '<img src="' + escapeHtml(slice.image_url) + '" alt="">' : "";
+        return '<div class="wp-slice" draggable="true" data-id="' + escapeHtml(slice.local_id || slice.id || slice.image_library_id) + '">' +
+          '<div class="wp-drag">⋮⋮</div>' +
+          '<div class="wp-thumb">' + img + '</div>' +
+          '<div><div class="wp-slice-name">' + (index + 1) + '. ' + escapeHtml(slice.name || slice.file_name || "图片切片") + '</div>' +
+          '<div class="wp-slice-sub">' + Math.round(Number(slice.file_size || 0) / 1024) + ' KB</div></div>' +
+          '<button class="wp-button wp-button--small wp-button--danger js-remove-slice" type="button" data-id="' + escapeHtml(slice.local_id || slice.id || slice.image_library_id) + '">删除</button>' +
+        '</div>';
+      }).join("");
+      bindDrag();
+      renderPreview();
+    }
+
+    function bindDrag() {
+      document.querySelectorAll(".wp-slice").forEach(function (item) {
+        item.addEventListener("dragstart", function () { dragId = item.dataset.id; item.classList.add("is-dragging"); });
+        item.addEventListener("dragend", function () { dragId = ""; item.classList.remove("is-dragging"); });
+        item.addEventListener("dragover", function (event) { event.preventDefault(); });
+        item.addEventListener("drop", function (event) {
+          event.preventDefault();
+          const targetId = item.dataset.id;
+          if (!dragId || dragId === targetId) return;
+          const from = draft.slices.findIndex(function (slice) { return String(slice.local_id || slice.id || slice.image_library_id) === String(dragId); });
+          const to = draft.slices.findIndex(function (slice) { return String(slice.local_id || slice.id || slice.image_library_id) === String(targetId); });
+          const moved = draft.slices.splice(from, 1)[0];
+          draft.slices.splice(to, 0, moved);
+          renderSlices();
+        });
+      });
+    }
+
+    function renderPreview() {
+      const target = $("phonePreview");
+      if (!target) return;
+      const sliceHtml = draft.slices.length
+        ? draft.slices.map(function (slice, index) {
+            return slice.image_url ? '<img class="wp-preview-img" loading="lazy" src="' + escapeHtml(slice.image_url) + '" alt="第 ' + (index + 1) + ' 张切片">' : '<div class="wp-preview-blank"></div>';
+          }).join("")
+        : '<div class="wp-preview-blank"></div>';
+      target.innerHTML =
+        '<div class="wp-phone-head"><div class="wp-phone-title">' + escapeHtml(draft.name || "商品名称") + '</div><div class="wp-phone-share">分享</div></div>' +
+        '<div class="wp-phone-scroll">' + sliceHtml + '</div>' +
+        '<div class="wp-sticky-buy"><div><div class="wp-sticky-title">' + escapeHtml(draft.name || "商品名称") + '</div>' +
+        '<div class="wp-sticky-price"><small>¥</small>' + money(draft.amount_total) + '</div></div>' +
+        '<button class="wp-cta" type="button">' + escapeHtml(draft.cta_text || "立即报名") + '</button></div>';
+    }
+
+    async function loadEditor() {
+      const plansPayload = await api("/api/admin/wechat-pay/products/lead-plans");
+      leadPlans = plansPayload.items || [];
+      renderLeadPlans();
+      if (productId > 0) {
+        const payload = await api("/api/admin/wechat-pay/products/" + productId);
+        draft = payload.product;
+      }
+      fillFields();
+      renderSlices();
+      renderPreview();
+    }
+
+    async function uploadSlices(files) {
+      const available = 20 - draft.slices.length;
+      for (const file of Array.from(files || []).slice(0, available)) {
+        const form = new FormData();
+        form.append("image", file);
+        form.append("name", file.name);
+        const response = await fetch("/api/admin/image-library/upload", { method: "POST", credentials: "same-origin", body: form });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "上传失败");
+        draft.slices.push({
+          local_id: "local_" + Date.now() + "_" + Math.random().toString(16).slice(2),
+          image_library_id: payload.item.id,
+          name: payload.item.name || file.name,
+          file_name: payload.item.file_name || file.name,
+          file_size: payload.item.file_size || file.size,
+          image_url: URL.createObjectURL(file)
+        });
+      }
+      renderSlices();
+    }
+
+    async function saveProduct() {
+      syncDraftFromFields();
+      const body = {
+        name: draft.name,
+        amount_total: draft.amount_total,
+        status: draft.status,
+        require_mobile: draft.require_mobile,
+        cta_text: draft.cta_text,
+        lead_program_id: draft.lead_program_id || null,
+        slices: draft.slices.map(function (slice, index) {
+          return { image_library_id: Number(slice.image_library_id), sort_order: index + 1 };
+        })
+      };
+      const isEdit = productId > 0;
+      const payload = await api(isEdit ? "/api/admin/wechat-pay/products/" + productId : "/api/admin/wechat-pay/products", {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: mutationBody(body)
+      });
+      toast("已保存");
+      if (!isEdit && payload.product && payload.product.id) {
+        window.location.href = "/admin/wechat-pay/products/" + payload.product.id + "/edit";
+      } else {
+        draft = payload.product;
+        fillFields();
+        renderSlices();
+      }
+    }
+
+    document.addEventListener("click", async function (event) {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const id = Number(button.dataset.id || 0);
+      try {
+        if (button.classList.contains("js-enable")) {
+          await api("/api/admin/wechat-pay/products/" + id + "/enable", { method: "POST", headers: { "Content-Type": "application/json" }, body: mutationBody({}) });
+          toast("已上架");
+          renderList();
+        }
+        if (button.classList.contains("js-disable")) {
+          await api("/api/admin/wechat-pay/products/" + id + "/disable", { method: "POST", headers: { "Content-Type": "application/json" }, body: mutationBody({}) });
+          toast("已下架");
+          renderList();
+        }
+        if (button.classList.contains("js-copy")) {
+          await api("/api/admin/wechat-pay/products/" + id + "/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: mutationBody({}) });
+          toast("已复制");
+          renderList();
+        }
+        if (button.classList.contains("js-delete")) {
+          await api("/api/admin/wechat-pay/products/" + id, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: mutationBody({}) });
+          toast("已删除");
+          renderList();
+        }
+        if (button.classList.contains("js-remove-slice")) {
+          const removeId = String(button.dataset.id || "");
+          draft.slices = draft.slices.filter(function (slice) { return String(slice.local_id || slice.id || slice.image_library_id) !== removeId; });
+          renderSlices();
+        }
+        if (button.id === "saveProductBtn") {
+          await saveProduct();
+        }
+      } catch (err) {
+        toast(err.message || "操作失败");
+      }
+    });
+
+    document.addEventListener("input", function (event) {
+      if (["productName", "productPrice", "ctaText"].includes(event.target.id)) syncDraftFromFields();
+    });
+    document.addEventListener("change", function (event) {
+      if (["productStatus", "leadPlan"].includes(event.target.id) || event.target.name === "requireMobile") syncDraftFromFields();
+      if (event.target.id === "sliceInput") {
+        uploadSlices(event.target.files).catch(function (err) { toast(err.message || "上传失败"); });
+        event.target.value = "";
+      }
+    });
+
+    if (pageMode === "list") renderList().catch(function (err) { toast(err.message || "加载失败"); });
+    if (pageMode === "edit") loadEditor().catch(function (err) { toast(err.message || "加载失败"); });
+  })();
+</script>
+{% endblock %}

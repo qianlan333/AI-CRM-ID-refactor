@@ -12,7 +12,9 @@ from ..domains.wechat_pay import (
     build_checkout_page_state,
     create_jsapi_order,
     get_order_status,
+    get_public_product_page_state,
     get_product,
+    get_product_slices,
     handle_wechat_pay_notification,
 )
 from ..infra.wechat_oauth import WeChatOAuthRequestError, exchange_wechat_oauth_code, fetch_wechat_userinfo
@@ -91,6 +93,14 @@ def h5_wechat_pay_checkout(product_code: str):
     return render_template("wechat_pay_h5_checkout.html", page_state=page_state)
 
 
+def h5_wechat_pay_product_page(product_code: str):
+    try:
+        page_state = get_public_product_page_state(product_code)
+    except WeChatPayOrderError:
+        abort(404)
+    return render_template("wechat_pay_product_intro.html", page_state=page_state)
+
+
 def h5_wechat_pay_oauth_start():
     if not _wechat_oauth_is_configured():
         return jsonify({"ok": False, "error": "wechat_oauth_not_configured"}), 501
@@ -149,7 +159,9 @@ def api_h5_wechat_pay_product(product_code: str):
     product = get_product(product_code)
     if not product:
         return jsonify({"ok": False, "error": "product_not_configured"}), 404
-    return jsonify({"ok": True, "product": product})
+    payload = dict(product)
+    payload["slices"] = get_product_slices(int(payload.get("id") or 0))
+    return jsonify({"ok": True, "product": payload})
 
 
 def api_h5_wechat_pay_create_jsapi_order():
@@ -183,6 +195,7 @@ def api_h5_wechat_pay_create_jsapi_order():
             client_order_ref=_normalized_text(payload.get("client_order_ref")),
             order_source=_normalized_text(payload.get("order_source")) or "h5_checkout",
             notify_url=notify_url,
+            mobile=_normalized_text(payload.get("mobile")),
             request_meta=_questionnaire_request_meta(),
         )
         return jsonify({"ok": True, **result})
@@ -217,6 +230,8 @@ def api_h5_wechat_pay_notify():
 
 
 def register_routes(bp) -> None:
+    bp.route("/p/<product_code>", methods=["GET"])(h5_wechat_pay_product_page)
+    bp.route("/product/<product_code>", methods=["GET"])(h5_wechat_pay_product_page)
     bp.route("/pay/<product_code>", methods=["GET"])(h5_wechat_pay_checkout)
     bp.route("/api/h5/wechat-pay/oauth/start", methods=["GET"])(h5_wechat_pay_oauth_start)
     bp.route("/api/h5/wechat-pay/oauth/callback", methods=["GET"])(h5_wechat_pay_oauth_callback)
