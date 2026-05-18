@@ -296,6 +296,7 @@
 {% endblock %}
 
 {% block scripts_extra %}
+<script src="{{ url_for('static', filename='admin_console/image_upload_client.js') }}"></script>
 <script>
   (function () {
     const root = document.querySelector(".wp-shell");
@@ -576,18 +577,22 @@
       const available = 10 - draft.slices.length;
       if (available <= 0) throw new Error("全景贴图最多 10 张");
       for (const file of Array.from(files || []).slice(0, available)) {
+        const prepared = window.ImageUploadClient
+          ? await window.ImageUploadClient.prepareImageForUpload(file)
+          : { file: file, uploadSize: file.size, compressed: false };
         const form = new FormData();
-        form.append("image", file);
+        form.append("image", prepared.file);
         form.append("name", file.name);
-        const response = await fetch("/api/admin/image-library/upload", { method: "POST", credentials: "same-origin", body: form });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) throw new Error(payload.error || "上传失败");
+        const payload = window.ImageUploadClient
+          ? await window.ImageUploadClient.requestJson("/api/admin/image-library/upload", { method: "POST", credentials: "same-origin", body: form })
+          : await api("/api/admin/image-library/upload", { method: "POST", body: form });
+        if (!payload.ok) throw new Error(payload.error || "上传失败");
         draft.slices.push({
           local_id: "local_" + Date.now() + "_" + Math.random().toString(16).slice(2),
           image_library_id: payload.item.id,
           name: payload.item.name || file.name,
           file_name: payload.item.file_name || file.name,
-          file_size: payload.item.file_size || file.size
+          file_size: payload.item.file_size || prepared.uploadSize || file.size
         });
       }
       renderSlices();
