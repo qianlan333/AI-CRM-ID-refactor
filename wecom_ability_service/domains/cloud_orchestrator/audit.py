@@ -11,7 +11,7 @@ import logging
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
 from ...db import get_db
@@ -204,8 +204,8 @@ def list_recent_audit(
 def build_observability_payload() -> dict[str, Any]:
     """Build Cloud Orchestrator observability counters for the admin/API surfaces."""
 
-    cutoff_7d = (datetime.now(UTC) - timedelta(days=7)).isoformat()
-    cutoff_1d = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    cutoff_1d = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
 
     db = get_db()
     cur = db.cursor()
