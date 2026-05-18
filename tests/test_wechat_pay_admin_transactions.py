@@ -263,3 +263,80 @@ def test_wechat_pay_admin_refund_calls_wechat_pay_and_updates_success(app, clien
         "refund_id": "503000000020260516",
         "refund_amount_total": 1000,
     }
+
+
+def test_wechat_pay_admin_refund_processing_counts_as_in_flight_amount(app, client, monkeypatch):
+    token = _login_admin(client)
+    order = _insert_order(
+        out_trade_no="WXP_REFUND_PROCESSING",
+        status="paid",
+        trade_state="SUCCESS",
+        transaction_id="420000PROCESSING",
+        amount_total=990,
+    )
+
+    class FakeClient:
+        def create_refund(self, payload):
+            return {
+                "refund_id": "503000000020260518",
+                "out_refund_no": payload["out_refund_no"],
+                "transaction_id": payload["transaction_id"],
+                "status": "PROCESSING",
+                "amount": {"refund": payload["amount"]["refund"], "total": payload["amount"]["total"], "currency": "CNY"},
+            }
+
+    monkeypatch.setattr(wechat_pay_admin_service, "_create_wechat_pay_client", lambda: FakeClient())
+
+    response = client.post(
+        f"/api/admin/wechat-pay/orders/{order['id']}/refunds",
+        json={
+            "admin_action_token": token,
+            "refund_amount_total": 990,
+            "reason": "客户主动申请退款",
+            "transaction_id_confirmation": "420000PROCESSING",
+            "checked": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["refund"]["status"] == "PROCESSING"
+    assert payload["order"]["refunded_amount_total"] == 0
+    assert payload["order"]["active_refund_amount_total"] == 990
+    assert payload["order"]["refundable_amount_total"] == 0
+    assert payload["order"]["can_refund"] is False
+
+
+def test_wechat_pay_admin_refund_rejects_amount_over_order_total(app, client, monkeypatch):
+    token = _login_admin(client)
+    order = _insert_order(
+        out_trade_no="WXP_REFUND_OVER_TOTAL",
+        status="paid",
+        trade_state="SUCCESS",
+        transaction_id="420000OVERTOTAL",
+        amount_total=990,
+    )
+    called = False
+
+    class FakeClient:
+        def create_refund(self, payload):
+            nonlocal called
+            called = True
+            return {"status": "SUCCESS"}
+
+    monkeypatch.setattr(wechat_pay_admin_service, "_create_wechat_pay_client", lambda: FakeClient())
+
+    response = client.post(
+        f"/api/admin/wechat-pay/orders/{order['id']}/refunds",
+        json={
+            "admin_action_token": token,
+            "refund_amount_total": 9900,
+            "reason": "客户主动申请退款",
+            "transaction_id_confirmation": "420000OVERTOTAL",
+            "checked": True,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "累计退款金额不能超过订单金额" in response.get_json()["error"]
+    assert called is False

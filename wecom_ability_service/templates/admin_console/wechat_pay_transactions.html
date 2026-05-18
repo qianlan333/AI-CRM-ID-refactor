@@ -323,6 +323,8 @@
             <div class="wxpay-kv__value"><span class="wxpay-pill wxpay-pill--{{ order.status }}">{{ order.status_label }}</span></div>
             <div class="wxpay-kv__label">已退款</div>
             <div class="wxpay-kv__value">¥{{ order.refunded_amount_yuan }}</div>
+            <div class="wxpay-kv__label">退款处理中</div>
+            <div class="wxpay-kv__value">¥{{ order.active_refund_amount_yuan }}</div>
             <div class="wxpay-kv__label">可退款</div>
             <div class="wxpay-kv__value">¥{{ order.refundable_amount_yuan }}</div>
           </div>
@@ -338,10 +340,10 @@
         </div>
         <div class="wxpay-card__body">
           {% if order.can_refund %}
-          <form id="refundForm" data-order-id="{{ order.id }}" data-transaction-id="{{ order.transaction_id }}">
+          <form id="refundForm" data-order-id="{{ order.id }}" data-transaction-id="{{ order.transaction_id }}" data-max-refund-total="{{ order.refundable_amount_total }}">
             <div class="wxpay-field">
               <label for="refundAmount">退款金额</label>
-              <input id="refundAmount" name="refund_amount_yuan" inputmode="decimal" placeholder="例如 99.00" required>
+              <input id="refundAmount" name="refund_amount_yuan" inputmode="decimal" placeholder="最多 {{ order.refundable_amount_yuan }}" required>
             </div>
             <div class="wxpay-field">
               <label for="refundReason">退款原因</label>
@@ -558,9 +560,19 @@
       const result = document.getElementById("refundResult");
       result.textContent = "正在提交退款申请...";
       const orderId = refundForm.dataset.orderId;
+      const maxRefundTotal = Number(refundForm.dataset.maxRefundTotal || 0);
+      const refundAmountTotal = moneyCents(document.getElementById("refundAmount").value);
+      if (!Number.isFinite(refundAmountTotal) || refundAmountTotal <= 0) {
+        result.textContent = "退款金额必须大于 0";
+        return;
+      }
+      if (maxRefundTotal > 0 && refundAmountTotal > maxRefundTotal) {
+        result.textContent = `退款金额不能超过可退款金额 ¥${(maxRefundTotal / 100).toFixed(2)}`;
+        return;
+      }
       const payload = {
         admin_action_token: adminActionToken,
-        refund_amount_total: moneyCents(document.getElementById("refundAmount").value),
+        refund_amount_total: refundAmountTotal,
         reason: document.getElementById("refundReason").value,
         transaction_id_confirmation: document.getElementById("transactionConfirm").value,
         checked: document.getElementById("refundChecked").checked
@@ -576,7 +588,10 @@
         return;
       }
       const refundLabel = data.refund ? `，微信退款状态：${data.refund.status_label}` : "";
-      result.textContent = `退款申请已提交${refundLabel}，当前订单状态：${data.order.status_label}，已退款 ¥${data.order.refunded_amount_yuan}`;
+      result.textContent = `退款申请已提交${refundLabel}，当前订单状态：${data.order.status_label}，退款处理中 ¥${data.order.active_refund_amount_yuan}，已退款 ¥${data.order.refunded_amount_yuan}，可退款 ¥${data.order.refundable_amount_yuan}`;
+      if (data.order && Number(data.order.refundable_amount_total || 0) <= 0) {
+        refundForm.querySelectorAll("input, select, button").forEach((node) => { node.disabled = true; });
+      }
     });
   }
   {% else %}
