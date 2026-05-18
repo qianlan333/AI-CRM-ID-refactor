@@ -285,6 +285,20 @@ def test_product_slices_limit_is_ten(app, client):
     assert "最多 10 张" in response.get_json()["error"]
 
 
+def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app, client, tmp_path):
+    _configure_pay(app, tmp_path)
+    app.config["SECRET_KEY"] = "wechat-pay-product-intro-secret"
+    token = _login_admin(client)
+    product = _create_product(client, token)
+
+    response = client.get(f"/p/{product['product_code']}", headers=_wechat_headers())
+
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    assert "/api/h5/wechat-pay/oauth/start" in location
+    assert f"return_url=%2Fp%2F{product['product_code']}" in location
+
+
 def test_image_library_upload_limits_are_reused(app, client):
     token = _login_admin(client)
     _create_product(client, token)
@@ -473,6 +487,12 @@ def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(app, cl
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
     with client.session_transaction() as sess:
         sess["wechat_pay_h5_identity"] = {"openid": "op_paid", "unionid": "un_paid", "payer_name": "已报名用户"}
+
+    intro_html = client.get(f"/p/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    assert "支付成功" in intro_html
+    assert '"paid_order":' in intro_html
+    assert 'id="showLeadQrButton"' in intro_html
+    assert "showPaid(state.paid_order, { autoShowQr: false })" in intro_html
 
     html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert '"paid_order":' in html
