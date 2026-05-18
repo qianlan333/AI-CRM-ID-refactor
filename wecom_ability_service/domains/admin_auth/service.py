@@ -23,6 +23,7 @@ MODULE_LABELS = {
     "customers": "客户",
     "questionnaires": "问卷",
     "wechat_pay_transactions": "交易管理",
+    "wechat_pay_products": "商品管理",
     "wecom_tags": "企微标签管理",
     "miniprogram_library": "素材库",
     "config": "配置",
@@ -31,11 +32,11 @@ MODULE_LABELS = {
 }
 
 ROLE_MODULE_ACCESS = {
-    "super_admin": {"automation_conversion", "customers", "questionnaires", "wechat_pay_transactions", "wecom_tags", "miniprogram_library", "config", "api_docs", "sunset"},
+    "super_admin": {"automation_conversion", "customers", "questionnaires", "wechat_pay_transactions", "wechat_pay_products", "wecom_tags", "miniprogram_library", "config", "api_docs", "sunset"},
     "automation_admin": {"automation_conversion", "customers", "miniprogram_library", "api_docs", "sunset"},
     "questionnaire_admin": {"questionnaires", "api_docs", "sunset"},
-    "config_admin": {"wechat_pay_transactions", "wecom_tags", "config", "api_docs", "sunset"},
-    "viewer": {"automation_conversion", "customers", "questionnaires", "wechat_pay_transactions", "wecom_tags", "miniprogram_library", "config", "api_docs", "sunset"},
+    "config_admin": {"wechat_pay_transactions", "wechat_pay_products", "wecom_tags", "config", "api_docs", "sunset"},
+    "viewer": {"automation_conversion", "customers", "questionnaires", "wechat_pay_transactions", "wechat_pay_products", "wecom_tags", "miniprogram_library", "config", "api_docs", "sunset"},
 }
 
 READ_ONLY_ROLES = {"viewer"}
