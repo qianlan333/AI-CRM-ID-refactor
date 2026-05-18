@@ -263,7 +263,13 @@ def _render_member_ops_page(*, page_error: str = "", program: dict[str, object] 
     )
 
 
-def _render_program_setup_page(*, page_error: str = "", program: dict[str, object] | None = None, step: str = "basic"):
+def _render_program_setup_page(
+    *,
+    page_error: str = "",
+    program: dict[str, object] | None = None,
+    step: str = "basic",
+    audience_picker: str = "",
+):
     program_id = int((program or {}).get("id") or 0)
     workspace_tabs = []
     if program_id:
@@ -284,7 +290,7 @@ def _render_program_setup_page(*, page_error: str = "", program: dict[str, objec
         ),
         workspace_tabs=workspace_tabs,
         program_context=_program_context(program, active_key="setup") if program else None,
-        setup_workspace=_build_program_setup_workspace(program_id, step=step) if program_id else {},
+        setup_workspace=_build_program_setup_workspace(program_id, step=step, audience_picker=audience_picker) if program_id else {},
         admin_action_token=ensure_admin_console_action_token(),
         page_error=page_error,
         show_shell_meta=False,

@@ -128,7 +128,11 @@ def admin_automation_program_overview(program_id: int):
 
 def admin_automation_program_setup(program_id: int):
     program = _load_program_or_404(program_id)
-    return _render_program_setup_page(program=program, step=_query_text("step") or "basic")
+    return _render_program_setup_page(
+        program=program,
+        step=_query_text("step") or "basic",
+        audience_picker=_query_text("audience_picker"),
+    )
 
 
 def admin_automation_program_operations(program_id: int):

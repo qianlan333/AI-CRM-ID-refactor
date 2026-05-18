@@ -556,9 +556,9 @@ def _program_context(program: dict[str, object], *, active_key: str = "overview"
     }
 
 
-def _build_program_setup_workspace(program_id: int, *, step: str = "basic") -> dict[str, object]:
+def _build_program_setup_workspace(program_id: int, *, step: str = "basic", audience_picker: str = "") -> dict[str, object]:
     normalized_step = normalize_setup_step(step)
-    payload = get_program_setup_payload(int(program_id), step=normalized_step)
+    payload = get_program_setup_payload(int(program_id), step=normalized_step, audience_picker=audience_picker)
     base_url = url_for("api.admin_automation_program_setup", program_id=int(program_id))
     payload["urls"] = {
         "base": base_url,
