@@ -298,7 +298,7 @@ def test_checkout_page_mobile_field_depends_on_product(app, client):
     require_mobile = _create_product(client, token, require_mobile=True)
     no_mobile = _create_product(client, token, name="无需手机号商品", require_mobile=False)
     with client.session_transaction() as sess:
-        sess["wechat_pay_h5_identity"] = {"openid": "op_test"}
+        sess["wechat_pay_h5_identity"] = {"openid": "op_test", "payer_name": "微信昵称"}
 
     html = client.get(f"/pay/{require_mobile['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert 'id="mobileInput"' in html
@@ -327,7 +327,7 @@ def test_require_mobile_order_validation_and_mobile_snapshot(app, client, tmp_pa
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
     with client.session_transaction() as sess:
-        sess["wechat_pay_h5_identity"] = {"openid": "op_test", "unionid": "un_test"}
+        sess["wechat_pay_h5_identity"] = {"openid": "op_test", "unionid": "un_test", "payer_name": "微信昵称"}
 
     missing_mobile = client.post(
         "/api/h5/wechat-pay/jsapi/orders",
@@ -402,7 +402,7 @@ def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(app, client, t
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
     with client.session_transaction() as sess:
-        sess["wechat_pay_h5_identity"] = {"openid": "op_test", "unionid": "un_test"}
+        sess["wechat_pay_h5_identity"] = {"openid": "op_test", "unionid": "un_test", "payer_name": "微信昵称"}
 
     created = client.post(
         "/api/h5/wechat-pay/jsapi/orders",

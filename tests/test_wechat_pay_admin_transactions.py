@@ -141,6 +141,18 @@ def test_wechat_pay_admin_cursor_pagination(app, client):
     assert second["has_more"] is False
 
 
+def test_wechat_pay_admin_displays_created_at_in_beijing_time(app):
+    _insert_order(
+        out_trade_no="WXP_TZ_DISPLAY",
+        transaction_id="420000TZDISPLAY",
+        created_at="2026-05-18T11:27:51+00:00",
+    )
+
+    payload = wechat_pay_admin_service.list_orders(filters={"transaction_id": "420000TZDISPLAY"}, limit=20)
+
+    assert payload["items"][0]["created_at"] == "2026-05-18 19:27:51"
+
+
 def test_wechat_pay_admin_export_job_saves_filters_json(app, client):
     token = _login_admin(client)
     _insert_order(out_trade_no="WXP_EXPORT", product_code="vip_course", product_name="会员课程")
