@@ -363,7 +363,14 @@ def insert_order(payload: dict[str, Any]) -> dict[str, Any]:
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb), ?::timestamptz, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            CAST(? AS jsonb),
+            CAST(? AS jsonb),
+            ?::timestamptz,
+            COALESCE(NULLIF(?, '')::timestamptz, CURRENT_TIMESTAMP),
+            CURRENT_TIMESTAMP
+        )
         RETURNING *
         """,
         (
@@ -387,6 +394,7 @@ def insert_order(payload: dict[str, Any]) -> dict[str, Any]:
             _json(payload.get("metadata") or {}),
             _json(payload.get("request_meta") or {}),
             _normalized_text(payload.get("expires_at")) or None,
+            _normalized_text(payload.get("created_at")),
         ),
     ).fetchone()
     return dict(row) if row else {}
@@ -524,6 +532,56 @@ def update_order_from_transaction(transaction: dict[str, Any]) -> dict[str, Any]
             _normalized_text(transaction.get("success_time")),
             _json(transaction),
             out_trade_no,
+        ),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def update_recovered_order_context(
+    out_trade_no: str,
+    *,
+    product_code: str,
+    product_name: str,
+    description: str = "",
+    success_url: str = "",
+    created_at: str = "",
+) -> dict[str, Any]:
+    row = get_db().execute(
+        """
+        UPDATE wechat_pay_orders
+        SET product_code = CASE
+                WHEN COALESCE(product_code, '') IN ('', 'recovered_wechat_pay') THEN ?
+                ELSE product_code
+            END,
+            product_name = CASE
+                WHEN COALESCE(product_name, '') IN ('', 'recovered_wechat_pay', '微信支付恢复订单') THEN ?
+                ELSE product_name
+            END,
+            description = CASE
+                WHEN COALESCE(description, '') IN ('', '微信支付恢复订单') THEN ?
+                ELSE description
+            END,
+            success_url = CASE
+                WHEN COALESCE(success_url, '') = '' THEN ?
+                ELSE success_url
+            END,
+            created_at = CASE
+                WHEN NULLIF(?, '') IS NOT NULL THEN ?::timestamptz
+                ELSE created_at
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE out_trade_no = ?
+          AND order_source LIKE 'recovered_%'
+        RETURNING *
+        """,
+        (
+            _normalized_text(product_code),
+            _normalized_text(product_name) or _normalized_text(product_code),
+            _normalized_text(description) or _normalized_text(product_name) or _normalized_text(product_code),
+            _normalized_text(success_url),
+            _normalized_text(created_at),
+            _normalized_text(created_at),
+            _normalized_text(out_trade_no),
         ),
     ).fetchone()
     return dict(row) if row else {}

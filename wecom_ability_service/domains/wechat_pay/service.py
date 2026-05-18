@@ -727,6 +727,13 @@ def _match_recovered_product(transaction: dict[str, Any]) -> dict[str, Any]:
         }
         if description and description in names:
             return product
+    amount_matches = [
+        product
+        for product in list_products()
+        if amount_total and int(product.get("amount_total") or 0) == amount_total
+    ]
+    if len(amount_matches) == 1:
+        return amount_matches[0]
     return {
         "product_code": product_code or "recovered_wechat_pay",
         "name": description or "微信支付恢复订单",
@@ -736,6 +743,53 @@ def _match_recovered_product(transaction: dict[str, Any]) -> dict[str, Any]:
         "success_url": "",
         "metadata": {},
     }
+
+
+def _created_at_from_out_trade_no(out_trade_no: str) -> str:
+    text = _normalized_text(out_trade_no)
+    stamp = text[3:15] if text.startswith("WXP") and len(text) >= 15 else ""
+    if len(stamp) != 12 or not stamp.isdigit():
+        return ""
+    try:
+        created = datetime(
+            year=2000 + int(stamp[0:2]),
+            month=int(stamp[2:4]),
+            day=int(stamp[4:6]),
+            hour=int(stamp[6:8]),
+            minute=int(stamp[8:10]),
+            second=int(stamp[10:12]),
+            tzinfo=timezone.utc,
+        )
+    except ValueError:
+        return ""
+    return created.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _enrich_recovered_order_from_transaction(order: dict[str, Any], transaction: dict[str, Any]) -> dict[str, Any]:
+    if not _normalized_text(order.get("order_source")).startswith("recovered_"):
+        return order
+    product = _match_recovered_product(transaction)
+    product_code = _normalized_text(product.get("product_code"))
+    if not product_code:
+        return order
+    product_name = _normalized_text(product.get("name") or product.get("description")) or product_code
+    updated = repo.update_recovered_order_context(
+        _normalized_text(order.get("out_trade_no") or transaction.get("out_trade_no")),
+        product_code=product_code,
+        product_name=product_name,
+        description=_normalized_text(transaction.get("description")) or product_name,
+        success_url=_normalized_text(product.get("success_url")),
+        created_at=_created_at_from_out_trade_no(_normalized_text(order.get("out_trade_no") or transaction.get("out_trade_no"))),
+    )
+    return updated or order
+
+
+def _should_refresh_recovered_order(order: dict[str, Any]) -> bool:
+    if not _normalized_text(order.get("order_source")).startswith("recovered_"):
+        return False
+    return _normalized_text(order.get("product_code")) in {"", "recovered_wechat_pay"} or _normalized_text(
+        order.get("product_name")
+    ) in {"", "微信支付恢复订单", "recovered_wechat_pay"}
 
 
 def _recover_missing_order_from_transaction(transaction: dict[str, Any], *, event_type: str) -> dict[str, Any]:
@@ -772,6 +826,7 @@ def _recover_missing_order_from_transaction(transaction: dict[str, Any], *, even
             "payer_openid": _transaction_payer_openid(transaction),
             "status": "created",
             "success_url": _normalized_text(product.get("success_url")),
+            "created_at": _created_at_from_out_trade_no(out_trade_no),
             "metadata": {
                 "recovered": True,
                 "recovered_event_type": event_type,
@@ -903,6 +958,7 @@ def _apply_transaction(transaction: dict[str, Any], *, event_type: str, headers:
         order = repo.update_order_from_transaction(transaction)
     if not order:
         raise WeChatPayOrderError("order_not_found")
+    order = _enrich_recovered_order_from_transaction(order, transaction)
     repo.insert_event(
         out_trade_no=out_trade_no,
         event_type=event_type,
@@ -930,7 +986,7 @@ def get_order_status(*, out_trade_no: str, refresh: bool = False) -> dict[str, A
         order = _apply_transaction(transaction, event_type="query")
     if not order:
         raise WeChatPayOrderError("order_not_found")
-    if refresh and _normalized_text(order.get("status")) not in {"paid", "closed"}:
+    if refresh and (_normalized_text(order.get("status")) not in {"paid", "closed"} or _should_refresh_recovered_order(order)):
         client = _create_wechat_pay_client()
         transaction = client.query_order_by_out_trade_no(out_trade_no)
         order = _apply_transaction(transaction, event_type="query")
