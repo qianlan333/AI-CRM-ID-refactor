@@ -689,6 +689,101 @@ def _mobile_binding_audit(
         return {"status": "skipped", "reason": str(exc), "mobile": mobile}
 
 
+def _transaction_amount_total(transaction: dict[str, Any]) -> int:
+    amount = transaction.get("amount") if isinstance(transaction.get("amount"), dict) else {}
+    return int(amount.get("total") or amount.get("payer_total") or 0)
+
+
+def _transaction_currency(transaction: dict[str, Any]) -> str:
+    amount = transaction.get("amount") if isinstance(transaction.get("amount"), dict) else {}
+    return _normalized_text(amount.get("currency")) or "CNY"
+
+
+def _transaction_payer_openid(transaction: dict[str, Any]) -> str:
+    payer = transaction.get("payer") if isinstance(transaction.get("payer"), dict) else {}
+    return _normalized_text(payer.get("openid"))
+
+
+def _transaction_attach_payload(transaction: dict[str, Any]) -> dict[str, Any]:
+    payload = safe_json_loads(_normalized_text(transaction.get("attach")), default={})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _match_recovered_product(transaction: dict[str, Any]) -> dict[str, Any]:
+    amount_total = _transaction_amount_total(transaction)
+    description = _normalized_text(transaction.get("description"))
+    attach = _transaction_attach_payload(transaction)
+    product_code = _normalized_text(attach.get("product_code"))
+    if product_code:
+        product = get_product(product_code)
+        if product:
+            return product
+    for product in list_products():
+        if amount_total and int(product.get("amount_total") or 0) != amount_total:
+            continue
+        names = {
+            _normalized_text(product.get("name")),
+            _normalized_text(product.get("description")),
+        }
+        if description and description in names:
+            return product
+    return {
+        "product_code": product_code or "recovered_wechat_pay",
+        "name": description or "微信支付恢复订单",
+        "description": description or "微信支付恢复订单",
+        "amount_total": amount_total,
+        "currency": _transaction_currency(transaction),
+        "success_url": "",
+        "metadata": {},
+    }
+
+
+def _recover_missing_order_from_transaction(transaction: dict[str, Any], *, event_type: str) -> dict[str, Any]:
+    out_trade_no = _normalized_text(transaction.get("out_trade_no"))
+    if not out_trade_no:
+        return {}
+    existing = repo.get_order(out_trade_no)
+    if existing:
+        return existing
+    amount_total = _transaction_amount_total(transaction)
+    if amount_total <= 0:
+        raise WeChatPayOrderError("order_not_found")
+    attach = _transaction_attach_payload(transaction)
+    product = _match_recovered_product(transaction)
+    product_code = _normalized_text(product.get("product_code")) or "recovered_wechat_pay"
+    product_name = _normalized_text(product.get("name") or product.get("description")) or product_code
+    logger.warning(
+        "recover missing WeChat Pay order out_trade_no=%s transaction_id=%s event_type=%s product_code=%s",
+        out_trade_no,
+        _normalized_text(transaction.get("transaction_id")),
+        event_type,
+        product_code,
+    )
+    return repo.insert_order(
+        {
+            "out_trade_no": out_trade_no,
+            "order_source": f"recovered_{event_type}",
+            "client_order_ref": _normalized_text(attach.get("client_order_ref")),
+            "product_code": product_code,
+            "product_name": product_name,
+            "description": _normalized_text(transaction.get("description")) or product_name,
+            "amount_total": amount_total,
+            "currency": _transaction_currency(transaction),
+            "payer_openid": _transaction_payer_openid(transaction),
+            "status": "created",
+            "success_url": _normalized_text(product.get("success_url")),
+            "metadata": {
+                "recovered": True,
+                "recovered_event_type": event_type,
+            },
+            "request_meta": {
+                "recovered_from_wechat_transaction": True,
+                "transaction_id": _normalized_text(transaction.get("transaction_id")),
+            },
+        }
+    )
+
+
 def create_jsapi_order(
     *,
     product_code: str,
@@ -696,6 +791,7 @@ def create_jsapi_order(
     respondent_key: str = "",
     unionid: str = "",
     external_userid: str = "",
+    payer_name: str = "",
     client_order_ref: str = "",
     order_source: str = "h5_checkout",
     notify_url: str,
@@ -720,13 +816,19 @@ def create_jsapi_order(
         raise WeChatPayOrderError("already_paid")
     normalized_mobile = _normalize_order_mobile(product=product, mobile=mobile)
     request_meta_payload = dict(request_meta or {})
+    identity_external_userid = _normalized_text(external_userid)
+    userid_snapshot = ""
     if normalized_mobile:
-        request_meta_payload["mobile_binding"] = _mobile_binding_audit(
+        mobile_binding = _mobile_binding_audit(
             mobile=normalized_mobile,
             openid=openid,
             unionid=unionid,
             external_userid=external_userid,
         )
+        request_meta_payload["mobile_binding"] = mobile_binding
+        if isinstance(mobile_binding, dict) and mobile_binding.get("status") == "bound":
+            identity_external_userid = _normalized_text(mobile_binding.get("external_userid")) or identity_external_userid
+            userid_snapshot = _normalized_text(mobile_binding.get("owner_userid"))
     out_trade_no = _generate_out_trade_no()
     success_url = _safe_success_url(product.get("success_url"))
     order = repo.insert_order(
@@ -742,8 +844,10 @@ def create_jsapi_order(
             "payer_openid": openid,
             "respondent_key": respondent_key,
             "unionid": unionid,
-            "external_userid": external_userid,
+            "external_userid": identity_external_userid,
+            "userid_snapshot": userid_snapshot,
             "mobile_snapshot": normalized_mobile,
+            "payer_name_snapshot": _normalized_text(payer_name),
             "status": "created",
             "success_url": success_url,
             "metadata": product.get("metadata") or {},
@@ -759,13 +863,12 @@ def create_jsapi_order(
         "notify_url": _normalized_text(notify_url),
         "amount": {"total": amount_total, "currency": product.get("currency") or "CNY"},
         "payer": {"openid": openid},
-    }
-    if client_order_ref:
-        transaction_payload["attach"] = json.dumps(
+        "attach": json.dumps(
             {"product_code": product["product_code"], "client_order_ref": client_order_ref},
             ensure_ascii=False,
             separators=(",", ":"),
-        )[:128]
+        )[:128],
+    }
     try:
         client = _create_wechat_pay_client()
         response_payload = client.create_jsapi_transaction(transaction_payload)
@@ -796,6 +899,9 @@ def _apply_transaction(transaction: dict[str, Any], *, event_type: str, headers:
         raise WeChatPayOrderError("out_trade_no_missing")
     order = repo.update_order_from_transaction(transaction)
     if not order:
+        _recover_missing_order_from_transaction(transaction, event_type=event_type)
+        order = repo.update_order_from_transaction(transaction)
+    if not order:
         raise WeChatPayOrderError("order_not_found")
     repo.insert_event(
         out_trade_no=out_trade_no,
@@ -818,6 +924,10 @@ def handle_wechat_pay_notification(*, body: str, headers: dict[str, Any]) -> dic
 
 def get_order_status(*, out_trade_no: str, refresh: bool = False) -> dict[str, Any]:
     order = repo.get_order(out_trade_no)
+    if not order and refresh:
+        client = _create_wechat_pay_client()
+        transaction = client.query_order_by_out_trade_no(out_trade_no)
+        order = _apply_transaction(transaction, event_type="query")
     if not order:
         raise WeChatPayOrderError("order_not_found")
     if refresh and _normalized_text(order.get("status")) not in {"paid", "closed"}:

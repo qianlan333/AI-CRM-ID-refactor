@@ -9,6 +9,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from flask import current_app
 
@@ -40,6 +41,7 @@ EXPORT_HEADERS = [
 ]
 EXPORT_MAX_DAYS = 90
 EXPORT_MAX_ROWS = 5000
+ADMIN_DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 class WeChatPayAdminError(ValueError):
@@ -59,7 +61,10 @@ def _normalized_int(value: Any, *, default: int = 0) -> int:
 
 def _dt_text(value: Any) -> str:
     if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        source = value
+        if source.tzinfo is None:
+            source = source.replace(tzinfo=timezone.utc)
+        return source.astimezone(ADMIN_DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
     return _normalized_text(value)
 
 
@@ -141,7 +146,7 @@ def _present_order(order: dict[str, Any], *, include_refund: bool = False) -> di
 
 
 def default_filters() -> dict[str, str]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(ADMIN_DISPLAY_TIMEZONE)
     start = now - timedelta(days=30)
     return {
         "created_from": start.strftime("%Y-%m-%dT00:00"),
