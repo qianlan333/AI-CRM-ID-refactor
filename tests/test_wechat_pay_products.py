@@ -134,6 +134,10 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "加载中" in edit_html
     assert "最多 10 张" in edit_html
     assert "最多 20 张" not in edit_html
+    assert "image_upload_client.js" in edit_html
+    assert "ImageUploadClient.prepareImageForUpload" in edit_html
+    assert "ImageUploadClient.requestJson" in edit_html
+    assert "response.json()" not in edit_html
     assert "手机端预览" not in edit_html
     assert "引流计划列表加载失败" not in edit_html
 
