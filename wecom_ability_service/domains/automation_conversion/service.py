@@ -17,6 +17,7 @@ from ..automation_state.state_defs import (
     FOLLOWUP_SEGMENT_FOCUS as SHARED_FOLLOWUP_SEGMENT_FOCUS,
     FOLLOWUP_SEGMENT_NORMAL as SHARED_FOLLOWUP_SEGMENT_NORMAL,
 )
+from ..attachment_library import _normalize_id_list as _normalize_attachment_ids
 from ..marketing_automation.service import get_signup_conversion_config, save_signup_conversion_config
 from ..outbound_webhook.service import EVENT_OPENCLAW_FOCUS_MESSAGE, send_outbound_webhook
 from ..questionnaire.service import get_questionnaire_detail, list_questionnaires
@@ -822,6 +823,29 @@ def _send_channel_welcome_message(
         if welcome_attachments:
             request_payload["attachments"] = welcome_attachments
     try:
+        raw_attachment_ids = channel.get("welcome_attachment_library_ids") or []
+        if raw_attachment_ids:
+            from .. import attachment_library as _attachment_library
+
+            welcome_attachments = list(request_payload.get("attachments") or [])
+            for aid in _attachment_library._normalize_id_list(raw_attachment_ids):
+                welcome_attachments.append(_attachment_library.materialize_file_attachment(aid))
+            if len(welcome_attachments) > 9:
+                raise ValueError("welcome message supports at most 9 attachments")
+            if welcome_attachments:
+                request_payload["attachments"] = welcome_attachments
+    except (ValueError, RuntimeError) as exc:
+        _write_event(
+            member_id=int(member["id"]),
+            action="qrcode_welcome_failed",
+            operator_type="system",
+            operator_id=_normalized_text(operator_id) or "wecom_callback",
+            before_snapshot=_member_snapshot(serialized_member),
+            after_snapshot=_member_snapshot(serialized_member),
+            remark=str(exc),
+        )
+        return {"attempted": True, "sent": False, "error": str(exc)}
+    try:
         wecom_result = get_contact_runtime_client().send_welcome_msg(request_payload)
     except (WeComClientError, AttributeError, ValueError) as exc:
         _write_event(
@@ -993,6 +1017,7 @@ def get_settings_payload(*, program_id: int | None = None) -> dict[str, Any]:
             "qr_ticket": _normalized_text(channel.get("qr_ticket")),
             "scene_value": _normalized_text(channel.get("scene_value")),
             "welcome_message": _normalized_text(channel.get("welcome_message")),
+            "welcome_attachment_library_ids": _normalize_attachment_ids(channel.get("welcome_attachment_library_ids")),
             "auto_accept_friend": _normalize_bool(channel.get("auto_accept_friend")),
             "entry_tag_id": _normalized_text(channel.get("entry_tag_id")),
             "entry_tag_name": _normalized_text(channel.get("entry_tag_name")),
@@ -1003,6 +1028,7 @@ def get_settings_payload(*, program_id: int | None = None) -> dict[str, Any]:
                 provider=provider,
                 channel_status=_normalized_text(channel.get("status")) or CHANNEL_STATUS_NOT_GENERATED,
                 welcome_message=_normalized_text(channel.get("welcome_message")),
+                welcome_attachment_library_ids=_normalize_attachment_ids(channel.get("welcome_attachment_library_ids")),
                 auto_accept_friend=_normalize_bool(channel.get("auto_accept_friend")),
                 entry_tag_name=_normalized_text(channel.get("entry_tag_name")),
             ),

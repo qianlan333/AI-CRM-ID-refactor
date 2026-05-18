@@ -1222,6 +1222,7 @@ CREATE TABLE IF NOT EXISTS automation_channel (
     qr_ticket TEXT NOT NULL DEFAULT '',
     scene_value TEXT NOT NULL DEFAULT '',
     welcome_message TEXT NOT NULL DEFAULT '',
+    welcome_attachment_library_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     auto_accept_friend BOOLEAN NOT NULL DEFAULT FALSE,
     entry_tag_id TEXT NOT NULL DEFAULT '',
     entry_tag_name TEXT NOT NULL DEFAULT '',
@@ -2821,6 +2822,28 @@ ON image_library (category) WHERE category <> '';
 
 CREATE INDEX IF NOT EXISTS idx_image_library_tags_gin
 ON image_library USING GIN (tags);
+
+CREATE TABLE IF NOT EXISTS attachment_library (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    file_name TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+    file_size INTEGER NOT NULL DEFAULT 0,
+    data_base64 TEXT NOT NULL DEFAULT '',
+    media_id TEXT NOT NULL DEFAULT '',
+    media_id_expires_at TIMESTAMPTZ,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    description TEXT NOT NULL DEFAULT '',
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachment_library_enabled
+ON attachment_library (enabled, updated_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_attachment_library_tags_gin
+ON attachment_library USING GIN (tags);
 
 CREATE INDEX IF NOT EXISTS idx_campaign_members_trace
 ON campaign_members (trace_id, id DESC);
