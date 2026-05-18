@@ -415,6 +415,19 @@ def test_audience_entry_rule_v5_save_validation(app):
         with pytest.raises(ValueError, match="已转化判定已启用"):
             save_audience_entry_rule(program_id, {"conversion_review": {"enabled": True}})
 
+        draft = save_audience_entry_rule(
+            program_id,
+            {
+                "_allow_incomplete": True,
+                "order_review": {"enabled": True},
+                "questionnaire_review": {"enabled": False},
+                "conversion_review": {"enabled": False},
+            },
+        )
+        draft_payload = draft["audience_entry_rule"]["payload_json"]
+        assert draft_payload["order_review"]["enabled"] is True
+        assert draft_payload["order_review"]["selected_product_id"] is None
+
 
 def test_audience_entry_rule_v5_publish_check_dynamic(app):
     from wecom_ability_service.domains.automation_conversion import program_repo
@@ -493,10 +506,13 @@ def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, mo
         assert label in html
     assert "必填" in html
     assert "不可关闭" in html
-    assert "下一步：<strong data-next-step=\"scan_enter\">问卷审核</strong>" in html
-    assert "下一步：<strong data-next-step=\"order_review\">本项已跳过</strong>" in html
-    assert "下一步：<strong data-next-step=\"operating\">结束</strong>" in html
+    assert 'data-next-step="scan_enter">问卷审核</strong>' in html
+    assert 'data-next-step="order_review">本项已跳过</strong>' in html
+    assert 'data-next-step="operating">结束</strong>' in html
     assert "本项已关闭" in html
+    assert "sessionStorage.setItem(audienceDraftKey" in html
+    assert "payload._allow_incomplete = true" in html
+    assert "已选择问卷" in html
     assert "去选择商品" in html
     assert "去选择问卷" in html
     assert "AI 测评报告" in picker_html

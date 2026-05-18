@@ -1029,8 +1029,9 @@ def save_segmentation(program_id: int, payload: dict[str, Any]) -> dict[str, Any
 
 def save_audience_entry_rule(program_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     payload = dict(payload or {})
+    allow_incomplete = bool(payload.pop("_allow_incomplete", False))
     is_legacy_payload = bool(payload.get("cards") or payload.get("rules"))
-    normalized = _normalize_audience_entry_rule_payload(payload, validate=not is_legacy_payload)
+    normalized = _normalize_audience_entry_rule_payload(payload, validate=not is_legacy_payload and not allow_incomplete)
     rules = _legacy_rules_from_entry_rule(normalized)
     normalized["rules"] = rules
     block = program_repo.upsert_config_block_row(
