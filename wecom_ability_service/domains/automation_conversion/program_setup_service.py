@@ -581,7 +581,11 @@ def _normalize_audience_review_item(
 def _normalize_audience_entry_rule_payload(payload: dict[str, Any], *, validate: bool = True) -> dict[str, Any]:
     payload = dict(payload or {})
     available_questionnaires = _list_available_questionnaires()
-    if payload.get("cards") or payload.get("rules"):
+    has_v5_review_config = any(
+        key in payload
+        for key in ("entry_source", "order_review", "questionnaire_review", "operating", "conversion_review")
+    )
+    if not has_v5_review_config and (payload.get("cards") or payload.get("rules")):
         rules = list(payload.get("rules") or [])
         if payload.get("cards"):
             cards = dict(payload.get("cards") or {})
