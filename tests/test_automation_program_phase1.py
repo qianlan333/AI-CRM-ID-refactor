@@ -260,8 +260,11 @@ def test_setup_segmentation_and_entry_rule_hide_raw_json_inputs(app, client, mon
     assert "规则 JSON" not in entry_rule_html
     assert "命中选项 ID" not in segmentation_html
     assert "hit_option_ids" not in segmentation_html
-    assert "入口进入后" in entry_rule_html
-    assert "问卷提交后" in entry_rule_html
+    assert "扫码进入" in entry_rule_html
+    assert "订单审核" in entry_rule_html
+    assert "问卷审核" in entry_rule_html
+    assert "运营中" in entry_rule_html
+    assert "已转化" in entry_rule_html
 
 
 def test_setup_page_hides_inner_program_header(app, client, monkeypatch):
@@ -384,6 +387,227 @@ def test_setup_footer_saves_before_navigation(app, client, monkeypatch):
     assert "saveCurrentStep" in html
     assert "const nextStep = event.currentTarget?.dataset.nextStep || \"\";" in html
     assert "const nextStep = event.currentTarget.dataset.nextStep || \"\";" not in html
+
+
+def test_audience_entry_rule_v5_save_validation(app):
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import save_audience_entry_rule
+
+    program_id = _default_program_id(app)
+    with app.app_context():
+        result = save_audience_entry_rule(
+            program_id,
+            {
+                "order_review": {"enabled": False},
+                "questionnaire_review": {"enabled": False},
+                "conversion_review": {"enabled": False},
+            },
+        )
+        payload = result["audience_entry_rule"]["payload_json"]
+        assert payload["order_review"]["enabled"] is False
+        assert payload["questionnaire_review"]["enabled"] is False
+        assert payload["conversion_review"]["enabled"] is False
+        assert payload["operating"]["enabled"] is True
+
+        with pytest.raises(ValueError, match="订单审核已启用"):
+            save_audience_entry_rule(program_id, {"order_review": {"enabled": True}})
+        with pytest.raises(ValueError, match="问卷审核已启用"):
+            save_audience_entry_rule(program_id, {"questionnaire_review": {"enabled": True}})
+        with pytest.raises(ValueError, match="已转化判定已启用"):
+            save_audience_entry_rule(program_id, {"conversion_review": {"enabled": True}})
+
+
+def test_audience_entry_rule_v5_publish_check_dynamic(app):
+    from wecom_ability_service.domains.automation_conversion import program_repo
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import (
+        build_publish_check,
+        save_audience_entry_rule,
+        save_entry_channel,
+    )
+
+    program_id = _default_program_id(app)
+    with app.app_context():
+        save_entry_channel(program_id, {"channel_name": "入池规则入口", "welcome_message": "欢迎"})
+        save_audience_entry_rule(
+            program_id,
+            {
+                "order_review": {"enabled": False},
+                "questionnaire_review": {"enabled": False},
+                "conversion_review": {"enabled": False},
+            },
+        )
+        check = build_publish_check(program_id)
+        program_repo.upsert_config_block_row(
+            program_id,
+            "audience_entry_rule",
+            {
+                "entry_source": "both",
+                "order_review": {"enabled": False},
+                "questionnaire_review": {"enabled": False},
+                "operating": {"enabled": True, "fixed": True},
+                "conversion_review": {"enabled": True},
+            },
+            status="saved",
+        )
+        failed_check = build_publish_check(program_id)
+
+    assert check["entry"]["passed"] is True
+    assert not any(item["label"] == "订单审核商品已选择" for item in check["entry"]["items"])
+    failed_items = {item["label"]: item for item in failed_check["entry"]["items"]}
+    assert failed_items["成交判定商品已选择"]["passed"] is False
+    assert failed_check["entry"]["passed"] is False
+
+
+def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import save_audience_entry_rule
+
+    _login(client, app, monkeypatch)
+    app.config["WECHAT_PAY_PRODUCT_CATALOG_JSON"] = json.dumps(
+        {
+            "products": [
+                {"product_code": "ai_report_v5", "name": "AI 测评报告", "description": "AI 测评报告", "amount_total": 9900}
+            ]
+        },
+        ensure_ascii=False,
+    )
+    program_id = _default_program_id(app)
+    questionnaire = _seed_choice_questionnaire(app, slug="audience-rule-v5-questionnaire")
+    with app.app_context():
+        save_audience_entry_rule(
+            program_id,
+            {
+                "order_review": {"enabled": False},
+                "questionnaire_review": {
+                    "enabled": True,
+                    "selected_questionnaire_id": questionnaire["id"],
+                },
+                "conversion_review": {"enabled": False},
+            },
+        )
+
+    html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=entry-rule").get_data(as_text=True)
+    picker_html = client.get(
+        f"/admin/automation-conversion/programs/{program_id}/setup?step=entry-rule&audience_picker=order_product"
+    ).get_data(as_text=True)
+
+    for label in ["扫码进入", "订单审核", "问卷审核", "运营中", "已转化"]:
+        assert label in html
+    assert "必填" in html
+    assert "不可关闭" in html
+    assert "下一步：<strong data-next-step=\"scan_enter\">问卷审核</strong>" in html
+    assert "下一步：<strong data-next-step=\"order_review\">本项已跳过</strong>" in html
+    assert "下一步：<strong data-next-step=\"operating\">结束</strong>" in html
+    assert "本项已关闭" in html
+    assert "去选择商品" in html
+    assert "去选择问卷" in html
+    assert "AI 测评报告" in picker_html
+    assert "¥99.00" in picker_html
+    for forbidden in ["product_code", "out_trade_no", "external_userid", "unionid", "respondent_key", "client_order_ref"]:
+        assert forbidden not in html
+        assert forbidden not in picker_html
+
+
+def test_audience_entry_rule_v5_runtime_resolves_order_questionnaire_and_conversion(app):
+    from wecom_ability_service.domains.automation_conversion import program_repo
+    from wecom_ability_service.domains.automation_conversion.workflow_runtime import _resolve_member_conversion_audience
+
+    program_id = _default_program_id(app)
+    questionnaire = _seed_choice_questionnaire(app, slug="audience-rule-v5-runtime")
+    with app.app_context():
+        db = get_db()
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, 'audience_rule_v5_runtime_channel', '入池判定渠道', 'owner-runtime', 'active')
+                RETURNING id
+                """,
+                (program_id,),
+            ).fetchone()["id"]
+        )
+        member = dict(
+            db.execute(
+                """
+                INSERT INTO automation_member (
+                    external_contact_id, phone, owner_staff_id, current_audience_code,
+                    source_channel_id, source_type, joined_at
+                )
+                VALUES ('ext-audience-rule-runtime', '13900009999', 'owner-runtime',
+                        'pending_questionnaire', ?, 'automation_channel', CURRENT_TIMESTAMP)
+                RETURNING *
+                """,
+                (channel_id,),
+            ).fetchone()
+        )
+        program_repo.upsert_config_block_row(
+            program_id,
+            "audience_entry_rule",
+            {
+                "entry_source": "both",
+                "order_review": {"enabled": True, "selected_product_id": "ai_report_runtime"},
+                "questionnaire_review": {
+                    "enabled": True,
+                    "selected_questionnaire_id": questionnaire["id"],
+                },
+                "operating": {"enabled": True, "fixed": True},
+                "conversion_review": {"enabled": True, "selected_product_id": "consult_runtime"},
+            },
+            status="saved",
+        )
+        db.commit()
+
+        before_order = _resolve_member_conversion_audience(member)
+        assert before_order["audience_code"] == "pending_questionnaire"
+        assert before_order["entry_reason"] == "order_review_pending"
+
+        db.execute(
+            """
+            INSERT INTO wechat_pay_orders (
+                out_trade_no, product_code, product_name, amount_total, external_userid,
+                mobile_snapshot, status, trade_state, metadata_json, request_meta_json
+            )
+            VALUES ('ORDER-RUNTIME-1', 'ai_report_runtime', 'AI 测评报告', 9900,
+                    'ext-audience-rule-runtime', '13900009999', 'paid', 'SUCCESS',
+                    '{}'::jsonb, '{}'::jsonb)
+            """
+        )
+        db.commit()
+        after_order = _resolve_member_conversion_audience(member)
+        assert after_order["audience_code"] == "pending_questionnaire"
+        assert after_order["entry_reason"] == "questionnaire_review_pending"
+
+        db.execute(
+            """
+            INSERT INTO questionnaire_submissions (
+                questionnaire_id, respondent_key, external_userid, mobile_snapshot,
+                total_score, final_tags, redirect_url_snapshot, submitted_at
+            )
+            VALUES (?, 'resp-audience-rule-runtime', 'ext-audience-rule-runtime', '13900009999',
+                    80, '[]', '', CURRENT_TIMESTAMP)
+            """,
+            (questionnaire["id"],),
+        )
+        db.commit()
+        after_questionnaire = _resolve_member_conversion_audience(member)
+        assert after_questionnaire["audience_code"] == "operating"
+        assert after_questionnaire["entry_reason"] == "audience_entry_rule_passed"
+
+        db.execute(
+            """
+            INSERT INTO wechat_pay_orders (
+                out_trade_no, product_code, product_name, amount_total, external_userid,
+                mobile_snapshot, status, trade_state, metadata_json, request_meta_json
+            )
+            VALUES ('ORDER-RUNTIME-2', 'consult_runtime', '进阶咨询服务', 69900,
+                    'ext-audience-rule-runtime', '13900009999', 'paid', 'SUCCESS',
+                    '{}'::jsonb, '{}'::jsonb)
+            """
+        )
+        db.commit()
+        after_conversion = _resolve_member_conversion_audience(member)
+        assert after_conversion["audience_code"] == "converted"
+        assert after_conversion["entry_reason"] == "conversion_product_paid"
 
 
 def test_program_basic_info_edit_updates_list_and_context_header(app, client, monkeypatch):
