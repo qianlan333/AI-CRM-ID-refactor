@@ -58,6 +58,11 @@
   .setup-picker-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 12px 14px; border: 1px solid rgba(15,23,42,.10); border-radius: 12px; background: #fff; }
   .setup-picker-title { display: grid; gap: 4px; color: #1f2329; font-weight: 900; }
   .setup-picker-subtitle { color: #667085; font-weight: 700; }
+  .setup-modal { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(15,23,42,.36); }
+  .setup-modal[hidden] { display: none !important; }
+  .setup-modal__panel { width: min(720px, 100%); max-height: min(720px, 86vh); display: grid; gap: 14px; padding: 18px; overflow: auto; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.22); }
+  .setup-modal__head { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+  .setup-modal__head h3 { margin: 0; }
   .setup-result-row { display: flex; justify-content: space-between; gap: 12px; color: #344054; word-break: break-all; }
   .setup-qrcode-preview { display: grid; place-items: center; min-height: 220px; border: 1px dashed rgba(20,86,240,.22); border-radius: 14px; background: #fff; }
   .setup-qrcode-preview img { width: min(220px, 100%); aspect-ratio: 1; object-fit: contain; border-radius: 10px; }
@@ -422,7 +427,7 @@
             <span class="setup-selection-summary{% if not order.selected_product_id %} is-empty{% endif %}" data-selected-summary="order_review">
               {% if order.selected_product_id %}<span class="setup-selection-ok">已选择</span>{{ (order.selected_product_snapshot or {}).name }} · {{ (order.selected_product_snapshot or {}).price_text }}{% else %}未选择商品{% endif %}
             </span>
-            <a class="setup-button" data-select-link="order_review" href="{{ urls.base }}?step=entry-rule&audience_picker=order_product">去选择商品</a>
+            <button class="setup-button" type="button" data-open-picker="order_product">去选择商品</button>
           </div>
         </div>
         <div class="setup-choice-field" data-disabled-area="order_review" {% if order.enabled %}style="display:none"{% endif %}>
@@ -445,7 +450,7 @@
             <span class="setup-selection-summary{% if not questionnaire.selected_questionnaire_id %} is-empty{% endif %}" data-selected-summary="questionnaire_review">
               {% if questionnaire.selected_questionnaire_id %}<span class="setup-selection-ok">已选择</span>{{ (questionnaire.selected_questionnaire_snapshot or {}).title }}{% else %}未选择问卷{% endif %}
             </span>
-            <a class="setup-button" data-select-link="questionnaire_review" href="{{ urls.base }}?step=entry-rule&audience_picker=questionnaire">去选择问卷</a>
+            <button class="setup-button" type="button" data-open-picker="questionnaire">去选择问卷</button>
           </div>
         </div>
         <div class="setup-choice-field" data-disabled-area="questionnaire_review" {% if questionnaire.enabled %}style="display:none"{% endif %}>
@@ -476,7 +481,7 @@
             <span class="setup-selection-summary{% if not conversion.selected_product_id %} is-empty{% endif %}" data-selected-summary="conversion_review">
               {% if conversion.selected_product_id %}<span class="setup-selection-ok">已选择</span>{{ (conversion.selected_product_snapshot or {}).name }} · {{ (conversion.selected_product_snapshot or {}).price_text }}{% else %}未选择成交商品{% endif %}
             </span>
-            <a class="setup-button" data-select-link="conversion_review" href="{{ urls.base }}?step=entry-rule&audience_picker=conversion_product">去选择商品</a>
+            <button class="setup-button" type="button" data-open-picker="conversion_product">去选择商品</button>
           </div>
         </div>
         <div class="setup-choice-field" data-disabled-area="conversion_review" {% if conversion.enabled %}style="display:none"{% endif %}>
@@ -487,6 +492,44 @@
       </article>
     </div>
   </section>
+  <div class="setup-modal" data-audience-modal hidden>
+    <div class="setup-modal__panel" role="dialog" aria-modal="true" aria-labelledby="audience-picker-title">
+      <div class="setup-modal__head">
+        <h3 id="audience-picker-title" data-picker-title>选择</h3>
+        <button class="setup-button" type="button" data-close-picker>关闭</button>
+      </div>
+      <div class="setup-picker-grid" data-picker-panel="order_product" hidden>
+        {% for item in rule.available_products or [] %}
+        <article class="setup-picker-row">
+          <div class="setup-picker-title"><span>{{ item.name }}</span><span class="setup-picker-subtitle">{{ item.price_text }}</span></div>
+          <button class="setup-button is-primary" type="button" data-pick-audience-item data-picker="order_product" data-value="{{ item.id }}" data-name="{{ item.name }}" data-price="{{ item.price_text }}">选择</button>
+        </article>
+        {% else %}
+        <div class="setup-empty-hint">当前没有可选择商品。</div>
+        {% endfor %}
+      </div>
+      <div class="setup-picker-grid" data-picker-panel="questionnaire" hidden>
+        {% for item in rule.available_questionnaires or [] %}
+        <article class="setup-picker-row">
+          <div class="setup-picker-title"><span>{{ item.title }}</span><span class="setup-picker-subtitle">{{ item.status }} · {{ item.question_count }} 题</span></div>
+          <button class="setup-button is-primary" type="button" data-pick-audience-item data-picker="questionnaire" data-value="{{ item.id }}" data-name="{{ item.title }}">选择</button>
+        </article>
+        {% else %}
+        <div class="setup-empty-hint">当前没有可选择问卷。</div>
+        {% endfor %}
+      </div>
+      <div class="setup-picker-grid" data-picker-panel="conversion_product" hidden>
+        {% for item in rule.available_products or [] %}
+        <article class="setup-picker-row">
+          <div class="setup-picker-title"><span>{{ item.name }}</span><span class="setup-picker-subtitle">{{ item.price_text }}</span></div>
+          <button class="setup-button is-primary" type="button" data-pick-audience-item data-picker="conversion_product" data-value="{{ item.id }}" data-name="{{ item.name }}" data-price="{{ item.price_text }}">选择</button>
+        </article>
+        {% else %}
+        <div class="setup-empty-hint">当前没有可选择商品。</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
   {% endif %}
 
   {% elif current_step == 'operations' %}
@@ -777,6 +820,37 @@
     await postJson(urls.audience_entry_rule, payload);
   };
   const audienceBool = (value) => String(value || "") === "1" || value === true;
+  const setAudienceEnabled = (key, enabled) => {
+    const form = root.querySelector("[data-audience-rule-form]");
+    if (!form) return;
+    const value = enabled ? "1" : "0";
+    if (key === "order_review") form.dataset.orderEnabled = value;
+    if (key === "questionnaire_review") form.dataset.questionnaireEnabled = value;
+    if (key === "conversion_review") form.dataset.conversionEnabled = value;
+  };
+  const setAudienceSelection = (key, payload) => {
+    const form = root.querySelector("[data-audience-rule-form]");
+    if (!form) return;
+    const summary = form.querySelector(`[data-selected-summary="${key}"]`);
+    if (key === "order_review") {
+      form.dataset.orderProductId = payload.id || "";
+      form.dataset.orderProductName = payload.name || "";
+      form.dataset.orderProductPrice = payload.price || "";
+      if (summary) summary.innerHTML = `<span class="setup-selection-ok">已选择</span>${escapeHtml(payload.name || "")} · ${escapeHtml(payload.price || "")}`;
+    }
+    if (key === "questionnaire_review") {
+      form.dataset.questionnaireId = payload.id || "";
+      form.dataset.questionnaireTitle = payload.name || "";
+      if (summary) summary.innerHTML = `<span class="setup-selection-ok">已选择</span>${escapeHtml(payload.name || "")}`;
+    }
+    if (key === "conversion_review") {
+      form.dataset.conversionProductId = payload.id || "";
+      form.dataset.conversionProductName = payload.name || "";
+      form.dataset.conversionProductPrice = payload.price || "";
+      if (summary) summary.innerHTML = `<span class="setup-selection-ok">已选择</span>${escapeHtml(payload.name || "")} · ${escapeHtml(payload.price || "")}`;
+    }
+    summary?.classList.remove("is-empty");
+  };
   const audienceStateFromForm = () => {
     const form = root.querySelector("[data-audience-rule-form]");
     const initial = audienceInitialState || {};
@@ -838,53 +912,52 @@
       if (!form) return;
       const value = button.dataset.toggleValue === "1" ? "1" : "0";
       const key = group.dataset.toggleGroup;
-      if (key === "order_review") form.dataset.orderEnabled = value;
-      if (key === "questionnaire_review") form.dataset.questionnaireEnabled = value;
-      if (key === "conversion_review") form.dataset.conversionEnabled = value;
+      setAudienceEnabled(key, value === "1");
       updateAudienceNextSteps();
     });
   });
-  root.querySelectorAll("[data-select-link]").forEach((link) => {
-    link.addEventListener("click", async (event) => {
-      const form = root.querySelector("[data-audience-rule-form]");
-      if (!form) return;
-      event.preventDefault();
+  const pickerModal = root.querySelector("[data-audience-modal]");
+  const pickerTitle = root.querySelector("[data-picker-title]");
+  const pickerTitles = { order_product: "选择订单审核商品", questionnaire: "选择问卷", conversion_product: "选择成交判定商品" };
+  const openPicker = (picker) => {
+    if (!pickerModal) return;
+    if (pickerTitle) pickerTitle.textContent = pickerTitles[picker] || "选择";
+    root.querySelectorAll("[data-picker-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.pickerPanel !== picker;
+    });
+    pickerModal.hidden = false;
+  };
+  const closePicker = () => {
+    if (pickerModal) pickerModal.hidden = true;
+  };
+  root.querySelectorAll("[data-open-picker]").forEach((button) => {
+    button.addEventListener("click", () => openPicker(button.dataset.openPicker || ""));
+  });
+  root.querySelector("[data-close-picker]")?.addEventListener("click", closePicker);
+  pickerModal?.addEventListener("click", (event) => {
+    if (event.target === pickerModal) closePicker();
+  });
+  root.querySelectorAll("[data-pick-audience-item]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const picker = button.dataset.picker || "";
+      if (picker === "order_product") {
+        setAudienceEnabled("order_review", true);
+        setAudienceSelection("order_review", { id: button.dataset.value || "", name: button.dataset.name || "", price: button.dataset.price || "" });
+      } else if (picker === "questionnaire") {
+        setAudienceEnabled("questionnaire_review", true);
+        setAudienceSelection("questionnaire_review", { id: button.dataset.value || "", name: button.dataset.name || "" });
+      } else if (picker === "conversion_product") {
+        setAudienceEnabled("conversion_review", true);
+        setAudienceSelection("conversion_review", { id: button.dataset.value || "", name: button.dataset.name || "", price: button.dataset.price || "" });
+      }
+      updateAudienceNextSteps();
       const payload = currentAudiencePayload();
       payload._allow_incomplete = true;
       try {
         await postJson(urls.audience_entry_rule, payload);
-        window.location.href = link.href;
-      } catch (error) {
-        showFeedback(error.message || "进入选择页失败，请稍后重试");
-      }
-    });
-  });
-  root.querySelectorAll("[data-pick-audience-item]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const payload = JSON.parse(JSON.stringify(audienceInitialState || {}));
-      payload.entry_source = payload.entry_source || "both";
-      payload.order_review = payload.order_review || { enabled: false };
-      payload.questionnaire_review = payload.questionnaire_review || { enabled: false };
-      payload.operating = { enabled: true, fixed: true };
-      payload.conversion_review = payload.conversion_review || { enabled: false };
-      const picker = button.dataset.picker || "";
-      if (picker === "order_product") {
-        payload.order_review.enabled = true;
-        payload.order_review.selected_product_id = button.dataset.value || "";
-        payload.order_review.selected_product_snapshot = { name: button.dataset.name || "", price_text: button.dataset.price || "" };
-      } else if (picker === "questionnaire") {
-        payload.questionnaire_review.enabled = true;
-        payload.questionnaire_review.selected_questionnaire_id = Number(button.dataset.value || 0) || null;
-        payload.questionnaire_review.selected_questionnaire_snapshot = { title: button.dataset.name || "" };
-      } else if (picker === "conversion_product") {
-        payload.conversion_review.enabled = true;
-        payload.conversion_review.selected_product_id = button.dataset.value || "";
-        payload.conversion_review.selected_product_snapshot = { name: button.dataset.name || "", price_text: button.dataset.price || "" };
-      }
-      payload._allow_incomplete = true;
-      try {
-        await postJson(urls.audience_entry_rule, payload);
-        window.location.href = `${urls.base}?step=entry-rule&selected=${encodeURIComponent(picker)}`;
+        closePicker();
+        const labels = { order_product: "已选择订单审核商品", questionnaire: "已选择问卷", conversion_product: "已选择成交判定商品" };
+        showFeedback(labels[picker] || "已选择", true);
       } catch (error) { showFeedback(error.message || "选择失败，请稍后重试"); }
     });
   });

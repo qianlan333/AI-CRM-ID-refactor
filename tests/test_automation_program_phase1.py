@@ -512,11 +512,18 @@ def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, mo
     assert 'data-next-step="order_review">本项已跳过</strong>' in html
     assert 'data-next-step="operating">结束</strong>' in html
     assert "本项已关闭" in html
+    assert "data-audience-modal" in html
+    assert 'data-open-picker="order_product"' in html
+    assert 'data-open-picker="questionnaire"' in html
+    assert 'data-open-picker="conversion_product"' in html
+    assert "data-select-link" not in html
+    assert "sessionStorage" not in html
     assert "payload._allow_incomplete = true" in html
     assert "await postJson(urls.audience_entry_rule, payload);" in html
     assert "已选择问卷" in html
     assert "去选择商品" in html
     assert "去选择问卷" in html
+    assert "AI 测评报告" in html
     assert "AI 测评报告" in picker_html
     assert "¥99.00" in picker_html
     for forbidden in ["product_code", "out_trade_no", "external_userid", "unionid", "respondent_key", "client_order_ref"]:
