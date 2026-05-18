@@ -117,8 +117,35 @@
   .wp-phone-title { font-weight: 900; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wp-phone-share { color: var(--pay-cta-deep); font-weight: 850; font-size: 13px; }
   .wp-phone-scroll { height: 100%; overflow: auto; padding-bottom: 88px; background: #fff; }
-  .wp-preview-img { width: 100%; display: block; background: #fff; }
-  .wp-preview-blank { min-height: 520px; background: linear-gradient(135deg,#fff3c8,#ffe6a2); }
+  .wp-preview-slice {
+    height: var(--slice-height, 156px); background:
+      linear-gradient(135deg, rgba(255,246,220,.94), rgba(252,227,164,.78)),
+      linear-gradient(90deg, rgba(47,109,246,.08), rgba(244,179,69,.14));
+    position: relative; overflow: hidden; border-bottom: 1px solid rgba(228,234,244,.72);
+  }
+  .wp-preview-slice::before {
+    content: ""; position: absolute; inset: 14px 18px; border-radius: 18px;
+    background:
+      linear-gradient(90deg, rgba(255,255,255,.70), rgba(255,255,255,.24)),
+      radial-gradient(circle at 18% 30%, rgba(255,255,255,.72), transparent 35%),
+      radial-gradient(circle at 76% 68%, rgba(255,207,119,.42), transparent 34%);
+    filter: blur(10px); transform: scale(1.04);
+  }
+  .wp-preview-slice::after {
+    content: ""; position: absolute; left: 22px; right: 22px; bottom: 18px; height: 36px;
+    border-radius: 999px; background: rgba(255,255,255,.46); filter: blur(7px);
+  }
+  .wp-preview-slice:nth-child(3n + 2) {
+    background:
+      linear-gradient(135deg, rgba(239,246,255,.88), rgba(255,240,195,.72)),
+      linear-gradient(90deg, rgba(47,109,246,.10), rgba(244,179,69,.10));
+  }
+  .wp-preview-slice:nth-child(3n) {
+    background:
+      linear-gradient(135deg, rgba(255,251,235,.92), rgba(233,248,239,.78)),
+      linear-gradient(90deg, rgba(18,138,69,.08), rgba(244,179,69,.14));
+  }
+  .wp-preview-blank { min-height: 520px; background: linear-gradient(135deg,#fff3c8,#ffe6a2); filter: blur(.2px); }
   .wp-sticky-buy {
     position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; padding: 10px 14px 12px;
     background: rgba(255,253,248,.96); backdrop-filter: blur(12px); border-top: 1px solid rgba(236,217,184,.86);
@@ -473,7 +500,8 @@
       if (!target) return;
       const sliceHtml = draft.slices.length
         ? draft.slices.map(function (slice, index) {
-            return slice.image_url ? '<img class="wp-preview-img" loading="lazy" src="' + escapeHtml(slice.image_url) + '" alt="第 ' + (index + 1) + ' 张切片">' : '<div class="wp-preview-blank"></div>';
+            const height = 128 + ((index % 3) * 34);
+            return '<div class="wp-preview-slice" style="--slice-height:' + height + 'px"></div>';
           }).join("")
         : '<div class="wp-preview-blank"></div>';
       target.innerHTML =
