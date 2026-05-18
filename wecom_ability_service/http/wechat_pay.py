@@ -25,6 +25,7 @@ from .questionnaire_support import (
     _external_base_url,
     _mask_identity_value,
     _questionnaire_request_meta,
+    _is_wechat_browser,
     _require_wechat_browser_api,
     _require_wechat_browser_page,
     _wechat_oauth_authorize_url,
@@ -113,6 +114,17 @@ def h5_wechat_pay_product_page(product_code: str):
         page_state = get_public_product_page_state(product_code)
     except WeChatPayOrderError:
         abort(404)
+    identity = _wechat_h5_identity(payment_only=True)
+    if _is_wechat_browser() and not _normalized_text(identity.get("openid")) and _wechat_oauth_is_configured():
+        return redirect(_payment_oauth_start_url(f"/p/{product_code}"), code=302)
+    if _normalized_text(identity.get("openid")):
+        checkout_state = build_checkout_page_state(
+            product_code=product_code,
+            identity=identity,
+            oauth_start_url=_payment_oauth_start_url(f"/pay/{product_code}"),
+        )
+        if checkout_state.get("paid_order"):
+            return render_template("wechat_pay_h5_checkout.html", page_state=checkout_state)
     return render_template("wechat_pay_product_intro.html", page_state=page_state)
 
 
