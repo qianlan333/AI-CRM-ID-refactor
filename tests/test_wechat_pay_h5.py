@@ -272,6 +272,13 @@ def test_create_jsapi_order_uses_session_openid_and_server_catalog(app, client, 
     assert row["prepay_id"] == "wx-prepay-id"
     assert row["payer_openid"] == "op_test"
 
+    status_response = client.get(
+        f"/api/h5/wechat-pay/orders/{payload['order']['out_trade_no']}",
+        headers=_wechat_headers(),
+    )
+    assert status_response.status_code == 200
+    assert status_response.get_json()["order"]["out_trade_no"] == payload["order"]["out_trade_no"]
+
 
 def test_create_jsapi_order_rejects_unknown_product(app, client, tmp_path, monkeypatch):
     _configure_pay(app, tmp_path)
