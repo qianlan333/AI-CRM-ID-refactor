@@ -118,7 +118,7 @@
   const root = document.querySelector("[data-operation-task-root]");
   if (!root) return;
   const apiUrls = JSON.parse(root.dataset.apiUrls || "{}");
-  const withId = (url, id) => String(url || "").replace(/\/0(?=\/|$)/, `/${encodeURIComponent(String(id || 0))}`);
+  const withId = (url, id) => String(url || "").replace(/\/0(?=\/|\?|$)/, `/${encodeURIComponent(String(id || 0))}`);
   const state = { groups: [], tasks: [], currentTask: null, profileTemplates: [], profileSegments: [], agents: [], preview: {} };
   const labels = {
     status: { draft: "草稿", active: "启用", paused: "停用", archived: "归档" },
