@@ -528,6 +528,99 @@ def test_audience_entry_rule_v5_publish_check_dynamic(app):
     assert failed_check["entry"]["passed"] is False
 
 
+def test_audience_entry_rule_v5_normalization_keeps_review_selection_when_rules_exist(monkeypatch):
+    from wecom_ability_service.domains.automation_conversion import program_setup_service as service
+
+    monkeypatch.setattr(
+        service,
+        "_list_available_questionnaires",
+        lambda: [{"id": 12, "title": "用户入群信息确认问卷", "status": "启用", "question_count": 5}],
+    )
+    monkeypatch.setattr(
+        service,
+        "_available_products",
+        lambda: [{"id": "ai_report_v5", "name": "AI 测评报告", "price_text": "¥99.00"}],
+    )
+    payload = {
+        "entry_source": "both",
+        "order_review": {"enabled": True, "selected_product_id": "ai_report_v5"},
+        "questionnaire_review": {"enabled": True, "selected_questionnaire_id": 12},
+        "operating": {"enabled": True, "fixed": True},
+        "conversion_review": {"enabled": False},
+        "rules": [{"event": "channel_enter", "enabled": True}],
+    }
+
+    normalized = service._normalize_audience_entry_rule_payload(payload, validate=False)
+    check_items = {item["label"]: item for item in service._audience_rule_check_items(payload)}
+
+    assert normalized["order_review"]["selected_product_id"] == "ai_report_v5"
+    assert normalized["order_review"]["selected_product_snapshot"]["name"] == "AI 测评报告"
+    assert normalized["questionnaire_review"]["selected_questionnaire_id"] == 12
+    assert normalized["questionnaire_review"]["selected_questionnaire_snapshot"]["title"] == "用户入群信息确认问卷"
+    assert check_items["订单审核商品已选择"]["passed"] is True
+    assert check_items["问卷审核问卷已选择"]["passed"] is True
+
+
+def test_audience_entry_rule_v5_preserves_saved_selection_with_compat_rules(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import (
+        build_publish_check,
+        save_audience_entry_rule,
+        save_entry_channel,
+    )
+
+    _login(client, app, monkeypatch)
+    app.config["WECHAT_PAY_PRODUCT_CATALOG_JSON"] = json.dumps(
+        {
+            "products": [
+                {"product_code": "ai_report_v5", "name": "AI 测评报告", "description": "AI 测评报告", "amount_total": 9900}
+            ]
+        },
+        ensure_ascii=False,
+    )
+    program_id = _default_program_id(app)
+    questionnaire = _seed_choice_questionnaire(app, slug="audience-rule-v5-preserve-selection")
+    with app.app_context():
+        save_entry_channel(program_id, {"channel_name": "保存回显入口", "welcome_message": "欢迎"})
+        save_audience_entry_rule(
+            program_id,
+            {
+                "order_review": {"enabled": True, "selected_product_id": "ai_report_v5"},
+                "questionnaire_review": {
+                    "enabled": True,
+                    "selected_questionnaire_id": questionnaire["id"],
+                },
+                "conversion_review": {"enabled": False},
+            },
+        )
+        payload = json.loads(
+            get_db()
+            .execute(
+                """
+                SELECT payload_json
+                FROM automation_program_config_block
+                WHERE program_id = ? AND block_key = 'audience_entry_rule'
+                """,
+                (program_id,),
+            )
+            .fetchone()["payload_json"]
+        )
+        check = build_publish_check(program_id)
+
+    assert payload["rules"]
+    assert payload["order_review"]["selected_product_id"] == "ai_report_v5"
+    assert payload["questionnaire_review"]["selected_questionnaire_id"] == questionnaire["id"]
+    entry_items = {item["label"]: item for item in check["entry"]["items"]}
+    assert entry_items["订单审核商品已选择"]["passed"] is True
+    assert entry_items["问卷审核问卷已选择"]["passed"] is True
+
+    entry_rule_html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=entry-rule").get_data(as_text=True)
+    publish_html = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=publish").get_data(as_text=True)
+    assert "已选择</span>AI 测评报告" in entry_rule_html
+    assert f"已选择</span>{questionnaire['title']}" in entry_rule_html
+    assert "请先选择订单审核商品" not in publish_html
+    assert "请先选择问卷审核问卷" not in publish_html
+
+
 def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, monkeypatch):
     from wecom_ability_service.domains.automation_conversion.program_setup_service import save_audience_entry_rule
 
