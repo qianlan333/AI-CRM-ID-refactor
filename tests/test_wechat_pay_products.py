@@ -134,6 +134,10 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "加载中" in edit_html
     assert "最多 10 张" in edit_html
     assert "最多 20 张" not in edit_html
+    assert "image_upload_client.js" in edit_html
+    assert "ImageUploadClient.prepareImageForUpload" in edit_html
+    assert "ImageUploadClient.requestJson" in edit_html
+    assert "response.json()" not in edit_html
     assert "手机端预览" not in edit_html
     assert "引流计划列表加载失败" not in edit_html
 
@@ -468,7 +472,7 @@ def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(app, cl
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
     with client.session_transaction() as sess:
-        sess["wechat_pay_h5_identity"] = {"openid": "op_paid", "unionid": "un_paid"}
+        sess["wechat_pay_h5_identity"] = {"openid": "op_paid", "unionid": "un_paid", "payer_name": "已报名用户"}
 
     html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert '"paid_order":' in html
@@ -527,7 +531,7 @@ def test_full_refunded_order_allows_repurchase(app, client, tmp_path, monkeypatc
 
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
     with client.session_transaction() as sess:
-        sess["wechat_pay_h5_identity"] = {"openid": "op_refunded"}
+        sess["wechat_pay_h5_identity"] = {"openid": "op_refunded", "payer_name": "退款用户"}
 
     html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
     assert '"paid_order": null' in html
