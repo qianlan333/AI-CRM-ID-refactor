@@ -417,6 +417,129 @@ def test_created_jsapi_order_can_refresh_paid_status_with_lead_qr(app, client, t
     assert paid["lead_qr"]["qr_url"] == "https://example.com/paid-refresh-qr.png"
 
 
+def test_checkout_page_reopens_paid_order_and_duplicate_order_is_blocked(app, client, tmp_path, monkeypatch):
+    _configure_pay(app, tmp_path)
+    token = _login_admin(client)
+    program = get_db().execute(
+        """
+        INSERT INTO automation_program (program_code, program_name, status, config_json)
+        VALUES ('lead_plan_reopen_paid', '0元引流用户', 'active', '{}'::jsonb)
+        RETURNING *
+        """
+    ).fetchone()
+    get_db().execute(
+        """
+        INSERT INTO automation_channel (
+            program_id, channel_code, channel_name, qr_url, status
+        )
+        VALUES (?, 'program_reopen_paid', '默认渠道', 'https://example.com/reopen-qr.png', 'active')
+        """,
+        (program["id"],),
+    )
+    get_db().commit()
+    product = _create_product(client, token, lead_program_id=program["id"], require_mobile=True)
+    order = wechat_pay_repo.insert_order(
+        {
+            "out_trade_no": "WXP_ALREADY_PAID",
+            "product_code": product["product_code"],
+            "product_name": product["name"],
+            "description": product["name"],
+            "amount_total": product["amount_total"],
+            "payer_openid": "op_paid",
+            "unionid": "un_paid",
+            "status": "paid",
+            "metadata": {},
+            "request_meta": {},
+        }
+    )
+    get_db().execute(
+        """
+        UPDATE wechat_pay_orders
+        SET trade_state = 'SUCCESS'
+        WHERE out_trade_no = ?
+        """,
+        (order["out_trade_no"],),
+    )
+    get_db().commit()
+
+    class FakeClient:
+        def create_jsapi_transaction(self, payload):
+            raise AssertionError("duplicate paid users must not create a new WeChat order")
+
+    monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
+    with client.session_transaction() as sess:
+        sess["wechat_pay_h5_identity"] = {"openid": "op_paid", "unionid": "un_paid"}
+
+    html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    assert '"paid_order":' in html
+    assert "WXP_ALREADY_PAID" in html
+    assert 'id="showLeadQrButton"' in html
+    assert "showPaid(state.paid_order, { autoShowQr: false })" in html
+
+    duplicate = client.post(
+        "/api/h5/wechat-pay/jsapi/orders",
+        json={
+            "product_code": product["product_code"],
+            "order_source": "product_checkout",
+            "mobile": "13800138000",
+        },
+        headers=_wechat_headers(),
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.get_json()["error"] == "already_paid"
+
+
+def test_full_refunded_order_allows_repurchase(app, client, tmp_path, monkeypatch):
+    _configure_pay(app, tmp_path)
+    token = _login_admin(client)
+    product = _create_product(client, token)
+    order = wechat_pay_repo.insert_order(
+        {
+            "out_trade_no": "WXP_FULL_REFUNDED",
+            "product_code": product["product_code"],
+            "product_name": product["name"],
+            "description": product["name"],
+            "amount_total": product["amount_total"],
+            "payer_openid": "op_refunded",
+            "status": "paid",
+            "metadata": {},
+            "request_meta": {},
+        }
+    )
+    get_db().execute(
+        """
+        UPDATE wechat_pay_orders
+        SET trade_state = 'SUCCESS',
+            refunded_amount_total = amount_total,
+            refund_status = 'full_refunded'
+        WHERE out_trade_no = ?
+        """,
+        (order["out_trade_no"],),
+    )
+    get_db().commit()
+
+    class FakeClient:
+        def create_jsapi_transaction(self, payload):
+            return {"prepay_id": "wx-prepay-id"}
+
+        def build_jsapi_pay_params(self, prepay_id):
+            return {"package": f"prepay_id={prepay_id}"}
+
+    monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
+    with client.session_transaction() as sess:
+        sess["wechat_pay_h5_identity"] = {"openid": "op_refunded"}
+
+    html = client.get(f"/pay/{product['product_code']}", headers=_wechat_headers()).get_data(as_text=True)
+    assert '"paid_order": null' in html
+    created = client.post(
+        "/api/h5/wechat-pay/jsapi/orders",
+        json={"product_code": product["product_code"], "order_source": "product_checkout"},
+        headers=_wechat_headers(),
+    )
+    assert created.status_code == 200
+    assert created.get_json()["order"]["status"] == "paying"
+
+
 def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
     token = _login_admin(client)
     program = get_db().execute(
