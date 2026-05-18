@@ -109,6 +109,8 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "创建商品" in html
     assert "分享商品" in html
     assert "/share" in html
+    assert "wp-preview-slice" in html
+    assert "wp-preview-img" not in html
     assert "全景贴图数量" not in html
     assert "商品编码" not in html
     assert "商品简介" not in html
