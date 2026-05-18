@@ -504,14 +504,16 @@ def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, mo
 
     for label in ["扫码进入", "订单审核", "问卷审核", "运营中", "已转化"]:
         assert label in html
-    assert "必填" in html
-    assert "不可关闭" in html
+    assert "必填" not in html
+    assert "不可关闭" not in html
+    assert "setup-audience-fixed" not in html
+    assert "data-skip-note" not in html
     assert 'data-next-step="scan_enter">问卷审核</strong>' in html
     assert 'data-next-step="order_review">本项已跳过</strong>' in html
     assert 'data-next-step="operating">结束</strong>' in html
     assert "本项已关闭" in html
-    assert "sessionStorage.setItem(audienceDraftKey" in html
     assert "payload._allow_incomplete = true" in html
+    assert "await postJson(urls.audience_entry_rule, payload);" in html
     assert "已选择问卷" in html
     assert "去选择商品" in html
     assert "去选择问卷" in html
