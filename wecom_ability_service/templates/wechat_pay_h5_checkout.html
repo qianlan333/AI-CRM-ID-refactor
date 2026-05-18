@@ -40,11 +40,16 @@
     .state-line.error { color: var(--red); }
     .state-line.success { color: var(--green); }
     .error-text { font-size: 12px; color: var(--red); margin-top: 6px; min-height: 18px; }
-    .pay-action, .button-link {
+    .pay-action, .button-link, .qr-reopen-button {
       width: 100%; height: 52px; border: 0; border-radius: 14px; background: var(--blue); color: #fff;
       font: inherit; font-weight: 950; margin-top: 12px; cursor: pointer; text-decoration: none;
       display: inline-flex; align-items: center; justify-content: center;
     }
+    .qr-reopen-button {
+      display: none; height: 46px; background: #edf3ff; color: var(--blue);
+      border: 1px solid #cddcff; box-shadow: none; font-weight: 900;
+    }
+    .qr-reopen-button.show { display: inline-flex; }
     .pay-action[disabled] { opacity: .55; cursor: default; }
     .success-box { display: none; text-align: center; padding-top: 6px; }
     .success-box.show { display: block; }
@@ -56,10 +61,10 @@
       z-index: 40; display: none; align-items: center; justify-content: center; padding: 22px;
     }
     .qr-modal.show { display: flex; }
-    .qr-panel { width: 100%; max-width: 286px; border-radius: 24px; background: #fff; padding: 20px; text-align: center; box-shadow: 0 20px 60px rgba(16,32,58,.25); }
-    .qr-img { width: 178px; height: 178px; margin: 14px auto; border-radius: 18px; border: 1px solid #dae4f3; padding: 10px; object-fit: contain; display: block; background: #fff; }
-    .modal-title { font-size: 20px; font-weight: 950; }
-    .modal-desc { color: var(--muted); font-size: 13px; }
+    .qr-panel { width: min(100%, 360px); border-radius: 28px; background: #fff; padding: 26px 22px; text-align: center; box-shadow: 0 20px 60px rgba(16,32,58,.25); }
+    .qr-img { width: 258px; height: 258px; margin: 18px auto; border-radius: 20px; border: 1px solid #dae4f3; padding: 12px; object-fit: contain; display: block; background: #fff; }
+    .modal-title { font-size: 24px; font-weight: 950; }
+    .modal-desc { color: var(--muted); font-size: 15px; }
     .close-button {
       width: 100%; height: 42px; border: 0; border-radius: 12px; background: var(--blue); color: #fff;
       font: inherit; font-weight: 900; margin-top: 14px; cursor: pointer;
@@ -105,6 +110,7 @@
       <div class="success-tick">✓</div>
       <div class="success-title">支付成功</div>
       <div class="success-desc" id="successDesc">报名成功</div>
+      <button class="qr-reopen-button" id="showLeadQrButton" type="button">查看领取二维码</button>
     </section>
   </main>
 
@@ -129,8 +135,10 @@
       const successDesc = document.getElementById("successDesc");
       const leadQrModal = document.getElementById("leadQrModal");
       const leadQrImage = document.getElementById("leadQrImage");
+      const showLeadQrButton = document.getElementById("showLeadQrButton");
       const closeQrButton = document.getElementById("closeQrButton");
       let activeOrderNo = "";
+      let paidOrder = state.paid_order || null;
 
       function setState(message, type) {
         if (!stateLine) return;
@@ -229,21 +237,38 @@
         return payload;
       }
 
-      function showLeadQr(order) {
+      function leadQrFromOrder(order) {
         const leadQr = order && order.lead_qr ? order.lead_qr : {};
+        return leadQr && leadQr.qr_url ? leadQr : {};
+      }
+
+      function showLeadQr(order) {
+        const leadQr = leadQrFromOrder(order);
         if (!leadQr.qr_url || !leadQrModal || !leadQrImage) return;
         leadQrImage.src = leadQr.qr_url;
         leadQrModal.classList.add("show");
         leadQrModal.setAttribute("aria-hidden", "false");
       }
 
-      function showPaid(order) {
+      function syncLeadQrButton(order) {
+        if (!showLeadQrButton) return;
+        showLeadQrButton.classList.toggle("show", Boolean(leadQrFromOrder(order).qr_url));
+      }
+
+      function showPaid(order, options) {
+        const autoShowQr = !options || options.autoShowQr !== false;
+        paidOrder = order || paidOrder || {};
         if (checkoutCard) checkoutCard.style.display = "none";
         if (successBox) successBox.classList.add("show");
         if (successDesc) {
           successDesc.textContent = "已购买 " + state.product.name + "，支付金额 ¥" + (Number(state.product.amount_total || 0) / 100).toFixed(2) + "。";
         }
-        showLeadQr(order || {});
+        syncLeadQrButton(order || {});
+        if (autoShowQr) showLeadQr(order || {});
+      }
+
+      if (state.paid_order) {
+        showPaid(state.paid_order, { autoShowQr: false });
       }
 
       if (payButton) {
@@ -291,6 +316,11 @@
           if (!leadQrModal) return;
           leadQrModal.classList.remove("show");
           leadQrModal.setAttribute("aria-hidden", "true");
+        });
+      }
+      if (showLeadQrButton) {
+        showLeadQrButton.addEventListener("click", function () {
+          showLeadQr(paidOrder || {});
         });
       }
     })();
