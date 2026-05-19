@@ -844,6 +844,99 @@ def _ensure_postgres_wechat_pay_tables(db) -> None:
     )
 
 
+def _ensure_postgres_alipay_pay_tables(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alipay_pay_orders (
+            id BIGSERIAL PRIMARY KEY,
+            out_trade_no TEXT NOT NULL UNIQUE,
+            trade_no TEXT NOT NULL DEFAULT '',
+            order_source TEXT NOT NULL DEFAULT 'h5_alipay_wap',
+            client_order_ref TEXT NOT NULL DEFAULT '',
+            product_code TEXT NOT NULL DEFAULT '',
+            product_name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            amount_total INTEGER NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            buyer_id TEXT NOT NULL DEFAULT '',
+            buyer_logon_id TEXT NOT NULL DEFAULT '',
+            mobile_snapshot TEXT NOT NULL DEFAULT '',
+            identity_snapshot TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'created',
+            trade_status TEXT NOT NULL DEFAULT '',
+            success_url TEXT NOT NULL DEFAULT '',
+            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            request_meta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            request_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            response_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            notify_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            return_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            refunded_amount_total INTEGER NOT NULL DEFAULT 0,
+            refund_status TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            expires_at TIMESTAMPTZ,
+            paid_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    for stmt in (
+        "ALTER TABLE IF EXISTS alipay_pay_orders ADD COLUMN IF NOT EXISTS mobile_snapshot TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS alipay_pay_orders ADD COLUMN IF NOT EXISTS identity_snapshot TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS alipay_pay_orders ADD COLUMN IF NOT EXISTS return_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE IF EXISTS alipay_pay_orders ADD COLUMN IF NOT EXISTS refunded_amount_total INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE IF EXISTS alipay_pay_orders ADD COLUMN IF NOT EXISTS refund_status TEXT NOT NULL DEFAULT ''",
+    ):
+        db.execute(stmt)
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_alipay_pay_orders_status_created
+        ON alipay_pay_orders (status, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_alipay_pay_orders_product_created
+        ON alipay_pay_orders (product_code, created_at DESC, id DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_alipay_pay_orders_mobile_created
+        ON alipay_pay_orders (mobile_snapshot, created_at DESC, id DESC)
+        WHERE mobile_snapshot <> ''
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_alipay_pay_orders_trade_no
+        ON alipay_pay_orders (trade_no)
+        WHERE trade_no <> ''
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alipay_pay_order_events (
+            id BIGSERIAL PRIMARY KEY,
+            out_trade_no TEXT NOT NULL REFERENCES alipay_pay_orders(out_trade_no) ON DELETE CASCADE,
+            event_type TEXT NOT NULL DEFAULT '',
+            trade_no TEXT NOT NULL DEFAULT '',
+            trade_status TEXT NOT NULL DEFAULT '',
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            headers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_alipay_pay_order_events_order
+        ON alipay_pay_order_events (out_trade_no, created_at DESC, id DESC)
+        """
+    )
+
+
 def _ensure_postgres_customer_value_segment_tables(db) -> None:
     db.execute(
         """
@@ -1599,6 +1692,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_questionnaire_scrm_apply_log_columns(db)
     _ensure_postgres_wechat_pay_tables(db)
+    _ensure_postgres_alipay_pay_tables(db)
     _ensure_postgres_hxc_dashboard_v6_columns(db)
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_miniprogram_library_thumb_image_id(db)

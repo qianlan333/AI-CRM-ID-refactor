@@ -124,11 +124,22 @@ WeChat Pay business rules stay in `wecom_ability_service/domains/wechat_pay/*`.
 `admin_service.py` owns admin transaction read models, status labels, export jobs, and refund request orchestration.
 `repo.py` owns order/refund/export persistence, `product_repo.py` owns product and product-slice persistence, and `client.py` is the domain-local WeChat Pay API client.
 
+Alipay Pay HTTP handlers are isolated by surface:
+
+- `alipay_pay.py`: WAP checkout, order creation/status, return display, and async notification callbacks.
+- `admin_alipay_pay.py`: admin transaction reads and CSV export.
+
+Alipay Pay business rules stay in `wecom_ability_service/domains/alipay_pay/*`.
+`service.py` owns WAP order creation, notify reconciliation, return handling, status refresh, and shared paid payload rules.
+`admin_service.py` owns admin transaction read models and export formatting.
+`repo.py` owns order/event persistence, and `client.py` is the domain-local Alipay OpenAPI client.
+
 ## Current Domain Modes
 
 | Domain | Mode | Primary responsibility | Notes |
 | --- | --- | --- | --- |
 | `admin_api_docs` | `simple` | API documentation metadata, quick reference, Markdown export view model | `repo.py` is an empty persistence placeholder |
+| `alipay_pay` | `simple` | Alipay WAP checkout, order lifecycle, notification verification, admin transaction reads | `service.py + admin_service.py + repo.py`; `client.py` stays a domain-local third-party API client |
 | `archive` | `simple` | archived messages, sync runs, message batches | `service.py + repo.py` |
 | `callbacks` | `simple` | external-contact callback business orchestration | `service.py + repo.py` |
 | `class_user` | `simple` | signup status state machine and history | `service.py + repo.py` |

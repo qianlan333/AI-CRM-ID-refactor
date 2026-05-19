@@ -29,6 +29,15 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         persistence_modules=("repo.py",),
         notes="Sync runs, callback runtime, message batches, and deferred jobs console aggregates.",
     ),
+    "alipay_pay": DomainLayoutSpec(
+        name="alipay_pay",
+        mode="simple",
+        service_module="service.py",
+        companion_service_modules=("admin_service.py",),
+        persistence_modules=("repo.py",),
+        allowed_companion_modules=("client.py",),
+        notes="Alipay WAP checkout, order lifecycle, notification verification, and admin transaction reads.",
+    ),
     "admin_audit": DomainLayoutSpec(
         name="admin_audit",
         mode="simple",

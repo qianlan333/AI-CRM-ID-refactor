@@ -119,6 +119,17 @@ def create_app(test_config: dict | None = None) -> Flask:
         WECHAT_PAY_API_BASE=os.getenv("WECHAT_PAY_API_BASE", "https://api.mch.weixin.qq.com"),
         WECHAT_PAY_TIMEOUT_SECONDS=int(os.getenv("WECHAT_PAY_TIMEOUT_SECONDS", "10")),
         WECHAT_PAY_PRODUCT_CATALOG_JSON=os.getenv("WECHAT_PAY_PRODUCT_CATALOG_JSON", ""),
+        ALIPAY_ENABLED=os.getenv("ALIPAY_ENABLED", "false"),
+        ALIPAY_APP_ID=os.getenv("ALIPAY_APP_ID", ""),
+        ALIPAY_APP_PRIVATE_KEY_PATH=os.getenv("ALIPAY_APP_PRIVATE_KEY_PATH", ""),
+        ALIPAY_PUBLIC_KEY_PATH=os.getenv("ALIPAY_PUBLIC_KEY_PATH", ""),
+        ALIPAY_SERVER_URL=os.getenv("ALIPAY_SERVER_URL", "https://openapi.alipay.com/gateway.do"),
+        ALIPAY_SIGN_TYPE=os.getenv("ALIPAY_SIGN_TYPE", "RSA2"),
+        ALIPAY_NOTIFY_URL=os.getenv("ALIPAY_NOTIFY_URL", ""),
+        ALIPAY_RETURN_URL=os.getenv("ALIPAY_RETURN_URL", ""),
+        ALIPAY_TIMEOUT_EXPRESS=os.getenv("ALIPAY_TIMEOUT_EXPRESS", "30m"),
+        ALIPAY_TIMEOUT_SECONDS=int(os.getenv("ALIPAY_TIMEOUT_SECONDS", "10")),
+        ALIPAY_SELLER_ID=os.getenv("ALIPAY_SELLER_ID", ""),
         ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API=(
             explicit_debug_session_api.lower() in {"1", "true", "yes"} if explicit_debug_session_api else None
         ),

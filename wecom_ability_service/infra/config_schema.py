@@ -167,6 +167,61 @@ CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "alipay_pay_wap": {
+        "label": "支付宝手机网站支付（WAP）",
+        "required": False,
+        "fields": {
+            "ALIPAY_ENABLED": {
+                "type": "string",
+                "required": False,
+                "label": "启用支付宝支付",
+                "default": "false",
+            },
+            "ALIPAY_APP_ID": {
+                "type": "string",
+                "required": False,
+                "label": "支付宝应用AppID",
+            },
+            "ALIPAY_APP_PRIVATE_KEY_PATH": {
+                "type": "string",
+                "required": False,
+                "label": "应用私钥路径",
+            },
+            "ALIPAY_PUBLIC_KEY_PATH": {
+                "type": "string",
+                "required": False,
+                "label": "支付宝公钥路径",
+            },
+            "ALIPAY_SERVER_URL": {
+                "type": "string",
+                "required": False,
+                "label": "支付宝网关地址",
+                "default": "https://openapi.alipay.com/gateway.do",
+            },
+            "ALIPAY_SIGN_TYPE": {
+                "type": "string",
+                "required": False,
+                "label": "签名类型",
+                "default": "RSA2",
+            },
+            "ALIPAY_NOTIFY_URL": {
+                "type": "string",
+                "required": False,
+                "label": "异步通知地址",
+            },
+            "ALIPAY_RETURN_URL": {
+                "type": "string",
+                "required": False,
+                "label": "同步返回地址",
+            },
+            "ALIPAY_TIMEOUT_EXPRESS": {
+                "type": "string",
+                "required": False,
+                "label": "支付超时时间",
+                "default": "30m",
+            },
+        },
+    },
     "admin_auth": {
         "label": "管理后台认证",
         "required": False,

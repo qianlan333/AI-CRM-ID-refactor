@@ -26,6 +26,7 @@ from .admin_hxc_dashboard import register_routes as register_admin_hxc_dashboard
 from .admin_questionnaires import register_routes as register_admin_questionnaires_routes
 from .admin_user_ops import register_routes as register_admin_user_ops_routes
 from .admin_user_ops_delivery import register_routes as register_admin_user_ops_delivery_routes
+from .admin_alipay_pay import register_routes as register_admin_alipay_pay_routes
 from .admin_wechat_pay import register_routes as register_admin_wechat_pay_routes
 from .admin_wechat_pay_products import register_routes as register_admin_wechat_pay_products_routes
 from .admin_wecom_tags import register_routes as register_admin_wecom_tags_routes
@@ -47,6 +48,7 @@ from .ops import register_routes as register_ops_routes
 from .public_questionnaire_oauth import register_routes as register_public_questionnaire_oauth_routes
 from .public_questionnaires import register_routes as register_public_questionnaire_routes
 from .public_questionnaire_diagnostics import register_routes as register_public_questionnaire_diagnostics_routes
+from .alipay_pay import register_routes as register_alipay_pay_routes
 from .wechat_pay import register_routes as register_wechat_pay_routes
 from .settings_ops import register_routes as register_settings_routes
 from .sidebar import register_routes as register_sidebar_routes
@@ -116,6 +118,7 @@ HTTP_ROUTE_MODULES = {
     "admin_hxc_dashboard": "wecom_ability_service.http.admin_hxc_dashboard",
     "admin_user_ops": "wecom_ability_service.http.admin_user_ops",
     "admin_user_ops_delivery": "wecom_ability_service.http.admin_user_ops_delivery",
+    "admin_alipay_pay": "wecom_ability_service.http.admin_alipay_pay",
     "admin_wechat_pay": "wecom_ability_service.http.admin_wechat_pay",
     "admin_wechat_pay_products": "wecom_ability_service.http.admin_wechat_pay_products",
     "admin_class_user": "wecom_ability_service.http.admin_class_user",
@@ -136,6 +139,7 @@ HTTP_ROUTE_MODULES = {
     "public_questionnaire_oauth": "wecom_ability_service.http.public_questionnaire_oauth",
     "public_questionnaire_diagnostics": "wecom_ability_service.http.public_questionnaire_diagnostics",
     "public_questionnaires": "wecom_ability_service.http.public_questionnaires",
+    "alipay_pay": "wecom_ability_service.http.alipay_pay",
     "wechat_pay": "wecom_ability_service.http.wechat_pay",
     "setup_wizard": "wecom_ability_service.http.setup_wizard",
     "system_health": "wecom_ability_service.http.system_health",
@@ -198,6 +202,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_class_user.py for /api/admin/class-user-management*",
         "admin_questionnaires.py for /api/admin/questionnaires* and /admin/questionnaires/ui",
         "admin_wecom_tags.py for /api/admin/wecom/tags* enterprise customer tag management",
+        "admin_alipay_pay.py for /admin/alipay/transactions* and /api/admin/alipay* transaction reads and exports",
         "admin_wechat_pay.py for /admin/wechat-pay/transactions* and /api/admin/wechat-pay* transaction management",
         "admin_wechat_pay_products.py for /admin/wechat-pay/products* and /api/admin/wechat-pay/products* product management",
         "wecom_customer_acquisition.py for /api/admin/wecom-customer-acquisition-links* and /admin/wecom-customer-acquisition-links/ui",
@@ -212,6 +217,7 @@ HTTP_ROUTE_PLACEMENT = {
         "image_library_endpoint.py for /admin/image-library and /api/admin/image-library* controllers",
         "attachment_library_endpoint.py for /admin/attachment-library and /api/admin/attachment-library*",
         "miniprogram_library_endpoint.py for /admin/miniprogram-library and /api/admin/miniprogram-library* controllers",
+        "alipay_pay.py for Alipay WAP checkout, order status, return display, and notify callbacks",
         "wechat_pay.py for WeChat-internal H5 JSAPI checkout, order status, OAuth, and notify callbacks",
     ),
     "callbacks": (
@@ -253,6 +259,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_user_ops_delivery", register_admin_user_ops_delivery_routes),
     ("admin_hxc_dashboard", register_admin_hxc_dashboard_routes),
     ("admin_class_user", register_admin_class_user_routes),
+    ("admin_alipay_pay", register_admin_alipay_pay_routes),
     ("admin_wechat_pay", register_admin_wechat_pay_routes),
     ("admin_wechat_pay_products", register_admin_wechat_pay_products_routes),
     ("admin_wecom_tags", register_admin_wecom_tags_routes),
@@ -269,6 +276,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("public_questionnaires", register_public_questionnaire_routes),
     ("public_questionnaire_diagnostics", register_public_questionnaire_diagnostics_routes),
     ("public_questionnaire_oauth", register_public_questionnaire_oauth_routes),
+    ("alipay_pay", register_alipay_pay_routes),
     ("wechat_pay", register_wechat_pay_routes),
     ("archive", register_archive_routes),
     ("contacts", register_contacts_routes),

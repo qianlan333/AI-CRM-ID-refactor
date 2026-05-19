@@ -156,6 +156,8 @@ _TABLES_TO_TRUNCATE = [
     "wechat_pay_refunds",
     "wechat_pay_order_events",
     "wechat_pay_orders",
+    "alipay_pay_order_events",
+    "alipay_pay_orders",
     # — admin / auth
     "admin_users",
     # admin_wecom_directory_member 不在 PG schema 中（WeCom 目录走 admin_users）
@@ -163,6 +165,8 @@ _TABLES_TO_TRUNCATE = [
     "routing_rule_config",
     "wechat_pay_order_events",
     "wechat_pay_orders",
+    "alipay_pay_order_events",
+    "alipay_pay_orders",
     "app_settings",
     "mcp_tool_settings",
     # — contacts / identity
