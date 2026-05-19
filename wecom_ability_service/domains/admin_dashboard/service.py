@@ -14,8 +14,8 @@ ADMIN_NAV_GROUPS = (
         "items": (
             {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
             {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},
-            {"key": "customers", "label": "客户列表", "endpoint": "api.admin_console_customers"},
-            {"key": "user_ops_funnel", "label": "数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
+            {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
+            {"key": "user_ops_funnel", "label": "漏斗 / 数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
             {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
             {"key": "wecom_tags", "label": "企微标签管理", "endpoint": "api.admin_wecom_tags_page"},
         ),
@@ -38,7 +38,7 @@ ADMIN_NAV_GROUPS = (
     {
         "title": "配置及后台",
         "items": (
-            {"key": "jobs", "label": "同步任务", "endpoint": "api.admin_console_jobs"},
+            {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_console_jobs"},
             {"key": "config", "label": "配置", "endpoint": "api.admin_config_home"},
             {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_console_api_docs"},
         ),
