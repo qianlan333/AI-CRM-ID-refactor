@@ -2,15 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from flask import (
-    abort,
-    current_app,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
+from flask import abort, current_app, jsonify, redirect, render_template, request, url_for
 
 from ..domains.admin_auth import (
     admin_role_can_access_module,
@@ -34,17 +26,33 @@ ADMIN_AUTH_EXEMPT_PATHS = {
     "/auth/wecom/callback",
 }
 ADMIN_API_MODULE_PREFIXES = (
+    ("/api/admin/attachment-library", "attachment_library"),
     ("/api/admin/config", "config"),
+    ("/api/admin/hxc-dashboard", "user_ops_funnel"),
+    ("/api/admin/image-library", "image_library"),
+    ("/api/admin/jobs", "jobs"),
     ("/api/admin/marketing-automation", "config"),
     ("/api/admin/wechat-pay/products", "wechat_pay_products"),
+    ("/api/admin/miniprogram-library", "miniprogram_library"),
+    ("/api/admin/broadcast-jobs", "jobs"),
+    ("/api/admin/user-ops", "user_ops_funnel"),
     ("/api/admin/wechat-pay", "wechat_pay_transactions"),
 )
 ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin/automation-conversion", "automation_conversion"),
+    ("/admin/attachment-library", "attachment_library"),
+    ("/admin/broadcast-jobs", "jobs"),
+    ("/admin/cloud-orchestrator", "cloud_orchestrator"),
     ("/admin/customers", "customers"),
+    ("/admin/hxc-dashboard", "user_ops_funnel"),
+    ("/admin/hxc-send-config", "user_ops_funnel"),
+    ("/admin/image-library", "image_library"),
+    ("/admin/jobs", "jobs"),
+    ("/admin/miniprogram-library", "miniprogram_library"),
     ("/admin/questionnaires", "questionnaires"),
     ("/admin/wechat-pay/products", "wechat_pay_products"),
     ("/admin/wechat-pay", "wechat_pay_transactions"),
+    ("/admin/wecom-tags", "wecom_tags"),
     ("/admin/config", "config"),
     ("/admin/api-docs", "api_docs"),
     ("/admin/mcp", "api_docs"),
