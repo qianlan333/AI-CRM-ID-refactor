@@ -110,6 +110,17 @@ External push-log list and retry handlers are isolated in `admin_questionnaire_p
 `wecom_ability_service/http/image_library_endpoint.py` owns the image-library page, listing, details, update, delete, references, and resolve-test APIs.
 Image creation handlers are isolated in `image_library_create.py` so upload/from-url/from-base64 request handling does not inflate the image-library owner.
 
+WeChat Pay HTTP handlers are split by product surface:
+
+- `wechat_pay.py`: H5/JSAPI checkout, public product intro pages, order creation/status, and payment notification callbacks.
+- `admin_wechat_pay.py`: admin transaction list/detail, export, and refund request APIs.
+- `admin_wechat_pay_products.py`: admin product CRUD, product sharing, lead-plan binding, and long-image slice APIs.
+
+WeChat Pay business rules stay in `wecom_ability_service/domains/wechat_pay/*`.
+`service.py` owns checkout, product lifecycle, paid re-entry, lead QR, and notification reconciliation.
+`admin_service.py` owns admin transaction read models, status labels, export jobs, and refund request orchestration.
+`repo.py` owns order/product/refund/export persistence, and `client.py` is the domain-local WeChat Pay API client.
+
 ## Current Domain Modes
 
 | Domain | Mode | Primary responsibility | Notes |
@@ -126,7 +137,7 @@ Image creation handlers are isolated in `image_library_create.py` so upload/from
 | `tags` | `simple` | tag snapshot, signup tag rules, tag refresh | `service.py + repo.py` |
 | `tasks` | `simple` | outbound task dispatch and persistence | `service.py + repo.py` |
 | `user_ops` | `simple` | lead pool, imports, activation, deferred jobs, class-term mapping | `service.py + repo.py` |
-| `wechat_pay` | `simple` | WeChat Pay H5 JSAPI checkout, order lifecycle, payment notification handling | `service.py + repo.py`; `client.py` stays a domain-local third-party API client |
+| `wechat_pay` | `simple` | WeChat Pay H5/JSAPI checkout, product management, transaction admin, refunds, and payment notification handling | `service.py + admin_service.py + repo.py`; `client.py` stays a domain-local third-party API client |
 
 ## Shared Infra
 
