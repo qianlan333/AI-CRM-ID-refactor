@@ -64,6 +64,7 @@ def test_admin_base_template_renders_grouped_navigation():
         "admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
         "admin_wechat_pay_products_page": "/admin/wechat-pay/products",
         "admin_image_library_workspace": "/admin/image-library",
+        "admin_attachment_library_workspace": "/admin/attachment-library",
         "admin_miniprogram_library_workspace": "/admin/miniprogram-library",
         "admin_console_jobs": "/admin/jobs",
         "admin_config_home": "/admin/config",

@@ -26,6 +26,7 @@ ADMIN_AUTH_EXEMPT_PATHS = {
     "/auth/wecom/callback",
 }
 ADMIN_API_MODULE_PREFIXES = (
+    ("/api/admin/attachment-library", "attachment_library"),
     ("/api/admin/config", "config"),
     ("/api/admin/hxc-dashboard", "user_ops_funnel"),
     ("/api/admin/image-library", "image_library"),
@@ -39,6 +40,7 @@ ADMIN_API_MODULE_PREFIXES = (
 )
 ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin/automation-conversion", "automation_conversion"),
+    ("/admin/attachment-library", "attachment_library"),
     ("/admin/broadcast-jobs", "jobs"),
     ("/admin/cloud-orchestrator", "cloud_orchestrator"),
     ("/admin/customers", "customers"),
