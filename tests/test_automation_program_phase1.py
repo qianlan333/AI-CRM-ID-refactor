@@ -109,6 +109,22 @@ def test_program_workflow_page_handlers_redirect_to_setup_without_pg(monkeypatch
             )
 
 
+def test_active_automation_templates_do_not_show_legacy_workflow_terms():
+    active_template_names = [
+        "automation_conversion_overview_workspace.html",
+        "automation_conversion_execution_records.html",
+        "automation_conversion_agent_config_workspace.html",
+    ]
+    combined_source = "\n".join(
+        (REPO_ROOT / "wecom_ability_service/templates/admin_console" / name).read_text(encoding="utf-8")
+        for name in active_template_names
+    )
+
+    assert "任务流" not in combined_source
+    assert "节点配置" not in combined_source
+    assert "执行节点" not in combined_source
+
+
 def _seed_choice_questionnaire(app, *, slug: str = "segmentation-choice-case") -> dict[str, object]:
     with app.app_context():
         db = get_db()
