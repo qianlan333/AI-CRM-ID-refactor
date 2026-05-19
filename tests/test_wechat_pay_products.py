@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import unquote
 
 import pytest
@@ -196,6 +197,96 @@ def test_delete_admin_product_rejects_product_with_orders(monkeypatch):
         product_service.delete_admin_product(8)
 
     assert deleted == []
+
+
+def test_create_jsapi_order_success_path_commits_with_fake_client(monkeypatch):
+    commits: list[str] = []
+    inserted_payloads: list[dict[str, object]] = []
+    payment_updates: list[dict[str, object]] = []
+
+    class FakeDb:
+        def commit(self):
+            commits.append("commit")
+
+    class FakeClient:
+        def create_jsapi_transaction(self, payload):
+            return {"prepay_id": "wx-prepay-id"}
+
+        def build_jsapi_pay_params(self, prepay_id):
+            return {"package": f"prepay_id={prepay_id}"}
+
+    product = {
+        "product_code": "prd_active_commit",
+        "name": "支付链路回归商品",
+        "description": "支付链路回归商品",
+        "amount_total": 9900,
+        "currency": "CNY",
+        "success_url": "",
+        "metadata": {},
+        "require_mobile": False,
+        "enabled": True,
+        "status": "active",
+    }
+
+    monkeypatch.setattr(wechat_pay_service, "get_db", lambda: FakeDb())
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "_require_ready_for_order",
+        lambda: SimpleNamespace(app_id="wx-pay-app", mch_id="1900000001"),
+    )
+    monkeypatch.setattr(wechat_pay_service, "get_product", lambda product_code: product)
+    monkeypatch.setattr(
+        wechat_pay_service.repo,
+        "get_paid_order_for_product_identity",
+        lambda **kwargs: None,
+    )
+
+    def fake_insert_order(payload):
+        inserted_payloads.append(payload)
+        return {
+            **payload,
+            "out_trade_no": payload["out_trade_no"],
+            "status": "created",
+            "trade_state": "",
+            "refund_status": "",
+            "refunded_amount_total": 0,
+        }
+
+    def fake_update_order_payment_request(out_trade_no, *, prepay_id, request_payload, response_payload):
+        payment_updates.append(
+            {
+                "out_trade_no": out_trade_no,
+                "prepay_id": prepay_id,
+                "request_payload": request_payload,
+                "response_payload": response_payload,
+            }
+        )
+        return {
+            **inserted_payloads[-1],
+            "out_trade_no": out_trade_no,
+            "status": "paying",
+            "trade_state": "",
+            "refund_status": "",
+            "refunded_amount_total": 0,
+            "prepay_id": prepay_id,
+        }
+
+    monkeypatch.setattr(wechat_pay_service.repo, "insert_order", fake_insert_order)
+    monkeypatch.setattr(wechat_pay_service.repo, "update_order_payment_request", fake_update_order_payment_request)
+    monkeypatch.setattr(wechat_pay_service.repo, "mark_order_failed", lambda *args, **kwargs: None)
+    monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
+
+    result = wechat_pay_service.create_jsapi_order(
+        product_code="prd_active_commit",
+        payer_openid="op_test",
+        notify_url="https://example.test/wechat-pay/notify",
+    )
+
+    assert result["order"]["status"] == "paying"
+    assert result["pay_params"]["package"] == "prepay_id=wx-prepay-id"
+    assert inserted_payloads[0]["product_code"] == "prd_active_commit"
+    assert payment_updates[0]["prepay_id"] == "wx-prepay-id"
+    assert commits == ["commit"]
 
 
 def test_admin_product_share_returns_public_link_and_qr(app, client):

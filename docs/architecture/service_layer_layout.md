@@ -7,8 +7,10 @@ This document defines the service-layer contract for `wecom_ability_service`.
 Only two domain layout modes are allowed:
 
 1. `simple`
-- `service.py`
-- `repo.py`
+- a primary `service.py`
+- declared persistence modules such as `repo.py`
+- optional declared companion service modules such as `product_service.py` or `admin_service.py`
+- optional declared domain-local support modules such as `client.py` or `exceptions.py`
 
 2. `complex`
 - `service.py`
@@ -16,7 +18,7 @@ Only two domain layout modes are allowed:
 - `writers.py`
 - optional `repo.py` as an aggregation entry
 
-Companion files are allowed only when they stay inside one of those two modes and do not create a third layering style.
+Companion files are allowed only when they are declared in `DOMAIN_LAYOUTS`, stay inside one of those two modes, and do not create a third layering style.
 Examples:
 - `definitions.py` for domain-owned rules
 - `preflight_service.py` for a small domain-local application assembly helper
@@ -24,7 +26,7 @@ Examples:
 ## Direction Of Dependencies
 
 - HTTP controller -> domain `service.py`
-- Domain `service.py` -> same-domain `repo.py` or `queries.py` / `writers.py`
+- Domain service modules -> same-domain persistence modules or declared domain service adapters
 - Domain code -> `infra/*` for shared constants, settings, runtime clients, and low-level helpers
 - `wecom_ability_service/services.py` -> compatibility facade only
 
