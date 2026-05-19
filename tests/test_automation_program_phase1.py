@@ -111,6 +111,7 @@ def test_program_workflow_page_handlers_redirect_to_setup_without_pg(monkeypatch
 
 def test_active_automation_templates_do_not_show_legacy_workflow_terms():
     active_template_names = [
+        "automation_program_list.html",
         "automation_conversion_overview_workspace.html",
         "automation_conversion_execution_records.html",
         "automation_conversion_agent_config_workspace.html",
@@ -123,6 +124,7 @@ def test_active_automation_templates_do_not_show_legacy_workflow_terms():
     assert "任务流" not in combined_source
     assert "节点配置" not in combined_source
     assert "执行节点" not in combined_source
+    assert "旧入口" not in combined_source
 
 
 def test_stale_workflow_page_templates_are_removed():
