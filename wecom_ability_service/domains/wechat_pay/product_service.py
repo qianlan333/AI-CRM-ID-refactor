@@ -166,36 +166,19 @@ def _lead_qr_from_channel(channel: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def resolve_lead_channel(program_id: int | None) -> dict[str, Any] | None:
-    normalized_program_id = int(program_id or 0)
-    if normalized_program_id <= 0:
-        return None
-    from ..automation_conversion import repo as automation_repo
+    from ..automation_conversion import service as automation_service
 
-    channels = automation_repo.list_channels_by_program(normalized_program_id, include_inactive=True)
-    preferred = next(
-        (
-            channel
-            for channel in channels
-            if _normalized_text(channel.get("qr_url"))
-            and _normalized_text(channel.get("status")) in {"active", "configured"}
-        ),
-        None,
-    )
-    if preferred:
-        return preferred
-    fallback = next((channel for channel in channels if _normalized_text(channel.get("qr_url"))), None)
-    if fallback:
-        return fallback
-    return automation_repo.get_default_channel(program_id=normalized_program_id, allow_legacy_fallback=True)
+    return automation_service.resolve_lead_channel_for_program(program_id)
 
 
 def _lead_qr_for_product(product: dict[str, Any]) -> dict[str, Any]:
-    from ..automation_conversion import repo as automation_repo
+    from ..automation_conversion import service as automation_service
 
     channel_id = int(product.get("lead_channel_id") or 0)
-    channel = automation_repo.get_channel_by_id(channel_id) if channel_id > 0 else None
-    if not channel:
-        channel = resolve_lead_channel(int(product.get("lead_program_id") or 0))
+    channel = automation_service.resolve_lead_channel_for_program(
+        int(product.get("lead_program_id") or 0),
+        channel_id=channel_id,
+    )
     return _lead_qr_from_channel(channel)
 
 
@@ -479,37 +462,6 @@ def delete_admin_product_slice(product_id: int, slice_id: int) -> dict[str, Any]
 
 
 def list_lead_plan_options() -> list[dict[str, Any]]:
-    from ..automation_conversion import program_repo
+    from ..automation_conversion import service as automation_service
 
-    options = [
-        {
-            "program_id": 0,
-            "program_name": "不配置引流计划",
-            "status": "",
-            "channel_id": None,
-            "channel_name": "",
-            "qr_url": "",
-            "selectable": True,
-        }
-    ]
-    # The product editor only needs program rows and channel QR URLs. Avoid
-    # program_service.list_automation_programs(), which also computes workflow
-    # summaries and can fail when unrelated runtime summary tables lag behind.
-    for program in program_repo.list_program_rows(include_archived=False):
-        status = _normalized_text(program.get("status"))
-        if status not in {"active", "draft", "paused"}:
-            continue
-        channel = resolve_lead_channel(int(program.get("id") or 0))
-        qr = _lead_qr_from_channel(channel)
-        options.append(
-            {
-                "program_id": int(program.get("id") or 0),
-                "program_name": _normalized_text(program.get("program_name")) or _normalized_text(program.get("program_code")),
-                "status": status,
-                "channel_id": qr.get("channel_id"),
-                "channel_name": qr.get("channel_name", ""),
-                "qr_url": qr.get("qr_url", ""),
-                "selectable": bool(qr.get("qr_url")),
-            }
-        )
-    return options
+    return automation_service.list_product_lead_plan_options()

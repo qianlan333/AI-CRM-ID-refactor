@@ -47,14 +47,104 @@ def test_domain_layout_files_match_declared_mode():
     domains_dir = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "domains"
     for domain_name, spec in DOMAIN_LAYOUTS.items():
         domain_dir = domains_dir / domain_name
-        assert (domain_dir / "service.py").exists(), f"{domain_name} must expose service.py"
+        assert (domain_dir / spec.service_module).exists(), f"{domain_name} must expose {spec.service_module}"
+        for module_name in spec.companion_service_modules:
+            assert (domain_dir / module_name).exists(), f"{domain_name} must declare an existing companion service {module_name}"
+        for module_name in spec.persistence_modules:
+            assert (domain_dir / module_name).exists(), f"{domain_name} must declare an existing persistence module {module_name}"
         if spec.mode == "simple":
-            assert (domain_dir / "repo.py").exists(), f"{domain_name} simple mode must expose repo.py"
+            assert spec.persistence_modules, f"{domain_name} simple mode must declare persistence modules"
         elif spec.mode == "complex":
             assert (domain_dir / "queries.py").exists(), f"{domain_name} complex mode must expose queries.py"
             assert (domain_dir / "writers.py").exists(), f"{domain_name} complex mode must expose writers.py"
         else:
             raise AssertionError(f"unknown mode: {spec.mode}")
+
+
+def test_split_domain_companion_modules_are_declared():
+    domains_dir = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "domains"
+    for domain_name, spec in DOMAIN_LAYOUTS.items():
+        domain_dir = domains_dir / domain_name
+        declared = {
+            spec.service_module,
+            *spec.companion_service_modules,
+            *spec.persistence_modules,
+            *spec.allowed_companion_modules,
+        }
+        for path in domain_dir.glob("*.py"):
+            if path.name == "__init__.py":
+                continue
+            requires_declaration = (
+                path.name == "admin_service.py"
+                or path.name == "product_repo.py"
+                or path.name.endswith("_service.py")
+                or path.name.endswith("_repo.py")
+            )
+            if requires_declaration:
+                assert path.name in declared, f"{domain_name}/{path.name} must be declared in DOMAIN_LAYOUTS"
+
+
+def test_wechat_pay_contract_declares_split_product_modules():
+    spec = DOMAIN_LAYOUTS["wechat_pay"]
+
+    assert spec.service_module == "service.py"
+    assert {"product_service.py", "admin_service.py"}.issubset(spec.companion_service_modules)
+    assert {"repo.py", "product_repo.py"}.issubset(spec.persistence_modules)
+    assert {"exceptions.py", "client.py"}.issubset(spec.allowed_companion_modules)
+
+
+def test_wechat_pay_product_service_does_not_import_automation_repos_directly():
+    source_path = (
+        Path(__file__).resolve().parents[1]
+        / "wecom_ability_service"
+        / "domains"
+        / "wechat_pay"
+        / "product_service.py"
+    )
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    forbidden = {
+        ("wecom_ability_service.domains.automation_conversion", "repo"),
+        ("wecom_ability_service.domains.automation_conversion", "program_repo"),
+        ("..automation_conversion", "repo"),
+        ("..automation_conversion", "program_repo"),
+    }
+    imports: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = "." * node.level + (node.module or "")
+            for alias in node.names:
+                imports.append((module, alias.name))
+    assert sorted(set(imports) & forbidden) == []
+
+
+def test_wechat_pay_order_repo_does_not_reexport_product_repo_functions():
+    source_path = (
+        Path(__file__).resolve().parents[1]
+        / "wecom_ability_service"
+        / "domains"
+        / "wechat_pay"
+        / "repo.py"
+    )
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    forbidden_names = {
+        "add_product_slice",
+        "count_orders_for_product_code",
+        "delete_product",
+        "delete_product_slice",
+        "get_product_by_code",
+        "get_product_by_id",
+        "insert_product",
+        "list_active_db_products",
+        "list_admin_products",
+        "list_product_slices",
+        "replace_product_slices",
+        "reorder_product_slices",
+        "update_product",
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("product_repo"):
+            imported = {alias.name for alias in node.names}
+            assert sorted(imported & forbidden_names) == []
 
 
 def test_services_py_remains_a_thin_facade():
@@ -110,6 +200,8 @@ def test_service_layer_layout_doc_exists():
     assert "`admin_api_docs`" in source
     assert "`admin_wechat_pay_products.py`: admin product CRUD" in source
     assert "`admin_service.py` owns admin transaction read models" in source
+    assert "`product_service.py` owns product lifecycle" in source
+    assert "`product_repo.py` owns product and product-slice persistence" in source
     assert "http_route_consolidation_check.md" in source
 
 

@@ -8,6 +8,7 @@ from typing import Any
 
 from flask import current_app
 
+from ...db import get_db
 from ...infra.json_utils import safe_json_loads
 from ...infra.settings import get_setting
 from . import repo

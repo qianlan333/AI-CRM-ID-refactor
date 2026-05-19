@@ -7,21 +7,6 @@ from typing import Any
 
 from ...db import get_db
 from ...infra.json_utils import json_dumps
-from .product_repo import (
-    add_product_slice,
-    count_orders_for_product_code,
-    delete_product,
-    delete_product_slice,
-    get_product_by_code,
-    get_product_by_id,
-    insert_product,
-    list_active_db_products,
-    list_admin_products,
-    list_product_slices,
-    replace_product_slices,
-    reorder_product_slices,
-    update_product,
-)
 
 
 def _normalized_text(value: Any) -> str:

@@ -68,6 +68,85 @@ def _program_default_channel_code(program_id: int | None = None) -> str:
     normalized_program_id = int(program_id or 0)
     return f"program_{normalized_program_id}_default_qrcode" if normalized_program_id > 0 else DEFAULT_CHANNEL_CODE
 
+
+def _lead_qr_from_channel(channel: dict[str, Any] | None) -> dict[str, Any]:
+    channel = dict(channel or {})
+    qr_url = _normalized_text(channel.get("qr_url"))
+    if not qr_url:
+        return {}
+    return {
+        "channel_id": int(channel.get("id") or 0),
+        "channel_name": _normalized_text(channel.get("channel_name")),
+        "qr_url": qr_url,
+        "status": _normalized_text(channel.get("status")),
+        "owner_staff_id": _normalized_text(channel.get("owner_staff_id")),
+    }
+
+
+def resolve_lead_channel_for_program(
+    program_id: int | None,
+    *,
+    channel_id: int | None = None,
+) -> dict[str, Any] | None:
+    normalized_channel_id = int(channel_id or 0)
+    if normalized_channel_id > 0:
+        channel = repo.get_channel_by_id(normalized_channel_id)
+        if channel and _normalized_text(channel.get("qr_url")):
+            return channel
+    normalized_program_id = int(program_id or 0)
+    if normalized_program_id <= 0:
+        return None
+    channels = repo.list_channels_by_program(normalized_program_id, include_inactive=True)
+    preferred = next(
+        (
+            channel
+            for channel in channels
+            if _normalized_text(channel.get("qr_url"))
+            and _normalized_text(channel.get("status")) in {"active", "configured"}
+        ),
+        None,
+    )
+    if preferred:
+        return preferred
+    fallback = next((channel for channel in channels if _normalized_text(channel.get("qr_url"))), None)
+    if fallback:
+        return fallback
+    return repo.get_default_channel(program_id=normalized_program_id, allow_legacy_fallback=True)
+
+
+def list_product_lead_plan_options() -> list[dict[str, Any]]:
+    from . import program_repo
+
+    options = [
+        {
+            "program_id": 0,
+            "program_name": "不配置引流计划",
+            "status": "",
+            "channel_id": None,
+            "channel_name": "",
+            "qr_url": "",
+            "selectable": True,
+        }
+    ]
+    for program in program_repo.list_program_rows(include_archived=False):
+        status = _normalized_text(program.get("status"))
+        if status not in {"active", "draft", "paused"}:
+            continue
+        qr = _lead_qr_from_channel(resolve_lead_channel_for_program(int(program.get("id") or 0)))
+        options.append(
+            {
+                "program_id": int(program.get("id") or 0),
+                "program_name": _normalized_text(program.get("program_name")) or _normalized_text(program.get("program_code")),
+                "status": status,
+                "channel_id": qr.get("channel_id"),
+                "channel_name": qr.get("channel_name", ""),
+                "qr_url": qr.get("qr_url", ""),
+                "selectable": bool(qr.get("qr_url")),
+            }
+        )
+    return options
+
+
 POOL_WON = local_projection.POOL_WON
 POOL_REMOVED = local_projection.POOL_REMOVED
 POOL_NO_REPLY = local_projection.POOL_NO_REPLY
