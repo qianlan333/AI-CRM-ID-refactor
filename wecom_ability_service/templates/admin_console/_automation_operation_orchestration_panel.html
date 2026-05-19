@@ -267,7 +267,7 @@
     if (!templateId || !apiUrls.profile_segment_template_detail_base) return [];
     const data = await requestJson(withId(apiUrls.profile_segment_template_detail_base, templateId));
     const bundle = data.template_bundle || data.bundle || data;
-    const segments = bundle.segments || bundle.profile_segments || (bundle.template || {}).segments || [];
+    const segments = bundle.categories || (bundle.template || {}).categories || bundle.segments || bundle.profile_segments || (bundle.template || {}).segments || [];
     state.profileSegments = segments.map((item) => ({
       segment_key: item.segment_key || item.category_key || item.profile_segment_key || item.key || String(item.id || ""),
       segment_name: item.segment_name || item.category_name || item.profile_segment_name || item.name || item.segment_key || String(item.id || ""),
@@ -293,6 +293,10 @@
     const mode = String((state.currentTask || {}).content_mode || "unified");
     const rows = segmentRowsForMode();
     dom.profileField.hidden = mode !== "profile_layered";
+    if (mode === "profile_layered" && !rows.length) {
+      dom.segments.innerHTML = `<div class="op-task-empty">当前画像模板还没有可填写的分层，请先选择包含分层分类的画像模板。</div>`;
+      return;
+    }
     dom.segments.innerHTML = rows.map((row) => {
       const content = segmentContent(row.segment_key);
       const count = (state.preview.segment_counts || {})[row.segment_key];
