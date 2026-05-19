@@ -593,20 +593,39 @@ def _expires_at_text(minutes: int = 30) -> str:
     return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _is_order_fully_refunded(order: dict[str, Any]) -> bool:
+    amount_total = int(order.get("amount_total") or 0)
+    refunded_amount_total = int(order.get("refunded_amount_total") or 0)
+    return _normalized_text(order.get("refund_status")) == "full_refunded" or (
+        amount_total > 0 and refunded_amount_total >= amount_total
+    )
+
+
+def _is_order_effectively_paid(order: dict[str, Any]) -> bool:
+    if _is_order_fully_refunded(order):
+        return False
+    return _normalized_text(order.get("status")) == "paid" or _normalized_text(order.get("trade_state")) == "SUCCESS"
+
+
 def _order_public_payload(order: dict[str, Any]) -> dict[str, Any]:
+    status = _normalized_text(order.get("status"))
+    if _is_order_fully_refunded(order):
+        status = "full_refunded"
     payload = {
         "out_trade_no": _normalized_text(order.get("out_trade_no")),
         "product_code": _normalized_text(order.get("product_code")),
         "product_name": _normalized_text(order.get("product_name")),
         "amount_total": int(order.get("amount_total") or 0),
         "currency": _normalized_text(order.get("currency")) or "CNY",
-        "status": _normalized_text(order.get("status")),
+        "status": status,
         "trade_state": _normalized_text(order.get("trade_state")),
+        "refund_status": _normalized_text(order.get("refund_status")),
+        "refunded_amount_total": int(order.get("refunded_amount_total") or 0),
         "success_url": _safe_success_url(order.get("success_url")),
         "paid_at": _normalized_text(order.get("paid_at")),
         "created_at": _normalized_text(order.get("created_at")),
     }
-    if _normalized_text(order.get("status")) == "paid" or _normalized_text(order.get("trade_state")) == "SUCCESS":
+    if _is_order_effectively_paid(order):
         product = repo.get_product_by_code(payload["product_code"])
         if product:
             lead_qr = _lead_qr_for_product(product)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import unquote
 
 import pytest
@@ -21,6 +22,7 @@ from wecom_ability_service.domains.admin_auth.auth_runtime import (
 
 PNG_A = b"\x89PNG\r\n\x1a\n" + b"a" * 32
 PNG_B = b"\x89PNG\r\n\x1a\n" + b"b" * 32
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _wechat_headers() -> dict[str, str]:
@@ -581,6 +583,41 @@ def test_full_refunded_order_allows_repurchase(app, client, tmp_path, monkeypatc
     )
     assert created.status_code == 200
     assert created.get_json()["order"]["status"] == "paying"
+
+
+def test_public_order_payload_does_not_show_lead_qr_after_full_refund(monkeypatch):
+    product_lookups: list[str] = []
+    monkeypatch.setattr(
+        wechat_pay_service.repo,
+        "get_product_by_code",
+        lambda product_code: product_lookups.append(product_code) or {"product_code": product_code, "lead_program_id": 1},
+    )
+
+    payload = wechat_pay_service._order_public_payload(
+        {
+            "out_trade_no": "WXP_REFUNDED_PUBLIC",
+            "product_code": "prd_refunded",
+            "product_name": "退款商品",
+            "amount_total": 9900,
+            "refunded_amount_total": 9900,
+            "refund_status": "full_refunded",
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        }
+    )
+
+    assert payload["status"] == "full_refunded"
+    assert payload["refund_status"] == "full_refunded"
+    assert "lead_qr" not in payload
+    assert product_lookups == []
+
+
+def test_checkout_template_uses_normalized_paid_status_only():
+    source = (REPO_ROOT / "wecom_ability_service/templates/wechat_pay_h5_checkout.html").read_text(encoding="utf-8")
+
+    assert 'order.status === "paid"' in source
+    assert 'order.trade_state === "SUCCESS"' not in source
+    assert 'order.status !== "paid" && order.trade_state !== "SUCCESS"' not in source
 
 
 def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):
