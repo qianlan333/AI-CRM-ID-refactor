@@ -17,7 +17,8 @@ from ...db import get_db
 from ...infra.json_utils import safe_json_loads
 from ..admin_audit import record_audit
 from . import repo
-from .service import _create_wechat_pay_client, list_products
+from .product_service import list_products
+from .service import _create_wechat_pay_client
 
 
 ADMIN_ORDER_STATUSES = {

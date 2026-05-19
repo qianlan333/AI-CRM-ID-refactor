@@ -117,9 +117,10 @@ WeChat Pay HTTP handlers are split by product surface:
 - `admin_wechat_pay_products.py`: admin product CRUD, product sharing, lead-plan binding, and long-image slice APIs.
 
 WeChat Pay business rules stay in `wecom_ability_service/domains/wechat_pay/*`.
-`service.py` owns checkout, product lifecycle, paid re-entry, lead QR, and notification reconciliation.
+`service.py` owns checkout, paid re-entry, and payment notification reconciliation.
+`product_service.py` owns product lifecycle, public product page state, long-image slices, sharing QR data, and lead-plan QR binding.
 `admin_service.py` owns admin transaction read models, status labels, export jobs, and refund request orchestration.
-`repo.py` owns order/product/refund/export persistence, and `client.py` is the domain-local WeChat Pay API client.
+`repo.py` owns order/refund/export persistence, `product_repo.py` owns product and product-slice persistence, and `client.py` is the domain-local WeChat Pay API client.
 
 ## Current Domain Modes
 
@@ -137,7 +138,7 @@ WeChat Pay business rules stay in `wecom_ability_service/domains/wechat_pay/*`.
 | `tags` | `simple` | tag snapshot, signup tag rules, tag refresh | `service.py + repo.py` |
 | `tasks` | `simple` | outbound task dispatch and persistence | `service.py + repo.py` |
 | `user_ops` | `simple` | lead pool, imports, activation, deferred jobs, class-term mapping | `service.py + repo.py` |
-| `wechat_pay` | `simple` | WeChat Pay H5/JSAPI checkout, product management, transaction admin, refunds, and payment notification handling | `service.py + admin_service.py + repo.py`; `client.py` stays a domain-local third-party API client |
+| `wechat_pay` | `simple` | WeChat Pay H5/JSAPI checkout, product management, transaction admin, refunds, and payment notification handling | `service.py + product_service.py + admin_service.py + repo.py + product_repo.py`; `client.py` stays a domain-local third-party API client |
 
 ## Shared Infra
 

@@ -9,6 +9,7 @@ import pytest
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains import image_library
+from wecom_ability_service.domains.wechat_pay import product_service
 from wecom_ability_service.domains.wechat_pay import repo as wechat_pay_repo
 from wecom_ability_service.domains.wechat_pay import service as wechat_pay_service
 from wecom_ability_service.domains.admin_auth.auth_runtime import (
@@ -184,15 +185,15 @@ def test_product_enable_disable_copy_and_delete(app, client):
 def test_delete_admin_product_rejects_product_with_orders(monkeypatch):
     deleted: list[int] = []
     monkeypatch.setattr(
-        wechat_pay_service.repo,
+        product_service.product_repo,
         "get_product_by_id",
         lambda product_id: {"id": int(product_id), "product_code": "prd_ordered"},
     )
-    monkeypatch.setattr(wechat_pay_service.repo, "count_orders_for_product_code", lambda product_code: 1)
-    monkeypatch.setattr(wechat_pay_service.repo, "delete_product", lambda product_id: deleted.append(int(product_id)))
+    monkeypatch.setattr(product_service.product_repo, "count_orders_for_product_code", lambda product_code: 1)
+    monkeypatch.setattr(product_service.product_repo, "delete_product", lambda product_id: deleted.append(int(product_id)))
 
-    with pytest.raises(wechat_pay_service.WeChatPayProductError, match="已有订单的商品不能删除"):
-        wechat_pay_service.delete_admin_product(8)
+    with pytest.raises(product_service.WeChatPayProductError, match="已有订单的商品不能删除"):
+        product_service.delete_admin_product(8)
 
     assert deleted == []
 
@@ -343,8 +344,8 @@ def test_product_slices_limit_is_ten(app, client):
 
 
 def test_normalize_product_slices_rejects_more_than_ten():
-    with pytest.raises(wechat_pay_service.WeChatPayProductError, match="最多 10 张"):
-        wechat_pay_service._normalize_slices_payload([{"image_library_id": index + 1} for index in range(11)])
+    with pytest.raises(product_service.WeChatPayProductError, match="最多 10 张"):
+        product_service._normalize_slices_payload([{"image_library_id": index + 1} for index in range(11)])
 
 
 def test_product_editor_rejects_batch_upload_over_slice_limit():
@@ -642,9 +643,9 @@ def test_full_refunded_order_allows_repurchase(app, client, tmp_path, monkeypatc
 def test_public_order_payload_does_not_show_lead_qr_after_full_refund(monkeypatch):
     product_lookups: list[str] = []
     monkeypatch.setattr(
-        wechat_pay_service.repo,
-        "get_product_by_code",
-        lambda product_code: product_lookups.append(product_code) or {"product_code": product_code, "lead_program_id": 1},
+        wechat_pay_service,
+        "get_lead_qr_for_product_code",
+        lambda product_code: product_lookups.append(product_code) or {"qr_url": "https://example.test/qr.png"},
     )
 
     payload = wechat_pay_service._order_public_payload(
