@@ -132,6 +132,7 @@ def _present_order(order: dict[str, Any], *, include_refund: bool = False) -> di
         "identity": _identity_text(order),
         "product_code": product_code,
         "product_name": product_name,
+        "product_label": product_name,
         "amount_total": amount_total,
         "amount_yuan": _money_text(amount_total),
         "currency": _normalized_text(order.get("currency")) or "CNY",
@@ -195,12 +196,14 @@ def list_product_options() -> list[dict[str, Any]]:
         code = _normalized_text(product.get("product_code"))
         if not code:
             continue
-        options[code] = {"product_code": code, "product_name": _normalized_text(product.get("name")) or code}
+        name = _normalized_text(product.get("name")) or code
+        options[code] = {"product_code": code, "product_name": name, "label": name}
     for product in repo.list_products_from_orders():
         code = _normalized_text(product.get("product_code"))
         if not code or code in options:
             continue
-        options[code] = {"product_code": code, "product_name": _normalized_text(product.get("product_name")) or code}
+        name = _normalized_text(product.get("product_name")) or code
+        options[code] = {"product_code": code, "product_name": name, "label": name}
     return list(options.values())
 
 
