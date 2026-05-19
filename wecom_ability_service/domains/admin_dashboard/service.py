@@ -31,8 +31,8 @@ ADMIN_NAV_GROUPS = (
         "title": "素材",
         "items": (
             {"key": "image_library", "label": "图片素材库", "endpoint": "api.admin_image_library_workspace"},
-            {"key": "attachment_library", "label": "附件素材库", "endpoint": "api.admin_attachment_library_workspace"},
             {"key": "miniprogram_library", "label": "小程序素材库", "endpoint": "api.admin_miniprogram_library_workspace"},
+            {"key": "attachment_library", "label": "附件素材库", "endpoint": "api.admin_attachment_library_workspace"},
         ),
     },
     {

@@ -26,6 +26,12 @@ def test_admin_navigation_groups_and_marks_active_item(monkeypatch):
         "wechat_pay_transactions": False,
         "wechat_pay_products": True,
     }
+    material_group = groups[2]
+    assert [item["key"] for item in material_group["items"]] == [
+        "image_library",
+        "miniprogram_library",
+        "attachment_library",
+    ]
 
 
 def test_admin_navigation_filters_empty_groups_by_role(monkeypatch):
@@ -65,6 +71,7 @@ def test_admin_base_template_renders_grouped_navigation():
         "admin_wechat_pay_products_page": "/admin/wechat-pay/products",
         "admin_image_library_workspace": "/admin/image-library",
         "admin_miniprogram_library_workspace": "/admin/miniprogram-library",
+        "admin_attachment_library_workspace": "/admin/attachment-library",
         "admin_console_jobs": "/admin/jobs",
         "admin_config_home": "/admin/config",
         "admin_console_api_docs": "/admin/api-docs",
@@ -94,3 +101,4 @@ def test_admin_base_template_renders_grouped_navigation():
     assert '<div class="admin-nav-section-title">运营</div>' in html
     assert "客户列表" in html
     assert "数据看板" in html
+    assert html.index("图片素材库") < html.index("小程序素材库") < html.index("附件素材库")
