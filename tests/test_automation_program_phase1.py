@@ -125,6 +125,18 @@ def test_active_automation_templates_do_not_show_legacy_workflow_terms():
     assert "执行节点" not in combined_source
 
 
+def test_stale_workflow_page_templates_are_removed():
+    template_dir = REPO_ROOT / "wecom_ability_service/templates/admin_console"
+    stale_template_names = [
+        "automation_conversion_operations_workspace.html",
+        "automation_conversion_workflow_editor.html",
+        "automation_conversion_workflow_nodes.html",
+    ]
+
+    for name in stale_template_names:
+        assert not (template_dir / name).exists(), f"{name} should stay removed; legacy pages redirect to setup operations"
+
+
 def _seed_choice_questionnaire(app, *, slug: str = "segmentation-choice-case") -> dict[str, object]:
     with app.app_context():
         db = get_db()
