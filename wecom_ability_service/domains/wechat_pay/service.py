@@ -339,9 +339,11 @@ def get_public_product_page_state(product_code: str) -> dict[str, Any]:
 def _normalize_slices_payload(slices: Any) -> list[dict[str, int]]:
     if not isinstance(slices, list):
         return []
+    if len(slices) > PRODUCT_SLICE_LIMIT:
+        raise WeChatPayProductError("全景贴图最多 10 张")
     normalized: list[dict[str, int]] = []
     seen: set[int] = set()
-    for index, item in enumerate(slices[:PRODUCT_SLICE_LIMIT]):
+    for index, item in enumerate(slices):
         if isinstance(item, dict):
             image_id = int(item.get("image_library_id") or item.get("id") or 0)
             sort_order = int(item.get("sort_order") or index + 1)

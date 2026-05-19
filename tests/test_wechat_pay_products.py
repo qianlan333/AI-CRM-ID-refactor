@@ -286,17 +286,53 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 def test_product_slices_limit_is_ten(app, client):
     token = _login_admin(client)
     images = [_create_image(PNG_A, f"slice-limit-{index}") for index in range(11)]
+    too_many = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "admin_action_token": token,
+            "name": "超过切片限制商品",
+            "amount_total": 19900,
+            "status": "active",
+            "require_mobile": False,
+            "cta_text": "立即报名",
+            "slices": [
+                {"image_library_id": item["id"], "sort_order": index + 1}
+                for index, item in enumerate(images)
+            ],
+        },
+    )
+    assert too_many.status_code == 400
+    assert "最多 10 张" in too_many.get_json()["error"]
+
     product = _create_product(
         client,
         token,
         slices=[
             {"image_library_id": item["id"], "sort_order": index + 1}
-            for index, item in enumerate(images)
+            for index, item in enumerate(images[:10])
         ],
     )
 
     detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
     assert len(detail["slices"]) == 10
+
+    update_too_many = client.put(
+        f"/api/admin/wechat-pay/products/{product['id']}",
+        json={
+            "admin_action_token": token,
+            "name": product["name"],
+            "amount_total": product["amount_total"],
+            "status": product["status"],
+            "require_mobile": product["require_mobile"],
+            "cta_text": product["cta_text"],
+            "slices": [
+                {"image_library_id": item["id"], "sort_order": index + 1}
+                for index, item in enumerate(images)
+            ],
+        },
+    )
+    assert update_too_many.status_code == 400
+    assert "最多 10 张" in update_too_many.get_json()["error"]
 
     response = client.post(
         f"/api/admin/wechat-pay/products/{product['id']}/slices",
@@ -304,6 +340,24 @@ def test_product_slices_limit_is_ten(app, client):
     )
     assert response.status_code == 400
     assert "最多 10 张" in response.get_json()["error"]
+
+
+def test_normalize_product_slices_rejects_more_than_ten():
+    with pytest.raises(wechat_pay_service.WeChatPayProductError, match="最多 10 张"):
+        wechat_pay_service._normalize_slices_payload([{"image_library_id": index + 1} for index in range(11)])
+
+
+def test_product_editor_rejects_batch_upload_over_slice_limit():
+    template = (
+        REPO_ROOT
+        / "wecom_ability_service"
+        / "templates"
+        / "admin_console"
+        / "wechat_pay_products.html"
+    ).read_text(encoding="utf-8")
+
+    assert "selectedFiles.length > available" in template
+    assert "Array.from(files || []).slice(0, available)" not in template
 
 
 def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app, client, tmp_path):

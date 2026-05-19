@@ -576,7 +576,9 @@
     async function uploadSlices(files) {
       const available = 10 - draft.slices.length;
       if (available <= 0) throw new Error("全景贴图最多 10 张");
-      for (const file of Array.from(files || []).slice(0, available)) {
+      const selectedFiles = Array.from(files || []);
+      if (selectedFiles.length > available) throw new Error("全景贴图最多 10 张");
+      for (const file of selectedFiles) {
         const prepared = window.ImageUploadClient
           ? await window.ImageUploadClient.prepareImageForUpload(file)
           : { file: file, uploadSize: file.size, compressed: false };
