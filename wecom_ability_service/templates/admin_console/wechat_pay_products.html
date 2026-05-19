@@ -660,6 +660,7 @@
           openShareModal(payload.share || {});
         }
         if (button.classList.contains("js-delete")) {
+          if (!window.confirm("确认删除这个商品吗？已有订单的商品请下架保留。")) return;
           await api("/api/admin/wechat-pay/products/" + id, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: mutationBody({}) });
           toast("已删除");
           renderList();

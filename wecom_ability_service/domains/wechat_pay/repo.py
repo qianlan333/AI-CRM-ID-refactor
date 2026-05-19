@@ -210,6 +210,14 @@ def delete_product(product_id: int) -> None:
     get_db().execute("DELETE FROM wechat_pay_products WHERE id = ?", (int(product_id),))
 
 
+def count_orders_for_product_code(product_code: str) -> int:
+    row = get_db().execute(
+        "SELECT COUNT(*) AS total FROM wechat_pay_orders WHERE product_code = ?",
+        (str(product_code or "").strip(),),
+    ).fetchone()
+    return int((row or {}).get("total") or 0)
+
+
 def list_product_slices(
     product_id: int,
     *,

@@ -499,8 +499,12 @@ def copy_admin_product(product_id: int, *, operator: str = "") -> dict[str, Any]
 
 def delete_admin_product(product_id: int, *, operator: str = "") -> None:
     del operator
-    if not repo.get_product_by_id(int(product_id)):
+    existing = repo.get_product_by_id(int(product_id))
+    if not existing:
         raise WeChatPayProductError("商品不存在")
+    product_code = _normalized_text(existing.get("product_code"))
+    if product_code and repo.count_orders_for_product_code(product_code) > 0:
+        raise WeChatPayProductError("已有订单的商品不能删除，请先下架")
     repo.delete_product(int(product_id))
     get_db().commit()
 

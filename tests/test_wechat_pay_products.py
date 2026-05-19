@@ -4,6 +4,8 @@ import json
 from io import BytesIO
 from urllib.parse import unquote
 
+import pytest
+
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains import image_library
 from wecom_ability_service.domains.wechat_pay import repo as wechat_pay_repo
@@ -138,6 +140,7 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "ImageUploadClient.prepareImageForUpload" in edit_html
     assert "ImageUploadClient.requestJson" in edit_html
     assert "response.json()" not in edit_html
+    assert "确认删除这个商品吗？已有订单的商品请下架保留。" in edit_html
     assert "手机端预览" not in edit_html
     assert "引流计划列表加载失败" not in edit_html
 
@@ -174,6 +177,22 @@ def test_product_enable_disable_copy_and_delete(app, client):
         json={"admin_action_token": token},
     )
     assert deleted.status_code == 200
+
+
+def test_delete_admin_product_rejects_product_with_orders(monkeypatch):
+    deleted: list[int] = []
+    monkeypatch.setattr(
+        wechat_pay_service.repo,
+        "get_product_by_id",
+        lambda product_id: {"id": int(product_id), "product_code": "prd_ordered"},
+    )
+    monkeypatch.setattr(wechat_pay_service.repo, "count_orders_for_product_code", lambda product_code: 1)
+    monkeypatch.setattr(wechat_pay_service.repo, "delete_product", lambda product_id: deleted.append(int(product_id)))
+
+    with pytest.raises(wechat_pay_service.WeChatPayProductError, match="已有订单的商品不能删除"):
+        wechat_pay_service.delete_admin_product(8)
+
+    assert deleted == []
 
 
 def test_admin_product_share_returns_public_link_and_qr(app, client):
