@@ -52,6 +52,26 @@ def test_admin_navigation_filters_empty_groups_by_role(monkeypatch):
     assert [item["key"] for item in groups[1]["items"]] == ["api_docs"]
 
 
+def test_automation_admin_navigation_keeps_material_group_complete(monkeypatch):
+    monkeypatch.setattr(admin_dashboard_service, "_current_admin_role_codes", lambda: ["automation_admin"])
+
+    groups = admin_dashboard_service.list_admin_navigation("attachment_library")
+
+    assert [group["title"] for group in groups] == ["运营", "素材", "配置及后台"]
+    material_group = groups[1]
+    assert material_group["active"] is True
+    assert [item["key"] for item in material_group["items"]] == [
+        "image_library",
+        "miniprogram_library",
+        "attachment_library",
+    ]
+    assert {item["key"]: item["active"] for item in material_group["items"]} == {
+        "image_library": False,
+        "miniprogram_library": False,
+        "attachment_library": True,
+    }
+
+
 def test_admin_base_template_renders_grouped_navigation():
     app = Flask(
         __name__,
