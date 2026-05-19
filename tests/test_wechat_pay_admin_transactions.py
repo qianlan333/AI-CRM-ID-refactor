@@ -190,6 +190,35 @@ def test_wechat_pay_admin_status_mapping_shows_refund_processing(app):
     assert payload["items"][0]["status_label"] == "退款处理中"
 
 
+def test_wechat_pay_admin_status_filters_align_with_presented_refund_status():
+    cases = {
+        "pending": [
+            "COALESCE(refund_status, '') NOT IN ('partial_refunded', 'full_refunded')",
+        ],
+        "paid": [
+            "COALESCE(refund_status, '') NOT IN ('partial_refunded', 'full_refunded')",
+            "NOT EXISTS",
+        ],
+        "refund_processing": [
+            "COALESCE(refund_status, '') <> 'full_refunded'",
+            "NOT (COALESCE(refunded_amount_total, 0) >= amount_total AND amount_total > 0)",
+        ],
+        "partial_refunded": [
+            "COALESCE(refund_status, '') = 'partial_refunded'",
+            "NOT EXISTS",
+        ],
+        "full_refunded": [
+            "COALESCE(refund_status, '') = 'full_refunded'",
+        ],
+    }
+
+    for status, expected_fragments in cases.items():
+        clauses = wechat_pay_repo._order_query_where({"status": status}, [])
+        sql = " AND ".join(clauses)
+        for fragment in expected_fragments:
+            assert fragment in sql
+
+
 def test_wechat_pay_admin_cursor_pagination(app, client):
     _login_admin(client)
     base = datetime(2026, 5, 16, 12, 0, 0)

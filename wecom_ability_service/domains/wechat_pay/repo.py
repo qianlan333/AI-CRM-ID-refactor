@@ -678,12 +678,14 @@ def _order_query_where(filters: dict[str, Any], params: list[Any]) -> list[str]:
     if status == "pending":
         clauses.append(
             "COALESCE(refunded_amount_total, 0) = 0 "
+            "AND COALESCE(refund_status, '') NOT IN ('partial_refunded', 'full_refunded') "
             "AND COALESCE(status, '') NOT IN ('paid') "
             "AND COALESCE(trade_state, '') <> 'SUCCESS'"
         )
     elif status == "paid":
         clauses.append(
             "COALESCE(refunded_amount_total, 0) = 0 "
+            "AND COALESCE(refund_status, '') NOT IN ('partial_refunded', 'full_refunded') "
             "AND (COALESCE(status, '') = 'paid' OR COALESCE(trade_state, '') = 'SUCCESS')"
         )
         clauses.append(
@@ -701,10 +703,25 @@ def _order_query_where(filters: dict[str, Any], params: list[Any]) -> list[str]:
             "AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')"
             ")"
         )
+        clauses.append("COALESCE(refund_status, '') <> 'full_refunded'")
+        clauses.append("NOT (COALESCE(refunded_amount_total, 0) >= amount_total AND amount_total > 0)")
     elif status == "partial_refunded":
-        clauses.append("COALESCE(refunded_amount_total, 0) > 0 AND COALESCE(refunded_amount_total, 0) < amount_total")
+        clauses.append(
+            "(COALESCE(refund_status, '') = 'partial_refunded' "
+            "OR (COALESCE(refunded_amount_total, 0) > 0 AND COALESCE(refunded_amount_total, 0) < amount_total))"
+        )
+        clauses.append(
+            "NOT EXISTS ("
+            "SELECT 1 FROM wechat_pay_refunds r "
+            "WHERE r.order_id = wechat_pay_orders.id "
+            "AND r.status NOT IN ('failed', 'closed', 'CLOSED', 'ABNORMAL', 'SUCCESS')"
+            ")"
+        )
     elif status == "full_refunded":
-        clauses.append("COALESCE(refunded_amount_total, 0) >= amount_total AND amount_total > 0")
+        clauses.append(
+            "(COALESCE(refund_status, '') = 'full_refunded' "
+            "OR (COALESCE(refunded_amount_total, 0) >= amount_total AND amount_total > 0))"
+        )
     return clauses
 
 
