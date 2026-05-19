@@ -2400,6 +2400,18 @@ def test_operation_task_panel_saves_single_task_payload():
     assert "loadExistingAction" not in html
 
 
+def test_operation_task_profile_layered_uses_template_categories_for_copy_boxes():
+    html = (
+        REPO_ROOT
+        / "wecom_ability_service/templates/admin_console/_automation_operation_orchestration_panel.html"
+    ).read_text(encoding="utf-8")
+
+    assert "bundle.categories" in html
+    assert "category_key" in html
+    assert "category_name" in html
+    assert "当前画像模板还没有可填写的分层" in html
+
+
 def test_ai_action_template_generate_returns_chinese_error_when_model_unavailable(app, client, monkeypatch):
     _login(client, app, monkeypatch)
 
