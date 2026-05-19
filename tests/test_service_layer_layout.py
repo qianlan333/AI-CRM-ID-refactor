@@ -22,6 +22,27 @@ def test_domain_layout_registry_matches_domain_directories():
     assert set(DOMAIN_LAYOUTS.keys()) | _STUB_DOMAINS == actual | _STUB_DOMAINS
 
 
+def test_domain_layout_registry_source_has_no_duplicate_domain_keys():
+    registry_path = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "domains" / "__init__.py"
+    tree = ast.parse(registry_path.read_text(encoding="utf-8"))
+    assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "DOMAIN_LAYOUTS"
+        and isinstance(node.value, ast.Dict)
+    ]
+    assert len(assignments) == 1
+    keys = [
+        key.value
+        for key in assignments[0].value.keys
+        if isinstance(key, ast.Constant) and isinstance(key.value, str)
+    ]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    assert duplicates == []
+
+
 def test_domain_layout_files_match_declared_mode():
     domains_dir = Path(__file__).resolve().parents[1] / "wecom_ability_service" / "domains"
     for domain_name, spec in DOMAIN_LAYOUTS.items():
@@ -87,6 +108,8 @@ def test_service_layer_layout_doc_exists():
     assert "Only two domain layout modes are allowed" in source
     assert "`wecom_ability_service/services.py` stays as a thin compatibility facade" in source
     assert "`admin_api_docs`" in source
+    assert "`admin_wechat_pay_products.py`: admin product CRUD" in source
+    assert "`admin_service.py` owns admin transaction read models" in source
     assert "http_route_consolidation_check.md" in source
 
 
@@ -103,6 +126,9 @@ def test_http_route_consolidation_check_doc_tracks_current_matrix():
         "tests/test_route_inventory_contract.py",
         "scripts/export_flask_routes.py",
         "admin_questionnaire_console.py",
+        "admin_wechat_pay_products.py",
+        "456 route rows",
+        "--json-out /tmp/ai_crm_routes.json",
     ]
     for fragment in required_fragments:
         assert fragment in source

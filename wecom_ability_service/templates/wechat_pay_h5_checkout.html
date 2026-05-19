@@ -208,7 +208,7 @@
       async function waitForPaid(outTradeNo) {
         for (let index = 0; index < 8; index += 1) {
           const order = await confirmStatus(outTradeNo, index === 0);
-          if (order.status === "paid" || order.trade_state === "SUCCESS") return order;
+          if (order.status === "paid") return order;
           await delay(900);
         }
         return confirmStatus(outTradeNo, true);
@@ -291,7 +291,7 @@
             }
             setState("正在确认支付结果...");
             const order = await waitForPaid(activeOrderNo);
-            if (order.status !== "paid" && order.trade_state !== "SUCCESS") {
+            if (order.status !== "paid") {
               throw new Error("支付结果确认中，请稍后刷新查看");
             }
             setState("支付成功", "success");

@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from flask import Blueprint, Flask
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.admin_auth import save_admin_user
@@ -76,6 +77,66 @@ def _program_row(html: str, program_id: int) -> str:
     match = re.search(rf'<tr id="program-row-{program_id}".*?</tr>', html, flags=re.S)
     assert match
     return match.group(0)
+
+
+def test_program_workflow_page_handlers_redirect_to_setup_without_pg(monkeypatch):
+    from wecom_ability_service.http import automation_conversion_pages as pages
+
+    app = Flask(__name__)
+    api = Blueprint("api", __name__)
+    api.add_url_rule(
+        "/admin/automation-conversion/programs/<int:program_id>/setup",
+        "admin_automation_program_setup",
+        lambda program_id: "",
+    )
+    app.register_blueprint(api)
+    monkeypatch.setattr(pages, "_load_program_or_404", lambda program_id: {"id": int(program_id)})
+
+    handlers = (
+        (pages.admin_automation_program_operations, (42,)),
+        (pages.admin_automation_program_workflows, (42,)),
+        (pages.admin_automation_program_workflow_new, (42,)),
+        (pages.admin_automation_program_workflow_edit, (42, 1)),
+        (pages.admin_automation_program_workflow_nodes, (42, 1)),
+    )
+
+    with app.test_request_context("/"):
+        for handler, args in handlers:
+            response = handler(*args)
+            assert response.status_code == 302
+            assert response.headers["Location"].endswith(
+                "/admin/automation-conversion/programs/42/setup?step=operations"
+            )
+
+
+def test_active_automation_templates_do_not_show_legacy_workflow_terms():
+    active_template_names = [
+        "automation_program_list.html",
+        "automation_conversion_overview_workspace.html",
+        "automation_conversion_execution_records.html",
+        "automation_conversion_agent_config_workspace.html",
+    ]
+    combined_source = "\n".join(
+        (REPO_ROOT / "wecom_ability_service/templates/admin_console" / name).read_text(encoding="utf-8")
+        for name in active_template_names
+    )
+
+    assert "任务流" not in combined_source
+    assert "节点配置" not in combined_source
+    assert "执行节点" not in combined_source
+    assert "旧入口" not in combined_source
+
+
+def test_stale_workflow_page_templates_are_removed():
+    template_dir = REPO_ROOT / "wecom_ability_service/templates/admin_console"
+    stale_template_names = [
+        "automation_conversion_operations_workspace.html",
+        "automation_conversion_workflow_editor.html",
+        "automation_conversion_workflow_nodes.html",
+    ]
+
+    for name in stale_template_names:
+        assert not (template_dir / name).exists(), f"{name} should stay removed; legacy pages redirect to setup operations"
 
 
 def _seed_choice_questionnaire(app, *, slug: str = "segmentation-choice-case") -> dict[str, object]:
@@ -201,9 +262,12 @@ def test_program_routes_render_and_removed_legacy_routes_404(app, client, monkey
 
     overview_response = client.get(f"/admin/automation-conversion/programs/{program_id}/overview")
     operations_response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations")
+    workflow_list_response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations/workflows")
     flow_design_response = client.get(f"/admin/automation-conversion/programs/{program_id}/flow-design")
     member_ops_response = client.get(f"/admin/automation-conversion/programs/{program_id}/member-ops")
     workflow_new_response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations/workflows/new")
+    workflow_edit_response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations/workflows/1/edit")
+    workflow_nodes_response = client.get(f"/admin/automation-conversion/programs/{program_id}/operations/workflows/1/nodes")
     executions_response = client.get(f"/admin/automation-conversion/programs/{program_id}/executions")
     legacy_overview = client.get("/admin/automation-conversion/overview", follow_redirects=False)
     legacy_operations = client.get("/admin/automation-conversion/operations", follow_redirects=False)
@@ -213,10 +277,17 @@ def test_program_routes_render_and_removed_legacy_routes_404(app, client, monkey
     assert overview_response.status_code == 200
     assert operations_response.status_code == 302
     assert operations_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
+    assert workflow_list_response.status_code == 302
+    assert workflow_list_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
     assert flow_design_response.status_code == 302
     assert flow_design_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=segmentation")
     assert member_ops_response.status_code == 200
     assert workflow_new_response.status_code == 302
+    assert workflow_new_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
+    assert workflow_edit_response.status_code == 302
+    assert workflow_edit_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
+    assert workflow_nodes_response.status_code == 302
+    assert workflow_nodes_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
     assert executions_response.status_code == 200
     assert "默认自动化转化方案" in overview_response.get_data(as_text=True)
     assert legacy_overview.status_code == 404

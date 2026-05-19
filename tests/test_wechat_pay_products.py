@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import unquote
+
+import pytest
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains import image_library
+from wecom_ability_service.domains.wechat_pay import product_service
 from wecom_ability_service.domains.wechat_pay import repo as wechat_pay_repo
 from wecom_ability_service.domains.wechat_pay import service as wechat_pay_service
 from wecom_ability_service.domains.admin_auth.auth_runtime import (
@@ -19,6 +23,7 @@ from wecom_ability_service.domains.admin_auth.auth_runtime import (
 
 PNG_A = b"\x89PNG\r\n\x1a\n" + b"a" * 32
 PNG_B = b"\x89PNG\r\n\x1a\n" + b"b" * 32
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _wechat_headers() -> dict[str, str]:
@@ -138,6 +143,7 @@ def test_admin_product_create_generates_code_and_list_shape(app, client):
     assert "ImageUploadClient.prepareImageForUpload" in edit_html
     assert "ImageUploadClient.requestJson" in edit_html
     assert "response.json()" not in edit_html
+    assert "确认删除这个商品吗？已有订单的商品请下架保留。" in edit_html
     assert "手机端预览" not in edit_html
     assert "引流计划列表加载失败" not in edit_html
 
@@ -174,6 +180,22 @@ def test_product_enable_disable_copy_and_delete(app, client):
         json={"admin_action_token": token},
     )
     assert deleted.status_code == 200
+
+
+def test_delete_admin_product_rejects_product_with_orders(monkeypatch):
+    deleted: list[int] = []
+    monkeypatch.setattr(
+        product_service.product_repo,
+        "get_product_by_id",
+        lambda product_id: {"id": int(product_id), "product_code": "prd_ordered"},
+    )
+    monkeypatch.setattr(product_service.product_repo, "count_orders_for_product_code", lambda product_code: 1)
+    monkeypatch.setattr(product_service.product_repo, "delete_product", lambda product_id: deleted.append(int(product_id)))
+
+    with pytest.raises(product_service.WeChatPayProductError, match="已有订单的商品不能删除"):
+        product_service.delete_admin_product(8)
+
+    assert deleted == []
 
 
 def test_admin_product_share_returns_public_link_and_qr(app, client):
@@ -265,17 +287,53 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 def test_product_slices_limit_is_ten(app, client):
     token = _login_admin(client)
     images = [_create_image(PNG_A, f"slice-limit-{index}") for index in range(11)]
+    too_many = client.post(
+        "/api/admin/wechat-pay/products",
+        json={
+            "admin_action_token": token,
+            "name": "超过切片限制商品",
+            "amount_total": 19900,
+            "status": "active",
+            "require_mobile": False,
+            "cta_text": "立即报名",
+            "slices": [
+                {"image_library_id": item["id"], "sort_order": index + 1}
+                for index, item in enumerate(images)
+            ],
+        },
+    )
+    assert too_many.status_code == 400
+    assert "最多 10 张" in too_many.get_json()["error"]
+
     product = _create_product(
         client,
         token,
         slices=[
             {"image_library_id": item["id"], "sort_order": index + 1}
-            for index, item in enumerate(images)
+            for index, item in enumerate(images[:10])
         ],
     )
 
     detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
     assert len(detail["slices"]) == 10
+
+    update_too_many = client.put(
+        f"/api/admin/wechat-pay/products/{product['id']}",
+        json={
+            "admin_action_token": token,
+            "name": product["name"],
+            "amount_total": product["amount_total"],
+            "status": product["status"],
+            "require_mobile": product["require_mobile"],
+            "cta_text": product["cta_text"],
+            "slices": [
+                {"image_library_id": item["id"], "sort_order": index + 1}
+                for index, item in enumerate(images)
+            ],
+        },
+    )
+    assert update_too_many.status_code == 400
+    assert "最多 10 张" in update_too_many.get_json()["error"]
 
     response = client.post(
         f"/api/admin/wechat-pay/products/{product['id']}/slices",
@@ -283,6 +341,24 @@ def test_product_slices_limit_is_ten(app, client):
     )
     assert response.status_code == 400
     assert "最多 10 张" in response.get_json()["error"]
+
+
+def test_normalize_product_slices_rejects_more_than_ten():
+    with pytest.raises(product_service.WeChatPayProductError, match="最多 10 张"):
+        product_service._normalize_slices_payload([{"image_library_id": index + 1} for index in range(11)])
+
+
+def test_product_editor_rejects_batch_upload_over_slice_limit():
+    template = (
+        REPO_ROOT
+        / "wecom_ability_service"
+        / "templates"
+        / "admin_console"
+        / "wechat_pay_products.html"
+    ).read_text(encoding="utf-8")
+
+    assert "selectedFiles.length > available" in template
+    assert "Array.from(files || []).slice(0, available)" not in template
 
 
 def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app, client, tmp_path):
@@ -562,6 +638,41 @@ def test_full_refunded_order_allows_repurchase(app, client, tmp_path, monkeypatc
     )
     assert created.status_code == 200
     assert created.get_json()["order"]["status"] == "paying"
+
+
+def test_public_order_payload_does_not_show_lead_qr_after_full_refund(monkeypatch):
+    product_lookups: list[str] = []
+    monkeypatch.setattr(
+        wechat_pay_service,
+        "get_lead_qr_for_product_code",
+        lambda product_code: product_lookups.append(product_code) or {"qr_url": "https://example.test/qr.png"},
+    )
+
+    payload = wechat_pay_service._order_public_payload(
+        {
+            "out_trade_no": "WXP_REFUNDED_PUBLIC",
+            "product_code": "prd_refunded",
+            "product_name": "退款商品",
+            "amount_total": 9900,
+            "refunded_amount_total": 9900,
+            "refund_status": "full_refunded",
+            "status": "paid",
+            "trade_state": "SUCCESS",
+        }
+    )
+
+    assert payload["status"] == "full_refunded"
+    assert payload["refund_status"] == "full_refunded"
+    assert "lead_qr" not in payload
+    assert product_lookups == []
+
+
+def test_checkout_template_uses_normalized_paid_status_only():
+    source = (REPO_ROOT / "wecom_ability_service/templates/wechat_pay_h5_checkout.html").read_text(encoding="utf-8")
+
+    assert 'order.status === "paid"' in source
+    assert 'order.trade_state === "SUCCESS"' not in source
+    assert 'order.status !== "paid" && order.trade_state !== "SUCCESS"' not in source
 
 
 def test_paid_order_status_returns_lead_qr_only_after_paid(app, client):

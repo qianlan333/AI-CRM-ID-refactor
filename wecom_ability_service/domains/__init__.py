@@ -145,7 +145,10 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         mode="simple",
         service_module="service.py",
         persistence_modules=("repo.py",),
-        notes="WeChat Pay JSAPI order creation, status sync, and payment notification handling.",
+        notes=(
+            "WeChat Pay H5/JSAPI checkout, product management, transaction admin, refunds, "
+            "and payment notification handling; admin_service.py owns admin transaction read models."
+        ),
     ),
     "routing_config": DomainLayoutSpec(
         name="routing_config",
@@ -174,13 +177,6 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         service_module="service.py",
         persistence_modules=("repo.py",),
         notes="Lead pool, import, activation, deferred jobs, class-term mapping.",
-    ),
-    "wechat_pay": DomainLayoutSpec(
-        name="wechat_pay",
-        mode="simple",
-        service_module="service.py",
-        persistence_modules=("repo.py",),
-        notes="WeChat Pay H5 JSAPI checkout, order lifecycle, and payment notification handling.",
     ),
 }
 

@@ -82,14 +82,14 @@
       <p class="admin-card-copy">当前处于启用状态的方案数量。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
-      <div class="admin-card-label">累计任务流</div>
+      <div class="admin-card-label">累计运营任务</div>
       <div class="admin-card-value admin-card-value--compact">{{ ns.workflow_total }}</div>
-      <p class="admin-card-copy">跨方案的任务流数量总和。</p>
+      <p class="admin-card-copy">跨方案的运营任务数量总和。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
       <div class="admin-card-label">默认方案</div>
       <div class="admin-card-value admin-card-value--compact">{{ default_program.program_name or "未初始化" }}</div>
-      <p class="admin-card-copy">旧入口默认回落到这份方案上下文。</p>
+      <p class="admin-card-copy">未指定方案时使用这份方案上下文。</p>
     </article>
     <article class="admin-card admin-stat-card admin-stat-card--nested">
       <div class="admin-card-label">最近运行时间</div>

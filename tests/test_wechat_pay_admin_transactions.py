@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.admin_auth.auth_runtime import (
@@ -12,6 +13,9 @@ from wecom_ability_service.domains.admin_auth.auth_runtime import (
 )
 from wecom_ability_service.domains.wechat_pay import repo as wechat_pay_repo
 from wecom_ability_service.domains.wechat_pay import admin_service as wechat_pay_admin_service
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _login_admin(client, *, token: str = "test-admin-action-token") -> str:
@@ -90,6 +94,42 @@ def test_wechat_pay_admin_backfills_empty_product_name(app):
     assert order["product_name"] == "vip_course"
     payload = wechat_pay_admin_service.list_orders(filters={"product_code": "vip_course"}, limit=20)
     assert payload["items"][0]["product_name"] == "vip_course"
+    assert payload["items"][0]["product_label"] == "vip_course"
+
+
+def test_wechat_pay_admin_transaction_template_hides_internal_filter_copy():
+    source = (REPO_ROOT / "wecom_ability_service/templates/admin_console/wechat_pay_transactions.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "商品编码" not in source
+    assert "mobile_snapshot / mobile" not in source
+    assert "userid / external_userid" not in source
+    assert "placeholder=\"transaction_id\"" not in source
+    assert "row.product_code" not in source
+    assert "{{ product.product_name }} / {{ product.product_code }}" not in source
+
+
+def test_wechat_pay_admin_present_order_uses_operator_product_label():
+    row = {
+        "id": 1,
+        "created_at": "2026-05-18 12:00:00",
+        "transaction_id": "420000DISPLAY",
+        "payer_name_snapshot": "张三",
+        "mobile_snapshot": "13800000000",
+        "userid_snapshot": "zhangsan",
+        "external_userid": "wm_test",
+        "product_code": "assessment_report_v1",
+        "product_name": "AI 测评报告",
+        "amount_total": 9900,
+        "status": "paid",
+        "trade_state": "SUCCESS",
+    }
+
+    presented = wechat_pay_admin_service._present_order(row)
+
+    assert presented["product_label"] == "AI 测评报告"
+    assert presented["product_code"] == "assessment_report_v1"
 
 
 def test_wechat_pay_admin_product_filter(app, client):
@@ -148,6 +188,35 @@ def test_wechat_pay_admin_status_mapping_shows_refund_processing(app):
     assert len(payload["items"]) == 1
     assert payload["items"][0]["status"] == "refund_processing"
     assert payload["items"][0]["status_label"] == "退款处理中"
+
+
+def test_wechat_pay_admin_status_filters_align_with_presented_refund_status():
+    cases = {
+        "pending": [
+            "COALESCE(refund_status, '') NOT IN ('partial_refunded', 'full_refunded')",
+        ],
+        "paid": [
+            "COALESCE(refund_status, '') NOT IN ('partial_refunded', 'full_refunded')",
+            "NOT EXISTS",
+        ],
+        "refund_processing": [
+            "COALESCE(refund_status, '') <> 'full_refunded'",
+            "NOT (COALESCE(refunded_amount_total, 0) >= amount_total AND amount_total > 0)",
+        ],
+        "partial_refunded": [
+            "COALESCE(refund_status, '') = 'partial_refunded'",
+            "NOT EXISTS",
+        ],
+        "full_refunded": [
+            "COALESCE(refund_status, '') = 'full_refunded'",
+        ],
+    }
+
+    for status, expected_fragments in cases.items():
+        clauses = wechat_pay_repo._order_query_where({"status": status}, [])
+        sql = " AND ".join(clauses)
+        for fragment in expected_fragments:
+            assert fragment in sql
 
 
 def test_wechat_pay_admin_cursor_pagination(app, client):
