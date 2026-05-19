@@ -126,6 +126,9 @@ def test_http_route_consolidation_check_doc_tracks_current_matrix():
         "tests/test_route_inventory_contract.py",
         "scripts/export_flask_routes.py",
         "admin_questionnaire_console.py",
+        "admin_wechat_pay_products.py",
+        "456 route rows",
+        "--json-out /tmp/ai_crm_routes.json",
     ]
     for fragment in required_fragments:
         assert fragment in source
