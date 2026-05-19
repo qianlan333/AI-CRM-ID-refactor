@@ -133,6 +133,16 @@ def update_group(group_id: int, payload: dict[str, Any]) -> dict[str, Any]:
 def archive_group(group_id: int, *, operator_id: str) -> None:
     get_db().execute(
         """
+        UPDATE automation_operation_task
+        SET group_id = NULL,
+            updated_by = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE group_id = ?
+        """,
+        (_text(operator_id), int(group_id)),
+    )
+    get_db().execute(
+        """
         UPDATE automation_operation_task_group
         SET archived_at = CURRENT_TIMESTAMP, updated_by = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?

@@ -32,6 +32,9 @@
   .program-status--active { color: #00856a; background: #e6faf5; }
   .program-status--paused { color: #4e5969; background: #f5f6f7; }
   .program-status--archived { color: #6b7280; background: #eef0f3; border-color: #d7dbe0; }
+  .program-publish--entry { color: #1456f0; background: #eef4ff; }
+  .program-publish--full { color: #067647; background: #ecfdf3; }
+  .program-publish--unpublished { color: #344054; background: #f5f6f7; }
   .program-row-actions {
     display: flex;
     align-items: center;
@@ -163,11 +166,12 @@
           {% set program = item.program or {} %}
           {% set summary = item.summary or {} %}
           {% set status_label = "启用" if program.status == "active" else "草稿" if program.status == "draft" else "暂停" if program.status == "paused" else "归档" if program.status == "archived" else program.status %}
+          {% set publish_status = summary.publish_status or "unpublished" %}
           <tr id="program-row-{{ program.id }}" class="{% if program.status == 'archived' %}is-archived{% endif %}">
             <td><strong>{{ program.program_name }}</strong></td>
             <td><span class="program-code">{{ program.program_code }}</span></td>
             <td><span class="admin-chip program-status program-status--{{ program.status }}">{{ status_label }}</span></td>
-            <td><span class="admin-chip admin-chip--neutral">未发布</span></td>
+            <td><span class="admin-chip program-publish--{{ publish_status }}">{{ summary.publish_status_label or "未发布" }}</span></td>
             <td>{{ summary.channel_count or 0 }}</td>
             <td>{{ summary.workflow_count or 0 }}</td>
             <td>{{ summary.latest_execution_at or "-" }}</td>

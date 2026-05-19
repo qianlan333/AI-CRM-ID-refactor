@@ -56,6 +56,7 @@
         <div class="op-task-tools__row">
           <button class="op-task-button is-primary" type="button" data-create-task>新增任务</button>
           <button class="op-task-button is-soft" type="button" data-create-group>新增分组</button>
+          <button class="op-task-button" type="button" data-delete-group>删除分组</button>
         </div>
       </div>
       <div class="op-task-feedback" data-task-list-feedback></div>
@@ -67,7 +68,6 @@
 
   <div class="op-task-panel" data-task-editor>
     <div class="op-task-feedback" data-task-feedback></div>
-    <div class="op-task-empty" data-task-empty>还没有运营任务</div>
     <div class="op-task-panel" data-task-form hidden>
       <section class="op-task-section">
         <h3>任务基础信息</h3>
@@ -136,7 +136,6 @@
     groupSelect: root.querySelector("[data-field='group_id']"),
     list: root.querySelector("[data-task-list]"),
     form: root.querySelector("[data-task-form]"),
-    empty: root.querySelector("[data-task-empty]"),
     feedback: root.querySelector("[data-task-feedback]"),
     listFeedback: root.querySelector("[data-task-list-feedback]"),
     previewTotal: root.querySelector("[data-preview-total]"),
@@ -219,7 +218,6 @@
 
   function setCurrentTask(task) {
     state.currentTask = task ? { ...task } : null;
-    dom.empty.hidden = Boolean(task);
     dom.form.hidden = !task;
     if (!task) {
       renderList();
@@ -429,6 +427,28 @@
     showFeedback(dom.listFeedback, "已新增分组", true);
   }
 
+  async function deleteSelectedGroup() {
+    const groupId = Number(dom.groupFilter?.value || 0);
+    if (!groupId) {
+      showFeedback(dom.listFeedback, "请先在分组筛选里选择要删除的分组");
+      return;
+    }
+    const group = state.groups.find((item) => Number(item.id) === groupId);
+    if (!group) {
+      showFeedback(dom.listFeedback, "分组不存在或已被删除");
+      return;
+    }
+    if (!window.confirm(`确认删除分组「${group.group_name || "未命名分组"}」吗？组内任务会保留，并移动到未分组。`)) return;
+    await requestJson(withId(apiUrls.task_group_detail_base, groupId), { method: "DELETE" });
+    state.groups = state.groups.filter((item) => Number(item.id) !== groupId);
+    state.tasks = state.tasks.map((task) => Number(task.group_id || 0) === groupId ? { ...task, group_id: null, group_name: "" } : task);
+    if (state.currentTask && Number(state.currentTask.group_id || 0) === groupId) state.currentTask = { ...state.currentTask, group_id: null, group_name: "" };
+    syncGroupControls();
+    if (dom.groupFilter) dom.groupFilter.value = "";
+    setCurrentTask(state.currentTask);
+    showFeedback(dom.listFeedback, "已删除分组，组内任务已移动到未分组", true);
+  }
+
   async function previewAudience() {
     if (!state.currentTask) return;
     const data = await requestJson(withId(apiUrls.task_preview_audience_base, currentId()), { method: "POST", body: JSON.stringify(collectPayload()) });
@@ -457,6 +477,7 @@
     }
     if (event.target.closest("[data-create-task]")) await createTask().catch((error) => showFeedback(dom.listFeedback, error.message || "新增失败"));
     if (event.target.closest("[data-create-group]")) await createGroup().catch((error) => showFeedback(dom.listFeedback, error.message || "新增失败"));
+    if (event.target.closest("[data-delete-group]")) await deleteSelectedGroup().catch((error) => showFeedback(dom.listFeedback, error.message || "删除分组失败"));
     if (event.target.closest("[data-preview-audience]")) await previewAudience().catch((error) => showFeedback(dom.feedback, error.message || "预览失败"));
     const actionButton = event.target.closest("[data-task-action]");
     if (actionButton) {
