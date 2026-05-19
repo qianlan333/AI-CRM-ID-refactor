@@ -289,7 +289,10 @@ def test_program_routes_render_and_removed_legacy_routes_404(app, client, monkey
     assert workflow_nodes_response.status_code == 302
     assert workflow_nodes_response.headers["Location"].endswith(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
     assert executions_response.status_code == 200
-    assert "默认自动化转化方案" in overview_response.get_data(as_text=True)
+    overview_html = overview_response.get_data(as_text=True)
+    assert "默认自动化转化方案" in overview_html
+    assert "/api/admin/cloud-orchestrator/segments" not in overview_html
+    assert f"/api/admin/automation-conversion/dashboard?program_id={program_id}" in overview_html
     assert legacy_overview.status_code == 404
     assert legacy_operations.status_code == 404
     assert legacy_flow_design.status_code == 404
@@ -1558,6 +1561,12 @@ def test_program_overview_and_member_ops_are_program_scoped(app, client, monkeyp
     search_ids = [item["external_contact_id"] for item in search_response.get_json()["items"]]
     assert "ext-overview-scope-b" in search_ids
     assert "ext-overview-scope-a" not in search_ids
+
+    overview_page_response = client.get(f"/admin/automation-conversion/programs/{int(program_b['id'])}/overview")
+    assert overview_page_response.status_code == 200
+    overview_html = overview_page_response.get_data(as_text=True)
+    assert "/api/admin/cloud-orchestrator/segments" not in overview_html
+    assert f"/api/admin/automation-conversion/dashboard?program_id={int(program_b['id'])}" in overview_html
 
 
 def test_operation_action_templates_and_from_template_create_current_workflow(app, client, monkeypatch):
