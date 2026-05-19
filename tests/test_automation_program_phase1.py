@@ -158,6 +158,8 @@ def test_operation_task_panel_uses_single_task_language():
     assert "分层话术" in source
     assert "绑定图片" in source
     assert "绑定小程序" in source
+    assert "还没有运营任务" not in source
+    assert "data-task-empty" not in source
     assert "执行节点" not in source
     assert "节点配置" not in source
     assert "任务流" not in source
@@ -995,7 +997,7 @@ def test_copy_program_copies_config_blocks_not_channels_or_links(app):
 
 
 def test_entry_publish_minimum_available_without_full_automation(app):
-    from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program
+    from wecom_ability_service.domains.automation_conversion.program_service import create_automation_program, list_automation_programs
     from wecom_ability_service.domains.automation_conversion.program_setup_service import (
         build_publish_check,
         publish_entry,
@@ -1012,10 +1014,15 @@ def test_entry_publish_minimum_available_without_full_automation(app):
         save_entry_channel(int(program["id"]), {"channel_name": "入口二维码", "welcome_message": "欢迎"})
         check = build_publish_check(int(program["id"]))
         result = publish_entry(int(program["id"]), operator_id="test")
+        published_item = next(
+            item for item in list_automation_programs(include_archived=True)["items"] if int(item["program"]["id"]) == int(program["id"])
+        )
 
     assert check["entry"]["passed"] is True
     assert check["full"]["passed"] is False
     assert result["program"]["status"] == "active"
+    assert published_item["summary"]["publish_status"] == "entry"
+    assert published_item["summary"]["publish_status_label"] == "入口已发布"
 
 
 def test_program_scoped_customer_acquisition_link(app, client, monkeypatch):
@@ -1572,6 +1579,7 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "运营任务" in html
     assert "新增任务" in html
     assert "新增分组" in html
+    assert "删除分组" in html
     assert "搜索任务标题" in html
     assert "保存草稿" in html
     assert "保存并发布" in html
@@ -1593,6 +1601,7 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "window.__automationOperationSaveDraft" in html
     assert "window.__automationOperationPublish" in html
     assert "task-groups" in html
+    assert "task_group_detail_base" in html
     assert "preview-audience" in html
     assert "minmax(300px, 360px) minmax(0, 1fr)" in html
     assert "@media (max-width: 960px)" in html
@@ -1691,6 +1700,19 @@ def test_operation_task_group_create_copy_filter_and_preview(app, client, monkey
     assert copied["group_id"] == group_id
     assert copied["status"] == "draft"
     assert copied["task_name"].endswith("/ 复制")
+
+    delete_group_response = client.delete(f"/api/admin/automation-conversion/task-groups/{group_id}?program_id={program_id}")
+    assert delete_group_response.status_code == 200
+    group_list_response = client.get(f"/api/admin/automation-conversion/task-groups?program_id={program_id}")
+    assert all(item["id"] != group_id for item in group_list_response.get_json()["groups"])
+    task_after_group_delete = client.get(
+        f"/api/admin/automation-conversion/tasks/{task['id']}?program_id={program_id}"
+    ).get_json()["task"]
+    copied_after_group_delete = client.get(
+        f"/api/admin/automation-conversion/tasks/{copied['id']}?program_id={program_id}"
+    ).get_json()["task"]
+    assert task_after_group_delete["group_id"] is None
+    assert copied_after_group_delete["group_id"] is None
 
 
 def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkeypatch):

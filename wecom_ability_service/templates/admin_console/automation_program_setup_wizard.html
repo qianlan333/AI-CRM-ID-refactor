@@ -1064,18 +1064,44 @@
     } catch (error) { showFeedback(error.message || "保存失败，请先处理当前页面配置"); }
   });
   root.querySelector("[data-operation-save-publish]")?.addEventListener("click", async () => {
+    const button = root.querySelector("[data-operation-save-publish]");
+    const originalText = button?.textContent || "保存并发布";
     try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "发布中...";
+      }
       if (typeof window.__automationOperationPublish === "function") {
         await window.__automationOperationPublish();
-        showFeedback("已保存并发布", true);
+        showFeedback("运营任务已保存并启用", true);
+        if (button) button.textContent = "已启用";
       } else {
         throw new Error("运营任务发布能力未加载，请刷新页面后重试");
       }
-    } catch (error) { showFeedback(error.message || "保存并发布失败"); }
+    } catch (error) {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+      showFeedback(error.message || "保存并发布失败");
+    }
   });
   root.querySelectorAll("[data-publish]").forEach((button) => {
     button.addEventListener("click", async () => {
-      try { await postJson(button.dataset.publish === "entry" ? urls.publish_entry : urls.publish_full, {}); showFeedback(button.dataset.publish === "entry" ? "入口已发布" : "完整自动化已发布", true); window.location.reload(); } catch (error) { showFeedback(error.message || "发布失败，请先处理检查项"); }
+      const publishType = button.dataset.publish === "entry" ? "entry" : "full";
+      const originalText = button.textContent;
+      try {
+        button.disabled = true;
+        button.textContent = "发布中...";
+        await postJson(publishType === "entry" ? urls.publish_entry : urls.publish_full, {});
+        const message = publishType === "entry" ? "入口已发布，方案列表会显示「入口已发布」" : "完整自动化已发布，方案列表会显示「完整自动化已发布」";
+        showFeedback(message, true);
+        button.textContent = publishType === "entry" ? "入口已发布" : "完整自动化已发布";
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = originalText;
+        showFeedback(error.message || "发布失败，请先处理检查项");
+      }
     });
   });
 })();
