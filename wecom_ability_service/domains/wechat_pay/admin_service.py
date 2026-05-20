@@ -15,6 +15,7 @@ from flask import current_app
 
 from ...db import get_db
 from ...infra.json_utils import safe_json_loads
+from ...infra.text_encoding import repair_utf8_mojibake
 from ..admin_audit import record_audit
 from . import repo
 from .product_service import list_products
@@ -103,7 +104,7 @@ def _merge_order_status(order: dict[str, Any]) -> str:
 
 
 def _identity_text(order: dict[str, Any]) -> str:
-    payer_name = _normalized_text(order.get("payer_name_snapshot")) or "未记录付款人"
+    payer_name = repair_utf8_mojibake(order.get("payer_name_snapshot")) or "未记录付款人"
     mobile = _normalized_text(order.get("mobile_snapshot")) or "未记录手机号"
     userid = _normalized_text(order.get("userid_snapshot"))
     external_userid = _normalized_text(order.get("external_userid"))
@@ -126,7 +127,7 @@ def _present_order(order: dict[str, Any], *, include_refund: bool = False) -> di
         "created_at": _dt_text(order.get("created_at")),
         "transaction_id": _normalized_text(order.get("transaction_id")) or "待支付暂无微信单号",
         "has_transaction_id": bool(_normalized_text(order.get("transaction_id"))),
-        "payer_name": _normalized_text(order.get("payer_name_snapshot")) or "未记录付款人",
+        "payer_name": repair_utf8_mojibake(order.get("payer_name_snapshot")) or "未记录付款人",
         "mobile": _normalized_text(order.get("mobile_snapshot")),
         "userid": _normalized_text(order.get("userid_snapshot")),
         "external_userid": _normalized_text(order.get("external_userid")),

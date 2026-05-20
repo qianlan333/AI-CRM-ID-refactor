@@ -11,6 +11,7 @@ from flask import current_app
 from ...db import get_db
 from ...infra.json_utils import safe_json_loads
 from ...infra.settings import get_setting
+from ...infra.text_encoding import repair_utf8_mojibake
 from . import repo
 from .client import WeChatPayClient, WeChatPayClientConfig, WeChatPayClientError
 from .exceptions import WeChatPayConfigError, WeChatPayOrderError
@@ -431,7 +432,7 @@ def create_jsapi_order(
             "external_userid": identity_external_userid,
             "userid_snapshot": userid_snapshot,
             "mobile_snapshot": normalized_mobile,
-            "payer_name_snapshot": _normalized_text(payer_name),
+            "payer_name_snapshot": repair_utf8_mojibake(payer_name),
             "status": "created",
             "success_url": success_url,
             "metadata": product.get("metadata") or {},
