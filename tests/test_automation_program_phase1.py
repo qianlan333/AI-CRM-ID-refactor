@@ -208,7 +208,7 @@ def test_operation_task_panel_uses_single_task_language():
     assert "新增任务" in source
     assert "所属分组" in source
     assert "每天触发时间" in source
-    assert "目标人群" in source
+    assert "触达对象所在阶段" in source
     assert "进入人群第 N 天" in source
     assert "行为过滤" in source
     assert "刷新人群预览" in source
@@ -224,6 +224,7 @@ def test_operation_task_panel_uses_single_task_language():
     assert "执行节点" not in source
     assert "节点配置" not in source
     assert "任务流" not in source
+    assert "目标人群" not in source
     assert "入口来源" not in source
     assert "发送去重" not in source
     assert "检查与执行" not in source
@@ -631,7 +632,10 @@ def test_setup_footer_saves_before_navigation(app, client, monkeypatch):
 
 
 def test_audience_entry_rule_v5_save_validation(app):
-    from wecom_ability_service.domains.automation_conversion.program_setup_service import save_audience_entry_rule
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import (
+        build_program_stage_flow,
+        save_audience_entry_rule,
+    )
 
     program_id = _default_program_id(app)
     with app.app_context():
@@ -653,7 +657,7 @@ def test_audience_entry_rule_v5_save_validation(app):
             save_audience_entry_rule(program_id, {"order_review": {"enabled": True}})
         with pytest.raises(ValueError, match="问卷审核已启用"):
             save_audience_entry_rule(program_id, {"questionnaire_review": {"enabled": True}})
-        with pytest.raises(ValueError, match="已转化判定已启用"):
+        with pytest.raises(ValueError, match="成交判定已启用"):
             save_audience_entry_rule(program_id, {"conversion_review": {"enabled": True}})
 
         draft = save_audience_entry_rule(
@@ -668,6 +672,34 @@ def test_audience_entry_rule_v5_save_validation(app):
         draft_payload = draft["audience_entry_rule"]["payload_json"]
         assert draft_payload["order_review"]["enabled"] is True
         assert draft_payload["order_review"]["selected_product_id"] is None
+
+        all_enabled = save_audience_entry_rule(
+            program_id,
+            {
+                "_allow_incomplete": True,
+                "order_review": {"enabled": True},
+                "questionnaire_review": {"enabled": True},
+                "conversion_review": {"enabled": True},
+            },
+        )
+        all_enabled_stages = {
+            item["stage_code"] for item in all_enabled["stage_flow"]["targetable_stages"]
+        }
+        assert {"order_review", "questionnaire_review", "operating", "converted"}.issubset(all_enabled_stages)
+
+        save_audience_entry_rule(
+            program_id,
+            {
+                "_allow_incomplete": True,
+                "order_review": {"enabled": False},
+                "questionnaire_review": {"enabled": True},
+                "conversion_review": {"enabled": False},
+            },
+        )
+        no_order_stages = {item["stage_code"] for item in build_program_stage_flow(program_id)["targetable_stages"]}
+        assert "order_review" not in no_order_stages
+        assert "questionnaire_review" in no_order_stages
+        assert "converted" not in no_order_stages
 
 
 def test_audience_entry_rule_v5_publish_check_dynamic(app):
@@ -836,7 +868,7 @@ def test_audience_entry_rule_v5_page_plain_state_line_and_picker(app, client, mo
         f"/admin/automation-conversion/programs/{program_id}/setup?step=entry-rule&audience_picker=order_product"
     ).get_data(as_text=True)
 
-    for label in ["扫码进入", "订单审核", "问卷审核", "运营中", "已转化"]:
+    for label in ["扫码进入", "订单审核", "问卷审核", "运营中", "成交判定", "已转化"]:
         assert label in html
     assert "必填" not in html
     assert "不可关闭" not in html
@@ -922,6 +954,8 @@ def test_audience_entry_rule_v5_runtime_resolves_order_questionnaire_and_convers
         before_order = _resolve_member_conversion_audience(member)
         assert before_order["audience_code"] == "pending_questionnaire"
         assert before_order["entry_reason"] == "order_review_pending"
+        assert before_order["stage_code"] == "order_review"
+        assert before_order["stage_label"] == "订单审核"
 
         db.execute(
             """
@@ -938,6 +972,8 @@ def test_audience_entry_rule_v5_runtime_resolves_order_questionnaire_and_convers
         after_order = _resolve_member_conversion_audience(member)
         assert after_order["audience_code"] == "pending_questionnaire"
         assert after_order["entry_reason"] == "questionnaire_review_pending"
+        assert after_order["stage_code"] == "questionnaire_review"
+        assert after_order["stage_label"] == "问卷审核"
 
         db.execute(
             """
@@ -953,6 +989,8 @@ def test_audience_entry_rule_v5_runtime_resolves_order_questionnaire_and_convers
         db.commit()
         after_questionnaire = _resolve_member_conversion_audience(member)
         assert after_questionnaire["audience_code"] == "operating"
+        assert after_questionnaire["stage_code"] == "operating"
+        assert after_questionnaire["stage_label"] == "运营中"
         assert after_questionnaire["entry_reason"] == "audience_entry_rule_passed"
 
         db.execute(
@@ -970,6 +1008,8 @@ def test_audience_entry_rule_v5_runtime_resolves_order_questionnaire_and_convers
         after_conversion = _resolve_member_conversion_audience(member)
         assert after_conversion["audience_code"] == "converted"
         assert after_conversion["entry_reason"] == "conversion_product_paid"
+        assert after_conversion["stage_code"] == "converted"
+        assert after_conversion["stage_label"] == "已转化"
 
 
 def test_program_basic_info_edit_updates_list_and_context_header(app, client, monkeypatch):
@@ -1902,6 +1942,99 @@ def test_operation_task_group_create_copy_filter_and_preview(app, client, monkey
     assert copied_after_group_delete["group_id"] is None
 
 
+def test_operation_task_preview_filters_by_target_stage(app):
+    from wecom_ability_service.domains.automation_conversion.operation_task_service import (
+        create_operation_task,
+        preview_operation_task_audience,
+    )
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import save_audience_entry_rule
+
+    program_id = _default_program_id(app)
+    with app.app_context():
+        save_audience_entry_rule(
+            program_id,
+            {
+                "_allow_incomplete": True,
+                "order_review": {"enabled": True},
+                "questionnaire_review": {"enabled": True},
+                "conversion_review": {"enabled": True},
+            },
+        )
+        db = get_db()
+        channel_id = int(
+            db.execute(
+                """
+                INSERT INTO automation_channel (
+                    program_id, channel_code, channel_name, owner_staff_id, status
+                )
+                VALUES (?, ?, '阶段预览渠道', 'stage-preview-owner', 'active')
+                RETURNING id
+                """,
+                (program_id, f"program_{program_id}_stage_preview"),
+            ).fetchone()["id"]
+        )
+        fixtures = [
+            ("ext-stage-order", "pending_questionnaire", "order_review_pending"),
+            ("ext-stage-questionnaire", "pending_questionnaire", "questionnaire_review_pending"),
+            ("ext-stage-operating", "operating", "audience_entry_rule_passed"),
+            ("ext-stage-converted", "converted", "conversion_product_paid"),
+        ]
+        for external_contact_id, audience_code, entry_reason in fixtures:
+            member_id = int(
+                db.execute(
+                    """
+                    INSERT INTO automation_member (
+                        external_contact_id, phone, current_audience_code,
+                        current_audience_entered_at, behavior_tier_key, source_channel_id
+                    )
+                    VALUES (?, '13800001111', ?, CURRENT_DATE::text, 'lt_2', ?)
+                    RETURNING id
+                    """,
+                    (external_contact_id, audience_code, channel_id),
+                ).fetchone()["id"]
+            )
+            db.execute(
+                """
+                INSERT INTO automation_member_audience_entry (
+                    member_id, audience_code, entered_at, is_current, entry_source, entry_reason
+                )
+                VALUES (?, ?, CURRENT_DATE::text, TRUE, 'test', ?)
+                """,
+                (member_id, audience_code, entry_reason),
+            )
+        db.commit()
+
+        base_payload = {
+            "task_name": "阶段预览任务",
+            "status": "draft",
+            "send_time": "10:00",
+            "audience_day_offset": 1,
+            "behavior_filter": "none",
+            "content_mode": "unified",
+            "unified_content_json": {"content_text": "测试"},
+        }
+        assert preview_operation_task_audience(program_id, {**base_payload, "target_stage_code": "order_review"})["preview"][
+            "target_count"
+        ] == 1
+        assert preview_operation_task_audience(
+            program_id, {**base_payload, "target_stage_code": "questionnaire_review"}
+        )["preview"]["target_count"] == 1
+        assert preview_operation_task_audience(program_id, {**base_payload, "target_stage_code": "operating"})["preview"][
+            "target_count"
+        ] == 1
+        assert preview_operation_task_audience(program_id, {**base_payload, "target_stage_code": "converted"})["preview"][
+            "target_count"
+        ] == 1
+
+        created = create_operation_task(
+            program_id,
+            {**base_payload, "task_name": "旧待审核任务", "target_audience_code": "pending_questionnaire"},
+            operator_id="pytest",
+        )["task"]
+        assert created["target_stage_code"] == "questionnaire_review"
+        assert created["target_stage_label"] == "问卷审核"
+
+
 def test_operation_task_due_runner_enqueues_and_worker_handler_sends(app, monkeypatch):
     from datetime import datetime
 
@@ -2382,6 +2515,8 @@ def test_operation_task_panel_saves_single_task_payload():
     assert "trigger_type" in html
     assert "进入人群后立即触发" in html
     assert "send_time" in html
+    assert "target_stage_code" in html
+    assert "触达对象所在阶段" in html
     assert "target_audience_code" in html
     assert "audience_day_offset" in html
     assert "behavior_filter" in html

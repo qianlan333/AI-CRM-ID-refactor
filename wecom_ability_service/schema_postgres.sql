@@ -2124,6 +2124,7 @@ CREATE TABLE IF NOT EXISTS automation_operation_task (
     timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
     target_audience_code TEXT NOT NULL DEFAULT 'operating'
         CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+    target_stage_code TEXT NOT NULL DEFAULT '',
     audience_day_offset INTEGER NOT NULL DEFAULT 1,
     behavior_filter TEXT NOT NULL DEFAULT 'none'
         CHECK (behavior_filter IN ('none', 'lt_2', 'between_2_9', 'gte_10')),

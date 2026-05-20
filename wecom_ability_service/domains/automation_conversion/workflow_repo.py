@@ -825,6 +825,7 @@ def list_current_member_audience_rows(
     audience_code: str,
     *,
     program_id: int | None = None,
+    entry_reason: str = "",
     include_unscoped: bool = False,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
@@ -833,6 +834,11 @@ def list_current_member_audience_rows(
         program_id=program_id,
         include_unscoped=include_unscoped,
     )
+    entry_reason_sql = ""
+    entry_reason_params: tuple[Any, ...] = ()
+    if _normalized_text(entry_reason):
+        entry_reason_sql = " AND e.entry_reason = ?"
+        entry_reason_params = (_normalized_text(entry_reason),)
     for row in _fetchall_dicts(
         f"""
         SELECT
@@ -866,10 +872,11 @@ def list_current_member_audience_rows(
         LEFT JOIN contacts c ON c.external_userid = m.external_contact_id AND m.external_contact_id <> ''
         WHERE e.audience_code = ?
           AND e.is_current = ?
+          {entry_reason_sql}
           {program_filter_sql}
         ORDER BY e.entered_at ASC, e.id ASC
         """,
-        (_normalized_text(audience_code), True, *program_filter_params),
+        (_normalized_text(audience_code), True, *entry_reason_params, *program_filter_params),
     ):
         items.append(
             {

@@ -2051,6 +2051,7 @@ def _init_postgres(db) -> None:
             timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
             target_audience_code TEXT NOT NULL DEFAULT 'operating'
                 CHECK (target_audience_code IN ('pending_questionnaire', 'operating', 'converted')),
+            target_stage_code TEXT NOT NULL DEFAULT '',
             audience_day_offset INTEGER NOT NULL DEFAULT 1,
             behavior_filter TEXT NOT NULL DEFAULT 'none'
                 CHECK (behavior_filter IN ('none', 'lt_2', 'between_2_9', 'gte_10')),
@@ -2071,6 +2072,8 @@ def _init_postgres(db) -> None:
     for stmt in (
         "ALTER TABLE IF EXISTS automation_operation_task "
         "ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'scheduled_daily'",
+        "ALTER TABLE IF EXISTS automation_operation_task "
+        "ADD COLUMN IF NOT EXISTS target_stage_code TEXT NOT NULL DEFAULT ''",
         "CREATE INDEX IF NOT EXISTS idx_automation_operation_task_program "
         "ON automation_operation_task (program_id, status, send_time, id DESC)",
         "CREATE INDEX IF NOT EXISTS idx_automation_operation_task_group "
