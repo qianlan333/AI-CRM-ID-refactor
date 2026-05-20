@@ -646,7 +646,7 @@
   {% endif %}
 
   {% elif current_step == 'operations' %}
-  {% set operations_workspace = workspace.operations_workspace or {} %}
+  {% set operations_workspace = workspace.operations or workspace.operations_workspace or {} %}
   {% include "admin_console/_automation_operation_orchestration_panel.html" %}
 
   {% elif current_step == 'publish' %}

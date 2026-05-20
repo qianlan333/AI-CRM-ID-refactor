@@ -231,6 +231,16 @@ def test_operation_task_panel_uses_single_task_language():
     assert "从当前任务复制" not in source
 
 
+def test_setup_operations_passes_program_scoped_workspace_to_operation_panel():
+    source = (
+        REPO_ROOT / "wecom_ability_service/templates/admin_console/automation_program_setup_wizard.html"
+    ).read_text(encoding="utf-8")
+
+    assert "workspace.operations or workspace.operations_workspace or {}" in source
+    assert "{% set operations_workspace = workspace.operations_workspace or {} %}" not in source
+    assert '{% include "admin_console/_automation_operation_orchestration_panel.html" %}' in source
+
+
 def test_default_program_bootstraps_and_automation_entry_lists_programs(app, client, monkeypatch):
     _login(client, app, monkeypatch)
     response = client.get("/admin/automation-conversion")
@@ -1795,8 +1805,20 @@ def test_operation_action_templates_and_from_template_create_current_workflow(ap
 
 
 def test_action_orchestration_page_is_main_operations_entry(app, client, monkeypatch):
+    from wecom_ability_service.domains.automation_conversion.program_setup_service import save_audience_entry_rule
+
     _login(client, app, monkeypatch)
     program_id = _default_program_id(app)
+    with app.app_context():
+        save_audience_entry_rule(
+            program_id,
+            {
+                "_allow_incomplete": True,
+                "order_review": {"enabled": True},
+                "questionnaire_review": {"enabled": True},
+                "conversion_review": {"enabled": True},
+            },
+        )
 
     response = client.get(f"/admin/automation-conversion/programs/{program_id}/setup?step=operations")
     html = response.get_data(as_text=True)
@@ -1818,6 +1840,10 @@ def test_action_orchestration_page_is_main_operations_entry(app, client, monkeyp
     assert "每天触发时间" in html
     assert "进入人群第 N 天" in html
     assert "行为过滤" in html
+    assert '<option value="order_review" data-audience-code="pending_questionnaire">订单审核 · 待支付 / 待确认订单</option>' in html
+    assert '<option value="questionnaire_review" data-audience-code="pending_questionnaire">问卷审核 · 待填写问卷</option>' in html
+    assert '<option value="operating" data-audience-code="operating">运营中 · 已通过前置条件</option>' in html
+    assert '<option value="converted" data-audience-code="converted">已转化 · 已确认成交</option>' in html
     assert "刷新人群预览" in html
     assert "统一内容" in html
     assert "按画像分层群发" in html
