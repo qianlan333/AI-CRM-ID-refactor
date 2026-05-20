@@ -1,10 +1,11 @@
 # AI-CRM
 
-AI-CRM 是当前主线仓库，承载这套 Flask 服务的源码、文档、脚本和测试。
+AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAPI modular monolith。
+旧 Flask 结构仍保留为 legacy fallback，方便回滚、对比和后续分批退场。
 
 当前主线包含：
 
-- 企业微信能力服务
+- AI-CRM Next modular monolith
 - CRM 后台控制台
 - 问卷与公众号 OAuth 流程
 - 客户中心 / 客户时间线
@@ -14,8 +15,11 @@ AI-CRM 是当前主线仓库，承载这套 Flask 服务的源码、文档、脚
 ## 当前主线口径
 
 - GitHub `main` 是唯一源码主线。
+- `python3 app.py run` 默认启动 AI-CRM Next。
+- 旧 Flask 只能通过 `python3 app.py run-legacy` 或 `python3 legacy_flask_app.py run` 显式启动。
 - 本地开发统一基于当前 Git clone，从最新 `main` 开功能分支。
 - 仓库只保留源码、脚本、测试和文档，不再把发布包、导出物、临时备份和本机专属路径一起带进主仓。
+- 生产 Nginx/systemd 切换仍需单独人工审批；本仓库入口切换不代表生产流量已经切换。
 
 ## 建议先读
 
@@ -41,13 +45,21 @@ AI-CRM 是当前主线仓库，承载这套 Flask 服务的源码、文档、脚
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
-python3 app.py init-db
 python3 app.py run
 ```
 
 本地默认监听：
 
-- `http://127.0.0.1:5000`
+- `http://127.0.0.1:5001`，除非设置 `APP_PORT`
+
+旧 Flask fallback：
+
+```bash
+python3 app.py run-legacy
+python3 app.py init-db-legacy
+```
+
+兼容旧部署脚本的 `python3 app.py init-db` 仍保留为 legacy alias，但新文档应优先使用 `init-db-legacy`。
 
 ## 生产环境快照
 
@@ -65,14 +77,18 @@ python3 app.py run
 ## 仓库结构
 
 - `app.py`
-  - 应用入口，支持 `init-db` 和 `run`
+  - 默认应用入口，`run` 启动 AI-CRM Next，legacy 命令显式启动旧 Flask
+- `legacy_flask_app.py`
+  - 旧 Flask fallback runner
+- `aicrm_next/`
+  - 当前默认 FastAPI modular monolith
 - `wecom_ability_service/`
-  - 主 Flask 服务
+  - legacy Flask fallback
   - `http/` 负责路由与控制器
   - `domains/` 负责业务能力
   - `templates/admin_console/` 和 `static/admin_console/` 负责后台页面
 - `openclaw_service/`
-  - OpenClaw 相关适配、工具和服务
+  - legacy OpenClaw 适配、工具和服务，默认不作为新功能入口
 - `docs/`
   - 项目说明、运行口径、接口和方案文档
 - `scripts/`

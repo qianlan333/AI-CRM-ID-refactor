@@ -2,6 +2,21 @@
 
 这份文档描述当前最常用的本地开发和生产发布口径。
 
+当前代码默认运行入口已经切到 AI-CRM Next：
+
+```bash
+python3 app.py run
+```
+
+旧 Flask 只作为 legacy fallback：
+
+```bash
+python3 app.py run-legacy
+python3 legacy_flask_app.py run
+```
+
+这次入口变更本身不修改生产 Nginx/systemd，不代表生产流量已经切换。
+
 ## 本地仓库约定
 
 - 当前 Git clone 就是本地唯一正式工作目录
@@ -25,7 +40,7 @@ git switch -c <feature-branch>
 - 环境变量文件：`/home/ubuntu/.openclaw-wecom-pg.env`
 - 生产虚拟环境：`/home/ubuntu/venvs/openclaw/bin/activate`
 
-当前线上正式流量只走 `5001`。
+当前线上正式流量只走 `5001`。生产服务命令是否改为 Next 仍需单独人工审批。
 
 不要再默认假设：
 
@@ -54,6 +69,8 @@ sudo journalctl -u openclaw-wecom-postgres.service -n 100 --no-pager
 GitHub Actions 里 `main` push 只跑关键路径 smoke，避免每个小 PR 合并后
 都等待全量 PG 回归；完整 `full-test` 保留在 nightly 和手动触发。
 
+AI-CRM Next 已经成为默认代码入口，但生产 route/systemd/Nginx 切换仍必须走人工签核。
+
 推荐顺序：
 
 1. 在本地最新 `main` 上开发和测试
@@ -61,8 +78,9 @@ GitHub Actions 里 `main` push 只跑关键路径 smoke，避免每个小 PR 合
 3. 服务器部署时只同步已经合入 `main` 的代码
 4. 同步到 `/home/ubuntu/极简 crm`
 5. 必要时安装依赖并执行数据库初始化
-6. 重启 `openclaw-wecom-postgres.service`
-7. 做只读验收
+6. 确认本次是否已获批切换 systemd 命令；未获批时保持 legacy fallback 命令
+7. 重启 `openclaw-wecom-postgres.service`
+8. 做只读验收
 
 ## 典型发布步骤
 
@@ -74,10 +92,16 @@ set +a
 test -n "${DATABASE_URL:-}"
 source /home/ubuntu/venvs/openclaw/bin/activate
 python3 -m pip install -r requirements.txt
-python3 app.py init-db
+# AI-CRM Next default runtime:
+python3 app.py health
+
+# Legacy database initialization remains explicit:
+python3 app.py init-db-legacy
 sudo systemctl restart openclaw-wecom-postgres.service
 curl -sS http://127.0.0.1:5001/health
 ```
+
+不要在未经审批时修改生产 Nginx、systemd 或 route flag。不要把本地/staging evidence 写成 production canary 已执行。
 
 ## 日志与备份
 

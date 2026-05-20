@@ -7,6 +7,8 @@
 ```text
 AI-CRM/
 ├── app.py
+├── legacy_flask_app.py
+├── aicrm_next/
 ├── README.md
 ├── requirements.txt
 ├── deploy/
@@ -20,11 +22,16 @@ AI-CRM/
 ## 入口链路
 
 - [`app.py`](../app.py)
-  - CLI 入口
-  - 支持 `python3 app.py init-db`
-  - 支持 `python3 app.py run`
+  - 默认 CLI 入口
+  - `python3 app.py run` 启动 AI-CRM Next FastAPI app
+  - `python3 app.py run-legacy` 显式启动旧 Flask fallback
+  - `python3 app.py init-db-legacy` 显式初始化旧 Flask 数据库
+- [`legacy_flask_app.py`](../legacy_flask_app.py)
+  - 旧 Flask fallback runner
+- [`aicrm_next/main.py`](../aicrm_next/main.py)
+  - 当前默认 FastAPI app factory
 - [`wecom_ability_service/__init__.py`](../wecom_ability_service/__init__.py)
-  - 创建 Flask app
+  - 创建 legacy Flask app
   - 装载配置、日志、数据库和蓝图
 - [`wecom_ability_service/routes.py`](../wecom_ability_service/routes.py)
   - 当前 HTTP 蓝图装配入口
@@ -32,9 +39,27 @@ AI-CRM/
 - [`wecom_ability_service/http/__init__.py`](../wecom_ability_service/http/__init__.py)
   - 注册所有 HTTP route 模块
 
+## `aicrm_next/`
+
+这是当前默认运行架构，来自 `experiments/ai_crm_next/src/aicrm_next` 的 FastAPI modular monolith。
+
+主要模块：
+
+- `platform_foundation`
+- `integration_gateway`
+- `identity_contact`
+- `customer_read_model`
+- `ops_enrollment`
+- `questionnaire`
+- `automation_engine`
+- `commerce`
+- `media_library`
+- `frontend_compat`
+- `ai_assist`
+
 ## `wecom_ability_service/`
 
-这是当前项目最核心的服务目录。
+这是 legacy Flask fallback 目录。
 
 主要结构：
 
@@ -72,7 +97,7 @@ AI-CRM/
 
 ## `openclaw_service/`
 
-这是 OpenClaw 相关的适配层。
+这是 legacy OpenClaw 相关的适配层。新默认运行入口不会从 `aicrm_next/` import 该目录。
 
 重点目录：
 

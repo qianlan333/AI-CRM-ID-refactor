@@ -1,0 +1,16 @@
+# Legacy Route Owner Cutover Matrix
+
+| Batch | Module | Next Owner | Legacy Owner | Current Status | Delete Gate |
+| --- | --- | --- | --- | --- | --- |
+| D0 | Freeze only | `ai_crm_next` default runtime | `legacy_flask` fallback | frozen | no deletion |
+| D1 | Media readonly | `aicrm_next.media_library` | legacy media routes | canary evidence available | production evidence and rollback proof |
+| D2 | Product readonly | `aicrm_next.commerce` | legacy commerce/payment routes | canary evidence available | production evidence and checkout/payment exclusion proof |
+| D3 | Customer readonly | `aicrm_next.customer_read_model` | legacy customer center | canary evidence available | production evidence and sample detail proof |
+| D4 | User Ops readonly | `aicrm_next.ops_enrollment` | legacy user ops | canary evidence available | production evidence and accepted drift proof |
+| D5 | Questionnaire readonly | `aicrm_next.questionnaire` | legacy questionnaire | canary evidence available | production evidence and OAuth/submit exclusion proof |
+| D6 | Automation readonly | `aicrm_next.automation_engine` | legacy automation conversion | canary evidence available | production evidence and accepted route drift proof |
+| D7 | Write/external adapters | Next adapters, if approved | legacy write/external routes | not approved | real external replacement evidence |
+| D8 | Flask factory/http registrar | none | legacy app factory and HTTP registrar | not eligible | all routes retired |
+| D9 | OpenClaw legacy adapter | Next-approved integration | legacy OpenClaw adapter | not eligible | external adapter replacement evidence |
+
+No row is `production_ready` or `production_approved`.
