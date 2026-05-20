@@ -267,6 +267,7 @@ def register_routes(bp) -> None:
     bp.route("/api/h5/wechat-pay/oauth/start", methods=["GET"])(h5_wechat_pay_oauth_start)
     bp.route("/api/h5/wechat-pay/oauth/callback", methods=["GET"])(h5_wechat_pay_oauth_callback)
     bp.route("/api/h5/wechat-pay/products/<product_code>", methods=["GET"])(api_h5_wechat_pay_product)
+    bp.route("/api/products/<product_code>", methods=["GET"])(api_h5_wechat_pay_product)
     bp.route("/api/h5/wechat-pay/jsapi/orders", methods=["POST"])(api_h5_wechat_pay_create_jsapi_order)
     bp.route("/api/h5/wechat-pay/orders/<out_trade_no>", methods=["GET"])(api_h5_wechat_pay_order_status)
     bp.route("/api/h5/wechat-pay/notify", methods=["POST"])(api_h5_wechat_pay_notify)
