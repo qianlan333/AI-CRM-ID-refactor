@@ -17,6 +17,26 @@ from .program_service import (
     update_automation_program_status,
 )
 from .service import _normalized_text, get_settings_payload
+from .workflow_definitions import (
+    AUDIENCE_CONVERTED,
+    AUDIENCE_OPERATING,
+    AUDIENCE_PENDING_QUESTIONNAIRE,
+    ENTRY_REASON_AUDIENCE_RULE_PASSED,
+    ENTRY_REASON_CONVERSION_PRODUCT_PAID,
+    ENTRY_REASON_ORDER_REVIEW_PENDING,
+    ENTRY_REASON_QUESTIONNAIRE_REVIEW_PENDING,
+    STAGE_COMPAT_AUDIENCE,
+    STAGE_COMPAT_ENTRY_REASON,
+    STAGE_CONVERSION_REVIEW,
+    STAGE_CONVERTED,
+    STAGE_DESCRIPTIONS,
+    STAGE_FINISHED,
+    STAGE_LABELS,
+    STAGE_OPERATING,
+    STAGE_ORDER_REVIEW,
+    STAGE_QUESTIONNAIRE_REVIEW,
+    STAGE_SCAN_ENTER,
+)
 from .workflow_service import list_conversion_profile_segment_templates
 
 BLOCK_BASIC = "basic"
@@ -36,7 +56,7 @@ SETUP_STEPS = (
     ("basic", "基础信息"),
     ("entry", "入口渠道"),
     ("segmentation", "分层规则"),
-    ("entry-rule", "入池规则"),
+    ("entry-rule", "阶段流转"),
     ("operations", "运营编排"),
     ("publish", "检查并发布"),
 )
@@ -57,9 +77,9 @@ DEFAULT_AUDIENCE_ENTRY_RULES = [
 ]
 
 AUDIENCE_LABELS = {
-    "pending_questionnaire": "待填问卷",
-    "operating": "运营中",
-    "converted": "已转化",
+    AUDIENCE_PENDING_QUESTIONNAIRE: "前置审核",
+    AUDIENCE_OPERATING: "运营中",
+    AUDIENCE_CONVERTED: "已转化",
 }
 
 ENTRY_CONDITION_LABELS = {
@@ -732,21 +752,130 @@ def _normalize_audience_entry_rule_payload(payload: dict[str, Any], *, validate:
         if questionnaire_review.get("enabled") and not int(questionnaire_review.get("selected_questionnaire_id") or 0):
             raise ValueError("问卷审核已启用，请先选择问卷")
         if conversion_review.get("enabled") and not _normalized_text(conversion_review.get("selected_product_id")):
-            raise ValueError("已转化判定已启用，请先选择成交商品")
+            raise ValueError("成交判定已启用，请先选择成交商品")
     return normalized
 
 
-def _audience_next_steps(payload: dict[str, Any]) -> dict[str, str]:
+def _stage_item(
+    stage_code: str,
+    *,
+    enabled: bool = True,
+    targetable: bool = False,
+    stage_type: str = "audience",
+    transition_to: str = "",
+    transition_label: str = "",
+    note: str = "",
+) -> dict[str, Any]:
+    return {
+        "stage_code": stage_code,
+        "label": STAGE_LABELS.get(stage_code, stage_code),
+        "description": STAGE_DESCRIPTIONS.get(stage_code, ""),
+        "type": stage_type,
+        "enabled": bool(enabled),
+        "targetable": bool(targetable and enabled),
+        "compat_audience_code": STAGE_COMPAT_AUDIENCE.get(stage_code, ""),
+        "compat_entry_reason": STAGE_COMPAT_ENTRY_REASON.get(stage_code, ""),
+        "transition_to": transition_to,
+        "transition_label": transition_label or STAGE_LABELS.get(transition_to, transition_to),
+        "note": note,
+    }
+
+
+def _next_enabled_stage_after_scan(*, order_enabled: bool, questionnaire_enabled: bool) -> str:
+    if order_enabled:
+        return STAGE_ORDER_REVIEW
+    if questionnaire_enabled:
+        return STAGE_QUESTIONNAIRE_REVIEW
+    return STAGE_OPERATING
+
+
+def _build_stage_flow_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     order_enabled = bool((payload.get("order_review") or {}).get("enabled"))
     questionnaire_enabled = bool((payload.get("questionnaire_review") or {}).get("enabled"))
     conversion_enabled = bool((payload.get("conversion_review") or {}).get("enabled"))
-    scan_next = "订单审核" if order_enabled else ("问卷审核" if questionnaire_enabled else "运营中")
+    scan_next = _next_enabled_stage_after_scan(order_enabled=order_enabled, questionnaire_enabled=questionnaire_enabled)
+    order_next = STAGE_QUESTIONNAIRE_REVIEW if questionnaire_enabled else STAGE_OPERATING
+    operating_next = STAGE_CONVERSION_REVIEW if conversion_enabled else STAGE_FINISHED
+    conversion_next = STAGE_CONVERTED if conversion_enabled else STAGE_FINISHED
+    stages = [
+        _stage_item(
+            STAGE_SCAN_ENTER,
+            stage_type="entry_event",
+            enabled=True,
+            targetable=False,
+            transition_to=scan_next,
+            transition_label=STAGE_LABELS.get(scan_next, scan_next),
+        ),
+        _stage_item(
+            STAGE_ORDER_REVIEW,
+            stage_type="checkpoint",
+            enabled=order_enabled,
+            targetable=order_enabled,
+            transition_to=order_next if order_enabled else "",
+            transition_label=STAGE_LABELS.get(order_next, order_next) if order_enabled else "本项已跳过",
+            note="" if order_enabled else "已跳过，扫码后直接进入下一启用阶段",
+        ),
+        _stage_item(
+            STAGE_QUESTIONNAIRE_REVIEW,
+            stage_type="checkpoint",
+            enabled=questionnaire_enabled,
+            targetable=questionnaire_enabled,
+            transition_to=STAGE_OPERATING if questionnaire_enabled else "",
+            transition_label=STAGE_LABELS[STAGE_OPERATING] if questionnaire_enabled else "本项已跳过",
+            note="" if questionnaire_enabled else "已跳过，扫码后直接进入下一启用阶段",
+        ),
+        _stage_item(
+            STAGE_OPERATING,
+            stage_type="audience",
+            enabled=True,
+            targetable=True,
+            transition_to=operating_next,
+            transition_label=STAGE_LABELS.get(operating_next, operating_next),
+            note="通过前置审核后进入正式自动化运营",
+        ),
+        _stage_item(
+            STAGE_CONVERSION_REVIEW,
+            stage_type="checkpoint",
+            enabled=conversion_enabled,
+            targetable=False,
+            transition_to=conversion_next if conversion_enabled else "",
+            transition_label=STAGE_LABELS.get(conversion_next, conversion_next) if conversion_enabled else "本项已关闭",
+            note="" if conversion_enabled else "不做成交判定，运营中结束后不自动进入已转化",
+        ),
+        _stage_item(
+            STAGE_CONVERTED,
+            stage_type="audience",
+            enabled=conversion_enabled,
+            targetable=conversion_enabled,
+            transition_to=STAGE_FINISHED,
+            transition_label=STAGE_LABELS[STAGE_FINISHED],
+            note="已确认成交，可做转化后服务、复购或留痕触达",
+        ),
+        _stage_item(
+            STAGE_FINISHED,
+            stage_type="terminal",
+            enabled=True,
+            targetable=False,
+            transition_to="",
+            transition_label="",
+        ),
+    ]
+    targetable_stages = [dict(item) for item in stages if bool(item.get("targetable"))]
+    return {"stages": stages, "targetable_stages": targetable_stages}
+
+
+def build_program_stage_flow(program_id: int) -> dict[str, Any]:
+    payload = _payload_from_block(_blocks_by_key(int(program_id)), BLOCK_AUDIENCE_ENTRY_RULE)
+    normalized = _normalize_audience_entry_rule_payload(payload or {}, validate=False)
+    return _build_stage_flow_from_payload(normalized)
+
+
+def _audience_next_steps(payload: dict[str, Any]) -> dict[str, str]:
+    flow = _build_stage_flow_from_payload(payload or {})
+    by_code = {str(item.get("stage_code")): item for item in list(flow.get("stages") or [])}
     return {
-        "scan_enter": scan_next,
-        "order_review": ("问卷审核" if questionnaire_enabled else "运营中") if order_enabled else "本项已跳过",
-        "questionnaire_review": "运营中" if questionnaire_enabled else "本项已跳过",
-        "operating": "已转化" if conversion_enabled else "结束",
-        "conversion_review": "结束" if conversion_enabled else "本项已关闭",
+        key: str((by_code.get(key) or {}).get("transition_label") or "")
+        for key in (STAGE_SCAN_ENTER, STAGE_ORDER_REVIEW, STAGE_QUESTIONNAIRE_REVIEW, STAGE_OPERATING, STAGE_CONVERSION_REVIEW, STAGE_CONVERTED)
     }
 
 
@@ -761,6 +890,7 @@ def _audience_rule_view_model(payload: dict[str, Any], *, program_id: int, picke
         **normalized_payload,
         "rules": _legacy_rules_from_entry_rule(normalized_payload),
         "next_steps": _audience_next_steps(normalized_payload),
+        "stage_flow": _build_stage_flow_from_payload(normalized_payload),
         "available_products": available_products,
         "available_questionnaires": available_questionnaires,
         "picker": picker_key,
@@ -885,7 +1015,14 @@ def get_program_setup_payload(program_id: int, *, step: str = "basic", audience_
         legacy_fallback_used = True
     segmentation_view = _segmentation_view_model(segmentation, program_id=int(program_id))
     audience_payload = _payload_from_block(blocks, BLOCK_AUDIENCE_ENTRY_RULE)
+    audience_view = _audience_rule_view_model(
+        audience_payload,
+        program_id=int(program_id),
+        picker=audience_picker,
+    )
     operations = list_operation_tasks(program_id=int(program_id))
+    operations["stage_flow"] = audience_view.get("stage_flow") or build_program_stage_flow(int(program_id))
+    operations["targetable_stages"] = list((operations.get("stage_flow") or {}).get("targetable_stages") or [])
     return {
         "program": program,
         "step": normalize_setup_step(step),
@@ -899,12 +1036,14 @@ def get_program_setup_payload(program_id: int, *, step: str = "basic", audience_
         "entry_channel": _payload_from_block(blocks, BLOCK_ENTRY_CHANNEL),
         "entry": _program_entry_payload(int(program_id)),
         "segmentation": segmentation_view,
-        "audience_entry_rule": _audience_rule_view_model(
-            audience_payload,
-            program_id=int(program_id),
-            picker=audience_picker,
-        ),
-        "operations": {"tasks": [dict(item or {}) for item in operations.get("tasks") or []]},
+        "audience_entry_rule": audience_view,
+        "operations": {
+            "groups": [dict(item or {}) for item in operations.get("groups") or []],
+            "tasks": [dict(item or {}) for item in operations.get("tasks") or []],
+            "behavior_tiers": [dict(item or {}) for item in operations.get("behavior_tiers") or []],
+            "stage_flow": operations.get("stage_flow") or {},
+            "targetable_stages": list(operations.get("targetable_stages") or []),
+        },
         "publish_state": _payload_from_block(blocks, BLOCK_PUBLISH_STATE),
         "publish_check": build_publish_check(program_id),
     }
@@ -1205,7 +1344,7 @@ def save_audience_entry_rule(program_id: int, payload: dict[str, Any]) -> dict[s
         status="saved",
     )
     get_db().commit()
-    return {"audience_entry_rule": block}
+    return {"audience_entry_rule": block, "stage_flow": _build_stage_flow_from_payload(normalized)}
 
 
 def _has_entry_channel(program_id: int) -> bool:
@@ -1343,9 +1482,11 @@ def resolve_member_audience_entry_rule_state(
     if order_review.get("enabled") and not _member_has_paid_product(member, order_review.get("selected_product_id")):
         return {
             "program_id": program_id,
-            "audience_code": "pending_questionnaire",
-            "entry_reason": "order_review_pending",
-            "checkpoint": "order_review",
+            "audience_code": AUDIENCE_PENDING_QUESTIONNAIRE,
+            "entry_reason": ENTRY_REASON_ORDER_REVIEW_PENDING,
+            "checkpoint": STAGE_ORDER_REVIEW,
+            "stage_code": STAGE_ORDER_REVIEW,
+            "stage_label": STAGE_LABELS[STAGE_ORDER_REVIEW],
         }
     if questionnaire_review.get("enabled") and not _member_has_questionnaire_submission(
         member,
@@ -1354,22 +1495,28 @@ def resolve_member_audience_entry_rule_state(
     ):
         return {
             "program_id": program_id,
-            "audience_code": "pending_questionnaire",
-            "entry_reason": "questionnaire_review_pending",
-            "checkpoint": "questionnaire_review",
+            "audience_code": AUDIENCE_PENDING_QUESTIONNAIRE,
+            "entry_reason": ENTRY_REASON_QUESTIONNAIRE_REVIEW_PENDING,
+            "checkpoint": STAGE_QUESTIONNAIRE_REVIEW,
+            "stage_code": STAGE_QUESTIONNAIRE_REVIEW,
+            "stage_label": STAGE_LABELS[STAGE_QUESTIONNAIRE_REVIEW],
         }
     if conversion_review.get("enabled") and _member_has_paid_product(member, conversion_review.get("selected_product_id")):
         return {
             "program_id": program_id,
-            "audience_code": "converted",
-            "entry_reason": "conversion_product_paid",
-            "checkpoint": "conversion_review",
+            "audience_code": AUDIENCE_CONVERTED,
+            "entry_reason": ENTRY_REASON_CONVERSION_PRODUCT_PAID,
+            "checkpoint": STAGE_CONVERSION_REVIEW,
+            "stage_code": STAGE_CONVERTED,
+            "stage_label": STAGE_LABELS[STAGE_CONVERTED],
         }
     return {
         "program_id": program_id,
-        "audience_code": "operating",
-        "entry_reason": "audience_entry_rule_passed",
-        "checkpoint": "operating",
+        "audience_code": AUDIENCE_OPERATING,
+        "entry_reason": ENTRY_REASON_AUDIENCE_RULE_PASSED,
+        "checkpoint": STAGE_OPERATING,
+        "stage_code": STAGE_OPERATING,
+        "stage_label": STAGE_LABELS[STAGE_OPERATING],
     }
 
 
@@ -1426,7 +1573,7 @@ def build_publish_check(program_id: int) -> dict[str, Any]:
                 item("入口发布检查通过", entry_ok, "请先完成入口发布检查", "entry"),
                 item("已绑定问卷", bool(segmentation.get("questionnaire_id")), "请选择当前方案使用的问卷", "segmentation"),
                 item("已配置分层策略", _has_segmentation(segmentation), "请配置普通问卷规则或总分分层", "segmentation"),
-                item("入池规则完整", bool(audience_rules) and audience_rule_ok, "请保存入池规则", "entry-rule"),
+                item("阶段流转完整", bool(audience_rules) and audience_rule_ok, "请保存阶段流转", "entry-rule"),
                 item("存在启用中的运营任务", bool(active_tasks.get("tasks")), "请至少启用一个运营任务", "operations"),
             ],
         },

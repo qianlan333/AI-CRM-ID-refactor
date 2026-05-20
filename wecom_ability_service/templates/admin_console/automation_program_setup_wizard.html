@@ -340,14 +340,14 @@
           <label class="setup-field"><span>range_user_list</span><input name="range_user_list" placeholder="多个成员用英文逗号分隔"></label>
           <label class="setup-field"><span>range_department_list</span><input name="range_department_list" placeholder="多个部门用英文逗号分隔"></label>
           <label class="setup-field"><span>priority_option</span><input name="priority_option" placeholder="默认留空"></label>
-          <label class="setup-field"><span>初始人群</span><select name="initial_audience_code"><option value="pending_questionnaire">待填问卷</option><option value="operating">运营中</option><option value="converted">已转化</option></select></label>
+          <label class="setup-field"><span>初始阶段</span><select name="initial_audience_code"><option value="pending_questionnaire">前置审核</option><option value="operating">运营中</option><option value="converted">已转化</option></select></label>
           <label class="setup-field"><span>绑定运营动作</span><select name="workflow_id"><option value="">不绑定</option>{% for item in (workspace.operations.workflows if workspace.operations else []) or [] %}<option value="{{ item.id }}">{{ item.workflow_name }}</option>{% endfor %}</select></label>
         </div>
         <div class="setup-actions"><button class="setup-button is-primary" type="submit">创建 / 绑定获客助手入口</button></div>
       </form>
       <div class="setup-table-wrap">
         <table class="setup-table">
-          <thead><tr><th>名称</th><th>link_id</th><th>初始人群</th><th>绑定动作</th><th>状态</th><th>final_url</th><th>最近事件</th><th>操作</th></tr></thead>
+          <thead><tr><th>名称</th><th>link_id</th><th>初始阶段</th><th>绑定动作</th><th>状态</th><th>final_url</th><th>最近事件</th><th>操作</th></tr></thead>
           <tbody>
             {% for link in entry.customer_acquisition_links or [] %}
             <tr><td>{{ link.link_name or link.link_id }}</td><td>{{ link.link_id }}</td><td>{{ link.initial_audience_code }}</td><td>{{ link.workflow_id or "-" }}</td><td>{{ link.status }}</td><td>{{ link.final_url }}</td><td>{{ link.last_event_at or "-" }}</td><td><button class="setup-button" type="button" data-copy-text="{{ link.final_url or '' }}">复制链接</button></td></tr>
@@ -471,7 +471,7 @@
   <section class="setup-card" data-audience-picker data-picker="{{ rule.picker }}">
     <div class="setup-card-head">
       <div><h2>{{ rule.picker_title }}</h2></div>
-      <a class="setup-button" href="{{ urls.base }}?step=entry-rule">返回入池规则</a>
+      <a class="setup-button" href="{{ urls.base }}?step=entry-rule">返回阶段流转</a>
     </div>
     <div class="setup-picker-grid">
       {% if rule.picker in ['order_product', 'conversion_product'] %}
@@ -508,7 +508,7 @@
     data-conversion-product-id="{{ conversion.selected_product_id or '' }}"
     data-conversion-product-name="{{ (conversion.selected_product_snapshot or {}).name or '' }}"
     data-conversion-product-price="{{ (conversion.selected_product_snapshot or {}).price_text or '' }}">
-    <div><h2>入池规则</h2></div>
+    <div><h2>阶段流转</h2></div>
     <div class="setup-audience-line">
       <article class="setup-audience-row" data-audience-row="scan_enter">
         <div class="setup-audience-title"><h3>扫码进入</h3><p>当前方案入口</p></div>
@@ -516,7 +516,7 @@
           <span class="setup-choice-label">入口来源</span>
           <div class="setup-choice-box"><span class="setup-selection-summary">当前方案入口</span></div>
         </div>
-        <div class="setup-audience-next"><span>下一步</span><strong data-next-step="scan_enter">{{ next_steps.scan_enter }}</strong></div>
+        <div class="setup-audience-next"><span>通过后进入</span><strong data-next-step="scan_enter">{{ next_steps.scan_enter }}</strong></div>
       </article>
       <article class="setup-audience-row{% if not order.enabled %} is-muted{% endif %}" data-audience-row="order_review">
         <div class="setup-audience-title">
@@ -539,7 +539,7 @@
           <span class="setup-choice-label">选择商品</span>
           <div class="setup-choice-box"><span class="setup-selection-summary is-empty">未启用时无需选择</span></div>
         </div>
-        <div class="setup-audience-next"><span>下一步</span><strong data-next-step="order_review">{{ next_steps.order_review }}</strong></div>
+        <div class="setup-audience-next"><span>通过后进入</span><strong data-next-step="order_review">{{ next_steps.order_review }}</strong></div>
       </article>
       <article class="setup-audience-row{% if not questionnaire.enabled %} is-muted{% endif %}" data-audience-row="questionnaire_review">
         <div class="setup-audience-title">
@@ -562,19 +562,19 @@
           <span class="setup-choice-label">选择问卷</span>
           <div class="setup-choice-box"><span class="setup-selection-summary is-empty">未启用时无需选择</span></div>
         </div>
-        <div class="setup-audience-next"><span>下一步</span><strong data-next-step="questionnaire_review">{{ next_steps.questionnaire_review }}</strong></div>
+        <div class="setup-audience-next"><span>通过后进入</span><strong data-next-step="questionnaire_review">{{ next_steps.questionnaire_review }}</strong></div>
       </article>
       <article class="setup-audience-row" data-audience-row="operating">
-        <div class="setup-audience-title"><h3>运营中</h3><p>默认必须启用</p></div>
+        <div class="setup-audience-title"><h3>运营中</h3><p>运营阶段</p></div>
         <div class="setup-choice-field">
           <span class="setup-choice-label">状态</span>
-          <div class="setup-choice-box"><span class="setup-selection-summary">进入后开始后续运营</span></div>
+          <div class="setup-choice-box"><span class="setup-selection-summary">通过前置审核后进入正式自动化运营</span></div>
         </div>
-        <div class="setup-audience-next"><span>下一步</span><strong data-next-step="operating">{{ next_steps.operating }}</strong></div>
+        <div class="setup-audience-next"><span>通过后进入</span><strong data-next-step="operating">{{ next_steps.operating }}</strong></div>
       </article>
       <article class="setup-audience-row{% if not conversion.enabled %} is-muted{% endif %}" data-audience-row="conversion_review">
         <div class="setup-audience-title">
-          <h3>已转化</h3><p>运营后的成交判定</p>
+          <h3>成交判定</h3><p>运营后的成交判断动作</p>
           <div class="setup-segmented" data-toggle-group="conversion_review">
             <button type="button" data-toggle-value="1" class="{% if conversion.enabled %}is-enabled{% endif %}">启用</button>
             <button type="button" data-toggle-value="0" class="{% if not conversion.enabled %}is-disabled{% endif %}">不启用</button>
@@ -593,7 +593,15 @@
           <span class="setup-choice-label">选择商品</span>
           <div class="setup-choice-box"><span class="setup-selection-summary is-empty">未启用时不做成交判定</span></div>
         </div>
-        <div class="setup-audience-next"><span>下一步</span><strong data-next-step="conversion_review">{{ next_steps.conversion_review }}</strong></div>
+        <div class="setup-audience-next"><span>通过后进入</span><strong data-next-step="conversion_review">{{ next_steps.conversion_review }}</strong></div>
+      </article>
+      <article class="setup-audience-row{% if not conversion.enabled %} is-muted{% endif %}" data-audience-row="converted">
+        <div class="setup-audience-title"><h3>已转化</h3><p>结果阶段</p></div>
+        <div class="setup-choice-field">
+          <span class="setup-choice-label">状态</span>
+          <div class="setup-choice-box"><span class="setup-selection-summary">已确认成交，可做转化后服务、复购或留痕触达</span></div>
+        </div>
+        <div class="setup-audience-next"><span>通过后进入</span><strong data-next-step="converted">{{ next_steps.converted or '结束' }}</strong></div>
       </article>
     </div>
   </section>
@@ -665,7 +673,7 @@
   <footer class="setup-footer">
     {% if current_step == 'entry-rule' and (workspace.audience_entry_rule or {}).picker %}
     <div class="setup-footer__side"></div>
-    <div class="setup-footer__side"><a class="setup-button" href="{{ urls.base }}?step=entry-rule">返回入池规则</a></div>
+    <div class="setup-footer__side"><a class="setup-button" href="{{ urls.base }}?step=entry-rule">返回阶段流转</a></div>
     {% elif current_step == 'operations' %}
     <div class="setup-footer__side"></div>
     <div class="setup-footer__side">
@@ -968,7 +976,7 @@
     const payload = currentAudiencePayload();
     if (payload.order_review.enabled && !payload.order_review.selected_product_id) throw new Error("订单审核已启用，请先选择商品");
     if (payload.questionnaire_review.enabled && !payload.questionnaire_review.selected_questionnaire_id) throw new Error("问卷审核已启用，请先选择问卷");
-    if (payload.conversion_review.enabled && !payload.conversion_review.selected_product_id) throw new Error("已转化判定已启用，请先选择成交商品");
+    if (payload.conversion_review.enabled && !payload.conversion_review.selected_product_id) throw new Error("成交判定已启用，请先选择成交商品");
     await postJson(urls.audience_entry_rule, payload);
   };
   const audienceBool = (value) => String(value || "") === "1" || value === true;
@@ -1041,9 +1049,10 @@
     setNext("scan_enter", orderEnabled ? "订单审核" : (questionnaireEnabled ? "问卷审核" : "运营中"));
     setNext("order_review", orderEnabled ? (questionnaireEnabled ? "问卷审核" : "运营中") : "本项已跳过");
     setNext("questionnaire_review", questionnaireEnabled ? "运营中" : "本项已跳过");
-    setNext("operating", conversionEnabled ? "已转化" : "结束");
-    setNext("conversion_review", conversionEnabled ? "结束" : "本项已关闭");
-    [["order_review", orderEnabled], ["questionnaire_review", questionnaireEnabled], ["conversion_review", conversionEnabled]].forEach(([key, enabled]) => {
+    setNext("operating", conversionEnabled ? "成交判定" : "结束");
+    setNext("conversion_review", conversionEnabled ? "已转化" : "本项已关闭");
+    setNext("converted", "结束");
+    [["order_review", orderEnabled], ["questionnaire_review", questionnaireEnabled], ["conversion_review", conversionEnabled], ["converted", conversionEnabled]].forEach(([key, enabled]) => {
       const row = form.querySelector(`[data-audience-row="${key}"]`);
       row?.classList.toggle("is-muted", !enabled);
       const area = form.querySelector(`[data-enabled-area="${key}"]`);

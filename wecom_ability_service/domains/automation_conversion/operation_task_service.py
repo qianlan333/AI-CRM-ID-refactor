@@ -15,6 +15,12 @@ from .workflow_definitions import (
     AUDIENCE_CONVERTED,
     AUDIENCE_OPERATING,
     AUDIENCE_PENDING_QUESTIONNAIRE,
+    STAGE_COMPAT_AUDIENCE,
+    STAGE_COMPAT_ENTRY_REASON,
+    STAGE_CONVERTED,
+    STAGE_OPERATING,
+    STAGE_ORDER_REVIEW,
+    STAGE_QUESTIONNAIRE_REVIEW,
     list_supported_behavior_tiers,
 )
 from .workflow_service import get_conversion_profile_segment_template_bundle
@@ -77,6 +83,75 @@ def _parse_date(value: Any) -> datetime | None:
     return None
 
 
+def _stage_flow(program_id: int) -> dict[str, Any]:
+    from .program_setup_service import build_program_stage_flow
+
+    return build_program_stage_flow(int(program_id))
+
+
+def _targetable_stages(program_id: int) -> list[dict[str, Any]]:
+    return [dict(item or {}) for item in list((_stage_flow(int(program_id)).get("targetable_stages") or []))]
+
+
+def _targetable_stage_by_code(program_id: int) -> dict[str, dict[str, Any]]:
+    return {_text(item.get("stage_code")): dict(item) for item in _targetable_stages(int(program_id))}
+
+
+def infer_stage_code_from_audience(program_id: int, audience_code: str) -> str:
+    code = _text(audience_code) or AUDIENCE_OPERATING
+    targetable = _targetable_stage_by_code(int(program_id))
+    if code == AUDIENCE_PENDING_QUESTIONNAIRE:
+        if STAGE_QUESTIONNAIRE_REVIEW in targetable:
+            return STAGE_QUESTIONNAIRE_REVIEW
+        if STAGE_ORDER_REVIEW in targetable:
+            return STAGE_ORDER_REVIEW
+        return STAGE_OPERATING
+    if code == AUDIENCE_CONVERTED:
+        return STAGE_CONVERTED if STAGE_CONVERTED in targetable else STAGE_OPERATING
+    return STAGE_OPERATING
+
+
+def resolve_stage_target_filter(program_id: int, target_stage_code: str, *, fallback_audience_code: str = "") -> dict[str, Any]:
+    stage_code = _text(target_stage_code)
+    if not stage_code:
+        stage_code = infer_stage_code_from_audience(int(program_id), fallback_audience_code)
+    targetable = _targetable_stage_by_code(int(program_id))
+    stage = targetable.get(stage_code)
+    if not stage:
+        stage_code = infer_stage_code_from_audience(int(program_id), STAGE_COMPAT_AUDIENCE.get(stage_code, fallback_audience_code))
+        stage = targetable.get(stage_code) or targetable.get(STAGE_OPERATING) or {
+            "stage_code": STAGE_OPERATING,
+            "label": "运营中",
+            "description": "已通过前置条件",
+            "compat_audience_code": AUDIENCE_OPERATING,
+            "compat_entry_reason": "",
+        }
+    return {
+        "stage_code": _text(stage.get("stage_code")) or STAGE_OPERATING,
+        "stage_label": _text(stage.get("label")) or "运营中",
+        "stage_description": _text(stage.get("description")),
+        "audience_code": _text(stage.get("compat_audience_code")) or STAGE_COMPAT_AUDIENCE.get(_text(stage.get("stage_code")), AUDIENCE_OPERATING),
+        "entry_reason": _text(stage.get("compat_entry_reason")) or STAGE_COMPAT_ENTRY_REASON.get(_text(stage.get("stage_code")), ""),
+    }
+
+
+def _with_stage_metadata(task: dict[str, Any]) -> dict[str, Any]:
+    item = dict(task or {})
+    if not item:
+        return item
+    stage_filter = resolve_stage_target_filter(
+        int(item.get("program_id") or 0),
+        _text(item.get("target_stage_code")),
+        fallback_audience_code=_text(item.get("target_audience_code")),
+    )
+    item["target_stage_code"] = stage_filter["stage_code"]
+    item["target_stage_label"] = stage_filter["stage_label"]
+    item["target_stage_description"] = stage_filter["stage_description"]
+    item["target_audience_code"] = stage_filter["audience_code"]
+    item["target_entry_reason"] = stage_filter["entry_reason"]
+    return item
+
+
 def _task_scheduled_for(task: dict[str, Any], base_time: datetime) -> datetime:
     send_time = _parse_time(task.get("send_time"))
     send_hour, send_minute = [int(part) for part in send_time.split(":", 1)]
@@ -132,7 +207,9 @@ def _normalize_task_payload(payload: dict[str, Any], *, program_id: int, operato
         raise ValueError("触发方式不正确")
     audience_code = _text(source.get("target_audience_code") if "target_audience_code" in source else current.get("target_audience_code")) or AUDIENCE_OPERATING
     if audience_code not in AUDIENCE_CODES:
-        raise ValueError("目标人群不正确")
+        raise ValueError("触达阶段不正确")
+    target_stage_code = _text(source.get("target_stage_code") if "target_stage_code" in source else current.get("target_stage_code"))
+    stage_filter = resolve_stage_target_filter(int(program_id), target_stage_code, fallback_audience_code=audience_code)
     behavior_filter = _text(source.get("behavior_filter") if "behavior_filter" in source else current.get("behavior_filter")) or "none"
     if behavior_filter not in BEHAVIOR_FILTERS:
         raise ValueError("行为过滤不正确")
@@ -158,7 +235,8 @@ def _normalize_task_payload(payload: dict[str, Any], *, program_id: int, operato
         "trigger_type": trigger_type,
         "send_time": _parse_time(source.get("send_time") if "send_time" in source else current.get("send_time")),
         "timezone": _text(source.get("timezone") if "timezone" in source else current.get("timezone")) or "Asia/Shanghai",
-        "target_audience_code": audience_code,
+        "target_audience_code": stage_filter["audience_code"],
+        "target_stage_code": stage_filter["stage_code"],
         "audience_day_offset": _int(
             source.get("audience_day_offset") if "audience_day_offset" in source else current.get("audience_day_offset"),
             default=1,
@@ -238,8 +316,9 @@ def delete_task_group(group_id: int, *, operator_id: str) -> dict[str, Any]:
 def list_operation_tasks(program_id: int, *, group_id: int | None = None, keyword: str = "", status: str = "") -> dict[str, Any]:
     return {
         "groups": repo.list_groups(int(program_id)),
-        "tasks": repo.list_tasks(int(program_id), group_id=group_id, status=status, keyword=keyword),
+        "tasks": [_with_stage_metadata(task) for task in repo.list_tasks(int(program_id), group_id=group_id, status=status, keyword=keyword)],
         "behavior_tiers": list_supported_behavior_tiers(),
+        "targetable_stages": _targetable_stages(int(program_id)),
     }
 
 
@@ -247,14 +326,14 @@ def get_operation_task(task_id: int) -> dict[str, Any]:
     task = repo.get_task(int(task_id))
     if not task:
         raise LookupError("任务不存在")
-    return {"task": task}
+    return {"task": _with_stage_metadata(task)}
 
 
 def create_operation_task(program_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
     normalized = _normalize_task_payload(payload, program_id=int(program_id), operator_id=operator_id)
     task = repo.insert_task(normalized)
     get_db().commit()
-    return {"task": task}
+    return {"task": _with_stage_metadata(task)}
 
 
 def update_operation_task(task_id: int, payload: dict[str, Any], *, operator_id: str) -> dict[str, Any]:
@@ -264,7 +343,7 @@ def update_operation_task(task_id: int, payload: dict[str, Any], *, operator_id:
     normalized = _normalize_task_payload(payload, program_id=int(existing["program_id"]), operator_id=operator_id, existing=existing)
     task = repo.update_task(int(task_id), normalized)
     get_db().commit()
-    return {"task": task}
+    return {"task": _with_stage_metadata(task)}
 
 
 def copy_operation_task(task_id: int, *, operator_id: str) -> dict[str, Any]:
@@ -280,7 +359,7 @@ def copy_operation_task(task_id: int, *, operator_id: str) -> dict[str, Any]:
     }
     task = repo.insert_task(copied)
     get_db().commit()
-    return {"task": task}
+    return {"task": _with_stage_metadata(task)}
 
 
 def activate_operation_task(task_id: int, *, operator_id: str) -> dict[str, Any]:
@@ -325,7 +404,16 @@ def _profile_key(member: dict[str, Any], template_id: int | None) -> str:
 def _candidate_entries(task: dict[str, Any], *, now: datetime | None = None) -> list[dict[str, Any]]:
     current_time = now or _now()
     program_channel_ids = _program_channel_ids(int(task.get("program_id") or 0))
-    entries = repo.list_current_audience_entries(_text(task.get("target_audience_code")) or AUDIENCE_OPERATING)
+    stage_filter = resolve_stage_target_filter(
+        int(task.get("program_id") or 0),
+        _text(task.get("target_stage_code")),
+        fallback_audience_code=_text(task.get("target_audience_code")),
+    )
+    entries = repo.list_current_audience_entries(
+        stage_filter["audience_code"],
+        program_id=int(task.get("program_id") or 0),
+        entry_reason=stage_filter["entry_reason"],
+    )
     result: list[dict[str, Any]] = []
     for entry in entries:
         member = dict(entry.get("member") or {})
@@ -574,7 +662,14 @@ def _entry_matches_event_task(task: dict[str, Any], entry: dict[str, Any]) -> bo
         return False
     if _text(task.get("trigger_type")) != "audience_entered":
         return False
-    if _text(task.get("target_audience_code")) != _text(entry.get("audience_code")):
+    stage_filter = resolve_stage_target_filter(
+        int(task.get("program_id") or 0),
+        _text(task.get("target_stage_code")),
+        fallback_audience_code=_text(task.get("target_audience_code")),
+    )
+    if stage_filter["audience_code"] != _text(entry.get("audience_code")):
+        return False
+    if stage_filter["entry_reason"] and stage_filter["entry_reason"] != _text(entry.get("entry_reason")):
         return False
     member = dict(entry.get("member") or {})
     if not _member_in_program_channels(member, _program_channel_ids(int(task.get("program_id") or 0))):
