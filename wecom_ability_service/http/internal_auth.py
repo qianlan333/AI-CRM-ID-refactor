@@ -35,7 +35,6 @@ ADMIN_API_MODULE_PREFIXES = (
     ("/api/admin/alipay", "wechat_pay_transactions"), ("/api/admin/wechat-pay/products", "wechat_pay_products"),
     ("/api/admin/miniprogram-library", "miniprogram_library"),
     ("/api/admin/broadcast-jobs", "jobs"),
-    ("/api/admin/user-ops", "user_ops_funnel"),
     ("/api/admin/wechat-pay", "wechat_pay_transactions"),
 )
 ADMIN_ROUTE_MODULE_PREFIXES = (
@@ -59,7 +58,7 @@ ADMIN_ROUTE_MODULE_PREFIXES = (
     ("/admin", "automation_conversion"),
 )
 ADMIN_SUNSET_PAGE_PREFIXES = ("/admin/user-ops", "/admin/audit", "/admin/class-user-management")
-ADMIN_SUNSET_EXEMPT_PATHS = {"/admin/user-ops/ui"}
+REMOVED_USER_OPS_API_PREFIXES = ("/api/admin/user-ops", "/api/internal/user-ops")
 REMOVED_ADMIN_CONFIG_PATHS = {
     "/admin/config/routing",
     "/admin/config/routing/owner-role",
@@ -128,7 +127,7 @@ def _module_for_admin_api_path(path: str) -> str:
 
 def _is_sunset_admin_path(path: str) -> bool:
     normalized_path = _normalized_text(path)
-    return normalized_path not in ADMIN_SUNSET_EXEMPT_PATHS and any(
+    return any(
         normalized_path == prefix or normalized_path.startswith(prefix + "/") for prefix in ADMIN_SUNSET_PAGE_PREFIXES
     )
 
@@ -315,6 +314,8 @@ def register_admin_request_guards(app) -> None:
             if path.startswith("/api/"):
                 return jsonify({"ok": False, "error": "not found"}), 404
             abort(404)
+        if any(path == prefix or path.startswith(prefix + "/") for prefix in REMOVED_USER_OPS_API_PREFIXES):
+            return jsonify({"ok": False, "error": "gone", "message": "user-ops admin page APIs have been retired"}), 410
 
         api_module_key = _module_for_admin_api_path(path)
         if api_module_key:

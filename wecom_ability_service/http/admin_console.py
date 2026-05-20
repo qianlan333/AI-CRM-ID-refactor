@@ -42,16 +42,6 @@ def _render_admin_template(
     )
 
 
-def render_admin_user_ops_shell():
-    return _render_admin_template(
-        "user_ops.html",
-        active_nav="operations",
-        page_title="运营管理",
-        page_summary="转化链路运营页。当前页只针对有班期标识的引流品用户做筛选、客户详情复用、批量群发、免打扰和发送记录。",
-        breadcrumbs=_breadcrumb_items(("客户管理后台", url_for("api.admin_console_home")), ("运营", None)),
-    )
-
-
 def admin_console_home():
     # Phase 1 shell slimming: admin root no longer renders the retired workbench.
     return redirect(url_for("api.admin_automation_conversion"), code=302)

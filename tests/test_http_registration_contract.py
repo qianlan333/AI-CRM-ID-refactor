@@ -75,7 +75,6 @@ def test_http_registration_exports_single_registry_contract():
         "callbacks",
         "tasks",
         "tags",
-        "admin_user_ops",
         "admin_class_user",
         "admin_questionnaires",
         "public_questionnaires",
@@ -527,35 +526,26 @@ def test_admin_questionnaire_push_log_routes_stay_in_child_controller():
         assert route_modules[route] == expected_module
 
 
-def test_admin_user_ops_delivery_routes_stay_in_child_controller():
+def test_retired_admin_user_ops_page_routes_are_not_registered():
     from wecom_ability_service import create_app
 
-    user_ops_source = (ROOT / "wecom_ability_service" / "http" / "admin_user_ops.py").read_text(encoding="utf-8")
-    assert len(user_ops_source.splitlines()) <= 260
-    for forbidden in (
-        "MAX_PRIVATE_MESSAGE_IMAGES",
-        "validate_wecom_image_upload",
-        "def admin_user_ops_batch_send_",
-        "def admin_user_ops_send_record",
-    ):
-        assert forbidden not in user_ops_source
-
     app = create_app({"TESTING": True})
-    route_modules = {
-        rule.rule: getattr(app.view_functions[rule.endpoint], "__module__", "")
-        for rule in app.url_map.iter_rules()
-    }
-    expected_module = "wecom_ability_service.http.admin_user_ops_delivery"
-
-    for route in {
+    retired_routes = {
+        "/admin/user-ops/ui",
+        "/api/admin/user-ops/overview",
+        "/api/admin/user-ops/list",
+        "/api/admin/user-ops/history",
+        "/api/admin/user-ops/export",
         "/api/admin/user-ops/do-not-disturb",
         "/api/admin/user-ops/batch-send/preview",
         "/api/admin/user-ops/batch-send/execute",
         "/api/admin/user-ops/send-records",
         "/api/admin/user-ops/send-records/<int:record_id>",
         "/api/admin/user-ops/send-records/<int:record_id>/refresh",
-    }:
-        assert route_modules[route] == expected_module
+    }
+    registered_routes = {rule.rule for rule in app.url_map.iter_rules()}
+
+    assert not (retired_routes & registered_routes)
 
 
 def test_automation_conversion_split_route_modules_stay_owned_by_child_controllers():

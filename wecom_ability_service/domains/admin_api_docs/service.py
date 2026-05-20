@@ -969,29 +969,6 @@ def _config_group() -> dict:
     }
 
 
-def _user_ops_group() -> dict:
-    return {
-        "id": "user-ops",
-        "title": "用户运营",
-        "description": "用户运营管理：批量查询、导入、群发及发送记录。",
-        "endpoints": [
-            {"id": "get-user-ops-overview", "method": "GET", "path": "/api/admin/user-ops/overview", "summary": "获取用户运营概览", "description": "返回用户运营数据概览，支持多维度筛选。", "auth": "session", "params": [{"name": "keyword", "type": "string", "required": False, "description": "关键词搜索"}, {"name": "mobile", "type": "string", "required": False, "description": "手机号搜索"}, {"name": "owner_userid", "type": "string", "required": False, "description": "负责人过滤"}, {"name": "class_term_no", "type": "string", "required": False, "description": "班期号过滤"}], "request_example": None, "response_example": '{"ok": true, "count": 120, "buckets": {...}}', "curl_example": _curl("GET", "/api/admin/user-ops/overview", "session")},
-            {"id": "get-user-ops-list", "method": "GET", "path": "/api/admin/user-ops/list", "summary": "获取用户运营列表", "description": "返回用户运营记录列表（同概览的筛选参数）。", "auth": "session", "params": [{"name": "keyword", "type": "string", "required": False, "description": "关键词搜索"}, {"name": "limit", "type": "int", "required": False, "description": "返回条数"}], "request_example": None, "response_example": '{"ok": true, "records": [...]}', "curl_example": _curl("GET", "/api/admin/user-ops/list?limit=50", "session")},
-            {"id": "get-user-ops-history", "method": "GET", "path": "/api/admin/user-ops/history", "summary": "获取操作历史", "description": "返回用户运营操作历史记录。", "auth": "session", "params": [{"name": "limit", "type": "int", "required": False, "description": "返回条数，默认 100"}], "request_example": None, "response_example": '{"ok": true, "history": [...]}', "curl_example": _curl("GET", "/api/admin/user-ops/history", "session")},
-            {"id": "post-user-ops-import-mobile-class-terms", "method": "POST", "path": "/api/admin/user-ops/import-mobile-class-terms", "summary": "导入手机号班期", "description": "通过文件或粘贴文本批量导入手机号与班期的关联。", "auth": "session", "params": [{"name": "file", "type": "file", "required": False, "description": "Excel/CSV 文件"}, {"name": "pasted_text", "type": "string", "required": False, "description": "粘贴的文本数据"}], "request_example": None, "response_example": '{"ok": true, "imported_count": 25, "results": [...]}', "curl_example": _curl("POST", "/api/admin/user-ops/import-mobile-class-terms", "session")},
-            {"id": "post-user-ops-import-activation", "method": "POST", "path": "/api/admin/user-ops/import-activation-status", "summary": "导入激活状态", "description": "批量导入用户的激活状态。", "auth": "session", "params": [{"name": "file", "type": "file", "required": False, "description": "Excel/CSV 文件"}, {"name": "pasted_text", "type": "string", "required": False, "description": "粘贴的文本数据"}], "request_example": None, "response_example": '{"ok": true, "imported_count": 10}', "curl_example": _curl("POST", "/api/admin/user-ops/import-activation-status", "session")},
-            {"id": "post-user-ops-run-deferred", "method": "POST", "path": "/api/admin/user-ops/run-deferred-jobs", "summary": "执行延迟任务", "description": "执行待处理的用户运营延迟任务。", "auth": "session", "params": [{"name": "limit", "type": "int", "required": False, "description": "批次大小，默认 20"}], "request_example": None, "response_example": '{"ok": true, "processed_count": 5}', "curl_example": _curl("POST", "/api/admin/user-ops/run-deferred-jobs", "session")},
-            {"id": "get-user-ops-export", "method": "GET", "path": "/api/admin/user-ops/export", "summary": "导出用户运营数据", "description": "以 Excel 文件格式导出用户运营数据（同概览的筛选参数）。", "auth": "session", "params": [], "request_example": None, "response_example": "Excel 文件下载 (application/vnd.ms-excel)", "curl_example": _curl("GET", "/api/admin/user-ops/export", "session")},
-            {"id": "post-user-ops-dnd", "method": "POST", "path": "/api/admin/user-ops/do-not-disturb", "summary": "设置免打扰", "description": "设置或取消用户的免打扰状态。", "auth": "session", "params": [{"name": "external_userid", "type": "string", "required": True, "description": "外部联系人 ID"}, {"name": "enabled", "type": "boolean", "required": True, "description": "是否开启免打扰"}], "request_example": None, "response_example": '{"ok": true}', "curl_example": _curl("POST", "/api/admin/user-ops/do-not-disturb", "session", '{"external_userid":"wmXXX","enabled":true}')},
-            {"id": "post-user-ops-batch-send-preview", "method": "POST", "path": "/api/admin/user-ops/batch-send/preview", "summary": "批量发送预览", "description": "预览批量发送的受众范围和内容。", "auth": "session", "params": [{"name": "selection_mode", "type": "string", "required": True, "description": "选择模式"}, {"name": "content", "type": "string", "required": True, "description": "发送内容"}], "request_example": None, "response_example": '{"ok": true, "preview": {...}, "count": 50}', "curl_example": _curl("POST", "/api/admin/user-ops/batch-send/preview", "session", '{"selection_mode":"filter","content":"您好"}')},
-            {"id": "post-user-ops-batch-send-execute", "method": "POST", "path": "/api/admin/user-ops/batch-send/execute", "summary": "执行批量发送", "description": "执行批量发送任务。", "auth": "session", "params": [{"name": "selection_mode", "type": "string", "required": True, "description": "选择模式"}, {"name": "content", "type": "string", "required": True, "description": "发送内容"}], "request_example": None, "response_example": '{"ok": true, "sent_count": 50, "batch_id": 1}', "curl_example": _curl("POST", "/api/admin/user-ops/batch-send/execute", "session", '{"selection_mode":"filter","content":"您好"}')},
-            {"id": "get-user-ops-send-records", "method": "GET", "path": "/api/admin/user-ops/send-records", "summary": "获取发送记录列表", "description": "返回批量发送的历史记录。", "auth": "session", "params": [{"name": "limit", "type": "int", "required": False, "description": "返回条数"}, {"name": "offset", "type": "int", "required": False, "description": "偏移量"}], "request_example": None, "response_example": '{"ok": true, "records": [...], "total": 10}', "curl_example": _curl("GET", "/api/admin/user-ops/send-records", "session")},
-            {"id": "get-user-ops-send-record-detail", "method": "GET", "path": "/api/admin/user-ops/send-records/<int:record_id>", "summary": "获取发送记录详情", "description": "返回单条发送记录的详细信息。", "auth": "session", "params": [{"name": "record_id", "type": "int (path)", "required": True, "description": "记录 ID"}], "request_example": None, "response_example": '{"ok": true, "record": {...}}', "curl_example": _curl("GET", "/api/admin/user-ops/send-records/1", "session")},
-            {"id": "post-user-ops-send-record-refresh", "method": "POST", "path": "/api/admin/user-ops/send-records/<int:record_id>/refresh", "summary": "刷新发送记录状态", "description": "从企业微信更新发送记录的投递状态。", "auth": "session", "params": [{"name": "record_id", "type": "int (path)", "required": True, "description": "记录 ID"}], "request_example": None, "response_example": '{"ok": true, "record": {...}}', "curl_example": _curl("POST", "/api/admin/user-ops/send-records/1/refresh", "session")},
-        ],
-    }
-
-
 def _class_user_group() -> dict:
     return {
         "id": "class-user",
@@ -1110,7 +1087,6 @@ def _api_endpoint_groups() -> list[dict]:
         _questionnaire_group(),
         _automation_group(),
         _config_group(),
-        _user_ops_group(),
         _class_user_group(),
         _sidebar_group(),
         _jobs_group(),

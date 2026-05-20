@@ -24,8 +24,6 @@ from .admin_dashboard import register_routes as register_admin_dashboard_routes
 from .admin_class_user import register_routes as register_admin_class_user_routes
 from .admin_hxc_dashboard import register_routes as register_admin_hxc_dashboard_routes
 from .admin_questionnaires import register_routes as register_admin_questionnaires_routes
-from .admin_user_ops import register_routes as register_admin_user_ops_routes
-from .admin_user_ops_delivery import register_routes as register_admin_user_ops_delivery_routes
 from .admin_alipay_pay import register_routes as register_admin_alipay_pay_routes
 from .admin_wechat_pay import register_routes as register_admin_wechat_pay_routes
 from .admin_wechat_pay_products import register_routes as register_admin_wechat_pay_products_routes
@@ -116,8 +114,6 @@ HTTP_ROUTE_MODULES = {
     "admin_config_marketing_automation": "wecom_ability_service.http.admin_config_marketing_automation",
     "admin_dashboard": "wecom_ability_service.http.admin_dashboard",
     "admin_hxc_dashboard": "wecom_ability_service.http.admin_hxc_dashboard",
-    "admin_user_ops": "wecom_ability_service.http.admin_user_ops",
-    "admin_user_ops_delivery": "wecom_ability_service.http.admin_user_ops_delivery",
     "admin_alipay_pay": "wecom_ability_service.http.admin_alipay_pay",
     "admin_wechat_pay": "wecom_ability_service.http.admin_wechat_pay",
     "admin_wechat_pay_products": "wecom_ability_service.http.admin_wechat_pay_products",
@@ -197,8 +193,6 @@ HTTP_ROUTE_PLACEMENT = {
         "automation_conversion_templates.py for action templates and profile-segment template handlers registered by automation_conversion.py",
         "automation_conversion_workflows.py for workflow model, node, dashboard, and execution-record handlers registered by automation_conversion.py",
         "admin_dashboard.py for /api/admin/dashboard/* shell status",
-        "admin_user_ops.py for /api/admin/user-ops* lead-pool list/import/maintenance APIs and /admin/user-ops/ui",
-        "admin_user_ops_delivery.py for /api/admin/user-ops/do-not-disturb, batch-send, and send-record APIs",
         "admin_class_user.py for /api/admin/class-user-management*",
         "admin_questionnaires.py for /api/admin/questionnaires* and /admin/questionnaires/ui",
         "admin_wecom_tags.py for /api/admin/wecom/tags* enterprise customer tag management",
@@ -255,8 +249,6 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_config_login_access", register_admin_config_login_access_routes),
     ("admin_config_marketing_automation", register_admin_config_marketing_automation_routes),
     ("admin_dashboard", register_admin_dashboard_routes),
-    ("admin_user_ops", register_admin_user_ops_routes),
-    ("admin_user_ops_delivery", register_admin_user_ops_delivery_routes),
     ("admin_hxc_dashboard", register_admin_hxc_dashboard_routes),
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_alipay_pay", register_admin_alipay_pay_routes),

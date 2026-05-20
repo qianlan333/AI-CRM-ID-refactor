@@ -8,6 +8,8 @@ from zipfile import ZipFile
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="retired User Ops admin page and /api/admin/user-ops routes")
+
 from wecom_ability_service import wecom_client as wecom_client_module
 from wecom_ability_service.db import get_db
 from wecom_ability_service.domains.routing_config import (

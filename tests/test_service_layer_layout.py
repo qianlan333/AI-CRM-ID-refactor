@@ -330,10 +330,7 @@ def test_admin_user_ops_and_admin_console_do_not_import_user_ops_legacy_service_
         "refresh_user_ops_contact_tags_for_owner",
         "upsert_user_ops_huangxiaocan_activation_source",
     }
-    expected_application_fragments = {
-        "wecom_ability_service/http/admin_user_ops.py": ["application.user_ops"],
-        "wecom_ability_service/domains/admin_console/service.py": ["application.user_ops"],
-    }
+    expected_application_fragments = {"wecom_ability_service/domains/admin_console/service.py": []}
 
     root = Path(__file__).resolve().parents[1]
     for relative_path, required_fragments in expected_application_fragments.items():
@@ -358,5 +355,7 @@ def test_admin_user_ops_and_admin_console_do_not_import_user_ops_legacy_service_
         assert not imported_from_user_ops_domain, (
             f"{relative_path} must not import domains.user_ops.service directly"
         )
+        if not required_fragments:
+            assert "application.user_ops" not in source, f"{relative_path} must not keep retired user_ops page imports"
         for fragment in required_fragments:
             assert fragment in source, f"{relative_path} must import the formal user_ops application owner"
