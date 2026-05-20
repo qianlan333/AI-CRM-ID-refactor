@@ -324,6 +324,8 @@ def _normalize_questionnaire_payload(
         "external_push_expires_at_ts",
         (existing or {}).get("external_push_expires_at_ts"),
     )
+    if external_push_enabled and raw_external_push_expires_at_ts in (None, ""):
+        raise ValueError("external_push_expires_at_ts is required")
     if raw_external_push_expires_at_ts in (None, ""):
         raw_external_push_expires_at_ts = DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS
     external_push_expires_at_ts = _normalize_required_integer(

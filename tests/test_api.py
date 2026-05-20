@@ -4557,6 +4557,20 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
         "error": "external_push_expires_at_ts must be an integer",
     }
 
+    missing_ts_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_expires_at_ts="",
+        ),
+    )
+    assert missing_ts_response.status_code == 400
+    assert missing_ts_response.get_json() == {
+        "ok": False,
+        "error": "external_push_expires_at_ts is required",
+    }
+
     invalid_type_response = client.post(
         "/api/admin/questionnaires",
         json=_build_questionnaire_payload(
