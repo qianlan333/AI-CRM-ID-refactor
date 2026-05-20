@@ -63,6 +63,9 @@ ADMIN_SUNSET_PAGE_PREFIXES = (
     "/admin/audit",
     "/admin/class-user-management",
 )
+ADMIN_SUNSET_EXEMPT_PATHS = {
+    "/admin/user-ops/ui",
+}
 REMOVED_ADMIN_CONFIG_PATHS = {
     "/admin/config/routing",
     "/admin/config/routing/owner-role",
@@ -131,6 +134,8 @@ def _module_for_admin_api_path(path: str) -> str:
 
 def _is_sunset_admin_path(path: str) -> bool:
     normalized_path = _normalized_text(path)
+    if normalized_path in ADMIN_SUNSET_EXEMPT_PATHS:
+        return False
     return any(normalized_path == prefix or normalized_path.startswith(prefix + "/") for prefix in ADMIN_SUNSET_PAGE_PREFIXES)
 
 
