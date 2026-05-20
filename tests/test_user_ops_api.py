@@ -495,6 +495,14 @@ def test_user_ops_reload_endpoint_is_deprecated_internal_only(client):
     assert payload["error"] == "deprecated_internal_only"
 
 
+def test_user_ops_ui_is_exempt_from_sunset_guard():
+    from wecom_ability_service.http import internal_auth
+
+    assert internal_auth._is_sunset_admin_path("/admin/user-ops/ui") is False
+    assert internal_auth._is_sunset_admin_path("/admin/user-ops") is True
+    assert internal_auth._is_sunset_admin_path("/admin/user-ops/legacy") is True
+
+
 def _seed_user_ops_lead_pool_read_model(app) -> None:
     with app.app_context():
         db = get_db()
@@ -1579,9 +1587,16 @@ def test_user_ops_history_returns_lead_pool_records(client, app):
 
 
 def test_user_ops_ui_route_renders_conversion_page(client):
-    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    assert response.status_code == 410
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "运营管理" in html
+    assert "overview-cards" in html
+    assert "/api/admin/user-ops/overview" in html
+    assert "/api/admin/user-ops/list" in html
+    assert "/api/admin/user-ops/send-records" in html
+    assert "模块已下线" not in html
 
 
 def test_user_ops_shell_page_exists(client):
@@ -1591,21 +1606,30 @@ def test_user_ops_shell_page_exists(client):
 
 
 def test_user_ops_batch_send_modal_removes_large_stats_and_sender_bucket_from_main_ui(client):
-    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    assert response.status_code == 410
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "批量群发" in html
+    assert "sender_bucket" not in html
 
 
 def test_user_ops_detail_column_is_removed_and_dnd_action_copy_is_simplified(client):
-    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    assert response.status_code == 410
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "客户详情" not in html
+    assert "免打扰" in html
 
 
 def test_user_ops_template_keeps_detail_button_and_dnd_actions(client):
-    # /admin/user-ops/ui is sunset (410)
     response = client.get("/admin/user-ops/ui")
-    assert response.status_code == 410
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "查看档案" in html
+    assert "do-not-disturb" in html
 
 
 def test_sync_user_ops_class_term_tag_definitions_updates_tag_identity_fields(app, user_ops_contact_client):
