@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -32,6 +33,15 @@ def create_app() -> FastAPI:
     reset_commerce_fixture_state()
     reset_media_library_fixture_state()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
+
+    @app.middleware("http")
+    async def write_route_owner_headers(request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-AICRM-Route-Owner", "ai_crm_next")
+        response.headers.setdefault("X-AICRM-App", "ai_crm_next")
+        response.headers.setdefault("X-AICRM-Release-SHA", os.getenv("AICRM_NEXT_RELEASE_SHA") or os.getenv("RELEASE_SHA") or "unknown")
+        return response
+
     app.mount(
         "/static",
         StaticFiles(directory=_FRONTEND_COMPAT_DIR / "static"),

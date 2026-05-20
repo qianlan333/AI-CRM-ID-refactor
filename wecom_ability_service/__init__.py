@@ -73,6 +73,15 @@ def _log_startup_config(app: Flask) -> None:
     )
 
 
+def _register_route_owner_headers(app: Flask) -> None:
+    @app.after_request
+    def _write_route_owner_headers(response: Response) -> Response:
+        response.headers.setdefault("X-AICRM-Route-Owner", "legacy_flask")
+        response.headers.setdefault("X-AICRM-App", "ai_crm_legacy_flask")
+        response.headers.setdefault("X-AICRM-Release-SHA", str(app.config.get("RELEASE_SHA") or "unknown"))
+        return response
+
+
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=False)
     explicit_debug_session_api = os.getenv("ENABLE_DEBUG_QUESTIONNAIRE_SESSION_API", "").strip()
@@ -182,6 +191,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     _configure_logging(app)
     _log_startup_config(app)
     register_request_observability(app)
+    _register_route_owner_headers(app)
     register_admin_request_guards(app)
 
     _schema_migrated = [False]
