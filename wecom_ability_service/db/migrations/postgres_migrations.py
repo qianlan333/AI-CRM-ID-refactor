@@ -462,6 +462,56 @@ def _ensure_postgres_questionnaire_external_push_tables(db) -> None:
     db.execute(
         """
         ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_type TEXT NOT NULL DEFAULT 'subscription'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ADD COLUMN IF NOT EXISTS external_push_expires_at_ts BIGINT NOT NULL DEFAULT 1809100800
+        """
+    )
+    db.execute(
+        """
+        UPDATE questionnaires
+        SET external_push_type = 'subscription'
+        WHERE COALESCE(external_push_type, '') = ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ALTER COLUMN external_push_type SET DEFAULT 'subscription'
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ALTER COLUMN external_push_type SET NOT NULL
+        """
+    )
+    db.execute(
+        """
+        UPDATE questionnaires
+        SET external_push_expires_at_ts = 1809100800
+        WHERE external_push_expires_at_ts IS NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ALTER COLUMN external_push_expires_at_ts SET DEFAULT 1809100800
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
+        ALTER COLUMN external_push_expires_at_ts SET NOT NULL
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS questionnaires
         ADD COLUMN IF NOT EXISTS external_push_day INTEGER
         """
     )

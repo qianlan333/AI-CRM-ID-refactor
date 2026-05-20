@@ -28,6 +28,8 @@ QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS = {
     "submitted_at",
     "answers",
     "phone_number",
+    "type",
+    "expires_at_ts",
     "day",
     "frequency",
     "remark",
@@ -39,6 +41,8 @@ class QuestionnaireAlreadySubmittedError(ValueError):
 
 
 from ._service_helpers import (  # noqa: F401  helpers — 阶段 7.2
+    DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS,
+    DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE,
     _bind_questionnaire_identity,
     _build_questionnaire_detail,
     _count_questionnaire_external_push_retry_logs,
@@ -83,16 +87,18 @@ def list_questionnaires() -> list[dict[str, Any]]:
         SELECT q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
                q.answer_display_mode,
                q.assessment_enabled, q.assessment_config,
-               q.external_push_enabled, q.external_push_url, q.external_push_day, q.external_push_frequency,
-               q.external_push_remark, q.external_push_custom_params, q.created_at, q.updated_at,
+               q.external_push_enabled, q.external_push_url, q.external_push_type, q.external_push_expires_at_ts,
+               q.external_push_day, q.external_push_frequency, q.external_push_remark, q.external_push_custom_params,
+               q.created_at, q.updated_at,
                COUNT(s.id) AS submission_count, {last_submitted_at_expr} AS last_submitted_at
         FROM questionnaires q
         LEFT JOIN questionnaire_submissions s ON s.questionnaire_id = q.id
         GROUP BY q.id, q.slug, q.name, q.title, q.description, q.is_disabled, q.redirect_url,
                  q.answer_display_mode,
                  q.assessment_enabled, q.assessment_config,
-                 q.external_push_enabled, q.external_push_url, q.external_push_day, q.external_push_frequency,
-                 q.external_push_remark, q.external_push_custom_params, q.created_at, q.updated_at
+                 q.external_push_enabled, q.external_push_url, q.external_push_type, q.external_push_expires_at_ts,
+                 q.external_push_day, q.external_push_frequency, q.external_push_remark, q.external_push_custom_params,
+                 q.created_at, q.updated_at
         ORDER BY q.updated_at DESC, q.id DESC
         """
     ).fetchall()
@@ -207,10 +213,11 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
                 slug, name, title, description, is_disabled, redirect_url,
                 answer_display_mode,
                 assessment_enabled, assessment_config,
-                external_push_enabled, external_push_url, external_push_day, external_push_frequency,
-                external_push_remark, external_push_custom_params, created_at, updated_at
+                external_push_enabled, external_push_url, external_push_type, external_push_expires_at_ts,
+                external_push_day, external_push_frequency, external_push_remark, external_push_custom_params,
+                created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """,
             (
@@ -225,6 +232,8 @@ def create_questionnaire(payload: dict[str, Any]) -> dict[str, Any]:
                 _json_dumps(normalized["assessment_config"]),
                 normalized["external_push_enabled"],
                 normalized["external_push_url"],
+                normalized["external_push_type"],
+                normalized["external_push_expires_at_ts"],
                 normalized["external_push_day"],
                 normalized["external_push_frequency"],
                 normalized["external_push_remark"],
@@ -264,8 +273,9 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
             SET slug = ?, name = ?, title = ?, description = ?, is_disabled = ?, redirect_url = ?,
                 answer_display_mode = ?,
                 assessment_enabled = ?, assessment_config = ?,
-                external_push_enabled = ?, external_push_url = ?, external_push_day = ?, external_push_frequency = ?,
-                external_push_remark = ?, external_push_custom_params = ?, updated_at = CURRENT_TIMESTAMP
+                external_push_enabled = ?, external_push_url = ?, external_push_type = ?, external_push_expires_at_ts = ?,
+                external_push_day = ?, external_push_frequency = ?, external_push_remark = ?,
+                external_push_custom_params = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
             (
@@ -280,6 +290,8 @@ def update_questionnaire(questionnaire_id: int, payload: dict[str, Any]) -> dict
                 _json_dumps(normalized["assessment_config"]),
                 normalized["external_push_enabled"],
                 normalized["external_push_url"],
+                normalized["external_push_type"],
+                normalized["external_push_expires_at_ts"],
                 normalized["external_push_day"],
                 normalized["external_push_frequency"],
                 normalized["external_push_remark"],
@@ -518,6 +530,8 @@ def get_public_questionnaire_by_slug(slug: str) -> dict[str, Any] | None:
     detail.pop("assessment_config", None)
     detail.pop("external_push_enabled", None)
     detail.pop("external_push_url", None)
+    detail.pop("external_push_type", None)
+    detail.pop("external_push_expires_at_ts", None)
     detail.pop("external_push_day", None)
     detail.pop("external_push_frequency", None)
     detail.pop("external_push_remark", None)
@@ -1488,6 +1502,13 @@ def _build_questionnaire_external_push_payload(
         payload["day"] = int(questionnaire["external_push_day"])
     if questionnaire.get("external_push_frequency") not in (None, ""):
         payload["frequency"] = int(questionnaire["external_push_frequency"])
+    external_push_type = str(
+        questionnaire.get("external_push_type") or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE
+    ).strip()
+    payload["type"] = external_push_type
+    payload["expires_at_ts"] = int(
+        questionnaire.get("external_push_expires_at_ts") or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS
+    )
     remark = str(questionnaire.get("external_push_remark") or "").strip()
     if remark:
         payload["remark"] = remark

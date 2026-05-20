@@ -6340,7 +6340,8 @@ def test_reply_monitor_dispatch_runs_router_shadow_mode_and_applies_async_callba
 def test_reply_monitor_dispatch_posts_laohuang_chat_when_enabled(app, monkeypatch):
     _configure_reply_monitor(app, enabled=True, last_capture_cursor=0, quiet_hours_start="00:00", quiet_hours_end="00:00")
     app.config["LAOHUANG_CHAT_ENABLED"] = "true"
-    app.config["LAOHUANG_CHAT_WEBHOOK_URL"] = "https://ip.lhbl.com.cn/api/webhook/crm/chat"
+    app.config["LAOHUANG_CHAT_WEBHOOK_URL"] = "https://www.youcangogogo.com/api/webhook/crm/chat"
+    app.config["LAOHUANG_CHAT_WEBHOOK_TOKEN"] = "test-chat-token"
     app.config["LAOHUANG_CHAT_TIMEOUT_SECONDS"] = 7
     _seed_contact(app, external_userid="wm_lh_dispatch_001", mobile="13800009201", owner_userid="sales_01", customer_name="lh-dispatch")
     _seed_automation_member(app, external_contact_id="wm_lh_dispatch_001", phone="13900009201", owner_staff_id="sales_01", current_pool="active_focus", follow_type="focus", activation_status="active", questionnaire_status="submitted", decision_source="manual")
@@ -6399,7 +6400,7 @@ def test_reply_monitor_dispatch_posts_laohuang_chat_when_enabled(app, monkeypatc
     assert capture["summary"]["created_queue_items"] == 1
     assert dispatch["ok"] is True
     assert dispatch["laohuang_chat"]["status"] == "accepted"
-    assert captured_requests[0]["url"] == "https://ip.lhbl.com.cn/api/webhook/crm/chat"
+    assert captured_requests[0]["url"] == "https://www.youcangogogo.com/api/webhook/crm/chat?token=test-chat-token"
     assert captured_requests[0]["timeout"] == 7
     assert "headers" not in captured_requests[0]["kwargs"]
     assert request_body["phone"] == "13900009201"
