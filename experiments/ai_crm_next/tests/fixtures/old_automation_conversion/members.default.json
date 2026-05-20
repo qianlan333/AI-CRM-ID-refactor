@@ -1,0 +1,36 @@
+{
+  "status_code": 200,
+  "payload": {
+    "ok": true,
+    "items": [
+      {
+        "member_id": "member_masked_001",
+        "person_id": "person_masked_001",
+        "external_userid": "external_user_masked_001",
+        "mobile": "mobile_masked_001",
+        "customer_name": "customer_masked_001",
+        "owner_userid": "owner_masked_001",
+        "current_pool": "new_user",
+        "current_pool_label": "新用户",
+        "followup_type": "normal",
+        "questionnaire_followup_type": "normal",
+        "manual_followup_type": "",
+        "trial_opened": false,
+        "activated": false,
+        "converted": false,
+        "exited": false,
+        "silent": false,
+        "latest_event_at": "2026-05-20T09:00:00Z",
+        "next_action": {"type": "wait_trial_opened", "label": "等待体验打开"},
+        "can_manual_override": true,
+        "can_confirm_conversion": true,
+        "can_enter_silent": true,
+        "can_exit_marketing": true
+      }
+    ],
+    "total": 3,
+    "limit": 50,
+    "offset": 0,
+    "filters": {"current_pool": "", "followup_type": "", "owner_userid": "", "keyword": ""}
+  }
+}

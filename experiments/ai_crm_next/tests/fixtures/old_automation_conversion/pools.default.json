@@ -1,0 +1,18 @@
+{
+  "status_code": 200,
+  "payload": {
+    "ok": true,
+    "pools": [
+      {
+        "pool_key": "new_user",
+        "label": "新用户",
+        "count": 1,
+        "description": "新进入 CRM 且尚未打开体验课的用户。",
+        "active_action_count": 0,
+        "allow_broadcast": false
+      }
+    ],
+    "total": 8,
+    "generated_at": "fixture"
+  }
+}
