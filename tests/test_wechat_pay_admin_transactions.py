@@ -132,6 +132,28 @@ def test_wechat_pay_admin_present_order_uses_operator_product_label():
     assert presented["product_code"] == "assessment_report_v1"
 
 
+def test_wechat_pay_admin_repairs_utf8_mojibake_payer_name_snapshot():
+    row = {
+        "id": 1,
+        "created_at": "2026-05-20 09:27:39",
+        "transaction_id": "4200003131202605208651604176",
+        "payer_name_snapshot": "æ›¾å¾·é’§",
+        "mobile_snapshot": "18675597381",
+        "userid_snapshot": "HuangYouCan",
+        "external_userid": "",
+        "product_code": "first_month_trial",
+        "product_name": "黄小璨首月体验",
+        "amount_total": 990,
+        "status": "paid",
+        "trade_state": "SUCCESS",
+    }
+
+    presented = wechat_pay_admin_service._present_order(row)
+
+    assert presented["payer_name"] == "曾德钧"
+    assert presented["identity"] == "曾德钧 / 18675597381 / HuangYouCan"
+
+
 def test_wechat_pay_admin_product_filter(app, client):
     _login_admin(client)
     _insert_order(out_trade_no="WXP_PROD_A", product_code="assessment_report_v1", product_name="AI 测评报告")

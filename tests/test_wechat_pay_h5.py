@@ -321,6 +321,43 @@ def test_create_jsapi_order_uses_session_openid_and_server_catalog(app, client, 
     assert status_response.get_json()["order"]["out_trade_no"] == payload["order"]["out_trade_no"]
 
 
+def test_create_jsapi_order_repairs_stale_mojibake_payer_name(app, client, tmp_path, monkeypatch):
+    _configure_pay(app, tmp_path)
+
+    class FakeClient:
+        def create_jsapi_transaction(self, payload):
+            return {"prepay_id": "wx-prepay-id"}
+
+        def build_jsapi_pay_params(self, prepay_id):
+            return {
+                "appId": "wx-pay-app",
+                "timeStamp": "1710000000",
+                "nonceStr": "nonce",
+                "package": f"prepay_id={prepay_id}",
+                "signType": "RSA",
+                "paySign": "signed",
+            }
+
+    monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: FakeClient())
+    with client.session_transaction() as sess:
+        sess["wechat_pay_h5_identity"] = {"openid": "op_test", "payer_name": "æ›¾å¾·é’§"}
+
+    response = client.post(
+        "/api/h5/wechat-pay/jsapi/orders",
+        json={"product_code": "assessment_report_v1"},
+        headers=_wechat_headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    close_db()
+    row = get_db().execute(
+        "SELECT payer_name_snapshot FROM wechat_pay_orders WHERE out_trade_no = ?",
+        (payload["order"]["out_trade_no"],),
+    ).fetchone()
+    assert row["payer_name_snapshot"] == "曾德钧"
+
+
 def test_create_jsapi_order_rejects_unknown_product(app, client, tmp_path, monkeypatch):
     _configure_pay(app, tmp_path)
     monkeypatch.setattr(wechat_pay_service, "_create_wechat_pay_client", lambda: object())
