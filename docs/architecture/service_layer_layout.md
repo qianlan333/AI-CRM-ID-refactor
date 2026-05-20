@@ -100,8 +100,8 @@ Client diagnostics and debug session handlers are isolated in `public_questionna
 `wecom_ability_service/http/internal_auth.py` owns request guards, RBAC checks, action tokens, and sunset interception.
 Login, logout, and Enterprise WeChat SSO route handlers are isolated in `admin_auth_routes.py` so route-level authentication flow does not inflate the guard module.
 
-`wecom_ability_service/http/admin_user_ops.py` owns lead-pool list, import, export, and maintenance APIs plus the user-ops UI shell.
-Do-not-disturb, one-time batch send, and send-record APIs are isolated in `admin_user_ops_delivery.py` so message-send upload parsing and WeCom media validation do not inflate the lead-pool controller.
+The legacy User Ops admin page and its `/api/admin/user-ops*` HTTP controllers have been retired.
+Shared `domains/user_ops` helpers remain available to automation, jobs, sidebar, and message-dispatch callers.
 
 `wecom_ability_service/http/admin_jobs.py` owns the sync/task console and `/api/admin/jobs*` operational APIs.
 Broadcast queue page and `/api/admin/broadcast-jobs*` handlers are isolated in `admin_broadcast_jobs.py` so broadcast queue operations do not inflate the general jobs controller.

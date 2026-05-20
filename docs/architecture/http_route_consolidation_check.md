@@ -54,7 +54,6 @@ Large route-owner files that remain worth considering, ordered by current cleanu
 | `wecom_ability_service/http/internal_auth.py` | 328 | already separated from route-level login; avoid extra auth churn unless there is a clear guard/runtime boundary |
 | `wecom_ability_service/http/automation_conversion.py` | 348 | route aggregator; acceptable while it remains registration-only |
 | `wecom_ability_service/http/admin_jobs.py` | 265 | already separated from broadcast jobs; keep below the guardrail |
-| `wecom_ability_service/http/admin_user_ops.py` | 244 | already separated from delivery/send-record handlers |
 | `wecom_ability_service/http/admin_customers.py` | 243 | acceptable unless customer detail actions grow |
 | `wecom_ability_service/http/wechat_pay.py` | 272 | public H5/JSAPI checkout and product-intro owner; keep payment client work in the domain |
 | `wecom_ability_service/http/admin_wechat_pay_products.py` | 218 | focused owner for product CRUD, sharing, lead-plan binding, and long-image slices |
