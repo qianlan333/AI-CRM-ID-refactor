@@ -732,31 +732,42 @@ def test_cloud_orchestrator_split_route_modules_stay_owned_by_child_controllers(
             assert route_modules[route] == expected_module
 
 
-def test_image_library_create_routes_stay_in_child_controller():
+def test_legacy_media_library_routes_are_retired_after_d1():
     from wecom_ability_service import create_app
 
-    image_library_source = (ROOT / "wecom_ability_service" / "http" / "image_library_endpoint.py").read_text(encoding="utf-8")
-    assert len(image_library_source.splitlines()) <= 210
-    for forbidden in (
-        "def admin_image_library_upload(",
-        "def admin_image_library_create_url(",
-        "def admin_image_library_create_base64(",
-    ):
-        assert forbidden not in image_library_source
+    retired_files = {
+        "image_library_endpoint.py",
+        "image_library_create.py",
+        "attachment_library_endpoint.py",
+        "miniprogram_library_endpoint.py",
+    }
+    http_dir = ROOT / "wecom_ability_service" / "http"
+    for file_name in retired_files:
+        assert not (http_dir / file_name).exists()
+
+    assert not {
+        "image_library",
+        "image_library_create",
+        "attachment_library",
+        "miniprogram_library",
+    } & set(HTTP_ROUTE_MODULES)
+    assert all(key not in {"image_library", "attachment_library", "miniprogram_library"} for key, _ in HTTP_ROUTE_REGISTRARS)
 
     app = create_app({"TESTING": True})
-    route_modules = {
-        rule.rule: getattr(app.view_functions[rule.endpoint], "__module__", "")
-        for rule in app.url_map.iter_rules()
-    }
-    expected_module = "wecom_ability_service.http.image_library_create"
+    routes = {rule.rule for rule in app.url_map.iter_rules()}
 
     for route in {
+        "/admin/image-library",
+        "/api/admin/image-library",
         "/api/admin/image-library/upload",
         "/api/admin/image-library/from-url",
         "/api/admin/image-library/from-base64",
+        "/admin/attachment-library",
+        "/api/admin/attachment-library",
+        "/admin/miniprogram-library",
+        "/api/admin/miniprogram-library",
     }:
-        assert route_modules[route] == expected_module
+        assert route not in routes
 
 
 def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():

@@ -1,6 +1,6 @@
 {
   "source": "wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()",
-  "route_count": 445,
+  "route_count": 419,
   "routes": [
     {
       "rule": "/<path:filename>",
@@ -43,16 +43,6 @@
       "arguments": [],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.admin_api_docs"
-    },
-    {
-      "rule": "/admin/attachment-library",
-      "endpoint": "api.admin_attachment_library_workspace",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
     },
     {
       "rule": "/admin/audit",
@@ -726,16 +716,6 @@
       "module_hint": "wecom_ability_service.http.admin_hxc_dashboard"
     },
     {
-      "rule": "/admin/image-library",
-      "endpoint": "api.admin_image_library_workspace",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
       "rule": "/admin/jobs",
       "endpoint": "api.admin_console_jobs",
       "methods": [
@@ -794,16 +774,6 @@
       "arguments": [],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.admin_mcp"
-    },
-    {
-      "rule": "/admin/miniprogram-library",
-      "endpoint": "api.admin_miniprogram_library_workspace",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.miniprogram_library_endpoint"
     },
     {
       "rule": "/admin/questionnaires",
@@ -1045,86 +1015,6 @@
       "arguments": [],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.admin_alipay_pay"
-    },
-    {
-      "rule": "/api/admin/attachment-library",
-      "endpoint": "api.admin_attachment_library_list",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/attachment-library/<int:attachment_id>",
-      "endpoint": "api.admin_attachment_library_delete",
-      "methods": [
-        "DELETE"
-      ],
-      "arguments": [
-        "attachment_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/attachment-library/<int:attachment_id>",
-      "endpoint": "api.admin_attachment_library_get",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "attachment_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/attachment-library/<int:attachment_id>",
-      "endpoint": "api.admin_attachment_library_update",
-      "methods": [
-        "PUT"
-      ],
-      "arguments": [
-        "attachment_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/attachment-library/<int:attachment_id>/references",
-      "endpoint": "api.admin_attachment_library_references",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "attachment_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/attachment-library/<int:attachment_id>/test-resolve",
-      "endpoint": "api.admin_attachment_library_test_resolve",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [
-        "attachment_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/attachment-library/upload",
-      "endpoint": "api.admin_attachment_library_upload",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.attachment_library_endpoint"
     },
     {
       "rule": "/api/admin/audit/logs",
@@ -3032,116 +2922,6 @@
       "module_hint": "wecom_ability_service.http.admin_hxc_dashboard"
     },
     {
-      "rule": "/api/admin/image-library",
-      "endpoint": "api.admin_image_library_list",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/image-library/<int:image_id>",
-      "endpoint": "api.admin_image_library_delete",
-      "methods": [
-        "DELETE"
-      ],
-      "arguments": [
-        "image_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/image-library/<int:image_id>",
-      "endpoint": "api.admin_image_library_get",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "image_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/image-library/<int:image_id>",
-      "endpoint": "api.admin_image_library_update",
-      "methods": [
-        "PUT"
-      ],
-      "arguments": [
-        "image_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/image-library/<int:image_id>/references",
-      "endpoint": "api.admin_image_library_references",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "image_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/image-library/<int:image_id>/test-resolve",
-      "endpoint": "api.admin_image_library_test_resolve",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [
-        "image_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/image-library/facets",
-      "endpoint": "api.admin_image_library_facets",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/image-library/from-base64",
-      "endpoint": "api.admin_image_library_create_base64",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_create"
-    },
-    {
-      "rule": "/api/admin/image-library/from-url",
-      "endpoint": "api.admin_image_library_create_url",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_create"
-    },
-    {
-      "rule": "/api/admin/image-library/upload",
-      "endpoint": "api.admin_image_library_upload",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.image_library_create"
-    },
-    {
       "rule": "/api/admin/jobs/archive-sync",
       "endpoint": "api.api_admin_jobs_archive_sync",
       "methods": [
@@ -3316,74 +3096,6 @@
       "arguments": [],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.admin_config_marketing_automation"
-    },
-    {
-      "rule": "/api/admin/miniprogram-library",
-      "endpoint": "api.admin_miniprogram_library_list",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.miniprogram_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/miniprogram-library",
-      "endpoint": "api.admin_miniprogram_library_create",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.miniprogram_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/miniprogram-library/<int:library_id>",
-      "endpoint": "api.admin_miniprogram_library_delete",
-      "methods": [
-        "DELETE"
-      ],
-      "arguments": [
-        "library_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.miniprogram_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/miniprogram-library/<int:library_id>",
-      "endpoint": "api.admin_miniprogram_library_get",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "library_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.miniprogram_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/miniprogram-library/<int:library_id>",
-      "endpoint": "api.admin_miniprogram_library_update",
-      "methods": [
-        "PUT"
-      ],
-      "arguments": [
-        "library_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.miniprogram_library_endpoint"
-    },
-    {
-      "rule": "/api/admin/miniprogram-library/<int:library_id>/test-resolve",
-      "endpoint": "api.admin_miniprogram_library_test_resolve",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [
-        "library_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.miniprogram_library_endpoint"
     },
     {
       "rule": "/api/admin/questionnaires",

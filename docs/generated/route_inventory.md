@@ -2,7 +2,7 @@
 
 Source: `wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()`
 
-Route rows: `445`
+Route rows: `419`
 
 | Rule | Methods | Endpoint | Arguments | Auth hint | Module hint |
 | --- | --- | --- | --- | --- | --- |
@@ -10,7 +10,6 @@ Route rows: `445`
 | `/admin` | `GET` | `api.admin_console_home` | `` | `admin_session` | `wecom_ability_service.http.admin_console` |
 | `/admin/alipay/transactions` | `GET` | `api.admin_alipay_pay_transactions_page` | `` | `admin_session` | `wecom_ability_service.http.admin_alipay_pay` |
 | `/admin/api-docs` | `GET` | `api.admin_console_api_docs` | `` | `admin_session` | `wecom_ability_service.http.admin_api_docs` |
-| `/admin/attachment-library` | `GET` | `api.admin_attachment_library_workspace` | `` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
 | `/admin/audit` | `GET` | `api.admin_audit_logs` | `` | `admin_session` | `wecom_ability_service.http.admin_audit` |
 | `/admin/automation-conversion` | `GET` | `api.admin_automation_conversion` | `` | `admin_session` | `wecom_ability_service.http.automation_conversion_pages` |
 | `/admin/automation-conversion/agent-orchestration/agents/<agent_code>/save-draft` | `POST` | `api.admin_automation_conversion_agent_orchestration_save_draft` | `agent_code` | `admin_session` | `wecom_ability_service.http.automation_conversion_agent_page_actions` |
@@ -73,14 +72,12 @@ Route rows: `445`
 | `/admin/customers/<external_userid>/tasks` | `POST` | `api.admin_console_customer_task_action` | `external_userid` | `admin_session` | `wecom_ability_service.http.admin_customers` |
 | `/admin/hxc-dashboard` | `GET` | `api.admin_hxc_dashboard_workspace` | `` | `admin_session` | `wecom_ability_service.http.admin_hxc_dashboard` |
 | `/admin/hxc-send-config` | `GET` | `api.admin_hxc_send_config_page` | `` | `admin_session` | `wecom_ability_service.http.admin_hxc_dashboard` |
-| `/admin/image-library` | `GET` | `api.admin_image_library_workspace` | `` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
 | `/admin/jobs` | `GET` | `api.admin_console_jobs` | `` | `admin_session` | `wecom_ability_service.http.admin_jobs` |
 | `/admin/jobs/actions` | `POST` | `api.admin_console_jobs_action` | `` | `admin_session` | `wecom_ability_service.http.admin_jobs` |
 | `/admin/marketing-automation/ui` | `GET` | `api.admin_marketing_automation_ui` | `` | `admin_session` | `wecom_ability_service.http.admin_config_marketing_automation` |
 | `/admin/mcp` | `GET` | `api.admin_console_mcp` | `` | `admin_session` | `wecom_ability_service.http.admin_mcp` |
 | `/admin/mcp/preflight` | `POST` | `api.admin_console_mcp` | `` | `admin_session` | `wecom_ability_service.http.admin_mcp` |
 | `/admin/mcp/sample-call` | `POST` | `api.admin_console_mcp` | `` | `admin_session` | `wecom_ability_service.http.admin_mcp` |
-| `/admin/miniprogram-library` | `GET` | `api.admin_miniprogram_library_workspace` | `` | `admin_session` | `wecom_ability_service.http.miniprogram_library_endpoint` |
 | `/admin/questionnaires` | `GET` | `api.admin_console_questionnaires` | `` | `admin_session` | `wecom_ability_service.http.admin_questionnaire_console` |
 | `/admin/questionnaires/<int:questionnaire_id>` | `GET` | `api.admin_console_questionnaire_detail` | `questionnaire_id` | `admin_session` | `wecom_ability_service.http.admin_questionnaire_console` |
 | `/admin/questionnaires/<int:questionnaire_id>/external-push-logs` | `GET` | `api.admin_console_questionnaire_external_push_logs` | `questionnaire_id` | `admin_session` | `wecom_ability_service.http.admin_questionnaire_push_logs` |
@@ -103,13 +100,6 @@ Route rows: `445`
 | `/alipay/pay/<product_code>` | `GET` | `api.h5_alipay_pay_checkout` | `product_code` | `existing_behavior` | `wecom_ability_service.http.alipay_pay` |
 | `/api/admin/alipay/order-export.csv` | `GET` | `api.api_admin_alipay_pay_order_export` | `` | `admin_session` | `wecom_ability_service.http.admin_alipay_pay` |
 | `/api/admin/alipay/orders` | `GET` | `api.api_admin_alipay_pay_orders` | `` | `admin_session` | `wecom_ability_service.http.admin_alipay_pay` |
-| `/api/admin/attachment-library` | `GET` | `api.admin_attachment_library_list` | `` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
-| `/api/admin/attachment-library/<int:attachment_id>` | `DELETE` | `api.admin_attachment_library_delete` | `attachment_id` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
-| `/api/admin/attachment-library/<int:attachment_id>` | `GET` | `api.admin_attachment_library_get` | `attachment_id` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
-| `/api/admin/attachment-library/<int:attachment_id>` | `PUT` | `api.admin_attachment_library_update` | `attachment_id` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
-| `/api/admin/attachment-library/<int:attachment_id>/references` | `GET` | `api.admin_attachment_library_references` | `attachment_id` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
-| `/api/admin/attachment-library/<int:attachment_id>/test-resolve` | `POST` | `api.admin_attachment_library_test_resolve` | `attachment_id` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
-| `/api/admin/attachment-library/upload` | `POST` | `api.admin_attachment_library_upload` | `` | `admin_session` | `wecom_ability_service.http.attachment_library_endpoint` |
 | `/api/admin/audit/logs` | `GET` | `api.api_admin_audit_logs` | `` | `admin_session` | `wecom_ability_service.http.admin_audit` |
 | `/api/admin/automation-conversion/action-templates` | `GET` | `api.api_admin_automation_conversion_action_templates` | `` | `admin_session` | `wecom_ability_service.http.automation_conversion_templates` |
 | `/api/admin/automation-conversion/action-templates` | `POST` | `api.api_admin_automation_conversion_action_templates` | `` | `admin_session` | `wecom_ability_service.http.automation_conversion_templates` |
@@ -284,16 +274,6 @@ Route rows: `445`
 | `/api/admin/hxc-dashboard/send-config` | `GET` | `api.admin_hxc_send_config_list` | `` | `admin_session` | `wecom_ability_service.http.admin_hxc_dashboard` |
 | `/api/admin/hxc-dashboard/send-config` | `POST` | `api.admin_hxc_send_config_upsert` | `` | `admin_session` | `wecom_ability_service.http.admin_hxc_dashboard` |
 | `/api/admin/hxc-dashboard/send-config/<sender_userid>` | `DELETE` | `api.admin_hxc_send_config_delete` | `sender_userid` | `admin_session` | `wecom_ability_service.http.admin_hxc_dashboard` |
-| `/api/admin/image-library` | `GET` | `api.admin_image_library_list` | `` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
-| `/api/admin/image-library/<int:image_id>` | `DELETE` | `api.admin_image_library_delete` | `image_id` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
-| `/api/admin/image-library/<int:image_id>` | `GET` | `api.admin_image_library_get` | `image_id` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
-| `/api/admin/image-library/<int:image_id>` | `PUT` | `api.admin_image_library_update` | `image_id` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
-| `/api/admin/image-library/<int:image_id>/references` | `GET` | `api.admin_image_library_references` | `image_id` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
-| `/api/admin/image-library/<int:image_id>/test-resolve` | `POST` | `api.admin_image_library_test_resolve` | `image_id` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
-| `/api/admin/image-library/facets` | `GET` | `api.admin_image_library_facets` | `` | `admin_session` | `wecom_ability_service.http.image_library_endpoint` |
-| `/api/admin/image-library/from-base64` | `POST` | `api.admin_image_library_create_base64` | `` | `admin_session` | `wecom_ability_service.http.image_library_create` |
-| `/api/admin/image-library/from-url` | `POST` | `api.admin_image_library_create_url` | `` | `admin_session` | `wecom_ability_service.http.image_library_create` |
-| `/api/admin/image-library/upload` | `POST` | `api.admin_image_library_upload` | `` | `admin_session` | `wecom_ability_service.http.image_library_create` |
 | `/api/admin/jobs/archive-sync` | `GET` | `api.api_admin_jobs_archive_sync` | `` | `admin_session` | `wecom_ability_service.http.admin_jobs` |
 | `/api/admin/jobs/archive-sync/run` | `POST` | `api.api_admin_jobs_archive_sync_run` | `` | `admin_session` | `wecom_ability_service.http.admin_jobs` |
 | `/api/admin/jobs/callbacks` | `GET` | `api.api_admin_jobs_callbacks` | `` | `admin_session` | `wecom_ability_service.http.admin_jobs` |
@@ -311,12 +291,6 @@ Route rows: `445`
 | `/api/admin/marketing-automation/config/preview` | `POST` | `api.api_admin_marketing_automation_preview` | `` | `admin_session` | `wecom_ability_service.http.admin_config_marketing_automation` |
 | `/api/admin/marketing-automation/dispatch-history` | `GET` | `api.api_admin_marketing_automation_dispatch_history` | `` | `admin_session` | `wecom_ability_service.http.admin_config_marketing_automation` |
 | `/api/admin/marketing-automation/recompute` | `POST` | `api.api_admin_marketing_automation_recompute` | `` | `admin_session` | `wecom_ability_service.http.admin_config_marketing_automation` |
-| `/api/admin/miniprogram-library` | `GET` | `api.admin_miniprogram_library_list` | `` | `admin_session` | `wecom_ability_service.http.miniprogram_library_endpoint` |
-| `/api/admin/miniprogram-library` | `POST` | `api.admin_miniprogram_library_create` | `` | `admin_session` | `wecom_ability_service.http.miniprogram_library_endpoint` |
-| `/api/admin/miniprogram-library/<int:library_id>` | `DELETE` | `api.admin_miniprogram_library_delete` | `library_id` | `admin_session` | `wecom_ability_service.http.miniprogram_library_endpoint` |
-| `/api/admin/miniprogram-library/<int:library_id>` | `GET` | `api.admin_miniprogram_library_get` | `library_id` | `admin_session` | `wecom_ability_service.http.miniprogram_library_endpoint` |
-| `/api/admin/miniprogram-library/<int:library_id>` | `PUT` | `api.admin_miniprogram_library_update` | `library_id` | `admin_session` | `wecom_ability_service.http.miniprogram_library_endpoint` |
-| `/api/admin/miniprogram-library/<int:library_id>/test-resolve` | `POST` | `api.admin_miniprogram_library_test_resolve` | `library_id` | `admin_session` | `wecom_ability_service.http.miniprogram_library_endpoint` |
 | `/api/admin/questionnaires` | `GET` | `api.admin_list_questionnaires` | `` | `admin_session` | `wecom_ability_service.http.admin_questionnaires` |
 | `/api/admin/questionnaires` | `POST` | `api.admin_create_questionnaire` | `` | `admin_session` | `wecom_ability_service.http.admin_questionnaires` |
 | `/api/admin/questionnaires/<int:questionnaire_id>` | `DELETE` | `api.admin_delete_questionnaire` | `questionnaire_id` | `admin_session` | `wecom_ability_service.http.admin_questionnaires` |
