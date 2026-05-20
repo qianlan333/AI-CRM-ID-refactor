@@ -827,3 +827,24 @@ def test_legacy_catalog_product_api_still_works(app, client, tmp_path):
     assert payload["product"]["product_code"] == "legacy_report_v1"
     assert payload["product"]["amount_total"] == 9900
     assert payload["product"]["slices"] == []
+
+
+def test_next_style_public_product_api_alias_is_readonly(app, client, tmp_path):
+    _configure_pay(app, tmp_path)
+
+    response = client.get("/api/products/legacy_report_v1")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["product"]["product_code"] == "legacy_report_v1"
+    assert payload["product"]["name"] == "历史支付商品"
+    assert payload["product"]["amount_total"] == 9900
+    assert payload["product"]["slices"] == []
+
+
+def test_next_style_public_product_api_alias_returns_404_for_missing_product(client):
+    response = client.get("/api/products/missing_product")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"ok": False, "error": "product_not_configured"}
