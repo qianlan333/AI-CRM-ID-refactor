@@ -41,7 +41,6 @@ class QuestionnaireAlreadySubmittedError(ValueError):
 
 
 from ._service_helpers import (  # noqa: F401  helpers — 阶段 7.2
-    DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS,
     DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE,
     _bind_questionnaire_identity,
     _build_questionnaire_detail,
@@ -1506,9 +1505,8 @@ def _build_questionnaire_external_push_payload(
         questionnaire.get("external_push_type") or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE
     ).strip()
     payload["type"] = external_push_type
-    payload["expires_at_ts"] = int(
-        questionnaire.get("external_push_expires_at_ts") or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS
-    )
+    if questionnaire.get("external_push_expires_at_ts") not in (None, ""):
+        payload["expires_at_ts"] = int(questionnaire["external_push_expires_at_ts"])
     remark = str(questionnaire.get("external_push_remark") or "").strip()
     if remark:
         payload["remark"] = remark

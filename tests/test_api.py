@@ -3000,7 +3000,7 @@ def _build_questionnaire_payload(**overrides) -> dict:
         "external_push_enabled": False,
         "external_push_url": "",
         "external_push_type": "subscription",
-        "external_push_expires_at_ts": 1809100800,
+        "external_push_expires_at_ts": "",
         "external_push_day": "",
         "external_push_frequency": "",
         "external_push_remark": "",
@@ -4393,6 +4393,7 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
             external_push_url="https://hooks.example.com/questionnaire/apply",
             external_push_day=20,
             external_push_frequency=20,
+            external_push_expires_at_ts=1809100800,
             external_push_remark="黄小璨 499 用户激活",
             external_push_custom_params=[
                 {"name": "source_name", "value": "黄小璨激活"},
@@ -4519,6 +4520,7 @@ def test_questionnaire_submit_external_push_without_mobile_question_sends_null_p
     assert response.get_json()["success"] is True
     assert len(push_calls) == 1
     assert push_calls[0]["json"]["phone_number"] == "NULL"
+    assert "expires_at_ts" not in push_calls[0]["json"]
 
     with app.app_context():
         row = get_db().execute(
@@ -4529,7 +4531,9 @@ def test_questionnaire_submit_external_push_without_mobile_question_sends_null_p
             LIMIT 1
             """
         ).fetchone()
-        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["phone_number"] == "NULL"
+        request_payload = row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"])
+        assert request_payload["phone_number"] == "NULL"
+        assert "expires_at_ts" not in request_payload
 
 
 def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_custom_param_name(client):
@@ -4557,7 +4561,7 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
         "error": "external_push_expires_at_ts must be an integer",
     }
 
-    missing_ts_response = client.post(
+    blank_ts_response = client.post(
         "/api/admin/questionnaires",
         json=_build_questionnaire_payload(
             external_push_enabled=True,
@@ -4565,11 +4569,8 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
             external_push_expires_at_ts="",
         ),
     )
-    assert missing_ts_response.status_code == 400
-    assert missing_ts_response.get_json() == {
-        "ok": False,
-        "error": "external_push_expires_at_ts is required",
-    }
+    assert blank_ts_response.status_code == 200
+    assert blank_ts_response.get_json()["questionnaire"]["external_push_expires_at_ts"] == ""
 
     invalid_type_response = client.post(
         "/api/admin/questionnaires",

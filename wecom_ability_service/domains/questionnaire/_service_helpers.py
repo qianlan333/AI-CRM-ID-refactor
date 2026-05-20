@@ -57,7 +57,6 @@ QUESTIONNAIRE_EXTERNAL_PUSH_RESERVED_KEYS = {
 }
 QUESTIONNAIRE_EXTERNAL_PUSH_TYPES = {"subscription", "premium"}
 DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE = "subscription"
-DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS = 1809100800
 QUESTIONNAIRE_ROW_SELECT = """
     SELECT id, slug, name, title, description, is_disabled, redirect_url,
            answer_display_mode,
@@ -324,14 +323,10 @@ def _normalize_questionnaire_payload(
         "external_push_expires_at_ts",
         (existing or {}).get("external_push_expires_at_ts"),
     )
-    if external_push_enabled and raw_external_push_expires_at_ts in (None, ""):
-        raise ValueError("external_push_expires_at_ts is required")
-    if raw_external_push_expires_at_ts in (None, ""):
-        raw_external_push_expires_at_ts = DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS
     external_push_expires_at_ts = _normalize_required_integer(
         raw_external_push_expires_at_ts,
         "external_push_expires_at_ts",
-        allow_none=False,
+        allow_none=True,
     )
     external_push_day = _normalize_required_integer(
         payload.get("external_push_day", (existing or {}).get("external_push_day")),
@@ -514,7 +509,7 @@ def _serialize_questionnaire_row(row: dict[str, Any]) -> dict[str, Any]:
         "external_push_type": row.get("external_push_type", "") or DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_TYPE,
         "external_push_expires_at_ts": int(row["external_push_expires_at_ts"])
         if row.get("external_push_expires_at_ts") is not None
-        else DEFAULT_QUESTIONNAIRE_EXTERNAL_PUSH_EXPIRES_AT_TS,
+        else "",
         "external_push_day": int(row["external_push_day"]) if row.get("external_push_day") is not None else "",
         "external_push_frequency": int(row["external_push_frequency"])
         if row.get("external_push_frequency") is not None
