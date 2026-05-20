@@ -235,10 +235,20 @@ def test_setup_operations_passes_program_scoped_workspace_to_operation_panel():
     source = (
         REPO_ROOT / "wecom_ability_service/templates/admin_console/automation_program_setup_wizard.html"
     ).read_text(encoding="utf-8")
+    workspace_source = (
+        REPO_ROOT / "wecom_ability_service/http/automation_conversion_workspaces.py"
+    ).read_text(encoding="utf-8")
+    panel_source = (
+        REPO_ROOT / "wecom_ability_service/templates/admin_console/_automation_operation_orchestration_panel.html"
+    ).read_text(encoding="utf-8")
 
     assert "workspace.operations or workspace.operations_workspace or {}" in source
     assert "{% set operations_workspace = workspace.operations_workspace or {} %}" not in source
     assert '{% include "admin_console/_automation_operation_orchestration_panel.html" %}' in source
+    assert "operations_workspace[\"api_urls\"] = dict(operations_shell.get(\"api_urls\") or {})" in workspace_source
+    assert "operations_workspace[\"entry_urls\"] = dict(operations_shell.get(\"entry_urls\") or {})" in workspace_source
+    assert "页面接口地址缺失，请刷新页面后重试" in panel_source
+    assert "操作失败，请稍后重试" not in panel_source
 
 
 def test_default_program_bootstraps_and_automation_entry_lists_programs(app, client, monkeypatch):

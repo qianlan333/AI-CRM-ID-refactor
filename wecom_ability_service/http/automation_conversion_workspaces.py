@@ -525,7 +525,12 @@ def _build_program_setup_workspace(program_id: int, *, step: str = "basic", audi
         "publish_full": url_for("api.api_admin_automation_program_publish_full", program_id=int(program_id)),
         "customer_acquisition_links": url_for("api.api_admin_automation_program_customer_acquisition_links", program_id=int(program_id)),
     }
-    payload["operations_workspace"] = _build_action_orchestration_workspace(program_id=int(program_id))
+    operations_shell = _build_action_orchestration_workspace(program_id=int(program_id))
+    operations_workspace = {**operations_shell, **dict(payload.get("operations") or {})}
+    operations_workspace["api_urls"] = dict(operations_shell.get("api_urls") or {})
+    operations_workspace["entry_urls"] = dict(operations_shell.get("entry_urls") or {})
+    payload["operations"] = operations_workspace
+    payload["operations_workspace"] = operations_workspace
     return payload
 
 
