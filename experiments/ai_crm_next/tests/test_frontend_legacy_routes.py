@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from conftest import make_client
+
+
+def test_admin_dashboard_route_returns_legacy_shell() -> None:
+    response = make_client().get("/admin")
+    assert response.status_code == 200
+    assert "客户管理后台" in response.text
+    assert "系统概况" in response.text
+
+
+def test_admin_user_ops_ui_returns_copied_legacy_page() -> None:
+    response = make_client().get("/admin/user-ops/ui")
+    assert response.status_code == 200
+    text = response.text
+    for expected in ["引流品总数", "已加微", "未加微", "黄小璨已激活", "黄小璨未激活", "发送记录"]:
+        assert expected in text
+    assert "批量发送" in text or "群发" in text
+    for forbidden in ["New UI", "redesign", "TODO replace old frontend"]:
+        assert forbidden not in text
+
+
+def test_admin_customers_route_returns_partial_legacy_shell() -> None:
+    response = make_client().get("/admin/customers")
+    assert response.status_code == 200
+    assert "客户中心" in response.text
+    assert "客户列表" in response.text
+    for forbidden in ["New UI", "redesign", "TODO replace old frontend", "partial shell", "new dashboard placeholder"]:
+        assert forbidden not in response.text
+
+
+def test_legacy_static_admin_console_css_is_served() -> None:
+    response = make_client().get("/static/admin_console/admin_console.css")
+    assert response.status_code == 200
+    assert "admin-shell" in response.text
+
+
+def test_commerce_and_media_admin_routes_return_legacy_shells() -> None:
+    client = make_client()
+    for path, expected in [
+        ("/admin/wechat-pay/products", "商品管理"),
+        ("/admin/wechat-pay/transactions", "微信支付交易管理"),
+        ("/admin/alipay/transactions", "支付宝交易管理"),
+        ("/admin/image-library", "图片素材库"),
+        ("/admin/attachment-library", "附件素材库"),
+        ("/admin/miniprogram-library", "小程序素材库"),
+    ]:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert expected in response.text
+        for forbidden in ["New UI", "redesign", "TODO replace old frontend", "experimental replacement UI"]:
+            assert forbidden not in response.text
+
+
+def test_user_ops_frontend_adapter_stubs_exist() -> None:
+    client = make_client()
+    assert client.get("/api/admin/miniprogram-library").json()["ok"] is True
+    record_payload = client.get("/api/admin/user-ops/send-records").json()
+    record_id = record_payload["items"][0]["record_id"]
+    assert client.get(f"/api/admin/user-ops/send-records/{record_id}").json()["ok"] is True
+    assert client.post(f"/api/admin/user-ops/send-records/{record_id}/refresh").json()["ok"] is True
+    assert client.get("/api/admin/user-ops/export").json()["status"] == "stubbed"
+
+
+def test_api_contracts_do_not_mark_do_not_disturb_implemented() -> None:
+    text = Path("docs/api_contracts.md").read_text(encoding="utf-8")
+    marker = "POST /api/admin/user-ops/do-not-disturb"
+    assert marker in text
+    section = text[text.index(marker) : text.index("### `POST /api/admin/user-ops/batch-send/preview`")]
+    assert "implemented" not in section.lower()
+    assert any(status in section.lower() for status in ["stubbed", "contract_ready", "partial"])
