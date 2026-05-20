@@ -3668,19 +3668,19 @@
                 <option value="premium" ${state.questionnaire.external_push_type === 'premium' ? 'selected' : ''}>私教版</option>
               </select>
             </label>
-            <label class="field">expires_at_ts
+            <label class="field">到期时间戳
               <input id="field-external-push-expires-at-ts" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_expires_at_ts ?? 1809100800))}" placeholder="1809100800">
             </label>
           </div>
           <div class="field-grid compact">
-            <label class="field">day
+            <label class="field">开通天数
               <input id="field-external-push-day" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_day ?? ''))}" placeholder="20">
             </label>
-            <label class="field">frequency
+            <label class="field">咨询次数额度
               <input id="field-external-push-frequency" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_frequency ?? ''))}" placeholder="20">
             </label>
           </div>
-          <label class="field">remark
+          <label class="field">备注
             <input id="field-external-push-remark" type="text" value="${escapeHtml(state.questionnaire.external_push_remark || '')}" placeholder="备注文本">
           </label>
           <div class="config-head" style="margin-top:8px;">
