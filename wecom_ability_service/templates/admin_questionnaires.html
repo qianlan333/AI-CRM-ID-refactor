@@ -2652,6 +2652,7 @@
         assessment_config: '测评结果规则',
         assessment_dimension_key: '测评维度',
         assessment_type_key: '测评分型',
+        external_push_expires_at_ts: '到期时间戳',
       };
       return labels[fieldName] || fieldName;
     }
@@ -2927,7 +2928,7 @@
         external_push_enabled: false,
         external_push_url: '',
         external_push_type: 'subscription',
-        external_push_expires_at_ts: 1809100800,
+        external_push_expires_at_ts: '',
         external_push_day: '',
         external_push_frequency: '',
         external_push_remark: '',
@@ -2979,7 +2980,9 @@
         external_push_enabled: Boolean(questionnaire.external_push_enabled),
         external_push_url: questionnaire.external_push_url || '',
         external_push_type: questionnaire.external_push_type || 'subscription',
-        external_push_expires_at_ts: questionnaire.external_push_expires_at_ts ?? 1809100800,
+        external_push_expires_at_ts: questionnaire.external_push_enabled
+          ? questionnaire.external_push_expires_at_ts ?? ''
+          : '',
         external_push_day: questionnaire.external_push_day ?? '',
         external_push_frequency: questionnaire.external_push_frequency ?? '',
         external_push_remark: questionnaire.external_push_remark || '',
@@ -3096,7 +3099,7 @@
         external_push_enabled: Boolean(state.questionnaire.external_push_enabled),
         external_push_url: state.questionnaire.external_push_url,
         external_push_type: state.questionnaire.external_push_type || 'subscription',
-        external_push_expires_at_ts: state.questionnaire.external_push_expires_at_ts === '' ? 1809100800 : Number(state.questionnaire.external_push_expires_at_ts),
+        external_push_expires_at_ts: state.questionnaire.external_push_expires_at_ts === '' ? '' : Number(state.questionnaire.external_push_expires_at_ts),
         external_push_day: state.questionnaire.external_push_day === '' ? '' : Number(state.questionnaire.external_push_day),
         external_push_frequency: state.questionnaire.external_push_frequency === '' ? '' : Number(state.questionnaire.external_push_frequency),
         external_push_remark: state.questionnaire.external_push_remark,
@@ -3669,7 +3672,7 @@
               </select>
             </label>
             <label class="field">到期时间戳
-              <input id="field-external-push-expires-at-ts" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_expires_at_ts ?? 1809100800))}" placeholder="1809100800">
+              <input id="field-external-push-expires-at-ts" type="number" step="1" min="1" required value="${escapeHtml(String(state.questionnaire.external_push_expires_at_ts ?? ''))}" placeholder="1809100800">
             </label>
           </div>
           <div class="field-grid compact">
@@ -5811,8 +5814,17 @@
       validateUrlField(builder.final_recommendation?.course_url, '尾部集中推荐课程链接');
     }
 
+    function validateExternalPushBeforeSave() {
+      if (!state.questionnaire.external_push_enabled) return;
+      const expiresAtTs = String(state.questionnaire.external_push_expires_at_ts ?? '').trim();
+      if (!expiresAtTs) {
+        throw new Error('请输入到期时间戳');
+      }
+    }
+
     async function saveQuestionnaire() {
       validateAssessmentConfigBeforeSave();
+      validateExternalPushBeforeSave();
       const wasEditing = Boolean(state.currentId);
       const payload = serializePayload();
       const url = state.currentId ? `/api/admin/questionnaires/${state.currentId}` : '/api/admin/questionnaires';
