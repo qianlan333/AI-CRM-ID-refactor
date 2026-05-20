@@ -2999,6 +2999,8 @@ def _build_questionnaire_payload(**overrides) -> dict:
         "redirect_url": "https://example.com/next",
         "external_push_enabled": False,
         "external_push_url": "",
+        "external_push_type": "subscription",
+        "external_push_expires_at_ts": 1809100800,
         "external_push_day": "",
         "external_push_frequency": "",
         "external_push_remark": "",
@@ -4433,6 +4435,8 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         "questionnaire_title": "来访测评",
         "submitted_at": push_calls[0]["json"]["submitted_at"],
         "phone_number": "13800138012",
+        "type": "subscription",
+        "expires_at_ts": 1809100800,
         "day": 20,
         "frequency": 20,
         "remark": "黄小璨 499 用户激活",
@@ -4466,6 +4470,8 @@ def test_questionnaire_submit_external_push_success_uses_fixed_payload_and_logs_
         assert row["status"] == "success"
         assert row["failure_reason"] == ""
         assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["phone_number"] == "13800138012"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["type"] == "subscription"
+        assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["expires_at_ts"] == 1809100800
         assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["day"] == 20
         assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["frequency"] == 20
         assert (row["request_payload"] if isinstance(row["request_payload"], (dict, list)) else json.loads(row["request_payload"]))["remark"] == "黄小璨 499 用户激活"
@@ -4537,6 +4543,34 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
         "error": "external_push_day must be an integer",
     }
 
+    invalid_ts_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_expires_at_ts="abc",
+        ),
+    )
+    assert invalid_ts_response.status_code == 400
+    assert invalid_ts_response.get_json() == {
+        "ok": False,
+        "error": "external_push_expires_at_ts must be an integer",
+    }
+
+    invalid_type_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_type="trial",
+        ),
+    )
+    assert invalid_type_response.status_code == 400
+    assert invalid_type_response.get_json() == {
+        "ok": False,
+        "error": "external_push_type must be subscription or premium",
+    }
+
     reserved_name_response = client.post(
         "/api/admin/questionnaires",
         json=_build_questionnaire_payload(
@@ -4563,6 +4597,34 @@ def test_questionnaire_external_push_rejects_invalid_fixed_number_and_reserved_c
     assert phone_number_reserved_response.get_json() == {
         "ok": False,
         "error": "external_push_custom_params name 'phone_number' is reserved",
+    }
+
+    type_reserved_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_custom_params=[{"name": "type", "value": "bad"}],
+        ),
+    )
+    assert type_reserved_response.status_code == 400
+    assert type_reserved_response.get_json() == {
+        "ok": False,
+        "error": "external_push_custom_params name 'type' is reserved",
+    }
+
+    expires_reserved_response = client.post(
+        "/api/admin/questionnaires",
+        json=_build_questionnaire_payload(
+            external_push_enabled=True,
+            external_push_url="https://hooks.example.com/q",
+            external_push_custom_params=[{"name": "expires_at_ts", "value": "bad"}],
+        ),
+    )
+    assert expires_reserved_response.status_code == 400
+    assert expires_reserved_response.get_json() == {
+        "ok": False,
+        "error": "external_push_custom_params name 'expires_at_ts' is reserved",
     }
 
 

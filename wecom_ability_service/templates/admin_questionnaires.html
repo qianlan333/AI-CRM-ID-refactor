@@ -2926,6 +2926,8 @@
         assessment_builder: defaultAssessmentBuilder,
         external_push_enabled: false,
         external_push_url: '',
+        external_push_type: 'subscription',
+        external_push_expires_at_ts: 1809100800,
         external_push_day: '',
         external_push_frequency: '',
         external_push_remark: '',
@@ -2976,6 +2978,8 @@
         assessment_builder: assessmentBuilder,
         external_push_enabled: Boolean(questionnaire.external_push_enabled),
         external_push_url: questionnaire.external_push_url || '',
+        external_push_type: questionnaire.external_push_type || 'subscription',
+        external_push_expires_at_ts: questionnaire.external_push_expires_at_ts ?? 1809100800,
         external_push_day: questionnaire.external_push_day ?? '',
         external_push_frequency: questionnaire.external_push_frequency ?? '',
         external_push_remark: questionnaire.external_push_remark || '',
@@ -3091,6 +3095,8 @@
           : buildAssessmentConfigFromBuilder(ensureAssessmentBuilder()),
         external_push_enabled: Boolean(state.questionnaire.external_push_enabled),
         external_push_url: state.questionnaire.external_push_url,
+        external_push_type: state.questionnaire.external_push_type || 'subscription',
+        external_push_expires_at_ts: state.questionnaire.external_push_expires_at_ts === '' ? 1809100800 : Number(state.questionnaire.external_push_expires_at_ts),
         external_push_day: state.questionnaire.external_push_day === '' ? '' : Number(state.questionnaire.external_push_day),
         external_push_frequency: state.questionnaire.external_push_frequency === '' ? '' : Number(state.questionnaire.external_push_frequency),
         external_push_remark: state.questionnaire.external_push_remark,
@@ -3656,6 +3662,17 @@
             <input id="field-external-push-url" type="text" value="${escapeHtml(state.questionnaire.external_push_url)}" placeholder="https://hooks.example.com/...">
           </label>
           <div class="field-grid compact">
+            <label class="field">type
+              <select id="field-external-push-type">
+                <option value="subscription" ${(state.questionnaire.external_push_type || 'subscription') === 'subscription' ? 'selected' : ''}>subscription</option>
+                <option value="premium" ${state.questionnaire.external_push_type === 'premium' ? 'selected' : ''}>premium</option>
+              </select>
+            </label>
+            <label class="field">expires_at_ts
+              <input id="field-external-push-expires-at-ts" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_expires_at_ts ?? 1809100800))}" placeholder="1809100800">
+            </label>
+          </div>
+          <div class="field-grid compact">
             <label class="field">day
               <input id="field-external-push-day" type="number" step="1" value="${escapeHtml(String(state.questionnaire.external_push_day ?? ''))}" placeholder="20">
             </label>
@@ -3710,6 +3727,14 @@
       });
       inspectorBodyEl.querySelector('#field-external-push-url').addEventListener('input', (event) => {
         state.questionnaire.external_push_url = event.target.value;
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#field-external-push-type').addEventListener('change', (event) => {
+        state.questionnaire.external_push_type = event.target.value;
+        updateDraftIndicator();
+      });
+      inspectorBodyEl.querySelector('#field-external-push-expires-at-ts').addEventListener('input', (event) => {
+        state.questionnaire.external_push_expires_at_ts = event.target.value;
         updateDraftIndicator();
       });
       inspectorBodyEl.querySelector('#field-external-push-day').addEventListener('input', (event) => {
