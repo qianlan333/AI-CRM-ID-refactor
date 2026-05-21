@@ -86,7 +86,7 @@ python3 app.py init-db-legacy
   - legacy Flask fallback
   - `http/` 负责路由与控制器
   - `domains/` 负责业务能力
-  - Media/Product/Customer/User Ops readonly legacy route owners 已按 D1-D4 分批退场，混合依赖包仅作 fallback/reference
+  - Media/Product/Customer/User Ops/Questionnaire readonly legacy route owners 已按 D1-D5 分批退场，混合依赖包仅作 fallback/reference
   - `templates/admin_console/` 和 `static/admin_console/` 负责后台页面
 - `openclaw_service/`
   - legacy OpenClaw 适配、工具和服务，默认不作为新功能入口

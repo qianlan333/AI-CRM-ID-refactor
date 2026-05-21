@@ -12,6 +12,7 @@ AI-CRM default runtime has moved to AI-CRM Next. Legacy Flask remains as a fallb
 - D2 Product Management old Flask admin route owner is retired/deleted. AI-CRM Next owns Product Management route handling by default; legacy checkout/payment files remain untouched fallback.
 - D3 Customer Read Model old Flask readonly route owner is retired/deleted. AI-CRM Next owns customer list/detail/timeline route handling by default; legacy archive, contacts, identity, and mixed dependency packages remain fallback.
 - D4 User Ops old Flask readonly route owner is retired/tombstoned. AI-CRM Next owns User Ops readonly page/list/overview/send-record routes by default; legacy User Ops write/external domain helpers remain fallback dependencies and are not delete-ready.
+- D5 Questionnaire old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns questionnaire admin readonly, public readonly, and result readonly surfaces by default; legacy submit, OAuth, admin write, diagnostics, and external-push fallback code remains not delete-ready.
 
 ## Retirement Principles
 
@@ -109,4 +110,37 @@ Retained fallback dependencies:
 - `wecom_ability_service/http/admin_jobs.py`
 - `wecom_ability_service/http/tasks.py`
 
-DND, batch-send preview/execute, deferred jobs, WeCom dispatch, media upload, and internal job capabilities remain not delete-ready. D4 does not execute or approve those write/external paths. Rollback is `git revert` of the D4 PR or restoring a pre-D4 fallback tag. D5 Questionnaire old routes have not started.
+DND, batch-send preview/execute, deferred jobs, WeCom dispatch, media upload, and internal job capabilities remain not delete-ready. D4 does not execute or approve those write/external paths. Rollback is `git revert` of the D4 PR or restoring a pre-D4 fallback tag.
+
+### D5: Questionnaire Old Readonly Routes
+
+Stopped legacy readonly route registrations:
+
+- `GET /admin/questionnaires`
+- `GET /admin/questionnaires/ui`
+- `GET /admin/questionnaires/new`
+- `GET /admin/questionnaires/<questionnaire_id>`
+- `GET /api/admin/questionnaires`
+- `GET /api/admin/questionnaires/preflight`
+- `GET /api/admin/questionnaires/<questionnaire_id>`
+- `GET /api/admin/questionnaires/<questionnaire_id>/latest-submit-debug`
+- `GET /api/admin/questionnaires/<questionnaire_id>/export`
+- `GET /s/<slug>`
+- `GET /s/<slug>/submitted`
+- `GET /s/<slug>/result/<result_token>`
+- `GET /api/h5/questionnaires/<slug>`
+
+D5 does not physically delete questionnaire mixed modules because they still carry submit, OAuth, admin write, diagnostics, and external-push fallback responsibilities.
+
+Retained fallback files:
+
+- `wecom_ability_service/http/admin_questionnaires.py`
+- `wecom_ability_service/http/admin_questionnaire_console.py`
+- `wecom_ability_service/http/public_questionnaires.py`
+- `wecom_ability_service/http/public_questionnaire_oauth.py`
+- `wecom_ability_service/http/public_questionnaire_diagnostics.py`
+- `wecom_ability_service/http/admin_questionnaire_push_logs.py`
+- `wecom_ability_service/http/questionnaire_support.py`
+- `wecom_ability_service/domains/questionnaire/`
+
+Questionnaire writes, public submit, OAuth, WeCom tag, webhook/external push, and external delivery capabilities remain not delete-ready. D5 does not execute or approve those write/external paths. Rollback is `git revert` of the D5 PR or restoring a pre-D5 fallback tag. D6 Automation old routes have not started.

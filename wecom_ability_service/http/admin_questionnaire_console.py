@@ -110,7 +110,7 @@ def admin_console_questionnaire_save(questionnaire_id: int):
         save_questionnaire_editor(questionnaire_id, form=request.form, operator=operator)
     except Exception:
         pass
-    return redirect(url_for("api.admin_console_questionnaire_detail", questionnaire_id=questionnaire_id))
+    return redirect("/admin/questionnaires/ui")
 
 
 def admin_console_questionnaire_toggle(questionnaire_id: int):
@@ -120,12 +120,9 @@ def admin_console_questionnaire_toggle(questionnaire_id: int):
         toggle_questionnaire_disabled(questionnaire_id, is_disabled=is_disabled, operator=operator)
     except Exception:
         pass
-    return redirect(url_for("api.admin_console_questionnaire_detail", questionnaire_id=questionnaire_id))
+    return redirect("/admin/questionnaires/ui")
 
 
 def register_routes(bp):
-    bp.route("/admin/questionnaires", methods=["GET"])(admin_console_questionnaires)
-    bp.route("/admin/questionnaires/new", methods=["GET"])(admin_console_questionnaire_new)
-    bp.route("/admin/questionnaires/<int:questionnaire_id>", methods=["GET"])(admin_console_questionnaire_detail)
     bp.route("/admin/questionnaires/<int:questionnaire_id>/save", methods=["POST"])(admin_console_questionnaire_save)
     bp.route("/admin/questionnaires/<int:questionnaire_id>/toggle", methods=["POST"])(admin_console_questionnaire_toggle)

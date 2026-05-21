@@ -104,11 +104,42 @@ Retained User Ops write / external fallback dependencies:
 
 DND, batch-send, deferred jobs, WeCom dispatch, and media upload capabilities remain not delete-ready. D4 does not execute or approve those write/external paths. If a legacy admin User Ops route owner is needed for rollback, restore it by reverting the D4/D0-D4 retirement PR chain or by using a pre-D4 fallback tag.
 
-D5 Questionnaire old readonly routes have not started.
-
 ## D5: Questionnaire Old Readonly Routes
 
-Status: not started. Delete only after Questionnaire readonly production evidence. Submit, OAuth, WeCom tag, and webhook routes are excluded.
+Status: retired/tombstoned.
+
+Stopped legacy readonly route registrations:
+
+- `GET /admin/questionnaires`
+- `GET /admin/questionnaires/ui`
+- `GET /admin/questionnaires/new`
+- `GET /admin/questionnaires/<questionnaire_id>`
+- `GET /api/admin/questionnaires`
+- `GET /api/admin/questionnaires/preflight`
+- `GET /api/admin/questionnaires/<questionnaire_id>`
+- `GET /api/admin/questionnaires/<questionnaire_id>/latest-submit-debug`
+- `GET /api/admin/questionnaires/<questionnaire_id>/export`
+- `GET /s/<slug>`
+- `GET /s/<slug>/submitted`
+- `GET /s/<slug>/result/<result_token>`
+- `GET /api/h5/questionnaires/<slug>`
+
+No questionnaire files were physically deleted in D5 because the legacy modules are read/write mixed. `admin_questionnaires.py`, `admin_questionnaire_console.py`, and `public_questionnaires.py` remain registered only for write/submit fallback paths. AI-CRM Next owns the Questionnaire readonly page/API/result surfaces via `aicrm_next.questionnaire` and `frontend_compat`.
+
+Retained Questionnaire write / external fallback files:
+
+- `wecom_ability_service/http/admin_questionnaires.py`
+- `wecom_ability_service/http/admin_questionnaire_console.py`
+- `wecom_ability_service/http/public_questionnaires.py`
+- `wecom_ability_service/http/public_questionnaire_oauth.py`
+- `wecom_ability_service/http/public_questionnaire_diagnostics.py`
+- `wecom_ability_service/http/admin_questionnaire_push_logs.py`
+- `wecom_ability_service/http/questionnaire_support.py`
+- `wecom_ability_service/domains/questionnaire/`
+
+Admin writes, public submit, OAuth start/callback, client diagnostics, external push log list/retry, WeCom tag writes, and webhook/external delivery paths remain not delete-ready. D5 does not execute or approve submit, OAuth, WeCom tag, or webhook paths. If a legacy questionnaire readonly route owner is needed for rollback, restore it by reverting the D5 PR or by using a pre-D5 fallback tag.
+
+D6 Automation old readonly routes have not started.
 
 ## D6: Automation Old Readonly Routes
 

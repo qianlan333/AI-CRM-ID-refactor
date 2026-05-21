@@ -105,6 +105,8 @@ D4 legacy retirement records `admin_user_ops.py` and `admin_user_ops_delivery.py
 Shared `domains/user_ops` helpers remain available to automation, jobs, sidebar, and message-dispatch callers.
 
 `wecom_ability_service/http/admin_jobs.py` owns the sync/task console and `/api/admin/jobs*` operational APIs.
+
+D5 legacy retirement stops legacy Questionnaire readonly route registration from `admin_questionnaires.py`, `admin_questionnaire_console.py`, and `public_questionnaires.py`; AI-CRM Next owns Questionnaire readonly surfaces while legacy submit, OAuth, admin write, diagnostics, and external-push fallback code remains isolated in the old modules.
 Broadcast queue page and `/api/admin/broadcast-jobs*` handlers are isolated in `admin_broadcast_jobs.py` so broadcast queue operations do not inflate the general jobs controller.
 
 `wecom_ability_service/http/admin_questionnaire_console.py` owns questionnaire shell and editor pages.

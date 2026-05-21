@@ -253,8 +253,4 @@ def public_submit_questionnaire(slug: str):
 
 
 def register_routes(bp):
-    bp.route('/s/<slug>', methods=['GET'])(questionnaire_h5_page)
-    bp.route('/s/<slug>/submitted', methods=['GET'])(questionnaire_h5_submitted)
-    bp.route('/s/<slug>/result/<result_token>', methods=['GET'])(questionnaire_h5_assessment_result)
-    bp.route('/api/h5/questionnaires/<slug>', methods=['GET'])(public_get_questionnaire)
     bp.route('/api/h5/questionnaires/<slug>/submit', methods=['POST'])(public_submit_questionnaire)
