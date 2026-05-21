@@ -198,7 +198,7 @@ def test_service_layer_layout_doc_exists():
     assert "Only two domain layout modes are allowed" in source
     assert "`wecom_ability_service/services.py` stays as a thin compatibility facade" in source
     assert "`admin_api_docs`" in source
-    assert "`admin_wechat_pay_products.py`: admin product CRUD" in source
+    assert "D2 legacy retirement removed `admin_wechat_pay_products.py`" in source
     assert "`admin_service.py` owns admin transaction read models" in source
     assert "`product_service.py` owns product lifecycle" in source
     assert "`product_repo.py` owns product and product-slice persistence" in source
@@ -218,8 +218,8 @@ def test_http_route_consolidation_check_doc_tracks_current_matrix():
         "tests/test_route_inventory_contract.py",
         "scripts/export_flask_routes.py",
         "admin_questionnaire_console.py",
-        "admin_wechat_pay_products.py",
-        "456 route rows",
+        "wechat_pay.py",
+        "route rows",
         "--json-out /tmp/ai_crm_routes.json",
     ]
     for fragment in required_fragments:

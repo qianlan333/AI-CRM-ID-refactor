@@ -116,7 +116,7 @@ WeChat Pay HTTP handlers are split by product surface:
 
 - `wechat_pay.py`: H5/JSAPI checkout, public product intro pages, order creation/status, and payment notification callbacks.
 - `admin_wechat_pay.py`: admin transaction list/detail, export, and refund request APIs.
-- `admin_wechat_pay_products.py`: admin product CRUD, product sharing, lead-plan binding, and long-image slice APIs.
+- D2 legacy retirement removed `admin_wechat_pay_products.py`; AI-CRM Next owns Product Management admin/read surfaces. Legacy `wechat_pay.py` still owns H5/JSAPI checkout and public product intro fallback until payment migration is separately approved.
 
 WeChat Pay business rules stay in `wecom_ability_service/domains/wechat_pay/*`.
 `service.py` owns checkout, paid re-entry, and payment notification reconciliation.

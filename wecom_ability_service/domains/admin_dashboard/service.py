@@ -24,7 +24,6 @@ ADMIN_NAV_GROUPS = (
         "title": "交易",
         "items": (
             {"key": "wechat_pay_transactions", "label": "交易管理", "endpoint": "api.admin_wechat_pay_transactions_page"},
-            {"key": "wechat_pay_products", "label": "商品管理", "endpoint": "api.admin_wechat_pay_products_page"},
         ),
     },
     {

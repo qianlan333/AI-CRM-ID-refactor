@@ -1,6 +1,6 @@
 {
   "source": "wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()",
-  "route_count": 419,
+  "route_count": 403,
   "routes": [
     {
       "rule": "/<path:filename>",
@@ -909,38 +909,6 @@
       "arguments": [],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.admin_questionnaires"
-    },
-    {
-      "rule": "/admin/wechat-pay/products",
-      "endpoint": "api.admin_wechat_pay_products_page",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/admin/wechat-pay/products/<int:product_id>/edit",
-      "endpoint": "api.admin_wechat_pay_product_edit_page",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/admin/wechat-pay/products/new",
-      "endpoint": "api.admin_wechat_pay_product_new_page",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
     },
     {
       "rule": "/admin/wechat-pay/transactions",
@@ -3254,157 +3222,6 @@
       ],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.admin_wechat_pay"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products",
-      "endpoint": "api.api_admin_wechat_pay_products",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products",
-      "endpoint": "api.api_admin_wechat_pay_products",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>",
-      "endpoint": "api.api_admin_wechat_pay_product",
-      "methods": [
-        "DELETE"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>",
-      "endpoint": "api.api_admin_wechat_pay_product",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>",
-      "endpoint": "api.api_admin_wechat_pay_product",
-      "methods": [
-        "PUT"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>/copy",
-      "endpoint": "api.api_admin_wechat_pay_product_copy",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>/disable",
-      "endpoint": "api.api_admin_wechat_pay_product_disable",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>/enable",
-      "endpoint": "api.api_admin_wechat_pay_product_enable",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>/share",
-      "endpoint": "api.api_admin_wechat_pay_product_share",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>/slices",
-      "endpoint": "api.api_admin_wechat_pay_product_slices",
-      "methods": [
-        "POST"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>/slices/<int:slice_id>",
-      "endpoint": "api.api_admin_wechat_pay_product_slice_delete",
-      "methods": [
-        "DELETE"
-      ],
-      "arguments": [
-        "product_id",
-        "slice_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/<int:product_id>/slices/reorder",
-      "endpoint": "api.api_admin_wechat_pay_product_slices_reorder",
-      "methods": [
-        "PUT"
-      ],
-      "arguments": [
-        "product_id"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
-    },
-    {
-      "rule": "/api/admin/wechat-pay/products/lead-plans",
-      "endpoint": "api.api_admin_wechat_pay_product_lead_plans",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_wechat_pay_products"
     },
     {
       "rule": "/api/admin/wecom-customer-acquisition-links",

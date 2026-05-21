@@ -27,11 +27,31 @@ Rollback:
 - Revert the D1 PR, or
 - Restore the legacy fallback service from a pre-D1 tag/commit.
 
-D2 Product old readonly routes have not started.
-
 ## D2: Product Old Readonly Routes
 
-Status: not started. Delete only after Product readonly production evidence. Checkout and payment notify remain excluded until separately approved.
+Status: retired/deleted.
+
+Deleted legacy HTTP route module:
+
+- `wecom_ability_service/http/admin_wechat_pay_products.py`
+
+Legacy HTTP registrar entries for this module have been removed. Fallback owner is AI-CRM Next via `aicrm_next.commerce` and `frontend_compat` pages.
+
+Untouched payment / checkout files:
+
+- `wecom_ability_service/http/wechat_pay.py`
+- `wecom_ability_service/http/alipay_pay.py`
+- `wecom_ability_service/http/admin_wechat_pay.py`
+- `wecom_ability_service/http/admin_alipay_pay.py`
+
+Checkout, payment return, and payment notify routes remain legacy fallback and are not delete-ready. Product admin write fallback routes went down with the Product Management owner, but this does not make Next product writes `production_ready`.
+
+Rollback:
+
+- Revert the D2 PR, or
+- Restore the legacy fallback service from a pre-D2 tag/commit.
+
+D3 Customer old readonly routes have not started.
 
 ## D3: Customer Old Readonly Routes
 
