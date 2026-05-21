@@ -14,6 +14,7 @@ AI-CRM default runtime has moved to AI-CRM Next. Legacy Flask remains as a fallb
 - D4 User Ops old Flask readonly route owner is retired/tombstoned. AI-CRM Next owns User Ops readonly page/list/overview/send-record routes by default; legacy User Ops write/external domain helpers remain fallback dependencies and are not delete-ready.
 - D5 Questionnaire old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns questionnaire admin readonly, public readonly, and result readonly surfaces by default; legacy submit, OAuth, admin write, diagnostics, and external-push fallback code remains not delete-ready.
 - D6 Automation old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns automation conversion overview/pools/members/execution-record readonly surfaces by default; legacy manual override, activation webhook, OpenClaw, workflow/runtime, agent, WeCom, and external fallback code remains not delete-ready.
+- D6.5 Dead Legacy Cleanup is completed for safe no-reference readonly leftovers only. It deleted one orphaned D1 attachment-library template plus stale generated route-inventory artifacts. D7 write/external/runtime blockers remain protected and documented in `docs/d7_write_external_blocker_matrix.md`.
 
 ## Retirement Principles
 
@@ -185,3 +186,15 @@ Retained fallback files:
 - `wecom_ability_service/domains/automation_conversion/`
 
 Automation writes, activation webhook, OpenClaw push, workflow runtime, agent runtime, WeCom dispatch, and external webhook capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. Rollback is `git revert` of the D6 PR or restoring a pre-D6 fallback tag. D7 write/external adapter retirement has not started.
+
+### D6.5: Dead Legacy Cleanup
+
+Deleted files:
+
+- `wecom_ability_service/templates/admin_console/attachment_library.html`
+- `docs/generated/route_inventory.md`
+- `docs/generated/route_inventory.json`
+
+D6.5 was limited to no-reference readonly leftovers and stale generated owner inventory. It did not delete write, external, runtime, payment, OAuth, WeCom, OpenClaw, archive, contacts, identity, or MCP fallback code. Full evidence is in `docs/legacy_dead_code_inventory.md`, `docs/legacy_d6_5_dead_cleanup_report.md`, and `tools/check_legacy_dead_cleanup.py`.
+
+D7 write/external/runtime capabilities remain blocked and must go through replacement planning, tests, production evidence, rollback proof, and human approval before any further removal.
