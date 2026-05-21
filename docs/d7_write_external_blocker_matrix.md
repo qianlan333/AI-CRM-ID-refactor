@@ -2,6 +2,8 @@
 
 D7 is planning only. None of these write, external, runtime, payment, OAuth, cloud, WeCom, archive, MCP, or OpenClaw capabilities can be removed until the listed replacement work, tests, production evidence, rollback proof, and human approval exist.
 
+Planning status: replacement planning is now split into `docs/d7_write_external_replacement_plan.md`, `docs/d7_adapter_contract_catalog.md`, and `docs/d7_capability_readiness_matrix.md`. D7.1 Media storage and WeCom media adapter contract is the recommended first implementation batch.
+
 | capability | legacy_files | next_context | current_next_status | external_dependency | delete_blocker | required_replacement_work | required_tests | required_production_evidence | delete_batch_candidate | risk | notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | User Ops DND | wecom_ability_service/domains/user_ops/service.py; wecom_ability_service/domains/user_ops/page_service.py | aicrm_next.ops_enrollment readonly only | write path not approved | WeCom member state | DND writes still need legacy fallback and rollback | Implement Next write command with audit and idempotency | unit write guard; dry-run write test; no-dispatch smoke | human-approved production canary with rollback proof | D7-user-ops-writes | high | keep legacy fallback |

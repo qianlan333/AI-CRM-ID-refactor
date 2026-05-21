@@ -11,5 +11,6 @@ This root matrix tracks the runtime-switch and legacy-retirement state. It does 
 | User Ops | `aicrm_next.ops_enrollment` | D4 retired old readonly owner | domain write/job fallback retained | DND, batch-send, deferred jobs, WeCom dispatch blocked | D6.5 scan completed | D7 User Ops replacement planning |
 | Questionnaire | `aicrm_next.questionnaire` | D5 retired old readonly owner | mixed submit/write/OAuth/external fallback retained | submit, OAuth, WeCom tag, external push blocked | D6.5 scan completed | D7 Questionnaire replacement planning |
 | Automation | `aicrm_next.automation_engine` | D6 retired old readonly owner | mixed write/external/runtime fallback retained | manual override, activation webhook, OpenClaw, workflow, agent, WeCom blocked | D6.5 scan completed | D7 Automation replacement planning |
+| D7 Planning | `aicrm_next.integration_gateway` plus module owners | readonly unaffected | all write/external/runtime fallback retained | all D7 blocker matrix rows blocked | planning_ready | start D7.1 Media storage / WeCom media adapter contract |
 
 Production traffic has not been cut by D6.5. Real external adapters remain disabled for this cleanup.
