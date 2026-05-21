@@ -93,7 +93,7 @@ Not deleted by D3:
 - `wecom_ability_service/http/contacts.py`
 - `wecom_ability_service/http/identity.py`
 
-`/api/messages/<external_userid>/recent` remains with legacy archive fallback until a later archive/external adapter retirement batch. Archive sync, WeCom conversation archive, tag refresh, OpenClaw, contacts, identity, and customer write capabilities remain not delete-ready. Rollback is `git revert` of the D3 PR or restoring a pre-D3 fallback tag. D4 User Ops old routes have not started.
+`/api/messages/<external_userid>/recent` remains with legacy archive fallback until a later archive/external adapter retirement batch. Archive sync, WeCom conversation archive, tag refresh, OpenClaw, contacts, identity, and customer write capabilities remain not delete-ready. Rollback is `git revert` of the D3 PR or restoring a pre-D3 fallback tag. D4-D6 readonly retirement is completed below; D7 write/external/runtime deletion remains blocked.
 
 ### D4: User Ops Old Readonly Routes
 
@@ -186,7 +186,7 @@ Retained fallback files:
 - `wecom_ability_service/http/automation_conversion_review.py`
 - `wecom_ability_service/domains/automation_conversion/`
 
-Automation writes, activation webhook, OpenClaw push, workflow runtime, agent runtime, WeCom dispatch, and external webhook capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. Rollback is `git revert` of the D6 PR or restoring a pre-D6 fallback tag. D7 write/external adapter retirement has not started.
+Automation writes, activation webhook, OpenClaw push, workflow runtime, agent runtime, WeCom dispatch, and external webhook capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. Rollback is `git revert` of the D6 PR or restoring a pre-D6 fallback tag. D7 write/external/runtime replacement planning is in progress and still does not authorize deletion.
 
 ### D6.5: Dead Legacy Cleanup
 

@@ -179,9 +179,9 @@ def test_deploy_and_production_config_not_modified_by_d5() -> None:
     assert forbidden == []
 
 
-def test_d6_to_d9_docs_are_not_marked_retired() -> None:
+def test_d7_to_d9_docs_are_not_marked_retired_or_deleted() -> None:
     content = _read("docs/legacy_delete_batches.md")
-    for batch in ["D6", "D7", "D8", "D9"]:
+    for batch in ["D7", "D8", "D9"]:
         section = content.split(f"## {batch}:", 1)[1].split("## ", 1)[0]
         status_line = next((line.strip().lower() for line in section.splitlines() if line.strip().lower().startswith("status:")), "")
         assert not status_line.startswith("status: retired")

@@ -209,7 +209,7 @@ D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
 ## D7: Write And External Adapters
 
-Status: replacement planning in progress; D7.1 fake media adapter contract implemented; D7.2 fake Questionnaire submit/OAuth/WeCom tag/external push adapter contract implemented; D7.3 fake User Ops DND/batch-send/WeCom dispatch/deferred-job adapter contract implemented; D7.4 fake Product/Payment adapter contract implemented; D7.5 fake Automation write/OpenClaw/workflow/agent adapter contract implemented; D7.6 fake Archive/Contacts/Identity/Customer Projection adapter contract implemented; D7.7 fake MCP/OpenClaw legacy adapter contract implemented. Delete only after real write/external/runtime/sync replacement evidence and explicit provider approval.
+Status: blocked/not approved for deletion; D7.1 fake media adapter contract implemented; D7.2 fake Questionnaire submit/OAuth/WeCom tag/external push adapter contract implemented; D7.3 fake User Ops DND/batch-send/WeCom dispatch/deferred-job adapter contract implemented; D7.4 fake Product/Payment adapter contract implemented; D7.5 fake Automation write/OpenClaw/workflow/agent adapter contract implemented; D7.6 fake Archive/Contacts/Identity/Customer Projection adapter contract implemented; D7.7 fake MCP/OpenClaw legacy adapter contract implemented. Delete only after real write/external/runtime/sync replacement evidence and explicit provider approval.
 
 Planning package:
 
@@ -238,10 +238,10 @@ D7.5 Automation write/OpenClaw/workflow/agent adapter contract now provides fake
 
 ## D8: Old Flask App Factory And HTTP Registrar
 
-Status: not started. Delete only after all legacy routes are retired and rollback no longer depends on Flask.
+Status: blocked/not approved. Delete only after all legacy routes are retired and rollback no longer depends on Flask.
 
 ## D9: OpenClaw Legacy Adapter Retirement
 
-Status: D7.7 fake compatibility gate implemented. `openclaw_service/` remains retained and not delete-ready. Delete only after OpenClaw replacement evidence, MCP compatibility evidence, rollback proof, and approval.
+Status: blocked/not approved for physical deletion. D7.7 fake compatibility gate is implemented, and `openclaw_service/` remains retained and not delete-ready. Delete only after OpenClaw replacement evidence, MCP compatibility evidence, rollback proof, and approval.
 
 This document authorizes only the explicitly completed delete batches above. It does not physically delete legacy services outside those batches.

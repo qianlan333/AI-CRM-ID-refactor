@@ -4,6 +4,8 @@ from pathlib import Path
 
 from conftest import make_client
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def _rpc(method: str, params: dict | None = None, request_id: int = 1) -> dict:
     response = make_client().post("/mcp", json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}})
@@ -77,6 +79,6 @@ def test_mcp_get_recent_messages_still_works() -> None:
 
 
 def test_mcp_dispatcher_does_not_import_customer_repo_directly() -> None:
-    text = Path("src/aicrm_next/integration_gateway/dispatch.py").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "aicrm_next" / "integration_gateway" / "dispatch.py").read_text(encoding="utf-8")
     assert "customer_read_model.repo" not in text
     assert "FixtureCustomerReadRepository" not in text

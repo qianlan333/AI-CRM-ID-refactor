@@ -10,8 +10,8 @@ New backend architecture must support the current user experience: pages, naviga
 
 This slice copies the legacy frontend baseline into:
 
-- `src/aicrm_next/frontend_compat/templates/`
-- `src/aicrm_next/frontend_compat/static/`
+- `../../aicrm_next/frontend_compat/templates/`
+- `../../aicrm_next/frontend_compat/static/`
 
 Copied sources:
 

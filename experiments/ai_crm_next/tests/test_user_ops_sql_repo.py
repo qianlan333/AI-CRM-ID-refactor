@@ -17,6 +17,7 @@ from aicrm_next.ops_enrollment.user_ops import apply_filters, build_overview_car
 from aicrm_next.shared.database import Base
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 def _sql_repo() -> SqlAlchemyUserOpsRepository:
@@ -164,8 +165,8 @@ def test_sql_repo_send_record_create_list_detail() -> None:
 
 def test_sql_repo_source_does_not_import_old_backend_packages() -> None:
     for path in [
-        PROJECT_ROOT / "src" / "aicrm_next" / "ops_enrollment" / "repo.py",
-        PROJECT_ROOT / "src" / "aicrm_next" / "ops_enrollment" / "models.py",
+        REPO_ROOT / "aicrm_next" / "ops_enrollment" / "repo.py",
+        REPO_ROOT / "aicrm_next" / "ops_enrollment" / "models.py",
     ]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
