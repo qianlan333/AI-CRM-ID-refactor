@@ -36,6 +36,20 @@ HIGH_CRITICAL_CAPABILITIES = [
     "Automation workflow runtime",
     "MCP / OpenClaw legacy adapter",
 ]
+PARITY_SMOKE_WRAPPERS = [
+    "compare_automation_conversion_parity.py",
+    "compare_commerce_parity.py",
+    "compare_customer_read_model_parity.py",
+    "compare_media_library_parity.py",
+    "compare_questionnaire_parity.py",
+    "compare_user_ops_parity.py",
+    "automation_readonly_gray_smoke.py",
+    "customer_read_model_gray_smoke.py",
+    "media_library_gray_smoke.py",
+    "product_management_gray_smoke.py",
+    "questionnaire_readonly_gray_smoke.py",
+    "user_ops_readonly_gray_smoke.py",
+]
 
 
 def _sha256(path: Path) -> str:
@@ -86,6 +100,29 @@ def test_d7_experiment_tools_are_not_byte_copies_of_root_tools() -> None:
             duplicate_tools.append(root_path.name)
 
     assert duplicate_tools == []
+
+
+def test_d7_experiment_parity_smoke_tools_are_thin_wrappers() -> None:
+    experiment_tools = REPO_ROOT / "experiments" / "ai_crm_next" / "tools"
+    root_tools = REPO_ROOT / "tools"
+
+    helper = experiment_tools / "_root_tool_wrapper.py"
+    helper_text = helper.read_text(encoding="utf-8")
+    assert "spec_from_file_location" in helper_text
+    assert "sys.modules[module_name]" in helper_text
+
+    for name in PARITY_SMOKE_WRAPPERS:
+        wrapper = experiment_tools / name
+        root_tool = root_tools / name
+        assert wrapper.exists(), name
+        assert root_tool.exists(), name
+        text = wrapper.read_text(encoding="utf-8")
+        assert len(text.splitlines()) <= 16, name
+        assert "load_root_tool(__file__, __name__)" in text
+        assert "def run_smoke" not in text
+        assert "def run_compare" not in text
+        assert "TestClient" not in text
+        assert "httpx" not in text
 
 
 def test_d7_protected_fallback_files_still_exist() -> None:

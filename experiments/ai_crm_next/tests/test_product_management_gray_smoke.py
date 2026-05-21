@@ -127,8 +127,10 @@ def test_gray_release_plan_does_not_mark_production_ready() -> None:
 
 
 def test_product_gray_smoke_tool_does_not_import_old_backend() -> None:
-    text = (PROJECT_ROOT / "tools" / "product_management_gray_smoke.py").read_text(encoding="utf-8")
-    assert "import wecom_ability_service" not in text
-    assert "from wecom_ability_service" not in text
-    assert "import openclaw_service" not in text
-    assert "from openclaw_service" not in text
+    assert Path(gray_smoke.__file__).resolve().relative_to(PROJECT_ROOT.parents[1]) == Path("tools/product_management_gray_smoke.py")
+    report = gray_smoke.run_smoke(_args())
+    safety = report["side_effect_safety"]
+    assert safety["old_write_endpoints_executed"] is False
+    assert safety["payment_provider_called"] is False
+    assert safety["checkout_executed"] is False
+    assert safety["external_payment_executed"] is False

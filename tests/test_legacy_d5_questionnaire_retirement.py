@@ -141,15 +141,16 @@ def test_aicrm_next_questionnaire_readonly_routes_are_served_by_ai_crm_next() ->
 
 
 def test_questionnaire_readonly_smoke_declares_submit_oauth_and_external_paths_not_executed() -> None:
-    source = _read("experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py")
-    for token in [
-        '"old_submit_executed": False',
-        '"real_oauth_executed": False',
-        '"wecom_tag_executed": False',
-        '"external_webhook_executed": False',
-    ]:
-        assert token in source
-    assert "fake_submit_not_requested" in source
+    from tools import questionnaire_readonly_gray_smoke as gray_smoke
+
+    args = gray_smoke.build_parser().parse_args(["--next-testclient", "--output-md", "/tmp/questionnaire.md", "--output-json", "/tmp/questionnaire.json"])
+    report = gray_smoke.run_smoke(args)
+    safety = report["side_effect_safety"]
+    assert safety["old_submit_executed"] is False
+    assert safety["real_oauth_executed"] is False
+    assert safety["wecom_tag_executed"] is False
+    assert safety["external_webhook_executed"] is False
+    assert any(item["reason"] == "fake_submit_not_requested" for item in report["skipped"])
 
 
 def test_app_py_default_is_still_next_and_legacy_fallback_exists() -> None:

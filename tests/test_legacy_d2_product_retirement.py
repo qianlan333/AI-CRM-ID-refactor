@@ -84,10 +84,16 @@ def test_next_product_readonly_routes_are_served_by_ai_crm_next() -> None:
 
 
 def test_next_checkout_is_not_executed_by_product_readonly_scope() -> None:
-    source = _read("experiments/ai_crm_next/tools/product_management_gray_smoke.py")
-    assert '"checkout_executed": False' in source
-    assert "checkout_not_in_scope" in source
-    assert "Checkout/payment endpoints are excluded" in source
+    from tools import product_management_gray_smoke as gray_smoke
+
+    args = gray_smoke.build_parser().parse_args(["--next-testclient", "--output-md", "/tmp/product.md", "--output-json", "/tmp/product.json"])
+    report = gray_smoke.run_smoke(args)
+    safety = report["side_effect_safety"]
+    assert safety["checkout_executed"] is False
+    assert safety["payment_provider_called"] is False
+    assert safety["external_payment_executed"] is False
+    assert safety["checkout_endpoints_in_default_smoke"] is False
+    assert any(item["reason"] == "checkout_not_in_scope" for item in report["skipped"])
 
 
 def test_app_py_default_is_still_next() -> None:
