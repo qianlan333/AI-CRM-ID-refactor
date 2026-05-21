@@ -207,9 +207,114 @@ Not deleted by D6.5:
 
 D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
+## D8.5: Legacy DB / Maintenance Command Planning
+
+Status: maintenance command retirement planning ready.
+
+New planning artifacts:
+
+- `docs/d8_5_legacy_db_maintenance_command_inventory.md`
+- `docs/d8_5_legacy_db_maintenance_command_retirement_plan.md`
+- `docs/d8_5_maintenance_command_replacement_matrix.md`
+
+D8.5 does not delete any legacy DB init or maintenance command. It keeps `python3 app.py init-db-legacy`, `python3 app.py init-db`, `python3 legacy_flask_app.py init-db`, legacy cleanup helpers, legacy schema helpers, diagnostic scripts, and rollback commands in place until replacement evidence and rollback signoff exist.
+
+## D9.0: OpenClaw Legacy Adapter Physical Retirement Planning
+
+Status: openclaw legacy retirement planning ready.
+
+New planning artifacts:
+
+- `docs/d9_openclaw_legacy_adapter_retirement_plan.md`
+- `docs/d9_openclaw_legacy_dependency_inventory.md`
+- `docs/d9_openclaw_mcp_compatibility_matrix.md`
+
+D9.0 does not move or delete `openclaw_service/`. It keeps `openclaw_service/LEGACY_FROZEN.md` and all OpenClaw/MCP fallback references in place until D7.7 real replacement evidence, import freeze, docs/scripts rewrite, plugin compatibility validation, rollback proof, and human signoff exist.
+
+No OpenClaw call, MCP external call, webhook delivery, production route cutover, production write, or production configuration change is performed by D9.0.
+
+## D9.1: OpenClaw Legacy Import Freeze
+
+Status: OpenClaw legacy import freeze ready.
+
+New planning and enforcement artifacts:
+
+- `docs/d9_1_openclaw_legacy_import_freeze_plan.md`
+- `docs/d9_1_openclaw_import_allowlist.md`
+- `tools/check_d9_1_openclaw_import_freeze.py`
+- `tests/test_d9_1_openclaw_import_freeze.py`
+
+D9.1 blocks new runtime imports of `openclaw_service` and keeps the package retained in place. Static docs/tests/checker references remain documented in the allowlist. D9.1 does not move, archive, remove, or execute the OpenClaw legacy adapter.
+
+## D9.2: OpenClaw Legacy Move Planning
+
+Status: OpenClaw legacy move planning ready.
+
+New planning artifacts:
+
+- `docs/d9_2_openclaw_legacy_move_plan.md`
+- `docs/d9_2_openclaw_legacy_move_map.md`
+- `docs/d9_2_openclaw_import_rewrite_plan.md`
+- `tools/check_d9_2_openclaw_legacy_move_readiness.py`
+- `tests/test_d9_2_openclaw_legacy_move_readiness.py`
+
+D9.2 plans a future move from `openclaw_service/` to `legacy_flask/openclaw_legacy/`. It does not create the runtime package, move files, delete the old package, call OpenClaw, call external MCP services, send webhooks, cut traffic, or change production configuration.
+
+## D9.3: OpenClaw Legacy Archive Skeleton
+
+Status: OpenClaw legacy skeleton created.
+
+New skeleton artifacts:
+
+- `legacy_flask/openclaw_legacy/__init__.py`
+- `legacy_flask/openclaw_legacy/README.md`
+- `legacy_flask/openclaw_legacy/LEGACY_FROZEN.md`
+- `legacy_flask/openclaw_legacy/MOVE_PENDING.md`
+- `docs/d9_3_openclaw_legacy_skeleton_implementation_report.md`
+- `tools/check_d9_3_openclaw_legacy_skeleton.py`
+- `tests/test_d9_3_openclaw_legacy_skeleton.py`
+
+D9.3 creates only a skeleton package. It does not move `openclaw_service/`, delete `openclaw_service/`, create an `openclaw_service` compatibility shim, call OpenClaw, call external MCP services, send webhooks, cut traffic, or change production configuration.
+
+## D9.4: OpenClaw Legacy Move With Shim
+
+Status: OpenClaw legacy files moved with shim retained.
+
+`openclaw_service/` remains retained as a compatibility shim. Shim removal is not approved in this batch and requires D9.5 planning, operational evidence, rollback proof, and human signoff.
+
+## D9.5: OpenClaw Shim Removal Planning
+
+Status: OpenClaw shim-removal planning ready.
+
+D9.5 adds planning and readiness artifacts for a future shim removal. `openclaw_service/` and its shim files remain retained. No deletion batch is authorized by D9.5. D9.5.1 must first capture final reference scan and observation evidence.
+
+## D9.5.1: OpenClaw Final Reference Scan Evidence
+
+Status: reference scan completed; observation evidence pending.
+
+D9.5.1 records repository reference-scan evidence, observation-evidence status, and a deletion-readiness evidence matrix. `openclaw_service/` remains retained as a compatibility shim. No deletion batch is authorized by D9.5.1 because runtime observation logs, shim hit counts, workload evidence, rollback independence, and human signoff remain pending.
+
+## D9.5.2: OpenClaw Shim Deletion Blocked Package
+
+Status: blocked pending observation evidence.
+
+D9.5.2 adds the deletion-blocked summary, observation collection runbook, deletion PR preflight checklist, checker, and tests. The local reference scan has no blocker hits, but `openclaw_service/` remains retained because production/runtime observation evidence, workload evidence, rollback independence, and human signoff are still missing. D9.5.2 does not prepare or authorize a deletion PR.
+
+## D9.6: OpenClaw Shim Physical Deletion
+
+Status: physically deleted after explicit owner approval.
+
+D9.6 removes the repository-side `openclaw_service/` shim and `legacy_flask/openclaw_legacy/` archive metadata package. It also records the server-side removal of OpenClaw-named cron/timer/API jobs after backing up their definitions to `/home/ubuntu/backups/openclaw-retirement-20260522004443`.
+
+Retained server-side dependency:
+
+- `openclaw-wecom-postgres.service`
+
+This service is retained because it appears to be a database/environment service rather than the OpenClaw shim or historical API task runner. D9.6 does not call OpenClaw or MCP external services and does not restart nginx or the running app process.
+
 ## D7: Write And External Adapters
 
-Status: blocked/not approved for deletion; D7.1 fake media adapter contract implemented; D7.2 fake Questionnaire submit/OAuth/WeCom tag/external push adapter contract implemented; D7.3 fake User Ops DND/batch-send/WeCom dispatch/deferred-job adapter contract implemented; D7.4 fake Product/Payment adapter contract implemented; D7.5 fake Automation write/OpenClaw/workflow/agent adapter contract implemented; D7.6 fake Archive/Contacts/Identity/Customer Projection adapter contract implemented; D7.7 fake MCP/OpenClaw legacy adapter contract implemented. Delete only after real write/external replacement evidence, runtime/sync replacement evidence, and explicit provider approval.
+Status: blocked/not approved for deletion; D7.1 fake media adapter contract implemented; D7.2 fake Questionnaire submit/OAuth/WeCom tag/external push adapter contract implemented; D7.3 fake User Ops DND/batch-send/WeCom dispatch/deferred-job adapter contract implemented; D7.4 fake Product/Payment adapter contract implemented; D7.5 fake Automation write/OpenClaw/workflow/agent adapter contract implemented; D7.6 fake Archive/Contacts/Identity/Customer Projection adapter contract implemented; D7.7 fake MCP/OpenClaw legacy adapter contract implemented. Delete only after real write/external/runtime/sync replacement evidence and explicit provider approval.
 
 Planning package:
 
@@ -238,7 +343,24 @@ D7.5 Automation write/OpenClaw/workflow/agent adapter contract now provides fake
 
 ## D8: Old Flask App Factory And HTTP Registrar
 
-Status: blocked/not approved. Delete only after all legacy routes are retired and rollback no longer depends on Flask.
+Status: retirement planning gate only. D8.0 adds the legacy Flask shell retirement plan, dependency inventory, allowed fallback matrix, checker, and tests. It does not delete `legacy_flask_app.py`, `wecom_ability_service/`, `openclaw_service/`, the legacy app factory, or the legacy HTTP registrar.
+
+D8.0 correct state:
+
+- `legacy_flask_shell_status`: `retirement_planning_ready`
+- deletion readiness: false
+- `production_cutover_executed`: false
+- `real_external_adapters_enabled`: false
+
+Later D8 phases may proceed only after their own evidence and rollback plan:
+
+- D8.1 legacy fallback route lockdown planning: `lockdown_planning_ready`; adds allowed fallback registry, retired readonly route matrix, checker, and tests only
+- D8.2 legacy fallback route lockdown enforcement: `lockdown_enforcement_implemented`; adds a legacy-only 410 guard for retired D1-D6 readonly routes while preserving allowed fallback routes
+- D8.3 legacy Flask archive package planning: `archive_move_planning_ready`; adds archive target structure, move map, import rewrite plan, checker, and tests only
+- D8.4 legacy Flask archive package implementation: `archive_package_created`; creates `legacy_flask/` entry-layer package and compatibility shims
+- D8.5 legacy app factory / HTTP registrar removal plan after production external cutover evidence and all fallback routes retire
+
+D8.4 does not delete the legacy shell, does not move `openclaw_service/`, does not modify production configuration, does not cut traffic, and does not enable real external behavior. Domains/templates/static mostly remain in the old location.
 
 ## D9: OpenClaw Legacy Adapter Retirement
 

@@ -15,7 +15,9 @@ AI-CRM default runtime has moved to AI-CRM Next. Legacy Flask remains as a fallb
 - D5 Questionnaire old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns questionnaire admin readonly, public readonly, and result readonly surfaces by default; legacy submit, OAuth, admin write, diagnostics, and external-push fallback code remains not delete-ready.
 - D6 Automation old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns automation conversion overview/pools/members/execution-record readonly surfaces by default; legacy manual override, activation webhook, OpenClaw, workflow/runtime, agent, WeCom, and external fallback code remains not delete-ready.
 - D6.5 Dead Legacy Cleanup is completed for safe no-reference readonly leftovers only. It deleted one orphaned D1 attachment-library template plus stale generated route-inventory artifacts. D7 write/external/runtime blockers remain protected and documented in `docs/d7_write_external_blocker_matrix.md`.
-- D7 Write / External replacement planning is in progress. The executable planning package is `docs/d7_write_external_replacement_plan.md`, `docs/d7_adapter_contract_catalog.md`, and `docs/d7_capability_readiness_matrix.md`; D7.1 Media storage / WeCom media adapter contract now has fake adapter boundaries only.
+- D7 Write / External adapter contracts are accepted through D7.7 in fake/staging-disabled form. Real external adapters remain disabled for production behavior.
+- D8 Legacy Flask shell retirement is in phased readiness. D8.0 adds readiness planning, dependency inventory, allowed fallback matrix, checker, and tests only. D8.1 adds fallback route lockdown planning, retired readonly route matrix, checker, and tests only. D8.2 adds legacy-only runtime lockdown enforcement for retired D1-D6 readonly routes. D8.3 adds archive package move planning only. D8.4 creates the archive package entry layer. D8.5 plans legacy DB init and maintenance command retirement without deleting commands or executing production DB migration.
+- D9 OpenClaw legacy adapter physical retirement planning is ready. D9.1 import freeze is ready. D9.2 move/archive planning is ready. D9.3 skeleton is created. D9.4 moved metadata into the archive package with a retained shim. D9.5 plans shim removal, D9.5.1 captures final reference-scan evidence, and D9.5.2 records the deletion-blocked state. D9.6 then physically removes the repo shim/archive after explicit owner approval and records server-side OpenClaw-named job removal with backup. Real OpenClaw/MCP behavior is not cut over.
 
 ## Retirement Principles
 
@@ -200,9 +202,96 @@ D6.5 was limited to no-reference readonly leftovers and stale generated owner in
 
 D7 write/external/runtime capabilities remain blocked and must go through replacement planning, tests, production evidence, rollback proof, and human approval before any further removal.
 
-### D7: Write / External Replacement Planning
+### D8.5: Legacy DB / Maintenance Command Planning
 
-Status: planning in progress.
+Status: `maintenance_command_retirement_planning_ready`.
+
+D8.5 adds inventory, replacement matrix, readiness checker, and tests for legacy DB init and maintenance commands:
+
+- `docs/d8_5_legacy_db_maintenance_command_inventory.md`
+- `docs/d8_5_legacy_db_maintenance_command_retirement_plan.md`
+- `docs/d8_5_maintenance_command_replacement_matrix.md`
+- `tools/check_d8_5_legacy_maintenance_command_readiness.py`
+- `tests/test_d8_5_legacy_maintenance_command_readiness.py`
+
+Legacy DB init, cleanup, diagnostic, backfill, and rollback commands remain retained. Future command removal requires production migration evidence, backup/restore proof, runbook cleanup, rollback proof, and human signoff. D8.5 does not execute production DB migration, production cleanup, traffic cutover, external calls, or production config changes.
+
+### D9.0: OpenClaw Legacy Adapter Physical Retirement Planning
+
+Status: `openclaw_legacy_retirement_planning_ready`.
+
+D9.0 adds the OpenClaw legacy adapter retirement plan, dependency inventory, compatibility matrix, checker, and tests:
+
+- `docs/d9_openclaw_legacy_adapter_retirement_plan.md`
+- `docs/d9_openclaw_legacy_dependency_inventory.md`
+- `docs/d9_openclaw_mcp_compatibility_matrix.md`
+- `tools/check_d9_openclaw_legacy_retirement_readiness.py`
+- `tests/test_d9_openclaw_legacy_retirement_readiness.py`
+
+`openclaw_service/` remains in place with `openclaw_service/LEGACY_FROZEN.md`. D9.0 does not move or remove the OpenClaw legacy adapter, does not call OpenClaw or external MCP services, does not send webhooks, does not cut production traffic, and does not modify production configuration. Future physical removal requires D7.7 real replacement evidence, no runtime imports, docs/scripts rewrite, plugin compatibility evidence, rollback proof, and human signoff.
+
+### D9.1: OpenClaw Legacy Import Freeze
+
+Status: `openclaw_import_freeze_ready`.
+
+D9.1 adds the import freeze plan, allowlist, checker, and tests:
+
+- `docs/d9_1_openclaw_legacy_import_freeze_plan.md`
+- `docs/d9_1_openclaw_import_allowlist.md`
+- `tools/check_d9_1_openclaw_import_freeze.py`
+- `tests/test_d9_1_openclaw_import_freeze.py`
+
+New runtime imports of `openclaw_service` are blocked. AI-CRM Next remains on the D7.7 MCP/OpenClaw adapter boundary. Static docs/tests/checker references remain allowed only as inventory and freeze assertions. D9.1 does not move or remove `openclaw_service/`, call OpenClaw, call external MCP services, send webhooks, cut traffic, or modify production configuration.
+
+### D9.2: OpenClaw Legacy Move Planning
+
+Status: `openclaw_legacy_move_planning_ready`.
+
+D9.2 adds the move plan, move map, import rewrite plan, checker, and tests:
+
+- `docs/d9_2_openclaw_legacy_move_plan.md`
+- `docs/d9_2_openclaw_legacy_move_map.md`
+- `docs/d9_2_openclaw_import_rewrite_plan.md`
+- `tools/check_d9_2_openclaw_legacy_move_readiness.py`
+- `tests/test_d9_2_openclaw_legacy_move_readiness.py`
+
+D9.2 plans the future `openclaw_service/` to `legacy_flask/openclaw_legacy/` move. It does not create the runtime package, move files, remove the old path, call OpenClaw, call external MCP services, send webhooks, cut traffic, or modify production configuration. D9.3 may start package skeleton or move implementation only after D9.2 acceptance.
+
+### D9.3: OpenClaw Legacy Archive Skeleton
+
+Status: `openclaw_legacy_skeleton_created`.
+
+D9.3 creates the skeleton archive package and skeleton readiness checker:
+
+- `legacy_flask/openclaw_legacy/__init__.py`
+- `legacy_flask/openclaw_legacy/README.md`
+- `legacy_flask/openclaw_legacy/LEGACY_FROZEN.md`
+- `legacy_flask/openclaw_legacy/MOVE_PENDING.md`
+- `docs/d9_3_openclaw_legacy_skeleton_implementation_report.md`
+- `tools/check_d9_3_openclaw_legacy_skeleton.py`
+- `tests/test_d9_3_openclaw_legacy_skeleton.py`
+
+The skeleton does not import `openclaw_service` and does not expose a runtime adapter. `openclaw_service/` and `openclaw_service/LEGACY_FROZEN.md` remain in place during D9.3. D9.4 is the move-with-shim phase.
+
+### D9.4: OpenClaw Legacy Move With Shim
+
+Status: `openclaw_legacy_files_moved_with_shim`.
+
+D9.4 keeps `openclaw_service/` as a compatibility shim and records the frozen legacy marker under `legacy_flask/openclaw_legacy/`. The shim is metadata-only, keeps old imports from crashing, and does not expose an OpenClaw runtime adapter.
+
+AI-CRM Next continues through the D7.7 MCP/OpenClaw adapter boundary. D9.4 does not modify production configuration, cut traffic, call OpenClaw, call external MCP services, or send webhooks.
+
+### D9.5: OpenClaw Shim Removal Planning
+
+Status: `openclaw_shim_removal_planning_ready`.
+
+D9.5 adds the shim-removal plan, final reference scan plan, readiness checklist, checker, and tests. It keeps `openclaw_service/`, `openclaw_service/__init__.py`, `openclaw_service/README.md`, `openclaw_service/LEGACY_FROZEN.md`, and `legacy_flask/openclaw_legacy/` in place.
+
+D9.5 does not remove the shim, modify production configuration, cut traffic, call OpenClaw, call external MCP services, or send webhooks. D9.5.1 is the next evidence-capture step.
+
+### D7: Write / External Adapter Contracts
+
+Status: accepted through D7.7 in fake/staging-disabled form.
 
 Planning artifacts:
 
@@ -211,6 +300,42 @@ Planning artifacts:
 - `docs/d7_capability_readiness_matrix.md`
 - `tools/check_d7_replacement_planning.py`
 
-Recommended first implementation batch: D7.1 Media storage and WeCom media adapter contract.
+Completed fake/staging-disabled contract gates:
 
-D7.1 implements CloudStorageAdapter and WeComMediaAdapter contracts in fake/staging-disabled form. D7.7 implements MCP/OpenClaw legacy adapter contracts in fake/staging-disabled form. Real cloud upload, real WeCom media upload, real MCP external calls, real OpenClaw calls, production route changes, and legacy write/external/runtime deletion remain blocked. D8 old Flask shell retirement remains blocked. D9 OpenClaw legacy adapter physical removal remains blocked.
+- D7.1 Media storage / WeCom media adapter.
+- D7.2 Questionnaire submit / OAuth / WeCom tag / external push adapter.
+- D7.3 User Ops DND / batch-send / WeCom dispatch / deferred-job adapter.
+- D7.4 Product writes / WeChat Pay / Alipay / notify / return adapter.
+- D7.5 Automation write / OpenClaw / workflow runtime / agent runtime adapter.
+- D7.6 Archive sync / contacts sync / identity mapping / customer projection adapter.
+- D7.7 MCP / OpenClaw legacy adapter.
+
+Real cloud upload, real WeCom media upload, real OAuth, real payment provider calls, real MCP external calls, real OpenClaw calls, real archive/contact sync, production route changes, and legacy write/external/runtime deletion remain blocked until later evidence and signoff.
+
+### D8: Legacy Flask Shell Retirement Planning
+
+Status: D8.4 archive package created.
+
+Artifacts:
+
+- `docs/d8_legacy_flask_shell_retirement_plan.md`
+- `docs/d8_legacy_shell_dependency_inventory.md`
+- `docs/d8_legacy_shell_allowed_fallback_matrix.md`
+- `tools/check_d8_legacy_shell_retirement_readiness.py`
+- `docs/d8_1_legacy_fallback_route_lockdown_plan.md`
+- `docs/d8_1_legacy_fallback_route_matrix.md`
+- `tools/check_d8_1_legacy_fallback_route_lockdown.py`
+- `docs/d8_2_legacy_fallback_route_lockdown_enforcement.md`
+- `docs/d8_2_legacy_fallback_route_lockdown_report.md`
+- `tools/check_d8_2_legacy_lockdown_enforcement.py`
+- `docs/d8_3_legacy_flask_shell_archive_package_plan.md`
+- `docs/d8_3_legacy_package_move_map.md`
+- `docs/d8_3_legacy_import_rewrite_plan.md`
+- `tools/check_d8_3_legacy_archive_move_readiness.py`
+- `legacy_flask/app_factory.py`
+- `legacy_flask/routes.py`
+- `legacy_flask/http/__init__.py`
+- `legacy_flask/legacy_lockdown.py`
+- `tools/check_d8_4_legacy_archive_package.py`
+
+D8.1 status is `lockdown_planning_ready`. D8.2 status is `lockdown_enforcement_implemented`. D8.3 status is `archive_move_planning_ready`. D8.4 status is `archive_package_created`. D8.4 creates `legacy_flask/` for the entry layer and keeps `wecom_ability_service/` as a compatibility shim and legacy module holder. It does not move `openclaw_service/`, delete `legacy_flask_app.py`, modify production config, cut traffic, run old writes, or enable real external adapters.
