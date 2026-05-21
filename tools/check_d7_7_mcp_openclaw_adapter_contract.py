@@ -253,7 +253,7 @@ def _check_smoke_parity(blockers: list[Json], warnings: list[Json]) -> tuple[Jso
         blockers.append({"reason": "automation_context_smoke_failed", "error": automation_smoke["error"]})
     try:
         customer_parity_tool = importlib.import_module("tools.compare_customer_read_model_parity")
-        customer_parity = customer_parity_tool.run_compare(Namespace(old_fixture_dir=str(_path("tests/fixtures/old_customer_read_model")), old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json=""))
+        customer_parity = customer_parity_tool.run_compare(Namespace(old_fixture_dir=str(_path("experiments/ai_crm_next/tests/fixtures/old_customer_read_model")), old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json=""))
     except Exception as exc:
         customer_parity = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         blockers.append({"reason": "customer_context_parity_failed", "error": customer_parity["error"]})

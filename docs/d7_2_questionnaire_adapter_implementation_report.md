@@ -55,7 +55,7 @@ The implementation is contained in `aicrm_next/integration_gateway` and `aicrm_n
 | D7.2 checker | `python3 tools/check_d7_2_questionnaire_adapter_contract.py --output-md /tmp/d7_2_questionnaire_adapter_contract.md --output-json /tmp/d7_2_questionnaire_adapter_contract.json` |
 | tests | `python3 -m pytest -q` or available project venv |
 | questionnaire smoke | `.venv/bin/python tools/questionnaire_readonly_gray_smoke.py --next-testclient --include-fake-submit --output-md /tmp/questionnaire_smoke_after_d7_2.md --output-json /tmp/questionnaire_smoke_after_d7_2.json` |
-| questionnaire parity | `.venv/bin/python tools/compare_questionnaire_parity.py --old-fixture-dir tests/fixtures/old_questionnaire --next-testclient --output-md /tmp/questionnaire_parity_after_d7_2.md --output-json /tmp/questionnaire_parity_after_d7_2.json` |
+| questionnaire parity | `.venv/bin/python tools/compare_questionnaire_parity.py --old-fixture-dir experiments/ai_crm_next/tests/fixtures/old_questionnaire --next-testclient --output-md /tmp/questionnaire_parity_after_d7_2.md --output-json /tmp/questionnaire_parity_after_d7_2.json` |
 
 ## Risks
 

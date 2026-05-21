@@ -14,7 +14,7 @@ D7.6 adds formal fake/staging-disabled adapter boundaries for Archive sync, Cont
 - `tools/compare_customer_read_model_parity.py`
 - `tools/check_d7_6_customer_sync_adapter_contract.py`
 - `tests/test_d7_6_customer_sync_adapter_contract.py`
-- `tests/fixtures/old_customer_read_model/*.json`
+- `experiments/ai_crm_next/tests/fixtures/old_customer_read_model/*.json`
 
 ## Adapter Coverage
 

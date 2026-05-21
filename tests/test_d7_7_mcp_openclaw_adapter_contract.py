@@ -182,7 +182,7 @@ def test_customer_and_automation_smoke_parity_remain_pass() -> None:
     customer_smoke = importlib.import_module("tools.customer_read_model_gray_smoke")
     assert customer_smoke.run_smoke(Namespace(old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json=""))["ok"] is True
     customer_parity = importlib.import_module("tools.compare_customer_read_model_parity")
-    assert customer_parity.run_compare(Namespace(old_fixture_dir=str(PROJECT_ROOT / "tests/fixtures/old_customer_read_model"), old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json=""))["ok"] is True
+    assert customer_parity.run_compare(Namespace(old_fixture_dir=str(PROJECT_ROOT / "experiments/ai_crm_next/tests/fixtures/old_customer_read_model"), old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json=""))["ok"] is True
     automation_smoke = importlib.import_module("tools.automation_readonly_gray_smoke")
     assert automation_smoke.run_smoke(Namespace(old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json=""))["ok"] is True
     automation_parity = importlib.import_module("tools.compare_automation_conversion_parity")
