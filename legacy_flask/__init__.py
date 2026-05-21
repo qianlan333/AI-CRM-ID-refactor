@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-LEGACY_COMPATIBILITY_SHIM = True
-DEFAULT_SECRET_KEY = "dev-secret-key-change-me"
+LEGACY_FLASK_ARCHIVE_PACKAGE = True
 
 
 def create_app(test_config: dict | None = None):
@@ -10,4 +9,4 @@ def create_app(test_config: dict | None = None):
     return _create_app(test_config)
 
 
-__all__ = ["DEFAULT_SECRET_KEY", "LEGACY_COMPATIBILITY_SHIM", "create_app"]
+__all__ = ["LEGACY_FLASK_ARCHIVE_PACKAGE", "create_app"]

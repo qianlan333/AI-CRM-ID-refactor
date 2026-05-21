@@ -25,7 +25,7 @@ def run_next() -> None:
 
 
 def run_legacy() -> None:
-    from wecom_ability_service import create_app
+    from legacy_flask.app_factory import create_app
 
     app = create_app()
     host = app.config.get("APP_HOST") or _host()
@@ -34,7 +34,7 @@ def run_legacy() -> None:
 
 
 def init_db_legacy() -> None:
-    from wecom_ability_service import create_app
+    from legacy_flask.app_factory import create_app
     from wecom_ability_service.db import init_db
 
     app = create_app()
@@ -44,7 +44,7 @@ def init_db_legacy() -> None:
 
 
 def delete_questionnaire_submissions_legacy(slug: str) -> None:
-    from wecom_ability_service import create_app
+    from legacy_flask.app_factory import create_app
     from wecom_ability_service.services import delete_questionnaire_submissions_by_slug
 
     app = create_app()

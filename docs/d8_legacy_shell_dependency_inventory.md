@@ -1,0 +1,27 @@
+# D8 Legacy Shell Dependency Inventory
+
+D8.0 inventories legacy shell dependencies so later retirement phases can be planned without accidental deletion. The old shell is retained in this phase.
+
+| file_or_directory | role | runtime_imported_by_default_next | runtime_imported_by_legacy_fallback | still_needed_for | replacement_in_next | delete_blocker | future_retirement_phase | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `app.py` | Runtime selector; `run` defaults to AI-CRM Next and explicit commands invoke legacy fallback | true | true when explicit legacy commands are used | CLI compatibility, health/routes helpers, explicit fallback | `aicrm_next.main:app` for default runtime | Legacy aliases and rollback command contract still referenced | D8.5 | Default command must stay Next before later command cleanup |
+| `legacy_flask_app.py` | Explicit legacy Flask fallback entrypoint | false | true | Emergency rollback, legacy DB init, legacy maintenance command access | Next app factory plus future maintenance command replacements | Rollback still depends on Flask fallback | D8.3 | Retained by D8.0 |
+| `wecom_ability_service/__init__.py` | Legacy Flask app factory package entry | false | true | Fallback app creation and legacy tests | `aicrm_next.main` | App factory removal gate is not satisfied | D8.3 | Shell core must remain |
+| `wecom_ability_service/routes.py` | Legacy Flask route registrar wrapper | false | true | Fallback route registration | Next routers in `aicrm_next/*/api.py` | Legacy route lockdown and fallback matrix not yet enforced | D8.4 | Shell core must remain |
+| `wecom_ability_service/http/__init__.py` | Legacy HTTP module registrar | false | true | Explicit fallback route registration and reference inventory | Next route modules plus D7 adapters | Mixed fallback routes still exist for write/external/runtime behavior | D8.4 | Shell core must remain |
+| `wecom_ability_service/http/*` | Legacy HTTP route modules and mixed fallback endpoints | false | true | Payment, OAuth, questionnaire submit, automation write/runtime, archive/contacts/identity fallback | D1-D7 Next owners and fake adapter contracts | Real external production cutover and fallback route lockdown not complete | D8.4 | Some readonly owners already retired, mixed modules retained |
+| `wecom_ability_service/domains/*` | Legacy domain services and external/write helpers | false | true | Rollback, reference behavior, legacy tests, operational scripts | D7 gateway contracts and Next application modules | Real writes/sync/runtime replacements lack production evidence | D8.5 | Keep frozen except approved fixes |
+| `wecom_ability_service/templates/*` | Legacy Flask templates retained for fallback UI | false | true | Emergency fallback UI and legacy tests | `aicrm_next.frontend_compat` templates/static | Legacy UI fallback still may be needed during rollback | D8.4 | D6.5 removed only no-reference stale template |
+| `wecom_ability_service/static/*` | Legacy Flask static assets retained for fallback UI | false | true | Emergency fallback UI | `aicrm_next.frontend_compat` static assets | Fallback UI retirement not complete | D8.4 | No D8.0 deletion |
+| `openclaw_service/*` | Legacy OpenClaw adapter, bridge, and reference implementation | false | false by default; available as explicit fallback/reference | OpenClaw compatibility reference and rollback planning | D7.5/D7.7 fake adapters | Real OpenClaw/MCP bridge production evidence and compatibility proof absent | D9 after D8 gates | Retained and not physically removed |
+| `deploy/openclaw-*.service` and `deploy/openclaw-*.timer` | Systemd reference files for legacy workers and app process | false | operational only | Production operations review and later cutover planning | Future Next-only deploy/service definitions | D8.0 does not modify deploy/systemd; commands still need owner review | D8.5 | Inventory only |
+| `.github/workflows/deploy.yml` | Deployment workflow reference | false | operational only | CI/deploy compatibility review | Future Next-only deploy workflow | Still references legacy-compatible command aliases such as `python3 app.py init-db` | D8.5 | Inventory only |
+| `docs/*` legacy and D7 references | Migration evidence and operator documentation | false | false | Acceptance evidence and rollback criteria | D8 plan/checker docs | Must preserve evidence for signoff | D8.0-D8.5 | Documentation updates only |
+| `tests/*` legacy references | Regression tests for legacy fallback and migration contracts | false | false unless tests import fallback | Guard against accidental deletion or route drift | D8 readiness tests and Next parity tests | Tests intentionally prove fallback presence until later phases | D8.5 | Reference imports are expected |
+| `tools/*` legacy references | Checkers, smoke tools, and parity tooling | false | false unless explicit legacy checker imports fallback | Migration validation and operational diagnostics | D8 checker plus existing Next smoke/parity tools | Some checkers intentionally import fallback to prove retained behavior | D8.5 | Do not treat checker imports as default runtime imports |
+
+## Notes
+
+- `runtime_imported_by_default_next` is false for legacy shell, OpenClaw, HTTP, domain, template, and static fallback paths.
+- `runtime_imported_by_legacy_fallback` may be true for legacy shell paths because explicit fallback commands are still allowed.
+- Delete blockers are intentionally specific so future D8.1-D8.5 work can retire one boundary at a time.

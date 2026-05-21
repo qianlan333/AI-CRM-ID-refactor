@@ -5,7 +5,7 @@ from collections.abc import Sequence
 
 
 def run() -> None:
-    from wecom_ability_service import create_app
+    from legacy_flask.app_factory import create_app
 
     app = create_app()
     host = app.config["APP_HOST"]
@@ -14,7 +14,7 @@ def run() -> None:
 
 
 def init_db() -> None:
-    from wecom_ability_service import create_app
+    from legacy_flask.app_factory import create_app
     from wecom_ability_service.db import init_db as do_init_db
 
     app = create_app()
@@ -24,7 +24,7 @@ def init_db() -> None:
 
 
 def delete_questionnaire_submissions(slug: str) -> None:
-    from wecom_ability_service import create_app
+    from legacy_flask.app_factory import create_app
     from wecom_ability_service.services import delete_questionnaire_submissions_by_slug
 
     app = create_app()
@@ -35,7 +35,10 @@ def delete_questionnaire_submissions(slug: str) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Explicit legacy Flask fallback runner. The default app.py runtime is AI-CRM Next."
+        description=(
+            "Explicit legacy Flask fallback runner. The app factory now lives in legacy_flask; "
+            "wecom_ability_service remains a compatibility shim. The default app.py runtime is AI-CRM Next."
+        )
     )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("run", help="Run the legacy Flask fallback service.")
