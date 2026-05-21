@@ -84,6 +84,22 @@ def test_d8_inventory_keeps_existing_fallback_surfaces_and_does_not_restore_arch
     assert "absent on current main" in shim_row
 
 
+def test_d8_inventory_marks_minimal_d8_0_and_d8_1_planning_as_keep() -> None:
+    for path in [
+        "docs/d8_legacy_flask_shell_retirement_plan.md",
+        "docs/d8_legacy_shell_dependency_inventory.md",
+        "docs/d8_legacy_shell_allowed_fallback_matrix.md",
+        "docs/d8_1_legacy_fallback_route_lockdown_plan.md",
+        "docs/d8_1_legacy_fallback_route_matrix.md",
+        "tools/check_d8_legacy_shell_retirement_readiness.py",
+        "tools/check_d8_1_legacy_fallback_route_lockdown.py",
+        "tests/test_d8_legacy_shell_retirement_readiness.py",
+        "tests/test_d8_1_legacy_fallback_route_lockdown.py",
+    ]:
+        assert (REPO_ROOT / path).exists(), path
+        assert "| keep |" in _inventory_row(path)
+
+
 def test_d8_docs_do_not_use_forbidden_readiness_markers() -> None:
     for path in (REPO_ROOT / "docs").glob("d8_*.md"):
         text = path.read_text(encoding="utf-8")
@@ -95,16 +111,17 @@ def test_d8_route_fallback_source_of_truth_status_is_declared() -> None:
     text = _inventory_text()
     assert "Route/fallback lockdown runtime" in text
     assert "Route/fallback lockdown docs" in text
-    assert "Not introduced on current main" in text
+    assert "D8.1 is planning-only" in text
+    assert "docs/d8_1_legacy_fallback_route_matrix.md" in text
     assert "one runtime owner" in text
     assert "one docs matrix" in text
 
 
 def test_d8_checker_and_test_duplicate_candidates_are_inventory_only() -> None:
     text = _inventory_text()
-    assert "No `tools/check_d8_*.py` files exist on current main" in text
-    assert "No `tests/test_d8_*.py` files exist on current main before this guard test" in text
-    assert "consider `tools/d8_check_common.py`" in text
+    assert "Only D8.0/D8.1 planning checkers are present" in text
+    assert "Only D8.0/D8.1 planning tests plus this slim inventory guard are present" in text
+    assert "consider a helper only if more D8 checkers return" in text
     assert "do not recreate old D8 test stacks" in text
 
 
