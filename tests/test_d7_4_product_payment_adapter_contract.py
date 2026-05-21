@@ -347,7 +347,7 @@ def test_commerce_parity_remains_pass() -> None:
         Namespace(
             old_base_url="",
             next_base_url="",
-            old_fixture_dir=str(REPO_ROOT / "tests/fixtures/old_commerce"),
+            old_fixture_dir=str(REPO_ROOT / "experiments/ai_crm_next/tests/fixtures/old_commerce"),
             next_testclient=True,
             allow_old_write_endpoints=False,
             output_md="/tmp/unused.md",

@@ -25,7 +25,7 @@ CONTRACT_FILES = [
     "aicrm_next/identity_contact/application.py",
     "tools/customer_read_model_gray_smoke.py",
     "tools/compare_customer_read_model_parity.py",
-    "tests/fixtures/old_customer_read_model/customers.default.json",
+    "experiments/ai_crm_next/tests/fixtures/old_customer_read_model/customers.default.json",
 ]
 
 DOCS_TO_SCAN = [
@@ -253,7 +253,7 @@ def _check_customer_smoke_parity(blockers: list[Json], warnings: list[Json]) -> 
         parity_tool = importlib.import_module("tools.compare_customer_read_model_parity")
         parity = parity_tool.run_compare(
             Namespace(
-                old_fixture_dir=str(_path("tests/fixtures/old_customer_read_model")),
+                old_fixture_dir=str(_path("experiments/ai_crm_next/tests/fixtures/old_customer_read_model")),
                 old_base_url="",
                 next_testclient=True,
                 next_base_url="",

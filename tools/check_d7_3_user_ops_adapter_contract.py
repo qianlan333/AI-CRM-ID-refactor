@@ -23,7 +23,7 @@ CONTRACT_FILES = [
     "aicrm_next/ops_enrollment/application.py",
     "tools/user_ops_readonly_gray_smoke.py",
     "tools/compare_user_ops_parity.py",
-    "tests/fixtures/old_user_ops/overview.default.json",
+    "experiments/ai_crm_next/tests/fixtures/old_user_ops/overview.default.json",
 ]
 DOCS_TO_SCAN = [
     "docs/d7_3_user_ops_dnd_batch_send_wecom_dispatch_adapter_contract.md",
@@ -212,7 +212,7 @@ def _run_user_ops_parity() -> dict[str, Any]:
         Namespace(
             old_base_url="",
             next_base_url="",
-            old_fixture_dir=str(REPO_ROOT / "tests/fixtures/old_user_ops"),
+            old_fixture_dir=str(REPO_ROOT / "experiments/ai_crm_next/tests/fixtures/old_user_ops"),
             next_testclient=True,
             include_write_endpoints=False,
             output_md="/tmp/unused.md",

@@ -93,23 +93,23 @@ The D7.4 baseline contains D7.1-D7.4 because earlier accepted prerequisites were
 - `tests/test_d7_3_user_ops_adapter_contract.py`
 - `tests/test_d7_4_product_payment_adapter_contract.py`
 - `tests/test_d7_scope_isolation.py`
-- `tests/fixtures/old_commerce/alipay_transactions.default.json`
-- `tests/fixtures/old_commerce/checkout_alipay.default.json`
-- `tests/fixtures/old_commerce/checkout_wechat.default.json`
-- `tests/fixtures/old_commerce/product_detail.default.json`
-- `tests/fixtures/old_commerce/products.default.json`
-- `tests/fixtures/old_commerce/wechat_transactions.default.json`
-- `tests/fixtures/old_questionnaire/admin_detail.default.json`
-- `tests/fixtures/old_questionnaire/admin_list.default.json`
-- `tests/fixtures/old_questionnaire/admin_preflight.default.json`
-- `tests/fixtures/old_questionnaire/public_get.default.json`
-- `tests/fixtures/old_questionnaire/submit.default.json`
-- `tests/fixtures/old_user_ops/list.default.json`
-- `tests/fixtures/old_user_ops/list.not_added.json`
-- `tests/fixtures/old_user_ops/list.wecom_added.json`
-- `tests/fixtures/old_user_ops/overview.default.json`
-- `tests/fixtures/old_user_ops/preview.default.json`
-- `tests/fixtures/old_user_ops/send_records.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/alipay_transactions.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/checkout_alipay.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/checkout_wechat.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/product_detail.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/products.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/wechat_transactions.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_detail.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_list.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_preflight.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/public_get.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/submit.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/list.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/list.not_added.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/list.wecom_added.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/overview.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/preview.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/send_records.default.json`
 
 ### out-of-scope files
 

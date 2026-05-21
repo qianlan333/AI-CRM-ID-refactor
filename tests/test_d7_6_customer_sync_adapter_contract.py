@@ -267,7 +267,7 @@ def test_customer_smoke_and_parity_remain_pass() -> None:
     parity = importlib.import_module("tools.compare_customer_read_model_parity")
     parity_result = parity.run_compare(
         Namespace(
-            old_fixture_dir=str(PROJECT_ROOT / "tests/fixtures/old_customer_read_model"),
+            old_fixture_dir=str(PROJECT_ROOT / "experiments/ai_crm_next/tests/fixtures/old_customer_read_model"),
             old_base_url="",
             next_testclient=True,
             next_base_url="",

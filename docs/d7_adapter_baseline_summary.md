@@ -9,9 +9,9 @@ Root `aicrm_next/` is the only Next production source. D7 implementation files l
 | stage | capability | status | core_files | docs | checker | tests | verification | scope_status | notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | D7.1 | Media storage / WeCom media adapter contract | accepted_prerequisite | `aicrm_next/integration_gateway/media_contracts.py`; `aicrm_next/integration_gateway/media_adapters.py`; `aicrm_next/media_library/application.py` | `docs/d7_1_media_storage_wecom_media_adapter_contract.md`; `docs/d7_1_media_adapter_implementation_report.md` | `tools/check_d7_1_media_adapter_contract.py` | `tests/test_d7_1_media_adapter_contract.py` | Checker exercises fake, disabled, staging, guarded production modes, idempotency, audit, and media parity static evidence. | accepted_prerequisite | Real cloud upload and real WeCom media upload remain blocked. |
-| D7.2 | Questionnaire submit / OAuth / WeCom tag / external push adapter contract | accepted_prerequisite | `aicrm_next/integration_gateway/questionnaire_contracts.py`; `aicrm_next/integration_gateway/questionnaire_adapters.py`; `aicrm_next/questionnaire/application.py`; `aicrm_next/questionnaire/oauth.py` | `docs/d7_2_questionnaire_submit_oauth_wecom_tag_adapter_contract.md`; `docs/d7_2_questionnaire_adapter_implementation_report.md` | `tools/check_d7_2_questionnaire_adapter_contract.py` | `tests/test_d7_2_questionnaire_adapter_contract.py`; `tests/fixtures/old_questionnaire/*` | Checker and tests cover fake OAuth identity, tag operation, webhook intent, submit side-effect boundary, no provider call, and questionnaire parity. | accepted_prerequisite | Real OAuth, WeCom tag writes, and webhook delivery remain blocked. |
-| D7.3 | User Ops DND / batch-send / WeCom dispatch / deferred jobs adapter contract | accepted_prerequisite | `aicrm_next/integration_gateway/user_ops_contracts.py`; `aicrm_next/integration_gateway/user_ops_adapters.py`; `aicrm_next/integration_gateway/dispatch.py`; `aicrm_next/ops_enrollment/application.py`; `aicrm_next/ops_enrollment/api.py` | `docs/d7_3_user_ops_dnd_batch_send_wecom_dispatch_adapter_contract.md`; `docs/d7_3_user_ops_adapter_implementation_report.md` | `tools/check_d7_3_user_ops_adapter_contract.py` | `tests/test_d7_3_user_ops_adapter_contract.py`; `tests/fixtures/old_user_ops/*` | Checker and tests cover fake DND, batch-send, WeCom dispatch, deferred jobs, idempotency, audit, and User Ops parity. | accepted_prerequisite | Real DND writes, WeCom dispatch, and deferred job execution remain blocked. |
-| D7.4 | Product writes / WeChat Pay / Alipay / notify / return adapter contract | scope_isolated | `aicrm_next/integration_gateway/payment_contracts.py`; `aicrm_next/integration_gateway/payment_adapters.py`; `aicrm_next/commerce/application.py`; `aicrm_next/commerce/api.py` | `docs/d7_4_product_payment_adapter_contract.md`; `docs/d7_4_product_payment_adapter_implementation_report.md`; `docs/d7_4_scope_isolation_report.md` | `tools/check_d7_4_product_payment_adapter_contract.py`; `tools/check_d7_scope_isolation.py` | `tests/test_d7_4_product_payment_adapter_contract.py`; `tests/test_d7_scope_isolation.py`; `tests/fixtures/old_commerce/*` | D7.4 checker, scope checker, Product smoke, Commerce parity, and focused tests validate guarded fake contract behavior with no payment-provider call. | current_increment | D7.4 is the current increment on top of accepted D7.1-D7.3 prerequisites. |
+| D7.2 | Questionnaire submit / OAuth / WeCom tag / external push adapter contract | accepted_prerequisite | `aicrm_next/integration_gateway/questionnaire_contracts.py`; `aicrm_next/integration_gateway/questionnaire_adapters.py`; `aicrm_next/questionnaire/application.py`; `aicrm_next/questionnaire/oauth.py` | `docs/d7_2_questionnaire_submit_oauth_wecom_tag_adapter_contract.md`; `docs/d7_2_questionnaire_adapter_implementation_report.md` | `tools/check_d7_2_questionnaire_adapter_contract.py` | `tests/test_d7_2_questionnaire_adapter_contract.py`; `experiments/ai_crm_next/tests/fixtures/old_questionnaire/*` | Checker and tests cover fake OAuth identity, tag operation, webhook intent, submit side-effect boundary, no provider call, and questionnaire parity. | accepted_prerequisite | Real OAuth, WeCom tag writes, and webhook delivery remain blocked. |
+| D7.3 | User Ops DND / batch-send / WeCom dispatch / deferred jobs adapter contract | accepted_prerequisite | `aicrm_next/integration_gateway/user_ops_contracts.py`; `aicrm_next/integration_gateway/user_ops_adapters.py`; `aicrm_next/integration_gateway/dispatch.py`; `aicrm_next/ops_enrollment/application.py`; `aicrm_next/ops_enrollment/api.py` | `docs/d7_3_user_ops_dnd_batch_send_wecom_dispatch_adapter_contract.md`; `docs/d7_3_user_ops_adapter_implementation_report.md` | `tools/check_d7_3_user_ops_adapter_contract.py` | `tests/test_d7_3_user_ops_adapter_contract.py`; `experiments/ai_crm_next/tests/fixtures/old_user_ops/*` | Checker and tests cover fake DND, batch-send, WeCom dispatch, deferred jobs, idempotency, audit, and User Ops parity. | accepted_prerequisite | Real DND writes, WeCom dispatch, and deferred job execution remain blocked. |
+| D7.4 | Product writes / WeChat Pay / Alipay / notify / return adapter contract | scope_isolated | `aicrm_next/integration_gateway/payment_contracts.py`; `aicrm_next/integration_gateway/payment_adapters.py`; `aicrm_next/commerce/application.py`; `aicrm_next/commerce/api.py` | `docs/d7_4_product_payment_adapter_contract.md`; `docs/d7_4_product_payment_adapter_implementation_report.md`; `docs/d7_4_scope_isolation_report.md` | `tools/check_d7_4_product_payment_adapter_contract.py`; `tools/check_d7_scope_isolation.py` | `tests/test_d7_4_product_payment_adapter_contract.py`; `tests/test_d7_scope_isolation.py`; `experiments/ai_crm_next/tests/fixtures/old_commerce/*` | D7.4 checker, scope checker, Product smoke, Commerce parity, and focused tests validate guarded fake contract behavior with no payment-provider call. | current_increment | D7.4 is the current increment on top of accepted D7.1-D7.3 prerequisites. |
 
 ## File Lists By Stage
 
@@ -39,11 +39,11 @@ Root `aicrm_next/` is the only Next production source. D7 implementation files l
 - `tools/compare_questionnaire_parity.py`
 - `tools/questionnaire_readonly_gray_smoke.py`
 - `tests/test_d7_2_questionnaire_adapter_contract.py`
-- `tests/fixtures/old_questionnaire/admin_detail.default.json`
-- `tests/fixtures/old_questionnaire/admin_list.default.json`
-- `tests/fixtures/old_questionnaire/admin_preflight.default.json`
-- `tests/fixtures/old_questionnaire/public_get.default.json`
-- `tests/fixtures/old_questionnaire/submit.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_detail.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_list.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/admin_preflight.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/public_get.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_questionnaire/submit.default.json`
 
 ### D7.3 accepted_prerequisite
 
@@ -58,12 +58,12 @@ Root `aicrm_next/` is the only Next production source. D7 implementation files l
 - `tools/compare_user_ops_parity.py`
 - `tools/user_ops_readonly_gray_smoke.py`
 - `tests/test_d7_3_user_ops_adapter_contract.py`
-- `tests/fixtures/old_user_ops/list.default.json`
-- `tests/fixtures/old_user_ops/list.not_added.json`
-- `tests/fixtures/old_user_ops/list.wecom_added.json`
-- `tests/fixtures/old_user_ops/overview.default.json`
-- `tests/fixtures/old_user_ops/preview.default.json`
-- `tests/fixtures/old_user_ops/send_records.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/list.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/list.not_added.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/list.wecom_added.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/overview.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/preview.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_user_ops/send_records.default.json`
 
 ### D7.4 current_increment
 
@@ -77,12 +77,12 @@ Root `aicrm_next/` is the only Next production source. D7 implementation files l
 - `tools/compare_commerce_parity.py`
 - `tools/product_management_gray_smoke.py`
 - `tests/test_d7_4_product_payment_adapter_contract.py`
-- `tests/fixtures/old_commerce/alipay_transactions.default.json`
-- `tests/fixtures/old_commerce/checkout_alipay.default.json`
-- `tests/fixtures/old_commerce/checkout_wechat.default.json`
-- `tests/fixtures/old_commerce/product_detail.default.json`
-- `tests/fixtures/old_commerce/products.default.json`
-- `tests/fixtures/old_commerce/wechat_transactions.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/alipay_transactions.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/checkout_alipay.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/checkout_wechat.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/product_detail.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/products.default.json`
+- `experiments/ai_crm_next/tests/fixtures/old_commerce/wechat_transactions.default.json`
 
 ### Shared D7 documentation and scope isolation
 

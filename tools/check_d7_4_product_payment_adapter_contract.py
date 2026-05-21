@@ -24,7 +24,7 @@ CONTRACT_FILES = [
     "aicrm_next/commerce/api.py",
     "tools/product_management_gray_smoke.py",
     "tools/compare_commerce_parity.py",
-    "tests/fixtures/old_commerce/products.default.json",
+    "experiments/ai_crm_next/tests/fixtures/old_commerce/products.default.json",
 ]
 DOCS_TO_SCAN = [
     "docs/d7_4_product_payment_adapter_contract.md",
@@ -247,7 +247,7 @@ def _run_commerce_parity() -> dict[str, Any]:
         Namespace(
             old_base_url="",
             next_base_url="",
-            old_fixture_dir=str(REPO_ROOT / "tests/fixtures/old_commerce"),
+            old_fixture_dir=str(REPO_ROOT / "experiments/ai_crm_next/tests/fixtures/old_commerce"),
             next_testclient=True,
             allow_old_write_endpoints=False,
             output_md="/tmp/unused.md",

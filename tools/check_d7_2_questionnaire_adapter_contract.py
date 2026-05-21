@@ -23,7 +23,7 @@ CONTRACT_FILES = [
     "aicrm_next/questionnaire/application.py",
     "tools/questionnaire_readonly_gray_smoke.py",
     "tools/compare_questionnaire_parity.py",
-    "tests/fixtures/old_questionnaire/submit.default.json",
+    "experiments/ai_crm_next/tests/fixtures/old_questionnaire/submit.default.json",
 ]
 DOCS_TO_SCAN = [
     "docs/d7_2_questionnaire_submit_oauth_wecom_tag_adapter_contract.md",
@@ -176,7 +176,7 @@ def _run_questionnaire_parity() -> dict[str, Any]:
         Namespace(
             old_base_url="",
             next_base_url="",
-            old_fixture_dir=str(REPO_ROOT / "tests/fixtures/old_questionnaire"),
+            old_fixture_dir=str(REPO_ROOT / "experiments/ai_crm_next/tests/fixtures/old_questionnaire"),
             next_testclient=True,
             output_md="/tmp/unused.md",
             output_json="/tmp/unused.json",
