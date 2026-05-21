@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -125,14 +126,24 @@ def test_next_user_ops_readonly_routes_are_served_by_ai_crm_next() -> None:
 
 
 def test_user_ops_readonly_smoke_declares_write_external_paths_not_executed() -> None:
-    source = _read("experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py")
-    for token in [
-        '"old_write_endpoints_executed": False',
-        '"wecom_dispatch_executed": False',
-        '"media_upload_executed": False',
-        '"deferred_jobs_executed": False',
+    from tools import user_ops_readonly_gray_smoke as gray_smoke
+
+    args = gray_smoke.build_parser().parse_args(["--next-testclient", "--output-md", "/tmp/user_ops.md", "--output-json", "/tmp/user_ops.json"])
+    report = gray_smoke.run_smoke(args)
+    safety = report["side_effect_safety"]
+    assert safety["old_write_endpoints_executed"] is False
+    assert safety["wecom_dispatch_executed"] is False
+    assert safety["media_upload_executed"] is False
+    assert safety["deferred_jobs_executed"] is False
+    for method, excluded in [
+        ("POST", "/do-not-disturb"),
+        ("POST", "/batch-send/preview"),
+        ("POST", "/batch-send/execute"),
+        ("POST", "/run-deferred-jobs"),
+        ("GET", "/api/internal/user-ops"),
     ]:
-        assert token in source
+        with pytest.raises(ValueError):
+            gray_smoke.ensure_readonly(method, excluded, target="old")
     for excluded in [
         "/do-not-disturb",
         "/batch-send/preview",
@@ -140,7 +151,7 @@ def test_user_ops_readonly_smoke_declares_write_external_paths_not_executed() ->
         "/run-deferred-jobs",
         "/api/internal/user-ops",
     ]:
-        assert excluded in source
+        assert excluded in gray_smoke.FORBIDDEN_OLD_PATH_FRAGMENTS
 
 
 def test_app_py_default_is_still_next() -> None:
@@ -196,7 +207,7 @@ def test_d4_retirement_checker_returns_ok(tmp_path: Path) -> None:
     output_json = tmp_path / "d4.json"
     subprocess.run(
         [
-            "python3",
+            sys.executable,
             "tools/check_legacy_d4_user_ops_retirement.py",
             "--output-md",
             str(output_md),

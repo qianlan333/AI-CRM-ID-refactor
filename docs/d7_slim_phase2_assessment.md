@@ -78,6 +78,11 @@ together with the docs.
 
 ## 3. Parity And Smoke Tool Wrapper Assessment
 
+Phase 2B result: root `tools/` is now the canonical source for D7 parity and
+smoke tools. The experiments paths remain for command compatibility, but they
+load the root tool modules through thin wrappers instead of carrying duplicated
+logic.
+
 ### Overlapping Tools
 
 The following root and experiments tools are functionally duplicated. A diff
@@ -87,23 +92,23 @@ root from `experiments/ai_crm_next`.
 
 | Root path | Experiments path | Lines root/experiments | Duplicated elsewhere? | Decision | Reason | Risk | Verification needed |
 | --- | --- | ---: | --- | --- | --- | --- | --- |
-| `tools/compare_automation_conversion_parity.py` | `experiments/ai_crm_next/tools/compare_automation_conversion_parity.py` | 139/140 | Yes, path bootstrap only | Wrapper candidate | Root tool can be canonical if experiments tests preserve module behavior. | Medium | Automation parity plus experiments pytest |
-| `tools/compare_commerce_parity.py` | `experiments/ai_crm_next/tools/compare_commerce_parity.py` | 164/165 | Yes, path bootstrap only | Wrapper candidate | Root tool can be canonical after payment safety tests are adjusted. | Medium to high | Commerce parity, payment D7 tests, experiments pytest |
-| `tools/compare_customer_read_model_parity.py` | `experiments/ai_crm_next/tools/compare_customer_read_model_parity.py` | 158/159 | Yes, path bootstrap only | Wrapper candidate | Lower-risk first candidate because it is readonly-oriented. | Medium | Customer parity and experiments pytest |
-| `tools/compare_questionnaire_parity.py` | `experiments/ai_crm_next/tools/compare_questionnaire_parity.py` | 160/161 | Yes, path bootstrap only | Wrapper candidate | Needs questionnaire fallback/source assertions preserved. | Medium | Questionnaire parity and D7.2 tests |
-| `tools/compare_user_ops_parity.py` | `experiments/ai_crm_next/tools/compare_user_ops_parity.py` | 175/176 | Yes, path bootstrap only | Wrapper candidate | User Ops tests monkeypatch tool internals, so wrapper design matters. | Medium | User Ops parity and experiments pytest |
-| `tools/automation_readonly_gray_smoke.py` | `experiments/ai_crm_next/tools/automation_readonly_gray_smoke.py` | 510/511 | Yes, path bootstrap only | Needs manual review | Experiments tests import and monkeypatch this module; legacy retirement tests inspect source text. | Medium to high | Automation smoke, legacy D6 tests, experiments pytest |
-| `tools/customer_read_model_gray_smoke.py` | `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py` | 467/468 | Yes, path bootstrap only | Wrapper candidate | Readonly-oriented smoke path is a safer pilot than write-adjacent slices. | Medium | Customer smoke and experiments pytest |
-| `tools/product_management_gray_smoke.py` | `experiments/ai_crm_next/tools/product_management_gray_smoke.py` | 444/445 | Yes, path bootstrap only | Needs manual review | Product/payment assertions are source-inspected by root tests and protect blocked payment behavior. | High | Product smoke, D7.4 tests, legacy D2 tests |
-| `tools/questionnaire_readonly_gray_smoke.py` | `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py` | 673/674 | Yes, path bootstrap only | Needs manual review | Root tests inspect experiments source for write-safety tokens. | Medium to high | Questionnaire smoke, legacy D5 tests |
-| `tools/user_ops_readonly_gray_smoke.py` | `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py` | 420/421 | Yes, path bootstrap only | Needs manual review | Root tests inspect experiments source for fallback/write-safety tokens. | Medium to high | User Ops smoke, legacy D4 tests |
+| `tools/compare_automation_conversion_parity.py` | `experiments/ai_crm_next/tools/compare_automation_conversion_parity.py` | 139/12 | Yes, experiments is now wrapper only | Done | Root tool is canonical; experiments path loads root module. | Low | Automation parity plus experiments pytest |
+| `tools/compare_commerce_parity.py` | `experiments/ai_crm_next/tools/compare_commerce_parity.py` | 164/12 | Yes, experiments is now wrapper only | Done | Root tool is canonical; experiments path loads root module. | Medium | Commerce parity, payment D7 tests, experiments pytest |
+| `tools/compare_customer_read_model_parity.py` | `experiments/ai_crm_next/tools/compare_customer_read_model_parity.py` | 158/12 | Yes, experiments is now wrapper only | Done | Root tool is canonical; experiments path loads root module. | Low | Customer parity and experiments pytest |
+| `tools/compare_questionnaire_parity.py` | `experiments/ai_crm_next/tools/compare_questionnaire_parity.py` | 160/12 | Yes, experiments is now wrapper only | Done | Root tool is canonical; experiments path loads root module. | Medium | Questionnaire parity and D7.2 tests |
+| `tools/compare_user_ops_parity.py` | `experiments/ai_crm_next/tools/compare_user_ops_parity.py` | 175/12 | Yes, experiments is now wrapper only | Done | Root tool is canonical; experiments path loads root module. | Medium | User Ops parity and experiments pytest |
+| `tools/automation_readonly_gray_smoke.py` | `experiments/ai_crm_next/tools/automation_readonly_gray_smoke.py` | 510/12 | Yes, experiments is now wrapper only | Done | Source-text assertions were moved to runtime side-effect checks. | Medium | Automation smoke, legacy D6 tests, experiments pytest |
+| `tools/customer_read_model_gray_smoke.py` | `experiments/ai_crm_next/tools/customer_read_model_gray_smoke.py` | 467/12 | Yes, experiments is now wrapper only | Done | Source-text assertions were moved to runtime side-effect checks. | Low | Customer smoke and experiments pytest |
+| `tools/product_management_gray_smoke.py` | `experiments/ai_crm_next/tools/product_management_gray_smoke.py` | 444/12 | Yes, experiments is now wrapper only | Done | Source-text assertions were moved to runtime payment/checkout safety checks. | Medium to high | Product smoke, D7.4 tests, legacy D2 tests |
+| `tools/questionnaire_readonly_gray_smoke.py` | `experiments/ai_crm_next/tools/questionnaire_readonly_gray_smoke.py` | 673/12 | Yes, experiments is now wrapper only | Done | Source-text assertions were moved to runtime submit/OAuth/external safety checks. | Medium | Questionnaire smoke, legacy D5 tests |
+| `tools/user_ops_readonly_gray_smoke.py` | `experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py` | 420/12 | Yes, experiments is now wrapper only | Done | Source-text assertions were moved to runtime User Ops write/external safety checks. | Medium | User Ops smoke, legacy D4 tests |
 
 ### Experiments-Only Tools
 
-`experiments/ai_crm_next/tools/compare_media_library_parity.py` and
-`experiments/ai_crm_next/tools/media_library_gray_smoke.py` do not currently have
-root twins in `tools/`. They should not be wrapperized as part of duplicate
-cleanup unless a root canonical media tool is intentionally introduced later.
+`tools/compare_media_library_parity.py` and
+`tools/media_library_gray_smoke.py` were added as root canonical tools in Phase
+2B by moving the former experiments-only implementations. The experiments media
+paths now use the same thin wrapper pattern as the other parity/smoke tools.
 
 ### Wrapper Feasibility
 
@@ -141,4 +146,3 @@ bash scripts/check_no_duplicate_next_source.sh
 scripts/run_tests.sh
 cd experiments/ai_crm_next && .venv/bin/python -m pytest -q
 ```
-

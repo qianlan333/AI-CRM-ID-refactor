@@ -144,16 +144,17 @@ def test_aicrm_next_automation_readonly_routes_are_served_by_ai_crm_next() -> No
 
 
 def test_automation_readonly_smoke_declares_writes_external_and_runtime_not_executed() -> None:
-    source = _read("experiments/ai_crm_next/tools/automation_readonly_gray_smoke.py")
-    for token in [
-        '"activation_webhook_executed": False',
-        '"openclaw_push_executed": False',
-        '"workflow_runtime_executed": False',
-        '"wecom_dispatch_executed": False',
-        '"external_webhook_executed": False',
-    ]:
-        assert token in source
-    assert "fake_writes_not_requested" in source
+    from tools import automation_readonly_gray_smoke as gray_smoke
+
+    args = gray_smoke.build_parser().parse_args(["--next-testclient", "--output-md", "/tmp/automation.md", "--output-json", "/tmp/automation.json"])
+    report = gray_smoke.run_smoke(args)
+    safety = report["side_effect_safety"]
+    assert safety["activation_webhook_executed"] is False
+    assert safety["openclaw_push_executed"] is False
+    assert safety["workflow_runtime_executed"] is False
+    assert safety["wecom_dispatch_executed"] is False
+    assert safety["external_webhook_executed"] is False
+    assert any(item["reason"] == "fake_writes_not_requested" for item in report["skipped"])
 
 
 def test_app_py_default_is_still_next_and_legacy_fallback_exists() -> None:

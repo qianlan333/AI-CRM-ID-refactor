@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import subprocess
 import sys
@@ -172,16 +173,21 @@ def build_report() -> dict[str, Any]:
     if not next_user_ops_routes["has_pending_input_card"]:
         blockers.append("AI-CRM Next User Ops overview no longer has pending-input card evidence")
 
-    smoke_source = _read("experiments/ai_crm_next/tools/user_ops_readonly_gray_smoke.py")
-    smoke_safety_tokens = [
-        '"old_write_endpoints_executed": False',
-        '"wecom_dispatch_executed": False',
-        '"media_upload_executed": False',
-        '"deferred_jobs_executed": False',
-    ]
-    missing_smoke_safety = [token for token in smoke_safety_tokens if token not in smoke_source]
-    if missing_smoke_safety:
-        blockers.append("User Ops readonly smoke no longer declares write/external safety false")
+    try:
+        smoke_tool = importlib.import_module("tools.user_ops_readonly_gray_smoke")
+        smoke_report = smoke_tool.run_smoke(
+            argparse.Namespace(old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json="")
+        )
+        smoke_safety = smoke_report["side_effect_safety"]
+        missing_smoke_safety = [
+            key
+            for key in ["old_write_endpoints_executed", "wecom_dispatch_executed", "media_upload_executed", "deferred_jobs_executed"]
+            if smoke_safety.get(key) is not False
+        ]
+        if not smoke_report.get("ok") or missing_smoke_safety:
+            blockers.append("User Ops readonly smoke no longer reports write/external safety false")
+    except Exception as exc:
+        blockers.append(f"User Ops readonly smoke runtime safety check failed: {type(exc).__name__}: {exc}")
 
     app_py = _read("app.py")
     default_next = 'NEXT_APP_IMPORT = "aicrm_next.main:app"' in app_py and "uvicorn.run(NEXT_APP_IMPORT" in app_py
