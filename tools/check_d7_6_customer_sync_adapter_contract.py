@@ -4,17 +4,28 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import os
-import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+from tools.d7_contract_check_common import (
+    Json,
+    check_adapter_methods,
+    check_adapter_mode_guards,
+    check_fake_operation_result_safety,
+    clean_environment,
+    collect_missing_files,
+    ensure_project_root_on_path,
+    project_path,
+    read_project_text,
+    resolve_project_root,
+    scan_docs_for_forbidden_markers,
+    write_json_report,
+    write_markdown_lines,
+)
 
-Json = dict[str, Any]
+PROJECT_ROOT = resolve_project_root(__file__)
+ensure_project_root_on_path(PROJECT_ROOT)
 
 CONTRACT_FILES = [
     "aicrm_next/integration_gateway/customer_sync_contracts.py",
@@ -82,11 +93,11 @@ PRODUCTION_FLAGS = {
 
 
 def _path(relpath: str) -> Path:
-    return PROJECT_ROOT / relpath
+    return project_path(PROJECT_ROOT, relpath)
 
 
 def _read(relpath: str) -> str:
-    return _path(relpath).read_text(encoding="utf-8")
+    return read_project_text(PROJECT_ROOT, relpath)
 
 
 def _sample_call(instance: Any) -> Json:
@@ -105,19 +116,7 @@ def _sample_call(instance: Any) -> Json:
 def _check_adapter_contracts(blockers: list[Json]) -> Json:
     contracts = importlib.import_module("aicrm_next.integration_gateway.customer_sync_contracts")
     adapters = importlib.import_module("aicrm_next.integration_gateway.customer_sync_adapters")
-    result: Json = {}
-    for class_name, methods in REQUIRED_METHODS.items():
-        contract_exists = hasattr(contracts, f"{class_name}Contract")
-        cls = getattr(adapters, class_name, None)
-        missing = [method for method in methods if cls is None or not callable(getattr(cls, method, None))]
-        result[class_name] = {"exists": cls is not None, "contract_exists": contract_exists, "missing_methods": missing}
-        if not contract_exists:
-            blockers.append({"reason": "missing_adapter_contract", "class": class_name})
-        if cls is None:
-            blockers.append({"reason": "missing_adapter_class", "class": class_name})
-        for method in missing:
-            blockers.append({"reason": "missing_adapter_method", "class": class_name, "method": method})
-    return result
+    return check_adapter_methods(adapters, REQUIRED_METHODS, blockers, contracts_module=contracts)
 
 
 def _check_modes(blockers: list[Json]) -> Json:
@@ -128,10 +127,7 @@ def _check_modes(blockers: list[Json]) -> Json:
         "AICRM_NEXT_IDENTITY_MAPPING_MODE",
         "AICRM_NEXT_CUSTOMER_PROJECTION_SYNC_MODE",
     ]
-    saved = {name: os.environ.get(name) for name in mode_env_names + list(PRODUCTION_FLAGS.values())}
-    for name in mode_env_names + list(PRODUCTION_FLAGS.values()):
-        os.environ.pop(name, None)
-    try:
+    with clean_environment(mode_env_names + list(PRODUCTION_FLAGS.values())):
         defaults = {
             "archive_sync": module.build_archive_sync_adapter().mode,
             "contacts_sync": module.build_contacts_sync_adapter().mode,
@@ -141,33 +137,10 @@ def _check_modes(blockers: list[Json]) -> Json:
         if any(mode != "fake" for mode in defaults.values()):
             blockers.append({"reason": "default_mode_not_fake", "defaults": defaults})
 
-        guards: Json = {"defaults": defaults, "production_without_flag": {}, "production_with_flag": {}, "disabled": {}}
-        for class_name, flag in PRODUCTION_FLAGS.items():
-            cls = getattr(module, class_name)
-            disabled_result = _sample_call(cls("disabled"))
-            guards["disabled"][class_name] = disabled_result["error_code"]
-            if disabled_result["error_code"] != "adapter_disabled":
-                blockers.append({"reason": "disabled_mode_not_stable", "class": class_name, "error_code": disabled_result["error_code"]})
-            os.environ.pop(flag, None)
-            guarded = _sample_call(cls("production"))
-            guards["production_without_flag"][class_name] = guarded["error_code"]
-            if guarded["error_code"] != "production_guard_failed":
-                blockers.append({"reason": "production_mode_not_guarded", "class": class_name, "error_code": guarded["error_code"]})
-            os.environ[flag] = "true"
-            not_implemented = _sample_call(cls("production"))
-            guards["production_with_flag"][class_name] = not_implemented["error_code"]
-            if not_implemented["error_code"] != "production_not_implemented":
-                blockers.append({"reason": "production_mode_not_fail_closed", "class": class_name, "error_code": not_implemented["error_code"]})
-            os.environ.pop(flag, None)
+        guards = check_adapter_mode_guards(module, PRODUCTION_FLAGS, _sample_call, blockers, defaults)
         source_guards = _check_source_guards(blockers)
         guards.update(source_guards)
         return guards
-    finally:
-        for name, value in saved.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
 
 
 def _check_idempotency_audit_side_effects(blockers: list[Json]) -> tuple[Json, Json, Json]:
@@ -191,53 +164,12 @@ def _check_idempotency_audit_side_effects(blockers: list[Json]) -> tuple[Json, J
     results = [_sample_call(adapter) for adapter in adapters]
     repeated = ArchiveSyncAdapter("fake").fetch_recent_messages(external_userid="wx_ext_001", idempotency_key="d7_6_repeat_key")
     repeated_again = ArchiveSyncAdapter("fake").fetch_recent_messages(external_userid="wx_ext_001", idempotency_key="d7_6_repeat_key")
-    required_fields = {
-        "ok",
-        "adapter",
-        "mode",
-        "operation",
-        "idempotency_key",
-        "target",
-        "result",
-        "audit_id",
-        "side_effect_executed",
-        "error_code",
-        "error_message",
-    }
-    missing_fields = {item["adapter"]: sorted(required_fields - set(item)) for item in results if required_fields - set(item)}
-    if missing_fields:
-        blockers.append({"reason": "result_shape_missing_fields", "missing_fields": missing_fields})
-    side_effects = {item["adapter"]: item["side_effect_executed"] for item in results}
-    if any(side_effects.values()):
-        blockers.append({"reason": "side_effect_executed_true", "side_effects": side_effects})
-    deterministic = repeated["result"] == repeated_again["result"]
-    if not deterministic:
-        blockers.append({"reason": "idempotency_not_deterministic"})
     events = list_audit_events()
-    audit_ok = len(events) >= len(results) and all(
-        {"audit_id", "adapter", "operation", "mode", "idempotency_key", "side_effect_executed", "status", "error_code", "created_at"} <= set(event)
-        for event in events
-    )
-    if not audit_ok:
-        blockers.append({"reason": "audit_record_shape_invalid"})
-    return {"deterministic_repeated_result": deterministic}, {"audit_records": len(events), "shape_ok": audit_ok}, {"side_effect_executed": side_effects}
+    return check_fake_operation_result_safety(results, repeated, repeated_again, events, blockers)
 
 
 def _check_docs(blockers: list[Json]) -> tuple[list[Json], list[Json]]:
-    missing_docs: list[Json] = []
-    forbidden: list[Json] = []
-    for relpath in DOCS_TO_SCAN:
-        path = _path(relpath)
-        if not path.exists():
-            missing_docs.append({"path": relpath})
-            blockers.append({"reason": "missing_doc", "path": relpath})
-            continue
-        text = path.read_text(encoding="utf-8")
-        for marker in FORBIDDEN_STATUS_MARKERS:
-            if marker in text:
-                forbidden.append({"path": relpath, "marker": marker})
-                blockers.append({"reason": "forbidden_status_marker", "path": relpath, "marker": marker})
-    return missing_docs, forbidden
+    return scan_docs_for_forbidden_markers(PROJECT_ROOT, DOCS_TO_SCAN, FORBIDDEN_STATUS_MARKERS, blockers)
 
 
 def _check_customer_smoke_parity(blockers: list[Json], warnings: list[Json]) -> tuple[Json, Json]:
@@ -294,9 +226,7 @@ def _check_source_guards(blockers: list[Json]) -> Json:
 def run_check() -> Json:
     blockers: list[Json] = []
     warnings: list[Json] = []
-    missing_files = [{"path": relpath} for relpath in CONTRACT_FILES if not _path(relpath).exists()]
-    for item in missing_files:
-        blockers.append({"reason": "missing_required_file", "path": item["path"]})
+    missing_files = collect_missing_files(PROJECT_ROOT, CONTRACT_FILES, blockers, reason="missing_required_file")
     adapter_contracts = _check_adapter_contracts(blockers)
     mode_guards = _check_modes(blockers)
     idempotency, audit, side_effect_safety = _check_idempotency_audit_side_effects(blockers)
@@ -325,13 +255,7 @@ def run_check() -> Json:
     }
 
 
-def write_json_report(report: Json, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 def write_markdown_report(report: Json, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# D7.6 Customer Sync Adapter Contract Check",
         "",
@@ -349,7 +273,7 @@ def write_markdown_report(report: Json, path: Path) -> None:
     else:
         lines.append("- none")
     lines.extend(["", "## Recommendation", "", report["recommendation"]])
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_markdown_lines(path, lines)
 
 
 def build_parser() -> argparse.ArgumentParser:

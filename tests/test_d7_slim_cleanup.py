@@ -91,3 +91,36 @@ def test_d7_experiment_tools_are_not_byte_copies_of_root_tools() -> None:
 def test_d7_protected_fallback_files_still_exist() -> None:
     missing = [path for path in PROTECTED_FALLBACKS if not (REPO_ROOT / path).exists()]
     assert missing == []
+
+
+def test_d7_phase2a_late_checkers_use_mechanical_shared_helper() -> None:
+    helper = REPO_ROOT / "tools" / "d7_contract_check_common.py"
+    assert helper.exists()
+    helper_text = helper.read_text(encoding="utf-8")
+    for helper_name in [
+        "resolve_project_root",
+        "read_project_text",
+        "check_adapter_methods",
+        "check_adapter_mode_guards",
+        "check_fake_operation_result_safety",
+        "scan_docs_for_forbidden_markers",
+        "write_json_report",
+        "write_markdown_lines",
+    ]:
+        assert f"def {helper_name}" in helper_text
+
+    checker_paths = [
+        REPO_ROOT / "tools" / "check_d7_5_automation_adapter_contract.py",
+        REPO_ROOT / "tools" / "check_d7_6_customer_sync_adapter_contract.py",
+        REPO_ROOT / "tools" / "check_d7_7_mcp_openclaw_adapter_contract.py",
+    ]
+    for path in checker_paths:
+        text = path.read_text(encoding="utf-8")
+        assert "from tools.d7_contract_check_common import" in text
+        assert "def _sample_call" in text
+        assert "check_fake_operation_result_safety" in text
+        assert "scan_docs_for_forbidden_markers" in text
+
+    assert "automation_application_boundary_missing" in checker_paths[0].read_text(encoding="utf-8")
+    assert "customer_sync_application_boundary_missing" in checker_paths[1].read_text(encoding="utf-8")
+    assert "openclaw_service_missing" in checker_paths[2].read_text(encoding="utf-8")
