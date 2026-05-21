@@ -13,6 +13,7 @@ AI-CRM default runtime has moved to AI-CRM Next. Legacy Flask remains as a fallb
 - D3 Customer Read Model old Flask readonly route owner is retired/deleted. AI-CRM Next owns customer list/detail/timeline route handling by default; legacy archive, contacts, identity, and mixed dependency packages remain fallback.
 - D4 User Ops old Flask readonly route owner is retired/tombstoned. AI-CRM Next owns User Ops readonly page/list/overview/send-record routes by default; legacy User Ops write/external domain helpers remain fallback dependencies and are not delete-ready.
 - D5 Questionnaire old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns questionnaire admin readonly, public readonly, and result readonly surfaces by default; legacy submit, OAuth, admin write, diagnostics, and external-push fallback code remains not delete-ready.
+- D6 Automation old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns automation conversion overview/pools/members/execution-record readonly surfaces by default; legacy manual override, activation webhook, OpenClaw, workflow/runtime, agent, WeCom, and external fallback code remains not delete-ready.
 
 ## Retirement Principles
 
@@ -143,4 +144,44 @@ Retained fallback files:
 - `wecom_ability_service/http/questionnaire_support.py`
 - `wecom_ability_service/domains/questionnaire/`
 
-Questionnaire writes, public submit, OAuth, WeCom tag, webhook/external push, and external delivery capabilities remain not delete-ready. D5 does not execute or approve those write/external paths. Rollback is `git revert` of the D5 PR or restoring a pre-D5 fallback tag. D6 Automation old routes have not started.
+Questionnaire writes, public submit, OAuth, WeCom tag, webhook/external push, and external delivery capabilities remain not delete-ready. D5 does not execute or approve those write/external paths. Rollback is `git revert` of the D5 PR or restoring a pre-D5 fallback tag.
+
+### D6: Automation Old Readonly Routes
+
+Stopped legacy readonly route registrations:
+
+- `GET /admin/automation-conversion`
+- `GET /api/admin/automation-conversion/overview`
+- `GET /api/admin/automation-conversion/pools`
+- `GET /api/admin/automation-conversion/members`
+- `GET /api/admin/automation-conversion/members/<member_id>`
+- `GET /api/admin/automation-conversion/execution-records`
+
+Stopped legacy readonly alias/page registrations:
+
+- `GET /admin/automation-conversion/programs/<program_id>/overview`
+- `GET /admin/automation-conversion/programs/<program_id>/executions`
+- `GET /admin/automation-conversion/programs/<program_id>/member-ops`
+- `GET /api/admin/automation-conversion/dashboard`
+- `GET /api/admin/automation-conversion/programs/<program_id>/members/segment-search`
+- `GET /api/admin/automation-conversion/member`
+- `GET /api/admin/automation-conversion/executions*`
+- `GET /api/admin/automation-conversion/execution-items/<execution_item_id>`
+
+D6 does not physically delete automation mixed modules because they still carry manual override, confirm conversion, OpenClaw push, activation webhook, workflow/runtime, agent, WeCom/external dispatch, and operation task fallback responsibilities.
+
+Retained fallback files:
+
+- `wecom_ability_service/http/automation_conversion.py`
+- `wecom_ability_service/http/customer_automation.py`
+- `wecom_ability_service/http/automation_conversion_member_api.py`
+- `wecom_ability_service/http/automation_conversion_delivery.py`
+- `wecom_ability_service/http/automation_conversion_runtime_api.py`
+- `wecom_ability_service/http/automation_conversion_router_callback_api.py`
+- `wecom_ability_service/http/automation_conversion_agent_api.py`
+- `wecom_ability_service/http/automation_conversion_operation_tasks.py`
+- `wecom_ability_service/http/automation_conversion_workflows.py`
+- `wecom_ability_service/http/automation_conversion_review.py`
+- `wecom_ability_service/domains/automation_conversion/`
+
+Automation writes, activation webhook, OpenClaw push, workflow runtime, agent runtime, WeCom dispatch, and external webhook capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. Rollback is `git revert` of the D6 PR or restoring a pre-D6 fallback tag. D7 write/external adapter retirement has not started.

@@ -161,7 +161,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_config_login_access.py for /admin/config/login-access* pages and account-management actions",
         "admin_config_marketing_automation.py for /admin/marketing-automation* and signup-conversion config compatibility APIs",
         "admin_hxc_dashboard.py for Huangxiaocan dashboard pages",
-        "automation_conversion.py for /admin/automation-conversion* and /api/admin/automation-conversion*",
+        "automation_conversion.py for legacy automation write/external/runtime fallback only; D6 retired core Automation readonly page/API/alias GET ownership",
         "automation_conversion_agent_page_actions.py for agent orchestration page form actions registered by automation_conversion.py",
         "automation_conversion_auto_reply_actions.py for auto-reply monitor page actions registered by automation_conversion.py",
         "automation_conversion_agent_api.py for agent outputs, agent config, and router callback JSON handlers registered by automation_conversion.py",
