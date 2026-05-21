@@ -39,6 +39,7 @@ from aicrm_next.shared.database import Base
 from aicrm_next.shared.errors import NotFoundError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 def _sql_repo() -> SqlAlchemyCustomerReadModelRepository:
@@ -142,8 +143,8 @@ def test_sql_repo_application_contracts_match_memory_shape() -> None:
 
 def test_customer_sql_repo_source_does_not_import_old_backend_packages() -> None:
     for path in [
-        PROJECT_ROOT / "src" / "aicrm_next" / "customer_read_model" / "repo.py",
-        PROJECT_ROOT / "src" / "aicrm_next" / "customer_read_model" / "models.py",
+        REPO_ROOT / "aicrm_next" / "customer_read_model" / "repo.py",
+        REPO_ROOT / "aicrm_next" / "customer_read_model" / "models.py",
     ]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = PROJECT_ROOT / "src"
+REPO_ROOT = PROJECT_ROOT.parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from tools import generate_gray_release_report  # noqa: E402
 

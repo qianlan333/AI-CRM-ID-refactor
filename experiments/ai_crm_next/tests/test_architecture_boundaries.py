@@ -5,10 +5,11 @@ from pathlib import Path
 
 
 FORBIDDEN_PREFIXES = ("wecom_ability_service", "openclaw_service")
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_next_project_does_not_import_old_backend_packages() -> None:
-    root = Path("src/aicrm_next")
+    root = REPO_ROOT / "aicrm_next"
     offenders: list[str] = []
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
