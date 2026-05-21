@@ -71,3 +71,29 @@ def test_d7_blocker_matrix_remains_non_delete_ready() -> None:
         "MCP / OpenClaw legacy adapter",
     ):
         assert capability in matrix
+
+
+def test_current_retirement_docs_do_not_reopen_completed_readonly_batches() -> None:
+    current_docs = "\n".join(
+        _read(path)
+        for path in (
+            "docs/legacy_retirement_plan.md",
+            "docs/legacy_delete_batches.md",
+        )
+    )
+
+    stale_status = "not" + " started"
+    for stale_phrase in (
+        "D4 User Ops old routes have " + stale_status,
+        "D5 Questionnaire old routes have " + stale_status,
+        "D6 Automation old routes have " + stale_status,
+    ):
+        assert stale_phrase not in current_docs
+
+    assert "D1 Media Library old Flask route modules are retired/deleted" in current_docs
+    assert "D2 Product Management old Flask admin route owner is retired/deleted" in current_docs
+    assert "D3 Customer Read Model old Flask readonly route owner is retired/deleted" in current_docs
+    assert "D4 User Ops old Flask readonly route owner is retired/tombstoned" in current_docs
+    assert "D5 Questionnaire old Flask readonly route registrations are retired/tombstoned" in current_docs
+    assert "D6 Automation old Flask readonly route registrations are retired/tombstoned" in current_docs
+    assert "D6.5 Dead Legacy Cleanup is completed" in current_docs

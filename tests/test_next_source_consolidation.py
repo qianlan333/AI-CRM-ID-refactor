@@ -6,6 +6,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PREFIXES = ("wecom_ability_service", "openclaw_service")
+ACTIVE_DUPLICATE_SOURCE_PATTERNS = (
+    "PYTHONPATH=src",
+    'pythonpath = ["src"]',
+    "from src.aicrm_next",
+    'PROJECT_ROOT / "src"',
+    "SRC_ROOT",
+)
 
 
 def _python_import_offenders(package_dir: Path) -> list[str]:
@@ -50,6 +57,26 @@ def test_experiments_pytest_and_tools_import_root_next_package() -> None:
     assert 'pythonpath = ["src"]' not in pyproject
     assert 'PROJECT_ROOT / "src"' not in tool_sources
     assert "SRC_ROOT" not in tool_sources
+
+
+def test_duplicate_source_references_are_not_active_import_or_config_paths() -> None:
+    ignored_dirs = {".git", ".venv", "__pycache__", ".pytest_cache"}
+    allowed_files = {Path("tests/test_next_source_consolidation.py")}
+    offenders: list[str] = []
+    for path in REPO_ROOT.rglob("*"):
+        if not path.is_file() or any(part in ignored_dirs for part in path.parts):
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        if rel in allowed_files:
+            continue
+        if path.suffix not in {".py", ".toml", ".sh", ".yml", ".yaml"}:
+            continue
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        for pattern in ACTIVE_DUPLICATE_SOURCE_PATTERNS:
+            if pattern in source:
+                offenders.append(f"{rel} contains {pattern}")
+
+    assert offenders == []
 
 
 def test_root_next_does_not_import_d7_external_fallbacks() -> None:

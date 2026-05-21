@@ -96,6 +96,6 @@ The `sidebar_marketing.py` controller is now a thin HTTP adapter backed by `side
 The `public_questionnaires.py` diagnostics/debug handlers are split into `public_questionnaire_diagnostics.py`.
 The `cloud_orchestrator_campaigns.py` member/step handlers are split into `cloud_orchestrator_campaign_details.py`.
 The `automation_conversion_agent_api.py` router callback handlers are split into `automation_conversion_router_callback_api.py`.
-The `image_library_endpoint.py` image creation handlers are split into `image_library_create.py`.
+D1 legacy retirement has removed `image_library_endpoint.py` and `image_library_create.py`; AI-CRM Next now owns the Media Library readonly route surface, while media write/external fallback remains protected outside this route-owner cleanup.
 The WeChat Pay product and transaction admin route owners are now split from the public H5/JSAPI owner.
 The remaining route-owner files are either already under guardrail or need a separate product-area pass.

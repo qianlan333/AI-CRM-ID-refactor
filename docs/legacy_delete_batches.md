@@ -207,7 +207,7 @@ D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
 ## D7: Write And External Adapters
 
-Status: replacement planning in progress. Delete only after real write/external replacement evidence and explicit provider approval.
+Status: blocked/not approved; replacement planning in progress. Delete only after real write/external replacement evidence and explicit provider approval.
 
 Planning package:
 
@@ -220,10 +220,10 @@ D7.1 Media storage and WeCom media adapter contract is the recommended first imp
 
 ## D8: Old Flask App Factory And HTTP Registrar
 
-Status: not started. Delete only after all legacy routes are retired and rollback no longer depends on Flask.
+Status: blocked/not approved. Delete only after all legacy routes are retired and rollback no longer depends on Flask.
 
 ## D9: OpenClaw Legacy Adapter Retirement
 
-Status: not started. Delete only after OpenClaw replacement evidence and approval.
+Status: blocked/not approved. Delete only after OpenClaw replacement evidence and approval.
 
 This document authorizes only the explicitly completed delete batches above. It does not physically delete legacy services outside those batches.

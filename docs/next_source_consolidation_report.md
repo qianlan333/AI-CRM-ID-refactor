@@ -1,5 +1,10 @@
 # Next Source Consolidation Report
 
+Historical D6.5/D6.6 source-consolidation report: references to
+`experiments/ai_crm_next/src/aicrm_next/**` below are deletion evidence only.
+The duplicate package has been deleted and must not be restored; root
+`aicrm_next/` is the only Next production source.
+
 ## Decision
 
 - root source of truth: `aicrm_next/`.

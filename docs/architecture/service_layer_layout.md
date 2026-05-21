@@ -112,8 +112,7 @@ Broadcast queue page and `/api/admin/broadcast-jobs*` handlers are isolated in `
 `wecom_ability_service/http/admin_questionnaire_console.py` owns questionnaire shell and editor pages.
 External push-log list and retry handlers are isolated in `admin_questionnaire_push_logs.py` so push-log query/retry orchestration does not inflate the questionnaire editor controller.
 
-`wecom_ability_service/http/image_library_endpoint.py` owns the image-library page, listing, details, update, delete, references, and resolve-test APIs.
-Image creation handlers are isolated in `image_library_create.py` so upload/from-url/from-base64 request handling does not inflate the image-library owner.
+D1 legacy retirement removed `image_library_endpoint.py` and `image_library_create.py`; AI-CRM Next owns Media Library readonly route handling by default. Legacy media domain helpers remain protected only for write/external fallback such as cloud storage and WeCom media upload.
 
 WeChat Pay HTTP handlers are split by product surface:
 
