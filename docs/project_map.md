@@ -41,7 +41,7 @@ AI-CRM/
 
 ## `aicrm_next/`
 
-这是当前默认运行架构，来自 `experiments/ai_crm_next/src/aicrm_next` 的 FastAPI modular monolith。
+这是当前默认运行架构，也是唯一生产运行源码位置。`experiments/ai_crm_next/` 只保留验证文档、工具、测试、fixture、migration 和实验材料。
 
 主要模块：
 

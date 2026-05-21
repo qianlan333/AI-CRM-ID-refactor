@@ -14,7 +14,7 @@ This strategy keeps the slice honest: Customer Read Model is `partial`, PostgreS
 - `GET /api/customers/{external_userid}/timeline`
 - `GET /api/messages/{external_userid}/recent`
 
-The required fields are defined in `src/aicrm_next/customer_read_model/parity_spec.py`.
+The required fields are defined in the root source package at `../../aicrm_next/customer_read_model/parity_spec.py`.
 
 ## Fixture Mode
 

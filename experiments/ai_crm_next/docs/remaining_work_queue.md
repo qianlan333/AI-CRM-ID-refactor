@@ -29,7 +29,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 4. Questionnaire Real OAuth Security Contract
 
 - objective: Replace fake OAuth contract with a real adapter specification and test harness.
-- files likely involved: `src/aicrm_next/questionnaire/oauth.py`, `questionnaire/api.py`, `tests/test_questionnaire_contract.py`.
+- files likely involved: `../../aicrm_next/questionnaire/oauth.py`, `questionnaire/api.py`, `tests/test_questionnaire_contract.py`.
 - acceptance criteria: state validation, callback errors, replay prevention, and masked logs are tested.
 - must not do: enable production OAuth without sandbox verification.
 - suggested validation command: `.venv/bin/python -m pytest tests/test_questionnaire_contract.py -q`.
@@ -37,7 +37,7 @@ Each task is scoped for a future Codex execution turn. Keep old production servi
 ## 5. Questionnaire PostgreSQL-Ready Repo
 
 - objective: Add schema/repository boundary for questionnaire definitions and submissions.
-- files likely involved: `src/aicrm_next/questionnaire/repo.py`, `migrations/versions/*`, `tests/test_questionnaire_*`.
+- files likely involved: `../../aicrm_next/questionnaire/repo.py`, `migrations/versions/*`, `tests/test_questionnaire_*`.
 - acceptance criteria: In-memory and SQL repo shape parity; migration tests exist.
 - must not do: migrate production questionnaire data in this task.
 - suggested validation command: `.venv/bin/python -m pytest tests/test_questionnaire_contract.py -q`.

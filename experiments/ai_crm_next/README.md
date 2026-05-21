@@ -2,7 +2,7 @@
 
 `experiments/ai_crm_next` is the frozen evidence workspace for the AI-CRM Next rewrite.
 
-The default runtime package has been promoted to root `aicrm_next/`. Keep this experiment directory for parity fixtures, canary evidence, and regression tooling until the legacy delete batches are complete.
+The default runtime package has been promoted to root `aicrm_next/`. Keep this experiment directory for parity fixtures, canary evidence, and regression tooling until the legacy delete batches are complete. Do not add a second source package under `experiments/ai_crm_next/src/aicrm_next`; tests and tools import the root package.
 
 The product goal is strict parity with the current AI-CRM product capability and frontend experience. The backend is a new FastAPI modular monolith; the old Flask backend is reference material only and is not imported at runtime.
 
