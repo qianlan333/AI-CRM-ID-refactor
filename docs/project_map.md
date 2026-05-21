@@ -60,6 +60,7 @@ AI-CRM/
 ## `wecom_ability_service/`
 
 这是 legacy Flask fallback 目录。
+Media Library old route modules were retired in D1; Media Library route ownership now lives in `aicrm_next/media_library` plus `aicrm_next/frontend_compat`.
 
 主要结构：
 

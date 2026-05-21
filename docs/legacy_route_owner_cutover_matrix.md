@@ -3,7 +3,7 @@
 | Batch | Module | Next Owner | Legacy Owner | Current Status | Delete Gate |
 | --- | --- | --- | --- | --- | --- |
 | D0 | Freeze only | `ai_crm_next` default runtime | `legacy_flask` fallback | frozen | no deletion |
-| D1 | Media readonly | `aicrm_next.media_library` | legacy media routes | canary evidence available | production evidence and rollback proof |
+| D1 | Media readonly | `aicrm_next.media_library` | legacy media routes | retired/deleted | completed by D1; rollback by reverting the D1 PR or restoring a pre-D1 legacy fallback tag |
 | D2 | Product readonly | `aicrm_next.commerce` | legacy commerce/payment routes | canary evidence available | production evidence and checkout/payment exclusion proof |
 | D3 | Customer readonly | `aicrm_next.customer_read_model` | legacy customer center | canary evidence available | production evidence and sample detail proof |
 | D4 | User Ops readonly | `aicrm_next.ops_enrollment` | legacy user ops | canary evidence available | production evidence and accepted drift proof |

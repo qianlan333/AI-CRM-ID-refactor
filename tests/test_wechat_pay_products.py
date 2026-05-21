@@ -466,7 +466,7 @@ def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app
     assert f"return_url=%2Fp%2F{product['product_code']}" in location
 
 
-def test_image_library_upload_limits_are_reused(app, client):
+def test_legacy_image_library_upload_route_is_retired_after_d1(app, client):
     token = _login_admin(client)
     _create_product(client, token)
     response = client.post(
@@ -474,8 +474,7 @@ def test_image_library_upload_limits_are_reused(app, client):
         data={"image": (BytesIO(b"not-image"), "slice.txt")},
         content_type="multipart/form-data",
     )
-    assert response.status_code == 400
-    assert "JPG/PNG" in response.get_json()["error"] or "supported" in response.get_json()["error"]
+    assert response.status_code in {404, 405}
 
 
 def test_checkout_page_mobile_field_depends_on_product(app, client):
