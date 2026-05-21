@@ -172,7 +172,11 @@ def build_report() -> dict[str, Any]:
         "legacy_route_owner_cutover_matrix": (REPO_ROOT / "docs" / "legacy_route_owner_cutover_matrix.md").read_text(encoding="utf-8"),
     }
     docs_record_d6 = all("D6" in content and "Automation" in content and "retired" in content for content in docs.values())
-    d7_to_d9_not_retired = "D7 | Write/external adapters" in docs["legacy_route_owner_cutover_matrix"] and "not approved" in docs["legacy_route_owner_cutover_matrix"]
+    d7_to_d9_not_retired = (
+        "| D7 | Write/external adapters |" in docs["legacy_route_owner_cutover_matrix"]
+        and "no deletion until replacement evidence" in docs["legacy_route_owner_cutover_matrix"]
+        and "No row is approved for production." in docs["legacy_route_owner_cutover_matrix"]
+    )
 
     stale_readonly_routes = [
         route for route, retired in {**retired_readonly_routes, **retired_alias_routes}.items() if not retired
