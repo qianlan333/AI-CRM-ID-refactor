@@ -15,6 +15,7 @@ AI-CRM default runtime has moved to AI-CRM Next. Legacy Flask remains as a fallb
 - D5 Questionnaire old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns questionnaire admin readonly, public readonly, and result readonly surfaces by default; legacy submit, OAuth, admin write, diagnostics, and external-push fallback code remains not delete-ready.
 - D6 Automation old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns automation conversion overview/pools/members/execution-record readonly surfaces by default; legacy manual override, activation webhook, OpenClaw, workflow/runtime, agent, WeCom, and external fallback code remains not delete-ready.
 - D6.5 Dead Legacy Cleanup is completed for safe no-reference readonly leftovers only. It deleted one orphaned D1 attachment-library template plus stale generated route-inventory artifacts. D7 write/external/runtime blockers remain protected and documented in `docs/d7_write_external_blocker_matrix.md`.
+- D7 Write / External replacement planning is in progress. The executable planning package is `docs/d7_write_external_replacement_plan.md`, `docs/d7_adapter_contract_catalog.md`, and `docs/d7_capability_readiness_matrix.md`; D7.1 Media storage / WeCom media adapter contract is the recommended first implementation batch.
 
 ## Retirement Principles
 
@@ -68,7 +69,7 @@ Not deleted by D2:
 - `wecom_ability_service/http/admin_wechat_pay.py`
 - `wecom_ability_service/http/admin_alipay_pay.py`
 
-Checkout, payment provider, return, notify, and transaction management remain legacy fallback and are not delete-ready. Product admin write fallback routes retire with the old Product Management owner, but Next product writes are still not `production_ready`. Rollback is `git revert` of the D2 PR or restoring a pre-D2 fallback tag.
+Checkout, payment provider, return, notify, and transaction management remain legacy fallback and are not delete-ready. Product admin write fallback routes retire with the old Product Management owner, but Next product writes are still blocked until D7 evidence exists. Rollback is `git revert` of the D2 PR or restoring a pre-D2 fallback tag.
 
 ### D3: Customer Read Model Old Readonly Routes
 
@@ -198,3 +199,18 @@ Deleted files:
 D6.5 was limited to no-reference readonly leftovers and stale generated owner inventory. It did not delete write, external, runtime, payment, OAuth, WeCom, OpenClaw, archive, contacts, identity, or MCP fallback code. Full evidence is in `docs/legacy_dead_code_inventory.md`, `docs/legacy_d6_5_dead_cleanup_report.md`, and `tools/check_legacy_dead_cleanup.py`.
 
 D7 write/external/runtime capabilities remain blocked and must go through replacement planning, tests, production evidence, rollback proof, and human approval before any further removal.
+
+### D7: Write / External Replacement Planning
+
+Status: planning in progress.
+
+Planning artifacts:
+
+- `docs/d7_write_external_replacement_plan.md`
+- `docs/d7_adapter_contract_catalog.md`
+- `docs/d7_capability_readiness_matrix.md`
+- `tools/check_d7_replacement_planning.py`
+
+Recommended first implementation batch: D7.1 Media storage and WeCom media adapter contract.
+
+D8 old Flask shell retirement remains blocked. D9 OpenClaw legacy adapter retirement remains blocked. D7 planning does not authorize real external calls, production route changes, or legacy write/external/runtime deletion.

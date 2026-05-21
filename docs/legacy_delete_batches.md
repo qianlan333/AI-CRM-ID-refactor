@@ -44,7 +44,7 @@ Untouched payment / checkout files:
 - `wecom_ability_service/http/admin_wechat_pay.py`
 - `wecom_ability_service/http/admin_alipay_pay.py`
 
-Checkout, payment return, and payment notify routes remain legacy fallback and are not delete-ready. Product admin write fallback routes went down with the Product Management owner, but this does not make Next product writes `production_ready`.
+Checkout, payment return, and payment notify routes remain legacy fallback and are not delete-ready. Product admin write fallback routes went down with the Product Management owner, but Next product writes remain blocked until D7 evidence exists.
 
 Rollback:
 
@@ -207,7 +207,16 @@ D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
 ## D7: Write And External Adapters
 
-Status: not started. Delete only after real write/external replacement evidence and explicit provider approval.
+Status: replacement planning in progress. Delete only after real write/external replacement evidence and explicit provider approval.
+
+Planning package:
+
+- `docs/d7_write_external_replacement_plan.md`
+- `docs/d7_adapter_contract_catalog.md`
+- `docs/d7_capability_readiness_matrix.md`
+- `tools/check_d7_replacement_planning.py`
+
+D7.1 Media storage and WeCom media adapter contract is the recommended first implementation batch. D8 and D9 remain blocked.
 
 ## D8: Old Flask App Factory And HTTP Registrar
 

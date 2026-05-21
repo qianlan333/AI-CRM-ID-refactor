@@ -20,3 +20,16 @@
 ## Go / No-Go
 
 D6.5 can proceed to acceptance only after checker, fallback smoke, pytest, and six parity checks pass. D7 remains blocked until replacement plans and production evidence exist.
+
+## D7 Replacement Planning
+
+| check | status | evidence |
+| --- | --- | --- |
+| D7 replacement master plan exists | PASS | `docs/d7_write_external_replacement_plan.md` |
+| D7 adapter contract catalog exists | PASS | `docs/d7_adapter_contract_catalog.md` |
+| D7 capability readiness matrix exists | PASS | `docs/d7_capability_readiness_matrix.md` |
+| D7 planning checker exists | PASS | `tools/check_d7_replacement_planning.py` |
+| Recommended first batch | PASS | D7.1 Media storage / WeCom media adapter contract |
+| Real external call | NO | planning only |
+| Production route change | NO | planning only |
+| Legacy write/external deletion | NO | planning only |
