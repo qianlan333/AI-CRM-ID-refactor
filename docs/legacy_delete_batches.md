@@ -207,6 +207,18 @@ Not deleted by D6.5:
 
 D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
+## D8.5: Legacy DB / Maintenance Command Planning
+
+Status: maintenance command retirement planning ready.
+
+New planning artifacts:
+
+- `docs/d8_5_legacy_db_maintenance_command_inventory.md`
+- `docs/d8_5_legacy_db_maintenance_command_retirement_plan.md`
+- `docs/d8_5_maintenance_command_replacement_matrix.md`
+
+D8.5 does not delete any legacy DB init or maintenance command. It keeps `python3 app.py init-db-legacy`, `python3 app.py init-db`, `python3 legacy_flask_app.py init-db`, legacy cleanup helpers, legacy schema helpers, diagnostic scripts, and rollback commands in place until replacement evidence and rollback signoff exist.
+
 ## D7: Write And External Adapters
 
 Status: blocked/not approved for deletion; D7.1 fake media adapter contract implemented; D7.2 fake Questionnaire submit/OAuth/WeCom tag/external push adapter contract implemented; D7.3 fake User Ops DND/batch-send/WeCom dispatch/deferred-job adapter contract implemented; D7.4 fake Product/Payment adapter contract implemented; D7.5 fake Automation write/OpenClaw/workflow/agent adapter contract implemented; D7.6 fake Archive/Contacts/Identity/Customer Projection adapter contract implemented; D7.7 fake MCP/OpenClaw legacy adapter contract implemented. Delete only after real write/external/runtime/sync replacement evidence and explicit provider approval.
@@ -238,7 +250,24 @@ D7.5 Automation write/OpenClaw/workflow/agent adapter contract now provides fake
 
 ## D8: Old Flask App Factory And HTTP Registrar
 
-Status: blocked/not approved. Delete only after all legacy routes are retired and rollback no longer depends on Flask.
+Status: retirement planning gate only. D8.0 adds the legacy Flask shell retirement plan, dependency inventory, allowed fallback matrix, checker, and tests. It does not delete `legacy_flask_app.py`, `wecom_ability_service/`, `openclaw_service/`, the legacy app factory, or the legacy HTTP registrar.
+
+D8.0 correct state:
+
+- `legacy_flask_shell_status`: `retirement_planning_ready`
+- deletion readiness: false
+- `production_cutover_executed`: false
+- `real_external_adapters_enabled`: false
+
+Later D8 phases may proceed only after their own evidence and rollback plan:
+
+- D8.1 legacy fallback route lockdown planning: `lockdown_planning_ready`; adds allowed fallback registry, retired readonly route matrix, checker, and tests only
+- D8.2 legacy fallback route lockdown enforcement: `lockdown_enforcement_implemented`; adds a legacy-only 410 guard for retired D1-D6 readonly routes while preserving allowed fallback routes
+- D8.3 legacy Flask archive package planning: `archive_move_planning_ready`; adds archive target structure, move map, import rewrite plan, checker, and tests only
+- D8.4 legacy Flask archive package implementation: `archive_package_created`; creates `legacy_flask/` entry-layer package and compatibility shims
+- D8.5 legacy app factory / HTTP registrar removal plan after production external cutover evidence and all fallback routes retire
+
+D8.4 does not delete the legacy shell, does not move `openclaw_service/`, does not modify production configuration, does not cut traffic, and does not enable real external behavior. Domains/templates/static mostly remain in the old location.
 
 ## D9: OpenClaw Legacy Adapter Retirement
 

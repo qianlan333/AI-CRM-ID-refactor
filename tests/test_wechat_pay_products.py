@@ -111,7 +111,10 @@ def test_legacy_admin_product_management_routes_are_retired_after_d2(app, client
         client.post(f"/api/admin/wechat-pay/products/{product['id']}/disable", json={"admin_action_token": token}),
         client.delete(f"/api/admin/wechat-pay/products/{product['id']}", json={"admin_action_token": token}),
     ]
-    assert all(response.status_code in {404, 405} for response in probes)
+    assert all(response.status_code in {404, 405, 410} for response in probes)
+    retired_payloads = [response.get_json(silent=True) or {} for response in probes if response.status_code == 410]
+    assert retired_payloads
+    assert all(payload.get("error") == "legacy_route_retired" for payload in retired_payloads)
 
 
 def test_product_enable_disable_copy_and_delete(app, client):
