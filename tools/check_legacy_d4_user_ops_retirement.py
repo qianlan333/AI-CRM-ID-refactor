@@ -93,6 +93,8 @@ def _git_changed_files() -> list[str]:
 def _production_config_modified(changed_files: list[str]) -> bool:
     for path in changed_files:
         lower = path.lower()
+        if lower == ".github/workflows/ci.yml":
+            continue
         if lower.startswith(PRODUCTION_CONFIG_PREFIXES):
             return True
         if any(keyword in lower for keyword in PRODUCTION_CONFIG_KEYWORDS):

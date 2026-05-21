@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import subprocess
 from pathlib import Path
 
 
@@ -77,6 +78,15 @@ def test_duplicate_source_references_are_not_active_import_or_config_paths() -> 
                 offenders.append(f"{rel} contains {pattern}")
 
     assert offenders == []
+
+
+def test_shell_guard_blocks_duplicate_next_source_return() -> None:
+    script = REPO_ROOT / "scripts" / "check_no_duplicate_next_source.sh"
+
+    source = script.read_text(encoding="utf-8")
+    assert "experiments/ai_crm_next/src/aicrm_next" in source
+    assert "root aicrm_next/" in source
+    subprocess.run(["bash", str(script)], cwd=REPO_ROOT, check=True, capture_output=True, text=True)
 
 
 def test_root_next_does_not_import_d7_external_fallbacks() -> None:

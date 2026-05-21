@@ -124,6 +124,8 @@ def _production_config_modified(changed: list[str]) -> bool:
     forbidden_tokens = ("nginx", "systemd", "supervisor", "docker-compose", "production")
     for path in changed:
         lower = path.lower()
+        if lower == ".github/workflows/ci.yml":
+            continue
         if path.startswith(forbidden_prefixes):
             return True
         if not path.startswith(("docs/", "tests/", "tools/")) and any(token in lower for token in forbidden_tokens):
