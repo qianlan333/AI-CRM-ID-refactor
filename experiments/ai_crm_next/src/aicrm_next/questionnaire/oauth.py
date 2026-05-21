@@ -1,41 +1,48 @@
 from __future__ import annotations
 
-from urllib.parse import quote
-
+from aicrm_next.integration_gateway.questionnaire_adapters import WeChatOAuthAdapter, build_wechat_oauth_adapter
 from .dto import OAuthCallbackRequest, OAuthStartRequest
 
 
 class FakeWechatOAuthAdapter:
     source_status = "fake"
 
+    def __init__(self, adapter: WeChatOAuthAdapter | None = None) -> None:
+        self._adapter = adapter or build_wechat_oauth_adapter()
+
     def start(self, request: OAuthStartRequest) -> dict:
-        state = (request.state or request.slug or "questionnaire_fake_state").strip()
-        redirect_url = request.redirect or f"/api/h5/wechat/oauth/callback?state={quote(state)}"
-        query = []
-        if request.openid:
-            query.append(f"openid={quote(request.openid)}")
-        if request.unionid:
-            query.append(f"unionid={quote(request.unionid)}")
-        if request.external_userid:
-            query.append(f"external_userid={quote(request.external_userid)}")
-        fake_redirect_url = redirect_url + (("&" if "?" in redirect_url else "?") + "&".join(query) if query else "")
+        adapter_result = self._adapter.build_authorize_url(
+            slug=request.slug,
+            state=request.state,
+            redirect=request.redirect,
+            openid=request.openid,
+            unionid=request.unionid,
+            external_userid=request.external_userid,
+        )
+        result = adapter_result.get("result") if isinstance(adapter_result.get("result"), dict) else {}
         return {
-            "ok": True,
-            "redirect_url": fake_redirect_url,
-            "state": state,
-            "source_status": self.source_status,
-            "oauth_provider": "wechat_mp",
+            "ok": bool(adapter_result.get("ok")),
+            "redirect_url": result.get("redirect_url", ""),
+            "state": result.get("state", request.state or request.slug or ""),
+            "source_status": result.get("source_status", "adapter_error"),
+            "oauth_provider": result.get("oauth_provider", "wechat_mp"),
         }
 
     def callback(self, request: OAuthCallbackRequest) -> dict:
-        state = (request.state or "").strip()
-        redirect_url = request.redirect or (f"/s/{state}" if state else "/")
+        adapter_result = self._adapter.resolve_oauth_identity(
+            state=request.state,
+            redirect=request.redirect,
+            openid=request.openid,
+            unionid=request.unionid,
+            external_userid=request.external_userid,
+        )
+        result = adapter_result.get("result") if isinstance(adapter_result.get("result"), dict) else {}
         return {
-            "ok": True,
-            "openid": request.openid or "openid_fake_001",
-            "unionid": request.unionid or "unionid_fake_001",
-            "external_userid": request.external_userid or "",
-            "redirect_url": redirect_url,
-            "state": state,
-            "source_status": self.source_status if state else "missing_config",
+            "ok": bool(adapter_result.get("ok")),
+            "openid": result.get("openid", request.openid or "openid_fake_001"),
+            "unionid": result.get("unionid", request.unionid or "unionid_fake_001"),
+            "external_userid": result.get("external_userid", request.external_userid or ""),
+            "redirect_url": result.get("redirect_url", request.redirect or (f"/s/{request.state}" if request.state else "/")),
+            "state": result.get("state", request.state or ""),
+            "source_status": result.get("source_status", "missing_config" if not request.state else "adapter_error"),
         }

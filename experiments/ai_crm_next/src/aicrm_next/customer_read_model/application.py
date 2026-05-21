@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from aicrm_next.shared.errors import NotFoundError
 from aicrm_next.shared.typing import JsonDict
+from aicrm_next.integration_gateway.customer_sync_adapters import (
+    build_archive_sync_adapter,
+    build_contacts_sync_adapter,
+    build_customer_projection_sync_gateway,
+    customer_sync_side_effect_safety,
+)
 
 from .dto import (
     CustomerChatContextRequest,
@@ -26,10 +32,21 @@ def _normalize_bool_filter(value: str | None) -> bool | None:
 
 
 class ListCustomersQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None) -> None:
+    def __init__(self, repo: CustomerReadRepository | None = None, contacts_adapter=None, projection_gateway=None) -> None:
         self._repo = repo or build_customer_read_model_repository()
+        self._contacts_adapter = contacts_adapter or build_contacts_sync_adapter()
+        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
 
     def execute(self, query: ListCustomersRequest) -> JsonDict:
+        contacts_contract = self._contacts_adapter.fetch_external_contacts(
+            follow_user_userid=query.owner_userid or "",
+            limit=query.limit,
+            sync_cursor=f"offset:{query.offset}",
+        )
+        projection_contract = self._projection_gateway.update_customer_list_projection(
+            projection_name="customer_list",
+            sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
+        )
         filters = {
             "owner_userid": query.owner_userid or "",
             "tag": query.tag or "",
@@ -82,29 +99,51 @@ class ListCustomersQuery:
             "limit": query.limit,
             "offset": query.offset,
             "filters": filters,
+            "adapter_contract": {
+                "contacts_sync": contacts_contract,
+                "customer_projection": projection_contract,
+            },
+            "side_effect_safety": customer_sync_side_effect_safety(),
         }
 
     __call__ = execute
 
 
 class GetCustomerDetailQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None) -> None:
+    def __init__(self, repo: CustomerReadRepository | None = None, contacts_adapter=None, projection_gateway=None) -> None:
         self._repo = repo or build_customer_read_model_repository()
+        self._contacts_adapter = contacts_adapter or build_contacts_sync_adapter()
+        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
 
     def execute(self, query: CustomerDetailRequest) -> JsonDict:
+        contacts_contract = self._contacts_adapter.fetch_contact_detail(external_userid=query.external_userid)
+        projection_contract = self._projection_gateway.update_customer_detail_projection(external_userid=query.external_userid)
         customer = self._repo.get_customer(query.external_userid)
         if not customer:
             raise NotFoundError("customer not found")
-        return {"ok": True, "customer": detail_projection(customer)}
+        return {
+            "ok": True,
+            "customer": detail_projection(customer),
+            "adapter_contract": {
+                "contacts_sync": contacts_contract,
+                "customer_projection": projection_contract,
+            },
+            "side_effect_safety": customer_sync_side_effect_safety(),
+        }
 
     __call__ = execute
 
 
 class GetCustomerTimelineQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None) -> None:
+    def __init__(self, repo: CustomerReadRepository | None = None, projection_gateway=None) -> None:
         self._repo = repo or build_customer_read_model_repository()
+        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
 
     def execute(self, query: CustomerTimelineRequest) -> JsonDict:
+        projection_contract = self._projection_gateway.update_customer_timeline_projection(
+            external_userid=query.external_userid,
+            sync_cursor=f"offset:{query.offset}:limit:{query.limit}",
+        )
         customer = self._repo.get_customer(query.external_userid)
         if not customer:
             raise NotFoundError("customer not found")
@@ -124,20 +163,40 @@ class GetCustomerTimelineQuery:
                 "filters": {"event_type": query.event_type or "", "limit": str(query.limit), "offset": str(query.offset)},
                 "total": total,
             },
+            "adapter_contract": {"customer_projection": projection_contract},
+            "side_effect_safety": customer_sync_side_effect_safety(),
         }
 
     __call__ = execute
 
 
 class ListRecentMessagesQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None) -> None:
+    def __init__(self, repo: CustomerReadRepository | None = None, archive_adapter=None, projection_gateway=None) -> None:
         self._repo = repo or build_customer_read_model_repository()
+        self._archive_adapter = archive_adapter or build_archive_sync_adapter()
+        self._projection_gateway = projection_gateway or build_customer_projection_sync_gateway()
 
     def execute(self, query: RecentMessagesRequest) -> JsonDict:
+        archive_contract = self._archive_adapter.fetch_recent_messages(
+            external_userid=query.external_userid,
+            limit=query.limit,
+        )
+        projection_contract = self._projection_gateway.update_recent_messages_projection(
+            external_userid=query.external_userid,
+            sync_cursor=f"limit:{query.limit}",
+        )
         customer = self._repo.get_customer(query.external_userid)
         if not customer:
             raise NotFoundError("customer not found")
-        return {"ok": True, "messages": self._repo.list_recent_messages(query.external_userid)[: query.limit]}
+        return {
+            "ok": True,
+            "messages": self._repo.list_recent_messages(query.external_userid)[: query.limit],
+            "adapter_contract": {
+                "archive_sync": archive_contract,
+                "customer_projection": projection_contract,
+            },
+            "side_effect_safety": customer_sync_side_effect_safety(),
+        }
 
     __call__ = execute
 
@@ -163,6 +222,12 @@ class GetCustomerChatContextQuery:
             "source_status": "fixture",
             "degraded": False,
             "warnings": [],
+            "adapter_contract": {
+                "detail": detail.get("adapter_contract", {}),
+                "timeline": timeline.get("adapter_contract", {}),
+                "recent_messages": messages.get("adapter_contract", {}),
+            },
+            "side_effect_safety": customer_sync_side_effect_safety(),
         }
 
     __call__ = execute

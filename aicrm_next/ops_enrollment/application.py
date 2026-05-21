@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from aicrm_next.integration_gateway.dispatch import DispatchGateway
+from aicrm_next.integration_gateway.user_ops_adapters import (
+    UserOpsBatchSendGateway,
+    UserOpsDeferredJobGateway,
+    UserOpsDndWriteGateway,
+    WeComMessageDispatchAdapter,
+    build_user_ops_batch_send_gateway,
+    build_user_ops_deferred_job_gateway,
+    build_user_ops_dnd_gateway,
+    build_wecom_message_dispatch_adapter,
+)
 from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.typing import JsonDict
 
@@ -29,6 +38,28 @@ def _filter_options(rows: list[JsonDict]) -> JsonDict:
 
 def reset_user_ops_fixture_state() -> None:
     _REPO.reset()
+
+
+def _media_refs_from_batch_request(request: BatchSendRequest) -> list[JsonDict]:
+    refs: list[JsonDict] = []
+    refs.extend({"kind": "image", "index": index} for index, _ in enumerate(request.images))
+    refs.extend({"kind": "attachment", "index": index} for index, _ in enumerate(request.attachments))
+    return refs
+
+
+def _user_ops_side_effect_safety() -> JsonDict:
+    return {
+        "user_ops_dnd_mode": build_user_ops_dnd_gateway().mode,
+        "user_ops_batch_send_mode": build_user_ops_batch_send_gateway().mode,
+        "wecom_dispatch_mode": build_wecom_message_dispatch_adapter().mode,
+        "user_ops_deferred_jobs_mode": build_user_ops_deferred_job_gateway().mode,
+        "real_dnd_write_executed": False,
+        "real_batch_send_executed": False,
+        "real_wecom_dispatch_executed": False,
+        "real_deferred_jobs_executed": False,
+        "real_wecom_media_upload_executed": False,
+        "side_effect_executed": False,
+    }
 
 
 class GetUserOpsOverviewQuery:
@@ -77,13 +108,39 @@ class ListLeadPoolQuery:
 
 
 class PreviewUserOpsBatchSendCommand:
-    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: UserOpsRepository | None = None,
+        batch_gateway: UserOpsBatchSendGateway | None = None,
+    ) -> None:
         self._repo = repo or _REPO
+        self._batch_gateway = batch_gateway or build_user_ops_batch_send_gateway()
 
     def execute(self, request: BatchSendRequest) -> JsonDict:
         request.filters = normalize_filters(request.filters)
         rows = apply_filters(self._repo.list_rows(), request.filters)
-        return {"ok": True, **resolve_batch_targets(rows, request)}
+        preview = resolve_batch_targets(rows, request)
+        gateway_result = self._batch_gateway.build_batch_send_preview(
+            selection_mode=request.selection_mode,
+            filters=preview["filters"],
+            selected_ids=request.selected_ids,
+            excluded_ids=request.excluded_ids,
+            content=request.content,
+            targets=preview["final_targets"],
+            owner_buckets=preview["owner_buckets"],
+            include_do_not_disturb=preview["include_do_not_disturb"],
+            media_refs=_media_refs_from_batch_request(request),
+        )
+        if not gateway_result["ok"]:
+            raise ContractError(gateway_result["error_message"] or gateway_result["error_code"])
+        return {
+            "ok": True,
+            **preview,
+            "side_effect_safety": _user_ops_side_effect_safety(),
+            "adapter_contract": {
+                "batch_send": gateway_result,
+            },
+        }
 
     __call__ = execute
 
@@ -92,27 +149,43 @@ class ExecuteUserOpsBatchSendCommand:
     def __init__(
         self,
         repo: UserOpsRepository | None = None,
-        dispatch_gateway: DispatchGateway | None = None,
+        batch_gateway: UserOpsBatchSendGateway | None = None,
+        dispatch_adapter: WeComMessageDispatchAdapter | None = None,
     ) -> None:
         self._repo = repo or _REPO
-        self._dispatch_gateway = dispatch_gateway or DispatchGateway()
+        self._batch_gateway = batch_gateway or build_user_ops_batch_send_gateway()
+        self._dispatch_adapter = dispatch_adapter or build_wecom_message_dispatch_adapter()
 
     def execute(self, request: BatchSendRequest) -> JsonDict:
         if not request.confirm:
             raise ContractError("confirm=true is required")
-        preview = PreviewUserOpsBatchSendCommand(self._repo)(request)
+        preview = PreviewUserOpsBatchSendCommand(self._repo, batch_gateway=self._batch_gateway)(request)
         if not preview["has_body"]:
             raise ContractError("content is required")
+
+        media_refs = _media_refs_from_batch_request(request)
+        execute_gateway_result = self._batch_gateway.execute_batch_send(
+            content=request.content,
+            targets=preview["final_targets"],
+            owner_buckets=preview["owner_buckets"],
+            operator=request.operator,
+            media_refs=media_refs,
+        )
+        if not execute_gateway_result["ok"]:
+            raise ContractError(execute_gateway_result["error_message"] or execute_gateway_result["error_code"])
 
         task_results: list[JsonDict] = []
         sender_userids: list[str] = []
         for bucket in preview["owner_buckets"]:
-            dispatch_result = self._dispatch_gateway.dispatch_user_ops_private_message_batch(
-                owner_bucket=bucket,
+            dispatch_result = self._dispatch_adapter.send_private_message(
+                owner_userid=str(bucket.get("owner_userid") or ""),
+                external_userids=list(bucket.get("external_userids") or []),
                 content=request.content,
-                images=request.images,
-                attachments=request.attachments,
+                media_refs=media_refs,
             )
+            if not dispatch_result["ok"]:
+                raise ContractError(dispatch_result["error_message"] or dispatch_result["error_code"])
+            dispatch_payload = dispatch_result["result"]
             sender_userid = str(bucket.get("sender_userid") or bucket.get("owner_userid") or "")
             sender_userids.append(sender_userid)
             task_results.append(
@@ -123,41 +196,54 @@ class ExecuteUserOpsBatchSendCommand:
                     "external_userids": bucket["external_userids"],
                     "external_userid_count": len(bucket["external_userids"]),
                     "target_count": bucket["target_count"],
-                    "task_id": dispatch_result["task_id"],
-                    "status": dispatch_result["status"],
-                    "status_label": dispatch_result["status_label"],
-                    "error_message": dispatch_result["error_message"],
-                    "dispatch_adapter": dispatch_result["dispatch_adapter"],
+                    "task_id": dispatch_payload["task_id"],
+                    "status": dispatch_payload["status"],
+                    "status_label": dispatch_payload["status_label"],
+                    "error_message": dispatch_payload["error_message"],
+                    "dispatch_adapter": dispatch_payload["dispatch_adapter"],
+                    "adapter_contract": dispatch_result,
                 }
             )
 
         sent_count = sum(result["target_count"] for result in task_results)
-        record = self._repo.create_send_record(
-            {
-                "selected_count": preview["selected_count"],
-                "eligible_count": preview["eligible_count"],
-                "sent_count": sent_count,
-                "skipped_count": preview["skipped_count"],
-                "skipped_reasons": preview["skipped_by_reason"],
-                "skipped_by_reason": preview["skipped_by_reason"],
-                "skipped_summary": preview["skipped_summary"],
-                "skip_summary": preview["skip_summary"],
-                "include_do_not_disturb": preview["include_do_not_disturb"],
-                "content_preview": preview["content_preview"],
-                "image_count": preview["image_count"],
-                "sender_userids": sorted(set(sender_userids)),
-                "filter_snapshot": preview["filters"],
-                "operator": request.operator,
-                "status": "created",
-                "status_label": "已创建任务",
-                "task_results": task_results,
-            }
+        record_payload = {
+            "selected_count": preview["selected_count"],
+            "eligible_count": preview["eligible_count"],
+            "sent_count": sent_count,
+            "skipped_count": preview["skipped_count"],
+            "skipped_reasons": preview["skipped_by_reason"],
+            "skipped_by_reason": preview["skipped_by_reason"],
+            "skipped_summary": preview["skipped_summary"],
+            "skip_summary": preview["skip_summary"],
+            "include_do_not_disturb": preview["include_do_not_disturb"],
+            "content_preview": preview["content_preview"],
+            "image_count": preview["image_count"],
+            "sender_userids": sorted(set(sender_userids)),
+            "filter_snapshot": preview["filters"],
+            "operator": request.operator,
+            "status": "created",
+            "status_label": "已创建任务",
+            "task_results": task_results,
+        }
+        record_gateway_result = self._batch_gateway.create_send_record(payload=record_payload)
+        if not record_gateway_result["ok"]:
+            raise ContractError(record_gateway_result["error_message"] or record_gateway_result["error_code"])
+        record = self._repo.create_send_record(record_payload)
+        summary_gateway_result = self._batch_gateway.build_send_result_summary(
+            record_id=record["record_id"],
+            task_results=task_results,
+            sent_count=sent_count,
+            skipped_count=preview["skipped_count"],
         )
+        if not summary_gateway_result["ok"]:
+            raise ContractError(summary_gateway_result["error_message"] or summary_gateway_result["error_code"])
         execution_summary = {
             "dispatch_adapter": "fake_wecom",
             "task_count": len(task_results),
             "sent_count": sent_count,
             "delivery_status_supported": False,
+            "adapter_contract": summary_gateway_result,
+            "side_effect_safety": _user_ops_side_effect_safety(),
         }
         return {
             "ok": True,
@@ -166,6 +252,11 @@ class ExecuteUserOpsBatchSendCommand:
             "sent_count": sent_count,
             "execution_summary": execution_summary,
             "task_results": task_results,
+            "side_effect_safety": _user_ops_side_effect_safety(),
+            "adapter_contract": {
+                "batch_send_execute": execute_gateway_result,
+                "send_record": record_gateway_result,
+            },
         }
 
     __call__ = execute
@@ -224,9 +315,34 @@ class RefreshUserOpsSendRecordStatusCommand:
     __call__ = execute
 
 
+class EnqueueUserOpsDeferredJobCommand:
+    def __init__(self, gateway: UserOpsDeferredJobGateway | None = None) -> None:
+        self._gateway = gateway or build_user_ops_deferred_job_gateway()
+
+    def execute(self, *, job_id: str = "", job_type: str = "", run_at: str = "", target: JsonDict | None = None, payload_summary: JsonDict | None = None) -> JsonDict:
+        return self._gateway.enqueue_deferred_job(job_id=job_id, job_type=job_type, run_at=run_at, target=target or {}, payload_summary=payload_summary or {})
+
+    __call__ = execute
+
+
+class RunDueUserOpsDeferredJobsCommand:
+    def __init__(self, gateway: UserOpsDeferredJobGateway | None = None) -> None:
+        self._gateway = gateway or build_user_ops_deferred_job_gateway()
+
+    def execute(self, *, now: str = "", limit: int = 100, job_ids: list[str] | None = None) -> JsonDict:
+        return self._gateway.run_due_jobs(now=now, limit=limit, job_ids=job_ids or [])
+
+    __call__ = execute
+
+
 class SetUserOpsDoNotDisturbCommand:
-    def __init__(self, repo: UserOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: UserOpsRepository | None = None,
+        dnd_gateway: UserOpsDndWriteGateway | None = None,
+    ) -> None:
         self._repo = repo or _REPO
+        self._dnd_gateway = dnd_gateway or build_user_ops_dnd_gateway()
 
     def execute(self, request: DoNotDisturbRequest) -> JsonDict:
         external_userid = request.external_userid.strip()
@@ -238,6 +354,26 @@ class SetUserOpsDoNotDisturbCommand:
         is_active = request.is_active
         if is_active is None:
             is_active = action not in {"disable", "cancel", "clear", "remove"}
+
+        gateway_result = (
+            self._dnd_gateway.enable_do_not_disturb(
+                external_userid=external_userid,
+                mobile=mobile,
+                reason_code=request.reason_code.strip() or "manual_set",
+                reason_text=request.reason_text.strip() or "运营设置",
+                operator=request.operator,
+            )
+            if is_active
+            else self._dnd_gateway.cancel_do_not_disturb(
+                external_userid=external_userid,
+                mobile=mobile,
+                reason_code=request.reason_code.strip() or "manual_set",
+                reason_text=request.reason_text.strip() or "运营设置",
+                operator=request.operator,
+            )
+        )
+        if not gateway_result["ok"]:
+            raise ContractError(gateway_result["error_message"] or gateway_result["error_code"])
 
         row = self._repo.set_do_not_disturb(
             external_userid=external_userid,
@@ -258,6 +394,10 @@ class SetUserOpsDoNotDisturbCommand:
             },
             "do_not_disturb": row["do_not_disturb"],
             "do_not_disturb_reasons": row["do_not_disturb_reasons"],
+            "side_effect_safety": _user_ops_side_effect_safety(),
+            "adapter_contract": {
+                "dnd_write": gateway_result,
+            },
         }
 
     __call__ = execute

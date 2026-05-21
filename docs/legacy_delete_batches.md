@@ -104,6 +104,8 @@ Retained User Ops write / external fallback dependencies:
 
 DND, batch-send, deferred jobs, WeCom dispatch, and media upload capabilities remain not delete-ready. D4 does not execute or approve those write/external paths. If a legacy admin User Ops route owner is needed for rollback, restore it by reverting the D4/D0-D4 retirement PR chain or by using a pre-D4 fallback tag.
 
+D7.3 now provides fake User Ops adapter contracts for DND, batch-send, WeCom dispatch, and deferred jobs under `aicrm_next/integration_gateway/user_ops_adapters.py`. The retained legacy fallback dependencies above still stay in place because real external calls, worker execution, production evidence, rollback proof, and human approval are not present.
+
 ## D5: Questionnaire Old Readonly Routes
 
 Status: retired/tombstoned.
@@ -207,7 +209,7 @@ D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
 ## D7: Write And External Adapters
 
-Status: replacement planning in progress. Delete only after real write/external replacement evidence and explicit provider approval.
+Status: replacement planning in progress; D7.1 fake media adapter contract implemented; D7.2 fake Questionnaire submit/OAuth/WeCom tag/external push adapter contract implemented; D7.3 fake User Ops DND/batch-send/WeCom dispatch/deferred-job adapter contract implemented; D7.4 fake Product/Payment adapter contract implemented; D7.5 fake Automation write/OpenClaw/workflow/agent adapter contract implemented; D7.6 fake Archive/Contacts/Identity/Customer Projection adapter contract implemented; D7.7 fake MCP/OpenClaw legacy adapter contract implemented. Delete only after real write/external/runtime/sync replacement evidence and explicit provider approval.
 
 Planning package:
 
@@ -216,7 +218,23 @@ Planning package:
 - `docs/d7_capability_readiness_matrix.md`
 - `tools/check_d7_replacement_planning.py`
 
-D7.1 Media storage and WeCom media adapter contract is the recommended first implementation batch. D8 and D9 remain blocked.
+D7.6 package:
+
+- `aicrm_next/integration_gateway/customer_sync_contracts.py`
+- `aicrm_next/integration_gateway/customer_sync_adapters.py`
+- `docs/d7_6_archive_contacts_identity_adapter_contract.md`
+- `docs/d7_6_archive_contacts_identity_adapter_implementation_report.md`
+- `tools/check_d7_6_customer_sync_adapter_contract.py`
+
+Archive, contacts, identity, and customer projection legacy fallback remain retained because real WeCom archive sync, real contacts sync, identity writes, production projection writes, production evidence, rollback proof, and human approval are not present.
+
+D7.4 provides fake Product write, WeChat Pay, Alipay, notify, and return adapter contracts under `aicrm_next/integration_gateway/payment_adapters.py`. The retained legacy payment fallback files still stay in place because real provider calls, production notify handling, payment reconciliation, rollback proof, and human approval are not present.
+
+D7.1 Media storage and WeCom media adapter contract now provides fake/staging-disabled CloudStorageAdapter and WeComMediaAdapter boundaries. Real cloud upload and real WeCom media upload remain blocked. D8 and D9 remain blocked.
+
+D7.2 Questionnaire submit/OAuth/WeCom tag/external push adapter contract now provides fake/staging-disabled WeChatOAuthAdapter, WeComTagAdapter, QuestionnaireExternalPushAdapter, and QuestionnaireSubmitSideEffectGateway boundaries. Real OAuth, real WeCom tag writes, and real webhook delivery remain blocked. Legacy questionnaire submit/OAuth/external fallback is retained and is not ready for deletion.
+
+D7.5 Automation write/OpenClaw/workflow/agent adapter contract now provides fake/staging-disabled AutomationWriteGateway, AutomationActivationGateway, OpenClawWebhookAdapter, AutomationWorkflowRuntimeAdapter, and AutomationAgentRuntimeAdapter boundaries. Real Automation writes, activation webhook side effects, OpenClaw push, workflow runtime, and agent runtime remain blocked. Legacy automation write/external/runtime fallback is retained and is not ready for deletion.
 
 ## D8: Old Flask App Factory And HTTP Registrar
 
@@ -224,6 +242,6 @@ Status: not started. Delete only after all legacy routes are retired and rollbac
 
 ## D9: OpenClaw Legacy Adapter Retirement
 
-Status: not started. Delete only after OpenClaw replacement evidence and approval.
+Status: D7.7 fake compatibility gate implemented. `openclaw_service/` remains retained and not delete-ready. Delete only after OpenClaw replacement evidence, MCP compatibility evidence, rollback proof, and approval.
 
 This document authorizes only the explicitly completed delete batches above. It does not physically delete legacy services outside those batches.

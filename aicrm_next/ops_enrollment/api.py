@@ -95,7 +95,10 @@ def user_ops_list(
 
 @router.post("/api/admin/user-ops/batch-send/preview")
 def user_ops_batch_send_preview(request: BatchSendRequest) -> dict:
-    return PreviewUserOpsBatchSendCommand()(request)
+    try:
+        return PreviewUserOpsBatchSendCommand()(request)
+    except ContractError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/admin/user-ops/batch-send/execute")

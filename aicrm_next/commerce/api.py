@@ -15,6 +15,7 @@ from .application import (
     ListProductsQuery,
     ListTransactionsQuery,
     NotifyPaymentCommand,
+    PaymentReturnCommand,
     SetProductEnabledCommand,
     UpsertProductCommand,
 )
@@ -155,10 +156,8 @@ def alipay_notify(payload: PaymentNotifyRequest) -> dict:
 
 @router.get("/api/alipay/return")
 def alipay_return(order_no: str = "", status: str = "paid") -> dict:
-    if not order_no:
-        return {"ok": True, "source_status": "fake_return_no_order", "payment_status": status}
     try:
-        return NotifyPaymentCommand("alipay")(PaymentNotifyRequest(order_no=order_no, payment_status=status))
+        return PaymentReturnCommand()(order_no=order_no, status=status)
     except Exception as exc:
         _raise_http(exc)
 

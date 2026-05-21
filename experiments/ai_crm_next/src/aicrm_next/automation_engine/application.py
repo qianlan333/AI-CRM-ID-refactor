@@ -6,6 +6,14 @@ from aicrm_next.customer_read_model.application import GetCustomerChatContextQue
 from aicrm_next.customer_read_model.dto import CustomerChatContextRequest
 from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.integration_gateway.automation_adapters import (
+    build_automation_activation_gateway,
+    build_automation_agent_runtime_adapter,
+    build_automation_workflow_runtime_adapter,
+    build_automation_write_gateway,
+    build_openclaw_webhook_adapter,
+)
+from aicrm_next.integration_gateway.mcp_openclaw_adapters import build_openclaw_legacy_bridge_adapter
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .domain import execution_record_projection, overview_cards, pool_summary
@@ -25,6 +33,19 @@ from .workflow import default_workflow_registry
 
 def _filters_snapshot(**filters: Any) -> dict[str, str]:
     return {key: str(value or "") for key, value in filters.items()}
+
+
+def _automation_side_effect_safety(**overrides: bool) -> dict[str, bool]:
+    safety = {
+        "real_automation_write_executed": False,
+        "real_activation_webhook_executed": False,
+        "real_openclaw_push_executed": False,
+        "real_workflow_runtime_executed": False,
+        "real_agent_runtime_executed": False,
+        "real_external_webhook_executed": False,
+    }
+    safety.update({key: bool(value) for key, value in overrides.items() if key in safety})
+    return safety
 
 
 class GetAutomationRuntimeContractQuery:
@@ -292,14 +313,22 @@ class ApplyActivationFactCommand:
 
 
 class OverrideFollowupTypeCommand:
-    def __init__(self, repo: AutomationRepository | None = None) -> None:
+    def __init__(self, repo: AutomationRepository | None = None, write_gateway: Any | None = None) -> None:
         self._repo = repo or build_automation_repository()
+        self._write_gateway = write_gateway or build_automation_write_gateway()
 
     def execute(self, member_id: str, request: OverrideFollowupTypeRequest) -> dict[str, Any]:
         member = self._repo.get_member(member_id)
         if not member:
             raise NotFoundError("automation member not found")
         followup_type = normalize_followup_type(request.followup_type)
+        adapter_result = self._write_gateway.override_followup_type(
+            member_id=member_id,
+            external_userid=str(member.get("external_userid") or ""),
+            followup_type=followup_type,
+            operator=request.operator,
+            reason=request.reason,
+        )
         updated, history = apply_transition(
             member,
             trigger="manual_override",
@@ -309,14 +338,23 @@ class OverrideFollowupTypeCommand:
             patch={"manual_followup_type": followup_type, "followup_type": followup_type},
         )
         self._repo.save_member(updated)
-        return {"ok": True, "member": updated, "history": history}
+        return {
+            "ok": True,
+            "member": updated,
+            "history": history,
+            "adapter_contract": {"automation_write": adapter_result},
+            "side_effect_safety": _automation_side_effect_safety(
+                real_automation_write_executed=bool(adapter_result.get("side_effect_executed"))
+            ),
+        }
 
     __call__ = execute
 
 
 class ConfirmConversionCommand:
-    def __init__(self, repo: AutomationRepository | None = None) -> None:
+    def __init__(self, repo: AutomationRepository | None = None, write_gateway: Any | None = None) -> None:
         self._repo = repo or build_automation_repository()
+        self._write_gateway = write_gateway or build_automation_write_gateway()
 
     def execute(self, member_id: str, request: AutomationActionRequest) -> dict[str, Any]:
         return self._action(member_id, request, trigger="confirm_conversion")
@@ -325,9 +363,33 @@ class ConfirmConversionCommand:
         member = self._repo.get_member(member_id)
         if not member:
             raise NotFoundError("automation member not found")
+        adapter_result = self._write_boundary(trigger=trigger, member=member, member_id=member_id, request=request)
         updated, history = apply_transition(member, trigger=trigger, source="admin", operator=request.operator, reason=request.reason)
         self._repo.save_member(updated)
-        return {"ok": True, "member": updated, "history": history}
+        return {
+            "ok": True,
+            "member": updated,
+            "history": history,
+            "adapter_contract": {"automation_write": adapter_result},
+            "side_effect_safety": _automation_side_effect_safety(
+                real_automation_write_executed=bool(adapter_result.get("side_effect_executed"))
+            ),
+        }
+
+    def _write_boundary(self, *, trigger: str, member: dict[str, Any], member_id: str, request: AutomationActionRequest) -> dict[str, Any]:
+        kwargs = {
+            "member_id": member_id,
+            "external_userid": str(member.get("external_userid") or ""),
+            "operator": request.operator,
+            "reason": request.reason,
+        }
+        if trigger == "confirm_conversion":
+            return self._write_gateway.confirm_conversion(**kwargs)
+        if trigger == "enter_silent":
+            return self._write_gateway.enter_silent(**kwargs)
+        if trigger == "exit_marketing":
+            return self._write_gateway.exit_marketing(**kwargs)
+        return self._write_gateway.build_write_preview(operation=trigger, member_id=member_id, external_userid=kwargs["external_userid"])
 
     __call__ = execute
 
@@ -347,8 +409,15 @@ class ExitMarketingCommand(ConfirmConversionCommand):
 
 
 class PushMemberContextToOpenClawCommand:
-    def __init__(self, repo: AutomationRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: AutomationRepository | None = None,
+        openclaw_adapter: Any | None = None,
+        legacy_bridge_adapter: Any | None = None,
+    ) -> None:
         self._repo = repo or build_automation_repository()
+        self._openclaw_adapter = openclaw_adapter or build_openclaw_webhook_adapter()
+        self._legacy_bridge_adapter = legacy_bridge_adapter or build_openclaw_legacy_bridge_adapter()
 
     def execute(self, member_id: str, request: PushOpenClawContextRequest) -> dict[str, Any]:
         detail = GetAutomationMemberDetailQuery(self._repo)(member_id)
@@ -362,6 +431,16 @@ class PushMemberContextToOpenClawCommand:
             "current_pool": detail["member"].get("current_pool"),
             "recent_timeline_events": detail.get("recent_timeline_events") or [],
         }
+        adapter_result = self._openclaw_adapter.push_member_context(
+            member_id=member_id,
+            external_userid=str(detail["member"].get("external_userid") or ""),
+            payload_summary=payload_preview,
+        )
+        legacy_bridge_result = self._legacy_bridge_adapter.push_context_to_openclaw(
+            member_id=member_id,
+            external_userid=str(detail["member"].get("external_userid") or ""),
+            payload_summary=payload_preview,
+        )
         record = self._repo.create_execution_record(
             {
                 "record_type": "openclaw_push",
@@ -373,7 +452,18 @@ class PushMemberContextToOpenClawCommand:
                 "payload_preview": payload_preview,
             }
         )
-        return {"ok": True, "delivery_status": "fake", "payload_preview": payload_preview, "warnings": ["openclaw_not_called"], "record": record}
+        return {
+            "ok": True,
+            "delivery_status": "fake",
+            "payload_preview": payload_preview,
+            "warnings": ["openclaw_not_called"],
+            "record": record,
+            "adapter_contract": {"openclaw": adapter_result, "openclaw_legacy_bridge": legacy_bridge_result},
+            "side_effect_safety": _automation_side_effect_safety(
+                real_openclaw_push_executed=bool(adapter_result.get("side_effect_executed") or legacy_bridge_result.get("side_effect_executed")),
+                real_external_webhook_executed=bool(adapter_result.get("side_effect_executed") or legacy_bridge_result.get("side_effect_executed")),
+            ),
+        }
 
     __call__ = execute
 
@@ -390,10 +480,19 @@ class ListAutomationExecutionRecordsQuery:
 
 
 class ApplyActivationWebhookCommand:
+    def __init__(self, repo: AutomationRepository | None = None, activation_gateway: Any | None = None) -> None:
+        self._repo = repo or build_automation_repository()
+        self._activation_gateway = activation_gateway or build_automation_activation_gateway()
+
     def execute(self, request: ActivationWebhookRequest) -> dict[str, Any]:
         if not (request.mobile or request.external_userid):
             raise ContractError("mobile or external_userid is required")
-        return ApplyActivationFactCommand()(
+        activation_result = self._activation_gateway.receive_activation_event(
+            external_userid=request.external_userid,
+            mobile=request.mobile,
+            source=request.source,
+        )
+        result = ApplyActivationFactCommand(self._repo)(
             ApplyActivationFactRequest(
                 mobile=request.mobile,
                 external_userid=request.external_userid,
@@ -403,5 +502,101 @@ class ApplyActivationWebhookCommand:
                 reason="activation_webhook",
             )
         )
+        result["adapter_contract"] = {"activation": activation_result}
+        result["side_effect_safety"] = _automation_side_effect_safety(
+            real_activation_webhook_executed=bool(activation_result.get("side_effect_executed"))
+        )
+        return result
+
+    __call__ = execute
+
+
+class EnqueueWorkflowRunCommand:
+    def __init__(self, workflow_runtime_adapter: Any | None = None) -> None:
+        self._workflow_runtime_adapter = workflow_runtime_adapter or build_automation_workflow_runtime_adapter()
+
+    def execute(self, *, workflow_id: str, member_id: str = "", execution_id: str = "", program_id: str = "") -> dict[str, Any]:
+        adapter_result = self._workflow_runtime_adapter.enqueue_workflow_run(
+            workflow_id=workflow_id,
+            member_id=member_id,
+            execution_id=execution_id,
+            program_id=program_id,
+        )
+        return {"ok": adapter_result["ok"], "adapter_contract": {"workflow_runtime": adapter_result}, "side_effect_safety": _automation_side_effect_safety()}
+
+    __call__ = execute
+
+
+class RunWorkflowNodeCommand:
+    def __init__(self, workflow_runtime_adapter: Any | None = None) -> None:
+        self._workflow_runtime_adapter = workflow_runtime_adapter or build_automation_workflow_runtime_adapter()
+
+    def execute(self, *, workflow_id: str, node_id: str, member_id: str = "", execution_id: str = "") -> dict[str, Any]:
+        adapter_result = self._workflow_runtime_adapter.run_workflow_node(
+            workflow_id=workflow_id,
+            node_id=node_id,
+            member_id=member_id,
+            execution_id=execution_id,
+        )
+        return {"ok": adapter_result["ok"], "adapter_contract": {"workflow_runtime": adapter_result}, "side_effect_safety": _automation_side_effect_safety()}
+
+    __call__ = execute
+
+
+class RunDueWorkflowsCommand:
+    def __init__(self, workflow_runtime_adapter: Any | None = None) -> None:
+        self._workflow_runtime_adapter = workflow_runtime_adapter or build_automation_workflow_runtime_adapter()
+
+    def execute(self, *, workflow_id: str = "", program_id: str = "", limit: int = 50) -> dict[str, Any]:
+        adapter_result = self._workflow_runtime_adapter.run_due_workflows(workflow_id=workflow_id, program_id=program_id, limit=limit)
+        return {"ok": adapter_result["ok"], "adapter_contract": {"workflow_runtime": adapter_result}, "side_effect_safety": _automation_side_effect_safety()}
+
+    __call__ = execute
+
+
+class RunAgentTaskCommand:
+    def __init__(self, agent_runtime_adapter: Any | None = None) -> None:
+        self._agent_runtime_adapter = agent_runtime_adapter or build_automation_agent_runtime_adapter()
+
+    def execute(self, *, agent_task_id: str, member_id: str = "", workflow_id: str = "", execution_id: str = "") -> dict[str, Any]:
+        adapter_result = self._agent_runtime_adapter.run_agent_task(
+            agent_task_id=agent_task_id,
+            member_id=member_id,
+            workflow_id=workflow_id,
+            execution_id=execution_id,
+        )
+        return {"ok": adapter_result["ok"], "adapter_contract": {"agent_runtime": adapter_result}, "side_effect_safety": _automation_side_effect_safety()}
+
+    __call__ = execute
+
+
+class GenerateAgentOutputCommand:
+    def __init__(self, agent_runtime_adapter: Any | None = None) -> None:
+        self._agent_runtime_adapter = agent_runtime_adapter or build_automation_agent_runtime_adapter()
+
+    def execute(self, *, agent_task_id: str, member_id: str = "", workflow_id: str = "", execution_id: str = "") -> dict[str, Any]:
+        adapter_result = self._agent_runtime_adapter.generate_agent_output(
+            agent_task_id=agent_task_id,
+            member_id=member_id,
+            workflow_id=workflow_id,
+            execution_id=execution_id,
+        )
+        return {"ok": adapter_result["ok"], "adapter_contract": {"agent_runtime": adapter_result}, "side_effect_safety": _automation_side_effect_safety()}
+
+    __call__ = execute
+
+
+class ReviewAgentOutputCommand:
+    def __init__(self, agent_runtime_adapter: Any | None = None) -> None:
+        self._agent_runtime_adapter = agent_runtime_adapter or build_automation_agent_runtime_adapter()
+
+    def execute(self, *, agent_task_id: str, output_id: str = "", reviewer: str = "system", decision: str = "preview") -> dict[str, Any]:
+        adapter_result = self._agent_runtime_adapter.review_agent_output(
+            agent_task_id=agent_task_id,
+            output_id=output_id,
+            reviewer=reviewer,
+            decision=decision,
+        )
+        return {"ok": adapter_result["ok"], "adapter_contract": {"agent_runtime": adapter_result}, "side_effect_safety": _automation_side_effect_safety()}
 
     __call__ = execute

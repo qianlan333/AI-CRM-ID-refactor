@@ -4,11 +4,15 @@ from typing import Any
 
 from aicrm_next.identity_contact.application import ResolvePersonIdentityQuery
 from aicrm_next.identity_contact.dto import ResolvePersonIdentityRequest
+from aicrm_next.integration_gateway.questionnaire_adapters import (
+    QuestionnaireSubmitSideEffectGateway,
+    WeChatOAuthAdapter,
+    build_wechat_oauth_adapter,
+)
 from aicrm_next.shared.errors import ContractError, NotFoundError
 
 from .domain import admin_detail_projection, public_projection, score_and_tags, summary_projection, validate_required_answers
 from .dto import OAuthCallbackRequest, OAuthStartRequest, QuestionnaireSubmitRequest, QuestionnaireUpsertRequest
-from .oauth import FakeWechatOAuthAdapter
 from .repo import QuestionnaireRepository, build_questionnaire_repository
 
 
@@ -142,9 +146,11 @@ class SubmitQuestionnaireCommand:
         self,
         repo: QuestionnaireRepository | None = None,
         identity_query: ResolvePersonIdentityQuery | None = None,
+        side_effect_gateway: QuestionnaireSubmitSideEffectGateway | None = None,
     ) -> None:
         self._repo = repo or build_questionnaire_repository()
         self._identity_query = identity_query or ResolvePersonIdentityQuery()
+        self._side_effect_gateway = side_effect_gateway or QuestionnaireSubmitSideEffectGateway()
 
     def execute(self, slug: str, payload: QuestionnaireSubmitRequest) -> dict[str, Any]:
         item = self._repo.get_questionnaire_by_slug(slug)
@@ -176,7 +182,31 @@ class SubmitQuestionnaireCommand:
                 "final_tags": final_tags,
             }
         )
-        automation_event = self._emit_automation_event(item, submission, final_tags)
+        tag_result = self._side_effect_gateway.apply_tags(
+            questionnaire_id=item["id"],
+            submission_id=submission["submission_id"],
+            external_userid=submission.get("external_userid") or "",
+            tag_ids=final_tags,
+        )
+        external_push_config = item.get("external_push_config") if isinstance(item.get("external_push_config"), dict) else {}
+        webhook_url = str(external_push_config.get("webhook_url") or "") if external_push_config.get("enabled") else ""
+        push_result = self._side_effect_gateway.emit_external_push(
+            questionnaire_id=item["id"],
+            submission_id=submission["submission_id"],
+            webhook_url=webhook_url,
+            payload_summary={
+                "slug": item["slug"],
+                "score": score,
+                "final_tag_count": len(final_tags),
+                "external_userid": submission.get("external_userid") or "",
+            },
+        )
+        automation_gateway_result = self._side_effect_gateway.emit_automation_questionnaire_result(
+            questionnaire=item,
+            submission=submission,
+            final_tags=final_tags,
+        )
+        automation_event = self._automation_event_from_gateway(automation_gateway_result)
         return {
             "ok": True,
             "submission_id": submission["submission_id"],
@@ -191,36 +221,24 @@ class SubmitQuestionnaireCommand:
             "redirect_url": item.get("redirect_url") or f"/s/{item['slug']}/submitted",
             "result_message": "提交成功",
             "automation_event": automation_event,
+            "side_effect_safety": self._side_effect_gateway.side_effect_safety(),
+            "side_effects": {
+                "wecom_tag": tag_result,
+                "external_push": push_result,
+                "automation": automation_gateway_result,
+            },
         }
 
     __call__ = execute
 
-    def _emit_automation_event(self, item: dict[str, Any], submission: dict[str, Any], final_tags: list[str]) -> dict[str, Any]:
-        from aicrm_next.automation_engine.application import ApplyQuestionnaireResultCommand
-        from aicrm_next.automation_engine.dto import ApplyQuestionnaireResultRequest
-
-        followup_type = "priority" if "tag_interest_ai_tools" in final_tags else "normal"
-        result = ApplyQuestionnaireResultCommand()(
-            ApplyQuestionnaireResultRequest(
-                person_id=submission.get("person_id"),
-                external_userid=submission.get("external_userid"),
-                mobile=submission.get("mobile"),
-                customer_name="问卷提交用户",
-                followup_type=followup_type,
-                questionnaire_id=item.get("id"),
-                submission_id=submission.get("submission_id"),
-                final_tags=final_tags,
-                source="questionnaire_submit_pipeline",
-                operator="system",
-                reason="questionnaire_submit_boundary",
-            )
-        )
+    def _automation_event_from_gateway(self, gateway_result: dict[str, Any]) -> dict[str, Any]:
+        result = gateway_result.get("result") if isinstance(gateway_result.get("result"), dict) else {}
         return {
             "ok": True,
             "source_status": result.get("source_status", "fixture_boundary"),
-            "member_id": result.get("member", {}).get("member_id", ""),
-            "followup_type": followup_type,
-            "current_pool": result.get("member", {}).get("current_pool", ""),
+            "member_id": result.get("member_id", ""),
+            "followup_type": result.get("followup_type", "normal"),
+            "current_pool": result.get("current_pool", ""),
         }
 
 
@@ -241,20 +259,51 @@ class GetSubmissionResultQuery:
 
 
 class StartWechatOAuthQuery:
-    def __init__(self, adapter: FakeWechatOAuthAdapter | None = None) -> None:
-        self._adapter = adapter or FakeWechatOAuthAdapter()
+    def __init__(self, adapter: WeChatOAuthAdapter | None = None) -> None:
+        self._adapter = adapter or build_wechat_oauth_adapter()
 
     def execute(self, request: OAuthStartRequest) -> dict[str, Any]:
-        return self._adapter.start(request)
+        adapter_result = self._adapter.build_authorize_url(
+            slug=request.slug,
+            state=request.state,
+            redirect=request.redirect,
+            openid=request.openid,
+            unionid=request.unionid,
+            external_userid=request.external_userid,
+        )
+        result = adapter_result.get("result") if isinstance(adapter_result.get("result"), dict) else {}
+        return {
+            "ok": bool(adapter_result.get("ok")),
+            "redirect_url": result.get("redirect_url", ""),
+            "state": result.get("state", request.state or request.slug or ""),
+            "source_status": result.get("source_status", "fake" if adapter_result.get("ok") else "adapter_error"),
+            "oauth_provider": result.get("oauth_provider", "wechat_mp"),
+        }
 
     __call__ = execute
 
 
 class CompleteWechatOAuthCallbackCommand:
-    def __init__(self, adapter: FakeWechatOAuthAdapter | None = None) -> None:
-        self._adapter = adapter or FakeWechatOAuthAdapter()
+    def __init__(self, adapter: WeChatOAuthAdapter | None = None) -> None:
+        self._adapter = adapter or build_wechat_oauth_adapter()
 
     def execute(self, request: OAuthCallbackRequest) -> dict[str, Any]:
-        return self._adapter.callback(request)
+        adapter_result = self._adapter.resolve_oauth_identity(
+            state=request.state,
+            redirect=request.redirect,
+            openid=request.openid,
+            unionid=request.unionid,
+            external_userid=request.external_userid,
+        )
+        result = adapter_result.get("result") if isinstance(adapter_result.get("result"), dict) else {}
+        return {
+            "ok": bool(adapter_result.get("ok")),
+            "openid": result.get("openid", request.openid or "openid_fake_001"),
+            "unionid": result.get("unionid", request.unionid or "unionid_fake_001"),
+            "external_userid": result.get("external_userid", request.external_userid or ""),
+            "redirect_url": result.get("redirect_url", request.redirect or (f"/s/{request.state}" if request.state else "/")),
+            "state": result.get("state", request.state or ""),
+            "source_status": result.get("source_status", "fake" if request.state else "missing_config"),
+        }
 
     __call__ = execute
