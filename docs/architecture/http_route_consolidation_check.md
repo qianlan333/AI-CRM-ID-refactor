@@ -56,7 +56,6 @@ Large route-owner files that remain worth considering, ordered by current cleanu
 | `wecom_ability_service/http/admin_jobs.py` | 265 | already separated from broadcast jobs; keep below the guardrail |
 | `wecom_ability_service/http/admin_customers.py` | 243 | acceptable unless customer detail actions grow |
 | `wecom_ability_service/http/wechat_pay.py` | 272 | public H5/JSAPI checkout and product-intro owner; keep payment client work in the domain |
-| `wecom_ability_service/http/admin_wechat_pay_products.py` | 218 | focused owner for product CRUD, sharing, lead-plan binding, and long-image slices |
 | `wecom_ability_service/http/admin_wechat_pay.py` | 149 | focused owner for transaction list/detail, export, and refund APIs |
 | `wecom_ability_service/http/admin_questionnaire_console.py` | 131 | external push-log list/retry handlers have been split into `admin_questionnaire_push_logs.py` |
 | `wecom_ability_service/http/admin_questionnaire_push_logs.py` | 215 | new focused owner for external push-log list/retry handlers |

@@ -61,6 +61,7 @@ AI-CRM/
 
 这是 legacy Flask fallback 目录。
 Media Library old route modules were retired in D1; Media Library route ownership now lives in `aicrm_next/media_library` plus `aicrm_next/frontend_compat`.
+Product Management old admin route owner was retired in D2; Product Management route ownership now lives in `aicrm_next/commerce` plus `aicrm_next/frontend_compat`. Legacy checkout/payment files remain fallback and are not part of D2 deletion.
 
 主要结构：
 

@@ -82,8 +82,8 @@ def _create_image(file_bytes: bytes, name: str) -> dict:
 
 
 def _create_product(client, token: str, **overrides):
+    del client, token
     payload = {
-        "admin_action_token": token,
         "name": "AI 实战小课",
         "amount_total": 19900,
         "status": "active",
@@ -93,94 +93,45 @@ def _create_product(client, token: str, **overrides):
         "slices": [],
     }
     payload.update(overrides)
-    response = client.post("/api/admin/wechat-pay/products", json=payload)
-    assert response.status_code == 200
-    return response.get_json()["product"]
+    return product_service.create_admin_product(payload, operator="pytest")
 
 
-def test_admin_product_create_generates_code_and_list_shape(app, client):
+def test_legacy_admin_product_management_routes_are_retired_after_d2(app, client):
     token = _login_admin(client)
-
     product = _create_product(client, token, name="私域成交动作拆解课", amount_total=39900)
 
-    assert product["product_code"].startswith("prd_")
-    assert product["name"] == "私域成交动作拆解课"
-    assert product["amount_total"] == 39900
-    assert product["status"] == "active"
-    assert product["slice_count"] == 0
-
-    page = client.get("/admin/wechat-pay/products")
-    assert page.status_code == 200
-    html = page.get_data(as_text=True)
-    assert "商品管理" in html
-    assert "创建商品" in html
-    assert "分享商品" in html
-    assert "/share" in html
-    assert "wp-preview-slice" not in html
-    assert "wp-preview-img" not in html
-    assert "wp-phone" not in html
-    assert "wp-thumb" not in html
-    assert "全景贴图数量" not in html
-    assert "商品编码" not in html
-    assert "商品简介" not in html
-    assert "介绍页路径" not in html
-
-    items = client.get("/api/admin/wechat-pay/products").get_json()["items"]
-    assert items[0]["name"] == "私域成交动作拆解课"
-    assert {"name", "amount_total", "status", "updated_at"}.issubset(items[0])
-
-    edit_page = client.get(f"/admin/wechat-pay/products/{product['id']}/edit")
-    assert edit_page.status_code == 200
-    edit_html = edit_page.get_data(as_text=True)
-    assert 'id="editorLoading"' in edit_html
-    assert 'id="editorShell" hidden' in edit_html
-    assert "扫码预览" in edit_html
-    assert 'id="editorSharePreview"' in edit_html
-    assert 'id="copyEditorShareUrl"' in edit_html
-    assert "加载中" in edit_html
-    assert "最多 10 张" in edit_html
-    assert "最多 20 张" not in edit_html
-    assert "image_upload_client.js" in edit_html
-    assert "ImageUploadClient.prepareImageForUpload" in edit_html
-    assert "ImageUploadClient.requestJson" in edit_html
-    assert "response.json()" not in edit_html
-    assert "确认删除这个商品吗？已有订单的商品请下架保留。" in edit_html
-    assert "手机端预览" not in edit_html
-    assert "引流计划列表加载失败" not in edit_html
+    probes = [
+        client.get("/admin/wechat-pay/products"),
+        client.get(f"/admin/wechat-pay/products/{product['id']}/edit"),
+        client.get("/api/admin/wechat-pay/products"),
+        client.get(f"/api/admin/wechat-pay/products/{product['id']}"),
+        client.post("/api/admin/wechat-pay/products", json={"admin_action_token": token}),
+        client.put(f"/api/admin/wechat-pay/products/{product['id']}", json={"admin_action_token": token}),
+        client.post(f"/api/admin/wechat-pay/products/{product['id']}/enable", json={"admin_action_token": token}),
+        client.post(f"/api/admin/wechat-pay/products/{product['id']}/disable", json={"admin_action_token": token}),
+        client.delete(f"/api/admin/wechat-pay/products/{product['id']}", json={"admin_action_token": token}),
+    ]
+    assert all(response.status_code in {404, 405} for response in probes)
 
 
 def test_product_enable_disable_copy_and_delete(app, client):
     token = _login_admin(client)
     product = _create_product(client, token, status="draft")
 
-    enabled = client.post(
-        f"/api/admin/wechat-pay/products/{product['id']}/enable",
-        json={"admin_action_token": token},
-    )
-    assert enabled.status_code == 200
-    assert enabled.get_json()["product"]["status"] == "active"
+    enabled = product_service.set_admin_product_status(product["id"], "active", operator="pytest")
+    assert enabled["status"] == "active"
 
-    disabled = client.post(
-        f"/api/admin/wechat-pay/products/{product['id']}/disable",
-        json={"admin_action_token": token},
-    )
-    assert disabled.status_code == 200
-    assert disabled.get_json()["product"]["status"] == "disabled"
+    disabled = product_service.set_admin_product_status(product["id"], "disabled", operator="pytest")
+    assert disabled["status"] == "disabled"
     assert client.get(f"/p/{product['product_code']}").status_code == 404
 
-    copied = client.post(
-        f"/api/admin/wechat-pay/products/{product['id']}/copy",
-        json={"admin_action_token": token},
-    )
-    assert copied.status_code == 200
-    assert copied.get_json()["product"]["status"] == "draft"
-    assert copied.get_json()["product"]["product_code"] != product["product_code"]
+    copied = product_service.copy_admin_product(product["id"], operator="pytest")
+    assert copied["status"] == "draft"
+    assert copied["product_code"] != product["product_code"]
 
-    deleted = client.delete(
-        f"/api/admin/wechat-pay/products/{product['id']}",
-        json={"admin_action_token": token},
-    )
-    assert deleted.status_code == 200
+    product_service.delete_admin_product(product["id"], operator="pytest")
+    with pytest.raises(product_service.WeChatPayProductError, match="商品不存在"):
+        product_service.get_admin_product(product["id"])
 
 
 def test_delete_admin_product_rejects_product_with_orders(monkeypatch):
@@ -293,13 +244,11 @@ def test_admin_product_share_returns_public_link_and_qr(app, client):
     token = _login_admin(client)
     product = _create_product(client, token, name="可分享商品")
 
-    response = client.get(
-        f"/api/admin/wechat-pay/products/{product['id']}/share",
-        base_url="https://crm.example.test",
+    share = product_service.build_admin_product_share(
+        product["id"],
+        product_url=f"https://crm.example.test/p/{product['product_code']}",
     )
 
-    assert response.status_code == 200
-    share = response.get_json()["share"]
     assert share["url"] == f"https://crm.example.test/p/{product['product_code']}"
     assert share["product_name"] == "可分享商品"
     assert share["qr_data_url"].startswith("data:image/svg+xml;charset=UTF-8,")
@@ -334,10 +283,7 @@ def test_lead_plan_options_skip_program_summary_dependency(app, client, monkeypa
 
     monkeypatch.setattr(program_service, "list_automation_programs", fail_summary_loader)
 
-    response = client.get("/api/admin/wechat-pay/products/lead-plans")
-
-    assert response.status_code == 200
-    items = response.get_json()["items"]
+    items = product_service.list_lead_plan_options()
     option = next(item for item in items if item["program_id"] == program["id"])
     assert option["program_name"] == "直接读取的引流计划"
     assert option["qr_url"] == "https://example.com/direct-qr.png"
@@ -357,19 +303,15 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
         ],
     )
 
-    detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
+    detail = product_service.get_admin_product(product["id"])
     assert [item["image_library_id"] for item in detail["slices"]] == [second["id"], first["id"]]
     assert all("image_url" not in item for item in detail["slices"])
 
-    reordered = client.put(
-        f"/api/admin/wechat-pay/products/{product['id']}/slices/reorder",
-        json={
-            "admin_action_token": token,
-            "slice_ids": [detail["slices"][1]["id"], detail["slices"][0]["id"]],
-        },
+    reordered = product_service.reorder_admin_product_slices(
+        product["id"],
+        {"slice_ids": [detail["slices"][1]["id"], detail["slices"][0]["id"]]},
     )
-    assert reordered.status_code == 200
-    assert [item["image_library_id"] for item in reordered.get_json()["product"]["slices"]] == [first["id"], second["id"]]
+    assert [item["image_library_id"] for item in reordered["slices"]] == [first["id"], second["id"]]
 
     public_html = client.get(f"/p/{product['product_code']}").get_data(as_text=True)
     assert public_html.index("YWFhYWFh") < public_html.index("YmJiYmJi")
@@ -378,23 +320,21 @@ def test_product_slices_sort_and_public_page_render_order(app, client):
 def test_product_slices_limit_is_ten(app, client):
     token = _login_admin(client)
     images = [_create_image(PNG_A, f"slice-limit-{index}") for index in range(11)]
-    too_many = client.post(
-        "/api/admin/wechat-pay/products",
-        json={
-            "admin_action_token": token,
-            "name": "超过切片限制商品",
-            "amount_total": 19900,
-            "status": "active",
-            "require_mobile": False,
-            "cta_text": "立即报名",
-            "slices": [
-                {"image_library_id": item["id"], "sort_order": index + 1}
-                for index, item in enumerate(images)
-            ],
-        },
-    )
-    assert too_many.status_code == 400
-    assert "最多 10 张" in too_many.get_json()["error"]
+    with pytest.raises(product_service.WeChatPayProductError, match="最多 10 张"):
+        product_service.create_admin_product(
+            {
+                "name": "超过切片限制商品",
+                "amount_total": 19900,
+                "status": "active",
+                "require_mobile": False,
+                "cta_text": "立即报名",
+                "slices": [
+                    {"image_library_id": item["id"], "sort_order": index + 1}
+                    for index, item in enumerate(images)
+                ],
+            },
+            operator="pytest",
+        )
 
     product = _create_product(
         client,
@@ -405,13 +345,13 @@ def test_product_slices_limit_is_ten(app, client):
         ],
     )
 
-    detail = client.get(f"/api/admin/wechat-pay/products/{product['id']}").get_json()["product"]
+    detail = product_service.get_admin_product(product["id"])
     assert len(detail["slices"]) == 10
 
-    update_too_many = client.put(
-        f"/api/admin/wechat-pay/products/{product['id']}",
-        json={
-            "admin_action_token": token,
+    with pytest.raises(product_service.WeChatPayProductError, match="最多 10 张"):
+        product_service.update_admin_product(
+            product["id"],
+            {
             "name": product["name"],
             "amount_total": product["amount_total"],
             "status": product["status"],
@@ -421,17 +361,12 @@ def test_product_slices_limit_is_ten(app, client):
                 {"image_library_id": item["id"], "sort_order": index + 1}
                 for index, item in enumerate(images)
             ],
-        },
-    )
-    assert update_too_many.status_code == 400
-    assert "最多 10 张" in update_too_many.get_json()["error"]
+            },
+            operator="pytest",
+        )
 
-    response = client.post(
-        f"/api/admin/wechat-pay/products/{product['id']}/slices",
-        json={"admin_action_token": token, "image_library_id": images[-1]["id"]},
-    )
-    assert response.status_code == 400
-    assert "最多 10 张" in response.get_json()["error"]
+    with pytest.raises(product_service.WeChatPayProductError, match="最多 10 张"):
+        product_service.add_admin_product_slice(product["id"], {"image_library_id": images[-1]["id"]})
 
 
 def test_normalize_product_slices_rejects_more_than_ten():

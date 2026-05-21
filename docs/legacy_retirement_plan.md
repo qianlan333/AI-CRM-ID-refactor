@@ -9,6 +9,7 @@ AI-CRM default runtime has moved to AI-CRM Next. Legacy Flask remains as a fallb
 - `wecom_ability_service/` and `openclaw_service/` are frozen, not deleted.
 - Production traffic cutover is not executed by this plan.
 - D1 Media Library old Flask route modules are retired/deleted. AI-CRM Next owns Media Library route handling by default.
+- D2 Product Management old Flask admin route owner is retired/deleted. AI-CRM Next owns Product Management route handling by default; legacy checkout/payment files remain untouched fallback.
 
 ## Retirement Principles
 
@@ -45,4 +46,21 @@ Deleted files:
 - `wecom_ability_service/http/attachment_library_endpoint.py`
 - `wecom_ability_service/http/miniprogram_library_endpoint.py`
 
-The legacy HTTP registrar no longer imports or registers these modules. Rollback is `git revert` of the D1 PR or restoring a pre-D1 fallback tag. D2 Product old routes have not started.
+The legacy HTTP registrar no longer imports or registers these modules. Rollback is `git revert` of the D1 PR or restoring a pre-D1 fallback tag.
+
+### D2: Product Management Old Routes
+
+Deleted file:
+
+- `wecom_ability_service/http/admin_wechat_pay_products.py`
+
+The legacy HTTP registrar no longer imports or registers this module. AI-CRM Next `aicrm_next.commerce` owns Product Management admin/read surfaces by default.
+
+Not deleted by D2:
+
+- `wecom_ability_service/http/wechat_pay.py`
+- `wecom_ability_service/http/alipay_pay.py`
+- `wecom_ability_service/http/admin_wechat_pay.py`
+- `wecom_ability_service/http/admin_alipay_pay.py`
+
+Checkout, payment provider, return, notify, and transaction management remain legacy fallback and are not delete-ready. Product admin write fallback routes retire with the old Product Management owner, but Next product writes are still not `production_ready`. Rollback is `git revert` of the D2 PR or restoring a pre-D2 fallback tag. D3 Customer old routes have not started.

@@ -2,7 +2,7 @@
 
 Source: `wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()`
 
-Route rows: `419`
+Route rows: `403`
 
 | Rule | Methods | Endpoint | Arguments | Auth hint | Module hint |
 | --- | --- | --- | --- | --- | --- |
@@ -90,9 +90,6 @@ Route rows: `419`
 | `/admin/questionnaires/external-push-logs/retry-batch` | `POST` | `api.admin_console_global_questionnaire_external_push_logs_retry_batch` | `` | `admin_session` | `wecom_ability_service.http.admin_questionnaire_push_logs` |
 | `/admin/questionnaires/new` | `GET` | `api.admin_console_questionnaire_new` | `` | `admin_session` | `wecom_ability_service.http.admin_questionnaire_console` |
 | `/admin/questionnaires/ui` | `GET` | `api.admin_questionnaires_ui` | `` | `admin_session` | `wecom_ability_service.http.admin_questionnaires` |
-| `/admin/wechat-pay/products` | `GET` | `api.admin_wechat_pay_products_page` | `` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/admin/wechat-pay/products/<int:product_id>/edit` | `GET` | `api.admin_wechat_pay_product_edit_page` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/admin/wechat-pay/products/new` | `GET` | `api.admin_wechat_pay_product_new_page` | `` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
 | `/admin/wechat-pay/transactions` | `GET` | `api.admin_wechat_pay_transactions_page` | `` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay` |
 | `/admin/wechat-pay/transactions/<int:order_id>` | `GET` | `api.admin_wechat_pay_transaction_detail_page` | `order_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay` |
 | `/admin/wecom-customer-acquisition-links/ui` | `GET` | `api.admin_wecom_customer_acquisition_links_ui` | `` | `admin_session` | `wecom_ability_service.http.wecom_customer_acquisition` |
@@ -305,19 +302,6 @@ Route rows: `419`
 | `/api/admin/wechat-pay/order-exports/<job_id>/download` | `GET` | `api.api_admin_wechat_pay_order_export_download` | `job_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay` |
 | `/api/admin/wechat-pay/orders` | `GET` | `api.api_admin_wechat_pay_orders` | `` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay` |
 | `/api/admin/wechat-pay/orders/<int:order_id>/refunds` | `POST` | `api.api_admin_wechat_pay_order_refund` | `order_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay` |
-| `/api/admin/wechat-pay/products` | `GET` | `api.api_admin_wechat_pay_products` | `` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products` | `POST` | `api.api_admin_wechat_pay_products` | `` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>` | `DELETE` | `api.api_admin_wechat_pay_product` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>` | `GET` | `api.api_admin_wechat_pay_product` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>` | `PUT` | `api.api_admin_wechat_pay_product` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>/copy` | `POST` | `api.api_admin_wechat_pay_product_copy` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>/disable` | `POST` | `api.api_admin_wechat_pay_product_disable` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>/enable` | `POST` | `api.api_admin_wechat_pay_product_enable` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>/share` | `GET` | `api.api_admin_wechat_pay_product_share` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>/slices` | `POST` | `api.api_admin_wechat_pay_product_slices` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>/slices/<int:slice_id>` | `DELETE` | `api.api_admin_wechat_pay_product_slice_delete` | `product_id, slice_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/<int:product_id>/slices/reorder` | `PUT` | `api.api_admin_wechat_pay_product_slices_reorder` | `product_id` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
-| `/api/admin/wechat-pay/products/lead-plans` | `GET` | `api.api_admin_wechat_pay_product_lead_plans` | `` | `admin_session` | `wecom_ability_service.http.admin_wechat_pay_products` |
 | `/api/admin/wecom-customer-acquisition-links` | `GET` | `api.api_list_wecom_customer_acquisition_links` | `` | `admin_session` | `wecom_ability_service.http.wecom_customer_acquisition` |
 | `/api/admin/wecom-customer-acquisition-links` | `POST` | `api.api_create_wecom_customer_acquisition_link` | `` | `admin_session` | `wecom_ability_service.http.wecom_customer_acquisition` |
 | `/api/admin/wecom-customer-acquisition-links/<int:link_id>/disable` | `POST` | `api.api_disable_wecom_customer_acquisition_link` | `link_id` | `admin_session` | `wecom_ability_service.http.wecom_customer_acquisition` |
