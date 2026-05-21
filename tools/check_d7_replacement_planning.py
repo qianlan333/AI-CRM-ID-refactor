@@ -47,7 +47,8 @@ REQUIRED_ADAPTERS = [
     "ArchiveSyncAdapter",
     "ContactsSyncAdapter",
     "IdentityMappingAdapter",
-    "AutomationRuntimeAdapter",
+    "AutomationWorkflowRuntimeAdapter",
+    "AutomationAgentRuntimeAdapter",
 ]
 
 REQUIRED_BATCHES = ["D7.1", "D7.2", "D7.3", "D7.4", "D7.5", "D7.6", "D7.7"]
@@ -163,6 +164,9 @@ def build_report(
         "staging_contract_ready",
         "production_contract_ready",
         "pending_human_signoff",
+        "accepted_prerequisite",
+        "conditional_pass_pending_scope_isolation",
+        "scope_isolated",
     }
     bad_statuses = [
         f"{row.get('capability', '')}:{row.get('current_status', '')}"

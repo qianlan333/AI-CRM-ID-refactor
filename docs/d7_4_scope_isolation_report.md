@@ -1,6 +1,8 @@
 # D7.4 Scope Isolation Report
 
-This report isolates the D7.4 Product/Payment adapter-contract increment from the accepted D7.1-D7.3 adapter prerequisites currently present in the same dirty worktree.
+This report isolates the D7.4 Product/Payment adapter-contract increment from the accepted D7.1-D7.3 adapter prerequisites.
+
+Root `aicrm_next/` is the only Next production source. No D7 scope includes, mirrors, or recreates `experiments/ai_crm_next/src/aicrm_next/**`.
 
 ## D7.4 Intended Scope
 
@@ -15,7 +17,7 @@ D7.4 is limited to fake or disabled Product/Commerce adapter boundaries:
 
 ## D7.4 Actual Changed Files
 
-The dirty worktree contains D7.1-D7.4 because earlier accepted prerequisites are still uncommitted. The D7.4 increment itself is the Product/Payment subset listed under `D7.4 increment files`; all other changed files are classified as accepted prerequisites or shared scope documentation.
+The D7.4 baseline contains D7.1-D7.4 because earlier accepted prerequisites were merged before this increment. The D7.4 increment itself is the Product/Payment subset listed under `D7.4 increment files`; all other files are classified as accepted prerequisites or shared scope documentation.
 
 ## File Classification
 
@@ -26,11 +28,6 @@ The dirty worktree contains D7.1-D7.4 because earlier accepted prerequisites are
 - `aicrm_next/integration_gateway/media_adapters.py`
 - `aicrm_next/integration_gateway/media_contracts.py`
 - `aicrm_next/media_library/application.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/audit.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/idempotency.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/media_adapters.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/media_contracts.py`
-- `experiments/ai_crm_next/src/aicrm_next/media_library/application.py`
 
 ### D7.2 baseline files
 
@@ -38,10 +35,6 @@ The dirty worktree contains D7.1-D7.4 because earlier accepted prerequisites are
 - `aicrm_next/integration_gateway/questionnaire_contracts.py`
 - `aicrm_next/questionnaire/application.py`
 - `aicrm_next/questionnaire/oauth.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/questionnaire_adapters.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/questionnaire_contracts.py`
-- `experiments/ai_crm_next/src/aicrm_next/questionnaire/application.py`
-- `experiments/ai_crm_next/src/aicrm_next/questionnaire/oauth.py`
 
 ### D7.3 baseline files
 
@@ -50,11 +43,6 @@ The dirty worktree contains D7.1-D7.4 because earlier accepted prerequisites are
 - `aicrm_next/integration_gateway/user_ops_contracts.py`
 - `aicrm_next/ops_enrollment/api.py`
 - `aicrm_next/ops_enrollment/application.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/dispatch.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/user_ops_adapters.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/user_ops_contracts.py`
-- `experiments/ai_crm_next/src/aicrm_next/ops_enrollment/api.py`
-- `experiments/ai_crm_next/src/aicrm_next/ops_enrollment/application.py`
 
 ### D7.4 increment files
 
@@ -62,17 +50,11 @@ The dirty worktree contains D7.1-D7.4 because earlier accepted prerequisites are
 - `aicrm_next/integration_gateway/payment_contracts.py`
 - `aicrm_next/commerce/api.py`
 - `aicrm_next/commerce/application.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/payment_adapters.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/payment_contracts.py`
-- `experiments/ai_crm_next/src/aicrm_next/commerce/api.py`
-- `experiments/ai_crm_next/src/aicrm_next/commerce/application.py`
 
 ### Shared infrastructure files
 
 - `aicrm_next/integration_gateway/audit.py`
 - `aicrm_next/integration_gateway/idempotency.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/audit.py`
-- `experiments/ai_crm_next/src/aicrm_next/integration_gateway/idempotency.py`
 
 ### docs/tests/checkers
 
@@ -141,7 +123,7 @@ D7.1-D7.3 prerequisite files are present because their accepted adapter-contract
 
 | question | answer | evidence |
 | --- | --- | --- |
-| Does D7.4 modify modules outside payment, commerce, or integration gateway? | No for the D7.4 current increment. Other changed modules belong to accepted D7.1-D7.3 prerequisites. | `D7.4 increment files` contains only commerce and payment integration files plus mirrored Next files. |
+| Does D7.4 modify modules outside payment, commerce, or integration gateway? | No for the D7.4 current increment. Other changed modules belong to accepted D7.1-D7.3 prerequisites. | `D7.4 increment files` contains only root commerce and payment integration files. |
 | Does D7.4 modify deploy or production config? | No. | No `deploy/`, nginx, systemd, supervisor, Docker, or production config path is in the D7.4 increment. |
 | Does D7.4 trigger real outbound calls? | No. | Product/Payment adapters return fake/staging-disabled results and `side_effect_executed=false`. |
 | Does D7.4 process real payment notify callbacks? | No. | `PaymentNotifyGateway` builds fake notify and order-update previews only. |

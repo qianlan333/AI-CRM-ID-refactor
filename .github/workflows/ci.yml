@@ -52,6 +52,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check no duplicate Next source
+        run: bash scripts/check_no_duplicate_next_source.sh
+
       - name: Run PR smoke tests (PG-only, targeted)
         run: |
           python -m pytest \

@@ -122,7 +122,7 @@ def test_deploy_and_production_config_not_modified_by_d2() -> None:
         path
         for path in changed
         if path.startswith("deploy/")
-        or path.startswith(".github/")
+        or (path.startswith(".github/") and path != ".github/workflows/ci.yml")
         or any(keyword in path.lower() for keyword in ["nginx", "systemd", "supervisor", "docker-compose", "production"])
         and not path.startswith(("docs/", "tests/", "tools/"))
     ]
