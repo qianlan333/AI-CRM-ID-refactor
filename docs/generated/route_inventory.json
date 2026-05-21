@@ -1,6 +1,6 @@
 {
   "source": "wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()",
-  "route_count": 403,
+  "route_count": 398,
   "routes": [
     {
       "rule": "/<path:filename>",
@@ -648,28 +648,6 @@
       "arguments": [],
       "auth_hint": "admin_session",
       "module_hint": "wecom_ability_service.http.admin_config"
-    },
-    {
-      "rule": "/admin/customers",
-      "endpoint": "api.admin_console_customers",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_customers"
-    },
-    {
-      "rule": "/admin/customers/<external_userid>",
-      "endpoint": "api.admin_console_customer_detail",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "external_userid"
-      ],
-      "auth_hint": "admin_session",
-      "module_hint": "wecom_ability_service.http.admin_customers"
     },
     {
       "rule": "/admin/customers/<external_userid>/tags",
@@ -3436,40 +3414,6 @@
       "arguments": [],
       "auth_hint": "api_existing_behavior",
       "module_hint": "wecom_ability_service.http.contacts"
-    },
-    {
-      "rule": "/api/customers",
-      "endpoint": "api.customer_center_list",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [],
-      "auth_hint": "api_existing_behavior",
-      "module_hint": "wecom_ability_service.http.customer_center"
-    },
-    {
-      "rule": "/api/customers/<external_userid>",
-      "endpoint": "api.customer_center_detail",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "external_userid"
-      ],
-      "auth_hint": "api_existing_behavior",
-      "module_hint": "wecom_ability_service.http.customer_center"
-    },
-    {
-      "rule": "/api/customers/<external_userid>/timeline",
-      "endpoint": "api.customer_timeline_detail",
-      "methods": [
-        "GET"
-      ],
-      "arguments": [
-        "external_userid"
-      ],
-      "auth_hint": "api_existing_behavior",
-      "module_hint": "wecom_ability_service.http.customer_timeline"
     },
     {
       "rule": "/api/customers/automation/activation-webhook",

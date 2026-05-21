@@ -8,7 +8,7 @@ AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAP
 - AI-CRM Next modular monolith
 - CRM 后台控制台
 - 问卷与公众号 OAuth 流程
-- 客户中心 / 客户时间线
+- 客户中心 / 客户时间线（AI-CRM Next 默认 owner；旧 Flask D3 readonly owner 已退场）
 - 自动化转化配置与阶段看板
 - OpenClaw / MCP 集成
 
@@ -86,6 +86,7 @@ python3 app.py init-db-legacy
   - legacy Flask fallback
   - `http/` 负责路由与控制器
   - `domains/` 负责业务能力
+  - Media/Product/Customer readonly legacy route owners 已按 D1-D3 分批退场，混合依赖包仅作 fallback/reference
   - `templates/admin_console/` 和 `static/admin_console/` 负责后台页面
 - `openclaw_service/`
   - legacy OpenClaw 适配、工具和服务，默认不作为新功能入口

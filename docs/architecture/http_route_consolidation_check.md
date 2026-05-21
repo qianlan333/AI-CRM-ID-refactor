@@ -11,12 +11,12 @@ Current registry shape:
 
 | Area | Current state |
 | --- | --- |
-| Route module registry | `HTTP_ROUTE_MODULES` contains 75 route-owner or child-controller modules |
-| Direct registrars | `HTTP_ROUTE_REGISTRARS` contains 50 modules registered directly on the Flask blueprint |
-| Child controllers | Automation-conversion, Cloud Orchestrator, sidebar, and image-library child modules are registered by their aggregators, so they intentionally appear in `HTTP_ROUTE_MODULES` but not in `HTTP_ROUTE_REGISTRARS` |
+| Route module registry | `HTTP_ROUTE_MODULES` contains 68 route-owner or child-controller modules |
+| Direct registrars | `HTTP_ROUTE_REGISTRARS` contains 44 modules registered directly on the Flask blueprint |
+| Child controllers | Automation-conversion, Cloud Orchestrator, and sidebar child modules are registered by their aggregators, so they intentionally appear in `HTTP_ROUTE_MODULES` but not in `HTTP_ROUTE_REGISTRARS` |
 | Placement groups | `HTTP_ROUTE_PLACEMENT` uses `customer`, `admin`, `callbacks`, and `ops_settings` |
 | Helper modules | 16 unregistered HTTP modules are explicitly listed as helper-only modules in `tests/test_http_registration_contract.py` |
-| Exported route inventory | `scripts/export_flask_routes.py` exported 456 route rows in this snapshot |
+| Exported route inventory | `scripts/export_flask_routes.py` exported 398 route rows in this snapshot |
 | Flask view ownership | No Flask view module is outside `HTTP_ROUTE_MODULES`, except explicit app-level routes such as `/favicon.ico` and `/mcp` |
 
 The owner contract is intentionally stricter than "routes import successfully":
@@ -71,8 +71,6 @@ Large route-owner files that remain worth considering, ordered by current cleanu
 | `wecom_ability_service/http/cloud_orchestrator_campaign_details.py` | 87 | focused owner for campaign member and step APIs |
 | `wecom_ability_service/http/automation_conversion_agent_api.py` | 222 | router callback handlers have been split into `automation_conversion_router_callback_api.py` |
 | `wecom_ability_service/http/automation_conversion_router_callback_api.py` | 49 | focused owner for router callback replay/check APIs |
-| `wecom_ability_service/http/image_library_endpoint.py` | 153 | image creation handlers have been split into `image_library_create.py` |
-| `wecom_ability_service/http/image_library_create.py` | 53 | focused owner for upload/from-url/from-base64 create APIs |
 
 Large helper/runtime modules that should not be split just to reduce line count:
 

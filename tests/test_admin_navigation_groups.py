@@ -15,7 +15,6 @@ def test_admin_navigation_groups_and_marks_active_item(monkeypatch):
     assert [group["title"] for group in groups] == ["运营", "交易", "配置及后台"]
     operations = groups[0]["items"]
     operations_by_key = {item["key"]: item["label"] for item in operations}
-    assert operations_by_key["customers"] == "客户激活 / 客户列表"
     assert operations_by_key["user_ops_funnel"] == "漏斗 / 数据看板"
     assert {item["key"]: item["label"] for item in groups[2]["items"]}["jobs"] == "同步任务配置 / 同步任务"
     trade_group = groups[1]
@@ -70,7 +69,6 @@ def test_admin_base_template_renders_grouped_navigation():
         "admin_dashboard_shell_context": "/api/admin/dashboard/shell-context",
         "admin_automation_conversion": "/admin/automation-conversion",
         "admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator",
-        "admin_console_customers": "/admin/customers",
         "admin_hxc_dashboard_workspace": "/admin/user-ops",
         "admin_console_questionnaires": "/admin/questionnaires",
         "admin_wecom_tags_page": "/admin/wecom-tags",
@@ -102,7 +100,6 @@ def test_admin_base_template_renders_grouped_navigation():
     )
     assert re.search(r'class="admin-nav-link is-active"\s+href="/admin/wechat-pay/transactions"', html)
     assert '<div class="admin-nav-section-title">运营</div>' in html
-    assert "客户激活 / 客户列表" in html
     assert "漏斗 / 数据看板" in html
     assert "同步任务配置 / 同步任务" in html
     assert "图片素材库" not in html
