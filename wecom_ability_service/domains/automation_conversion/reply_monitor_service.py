@@ -327,21 +327,23 @@ def run_reply_monitor_capture(
 
     # 把所有 inbound 转给 Campaign 调度器停"回复后停止"的 member。Campaign
     # 命中的用户不一定是自动化运营计划的 active member，所以这里在 active_members
-    # 过滤之前就触发。register_member_reply 内部按 external_contact_id 查
-    # campaign_members 表（已建索引），不会无谓做无效更新。
+    # 过滤之前就触发。register_member_reply 内部按 external_contact_id + owner_userid
+    # 查 campaign_members，避免一个企微账号的回复误停另一个账号的计划。
     try:
         from ..campaigns.scheduler import register_member_reply as _campaign_register_reply
     except Exception:  # pragma: no cover - 防御式 import
         _campaign_register_reply = None
     if _campaign_register_reply:
-        seen_externals: set[str] = set()
+        seen_pairs: set[tuple[str, str]] = set()
         for row in candidate_rows:
             ext = _normalized_text(row.get("external_userid"))
-            if not ext or ext in seen_externals:
+            owner = _normalized_text(row.get("owner_userid"))
+            pair = (ext, owner)
+            if not ext or pair in seen_pairs:
                 continue
-            seen_externals.add(ext)
+            seen_pairs.add(pair)
             try:
-                _campaign_register_reply(external_contact_id=ext)
+                _campaign_register_reply(external_contact_id=ext, owner_userid=owner)
             except Exception:  # pragma: no cover - 不能让 campaign 一处错把 reply_monitor 堵了
                 pass
 

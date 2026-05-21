@@ -268,7 +268,7 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
     # mock 企微 dispatch — 不真发；记录每次调用的 external_userid 数量
     dispatched_calls: list[dict[str, Any]] = []
 
-    def _fake_dispatch(task_type: str, fn_name: str, payload: dict) -> dict:
+    def _fake_dispatch(task_type: str, fn_name: str, payload: dict, **kwargs) -> dict:
         dispatched_calls.append(payload)
         return {"task_id": 42}
 
@@ -280,7 +280,7 @@ def test_pg_bug_192_200_206_scheduler_full_cycle_batch(app):
     import run_broadcast_queue_worker as worker
 
     with patch(
-        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
         side_effect=_fake_dispatch,
     ):
         scan_result = scheduler.process_due_campaign_members(batch_size=10)
@@ -765,12 +765,12 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
 
     dispatched: list[dict[str, Any]] = []
 
-    def _fake_dispatch(task_type, fn_name, payload):
+    def _fake_dispatch(task_type, fn_name, payload, **kwargs):
         dispatched.append(payload)
         return {"task_id": 100}
 
     with patch(
-        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
         side_effect=_fake_dispatch,
     ):
         r1 = scheduler.process_due_campaign_members(batch_size=10)
@@ -798,7 +798,7 @@ def test_campaign_multi_step_not_blocked_by_own_daily_budget(app):
 
     dispatched.clear()
     with patch(
-        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
         side_effect=_fake_dispatch,
     ):
         # 预排期 job 已存在，直接由 worker 消费（不需要再 process_due_campaign_members）
@@ -886,12 +886,12 @@ def test_campaign_scheduler_does_not_claim_member_when_open_job_exists(app):
 
     dispatched: list[dict[str, Any]] = []
 
-    def _fake_dispatch(task_type: str, fn_name: str, payload: dict) -> dict:
+    def _fake_dispatch(task_type: str, fn_name: str, payload: dict, **kwargs) -> dict:
         dispatched.append(payload)
         return {"task_id": 960}
 
     with patch(
-        "wecom_ability_service.domains.marketing_automation.service.dispatch_wecom_task",
+        "wecom_ability_service.domains.tasks.service.dispatch_wecom_task_with_intent",
         side_effect=_fake_dispatch,
     ):
         worker_result = worker.run(batch_size=10)

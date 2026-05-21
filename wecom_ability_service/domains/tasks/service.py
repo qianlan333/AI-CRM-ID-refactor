@@ -129,6 +129,53 @@ def dispatch_wecom_task(task_type: str, fn_name: str, payload: dict[str, Any]) -
     }
 
 
+def dispatch_wecom_task_with_intent(
+    task_type: str,
+    fn_name: str,
+    payload: dict[str, Any],
+    *,
+    broadcast_job_id: int | None = None,
+    trace_id: str = "",
+) -> dict[str, Any]:
+    """Create a local outbound intent before calling WeCom.
+
+    This gives the queue worker a durable recovery boundary. If the worker dies
+    before the external call, the job can be safely requeued. If it dies after
+    creating an intent but before recording a WeCom result, recovery fails the
+    job for manual reconciliation instead of blindly duplicating the send.
+    """
+    local_id = repo.create_outbound_task_intent(
+        task_type,
+        payload,
+        trace_id=trace_id,
+    )
+    if broadcast_job_id:
+        from ..broadcast_jobs import service as queue_service
+
+        queue_service.mark_dispatch_started(
+            int(broadcast_job_id),
+            outbound_task_id=int(local_id),
+        )
+    client = WeComClient.from_app()
+    try:
+        result = getattr(client, fn_name)(payload)
+    except Exception as exc:
+        repo.update_outbound_task_status(
+            int(local_id),
+            status="failed",
+            response_payload={
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+    repo.update_outbound_task_status(int(local_id), status="created", response_payload=result)
+    return {
+        "task_id": local_id,
+        "wecom_result": result,
+    }
+
+
 def record_conversion_feedback(
     *,
     feedback_type: str,

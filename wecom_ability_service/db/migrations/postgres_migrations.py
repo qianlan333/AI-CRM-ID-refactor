@@ -1481,6 +1481,28 @@ def _ensure_postgres_automation_program_tables(db) -> None:
     )
 
 
+def _ensure_postgres_broadcast_job_leases(db) -> None:
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS broadcast_jobs
+        ADD COLUMN IF NOT EXISTS claim_token TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE IF EXISTS broadcast_jobs
+        ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_lease
+        ON broadcast_jobs (status, claim_token, lease_expires_at, id ASC)
+        WHERE status = 'claimed' AND claim_token <> ''
+        """
+    )
+
+
 def _init_postgres(db) -> None:
     db.execute(
         """
@@ -1671,6 +1693,10 @@ def _init_postgres(db) -> None:
         "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS outbound_tasks "
         "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS claim_token TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS broadcast_jobs "
+        "ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
         "ALTER TABLE IF EXISTS automation_touch_delivery_log "
         "ADD COLUMN IF NOT EXISTS trace_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS automation_workflow "
@@ -1732,6 +1758,7 @@ def _init_postgres(db) -> None:
         ON user_ops_deferred_jobs (job_type, tenant_key, status, run_after, id DESC)
         """
     )
+    _ensure_postgres_broadcast_job_leases(db)
     _ensure_postgres_questionnaire_external_push_tables(db)
     _ensure_postgres_questionnaire_scrm_apply_log_columns(db)
     _ensure_postgres_wechat_pay_tables(db)
