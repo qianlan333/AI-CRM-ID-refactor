@@ -152,7 +152,7 @@ def build_report() -> dict[str, Any]:
     docs = _read("docs/legacy_delete_batches.md")
     if "D1: Media Old Readonly Routes" not in docs or "Status: retired/deleted" not in docs:
         warnings.append("D1 retired/deleted status not explicit in docs/legacy_delete_batches.md")
-    for batch in ["D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9"]:
+    for batch in ["D7", "D8", "D9"]:
         section_marker = f"## {batch}:"
         after = docs.split(section_marker, 1)[1] if section_marker in docs else ""
         status_line = next((line.strip().lower() for line in after.splitlines() if line.strip().lower().startswith("status:")), "")

@@ -61,6 +61,33 @@ python3 app.py init-db-legacy
 
 兼容旧部署脚本的 `python3 app.py init-db` 仍保留为 legacy alias，但新文档应优先使用 `init-db-legacy`。
 
+## 测试基线
+
+root 全量测试的标准环境是安装了 `requirements.txt` 的虚拟环境，root pytest 只收集顶层 `tests/`。系统 Python 如果没有安装 FastAPI、SQLAlchemy、Alembic 等依赖，直接运行 `python3 -m pytest -q` 会在 collection 阶段失败，这不是代码回归。
+
+推荐入口：
+
+```bash
+scripts/run_tests.sh
+```
+
+等价手动命令：
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pytest -q
+```
+
+AI-CRM Next experiment 目录仍保留独立测试环境，用于验证实验 docs/tools/tests 从 root `aicrm_next/` 导入：
+
+```bash
+cd experiments/ai_crm_next
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[test]'
+.venv/bin/python -m pytest -q
+```
+
 ## 生产环境快照
 
 - 外网入口：`https://www.youcangogogo.com`

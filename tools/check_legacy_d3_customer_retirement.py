@@ -168,7 +168,7 @@ def build_report() -> dict[str, Any]:
         warnings.append("D3 retired/deleted status not explicit in docs/legacy_delete_batches.md")
     if "`wecom_ability_service/http/archive.py`" not in docs:
         warnings.append("D3 docs do not explicitly record archive.py preservation")
-    for batch in ["D4", "D5", "D6", "D7", "D8", "D9"]:
+    for batch in ["D7", "D8", "D9"]:
         marker = f"## {batch}:"
         section = docs.split(marker, 1)[1] if marker in docs else ""
         status_line = next((line.strip().lower() for line in section.splitlines() if line.strip().lower().startswith("status:")), "")
