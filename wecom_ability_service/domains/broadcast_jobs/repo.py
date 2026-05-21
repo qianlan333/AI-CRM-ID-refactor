@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ...db import get_db
@@ -33,7 +33,8 @@ _BASE_COLUMNS = (
     "target_external_userids, target_count, target_summary, "
     "content_type, content_payload, content_summary, "
     "attempt_count, last_error, outbound_task_id, sent_count, failed_count, "
-    "trace_id, created_by, created_at, updated_at, claimed_at, sent_at"
+    "trace_id, created_by, created_at, updated_at, claimed_at, sent_at, "
+    "claim_token, lease_expires_at"
 )
 
 
@@ -223,7 +224,13 @@ def fetch_job_by_source(
     return _row_to_dict(row) if row else None
 
 
-def claim_due_jobs(*, now: Any, limit: int) -> list[dict[str, Any]]:
+def claim_due_jobs(
+    *,
+    now: Any,
+    limit: int,
+    claim_token: str = "",
+    lease_seconds: int = 900,
+) -> list[dict[str, Any]]:
     """原子地把到期的 queued 任务标 claimed 并返回。
 
     用 UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING
@@ -231,12 +238,20 @@ def claim_due_jobs(*, now: Any, limit: int) -> list[dict[str, Any]]:
     """
     db = get_db()
     cutoff = _normalize_dt(now)
+    base_dt = now if isinstance(now, datetime) else datetime.now(timezone.utc)
+    if base_dt.tzinfo is None:
+        base_dt = base_dt.replace(tzinfo=timezone.utc)
+    lease_expires_at = _normalize_dt(
+        base_dt + timedelta(seconds=max(1, int(lease_seconds)))
+    )
     rows = db.execute(
         f"""
         UPDATE broadcast_jobs
         SET status = 'claimed',
             claimed_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP,
+            claim_token = ?,
+            lease_expires_at = ?,
             attempt_count = attempt_count + 1
         WHERE id IN (
             SELECT id FROM broadcast_jobs
@@ -247,10 +262,129 @@ def claim_due_jobs(*, now: Any, limit: int) -> list[dict[str, Any]]:
         )
         RETURNING {_BASE_COLUMNS}
         """,
-        (cutoff, int(limit)),
+        (str(claim_token or ""), lease_expires_at, cutoff, int(limit)),
     ).fetchall()
     db.commit()
     return [_row_to_dict(r) for r in rows]
+
+
+def recover_stale_claimed_jobs(
+    *,
+    now: Any,
+    older_than_seconds: int,
+    limit: int,
+) -> dict[str, list[dict[str, Any]]]:
+    """恢复带租约的 stale claimed 任务。
+
+    只处理 ``claim_token`` 非空的新 worker 租约，避免把历史遗留 claimed job 自动
+    重发。恢复规则：
+    - 无 outbound intent：安全回队列；
+    - outbound 已 created：回队列，由 handler 复用 outbound_task_id 补业务 side effects；
+    - outbound 仍 pending/failed：标 failed，要求人工核对，避免未知外部副作用被重复发送。
+    """
+    db = get_db()
+    base_dt = now if isinstance(now, datetime) else datetime.now(timezone.utc)
+    if base_dt.tzinfo is None:
+        base_dt = base_dt.replace(tzinfo=timezone.utc)
+    cutoff = _normalize_dt(base_dt - timedelta(seconds=int(older_than_seconds)))
+    requeued_without_outbound = db.execute(
+        f"""
+        UPDATE broadcast_jobs
+        SET status = 'queued',
+            claimed_at = NULL,
+            claim_token = '',
+            lease_expires_at = NULL,
+            updated_at = CURRENT_TIMESTAMP,
+            last_error = 'requeued stale claimed job before outbound dispatch'
+        WHERE id IN (
+            SELECT id FROM broadcast_jobs
+            WHERE status = 'claimed'
+              AND claim_token <> ''
+              AND claimed_at IS NOT NULL
+              AND claimed_at <= ?
+              AND sent_at IS NULL
+              AND outbound_task_id IS NULL
+            ORDER BY claimed_at ASC, id ASC
+            LIMIT ?
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING {_BASE_COLUMNS}
+        """,
+        (cutoff, int(limit)),
+    ).fetchall()
+    requeued_created_outbound = db.execute(
+        f"""
+        UPDATE broadcast_jobs
+        SET status = 'queued',
+            claimed_at = NULL,
+            claim_token = '',
+            lease_expires_at = NULL,
+            updated_at = CURRENT_TIMESTAMP,
+            last_error = 'resuming stale claimed job with created outbound task'
+        WHERE id IN (
+            SELECT bj2.id FROM broadcast_jobs bj2
+            JOIN outbound_tasks ot2 ON ot2.id = bj2.outbound_task_id
+            WHERE bj2.status = 'claimed'
+              AND bj2.claim_token <> ''
+              AND bj2.claimed_at IS NOT NULL
+              AND bj2.claimed_at <= ?
+              AND bj2.sent_at IS NULL
+              AND bj2.outbound_task_id IS NOT NULL
+              AND ot2.status = 'created'
+            ORDER BY bj2.claimed_at ASC, bj2.id ASC
+            LIMIT ?
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING {_BASE_COLUMNS}
+        """,
+        (cutoff, int(limit)),
+    ).fetchall()
+    failed_unknown_outbound = db.execute(
+        f"""
+        UPDATE broadcast_jobs
+        SET status = 'failed',
+            claim_token = '',
+            lease_expires_at = NULL,
+            updated_at = CURRENT_TIMESTAMP,
+            last_error = 'stale claimed job has unresolved outbound intent; manual reconciliation required'
+        WHERE id IN (
+            SELECT bj2.id FROM broadcast_jobs bj2
+            JOIN outbound_tasks ot2 ON ot2.id = bj2.outbound_task_id
+            WHERE bj2.status = 'claimed'
+              AND bj2.claim_token <> ''
+              AND bj2.claimed_at IS NOT NULL
+              AND bj2.claimed_at <= ?
+              AND bj2.sent_at IS NULL
+              AND bj2.outbound_task_id IS NOT NULL
+              AND ot2.status <> 'created'
+            ORDER BY bj2.claimed_at ASC, bj2.id ASC
+            LIMIT ?
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING {_BASE_COLUMNS}
+        """,
+        (cutoff, int(limit)),
+    ).fetchall()
+    db.commit()
+    return {
+        "requeued_without_outbound": [_row_to_dict(r) for r in requeued_without_outbound],
+        "requeued_created_outbound": [_row_to_dict(r) for r in requeued_created_outbound],
+        "failed_unknown_outbound": [_row_to_dict(r) for r in failed_unknown_outbound],
+    }
+
+
+def mark_dispatch_started(job_id: int, *, outbound_task_id: int) -> None:
+    db = get_db()
+    db.execute(
+        """
+        UPDATE broadcast_jobs
+        SET outbound_task_id = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND status = 'claimed' AND outbound_task_id IS NULL
+        """,
+        (int(outbound_task_id), int(job_id)),
+    )
+    db.commit()
 
 
 def mark_sent(
@@ -267,6 +401,8 @@ def mark_sent(
         SET status = 'sent',
             sent_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP,
+            claim_token = '',
+            lease_expires_at = NULL,
             outbound_task_id = ?,
             sent_count = ?,
             failed_count = ?,
@@ -290,6 +426,8 @@ def mark_failed(job_id: int, *, error: str) -> None:
         UPDATE broadcast_jobs
         SET status = 'failed',
             updated_at = CURRENT_TIMESTAMP,
+            claim_token = '',
+            lease_expires_at = NULL,
             last_error = ?
         WHERE id = ? AND status IN ('claimed', 'queued')
         """,

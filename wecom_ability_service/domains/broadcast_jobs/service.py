@@ -79,9 +79,38 @@ def list_jobs(
     )
 
 
-def claim_due_jobs(*, limit: int = 50, now: Any = None) -> list[dict[str, Any]]:
+def claim_due_jobs(
+    *,
+    limit: int = 50,
+    now: Any = None,
+    claim_token: str = "",
+    lease_seconds: int = 900,
+) -> list[dict[str, Any]]:
     cutoff = now if now is not None else datetime.now(timezone.utc)
-    return repo.claim_due_jobs(now=cutoff, limit=int(limit))
+    return repo.claim_due_jobs(
+        now=cutoff,
+        limit=int(limit),
+        claim_token=str(claim_token or ""),
+        lease_seconds=max(1, int(lease_seconds)),
+    )
+
+
+def recover_stale_claimed_jobs(
+    *,
+    older_than_seconds: int = 900,
+    limit: int = 50,
+    now: Any = None,
+) -> dict[str, list[dict[str, Any]]]:
+    cutoff = now if now is not None else datetime.now(timezone.utc)
+    return repo.recover_stale_claimed_jobs(
+        now=cutoff,
+        older_than_seconds=max(1, int(older_than_seconds)),
+        limit=max(1, int(limit)),
+    )
+
+
+def mark_dispatch_started(job_id: int, *, outbound_task_id: int) -> None:
+    repo.mark_dispatch_started(int(job_id), outbound_task_id=int(outbound_task_id))
 
 
 def mark_sent(

@@ -2889,7 +2889,9 @@ CREATE TABLE IF NOT EXISTS broadcast_jobs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     claimed_at TIMESTAMPTZ,
-    sent_at TIMESTAMPTZ
+    sent_at TIMESTAMPTZ,
+    claim_token TEXT NOT NULL DEFAULT '',
+    lease_expires_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_due
@@ -2903,6 +2905,10 @@ ON broadcast_jobs (source_type, source_id, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_trace
 ON broadcast_jobs (trace_id, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_broadcast_jobs_lease
+ON broadcast_jobs (status, claim_token, lease_expires_at, id ASC)
+WHERE status = 'claimed' AND claim_token <> '';
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_broadcast_jobs_source_scheduled
 ON broadcast_jobs (source_table, source_id, scheduled_for)
