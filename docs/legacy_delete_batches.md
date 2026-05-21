@@ -44,7 +44,7 @@ Untouched payment / checkout files:
 - `wecom_ability_service/http/admin_wechat_pay.py`
 - `wecom_ability_service/http/admin_alipay_pay.py`
 
-Checkout, payment return, and payment notify routes remain legacy fallback and are not delete-ready. Product admin write fallback routes went down with the Product Management owner, but this does not make Next product writes `production_ready`.
+Checkout, payment return, and payment notify routes remain legacy fallback and are not delete-ready. Product admin write fallback routes went down with the Product Management owner, but Next product writes remain blocked until D7 evidence exists.
 
 Rollback:
 
@@ -139,15 +139,84 @@ Retained Questionnaire write / external fallback files:
 
 Admin writes, public submit, OAuth start/callback, client diagnostics, external push log list/retry, WeCom tag writes, and webhook/external delivery paths remain not delete-ready. D5 does not execute or approve submit, OAuth, WeCom tag, or webhook paths. If a legacy questionnaire readonly route owner is needed for rollback, restore it by reverting the D5 PR or by using a pre-D5 fallback tag.
 
-D6 Automation old readonly routes have not started.
-
 ## D6: Automation Old Readonly Routes
 
-Status: not started. Delete only after Automation readonly production evidence and accepted legacy route drift review.
+Status: retired/tombstoned.
+
+Stopped legacy readonly route registrations:
+
+- `GET /admin/automation-conversion`
+- `GET /api/admin/automation-conversion/overview`
+- `GET /api/admin/automation-conversion/pools`
+- `GET /api/admin/automation-conversion/members`
+- `GET /api/admin/automation-conversion/members/{member_id}`
+- `GET /api/admin/automation-conversion/execution-records`
+
+Stopped legacy readonly alias/page registrations:
+
+- `GET /admin/automation-conversion/programs/{program_id}/overview`
+- `GET /admin/automation-conversion/programs/{program_id}/executions`
+- `GET /admin/automation-conversion/programs/{program_id}/member-ops`
+- `GET /api/admin/automation-conversion/dashboard`
+- `GET /api/admin/automation-conversion/programs/{program_id}/members/segment-search`
+- `GET /api/admin/automation-conversion/member`
+- `GET /api/admin/automation-conversion/executions`
+- `GET /api/admin/automation-conversion/executions/{execution_id}`
+- `GET /api/admin/automation-conversion/executions/{execution_id}/items`
+- `GET /api/admin/automation-conversion/execution-items/{execution_item_id}`
+
+No automation files were physically deleted in D6 because `automation_conversion.py` is a mixed registrar for readonly, write, external, workflow/runtime, agent, and OpenClaw fallback paths. AI-CRM Next owns the Automation readonly page/API surfaces via `aicrm_next.automation_engine` and `frontend_compat`.
+
+Retained Automation write / external / runtime fallback files:
+
+- `wecom_ability_service/http/automation_conversion.py`
+- `wecom_ability_service/http/customer_automation.py`
+- `wecom_ability_service/http/automation_conversion_member_api.py`
+- `wecom_ability_service/http/automation_conversion_delivery.py`
+- `wecom_ability_service/http/automation_conversion_runtime_api.py`
+- `wecom_ability_service/http/automation_conversion_router_callback_api.py`
+- `wecom_ability_service/http/automation_conversion_agent_api.py`
+- `wecom_ability_service/http/automation_conversion_operation_tasks.py`
+- `wecom_ability_service/http/automation_conversion_workflows.py`
+- `wecom_ability_service/http/automation_conversion_review.py`
+- `wecom_ability_service/domains/automation_conversion/`
+
+Manual override, confirm conversion, enter/exit, activation webhook, OpenClaw push, workflow runtime, agent runtime, router callbacks, WeCom dispatch, and external webhook capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. If a legacy automation readonly route owner is needed for rollback, restore it by reverting the D6 PR or by using a pre-D6 fallback tag.
+
+## D6.5: Dead Legacy Cleanup
+
+Status: completed for no-reference readonly leftovers only.
+
+Physically deleted in D6.5:
+
+- `wecom_ability_service/templates/admin_console/attachment_library.html`
+- `docs/generated/route_inventory.md`
+- `docs/generated/route_inventory.json`
+
+The deleted template belonged to the retired D1 attachment-library old route owner. AI-CRM Next serves `/admin/attachment-library` through `frontend_compat` and does not render this template. The generated route inventory files were unreferenced stale legacy owner artifacts after D1-D6 retirement.
+
+Not deleted by D6.5:
+
+- any payment checkout / notify / return file
+- any Questionnaire submit / OAuth / admin write / external-push file
+- any User Ops DND / batch-send / deferred job file
+- any Automation manual override / activation / OpenClaw / workflow / agent runtime file
+- archive, contacts, identity, MCP, OpenClaw, deploy, schema, or migration files
+
+D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
 ## D7: Write And External Adapters
 
-Status: not started. Delete only after real write/external replacement evidence and explicit provider approval.
+Status: replacement planning in progress. Delete only after real write/external replacement evidence and explicit provider approval.
+
+Planning package:
+
+- `docs/d7_write_external_replacement_plan.md`
+- `docs/d7_adapter_contract_catalog.md`
+- `docs/d7_capability_readiness_matrix.md`
+- `tools/check_d7_replacement_planning.py`
+
+D7.1 Media storage and WeCom media adapter contract is the recommended first implementation batch. D8 and D9 remain blocked.
 
 ## D8: Old Flask App Factory And HTTP Registrar
 
