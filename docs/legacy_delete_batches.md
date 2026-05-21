@@ -183,6 +183,28 @@ Retained Automation write / external / runtime fallback files:
 
 Manual override, confirm conversion, enter/exit, activation webhook, OpenClaw push, workflow runtime, agent runtime, router callbacks, WeCom dispatch, and external webhook capabilities remain not delete-ready. D6 does not execute or approve those write/external/runtime paths. If a legacy automation readonly route owner is needed for rollback, restore it by reverting the D6 PR or by using a pre-D6 fallback tag.
 
+## D6.5: Dead Legacy Cleanup
+
+Status: completed for no-reference readonly leftovers only.
+
+Physically deleted in D6.5:
+
+- `wecom_ability_service/templates/admin_console/attachment_library.html`
+- `docs/generated/route_inventory.md`
+- `docs/generated/route_inventory.json`
+
+The deleted template belonged to the retired D1 attachment-library old route owner. AI-CRM Next serves `/admin/attachment-library` through `frontend_compat` and does not render this template. The generated route inventory files were unreferenced stale legacy owner artifacts after D1-D6 retirement.
+
+Not deleted by D6.5:
+
+- any payment checkout / notify / return file
+- any Questionnaire submit / OAuth / admin write / external-push file
+- any User Ops DND / batch-send / deferred job file
+- any Automation manual override / activation / OpenClaw / workflow / agent runtime file
+- archive, contacts, identity, MCP, OpenClaw, deploy, schema, or migration files
+
+D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
+
 ## D7: Write And External Adapters
 
 Status: not started. Delete only after real write/external replacement evidence and explicit provider approval.
