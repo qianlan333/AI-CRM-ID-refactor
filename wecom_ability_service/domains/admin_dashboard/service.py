@@ -14,7 +14,6 @@ ADMIN_NAV_GROUPS = (
         "items": (
             {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
             {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},
-            {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
             {"key": "user_ops_funnel", "label": "漏斗 / 数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
             {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_console_questionnaires"},
             {"key": "wecom_tags", "label": "企微标签管理", "endpoint": "api.admin_wecom_tags_page"},
@@ -244,7 +243,7 @@ def build_dashboard_summary() -> dict[str, Any]:
             "label": "联系人",
             "value": counts["contacts_total"],
             "description": "联系人快照总量",
-            "href": "/admin/customers",
+            "href": "/admin/jobs",
         },
         {
             "key": "group_chats_total",
@@ -258,7 +257,7 @@ def build_dashboard_summary() -> dict[str, Any]:
             "label": "客户",
             "value": counts["customers_total"],
             "description": "当前客户总量",
-            "href": "/admin/customers",
+            "href": "/admin/jobs",
         },
         {
             "key": "questionnaire_total",

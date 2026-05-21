@@ -2,7 +2,7 @@
 
 Source: `wecom_ability_service.create_app({'TESTING': True}).url_map.iter_rules()`
 
-Route rows: `403`
+Route rows: `398`
 
 | Rule | Methods | Endpoint | Arguments | Auth hint | Module hint |
 | --- | --- | --- | --- | --- | --- |
@@ -66,8 +66,6 @@ Route rows: `403`
 | `/admin/config/mcp-tools` | `GET` | `api.admin_config_mcp_tools` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
 | `/admin/config/mcp-tools/save` | `POST` | `api.admin_config_save_mcp_tool` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
 | `/admin/config/wecom-tags` | `GET` | `api.admin_config_wecom_tags` | `` | `admin_session` | `wecom_ability_service.http.admin_config` |
-| `/admin/customers` | `GET` | `api.admin_console_customers` | `` | `admin_session` | `wecom_ability_service.http.admin_customers` |
-| `/admin/customers/<external_userid>` | `GET` | `api.admin_console_customer_detail` | `external_userid` | `admin_session` | `wecom_ability_service.http.admin_customers` |
 | `/admin/customers/<external_userid>/tags` | `POST` | `api.admin_console_customer_tag_action` | `external_userid` | `admin_session` | `wecom_ability_service.http.admin_customers` |
 | `/admin/customers/<external_userid>/tasks` | `POST` | `api.admin_console_customer_task_action` | `external_userid` | `admin_session` | `wecom_ability_service.http.admin_customers` |
 | `/admin/hxc-dashboard` | `GET` | `api.admin_hxc_dashboard_workspace` | `` | `admin_session` | `wecom_ability_service.http.admin_hxc_dashboard` |
@@ -322,9 +320,6 @@ Route rows: `403`
 | `/api/contacts/full-sync` | `POST` | `api.full_sync_contacts` | `` | `api_existing_behavior` | `wecom_ability_service.http.contacts` |
 | `/api/contacts/normalize-description` | `POST` | `api.normalize_contact_descriptions` | `` | `api_existing_behavior` | `wecom_ability_service.http.contacts` |
 | `/api/contacts/sync-new` | `POST` | `api.sync_new_contacts` | `` | `api_existing_behavior` | `wecom_ability_service.http.contacts` |
-| `/api/customers` | `GET` | `api.customer_center_list` | `` | `api_existing_behavior` | `wecom_ability_service.http.customer_center` |
-| `/api/customers/<external_userid>` | `GET` | `api.customer_center_detail` | `external_userid` | `api_existing_behavior` | `wecom_ability_service.http.customer_center` |
-| `/api/customers/<external_userid>/timeline` | `GET` | `api.customer_timeline_detail` | `external_userid` | `api_existing_behavior` | `wecom_ability_service.http.customer_timeline` |
 | `/api/customers/automation/activation-webhook` | `POST` | `api.activation_webhook` | `` | `api_existing_behavior` | `wecom_ability_service.http.customer_automation` |
 | `/api/customers/automation/signup-conversion/batches` | `GET` | `api.signup_conversion_batch_list` | `` | `api_existing_behavior` | `wecom_ability_service.http.customer_automation` |
 | `/api/customers/automation/signup-conversion/batches/<int:batch_id>` | `GET` | `api.signup_conversion_batch_detail` | `batch_id` | `api_existing_behavior` | `wecom_ability_service.http.customer_automation` |

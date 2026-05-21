@@ -67,8 +67,6 @@ def test_http_registration_exports_single_registry_contract():
         "identity",
         "ops",
         "settings",
-        "customer_center",
-        "customer_timeline",
         "archive",
         "contacts",
         "group_chats",
@@ -768,6 +766,35 @@ def test_legacy_media_library_routes_are_retired_after_d1():
         "/api/admin/miniprogram-library",
     }:
         assert route not in routes
+
+
+def test_legacy_customer_read_model_routes_are_retired_after_d3():
+    from wecom_ability_service import create_app
+
+    http_dir = ROOT / "wecom_ability_service" / "http"
+    for file_name in {"customer_center.py", "customer_timeline.py"}:
+        assert not (http_dir / file_name).exists()
+
+    assert not {"customer_center", "customer_timeline"} & set(HTTP_ROUTE_MODULES)
+    assert all(key not in {"customer_center", "customer_timeline"} for key, _ in HTTP_ROUTE_REGISTRARS)
+
+    app = create_app({"TESTING": True})
+    routes = {rule.rule for rule in app.url_map.iter_rules()}
+
+    for route in {
+        "/admin/customers",
+        "/api/customers",
+        "/api/customers/<external_userid>",
+        "/api/customers/<external_userid>/timeline",
+    }:
+        assert route not in routes
+
+    for route in {
+        "/api/messages/<external_userid>",
+        "/api/messages/<external_userid>/recent",
+        "/api/messages/search",
+    }:
+        assert route in routes
 
 
 def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():

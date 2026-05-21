@@ -33,9 +33,7 @@ from .cloud_orchestrator_endpoint import register_routes as register_cloud_orche
 from .archive import register_routes as register_archive_routes
 from .callbacks import register_routes as register_callback_routes
 from .contacts import register_routes as register_contacts_routes
-from .customer_center import register_routes as register_customer_center_routes
 from .customer_automation import register_routes as register_customer_automation_routes
-from .customer_timeline import register_routes as register_customer_timeline_routes
 from .group_chats import register_routes as register_group_chat_routes
 from .identity import register_routes as register_identity_routes
 from .ops import register_routes as register_ops_routes
@@ -68,7 +66,6 @@ HTTP_ROUTE_MODULES = {
     "admin_auth_routes": "wecom_ability_service.http.admin_auth_routes",
     "internal_auth": "wecom_ability_service.http.internal_auth",
     "sidebar_marketing": "wecom_ability_service.http.sidebar_marketing",
-    "customer_center": "wecom_ability_service.http.customer_center",
     "customer_automation": "wecom_ability_service.http.customer_automation",
     "automation_conversion": "wecom_ability_service.http.automation_conversion",
     "automation_conversion_agent_page_actions": "wecom_ability_service.http.automation_conversion_agent_page_actions",
@@ -87,7 +84,6 @@ HTTP_ROUTE_MODULES = {
     "automation_conversion_setup": "wecom_ability_service.http.automation_conversion_setup",
     "automation_conversion_templates": "wecom_ability_service.http.automation_conversion_templates",
     "automation_conversion_workflows": "wecom_ability_service.http.automation_conversion_workflows",
-    "customer_timeline": "wecom_ability_service.http.customer_timeline",
     "archive": "wecom_ability_service.http.archive",
     "contacts": "wecom_ability_service.http.contacts",
     "group_chats": "wecom_ability_service.http.group_chats",
@@ -137,9 +133,8 @@ HTTP_ROUTE_PLACEMENT = {
         "sidebar.py for /sidebar/* contact binding, signup-tag, and JSSDK endpoints",
         "sidebar_lead_pool.py for /api/sidebar/lead-pool* user-ops handlers registered by sidebar.py",
         "sidebar_marketing.py for /api/sidebar/marketing-status* automation-engine handlers",
-        "customer_center.py for /api/customers* list/detail",
         "customer_automation.py for /api/customers/automation/signup-conversion/batches*",
-        "customer_timeline.py for /api/customers/<external_userid>/timeline",
+        "D3 retired legacy customer read-model owner; AI-CRM Next owns /api/customers* and /api/customers/<external_userid>/timeline",
         "contacts.py and identity.py for contact binding / identity resolution",
         "archive.py for archive health/sync and /api/messages* customer conversation history endpoints",
         "group_chats.py for /api/group-chats* sync controllers",
@@ -155,7 +150,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_broadcast_jobs.py for broadcast job queue page and /api/admin/broadcast-jobs* controllers",
         "admin_jobs.py for /admin/jobs and confirmed sync/task actions",
         "admin_audit.py for /admin/audit governance page and /api/admin/audit/logs",
-        "admin_customers.py for /admin/customers* pages and customer detail actions",
+        "admin_customers.py for customer profile APIs and legacy customer detail actions; D3 retired /admin/customers page ownership",
         "admin_api_docs.py for /admin/api-docs human-readable API documentation",
         "admin_mcp.py for legacy /admin/mcp compatibility redirect only",
         "admin_operations.py for /admin/user-ops, /admin/class-users, and confirmed operations actions",
@@ -244,9 +239,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_questionnaires", register_admin_questionnaires_routes),
     ("automation_conversion", register_automation_conversion_routes),
     ("cloud_orchestrator", register_cloud_orchestrator_routes),
-    ("customer_center", register_customer_center_routes),
     ("customer_automation", register_customer_automation_routes),
-    ("customer_timeline", register_customer_timeline_routes),
     ("public_questionnaires", register_public_questionnaire_routes),
     ("public_questionnaire_diagnostics", register_public_questionnaire_diagnostics_routes),
     ("public_questionnaire_oauth", register_public_questionnaire_oauth_routes),

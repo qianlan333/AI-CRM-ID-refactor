@@ -51,11 +51,38 @@ Rollback:
 - Revert the D2 PR, or
 - Restore the legacy fallback service from a pre-D2 tag/commit.
 
-D3 Customer old readonly routes have not started.
-
 ## D3: Customer Old Readonly Routes
 
-Status: not started. Delete only after Customer readonly production evidence, including detail/timeline/recent-message proof.
+Status: retired/deleted.
+
+Deleted legacy HTTP route modules:
+
+- `wecom_ability_service/http/customer_center.py`
+- `wecom_ability_service/http/customer_timeline.py`
+
+Legacy HTTP registrar entries for these modules have been removed. The legacy `/admin/customers` readonly page registration has also been retired from `admin_customers.py`; customer profile APIs and customer write fallbacks remain importable but are not part of D3 readonly ownership.
+
+Retained mixed-dependency fallback packages:
+
+- `wecom_ability_service/customer_center/`
+- `wecom_ability_service/customer_timeline/`
+
+These packages are retained because admin profile, automation context, and MCP fallback code still import their helpers. They are marked `LEGACY_DEPENDENCY_FALLBACK.md` and must not receive new business features.
+
+Untouched archive / contacts / identity files:
+
+- `wecom_ability_service/http/archive.py`
+- `wecom_ability_service/http/contacts.py`
+- `wecom_ability_service/http/identity.py`
+
+The legacy `/api/messages/<external_userid>/recent` route remains with `archive.py` as archive fallback and is not counted as a D3 blocker. Archive sync, WeCom conversation archive, contact identity, tag refresh, and external sync/write capabilities remain not delete-ready.
+
+Rollback:
+
+- Revert the D3 PR, or
+- Restore the legacy fallback service from a pre-D3 tag/commit.
+
+D4 User Ops old readonly routes have not started.
 
 ## D4: User Ops Old Readonly Routes
 

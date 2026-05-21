@@ -199,6 +199,7 @@ def test_service_layer_layout_doc_exists():
     assert "`wecom_ability_service/services.py` stays as a thin compatibility facade" in source
     assert "`admin_api_docs`" in source
     assert "D2 legacy retirement removed `admin_wechat_pay_products.py`" in source
+    assert "D3 legacy retirement removed `http/customer_center.py` and `http/customer_timeline.py`" in source
     assert "`admin_service.py` owns admin transaction read models" in source
     assert "`product_service.py` owns product lifecycle" in source
     assert "`product_repo.py` owns product and product-slice persistence" in source

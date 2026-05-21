@@ -62,6 +62,7 @@ AI-CRM/
 这是 legacy Flask fallback 目录。
 Media Library old route modules were retired in D1; Media Library route ownership now lives in `aicrm_next/media_library` plus `aicrm_next/frontend_compat`.
 Product Management old admin route owner was retired in D2; Product Management route ownership now lives in `aicrm_next/commerce` plus `aicrm_next/frontend_compat`. Legacy checkout/payment files remain fallback and are not part of D2 deletion.
+Customer Read Model old Flask route owner was retired in D3; customer list/detail/timeline ownership now lives in `aicrm_next/customer_read_model` plus `aicrm_next/frontend_compat`. Legacy archive, contacts, identity, and mixed customer helper packages remain fallback and are not part of D3 deletion.
 
 主要结构：
 
@@ -89,9 +90,9 @@ Product Management old admin route owner was retired in D2; Product Management r
 - [`wecom_ability_service/static/admin_console/`](../wecom_ability_service/static/admin_console)
   - 后台控制台静态资源
 - [`wecom_ability_service/customer_center/`](../wecom_ability_service/customer_center)
-  - 客户中心聚合读逻辑
+  - legacy dependency fallback；不再拥有旧 Flask `/api/customers*` route
 - [`wecom_ability_service/customer_timeline/`](../wecom_ability_service/customer_timeline)
-  - 客户时间线聚合读逻辑
+  - legacy dependency fallback；不再拥有旧 Flask timeline route
 - [`wecom_ability_service/mcp_adapter.py`](../wecom_ability_service/mcp_adapter.py)
   - MCP 工具入口
 - [`wecom_ability_service/db/`](../wecom_ability_service/db)
