@@ -4,6 +4,7 @@ from aicrm_next.shared.errors import ApplicationError
 from aicrm_next.shared.typing import JsonDict
 
 from .dispatch import McpToolDispatcher
+from .mcp_openclaw_adapters import build_mcp_tool_gateway
 
 MCP_TOOLS = [
     {
@@ -45,12 +46,25 @@ MCP_TOOLS = [
             },
         },
     },
+    {
+        "name": "get_automation_context",
+        "description": "Return readonly automation member context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "member_id": {"type": "string"},
+                "external_userid": {"type": "string"},
+                "request_id": {"type": "string"},
+            },
+        },
+    },
 ]
 
 
 class McpJsonRpcApplication:
-    def __init__(self, dispatcher: McpToolDispatcher | None = None) -> None:
+    def __init__(self, dispatcher: McpToolDispatcher | None = None, tool_gateway=None) -> None:
         self._dispatcher = dispatcher or McpToolDispatcher()
+        self._tool_gateway = tool_gateway or build_mcp_tool_gateway()
 
     def handle(self, payload: JsonDict) -> JsonDict:
         request_id = payload.get("id")
@@ -64,7 +78,8 @@ class McpJsonRpcApplication:
                     "capabilities": {"tools": {}},
                 }
             elif method == "tools/list":
-                result = {"tools": MCP_TOOLS}
+                adapter_result = self._tool_gateway.list_tools(request_id=str(request_id or ""))
+                result = {"tools": MCP_TOOLS, "adapter_contract": {"mcp_tool": adapter_result}}
             elif method == "tools/call":
                 name = str(params.get("name") or "")
                 arguments = params.get("arguments") or {}

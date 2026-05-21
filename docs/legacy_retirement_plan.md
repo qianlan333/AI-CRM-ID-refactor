@@ -15,7 +15,7 @@ AI-CRM default runtime has moved to AI-CRM Next. Legacy Flask remains as a fallb
 - D5 Questionnaire old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns questionnaire admin readonly, public readonly, and result readonly surfaces by default; legacy submit, OAuth, admin write, diagnostics, and external-push fallback code remains not delete-ready.
 - D6 Automation old Flask readonly route registrations are retired/tombstoned. AI-CRM Next owns automation conversion overview/pools/members/execution-record readonly surfaces by default; legacy manual override, activation webhook, OpenClaw, workflow/runtime, agent, WeCom, and external fallback code remains not delete-ready.
 - D6.5 Dead Legacy Cleanup is completed for safe no-reference readonly leftovers only. It deleted one orphaned D1 attachment-library template plus stale generated route-inventory artifacts. D7 write/external/runtime blockers remain protected and documented in `docs/d7_write_external_blocker_matrix.md`.
-- D7 Write / External replacement planning is in progress. The executable planning package is `docs/d7_write_external_replacement_plan.md`, `docs/d7_adapter_contract_catalog.md`, and `docs/d7_capability_readiness_matrix.md`; D7.1 Media storage / WeCom media adapter contract is the recommended first implementation batch.
+- D7 Write / External replacement planning is in progress. The executable planning package is `docs/d7_write_external_replacement_plan.md`, `docs/d7_adapter_contract_catalog.md`, and `docs/d7_capability_readiness_matrix.md`; D7.1 Media storage / WeCom media adapter contract now has fake adapter boundaries only.
 
 ## Retirement Principles
 
@@ -213,4 +213,4 @@ Planning artifacts:
 
 Recommended first implementation batch: D7.1 Media storage and WeCom media adapter contract.
 
-D8 old Flask shell retirement remains blocked. D9 OpenClaw legacy adapter retirement remains blocked. D7 planning does not authorize real external calls, production route changes, or legacy write/external/runtime deletion.
+D7.1 implements CloudStorageAdapter and WeComMediaAdapter contracts in fake/staging-disabled form. D7.7 implements MCP/OpenClaw legacy adapter contracts in fake/staging-disabled form. Real cloud upload, real WeCom media upload, real MCP external calls, real OpenClaw calls, production route changes, and legacy write/external/runtime deletion remain blocked. D8 old Flask shell retirement remains blocked. D9 OpenClaw legacy adapter physical removal remains blocked.
