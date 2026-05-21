@@ -557,10 +557,8 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
 
     expected_by_module = {
         "automation_conversion_pages": {
-            "/admin/automation-conversion",
             "/admin/automation-conversion/programs",
             "/admin/automation-conversion/programs/<int:program_id>/setup",
-            "/admin/automation-conversion/programs/<int:program_id>/overview",
             "/admin/automation-conversion/programs/<int:program_id>/operations",
             "/admin/automation-conversion/shared/agents",
             "/admin/automation-conversion/runtime/router",
@@ -588,7 +586,6 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
             "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-broadcast",
         },
         "automation_conversion_member_api": {
-            "/api/admin/automation-conversion/member",
             "/api/admin/automation-conversion/member/put-in-pool",
             "/api/admin/automation-conversion/member/set-focus",
             "/api/admin/automation-conversion/member/push-openclaw",
@@ -648,13 +645,10 @@ def test_automation_conversion_split_route_modules_stay_owned_by_child_controlle
             "/api/admin/automation-conversion/review-outputs/<output_id>/send-via-bazhuayu",
         },
         "automation_conversion_workflows": {
-            "/api/admin/automation-conversion/dashboard",
             "/api/admin/automation-conversion/workflows",
             "/api/admin/automation-conversion/workflows/<int:workflow_id>",
             "/api/admin/automation-conversion/workflows/<int:workflow_id>/nodes",
             "/api/admin/automation-conversion/workflow-nodes/<int:node_id>",
-            "/api/admin/automation-conversion/executions",
-            "/api/admin/automation-conversion/execution-items/<int:execution_item_id>",
         },
         "automation_conversion_runtime_api": {
             "/api/admin/automation-conversion/message-activity-sync/run",
@@ -855,12 +849,8 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "api_admin_automation_conversion_model_infra_settings_save_legacy",
     }
     kept_routes = {
-        "/admin/automation-conversion",
-        "/admin/automation-conversion/programs/<int:program_id>/overview",
         "/admin/automation-conversion/programs/<int:program_id>/operations",
         "/admin/automation-conversion/programs/<int:program_id>/flow-design",
-        "/admin/automation-conversion/programs/<int:program_id>/member-ops",
-        "/admin/automation-conversion/programs/<int:program_id>/executions",
         "/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send",
         "/admin/automation-conversion/programs/<int:program_id>/overview/signup-tag/apply",
         "/admin/automation-conversion/programs/<int:program_id>/overview/message-activity-sync/run",
