@@ -63,6 +63,7 @@ AI-CRM/
 Media Library old route modules were retired in D1; Media Library route ownership now lives in `aicrm_next/media_library` plus `aicrm_next/frontend_compat`.
 Product Management old admin route owner was retired in D2; Product Management route ownership now lives in `aicrm_next/commerce` plus `aicrm_next/frontend_compat`. Legacy checkout/payment files remain fallback and are not part of D2 deletion.
 Customer Read Model old Flask route owner was retired in D3; customer list/detail/timeline ownership now lives in `aicrm_next/customer_read_model` plus `aicrm_next/frontend_compat`. Legacy archive, contacts, identity, and mixed customer helper packages remain fallback and are not part of D3 deletion.
+User Ops old Flask readonly route owner is retired/tombstoned in D4; User Ops readonly ownership now lives in `aicrm_next/ops_enrollment` plus `aicrm_next/frontend_compat`. Legacy User Ops write/external domain helpers, admin jobs, and task dispatch files remain fallback dependencies and are not part of D4 deletion.
 
 主要结构：
 

@@ -101,6 +101,7 @@ Client diagnostics and debug session handlers are isolated in `public_questionna
 Login, logout, and Enterprise WeChat SSO route handlers are isolated in `admin_auth_routes.py` so route-level authentication flow does not inflate the guard module.
 
 The legacy User Ops admin page and its `/api/admin/user-ops*` HTTP controllers have been retired.
+D4 legacy retirement records `admin_user_ops.py` and `admin_user_ops_delivery.py` as retired/absent route owners; AI-CRM Next owns User Ops readonly surfaces while legacy domain helpers remain fallback dependencies for non-readonly write/external paths.
 Shared `domains/user_ops` helpers remain available to automation, jobs, sidebar, and message-dispatch callers.
 
 `wecom_ability_service/http/admin_jobs.py` owns the sync/task console and `/api/admin/jobs*` operational APIs.

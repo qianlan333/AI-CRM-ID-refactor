@@ -82,11 +82,29 @@ Rollback:
 - Revert the D3 PR, or
 - Restore the legacy fallback service from a pre-D3 tag/commit.
 
-D4 User Ops old readonly routes have not started.
-
 ## D4: User Ops Old Readonly Routes
 
-Status: not started. Delete only after User Ops readonly production evidence and accepted legacy drift review.
+Status: retired/tombstoned.
+
+Deleted or already-absent legacy HTTP route owner modules:
+
+- `wecom_ability_service/http/admin_user_ops.py`
+- `wecom_ability_service/http/admin_user_ops_delivery.py`
+
+The legacy HTTP registrar has no `admin_user_ops` / `admin_user_ops_delivery` import or register entry. Legacy `/api/admin/user-ops*` and `/api/internal/user-ops*` requests are blocked before route dispatch with the existing retired API guard. AI-CRM Next owns the User Ops readonly page and API surfaces via `aicrm_next.ops_enrollment` and `frontend_compat`.
+
+Retained User Ops write / external fallback dependencies:
+
+- `wecom_ability_service/domains/user_ops/page_service.py`
+- `wecom_ability_service/domains/user_ops/service.py`
+- `wecom_ability_service/domains/user_ops/user_ops_deferred_job_service.py`
+- `wecom_ability_service/domains/user_ops/hxc_send_config_service.py`
+- `wecom_ability_service/http/admin_jobs.py`
+- `wecom_ability_service/http/tasks.py`
+
+DND, batch-send, deferred jobs, WeCom dispatch, and media upload capabilities remain not delete-ready. D4 does not execute or approve those write/external paths. If a legacy admin User Ops route owner is needed for rollback, restore it by reverting the D4/D0-D4 retirement PR chain or by using a pre-D4 fallback tag.
+
+D5 Questionnaire old readonly routes have not started.
 
 ## D5: Questionnaire Old Readonly Routes
 
