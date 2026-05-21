@@ -10,8 +10,8 @@
 | D5 | Questionnaire readonly | `aicrm_next.questionnaire` | legacy questionnaire mixed readonly owner | retired/tombstoned | completed by D5; submit/OAuth/admin-write/external-push fallback files remain not delete-ready and rollback is git revert/pre-D5 fallback tag |
 | D6 | Automation readonly | `aicrm_next.automation_engine` | legacy automation conversion mixed readonly owner | retired/tombstoned | completed by D6; manual override, activation webhook, OpenClaw, workflow/runtime, agent, and WeCom fallback files remain not delete-ready |
 | D6.5 | Dead legacy cleanup | no route owner change | D1-D6 stale readonly leftovers | completed | deleted only unreferenced attachment template and stale generated route inventory; D7 blockers remain protected |
-| D7 | Write/external adapters | Next adapters, if approved | legacy write/external routes | planning in progress | D7.1 Media fake adapter contract implemented; no deletion until replacement evidence |
-| D8 | Flask factory/http registrar | none | legacy app factory and HTTP registrar | not eligible | all routes retired |
-| D9 | OpenClaw legacy adapter | Next-approved integration | legacy OpenClaw adapter | not eligible | external adapter replacement evidence |
+| D7 | Write/external adapters | Next fake/staging-disabled adapter contracts | legacy write/external routes | accepted through D7.7 | no deletion until real replacement evidence, rollback proof, and signoff |
+| D8 | Flask factory/http registrar and maintenance commands | `aicrm_next.main` default runtime remains active | `legacy_flask/` entry layer plus `wecom_ability_service/` compatibility shim and retained maintenance commands | maintenance_command_retirement_planning_ready | D8.5 plans maintenance command replacement; no shell deletion, command deletion, DB migration execution, or production cutover |
+| D9 | OpenClaw legacy adapter | `aicrm_next.integration_gateway` D7.7 fake/staging-disabled contracts | `openclaw_service/` frozen legacy reference | openclaw_import_freeze_ready | no physical removal until import freeze acceptance, real replacement evidence, docs/scripts rewrite, plugin compatibility validation, rollback proof, and human signoff |
 
 No row is approved for production.
