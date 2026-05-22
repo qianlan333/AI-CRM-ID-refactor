@@ -114,6 +114,32 @@
     return url.toString();
   }
 
+  function absoluteUrl(path) {
+    const text = String(path || "").trim();
+    if (!text) return "";
+    try {
+      return new URL(text, window.location.origin).toString();
+    } catch (_error) {
+      return text;
+    }
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const input = document.createElement("textarea");
+    input.value = text;
+    input.setAttribute("readonly", "readonly");
+    input.style.position = "fixed";
+    input.style.left = "-9999px";
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    document.body.removeChild(input);
+  }
+
   function getQueryValue(key) {
     return new URLSearchParams(window.location.search).get(key) || "";
   }
@@ -248,12 +274,14 @@
     content.innerHTML = panel(
       "商品",
       rows
-        .map((item) => (
-          '<article class="card"><div class="card-title"><h3>' + escapeHtml(item.title || "未命名商品") + "</h3>" +
-          '<div class="price">' + escapeHtml(item.price_label || "") + "</div></div>" +
-          '<div class="row-actions"><button class="btn primary" type="button" data-product-send="' + escapeHtml(item.id || "") + '">发送介绍</button>' +
-          '<button class="btn ghost" type="button" data-product-detail="' + escapeHtml(item.id || "") + '">查看详情</button></div></article>'
-        ))
+        .map((item) => {
+          const link = item.product_url || (item.id ? "/p/" + item.id : "");
+          return (
+            '<article class="card"><div class="card-title"><h3>' + escapeHtml(item.title || "未命名商品") + "</h3>" +
+            '<div class="price">' + escapeHtml(item.price_label || "") + "</div></div>" +
+            '<div class="row-actions"><button class="btn primary" type="button" data-product-copy="' + escapeHtml(link) + '">复制商品链接</button></div></article>'
+          );
+        })
         .join("")
     );
   }
@@ -291,11 +319,14 @@
         rows
           .map((item) => {
             const thumbClass = item.type === "mini" ? "mini-program" : item.type === "pdf" ? "pdf" : "";
+            const thumb = item.thumbnail_url
+              ? '<div class="thumb image-thumb"><img src="' + escapeHtml(item.thumbnail_url) + '" alt=""></div>'
+              : '<div class="thumb ' + thumbClass + '">' + escapeHtml(item.thumbnail_label || "") + "</div>";
             return (
-              '<article class="card material"><div class="thumb ' + thumbClass + '">' + escapeHtml(item.thumbnail_label || "") + "</div>" +
-              '<div><h3>' + escapeHtml(item.title || "未命名素材") + '</h3><div class="tags">' +
+              '<article class="card material">' + thumb +
+              '<div class="material-main"><h3>' + escapeHtml(item.title || "未命名素材") + '</h3><div class="tags">' +
               (item.tags || []).map((tag) => '<span class="tag">' + escapeHtml(tag) + "</span>").join("") +
-              '</div></div><button class="btn primary" type="button" data-material-send="' + escapeHtml(item.id || "") + '">发给客户</button></article>'
+              '</div></div><button class="btn primary material-send" type="button" data-material-send="' + escapeHtml(item.id || "") + '">发送</button></article>'
             );
           })
           .join("")
@@ -407,7 +438,7 @@
 
   async function sendMaterial(materialId) {
     try {
-      await requestJson(endpoint("materialSendUrl"), {
+      const payload = await requestJson(endpoint("materialSendUrl"), {
         method: "POST",
         body: JSON.stringify({
           external_userid: state.external_userid,
@@ -415,12 +446,44 @@
           type: state.materialType,
           material_id: materialId,
           operator: state.bind_by_userid || state.owner_userid || "",
+          delivery_mode: state.materialType === "image" ? "chat_toolbar" : "dispatch",
         }),
       });
+      if (state.materialType === "image") {
+        if (!payload.media_id) throw new Error("图片素材未取得 media_id");
+        await sendImageToCurrentChat(payload.media_id);
+        showToast("已发送到当前会话");
+        return;
+      }
       showToast("已发送");
     } catch (error) {
       showToast(error.message || "发送失败", "error");
     }
+  }
+
+  async function sendImageToCurrentChat(mediaId) {
+    const sdkReady = await initWeComSdk();
+    if (!sdkReady || !window.wx || typeof window.wx.invoke !== "function") {
+      throw new Error("请在企微侧边栏内发送");
+    }
+    return await new Promise((resolve, reject) => {
+      window.wx.invoke(
+        "sendChatMessage",
+        {
+          msgtype: "image",
+          image: { mediaid: mediaId },
+        },
+        function (res) {
+          writeDebug("sendChatMessage result", res || {});
+          const errMsg = String((res || {}).err_msg || "");
+          if (!errMsg || errMsg.indexOf(":ok") >= 0) {
+            resolve(res);
+            return;
+          }
+          reject(new Error(String((res || {}).errmsg || errMsg || "发送失败")));
+        }
+      );
+    });
   }
 
   function openMobileModal() {
@@ -492,7 +555,7 @@
         timestamp: Number(configPayload.config.timestamp),
         nonceStr: configPayload.config.nonceStr,
         signature: configPayload.config.signature,
-        jsApiList: ["getContext"],
+        jsApiList: ["getContext", "sendChatMessage"],
       });
       window.wx.ready(function () {
         writeDebug("wx.config success", { url: configPayload.config.url });
@@ -506,7 +569,7 @@
           timestamp: Number(configPayload.agent_config.timestamp),
           nonceStr: configPayload.agent_config.nonceStr,
           signature: configPayload.agent_config.signature,
-          jsApiList: ["getContext", "getCurExternalContact"],
+          jsApiList: ["getContext", "getCurExternalContact", "sendChatMessage"],
           success: function (res) {
             writeDebug("wx.agentConfig success", res || {});
             finish(true);
@@ -618,11 +681,22 @@
       }
       return;
     }
-    if (event.target.closest("[data-product-send]")) {
-      showToast("商品介绍发送能力待接入");
+    const productCopyButton = event.target.closest("[data-product-copy]");
+    if (productCopyButton) {
+      const link = absoluteUrl(productCopyButton.dataset.productCopy);
+      if (!link) {
+        showToast("暂无商品链接", "error");
+        return;
+      }
+      try {
+        await copyText(link);
+        showToast("已复制商品链接");
+      } catch (_error) {
+        showToast("复制失败，请手动复制", "error");
+      }
       return;
     }
-    if (event.target.closest("[data-product-detail]") || event.target.closest("[data-order-detail]")) {
+    if (event.target.closest("[data-order-detail]")) {
       showToast("详情能力待接入");
     }
   });

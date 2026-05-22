@@ -51,6 +51,19 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "<select" not in combined
     assert "selectField" not in combined
     assert "请选择" not in combined
+    assert "复制商品链接" in script
+    assert "data-product-copy" in script
+    assert "product_url" in script
+    assert "发送介绍" not in script
+    assert "商品介绍发送能力待接入" not in script
+    assert "data-product-send" not in script
+    assert "data-product-detail" not in script
+    assert "image-thumb" in script
+    assert "thumbnail_url" in script
+    assert "sendChatMessage" in script
+    assert "delivery_mode" in script
+    assert "chat_toolbar" in script
+    assert ">发送</button>" in script
 
     forbidden = [
         "第 3 天",

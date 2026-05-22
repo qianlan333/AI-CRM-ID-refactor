@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import Response, jsonify, redirect, request
 
 from ..domains import sidebar_v2
 
@@ -57,6 +57,21 @@ def sidebar_v2_materials():
         return _json_error(str(exc))
 
 
+def sidebar_v2_image_thumbnail(image_id: int):
+    try:
+        payload = sidebar_v2.get_image_thumbnail(image_id)
+    except LookupError as exc:
+        return _json_error(str(exc), 404)
+    except ValueError as exc:
+        return _json_error(str(exc))
+    redirect_url = str(payload.get("redirect_url") or "").strip()
+    if redirect_url:
+        return redirect(redirect_url, code=302)
+    response = Response(payload.get("body") or b"", mimetype=str(payload.get("mime_type") or "image/png"))
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response
+
+
 def sidebar_v2_send_material():
     payload = request.get_json(silent=True) or {}
     try:
@@ -67,6 +82,7 @@ def sidebar_v2_send_material():
                 material_type=str(payload.get("type") or ""),
                 material_id=payload.get("material_id"),
                 operator=str(payload.get("operator") or ""),
+                delivery_mode=str(payload.get("delivery_mode") or ""),
             )
         )
     except ValueError as exc:
@@ -105,6 +121,7 @@ def register_routes(bp):
     bp.route("/api/sidebar/v2/profile", methods=["PUT"])(sidebar_v2_update_profile)
     bp.route("/api/sidebar/v2/questionnaires", methods=["GET"])(sidebar_v2_questionnaires)
     bp.route("/api/sidebar/v2/materials", methods=["GET"])(sidebar_v2_materials)
+    bp.route("/api/sidebar/v2/materials/image/<int:image_id>/thumbnail", methods=["GET"])(sidebar_v2_image_thumbnail)
     bp.route("/api/sidebar/v2/materials/send", methods=["POST"])(sidebar_v2_send_material)
     bp.route("/api/sidebar/v2/other-staff-messages", methods=["GET"])(sidebar_v2_other_staff_messages)
     bp.route("/api/sidebar/v2/products", methods=["GET"])(sidebar_v2_products)

@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import base64
 import json
 
 from wecom_ability_service.db import get_db
+
+_TINY_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAEAAAcAAekVCC0AAAAASUVORK5CYII="
+)
+_TINY_PNG_B64 = base64.b64encode(_TINY_PNG_BYTES).decode("ascii")
 
 
 def _seed_contact(external_userid: str = "wm_sidebar_v2") -> None:
@@ -169,14 +175,60 @@ def test_sidebar_v2_materials_use_unified_schema(client, monkeypatch):
     mini = client.get("/api/sidebar/v2/materials", query_string={"type": "mini"}).get_json()["materials"][0]
     pdf = client.get("/api/sidebar/v2/materials", query_string={"type": "pdf"}).get_json()["materials"][0]
 
-    assert image == {"id": 1, "type": "image", "title": "课程海报", "thumbnail_label": "图", "tags": ["课程介绍"], "enabled": True}
-    assert mini == {"id": 2, "type": "mini", "title": "测评入口", "thumbnail_label": "小", "tags": [], "enabled": True}
-    assert pdf == {"id": 3, "type": "pdf", "title": "阅读资料.pdf", "thumbnail_label": "PDF", "tags": ["PDF"], "enabled": True}
+    assert image == {
+        "id": 1,
+        "type": "image",
+        "title": "课程海报",
+        "thumbnail_label": "图",
+        "thumbnail_url": "/api/sidebar/v2/materials/image/1/thumbnail",
+        "tags": ["课程介绍"],
+        "enabled": True,
+    }
+    assert mini == {"id": 2, "type": "mini", "title": "测评入口", "thumbnail_label": "小", "thumbnail_url": "", "tags": [], "enabled": True}
+    assert pdf == {"id": 3, "type": "pdf", "title": "阅读资料.pdf", "thumbnail_label": "PDF", "thumbnail_url": "", "tags": ["PDF"], "enabled": True}
+
+
+def test_sidebar_v2_image_material_thumbnail_returns_real_image(client, app):
+    from wecom_ability_service.domains import image_library
+
+    with app.app_context():
+        item = image_library.create_image_from_base64(
+            data_base64=_TINY_PNG_B64,
+            file_name="tiny.png",
+            mime_type="image/png",
+            name="真实图片",
+        )
+
+    response = client.get(f"/api/sidebar/v2/materials/image/{item['id']}/thumbnail")
+
+    assert response.status_code == 200
+    assert response.content_type == "image/png"
+    assert response.data == _TINY_PNG_BYTES
 
 
 def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, app):
     with app.app_context():
+        _seed_contact()
         db = get_db()
+        person_id = db.execute(
+            "INSERT INTO people (mobile) VALUES (?) RETURNING id",
+            ("13800138000",),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO external_contact_bindings (external_userid, person_id, first_owner_userid, last_owner_userid)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("wm_sidebar_v2", person_id, "owner_current", "owner_current"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("corp_sidebar", "wm_sidebar_v2", "union_sidebar_v2", "openid_sidebar_v2", "owner_current", "月朗"),
+        )
         db.execute(
             """
             INSERT INTO wechat_pay_products (
@@ -206,8 +258,9 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
             """
             INSERT INTO wechat_pay_orders (
                 out_trade_no, product_code, product_name, amount_total, currency,
-                external_userid, mobile_snapshot, status, trade_state, paid_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
+                payer_openid, unionid, external_userid, mobile_snapshot, status, trade_state,
+                transaction_id, paid_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
             """,
             (
                 "WXP_SIDE_001",
@@ -215,10 +268,13 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
                 "暑期阅读提升营 · 4 周",
                 39900,
                 "CNY",
-                "wm_sidebar_v2",
-                "13800138000",
+                "openid_sidebar_v2",
+                "",
+                "",
+                "13800138001",
                 "paid",
                 "SUCCESS",
+                "4200003132202605227627324115",
                 "2026-05-20 06:22:00+00",
                 "2026-05-20 06:20:00+00",
             ),
@@ -237,6 +293,7 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
                 "id": "prd_sidebar_active",
                 "title": "暑期阅读提升营 · 4 周",
                 "price_label": "¥399",
+                "product_url": "/p/prd_sidebar_active",
             }
         ],
     }
@@ -351,3 +408,34 @@ def test_sidebar_v2_material_send_uses_private_message_dispatch(client, monkeypa
     assert captured["image_media_ids"] == ["media_123"]
     assert captured["sender_userid"] == "HuangYouCan"
     assert captured["operator_id"] == "operator_1"
+
+
+def test_sidebar_v2_image_material_send_can_prepare_chat_toolbar_media(client, monkeypatch):
+    from wecom_ability_service.domains.sidebar_v2 import service
+
+    monkeypatch.setattr(service.image_library, "resolve_image_media_id", lambda image_id: f"media_{image_id}")
+
+    def fail_dispatch(**_kwargs):
+        raise AssertionError("chat toolbar mode should not create background dispatch")
+
+    monkeypatch.setattr(service.private_message_dispatch, "_dispatch_private_message_batch", fail_dispatch)
+
+    response = client.post(
+        "/api/sidebar/v2/materials/send",
+        json={
+            "external_userid": "wm_sidebar_v2",
+            "owner_userid": "HuangYouCan",
+            "type": "image",
+            "material_id": 123,
+            "operator": "operator_1",
+            "delivery_mode": "chat_toolbar",
+        },
+    )
+
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["status"] == "ready"
+    assert payload["delivery_mode"] == "chat_toolbar"
+    assert payload["media_id"] == "media_123"
+    assert payload["record_id"] == 0
+    assert payload["task_ids"] == []

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -270,9 +271,14 @@ def get_questionnaires(*, external_userid: str) -> dict[str, Any]:
 
 
 def _material_item(item: dict[str, Any], material_type: str) -> dict[str, Any]:
+    item_id = int(item.get("id") or 0)
+    thumbnail_url = ""
     if material_type == "image":
         title = _text(item.get("name")) or _text(item.get("file_name"))
         label = "图"
+        thumbnail_url = _text(item.get("source_url")) if _text(item.get("source")) == "url" else ""
+        if not thumbnail_url and item_id:
+            thumbnail_url = f"/api/sidebar/v2/materials/image/{item_id}/thumbnail"
     elif material_type == "mini":
         title = _text(item.get("title")) or _text(item.get("name"))
         label = "小"
@@ -280,10 +286,11 @@ def _material_item(item: dict[str, Any], material_type: str) -> dict[str, Any]:
         title = _text(item.get("name")) or _text(item.get("file_name"))
         label = "PDF"
     return {
-        "id": int(item.get("id") or 0),
+        "id": item_id,
         "type": material_type,
         "title": title,
         "thumbnail_label": label,
+        "thumbnail_url": thumbnail_url,
         "tags": list(item.get("tags") or []),
         "enabled": bool(item.get("enabled")),
     }
@@ -303,6 +310,25 @@ def list_materials(*, material_type: str, limit: int = 50) -> dict[str, Any]:
     return {"ok": True, "materials": [_material_item(dict(item), normalized_type) for item in rows]}
 
 
+def get_image_thumbnail(image_id: int) -> dict[str, Any]:
+    item = image_library.get_image(int(image_id or 0), include_data=True)
+    if not item:
+        raise LookupError("image not found")
+    source_url = _text(item.get("source_url"))
+    if _text(item.get("source")) == "url" and source_url:
+        return {"redirect_url": source_url}
+    data_base64 = _text(item.get("data_base64"))
+    if not data_base64:
+        raise LookupError("image data not found")
+    if "," in data_base64 and data_base64.lower().startswith("data:"):
+        data_base64 = data_base64.split(",", 1)[1]
+    try:
+        body = base64.b64decode(data_base64)
+    except Exception as exc:
+        raise ValueError("invalid image data") from exc
+    return {"body": body, "mime_type": _text(item.get("mime_type")) or "image/png"}
+
+
 def send_material(
     *,
     external_userid: str,
@@ -310,9 +336,11 @@ def send_material(
     material_type: str,
     material_id: Any,
     operator: str = "",
+    delivery_mode: str = "",
 ) -> dict[str, Any]:
     normalized_external_userid = _text(external_userid)
     normalized_type = _text(material_type)
+    normalized_delivery_mode = _text(delivery_mode)
     if not normalized_external_userid:
         raise ValueError("external_userid is required")
     try:
@@ -320,8 +348,21 @@ def send_material(
     except (TypeError, ValueError):
         raise ValueError("material_id is required") from None
     kwargs: dict[str, Any] = {}
+    media_id = ""
     if normalized_type == "image":
-        kwargs["image_media_ids"] = [image_library.resolve_image_media_id(library_id)]
+        media_id = image_library.resolve_image_media_id(library_id)
+        if normalized_delivery_mode == "chat_toolbar":
+            return {
+                "ok": True,
+                "status": "ready",
+                "delivery_mode": "chat_toolbar",
+                "media_id": media_id,
+                "record_id": 0,
+                "task_ids": [],
+                "sender_userid": _text(owner_userid),
+                "error": "",
+            }
+        kwargs["image_media_ids"] = [media_id]
     elif normalized_type == "mini":
         kwargs["miniprogram_library_ids"] = [library_id]
     elif normalized_type == "pdf":
@@ -416,10 +457,12 @@ def get_other_staff_messages(*, external_userid: str, current_userid: str = "", 
 def _product_item(item: dict[str, Any]) -> dict[str, Any]:
     product_code = _text(item.get("product_code"))
     product_id = _text(item.get("id"))
+    public_path = f"/p/{product_code}" if product_code else ""
     return {
         "id": product_code or product_id,
         "title": _text(item.get("name")) or product_code or "未命名商品",
         "price_label": _money_label(item.get("amount_total")),
+        "product_url": public_path,
     }
 
 
