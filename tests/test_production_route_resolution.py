@@ -49,6 +49,19 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "POST", "/wecom/external-contact/callback") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "production_compat"
     assert _endpoint_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "POST", "/api/admin/automation-conversion/programs/3/setup/basic") == "production_compat"
+    assert (
+        _endpoint_for(samples, "POST", "/api/admin/automation-conversion/programs/3/setup/basic")
+        == "aicrm_next.production_compat.api"
+    )
+    assert (
+        _owner_for(samples, "GET", "/api/admin/automation-conversion/profile-segment-templates/options")
+        == "production_compat"
+    )
+    assert (
+        _endpoint_for(samples, "GET", "/api/admin/automation-conversion/profile-segment-templates/options")
+        == "aicrm_next.production_compat.api"
+    )
     assert _owner_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "POST", "/api/sidebar/bind-mobile") == "production_compat"

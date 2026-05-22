@@ -280,6 +280,116 @@ routes:
     delete_ready: false
     checker: tools/check_next_timer_route_readiness.py
     notes: Campaign run-due timer route is safe-mode only.
+  - route_pattern: /api/admin/automation-conversion/programs*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program setup/workspace APIs are still served by the legacy production facade while Next owns the readonly list shell.
+  - route_pattern: /api/admin/automation-conversion/profile-segment-templates*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program operations workspace still loads profile segment template options from the legacy production facade.
+  - route_pattern: /api/admin/automation-conversion/action-templates*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program operations action-template APIs remain legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/task-groups*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program operation task group APIs remain legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/tasks*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program operation task APIs remain legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/workflows*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program workflow APIs remain legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/workflow-nodes*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program workflow node APIs remain legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/dashboard
+    methods: [GET, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: readonly
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program operations dashboard API remains legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/executions*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program execution workspace APIs remain legacy-forwarded during the workspace cutover.
+  - route_pattern: /api/admin/automation-conversion/execution-items*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_production_route_resolution.py
+    notes: Program execution item APIs remain legacy-forwarded during the workspace cutover.
   - route_pattern: /api/admin/automation-conversion*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.automation_engine

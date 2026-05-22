@@ -45,6 +45,26 @@ async def legacy_production_compat_timer_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
+@router.api_route("/api/admin/automation-conversion/programs/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/profile-segment-templates", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/profile-segment-templates/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/action-templates", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/action-templates/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/task-groups", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/task-groups/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/tasks", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/tasks/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/workflows", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/workflows/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/workflow-nodes/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/dashboard", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/executions", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/executions/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/automation-conversion/execution-items/{path:path}", methods=_ALL_METHODS)
+async def legacy_automation_workspace_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
 @router.api_route("/login", methods=_ALL_METHODS)
 @router.api_route("/logout", methods=_ALL_METHODS)
 async def legacy_admin_auth_routes(request: Request) -> Response:
