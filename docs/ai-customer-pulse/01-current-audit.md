@@ -276,7 +276,7 @@ flowchart LR
 | 统一收件箱排序/去重/状态流转服务 | 不存在 |
 | AI 输出证据标准化 | 目前 `automation_agent_output` 记录 confidence/reason，但证据不是统一字段 |
 | 跨 owner / 跨模块的操作权限策略 | 未发现成熟 RBAC；主要靠 token、session action token、owner 语义 |
-| OpenClaw 会话 runtime / session runtime | `openclaw_service` 仅有 CLI/tool/service，没有真实 conversation runtime |
+| OpenClaw 会话 runtime / session runtime | Historical pre-D9 note: `openclaw_service` only had CLI/tool/service and no real conversation runtime. After D9.6 it is deleted and is not a live source path. |
 
 ## 7. 权限点
 

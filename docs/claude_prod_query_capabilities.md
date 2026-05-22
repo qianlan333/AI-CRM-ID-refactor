@@ -143,7 +143,7 @@ prod.sh psql "EXPLAIN ANALYZE SELECT * FROM questionnaire_submissions WHERE ques
 ```bash
 prod.sh cat "/home/ubuntu/极简 crm/app.py" | head -100
 prod.sh ls "/home/ubuntu/极简 crm/"
-prod.sh ls "/home/ubuntu/极简 crm/openclaw_service/"
+# Historical pre-D9 only: openclaw_service/ was deleted after D9.6 and is not a live source path.
 ```
 
 ### 5.2 配置/环境变量
