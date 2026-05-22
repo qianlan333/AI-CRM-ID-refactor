@@ -13,7 +13,6 @@ AI-CRM/
 ├── requirements.txt
 ├── deploy/
 ├── docs/
-├── openclaw_service/
 ├── scripts/
 ├── tests/
 └── wecom_ability_service/
@@ -30,6 +29,7 @@ AI-CRM/
   - 旧 Flask fallback runner
 - [`aicrm_next/main.py`](../aicrm_next/main.py)
   - 当前默认 FastAPI app factory
+  - `app.py run` 默认启动 `aicrm_next.main:app`
 - [`wecom_ability_service/__init__.py`](../wecom_ability_service/__init__.py)
   - 创建 legacy Flask app
   - 装载配置、日志、数据库和蓝图
@@ -42,6 +42,9 @@ AI-CRM/
 ## `aicrm_next/`
 
 这是当前默认运行架构，也是唯一生产运行源码位置。`experiments/ai_crm_next/` 只保留验证文档、工具、测试、fixture、migration 和实验材料。
+
+AI-CRM Next 是 FastAPI modular monolith。legacy Flask 只作为显式 fallback 和生产兼容 facade；
+`wecom_ability_service/` 保留为 legacy fallback。
 
 主要模块：
 
@@ -100,20 +103,13 @@ Questionnaire old Flask readonly route registrations are retired/tombstoned in D
 - [`wecom_ability_service/db/`](../wecom_ability_service/db)
   - PostgreSQL 连接、schema 初始化与迁移补齐
 
-## `openclaw_service/`
+## MCP / OpenClaw after D9.6
 
-这是 legacy OpenClaw 相关的适配层。新默认运行入口不会从 `aicrm_next/` import 该目录。
+`openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 已在 D9.6 后 physically removed，
+不是当前 live source directory，也不是后续开发入口。不得重新引入这些目录或 import。
 
-重点目录：
-
-- [`openclaw_service/integrations/crm/`](../openclaw_service/integrations/crm)
-  - CRM 适配器与数据模型
-- [`openclaw_service/tools/`](../openclaw_service/tools)
-  - OpenClaw 工具注册
-- [`openclaw_service/services/`](../openclaw_service/services)
-  - CRM operator、聊天上下文等服务
-- [`openclaw_service/feishu/`](../openclaw_service/feishu)
-  - 飞书相关适配
+MCP / OpenClaw 后续只允许通过 `aicrm_next.integration_gateway` 的 D7.7 adapter boundary
+承接。real MCP/OpenClaw external calls 仍 blocked / fake / staging-disabled，不能未经审批打开。
 
 ## `tests/`
 
@@ -158,5 +154,5 @@ Questionnaire old Flask readonly route registrations are retired/tombstoned in D
   - 再看 `deploy/` 和 `scripts/`
 - 理解 MCP / OpenClaw
   - 先看 [mcp_usage.md](mcp_usage.md)
-  - 再看 [`wecom_ability_service/mcp_adapter.py`](../wecom_ability_service/mcp_adapter.py)
-  - 再看 [`openclaw_service/integrations/crm/`](../openclaw_service/integrations/crm)
+  - 再看 [`aicrm_next/integration_gateway/`](../aicrm_next/integration_gateway)
+  - 如需理解旧 transport fallback，再看 [`wecom_ability_service/mcp_adapter.py`](../wecom_ability_service/mcp_adapter.py)
