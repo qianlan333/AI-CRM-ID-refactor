@@ -4,6 +4,7 @@ import os
 from typing import Any, Protocol
 
 from aicrm_next.shared.runtime import database_mode, production_data_ready, runtime_health_state
+from aicrm_next.shared.repository_provider import assert_repository_allowed
 
 from .dto import AdminReadDiagnostics
 from .errors import AdminReadModelError
@@ -98,6 +99,5 @@ class LocalContractAdminReadRepository:
 
 def build_admin_read_repository() -> AdminReadRepository:
     if production_data_ready():
-        return PostgresAdminReadRepository()
-    return LocalContractAdminReadRepository()
-
+        return assert_repository_allowed(PostgresAdminReadRepository(), capability_owner="admin_read_model")
+    return assert_repository_allowed(LocalContractAdminReadRepository(), capability_owner="admin_read_model")

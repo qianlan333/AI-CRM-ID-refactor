@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai_assist.api import router as ai_assist_router
@@ -22,19 +23,36 @@ from .ops_enrollment.api import router as user_ops_router
 from .platform_foundation.api import router as platform_router
 from .production_compat.api import router as production_compat_router
 from .questionnaire.api import router as questionnaire_router
+from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import legacy_production_facade_enabled
+from .shared.runtime import fixture_mode
 from .questionnaire.repo import reset_questionnaire_fixture_state
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
 
 
 def create_app() -> FastAPI:
-    reset_user_ops_fixture_state()
-    reset_questionnaire_fixture_state()
-    reset_automation_fixture_state()
-    reset_commerce_fixture_state()
-    reset_media_library_fixture_state()
     app = FastAPI(title="AI-CRM Next", version="0.1.0")
+
+    if fixture_mode():
+        reset_user_ops_fixture_state()
+        reset_questionnaire_fixture_state()
+        reset_automation_fixture_state()
+        reset_commerce_fixture_state()
+        reset_media_library_fixture_state()
+
+    @app.exception_handler(RepositoryProviderError)
+    async def repository_provider_error_handler(request, exc):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "ok": False,
+                "degraded": True,
+                "source_status": "production_unavailable",
+                "error_code": "fixture_repository_blocked_in_production",
+                "detail": str(exc),
+            },
+        )
 
     @app.middleware("http")
     async def write_route_owner_headers(request, call_next):
