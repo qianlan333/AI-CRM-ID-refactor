@@ -10,13 +10,15 @@ AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAP
 - 问卷与公众号 OAuth 流程
 - 客户中心 / 客户时间线（AI-CRM Next 默认 owner；旧 Flask D3 readonly owner 已退场）
 - 自动化转化配置与阶段看板
-- OpenClaw / MCP 集成
+- MCP / OpenClaw 集成（经 `aicrm_next.integration_gateway` D7.7 adapter boundary）
 
 ## 当前主线口径
 
 - GitHub `main` 是唯一源码主线。
-- `python3 app.py run` 默认启动 AI-CRM Next。
+- `python3 app.py run` 默认启动 `aicrm_next.main:app`。
 - 旧 Flask 只能通过 `python3 app.py run-legacy` 或 `python3 legacy_flask_app.py run` 显式启动。
+- `openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 已在 D9.6 后 physically removed，不是当前 live repo path。
+- MCP / OpenClaw 后续只允许通过 `aicrm_next.integration_gateway` 的 D7.7 adapter boundary 承接。
 - 本地开发统一基于当前 Git clone，从最新 `main` 开功能分支。
 - 仓库只保留源码、脚本、测试和文档，不再把发布包、导出物、临时备份和本机专属路径一起带进主仓。
 - 生产 Nginx/systemd 切换仍需单独人工审批；本仓库入口切换不代表生产流量已经切换。
@@ -25,6 +27,7 @@ AI-CRM 是当前主线仓库，默认运行入口已经切到 AI-CRM Next FastAP
 
 - [docs/llm_handoff.md](docs/llm_handoff.md)
 - [docs/project_map.md](docs/project_map.md)
+- [docs/development/ai_crm_next_architecture_skill.md](docs/development/ai_crm_next_architecture_skill.md)
 - [docs/user_ops_v2.md](docs/user_ops_v2.md)
 - [docs/deploy_runbook.md](docs/deploy_runbook.md)
 
@@ -115,8 +118,9 @@ python3 -m venv .venv
   - `domains/` 负责业务能力
   - Media/Product/Customer/User Ops/Questionnaire readonly legacy route owners 已按 D1-D5 分批退场，混合依赖包仅作 fallback/reference
   - `templates/admin_console/` 和 `static/admin_console/` 负责后台页面
-- `openclaw_service/`
-  - legacy OpenClaw 适配、工具和服务，默认不作为新功能入口
+- D9.6 已删除的历史路径
+  - `openclaw_service/` 和 `legacy_flask/openclaw_legacy/` 不是当前 live source directory，不得重新引入
+  - MCP / OpenClaw 当前架构入口是 `aicrm_next.integration_gateway`
 - `docs/`
   - 项目说明、运行口径、接口和方案文档
 - `scripts/`
