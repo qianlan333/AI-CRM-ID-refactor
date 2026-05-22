@@ -28,7 +28,6 @@ def _route_methods() -> dict[str, set[str]]:
 def test_legacy_flask_no_longer_registers_automation_core_readonly_routes() -> None:
     routes = _route_methods()
     for route in [
-        "/admin/automation-conversion",
         "/api/admin/automation-conversion/overview",
         "/api/admin/automation-conversion/pools",
         "/api/admin/automation-conversion/members",
@@ -56,6 +55,7 @@ def test_legacy_flask_no_longer_registers_known_automation_readonly_aliases() ->
 def test_legacy_flask_preserves_program_scoped_workspace_routes() -> None:
     routes = _route_methods()
     for route in [
+        "/admin/automation-conversion",
         "/admin/automation-conversion/programs/<int:program_id>/overview",
         "/admin/automation-conversion/programs/<int:program_id>/executions",
         "/admin/automation-conversion/programs/<int:program_id>/member-ops",
@@ -91,13 +91,13 @@ def test_legacy_flask_preserves_automation_write_external_and_runtime_fallbacks(
 def test_automation_mixed_modules_keep_expected_fallback_route_registrations() -> None:
     source = _read("wecom_ability_service/http/automation_conversion.py")
     for stopped in [
-        'bp.route("/admin/automation-conversion", methods=["GET"])',
         'bp.route("/api/admin/automation-conversion/dashboard", methods=["GET"])',
         'bp.route("/api/admin/automation-conversion/member", methods=["GET"])',
         'bp.route("/api/admin/automation-conversion/executions", methods=["GET"])',
     ]:
         assert stopped not in source
     for retained in [
+        'bp.route("/admin/automation-conversion", methods=["GET"])',
         'bp.route("/api/admin/automation-conversion/member/push-openclaw", methods=["POST"])',
         'bp.route("/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview", methods=["POST"])',
         'bp.route("/api/admin/automation-conversion/jobs/run-due", methods=["POST"])',

@@ -191,6 +191,7 @@ from ..domains.automation_conversion.workflow_service import apply_dashboard_sig
 
 
 def register_routes(bp):
+    bp.route("/admin/automation-conversion", methods=["GET"])(admin_automation_conversion)
     bp.route("/admin/automation-conversion/programs/new", methods=["GET"])(admin_automation_program_new)
     bp.route("/admin/automation-conversion/programs", methods=["POST"])(admin_automation_program_create)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/update", methods=["POST"])(admin_automation_program_update)
