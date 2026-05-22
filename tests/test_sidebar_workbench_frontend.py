@@ -66,6 +66,7 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert ">发送</button>" in script
     assert "data-order-detail-url" in script
     assert "window.open(link, \"_blank\", \"noopener\")" in script
+    assert "window.location.href = link" not in script
     assert "详情能力待接入" not in script
 
     forbidden = [

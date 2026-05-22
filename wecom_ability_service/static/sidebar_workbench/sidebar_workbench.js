@@ -703,10 +703,9 @@
         showToast("暂无订单详情链接", "error");
         return;
       }
-      const opened = window.open(link, "_blank", "noopener");
-      if (!opened) {
-        window.location.href = link;
-      }
+      window.open(link, "_blank", "noopener");
+      showToast("已打开订单详情");
+      return;
     }
   });
 
