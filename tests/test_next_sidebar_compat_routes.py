@@ -34,6 +34,7 @@ def test_next_sidebar_bind_mobile_page_renders_v2_workbench(monkeypatch):
     assert "/api/sidebar/bind-mobile" in html
     assert "sidebar_workbench/sidebar_workbench.css" in html
     assert "sidebar_workbench/sidebar_workbench.js" in html
+    assert "加载中..." in html
     assert "客户档案绑定" not in html
     assert "只读客户上下文" not in html
     assert "写入仍受保护" not in html

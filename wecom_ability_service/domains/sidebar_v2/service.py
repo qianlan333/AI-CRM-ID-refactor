@@ -15,6 +15,7 @@ from ...domains.admin_console.customer_profile_service import (
     get_customer_questionnaire_answers_payload,
 )
 from ...domains.automation_conversion import private_message_dispatch
+from ...domains.wechat_pay import product_service as wechat_pay_product_service
 from . import repo
 
 SOURCE_OPTIONS = ["小蓝咨询群", "媛子咨询群", "学员转介绍", "流量群", "公域", "其他", "公域直播流量"]
@@ -22,6 +23,15 @@ INDUSTRY_OPTIONS = ["美业", "大健康", "知识IP", "疗愈", "教育培训",
 MODULES = ["profile", "questionnaires", "products", "orders", "materials", "other_staff_messages"]
 MAX_PROFILE_TEXT_LENGTH = 4000
 DEFAULT_MATERIAL_CONTENT = "给你发一份资料，你可以看下。"
+ORDER_STATUS_LABELS = {
+    "pending": "待支付",
+    "paid": "已支付",
+    "refund_processing": "退款处理中",
+    "partial_refunded": "部分退款",
+    "full_refunded": "全额退款",
+    "closed": "已关闭",
+    "failed": "支付失败",
+}
 
 
 def _text(value: Any) -> str:
@@ -49,6 +59,21 @@ def _format_time(value: Any) -> str:
     except ValueError:
         pass
     return text[:16]
+
+
+def _int(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _money_label(amount_total: Any) -> str:
+    cents = _int(amount_total)
+    yuan = cents / 100
+    if cents % 100 == 0:
+        return f"¥{int(yuan)}"
+    return f"¥{yuan:.2f}"
 
 
 def _context(external_userid: str) -> dict[str, Any]:
@@ -390,13 +415,65 @@ def get_other_staff_messages(*, external_userid: str, current_userid: str = "", 
     return {"ok": True, "messages": items}
 
 
+def _product_item(item: dict[str, Any]) -> dict[str, Any]:
+    product_code = _text(item.get("product_code"))
+    product_id = _text(item.get("id"))
+    return {
+        "id": product_code or product_id,
+        "title": _text(item.get("name")) or product_code or "未命名商品",
+        "price_label": _money_label(item.get("amount_total")),
+    }
+
+
 def get_products(*, external_userid: str) -> dict[str, Any]:
     if not _text(external_userid):
         raise ValueError("external_userid is required")
-    return {"ok": True, "products": []}
+    rows = wechat_pay_product_service.list_products()
+    return {"ok": True, "products": [_product_item(dict(item)) for item in rows]}
+
+
+def _order_status(order: dict[str, Any]) -> str:
+    amount_total = _int(order.get("amount_total"))
+    refunded = _int(order.get("refunded_amount_total"))
+    refund_status = _text(order.get("refund_status"))
+    status = _text(order.get("status"))
+    trade_state = _text(order.get("trade_state"))
+    if refund_status == "full_refunded" or (amount_total > 0 and refunded >= amount_total):
+        return "full_refunded"
+    if refund_status == "partial_refunded" or refunded > 0:
+        return "partial_refunded"
+    if status == "paid" or trade_state == "SUCCESS":
+        return "paid"
+    if status in {"closed", "cancelled"} or trade_state in {"CLOSED", "REVOKED"}:
+        return "closed"
+    if status in {"failed", "error"} or trade_state == "PAYERROR":
+        return "failed"
+    return "pending"
+
+
+def _order_item(order: dict[str, Any]) -> dict[str, Any]:
+    product_code = _text(order.get("product_code"))
+    product_name = _text(order.get("product_name")) or product_code or "未命名商品"
+    status = _order_status(order)
+    return {
+        "id": _text(order.get("out_trade_no")) or _text(order.get("id")),
+        "title": product_name,
+        "amount_label": _money_label(order.get("amount_total")),
+        "status_label": ORDER_STATUS_LABELS.get(status, status),
+        "paid_at": _format_time(order.get("paid_at") or order.get("created_at")),
+    }
 
 
 def get_orders(*, external_userid: str) -> dict[str, Any]:
-    if not _text(external_userid):
+    normalized_external_userid = _text(external_userid)
+    if not normalized_external_userid:
         raise ValueError("external_userid is required")
-    return {"ok": True, "orders": []}
+    context = _context(normalized_external_userid)
+    binding = dict(context.get("binding") or {}) or _binding_status(normalized_external_userid, "")
+    customer = _customer_payload(context, binding, normalized_external_userid, "")
+    rows = repo.list_customer_wechat_pay_orders(
+        external_userid=normalized_external_userid,
+        mobile=_text(customer.get("mobile")),
+        limit=20,
+    )
+    return {"ok": True, "orders": [_order_item(dict(item)) for item in rows]}

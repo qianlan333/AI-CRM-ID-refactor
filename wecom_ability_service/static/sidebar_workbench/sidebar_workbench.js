@@ -155,6 +155,7 @@
     document.getElementById("workflow-title").textContent = String(workflow.title || "").trim();
     const bindingState = document.getElementById("binding-state");
     bindingState.textContent = isBound ? "手机号已绑定" : "手机号未绑定";
+    bindingState.classList.remove("loading");
     bindingState.classList.toggle("unbound", !isBound);
   }
 

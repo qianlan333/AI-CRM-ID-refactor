@@ -122,6 +122,11 @@ button[disabled] {
   color: var(--danger);
 }
 
+.phone-state.loading {
+  background: #eef2f7;
+  color: var(--muted);
+}
+
 .meta {
   margin-top: 4px;
   color: var(--muted);
