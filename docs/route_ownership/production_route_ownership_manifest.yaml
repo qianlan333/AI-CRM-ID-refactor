@@ -1,0 +1,524 @@
+version: 1
+status: manifest_only_no_runtime_change
+notes:
+  - AI-CRM Next is the default FastAPI modular monolith runtime.
+  - This manifest documents ownership only; it does not narrow production_compat wildcard routes.
+  - Real external side effects remain blocked, fake, guarded, or staging-disabled unless separately approved.
+routes:
+  - route_pattern: /health
+    methods: [GET]
+    capability_owner: aicrm_next.platform_foundation
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_runtime_switch_to_next.py
+    notes: AI-CRM Next health endpoint from platform_foundation.
+  - route_pattern: /api/system/health
+    methods: [GET]
+    capability_owner: aicrm_next.platform_foundation
+    current_runtime_owner: next
+    production_behavior: next_exact
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_runtime_switch_to_next.py
+    notes: System health endpoint from platform_foundation.
+  - route_pattern: /admin
+    methods: [GET]
+    capability_owner: aicrm_next.frontend_compat
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_admin_ui_data_parity.py
+    notes: Admin shell rendered by Next frontend_compat.
+  - route_pattern: /admin/customers
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Production mode reads PostgreSQL through the customer legacy production facade; fixture/local_contract is not allowed in production.
+  - route_pattern: /admin/questionnaires
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Production mode reads questionnaire PostgreSQL through the legacy production facade; fixture/local_contract is not allowed in production.
+  - route_pattern: /admin/automation-conversion
+    methods: [GET]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_cutover_readiness.py
+    notes: Admin page is Next frontend_compat; write/runtime actions remain guarded separately.
+  - route_pattern: /admin/jobs
+    methods: [GET]
+    capability_owner: aicrm_next.platform_foundation
+    current_runtime_owner: frontend_compat
+    production_behavior: scheduled_safe_mode
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_timer_route_readiness.py
+    notes: Jobs page displays timer safe-mode status and does not enable timers.
+  - route_pattern: /admin/wechat-pay/products
+    methods: [GET]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Admin product page is readonly; payment/provider side effects remain blocked.
+  - route_pattern: /admin/wechat-pay/transactions
+    methods: [GET]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Admin transaction page is readonly; payment/provider side effects remain blocked.
+  - route_pattern: /admin/image-library
+    methods: [GET]
+    capability_owner: aicrm_next.media_library
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Admin media page is readonly; upload adapters remain fake/staging-disabled.
+  - route_pattern: /admin/miniprogram-library
+    methods: [GET]
+    capability_owner: aicrm_next.media_library
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Admin miniprogram page is readonly; WeCom media calls remain blocked.
+  - route_pattern: /admin/attachment-library
+    methods: [GET]
+    capability_owner: aicrm_next.media_library
+    current_runtime_owner: frontend_compat
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Admin attachment page is readonly; external storage calls remain blocked.
+  - route_pattern: /api/customers
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Next exact router; production reads through legacy customer facade when production_data_ready().
+  - route_pattern: /api/customers/{external_userid}
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Next exact customer detail route with production facade.
+  - route_pattern: /api/customers/{external_userid}/timeline
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Next exact customer timeline route with production facade.
+  - route_pattern: /api/messages/{external_userid}/recent
+    methods: [GET]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: next
+    production_behavior: readonly_facade
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Next exact recent-message read route; broader /api/messages/* production_compat fallback remains documented below.
+  - route_pattern: /api/messages*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.integration_gateway
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: production_compat catch-all for legacy message/archive surfaces until exact Next replacement exists.
+  - route_pattern: /api/admin/questionnaires*
+    methods: [GET, POST, PUT, DELETE]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    notes: Read paths use production facade; write/enable/delete/export remain guarded by questionnaire contracts.
+  - route_pattern: /api/h5/questionnaires*
+    methods: [GET, POST]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    notes: Public questionnaire routes are Next exact; submit/external push behavior remains guarded.
+  - route_pattern: /s/{slug}
+    methods: [GET]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    notes: Public H5 page rendered by Next frontend templates; real OAuth remains guarded.
+  - route_pattern: /api/h5/wechat/oauth*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_2_questionnaire_adapter_contract.py
+    notes: Next exact OAuth start/callback plus production_compat fallback; real OAuth provider calls remain blocked.
+  - route_pattern: /auth/wecom*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.questionnaire
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: production_compat OAuth-related legacy fallback; not a real OAuth enablement.
+  - route_pattern: /api/admin/automation-conversion/reply-monitor*
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: scheduled_safe_mode
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_timer_route_readiness.py
+    notes: Timer run-due/capture routes require auth and dry-run/noop safety; timers are not enabled here.
+  - route_pattern: /api/admin/automation-conversion/jobs/run-due*
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: scheduled_safe_mode
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_timer_route_readiness.py
+    notes: Automation jobs timer route is safe-mode only.
+  - route_pattern: /api/admin/cloud-orchestrator/campaigns/run-due*
+    methods: [POST, OPTIONS]
+    capability_owner: aicrm_next.ai_assist
+    current_runtime_owner: production_compat
+    production_behavior: scheduled_safe_mode
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_timer_route_readiness.py
+    notes: Campaign run-due timer route is safe-mode only.
+  - route_pattern: /api/admin/automation-conversion*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_5_automation_adapter_contract.py
+    notes: Next exact readonly/write-preview routes plus production_compat fallback for legacy automation members.
+  - route_pattern: /api/customer-automation*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: next
+    production_behavior: guarded_preview
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_5_automation_adapter_contract.py
+    notes: Activation webhook has Next exact route and production_compat fallback; real side effects remain blocked.
+  - route_pattern: /api/customers/automation*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.automation_engine
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: production_compat fallback for legacy customer automation surfaces.
+  - route_pattern: /api/admin/wechat-pay*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: Next exact product/transaction routes plus production_compat fallback; real payment provider calls blocked.
+  - route_pattern: /api/admin/alipay*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: Next exact Alipay transaction routes plus production_compat fallback; real provider calls blocked.
+  - route_pattern: /api/products*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: Public product API exact route plus production_compat fallback.
+  - route_pattern: /p/{page_slug}
+    methods: [GET]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: Public product page rendered by Next; checkout side effects remain fake/guarded.
+  - route_pattern: /api/orders*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: guarded
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: Order status API exact route plus production_compat fallback.
+  - route_pattern: /api/checkout*
+    methods: [POST, OPTIONS, GET, PUT, PATCH, DELETE, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: Checkout routes use fake payment adapter unless a separately approved real provider path exists.
+  - route_pattern: /api/wechat-pay*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: WeChat Pay notify/fallback route family; real provider calls blocked.
+  - route_pattern: /api/alipay*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_4_product_payment_adapter_contract.py
+    notes: Alipay notify/return/fallback route family; real provider calls blocked.
+  - route_pattern: /api/h5/wechat-pay*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Legacy H5 WeChat Pay production_compat fallback; real provider calls still blocked.
+  - route_pattern: /api/h5/alipay*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.commerce
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_production_runtime_gaps.py
+    notes: Legacy H5 Alipay production_compat fallback; real provider calls still blocked.
+  - route_pattern: /api/admin/image-library*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.media_library
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_1_media_adapter_contract.py
+    notes: Next exact media routes plus production_compat fallback; real cloud/WeCom media upload blocked.
+  - route_pattern: /api/admin/attachment-library*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.media_library
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_1_media_adapter_contract.py
+    notes: Attachment routes use fake/staging-disabled adapters.
+  - route_pattern: /api/admin/miniprogram-library*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.media_library
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_1_media_adapter_contract.py
+    notes: Miniprogram routes use fake/staging-disabled adapters.
+  - route_pattern: /sidebar*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.frontend_compat
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_admin_ui_data_parity.py
+    notes: production_compat sidebar fallback retained for admin shell compatibility.
+  - route_pattern: /api/sidebar*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.frontend_compat
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_admin_ui_data_parity.py
+    notes: production_compat sidebar API fallback retained for admin shell compatibility.
+  - route_pattern: /api/admin/customers/profile*
+    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
+    capability_owner: aicrm_next.customer_read_model
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: none
+    delete_ready: false
+    checker: tools/check_next_admin_ui_data_parity.py
+    notes: Customer profile production_compat fallback retained until exact Next owner is complete.
+  - route_pattern: /wecom/external-contact/callback
+    methods: [GET, POST, OPTIONS, HEAD]
+    capability_owner: aicrm_next.integration_gateway
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_production_cutover_readiness.py
+    notes: Callback route forwards through legacy facade; no new real external behavior is enabled here.
+  - route_pattern: /api/wecom/events
+    methods: [GET, POST, OPTIONS, HEAD]
+    capability_owner: aicrm_next.integration_gateway
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
+    legacy_fallback_allowed: true
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_next_production_cutover_readiness.py
+    notes: WeCom event callback route forwards through legacy facade; no new real external behavior is enabled here.
+  - route_pattern: /mcp
+    methods: [GET, POST]
+    capability_owner: aicrm_next.integration_gateway
+    current_runtime_owner: next
+    production_behavior: fake_adapter
+    legacy_fallback_allowed: false
+    fixture_allowed_in_production: false
+    external_side_effect_risk: real_blocked
+    delete_ready: false
+    checker: tools/check_d7_7_mcp_openclaw_adapter_contract.py
+    notes: MCP is owned by aicrm_next.integration_gateway D7.7 adapter boundary; openclaw_service is not an owner and must not be reintroduced.
