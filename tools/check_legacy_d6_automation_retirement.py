@@ -22,13 +22,8 @@ RETIRED_READONLY_ROUTES: tuple[tuple[str, str], ...] = (
 )
 
 RETIRED_ALIAS_ROUTES: tuple[tuple[str, str], ...] = (
-    ("GET", "/api/admin/automation-conversion/dashboard"),
     ("GET", "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search"),
     ("GET", "/api/admin/automation-conversion/member"),
-    ("GET", "/api/admin/automation-conversion/executions"),
-    ("GET", "/api/admin/automation-conversion/executions/<int:execution_id>"),
-    ("GET", "/api/admin/automation-conversion/executions/<int:execution_id>/items"),
-    ("GET", "/api/admin/automation-conversion/execution-items/<int:execution_item_id>"),
 )
 
 RETAINED_FALLBACK_ROUTES: tuple[tuple[str, str], ...] = (
@@ -36,6 +31,11 @@ RETAINED_FALLBACK_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/admin/automation-conversion/programs/<int:program_id>/overview"),
     ("GET", "/admin/automation-conversion/programs/<int:program_id>/executions"),
     ("GET", "/admin/automation-conversion/programs/<int:program_id>/member-ops"),
+    ("GET", "/api/admin/automation-conversion/dashboard"),
+    ("GET", "/api/admin/automation-conversion/executions"),
+    ("GET", "/api/admin/automation-conversion/executions/<int:execution_id>"),
+    ("GET", "/api/admin/automation-conversion/executions/<int:execution_id>/items"),
+    ("GET", "/api/admin/automation-conversion/execution-items/<int:execution_item_id>"),
     ("POST", "/api/admin/automation-conversion/member/push-openclaw"),
     ("POST", "/api/admin/automation-conversion/stage/<stage_key>/manual-send/preview"),
     ("POST", "/api/admin/automation-conversion/stage/<stage_key>/manual-send"),
