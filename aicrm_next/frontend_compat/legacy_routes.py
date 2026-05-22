@@ -369,11 +369,12 @@ def admin_questionnaires(request: Request):
         page_summary="读取生产问卷列表，保留新建、编辑、停用、删除和导出入口。",
         active_endpoint="api.admin_questionnaires",
     )
+    questionnaires = list_payload.get("questionnaires") or list_payload.get("items") or []
     context["questionnaire_payload"] = {
-        "questionnaires": list_payload["questionnaires"],
+        "questionnaires": questionnaires,
         "preflight": preflight_payload["checks"],
         "preflight_error": preflight_error,
-        "total": list_payload.get("total", len(list_payload["questionnaires"])),
+        "total": list_payload.get("total", len(questionnaires)),
         "source_status": list_payload.get("source_status", "local_contract_probe"),
     }
     return templates.TemplateResponse(request, "admin_console/questionnaires.html", context)

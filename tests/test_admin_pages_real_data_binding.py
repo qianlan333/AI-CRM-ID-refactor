@@ -118,6 +118,43 @@ def test_questionnaire_page_uses_production_facade_when_database_ready(monkeypat
     assert "disabled-demo" not in response.text
 
 
+def test_questionnaire_page_accepts_legacy_items_shape(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        legacy_routes,
+        "list_questionnaires_from_legacy",
+        lambda limit, offset: {
+            "ok": True,
+            "items": [
+                {
+                    "id": 20,
+                    "slug": "q-20260414113428-da92d4",
+                    "title": "黄小璨月度体验开通",
+                    "name": "黄小璨月度体验开通",
+                    "enabled": True,
+                    "is_disabled": False,
+                    "created_at": "2026-04-14T11:34:28.626862",
+                    "updated_at": "2026-05-21T03:40:18.539121",
+                    "submission_count": 911,
+                    "assessment_enabled": False,
+                    "public_path": "/s/q-20260414113428-da92d4",
+                }
+            ],
+            "total": 7,
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = _client(monkeypatch).get("/admin/questionnaires")
+
+    assert response.status_code == 200
+    assert "q-20260414113428-da92d4" in response.text
+    assert "911" in response.text
+    assert "Internal Server Error" not in response.text
+
+
 def test_real_data_binding_checker_returns_ok():
     result = checker.run_check()
 
