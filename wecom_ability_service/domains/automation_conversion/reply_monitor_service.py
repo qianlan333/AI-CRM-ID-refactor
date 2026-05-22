@@ -143,6 +143,96 @@ def _serialize_reply_monitor_queue_item(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _reply_monitor_failed_item(result: dict[str, Any], queue_item: dict[str, Any]) -> dict[str, Any]:
+    queue_id = int(queue_item.get("id") or 0)
+    error_message = _normalized_text(result.get("error") or result.get("message") or result.get("detail"))
+    if not error_message:
+        summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+        error_message = _normalized_text(summary.get("error") or summary.get("detail"))
+    return {
+        "queue_id": queue_id,
+        "external_userid": _normalized_text(queue_item.get("external_userid")),
+        "error_message": error_message or "reply_monitor_item_failed",
+        "status": _normalized_text(result.get("status")) or "failed",
+    }
+
+
+def _mark_reply_monitor_queue_item_failed(queue_item: dict[str, Any], *, error_message: str, now_text: str = "") -> dict[str, Any]:
+    repo.update_reply_monitor_queue_item(
+        int(queue_item["id"]),
+        {
+            "member_id": queue_item.get("member_id") or None,
+            "external_userid": queue_item.get("external_userid"),
+            "owner_userid": queue_item.get("owner_userid"),
+            "status": REPLY_MONITOR_STATUS_FAILED,
+            "message_ids_json": queue_item.get("message_ids") or [],
+            "message_count": int(queue_item.get("message_count") or 0),
+            "first_inbound_at": queue_item.get("first_inbound_at"),
+            "last_inbound_at": queue_item.get("last_inbound_at"),
+            "not_before": queue_item.get("not_before"),
+            "last_dispatch_at": now_text,
+            "error_message": _normalized_text(error_message) or "reply_monitor_item_failed",
+            "payload_snapshot_json": queue_item.get("payload_snapshot") or {},
+        },
+    )
+    return _serialize_reply_monitor_queue_item(repo.get_reply_monitor_queue_item(int(queue_item["id"])) or {})
+
+
+def _reply_monitor_batch_result(
+    *,
+    processed_items: list[dict[str, Any]],
+    success_results: list[dict[str, Any]],
+    failed_items: list[dict[str, Any]],
+    now_text: str,
+) -> dict[str, Any]:
+    queue_counts = repo.get_reply_monitor_queue_counts()
+    success_count = len(success_results)
+    failed_count = len(failed_items)
+    summary = {
+        "processed_count": len(processed_items),
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "failed_items": failed_items,
+        "pending_count": int(queue_counts.get("pending") or 0),
+        "deferred_count": int(queue_counts.get("deferred_quiet_hours") or 0),
+    }
+    status = "success" if failed_count == 0 else "partial_failed"
+    last_error = "reply_monitor_item_failed" if failed_count else ""
+    _save_reply_monitor_config(
+        {
+            "last_dispatch_at": now_text if success_count > 0 else _reply_monitor_config().get("last_dispatch_at", ""),
+            "last_dispatch_status": status,
+            "last_dispatch_summary_json": summary,
+            "last_error": last_error,
+        }
+    )
+    if failed_count == 0 and len(success_results) == 1:
+        payload = dict(success_results[0])
+        payload.setdefault("processed_count", len(processed_items))
+        payload.setdefault("success_count", success_count)
+        payload.setdefault("failed_count", failed_count)
+        payload.setdefault("failed_items", failed_items)
+        payload.setdefault("partial_failed", False)
+        payload.setdefault("results", success_results)
+        return payload
+    payload: dict[str, Any] = dict(success_results[0]) if len(success_results) == 1 else {}
+    payload.update({
+        "ok": True,
+        "status": status,
+        "partial_failed": failed_count > 0,
+        "processed_count": len(processed_items),
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "failed_items": failed_items,
+        "summary": summary,
+        "reply_monitor": _reply_monitor_status_payload(),
+        "results": success_results,
+    })
+    if failed_count:
+        payload["error_code"] = "reply_monitor_item_failed"
+    return payload
+
+
 def _reply_monitor_status_payload() -> dict[str, Any]:
     config = _reply_monitor_config()
     queue_counts = repo.get_reply_monitor_queue_counts()
@@ -574,21 +664,50 @@ def run_due_reply_monitor(
             "reply_monitor": _reply_monitor_status_payload(),
         }
 
-    queue_item = due_items[0]
     from .laohuang_chat_service import dispatch_reply_monitor_queue_item, laohuang_chat_enabled
 
-    if laohuang_chat_enabled():
-        return dispatch_reply_monitor_queue_item(
-            queue_item,
-            operator_id=operator_id,
-            operator_type=operator_type,
-        )
-    return _dispatch_reply_monitor_queue_item(
-        queue_item,
-        operator_id=operator_id,
-        operator_type=operator_type,
-        trigger_action="reply_monitor_dispatch",
-        trigger_source="reply_monitor_shadow",
+    processed_items: list[dict[str, Any]] = []
+    success_results: list[dict[str, Any]] = []
+    failed_items: list[dict[str, Any]] = []
+    use_laohuang_chat = laohuang_chat_enabled()
+    for queue_item in due_items:
+        processed_items.append(queue_item)
+        try:
+            if use_laohuang_chat:
+                result = dispatch_reply_monitor_queue_item(
+                    queue_item,
+                    operator_id=operator_id,
+                    operator_type=operator_type,
+                )
+            else:
+                result = _dispatch_reply_monitor_queue_item(
+                    queue_item,
+                    operator_id=operator_id,
+                    operator_type=operator_type,
+                    trigger_action="reply_monitor_dispatch",
+                    trigger_source="reply_monitor_shadow",
+                )
+        except Exception as exc:  # pragma: no cover - defensive guard for timer compatibility
+            current_app.logger.exception("reply monitor queue item dispatch crashed")
+            error_message = _normalized_text(str(exc)) or exc.__class__.__name__
+            failed_queue_item = _mark_reply_monitor_queue_item_failed(queue_item, error_message=error_message, now_text=now_text)
+            failed_items.append(
+                _reply_monitor_failed_item(
+                    {"ok": False, "status": "failed", "error": failed_queue_item.get("error_message") or error_message},
+                    failed_queue_item,
+                )
+            )
+            continue
+        if result.get("ok"):
+            success_results.append(result)
+            break
+        failed_items.append(_reply_monitor_failed_item(result, queue_item))
+
+    return _reply_monitor_batch_result(
+        processed_items=processed_items,
+        success_results=success_results,
+        failed_items=failed_items,
+        now_text=now_text,
     )
 
 
