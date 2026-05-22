@@ -119,6 +119,7 @@ def _sentinel_comparison(before: dict[str, Any], after: dict[str, Any]) -> dict[
 
 def run_check() -> dict[str, Any]:
     with timer_probe_env():
+        local_probe_database = _is_local_probe_database(os.getenv("DATABASE_URL", ""))
         client = _client()
         results: dict[str, Any] = {}
         sentinel_before = _read_db_sentinel()
@@ -192,20 +193,30 @@ def run_check() -> dict[str, Any]:
         or not payload["dry_run_or_noop_available"]
         or not payload["dry_run_noop"]
     ]
-    if not db_sentinel["ok"]:
+    warnings: list[str] = []
+    if not db_sentinel["ok"] and local_probe_database:
+        warnings.append("dry_run_db_sentinel_unavailable_in_local_probe_database")
+    elif not db_sentinel["ok"]:
         blockers.append("dry_run_db_sentinel_not_passed")
-    if not automation_production_data_ready:
+    if not automation_production_data_ready and local_probe_database:
+        warnings.append("automation_production_data_unavailable_in_local_probe_database")
+    elif not automation_production_data_ready:
         blockers.append("automation_production_data_not_ready")
     result = {
         "ok": not blockers,
         "blockers": blockers,
+        "warnings": warnings,
         "timer_routes": results,
         "automation_overview_status": overview.status_code,
         "automation_overview": overview_payload,
         "automation_production_data_ready": automation_production_data_ready,
         "dry_run_db_sentinel": db_sentinel,
         "safe_to_enable_timers": not blockers and automation_production_data_ready and db_sentinel["ok"],
-        "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers else "TIMER_ROUTES_NOT_READY",
+        "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION"
+        if not blockers and automation_production_data_ready and db_sentinel["ok"]
+        else "TIMER_ROUTES_READY_BUT_NOT_PRODUCTION_ENABLE_EVIDENCE"
+        if not blockers
+        else "TIMER_ROUTES_NOT_READY",
     }
     return result
 
@@ -221,6 +232,7 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             f"- safe_to_enable_timers: {result['safe_to_enable_timers']}",
             f"- automation_production_data_ready: {result['automation_production_data_ready']}",
             f"- blockers: {result['blockers']}",
+            f"- warnings: {result['warnings']}",
             "",
             "## Timer Routes",
         ]
