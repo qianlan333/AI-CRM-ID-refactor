@@ -96,22 +96,67 @@ def _create_product(client, token: str, **overrides):
     return product_service.create_admin_product(payload, operator="pytest")
 
 
-def test_legacy_admin_product_management_routes_are_retired_after_d2(app, client):
+def test_admin_product_management_routes_render_and_mutate(app, client):
     token = _login_admin(client)
     product = _create_product(client, token, name="私域成交动作拆解课", amount_total=39900)
 
-    probes = [
-        client.get("/admin/wechat-pay/products"),
-        client.get(f"/admin/wechat-pay/products/{product['id']}/edit"),
-        client.get("/api/admin/wechat-pay/products"),
-        client.get(f"/api/admin/wechat-pay/products/{product['id']}"),
-        client.post("/api/admin/wechat-pay/products", json={"admin_action_token": token}),
-        client.put(f"/api/admin/wechat-pay/products/{product['id']}", json={"admin_action_token": token}),
-        client.post(f"/api/admin/wechat-pay/products/{product['id']}/enable", json={"admin_action_token": token}),
-        client.post(f"/api/admin/wechat-pay/products/{product['id']}/disable", json={"admin_action_token": token}),
-        client.delete(f"/api/admin/wechat-pay/products/{product['id']}", json={"admin_action_token": token}),
-    ]
-    assert all(response.status_code in {404, 405} for response in probes)
+    list_page = client.get("/admin/wechat-pay/products")
+    assert list_page.status_code == 200
+    assert "商品管理" in list_page.get_data(as_text=True)
+    assert "创建商品" in list_page.get_data(as_text=True)
+
+    new_page = client.get("/admin/wechat-pay/products/new")
+    assert new_page.status_code == 200
+    assert "保存商品" in new_page.get_data(as_text=True)
+
+    edit_page = client.get(f"/admin/wechat-pay/products/{product['id']}/edit")
+    assert edit_page.status_code == 200
+    assert "扫码预览" in edit_page.get_data(as_text=True)
+
+    list_response = client.get("/api/admin/wechat-pay/products")
+    assert list_response.status_code == 200
+    assert list_response.json["ok"] is True
+    assert any(item["id"] == product["id"] for item in list_response.json["items"])
+
+    detail_response = client.get(f"/api/admin/wechat-pay/products/{product['id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json["product"]["name"] == "私域成交动作拆解课"
+
+    lead_plans_response = client.get("/api/admin/wechat-pay/products/lead-plans")
+    assert lead_plans_response.status_code == 200
+    assert lead_plans_response.json["ok"] is True
+
+    share_response = client.get(f"/api/admin/wechat-pay/products/{product['id']}/share")
+    assert share_response.status_code == 200
+    assert f"/p/{product['product_code']}" in share_response.json["share"]["url"]
+    assert share_response.json["share"]["qr_data_url"].startswith("data:image/svg+xml")
+
+    update_response = client.put(
+        f"/api/admin/wechat-pay/products/{product['id']}",
+        json={
+            "admin_action_token": token,
+            "name": "私域成交动作拆解课升级版",
+            "amount_total": 49900,
+            "status": "draft",
+            "require_mobile": True,
+            "cta_text": "立即报名",
+            "slices": [],
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json["product"]["status"] == "draft"
+
+    assert client.post(f"/api/admin/wechat-pay/products/{product['id']}/enable", json={"admin_action_token": token}).json["product"]["status"] == "active"
+    assert client.post(f"/api/admin/wechat-pay/products/{product['id']}/disable", json={"admin_action_token": token}).json["product"]["status"] == "disabled"
+
+    copy_response = client.post(f"/api/admin/wechat-pay/products/{product['id']}/copy", json={"admin_action_token": token})
+    assert copy_response.status_code == 201
+    copied_id = copy_response.json["product"]["id"]
+    assert copied_id != product["id"]
+
+    delete_response = client.delete(f"/api/admin/wechat-pay/products/{copied_id}", json={"admin_action_token": token})
+    assert delete_response.status_code == 200
+    assert delete_response.json["ok"] is True
 
 
 def test_product_enable_disable_copy_and_delete(app, client):

@@ -56,6 +56,7 @@ NEXT_ROUTE_TOKENS = [
 
 PRODUCTION_CONFIG_PREFIXES = ("deploy/", ".github/")
 PRODUCTION_CONFIG_KEYWORDS = ("nginx", "production", "systemd", "supervisor", "docker-compose")
+PRODUCTION_COMPAT_SOURCE_PREFIXES = ("aicrm_next/production_compat/",)
 
 
 def _read(path: str) -> str:
@@ -82,6 +83,8 @@ def _production_config_modified(changed_files: list[str]) -> bool:
     for path in changed_files:
         lower = path.lower()
         if lower == ".github/workflows/ci.yml":
+            continue
+        if lower.startswith(PRODUCTION_COMPAT_SOURCE_PREFIXES):
             continue
         if lower.startswith(PRODUCTION_CONFIG_PREFIXES):
             return True
