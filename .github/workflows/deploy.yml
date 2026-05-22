@@ -22,7 +22,8 @@ jobs:
               git stash push --include-untracked -m "deploy-backup-$(date -u +%Y%m%dT%H%M%SZ)"
             fi
             before_sha="$(git rev-parse HEAD)"
-            git pull --ff-only origin main
+            git fetch origin main:refs/remotes/origin/main
+            git reset --hard refs/remotes/origin/main
             after_sha="$(git rev-parse HEAD)"
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
