@@ -22,6 +22,7 @@ from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .platform_foundation.api import router as platform_router
 from .production_compat.api import router as production_compat_router
+from .production_compat.api import wildcard_router as production_compat_wildcard_router
 from .questionnaire.api import router as questionnaire_router
 from .shared.repository_provider import RepositoryProviderError
 from .shared.runtime import legacy_production_facade_enabled
@@ -79,6 +80,8 @@ def create_app() -> FastAPI:
     app.include_router(commerce_router)
     app.include_router(media_library_router)
     app.include_router(ai_assist_router)
+    if legacy_production_facade_enabled():
+        app.include_router(production_compat_wildcard_router)
     app.include_router(frontend_compat_router)
     return app
 
