@@ -29,6 +29,11 @@
 - Do not enable real WeCom / Payment / OAuth / OpenClaw / MCP calls.
 - Do not present local checker output as production canary evidence.
 
+## Completion Checks
+
+- Run `tools/check_architecture_skill_compliance.py` before marking a Codex task complete.
+- Include the checker result in Verification when the task changes code, docs, routes, or checker rules.
+
 ## PR Summary Template
 
 ### Summary
@@ -42,4 +47,3 @@
 ### Risk / rollback
 
 ### Next action
-

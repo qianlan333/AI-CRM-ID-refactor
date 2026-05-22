@@ -139,9 +139,9 @@
 | `static/admin_console/` | 后台页面 JS/CSS |
 | `static/admin_console/customer_profile.js` | 客户详情页前端，已含 Pulse 渲染逻辑 |
 
-## 3. `openclaw_service/`
+## 3. Historical Pre-D9 `openclaw_service/`
 
-这是 OpenClaw 侧的适配层，不是 CRM 主站页面层。
+这是历史 OpenClaw 侧适配层记录，不是当前 live source path。D9.6 后 `openclaw_service/` 已删除，后续 OpenClaw/MCP 只能经 `aicrm_next.integration_gateway` adapter boundary 承接。
 
 | 目录 | 职责 |
 | --- | --- |
@@ -151,9 +151,9 @@
 | `cli/` | 当前仅有 chat context CLI bridge |
 | `feishu/` | 飞书适配 |
 
-当前结论：
+历史结论：
 
-- `openclaw_service` 没有真实 conversation runtime / session runtime / orchestration runtime。
+- `openclaw_service` 没有真实 conversation runtime / session runtime / orchestration runtime，且 D9.6 后已删除。
 - 如果未来要把 Pulse 深度接进 OpenClaw，不应假设这里已有会话主循环。
 
 ## 4. `docs/`
@@ -240,4 +240,4 @@
 
 - 在 `services.py` 堆新逻辑
 - 在 `http/` 里直接拼 SQL
-- 在 `openclaw_service/` 里先造一个并不存在的 conversation runtime
+- 禁止重新引入 `openclaw_service/` 或在其中先造一个并不存在的 conversation runtime
