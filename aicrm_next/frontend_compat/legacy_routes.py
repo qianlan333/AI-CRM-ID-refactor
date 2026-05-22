@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -369,7 +370,7 @@ def admin_questionnaires(request: Request):
         page_summary="读取生产问卷列表，保留新建、编辑、停用、删除和导出入口。",
         active_endpoint="api.admin_questionnaires",
     )
-    questionnaires = list_payload.get("questionnaires") or list_payload.get("items") or []
+    questionnaires = jsonable_encoder(list_payload.get("questionnaires") or list_payload.get("items") or [])
     context["questionnaire_payload"] = {
         "questionnaires": questionnaires,
         "preflight": preflight_payload["checks"],

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
@@ -152,6 +154,43 @@ def test_questionnaire_page_accepts_legacy_items_shape(monkeypatch):
     assert response.status_code == 200
     assert "q-20260414113428-da92d4" in response.text
     assert "911" in response.text
+    assert "Internal Server Error" not in response.text
+
+
+def test_questionnaire_page_serializes_datetime_items(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        legacy_routes,
+        "list_questionnaires_from_legacy",
+        lambda limit, offset: {
+            "ok": True,
+            "items": [
+                {
+                    "id": 21,
+                    "slug": "q-20260414135818-5d8fba",
+                    "title": "填写问卷激活黄小璨AI",
+                    "name": "黄小璨激活问卷",
+                    "enabled": True,
+                    "is_disabled": False,
+                    "created_at": datetime(2026, 4, 14, 13, 58, 18, tzinfo=timezone.utc),
+                    "updated_at": datetime(2026, 5, 21, 3, 40, 33, tzinfo=timezone.utc),
+                    "submission_count": 82,
+                    "assessment_enabled": False,
+                    "public_path": "/s/q-20260414135818-5d8fba",
+                }
+            ],
+            "total": 7,
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = _client(monkeypatch).get("/admin/questionnaires")
+
+    assert response.status_code == 200
+    assert "q-20260414135818-5d8fba" in response.text
+    assert "2026-04-14T13:58:18" in response.text
     assert "Internal Server Error" not in response.text
 
 
