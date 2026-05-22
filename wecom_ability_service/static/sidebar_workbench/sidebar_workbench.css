@@ -384,14 +384,14 @@ button[disabled] {
 
 .material {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 54px minmax(0, 1fr) 46px;
+  gap: 9px;
   align-items: center;
 }
 
 .thumb {
-  width: 44px;
-  height: 44px;
+  width: 54px;
+  height: 54px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -401,6 +401,19 @@ button[disabled] {
   color: var(--blue-strong);
   font-size: 13px;
   font-weight: 900;
+}
+
+.thumb.image-thumb {
+  overflow: hidden;
+  padding: 0;
+  background: #f8fbff;
+}
+
+.thumb.image-thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .thumb.mini-program {
@@ -413,6 +426,18 @@ button[disabled] {
   border-color: #ffedd5;
   background: #fff7ed;
   color: #c2410c;
+}
+
+.material-main {
+  min-width: 0;
+}
+
+.material-send {
+  min-width: 46px;
+  width: 46px;
+  min-height: 30px;
+  padding: 5px 0;
+  border-radius: 10px;
 }
 
 .tags {
@@ -628,16 +653,16 @@ button[disabled] {
   }
 
   .material {
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 54px minmax(0, 1fr) 46px;
   }
 
   .thumb {
-    width: 44px;
-    height: 44px;
+    width: 54px;
+    height: 54px;
   }
 
   .material .btn {
-    grid-column: 1 / 3;
-    width: 100%;
+    grid-column: auto;
+    width: 46px;
   }
 }
