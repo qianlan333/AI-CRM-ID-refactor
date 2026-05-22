@@ -51,6 +51,73 @@ def test_customer_page_does_not_render_sample_fixture_names(monkeypatch):
         assert marker not in response.text
 
 
+def test_customer_page_uses_production_facade_when_database_ready(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+
+    def fake_list_customers(query):
+        return {
+            "customers": [
+                {
+                    "external_userid": "real_ext_001",
+                    "customer_name": "真实客户甲",
+                    "owner_display_name": "真实负责人",
+                    "owner_userid": "owner_real",
+                    "mobile": "138****0000",
+                }
+            ],
+            "total": 23709,
+        }
+
+    monkeypatch.setattr(legacy_routes, "list_customers_via_legacy", fake_list_customers)
+
+    response = _client(monkeypatch).get("/admin/customers")
+
+    assert response.status_code == 200
+    assert "共 23709 位客户" in response.text
+    assert "真实客户甲" in response.text
+    assert "张小蓝" not in response.text
+
+
+def test_questionnaire_page_uses_production_facade_when_database_ready(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        legacy_routes,
+        "list_questionnaires_from_legacy",
+        lambda limit, offset: {
+            "ok": True,
+            "questionnaires": [
+                {
+                    "id": 101,
+                    "slug": "real-questionnaire",
+                    "title": "真实生产问卷",
+                    "name": "真实生产问卷",
+                    "enabled": True,
+                    "is_disabled": False,
+                    "created_at": "2026-05-01T00:00:00Z",
+                    "updated_at": "2026-05-22T00:00:00Z",
+                    "submission_count": 1171,
+                    "assessment_enabled": False,
+                    "public_path": "/s/real-questionnaire",
+                }
+            ],
+            "total": 7,
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = _client(monkeypatch).get("/admin/questionnaires")
+
+    assert response.status_code == 200
+    assert "real-questionnaire" in response.text
+    assert "1171" in response.text
+    assert "hxc-activation-v1" not in response.text
+    assert "disabled-demo" not in response.text
+
+
 def test_real_data_binding_checker_returns_ok():
     result = checker.run_check()
 
