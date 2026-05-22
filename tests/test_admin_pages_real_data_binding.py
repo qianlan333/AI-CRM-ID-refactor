@@ -236,6 +236,36 @@ def test_automation_conversion_page_uses_production_facade_without_fixture_repo(
     assert "real_program_v1" in response.text
     assert "fixture_repository_blocked_in_production" not in response.text
     assert "next_local_preview" not in response.text
+    assert 'href="/admin/automation-conversion/programs/7/setup?step=basic">编辑</a>' in response.text
+    assert 'href="/admin/automation-conversion/programs/7/overview">概览</a>' in response.text
+    assert 'action="/admin/automation-conversion/programs/7/pause"' in response.text
+
+
+def test_automation_program_scoped_admin_routes_forward_to_legacy(monkeypatch):
+    import aicrm_next.production_compat.api as production_api
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    async def fake_forward(request):
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            f"legacy-forwarded:{request.method}:{request.url.path}:{request.url.query}",
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
+
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+
+    response = TestClient(create_app(), raise_server_exceptions=False).get(
+        "/admin/automation-conversion/programs/7/setup?step=basic"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert "legacy-forwarded:GET:/admin/automation-conversion/programs/7/setup:step=basic" in response.text
 
 
 def test_real_data_binding_checker_returns_ok():

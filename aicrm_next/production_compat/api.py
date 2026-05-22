@@ -64,6 +64,7 @@ async def legacy_production_compat_timer_routes(request: Request) -> Response:
 @wildcard_router.api_route("/api/admin/attachment-library/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/miniprogram-library", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/miniprogram-library/{path:path}", methods=_ALL_METHODS)
+@wildcard_router.api_route("/admin/automation-conversion/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/sidebar/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/sidebar/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/customers/profile", methods=_ALL_METHODS)
