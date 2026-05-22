@@ -134,9 +134,9 @@ def _answer_profile_fallback(questionnaires: list[dict[str, Any]]) -> dict[str, 
             if not value:
                 continue
             if not fields["source"] and ("来源" in question or "渠道" in question):
-                fields["source"] = value if value in SOURCE_OPTIONS else ""
+                fields["source"] = value
             elif not fields["industry"] and "行业" in question:
-                fields["industry"] = value if value in INDUSTRY_OPTIONS else ""
+                fields["industry"] = value
             elif not fields["industry_description"] and ("行业" in question or "业务" in question):
                 fields["industry_description"] = value
             elif not fields["needs_blockers_followup"] and any(key in question for key in ("需求", "痛点", "阻碍", "跟进")):
@@ -208,10 +208,8 @@ def update_profile(
     normalized_industry = _text(industry)
     if not normalized_external_userid:
         raise ValueError("external_userid is required")
-    if normalized_source not in SOURCE_OPTIONS:
-        raise ValueError("source is invalid")
-    if normalized_industry not in INDUSTRY_OPTIONS:
-        raise ValueError("industry is invalid")
+    normalized_source = normalized_source[:MAX_PROFILE_TEXT_LENGTH]
+    normalized_industry = normalized_industry[:MAX_PROFILE_TEXT_LENGTH]
     description = _text(industry_description)[:MAX_PROFILE_TEXT_LENGTH]
     blockers = _text(needs_blockers_followup)[:MAX_PROFILE_TEXT_LENGTH]
     row = repo.upsert_profile_fields(

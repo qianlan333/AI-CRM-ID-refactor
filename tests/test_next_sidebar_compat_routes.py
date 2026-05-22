@@ -61,6 +61,8 @@ def test_next_sidebar_workbench_css_keeps_dense_three_column_tabs():
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" not in css
     assert "font-size: 22px" not in css
     assert "min-height: 50px" not in css
+    assert "font-size: 19px" not in css
+    assert "min-height: 42px" not in css
 
 
 def test_next_forwards_sidebar_read_apis_without_404(monkeypatch):

@@ -45,8 +45,12 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "行业信息" in script
     assert "行业具体描述" in script
     assert "需求、卡点、跟进状态" in script
-    assert "select" in script
     assert "textarea" in script
+    assert "textAreaField(\"source\", \"用户来源\"" in script
+    assert "textAreaField(\"industry\", \"行业信息\"" in script
+    assert "<select" not in combined
+    assert "selectField" not in combined
+    assert "请选择" not in combined
 
     forbidden = [
         "第 3 天",

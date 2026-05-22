@@ -165,12 +165,6 @@
     state.workbench.profile = profile;
   }
 
-  function validProfileSelects() {
-    const profile = state.workbench.profile || {};
-    const options = state.workbench.profile_options || {};
-    return (options.source || []).includes(profile.source) && (options.industry || []).includes(profile.industry);
-  }
-
   function saveProfileSoon() {
     window.clearTimeout(state.profileSaveTimer);
     state.profileSaveTimer = window.setTimeout(saveProfile, 520);
@@ -178,10 +172,6 @@
 
   async function saveProfile() {
     if (!state.workbench || !state.external_userid) return;
-    if (!validProfileSelects()) {
-      showToast("请选择用户来源和行业信息后保存", "error");
-      return;
-    }
     const profile = state.workbench.profile || {};
     try {
       await requestJson(endpoint("profileUrl"), {
@@ -201,35 +191,24 @@
     }
   }
 
-  function selectField(key, label, value, options) {
-    const optionHtml = ['<option value="">' + escapeHtml("请选择") + "</option>"]
-      .concat(
-        (options || []).map((item) => {
-          const selected = item === value ? " selected" : "";
-          return '<option value="' + escapeHtml(item) + '"' + selected + ">" + escapeHtml(item) + "</option>";
-        })
-      )
-      .join("");
+  function textAreaField(key, label, value) {
     return (
       '<div class="field">' +
       '<div class="field-title">' + escapeHtml(label) + "</div>" +
-      '<div class="select-wrap"><select class="select" data-profile-field="' + key + '">' + optionHtml + "</select></div>" +
+      '<textarea class="textarea" data-profile-field="' + key + '">' + escapeHtml(value || "") + "</textarea>" +
       "</div>"
     );
   }
 
   function renderProfile() {
     const profile = (state.workbench && state.workbench.profile) || {};
-    const options = (state.workbench && state.workbench.profile_options) || {};
     content.innerHTML = panel(
       "核心画像",
       '<div class="editor">' +
-        selectField("source", "用户来源", profile.source || "", options.source || []) +
-        selectField("industry", "行业信息", profile.industry || "", options.industry || []) +
-        '<div class="field"><div class="field-title">行业具体描述</div>' +
-        '<textarea class="textarea" data-profile-field="industry_description">' + escapeHtml(profile.industry_description || "") + "</textarea></div>" +
-        '<div class="field"><div class="field-title">需求、卡点、跟进状态</div>' +
-        '<textarea class="textarea" data-profile-field="needs_blockers_followup">' + escapeHtml(profile.needs_blockers_followup || "") + "</textarea></div>" +
+        textAreaField("source", "用户来源", profile.source || "") +
+        textAreaField("industry", "行业信息", profile.industry || "") +
+        textAreaField("industry_description", "行业具体描述", profile.industry_description || "") +
+        textAreaField("needs_blockers_followup", "需求、卡点、跟进状态", profile.needs_blockers_followup || "") +
       "</div>"
     );
   }
@@ -591,7 +570,7 @@
 
   content.addEventListener("change", (event) => {
     const field = event.target.dataset.profileField;
-    if (!field) return;
+    if (!field || event.target.tagName === "TEXTAREA") return;
     updateProfileField(field, event.target.value);
     saveProfile();
   });

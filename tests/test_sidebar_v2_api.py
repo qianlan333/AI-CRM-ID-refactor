@@ -34,18 +34,25 @@ def test_sidebar_v2_workbench_returns_fixed_profile_options(client):
     assert "counts" not in payload
 
 
-def test_sidebar_v2_profile_put_rejects_invalid_source_and_industry(client):
-    invalid_source = client.put(
+def test_sidebar_v2_profile_put_accepts_free_text_source_and_industry(client):
+    response = client.put(
         "/api/sidebar/v2/profile",
-        json={"external_userid": "wm_sidebar_v2", "source": "朋友圈", "industry": "教育培训"},
-    )
-    invalid_industry = client.put(
-        "/api/sidebar/v2/profile",
-        json={"external_userid": "wm_sidebar_v2", "source": "流量群", "industry": "AI"},
+        json={
+            "external_userid": "wm_sidebar_v2",
+            "source": "  媛子咨询群，朋友介绍  ",
+            "industry": "  大健康，线下门店  ",
+            "industry_description": "  本地连锁健康管理门店  ",
+            "needs_blockers_followup": "  想先看案例  ",
+        },
     )
 
-    assert invalid_source.status_code == 400
-    assert invalid_industry.status_code == 400
+    assert response.status_code == 200
+    assert response.get_json()["profile"] == {
+        "source": "媛子咨询群，朋友介绍",
+        "industry": "大健康，线下门店",
+        "industry_description": "本地连锁健康管理门店",
+        "needs_blockers_followup": "想先看案例",
+    }
 
 
 def test_sidebar_v2_profile_put_persists_fixed_fields(client):
