@@ -89,3 +89,22 @@ def list_automation_programs_from_legacy() -> dict[str, Any]:
         }
 
     return _with_legacy_app_context(_load)
+
+
+def get_automation_member_detail_from_legacy(*, external_contact_id: str = "", phone: str = "") -> dict[str, Any]:
+    external_contact_id = str(external_contact_id or "").strip()
+    phone = str(phone or "").strip()
+    if not external_contact_id and not phone:
+        return {"ok": False, "error": "external_contact_id or phone is required"}
+
+    def _load() -> dict[str, Any]:
+        from wecom_ability_service.domains.automation_conversion import service as legacy_service
+
+        return {
+            "ok": True,
+            "detail": legacy_service.get_member_detail(external_contact_id=external_contact_id, phone=phone),
+            "source_status": "production_postgres",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        }
+
+    return _with_legacy_app_context(_load)
