@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from aicrm_next.shared.runtime import production_data_ready
@@ -62,45 +63,15 @@ LEGACY_FRONTEND_ROUTES = [
 
 
 @router.get("/sidebar/bind-mobile", name="api.sidebar_bind_mobile_page")
-def sidebar_bind_mobile_page():
-    html = """<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>客户档案绑定</title>
-  <style>
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f8fb; color: #172033; }
-    main { max-width: 720px; margin: 0 auto; padding: 20px; display: grid; gap: 14px; }
-    section { background: #fff; border: 1px solid #d9dee8; border-radius: 8px; padding: 16px; }
-    h1 { font-size: 22px; margin: 0 0 8px; }
-    h2 { font-size: 16px; margin: 0 0 8px; }
-    code { background: #eef2f8; padding: 2px 4px; border-radius: 4px; }
-  </style>
-</head>
-<body>
-  <main>
-    <section>
-      <h1>客户档案绑定</h1>
-      <p>当前未识别到客户信息，请从企微客户侧边栏重新打开。</p>
-      <p>客户昵称：识别中</p>
-    </section>
-    <section>
-      <h2>只读客户上下文</h2>
-      <p><code>/api/sidebar/customer-context</code></p>
-      <p><code>/api/sidebar/contact-binding-status</code></p>
-      <p><code>/api/admin/customers/profile</code></p>
-      <p><code>/api/admin/customers/profile/tags</code></p>
-    </section>
-    <section>
-      <h2>写入仍受保护</h2>
-      <p><code>/api/sidebar/bind-mobile</code> 继续由兼容 fallback/guard 处理，不在 Next 中执行真实写入。</p>
-      <p><code>/api/admin/automation-conversion/member</code></p>
-    </section>
-  </main>
-</body>
-</html>"""
-    return HTMLResponse(html)
+async def sidebar_bind_mobile_page(request: Request):
+    enabled = str(os.getenv("SIDEBAR_WORKBENCH_V2_ENABLED", "true")).strip().lower()
+    if enabled in {"0", "false", "no", "off"} or str(request.query_params.get("v") or "").strip().lower() == "legacy":
+        return await forward_to_legacy_flask(request)
+    return templates.TemplateResponse(
+        request,
+        "sidebar_customer_workbench.html",
+        {"request": request, "debug_enabled": False},
+    )
 
 
 def _legacy_url_for(name: str, **path_params: object) -> str:

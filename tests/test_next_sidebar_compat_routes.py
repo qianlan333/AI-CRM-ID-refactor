@@ -13,7 +13,7 @@ def _production_client(monkeypatch) -> TestClient:
     return TestClient(create_app())
 
 
-def test_next_forwards_sidebar_bind_mobile_page_to_legacy_facade(monkeypatch):
+def test_next_sidebar_bind_mobile_page_renders_v2_workbench(monkeypatch):
     client = _production_client(monkeypatch)
 
     response = client.get("/sidebar/bind-mobile")
@@ -23,11 +23,29 @@ def test_next_forwards_sidebar_bind_mobile_page_to_legacy_facade(monkeypatch):
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
     assert "X-AICRM-Compatibility-Facade" not in response.headers
     assert "Not Found" not in html
-    assert "客户档案绑定" in html
-    assert "/api/sidebar/customer-context" in html
-    assert "/api/sidebar/contact-binding-status" in html
+    assert "客户侧边栏 V2 工作台" in html
+    assert 'data-workbench-url="/api/sidebar/v2/workbench"' in html
+    assert 'data-material-send-url="/api/sidebar/v2/materials/send"' in html
     assert "/api/sidebar/bind-mobile" in html
-    assert "/api/admin/automation-conversion/member" in html
+    assert "sidebar_workbench/sidebar_workbench.css" in html
+    assert "sidebar_workbench/sidebar_workbench.js" in html
+    assert "客户档案绑定" not in html
+    assert "只读客户上下文" not in html
+    assert "写入仍受保护" not in html
+    assert "/api/sidebar/customer-context" not in html
+    assert "/api/admin/automation-conversion/member" not in html
+
+
+def test_next_sidebar_workbench_static_assets_are_served(monkeypatch):
+    client = _production_client(monkeypatch)
+
+    css_response = client.get("/static/sidebar_workbench/sidebar_workbench.css")
+    js_response = client.get("/static/sidebar_workbench/sidebar_workbench.js")
+
+    assert css_response.status_code == 200
+    assert ".profile-card" in css_response.text
+    assert js_response.status_code == 200
+    assert "other_staff_messages" in js_response.text
 
 
 def test_next_forwards_sidebar_read_apis_without_404(monkeypatch):
