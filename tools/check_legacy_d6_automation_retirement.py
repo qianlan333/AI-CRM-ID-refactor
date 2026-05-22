@@ -14,7 +14,6 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 RETIRED_READONLY_ROUTES: tuple[tuple[str, str], ...] = (
-    ("GET", "/admin/automation-conversion"),
     ("GET", "/api/admin/automation-conversion/overview"),
     ("GET", "/api/admin/automation-conversion/pools"),
     ("GET", "/api/admin/automation-conversion/members"),
@@ -33,6 +32,7 @@ RETIRED_ALIAS_ROUTES: tuple[tuple[str, str], ...] = (
 )
 
 RETAINED_FALLBACK_ROUTES: tuple[tuple[str, str], ...] = (
+    ("GET", "/admin/automation-conversion"),
     ("GET", "/admin/automation-conversion/programs/<int:program_id>/overview"),
     ("GET", "/admin/automation-conversion/programs/<int:program_id>/executions"),
     ("GET", "/admin/automation-conversion/programs/<int:program_id>/member-ops"),

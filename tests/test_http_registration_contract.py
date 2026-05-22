@@ -849,6 +849,7 @@ def test_automation_conversion_legacy_routes_and_endpoints_remain_removed():
         "api_admin_automation_conversion_model_infra_settings_save_legacy",
     }
     kept_routes = {
+        "/admin/automation-conversion",
         "/admin/automation-conversion/programs/<int:program_id>/overview",
         "/admin/automation-conversion/programs/<int:program_id>/operations",
         "/admin/automation-conversion/programs/<int:program_id>/executions",
