@@ -29,6 +29,7 @@ def test_route_matrix_declares_future_next_owners_and_guarded_writes():
         assert record["current_owner"] in {
             "production_compat legacy_forward",
             "exact compatibility facade",
+            "next exact readonly",
             "missing Next exact owner",
             "blocked",
         }
@@ -43,4 +44,6 @@ def test_route_probes_have_explicit_owner_and_no_fixture_markers():
         assert probe["status_code"] != 404, probe
         assert probe["route_owner_header"], probe
         assert probe["compatibility_facade"] == probe["expected_facade"], probe
+        if probe["expected_endpoint_module"]:
+            assert probe["endpoint_module"] == probe["expected_endpoint_module"], probe
         assert probe["fixture_marker_present"] is False, probe

@@ -10,8 +10,13 @@ legacy compatibility routes to exact Next owners.
 
 ## Current State
 
-- `/sidebar/*`, `/api/sidebar/*`, and `/api/admin/customers/profile*` are
-  currently served by `production_compat` legacy forwarding.
+- `GET /sidebar/bind-mobile`, `GET /api/sidebar/contact-binding-status`,
+  `GET /api/sidebar/customer-context`, `GET /api/admin/customers/profile`, and
+  `GET /api/admin/customers/profile/tags` now have AI-CRM Next exact readonly
+  owners.
+- Remaining `/sidebar/*`, `/api/sidebar/*`, and
+  `/api/admin/customers/profile*` paths continue to use `production_compat`
+  legacy forwarding until they receive exact owner evidence.
 - `/api/sidebar/bind-mobile` is a write-capable identity/mobile binding route
   and remains behind the legacy compatibility facade until a guarded
   `identity_contact` command exists.
@@ -28,10 +33,13 @@ legacy compatibility routes to exact Next owners.
 
 | Route family | Current owner | Future Next owner | Data source | Access |
 | --- | --- | --- | --- | --- |
-| `/sidebar/*` | production_compat legacy_forward | frontend_compat | production postgres via legacy facade | readonly page |
-| `/api/sidebar/*` | production_compat legacy_forward | identity_contact / customer_read_model / automation_engine | identity_contact and customer_read_model | readonly plus guarded writes |
-| `/api/admin/customers/profile` | production_compat legacy_forward | customer_read_model | customer_read_model | readonly profile |
-| `/api/admin/customers/profile/*` | production_compat legacy_forward | customer_read_model | customer_read_model | readonly sections |
+| `/sidebar/bind-mobile` | next exact readonly | frontend_compat | frontend_compat readonly page | readonly page |
+| `/api/sidebar/contact-binding-status` | next exact readonly | identity_contact | identity_contact with legacy production facade fallback | readonly identity binding |
+| `/api/sidebar/customer-context` | next exact readonly | customer_read_model | customer_read_model with legacy production facade fallback | readonly customer context |
+| `/api/sidebar/*` remaining paths | production_compat legacy_forward | identity_contact / customer_read_model / automation_engine | identity_contact and customer_read_model | readonly plus guarded writes |
+| `/api/admin/customers/profile` | next exact readonly | customer_read_model | customer_read_model with legacy production facade fallback | readonly profile |
+| `/api/admin/customers/profile/tags` | next exact readonly | customer_read_model | customer_read_model with legacy production facade fallback | readonly sections |
+| `/api/admin/customers/profile/*` remaining paths | production_compat legacy_forward | customer_read_model | customer_read_model | readonly sections |
 | `/api/admin/automation-conversion/member` | exact compatibility facade | automation_engine | production postgres via legacy facade | readonly member detail |
 | `/api/admin/automation-conversion/member/*` | production_compat legacy_forward | automation_engine | production postgres via legacy facade | guarded writes |
 

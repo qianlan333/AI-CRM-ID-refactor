@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from starlette.routing import Match
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -28,25 +29,40 @@ ROUTE_MATRIX: list[dict[str, Any]] = [
         "route_pattern": "/sidebar/*",
         "probe_method": "GET",
         "probe_path": "/sidebar/bind-mobile",
-        "current_owner": "production_compat legacy_forward",
+        "current_owner": "next exact readonly",
         "future_next_owner": "frontend_compat",
-        "data_source": "production postgres via legacy facade",
+        "data_source": "frontend_compat readonly page",
         "access": "readonly_page",
         "write_guard": "n/a",
-        "expected_facade": "legacy_flask_facade",
-        "next_exact_owner_status": "missing Next exact owner",
+        "expected_facade": "",
+        "expected_endpoint_module": "aicrm_next.frontend_compat.legacy_routes",
+        "next_exact_owner_status": "next exact readonly",
     },
     {
         "route_pattern": "/api/sidebar/*",
         "probe_method": "GET",
         "probe_path": "/api/sidebar/contact-binding-status",
-        "current_owner": "production_compat legacy_forward",
+        "current_owner": "next exact readonly",
         "future_next_owner": "identity_contact",
         "data_source": "identity_contact",
         "access": "read_identity_binding",
         "write_guard": "n/a",
-        "expected_facade": "legacy_flask_facade",
-        "next_exact_owner_status": "missing Next exact owner",
+        "expected_facade": "",
+        "expected_endpoint_module": "aicrm_next.identity_contact.api",
+        "next_exact_owner_status": "next exact readonly",
+    },
+    {
+        "route_pattern": "/api/sidebar/customer-context",
+        "probe_method": "GET",
+        "probe_path": "/api/sidebar/customer-context",
+        "current_owner": "next exact readonly",
+        "future_next_owner": "customer_read_model",
+        "data_source": "customer_read_model",
+        "access": "readonly_customer_context",
+        "write_guard": "n/a",
+        "expected_facade": "",
+        "expected_endpoint_module": "aicrm_next.customer_read_model.api",
+        "next_exact_owner_status": "next exact readonly",
     },
     {
         "route_pattern": "/api/sidebar/bind-mobile",
@@ -101,25 +117,27 @@ ROUTE_MATRIX: list[dict[str, Any]] = [
         "route_pattern": "/api/admin/customers/profile",
         "probe_method": "GET",
         "probe_path": "/api/admin/customers/profile",
-        "current_owner": "production_compat legacy_forward",
+        "current_owner": "next exact readonly",
         "future_next_owner": "customer_read_model",
         "data_source": "customer_read_model",
         "access": "readonly_customer_profile",
         "write_guard": "n/a",
-        "expected_facade": "legacy_flask_facade",
-        "next_exact_owner_status": "missing Next exact owner",
+        "expected_facade": "",
+        "expected_endpoint_module": "aicrm_next.customer_read_model.api",
+        "next_exact_owner_status": "next exact readonly",
     },
     {
         "route_pattern": "/api/admin/customers/profile/*",
         "probe_method": "GET",
         "probe_path": "/api/admin/customers/profile/tags",
-        "current_owner": "production_compat legacy_forward",
+        "current_owner": "next exact readonly",
         "future_next_owner": "customer_read_model",
         "data_source": "customer_read_model",
         "access": "readonly_profile_sections",
         "write_guard": "n/a",
-        "expected_facade": "legacy_flask_facade",
-        "next_exact_owner_status": "missing Next exact owner",
+        "expected_facade": "",
+        "expected_endpoint_module": "aicrm_next.customer_read_model.api",
+        "next_exact_owner_status": "next exact readonly",
     },
     {
         "route_pattern": "/api/admin/automation-conversion/member",
@@ -192,6 +210,7 @@ def _probe_route(client: TestClient, record: dict[str, Any]) -> dict[str, Any]:
     if "probe_json" in record:
         kwargs["json"] = record["probe_json"]
     response = getattr(client, method)(path, **kwargs)
+    endpoint_module = _first_matching_endpoint_module(client, method=str(record["probe_method"]), path=path)
     body = response.text
     return {
         "route_pattern": record["route_pattern"],
@@ -202,9 +221,22 @@ def _probe_route(client: TestClient, record: dict[str, Any]) -> dict[str, Any]:
         "compatibility_facade": response.headers.get("X-AICRM-Compatibility-Facade", ""),
         "fixture_marker_present": _contains_fixture_marker(body),
         "expected_facade": record["expected_facade"],
+        "endpoint_module": endpoint_module,
+        "expected_endpoint_module": record.get("expected_endpoint_module", ""),
         "write_probe": str(record["access"]).startswith("write_"),
         "state_changing_probe": record["probe_method"] in {"POST", "PUT", "PATCH", "DELETE"},
     }
+
+
+def _first_matching_endpoint_module(client: TestClient, *, method: str, path: str) -> str:
+    scope = {"type": "http", "method": method.upper(), "path": path, "root_path": "", "headers": []}
+    for route in client.app.routes:
+        match, _ = route.matches(scope)
+        if match == Match.NONE:
+            continue
+        endpoint = getattr(route, "endpoint", None)
+        return getattr(endpoint, "__module__", "") if endpoint else ""
+    return ""
 
 
 def _validate_matrix() -> list[str]:
@@ -220,12 +252,21 @@ def _validate_matrix() -> list[str]:
         "next_exact_owner_status",
     }
     allowed_future_owners = {"customer_read_model", "identity_contact", "frontend_compat", "automation_engine"}
+    allowed_current_owners = {
+        "production_compat legacy_forward",
+        "exact compatibility facade",
+        "next exact readonly",
+        "missing Next exact owner",
+        "blocked",
+    }
     for record in ROUTE_MATRIX:
         missing = sorted(required_fields - set(record))
         if missing:
             blockers.append(f"matrix_missing_fields:{record.get('route_pattern', '<unknown>')}:{','.join(missing)}")
         if record.get("future_next_owner") not in allowed_future_owners:
             blockers.append(f"matrix_invalid_future_owner:{record.get('route_pattern')}")
+        if record.get("current_owner") not in allowed_current_owners:
+            blockers.append(f"matrix_invalid_current_owner:{record.get('route_pattern')}")
         if str(record.get("access", "")).startswith("write_") and not str(record.get("write_guard", "")).startswith("guarded"):
             blockers.append(f"matrix_write_not_guarded:{record.get('route_pattern')}")
         if not record.get("current_owner"):
@@ -263,6 +304,10 @@ def run_check() -> dict[str, Any]:
         if probe["compatibility_facade"] != probe["expected_facade"]:
             blockers.append(
                 f"unexpected_facade:{label}:expected={probe['expected_facade']}:actual={probe['compatibility_facade']}"
+            )
+        if probe["expected_endpoint_module"] and probe["endpoint_module"] != probe["expected_endpoint_module"]:
+            blockers.append(
+                f"unexpected_endpoint_owner:{label}:expected={probe['expected_endpoint_module']}:actual={probe['endpoint_module']}"
             )
         if probe["write_probe"] and probe["state_changing_probe"] and 200 <= int(probe["status_code"]) < 300:
             blockers.append(f"write_probe_not_guarded:{label}")
