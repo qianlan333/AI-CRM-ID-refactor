@@ -514,25 +514,25 @@ routes:
   - route_pattern: /api/products*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: next
-    production_behavior: fake_adapter
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_d7_4_product_payment_adapter_contract.py
-    notes: Public product API exact route plus production_compat fallback.
+    notes: Public product API forwards to legacy Flask/product_service so real PostgreSQL product links opened from QR codes do not hit the Next fake commerce repository.
   - route_pattern: /p/{page_slug}
     methods: [GET]
     capability_owner: aicrm_next.commerce
-    current_runtime_owner: next
-    production_behavior: fake_adapter
+    current_runtime_owner: production_compat
+    production_behavior: legacy_forward
     legacy_fallback_allowed: true
     fixture_allowed_in_production: false
     external_side_effect_risk: guarded
     delete_ready: false
     checker: tools/check_d7_4_product_payment_adapter_contract.py
-    notes: Public product page rendered by Next; checkout side effects remain fake/guarded.
+    notes: Public product page forwards to legacy Flask/product_service; checkout side effects remain guarded by the legacy payment flow.
   - route_pattern: /api/orders*
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD]
     capability_owner: aicrm_next.commerce

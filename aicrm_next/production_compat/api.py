@@ -86,6 +86,12 @@ async def legacy_wechat_pay_product_admin_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
+@router.api_route("/api/products/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/p/{path:path}", methods=_ALL_METHODS)
+async def legacy_public_product_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
 @wildcard_router.api_route("/api/messages/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/h5/wechat/oauth/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/auth/wecom/{path:path}", methods=_ALL_METHODS)

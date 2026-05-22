@@ -1,9 +1,9 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `183`
-- production_compat_route_count: `65`
-- production_compat_catch_all_count: `38`
+- route_count: `185`
+- production_compat_route_count: `67`
+- production_compat_catch_all_count: `40`
 - blockers: `0`
 
 ## Resolution Samples
@@ -26,6 +26,8 @@
 - GET /api/admin/wechat-pay/products: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/api/admin/wechat-pay/products*` / `legacy_forward`)
 - GET /api/admin/wechat-pay/products/1: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/api/admin/wechat-pay/products*` / `legacy_forward`)
 - GET /api/admin/wechat-pay/products/1/share: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/api/admin/wechat-pay/products*` / `legacy_forward`)
+- GET /p/prd_20260518095708_9f77db: `production_compat` -> `aicrm_next.production_compat.api.legacy_public_product_routes` (manifest `/p/{page_slug}` / `legacy_forward`)
+- GET /api/products/prd_20260518095708_9f77db: `production_compat` -> `aicrm_next.production_compat.api.legacy_public_product_routes` (manifest `/api/products*` / `legacy_forward`)
 - GET /api/admin/image-library: `next` -> `aicrm_next.media_library.api.list_images` (manifest `/api/admin/image-library*` / `fake_adapter`)
 - GET /api/admin/image-library/image_masked_001: `next` -> `aicrm_next.media_library.api.get_image` (manifest `/api/admin/image-library*` / `fake_adapter`)
 - POST /api/admin/automation-conversion/jobs/run-due: `production_compat` -> `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` (manifest `/api/admin/automation-conversion/jobs/run-due*` / `scheduled_safe_mode`)
@@ -46,6 +48,8 @@
 - POST /api/admin/wechat-pay/products caught by `/api/admin/wechat-pay/products`
 - POST /api/admin/wechat-pay/products/{product_id}/enable caught by `/api/admin/wechat-pay/products/{path:path}`
 - POST /api/admin/wechat-pay/products/{product_id}/disable caught by `/api/admin/wechat-pay/products/{path:path}`
+- GET /api/products/{page_slug} caught by `/api/products/{path:path}`
+- GET /p/{page_slug} caught by `/p/{path:path}`
 - GET /admin/wechat-pay/products caught by `/admin/wechat-pay/products`
 
 ## Blockers

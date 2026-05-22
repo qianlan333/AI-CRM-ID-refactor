@@ -43,6 +43,8 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/admin/wechat-pay/products"),
     ("GET", "/api/admin/wechat-pay/products/1"),
     ("GET", "/api/admin/wechat-pay/products/1/share"),
+    ("GET", "/p/prd_20260518095708_9f77db"),
+    ("GET", "/api/products/prd_20260518095708_9f77db"),
     ("GET", "/api/admin/image-library"),
     ("GET", "/api/admin/image-library/image_masked_001"),
     ("POST", "/api/admin/automation-conversion/jobs/run-due"),
