@@ -318,13 +318,16 @@
       controls +
         rows
           .map((item) => {
-            const thumbClass = item.type === "mini" ? "mini-program" : item.type === "pdf" ? "pdf" : "";
+            const type = item.type === "mini" ? "mini" : item.type === "pdf" ? "pdf" : "image";
+            const thumbClass = type === "mini" ? "mini-program" : type === "pdf" ? "pdf" : "image-thumb";
+            const materialClass = type === "mini" ? "material--mini" : type === "pdf" ? "material--pdf" : "material--image";
+            const fallbackLabel = item.thumbnail_label || (type === "mini" ? "小" : type === "pdf" ? "PDF" : "图");
             const thumb = item.thumbnail_url
-              ? '<div class="thumb image-thumb"><img src="' + escapeHtml(item.thumbnail_url) + '" alt=""></div>'
-              : '<div class="thumb ' + thumbClass + '">' + escapeHtml(item.thumbnail_label || "") + "</div>";
+              ? '<div class="material-thumb thumb image-thumb"><img src="' + escapeHtml(item.thumbnail_url) + '" alt="" data-material-thumb-img data-fallback-label="' + escapeHtml(fallbackLabel) + '"></div>'
+              : '<div class="material-thumb thumb ' + thumbClass + '">' + escapeHtml(fallbackLabel) + "</div>";
             return (
-              '<article class="card material">' + thumb +
-              '<div class="material-main"><h3>' + escapeHtml(item.title || "未命名素材") + '</h3><div class="tags">' +
+              '<article class="card material ' + materialClass + '">' + thumb +
+              '<div class="material-main"><h3 class="material-title">' + escapeHtml(item.title || "未命名素材") + '</h3><div class="material-tags tags">' +
               (item.tags || []).map((tag) => '<span class="tag">' + escapeHtml(tag) + "</span>").join("") +
               '</div></div><button class="btn primary material-send" type="button" data-material-send="' + escapeHtml(item.id || "") + '">发送</button></article>'
             );
@@ -708,6 +711,15 @@
       return;
     }
   });
+
+  content.addEventListener("error", (event) => {
+    const image = event.target.closest ? event.target.closest("[data-material-thumb-img]") : null;
+    if (!image) return;
+    const parent = image.parentElement;
+    if (!parent) return;
+    parent.textContent = image.dataset.fallbackLabel || "图";
+    parent.classList.remove("image-thumb");
+  }, true);
 
   document.getElementById("change-mobile-button").addEventListener("click", openMobileModal);
   document.getElementById("close-mobile-modal").addEventListener("click", closeMobileModal);

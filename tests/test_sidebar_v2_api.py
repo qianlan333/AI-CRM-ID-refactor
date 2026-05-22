@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import json
 
+import pytest
+
 from wecom_ability_service.db import get_db
 
 _TINY_PNG_BYTES = base64.b64decode(
@@ -163,12 +165,22 @@ def test_sidebar_v2_materials_use_unified_schema(client, monkeypatch):
     monkeypatch.setattr(
         service.image_library,
         "list_images",
-        lambda **kwargs: [{"id": 1, "name": "课程海报", "file_name": "poster.png", "tags": ["课程介绍"], "enabled": True}],
+        lambda **kwargs: [
+            {
+                "id": 1,
+                "name": "",
+                "file_name": "poster.png",
+                "source": "url",
+                "source_url": "https://example.com/raw-big-image.png",
+                "tags": ["课程介绍", "朋友圈", "海报", "第四个标签"],
+                "enabled": True,
+            }
+        ],
     )
     monkeypatch.setattr(
         service.miniprogram_library,
         "list_miniprograms",
-        lambda **kwargs: [{"id": 2, "title": "测评入口", "name": "mini", "enabled": True}],
+        lambda **kwargs: [{"id": 2, "title": "", "name": "mini", "enabled": True, "tags": ["小程序", "测评", "转化", "多余"]}],
     )
     monkeypatch.setattr(
         service.attachment_library,
@@ -183,14 +195,30 @@ def test_sidebar_v2_materials_use_unified_schema(client, monkeypatch):
     assert image == {
         "id": 1,
         "type": "image",
-        "title": "课程海报",
+        "title": "poster.png",
         "thumbnail_label": "图",
         "thumbnail_url": "/api/sidebar/v2/materials/image/1/thumbnail",
-        "tags": ["课程介绍"],
+        "tags": ["课程介绍", "朋友圈", "海报"],
         "enabled": True,
     }
-    assert mini == {"id": 2, "type": "mini", "title": "测评入口", "thumbnail_label": "小", "thumbnail_url": "", "tags": [], "enabled": True}
+    assert mini == {"id": 2, "type": "mini", "title": "mini", "thumbnail_label": "小", "thumbnail_url": "", "tags": ["小程序", "测评", "转化"], "enabled": True}
     assert pdf == {"id": 3, "type": "pdf", "title": "阅读资料.pdf", "thumbnail_label": "PDF", "thumbnail_url": "", "tags": ["PDF"], "enabled": True}
+
+
+def test_sidebar_v2_material_titles_have_safe_fallbacks(client, monkeypatch):
+    from wecom_ability_service.domains.sidebar_v2 import service
+
+    monkeypatch.setattr(service.image_library, "list_images", lambda **kwargs: [{"id": 11, "enabled": True}])
+    monkeypatch.setattr(service.miniprogram_library, "list_miniprograms", lambda **kwargs: [{"id": 12, "enabled": True}])
+    monkeypatch.setattr(service.attachment_library, "list_attachments", lambda **kwargs: [{"id": 13, "enabled": True}])
+
+    image = client.get("/api/sidebar/v2/materials", query_string={"type": "image"}).get_json()["materials"][0]
+    mini = client.get("/api/sidebar/v2/materials", query_string={"type": "mini"}).get_json()["materials"][0]
+    pdf = client.get("/api/sidebar/v2/materials", query_string={"type": "pdf"}).get_json()["materials"][0]
+
+    assert image["title"] == "未命名图片素材"
+    assert mini["title"] == "未命名小程序素材"
+    assert pdf["title"] == "未命名 PDF 素材"
 
 
 def test_sidebar_v2_image_material_thumbnail_returns_real_image(client, app):
@@ -209,6 +237,35 @@ def test_sidebar_v2_image_material_thumbnail_returns_real_image(client, app):
     assert response.status_code == 200
     assert response.content_type == "image/png"
     assert response.data == _TINY_PNG_BYTES
+    assert response.headers["Cache-Control"] == "private, max-age=86400"
+
+
+def test_sidebar_v2_image_material_thumbnail_errors_are_json(client, app):
+    response = client.get("/api/sidebar/v2/materials/image/999999/thumbnail")
+
+    assert response.status_code == 404
+    assert response.content_type.startswith("application/json")
+    assert response.get_json()["ok"] is False
+
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO image_library (
+                name, file_name, source, source_url, data_base64, mime_type, file_size,
+                thumb_media_id, thumb_media_id_expires_at, enabled, description, tags, category, ai_metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, '', NULL, ?, '', ?, '', ?)
+            """,
+            ("坏图", "bad.png", "base64", "", "not-valid-base64!", "image/png", 0, True, "[]", "{}"),
+        )
+        image_id = db.execute("SELECT id FROM image_library WHERE file_name = ?", ("bad.png",)).fetchone()["id"]
+        db.commit()
+
+    bad_response = client.get(f"/api/sidebar/v2/materials/image/{image_id}/thumbnail")
+
+    assert bad_response.status_code == 400
+    assert bad_response.content_type.startswith("application/json")
+    assert bad_response.get_json()["error"] == "invalid image data"
 
 
 def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, app):
@@ -450,3 +507,52 @@ def test_sidebar_v2_image_material_send_can_prepare_chat_toolbar_media(client, m
     assert payload["media_id"] == "media_123"
     assert payload["record_id"] == 0
     assert payload["task_ids"] == []
+
+
+@pytest.mark.parametrize(
+    ("material_type", "expected_key"),
+    [("mini", "miniprogram_library_ids"), ("pdf", "attachment_library_ids")],
+)
+def test_sidebar_v2_non_image_material_send_uses_dispatch(client, monkeypatch, material_type, expected_key):
+    from wecom_ability_service.domains.sidebar_v2 import service
+
+    captured = {}
+
+    def fake_dispatch(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "status": "sent", "record_id": 91, "task_ids": [92], "sender_userid": kwargs["sender_userid"]}
+
+    monkeypatch.setattr(service.private_message_dispatch, "_dispatch_private_message_batch", fake_dispatch)
+
+    response = client.post(
+        "/api/sidebar/v2/materials/send",
+        json={
+            "external_userid": "wm_sidebar_v2",
+            "owner_userid": "HuangYouCan",
+            "type": material_type,
+            "material_id": 456,
+            "operator": "operator_1",
+        },
+    )
+
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["record_id"] == 91
+    assert captured["target_items"] == [{"external_userid": "wm_sidebar_v2"}]
+    assert captured[expected_key] == [456]
+    assert "image_media_ids" not in captured
+
+
+@pytest.mark.parametrize(
+    "payload,error",
+    [
+        ({"type": "image", "material_id": 1}, "external_userid is required"),
+        ({"external_userid": "wm_sidebar_v2", "type": "image"}, "material_id is required"),
+        ({"external_userid": "wm_sidebar_v2", "type": "unknown", "material_id": 1}, "type must be image, mini, or pdf"),
+    ],
+)
+def test_sidebar_v2_material_send_validates_required_inputs(client, payload, error):
+    response = client.post("/api/sidebar/v2/materials/send", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": error}
