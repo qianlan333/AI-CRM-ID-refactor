@@ -27,6 +27,7 @@ except ModuleNotFoundError:
 
 ADMIN_PAGES = [
     "/admin/cloud-orchestrator",
+    "/admin/cloud-orchestrator/campaigns",
     "/admin/user-ops",
     "/admin/user-ops/ui",
     "/admin/customers",
@@ -172,16 +173,22 @@ def run_check() -> dict[str, Any]:
         client = _client()
         for route in ADMIN_PAGES:
             response = client.get(route, follow_redirects=False)
-            html = response.text
+            effective_response = response
+            if route == "/admin/cloud-orchestrator" and response.status_code in {301, 302, 303, 307, 308}:
+                location = response.headers.get("location", "")
+                if location == "/admin/cloud-orchestrator/campaigns":
+                    effective_response = client.get(location, follow_redirects=False)
+            html = effective_response.text
             markers = _bad_marker_hits(route, html)
             has_real_data, count = _has_real_data(route, html)
             page_results[route] = {
                 "status": response.status_code,
+                "effective_status": effective_response.status_code,
                 "has_real_data": has_real_data,
                 "bad_markers": markers,
                 "row_count": count,
             }
-            if response.status_code == 404:
+            if response.status_code == 404 or effective_response.status_code == 404:
                 route_404_blockers.append(route)
             if "admin login required" in html.lower():
                 auth_failures.append(route)

@@ -45,6 +45,12 @@ async def legacy_production_compat_timer_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
+@router.api_route("/api/admin/cloud-orchestrator/campaigns", methods=_ALL_METHODS)
+@router.api_route("/api/admin/cloud-orchestrator/campaigns/{path:path}", methods=_ALL_METHODS)
+async def legacy_cloud_orchestrator_campaign_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
 @router.api_route("/api/h5/wechat/oauth/start", methods=["GET", "OPTIONS", "HEAD"])
 @router.api_route("/api/h5/wechat/oauth/callback", methods=["GET", "OPTIONS", "HEAD"])
 async def legacy_questionnaire_oauth_routes(request: Request) -> Response:
