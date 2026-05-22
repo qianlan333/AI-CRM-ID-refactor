@@ -29,6 +29,7 @@ D8_2_ALLOWED = [
     "tests/test_d8_2_legacy_lockdown_preflight.py",
 ]
 D8_2_RUNTIME_FORBIDDEN = [
+    "openclaw_service",
     "legacy_flask",
     "wecom_ability_service/legacy_lockdown.py",
     "docs/d8_2_legacy_fallback_route_lockdown_enforcement.md",

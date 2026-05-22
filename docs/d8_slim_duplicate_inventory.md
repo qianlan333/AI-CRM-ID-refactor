@@ -13,7 +13,7 @@ The only in-repo D8-adjacent runtime files in scope are existing fallback entry 
 - `app.py` remains the default AI-CRM Next runtime entry with explicit legacy fallback commands.
 - `legacy_flask_app.py` remains the explicit legacy Flask fallback runner.
 - `wecom_ability_service/__init__.py`, `wecom_ability_service/routes.py`, and `wecom_ability_service/http/__init__.py` remain legacy fallback surfaces.
-- `openclaw_service/` remains a protected legacy external fallback surface.
+- `openclaw_service/` is absent after D9.6 physical deletion and must not be restored by D8 work.
 
 No files were deleted in this inventory pass.
 
@@ -37,6 +37,7 @@ No files were deleted in this inventory pass.
 | `docs/d8_legacy_shell_allowed_fallback_matrix.md` | 22 | D8 docs | D8.0 allowed fallback matrix | Not duplicated | keep | Documents allowed fallback categories while planning remains blocked. | Low; docs-only. | D8.0 checker and targeted tests. |
 | `docs/d8_1_legacy_fallback_route_lockdown_plan.md` | 34 | D8 docs | D8.1 planning plan | Not duplicated | keep | Planning-only route/fallback lockdown plan with no runtime enforcement. | Low; docs-only. | D8.1 checker and targeted tests. |
 | `docs/d8_1_legacy_fallback_route_matrix.md` | 19 | D8 docs | D8.1 docs matrix | Not duplicated | keep | Single planning matrix for future route/fallback lockdown candidates. | Low; docs-only. | D8.1 checker and targeted tests. |
+| `docs/d8_2_legacy_fallback_route_lockdown_preflight.md` | 52 | D8 docs | D8.2 preflight report | Not duplicated | keep | Preflight-only status check; does not register runtime enforcement. | Low; docs-only. | D8.2 preflight checker and targeted tests. |
 | `docs/d8_2_legacy_fallback_route_lockdown_enforcement.md` | 0 | D8 docs | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Enforcement docs could overstate runtime behavior if restored alone. | If reintroduced, require tests that prove enforcement is guard-only. |
 | `docs/d8_2_legacy_fallback_route_lockdown_report.md` | 0 | D8 docs | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Historical report could be mistaken for current state. | If reintroduced, mark historical status clearly. |
 | `docs/d8_3_legacy_flask_shell_archive_package_plan.md` | 0 | D8 docs | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could imply archive package migration has started. | If reintroduced, keep as plan only. |
@@ -49,12 +50,14 @@ No files were deleted in this inventory pass.
 | `docs/d8_5_maintenance_command_replacement_matrix.md` | 0 | D8 docs | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could duplicate command retirement plan rows. | If reintroduced, keep one command matrix source. |
 | `tools/check_d8_legacy_shell_retirement_readiness.py` | 151 | D8 checker | D8.0 planning checker | Not duplicated | keep | Small planning/readiness checker for docs, gates, protected files, and absent runtime package. | Low; checker-only. | Targeted D8.0 tests and full suite. |
 | `tools/check_d8_1_legacy_fallback_route_lockdown.py` | 136 | D8 checker | D8.1 planning checker | Not duplicated | keep | Small planning checker for matrix categories and no runtime enforcement. | Low; checker-only. | Targeted D8.1 tests and full suite. |
+| `tools/check_d8_2_legacy_lockdown_preflight.py` | 244 | D8 checker | D8.2 preflight checker | Not duplicated | keep | Preflight checker confirms D8.0/D8.1 prerequisites, absent runtime guard/package, and not-ready blockers. | Low; checker-only. | Targeted D8.2 tests and full suite. |
 | `tools/check_d8_2_legacy_lockdown_enforcement.py` | 0 | D8 checker | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could duplicate enforcement/report boilerplate. | If reintroduced, keep capability-specific assertions local. |
 | `tools/check_d8_3_legacy_archive_move_readiness.py` | 0 | D8 checker | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Import rewrite checks can become broad and fragile. | If reintroduced, verify against real imports with focused rules. |
 | `tools/check_d8_4_legacy_archive_package.py` | 0 | D8 checker | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could confuse archive owner with compatibility shims. | If reintroduced, explicitly protect shims and fallback. |
 | `tools/check_d8_5_legacy_maintenance_command_readiness.py` | 0 | D8 checker | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could duplicate parser command scans. | If reintroduced, share parser command extraction helper. |
 | `tests/test_d8_legacy_shell_retirement_readiness.py` | 94 | D8 test | D8.0 planning test | Not duplicated | keep | Guards planning-only status, gate evidence, and protected fallback existence. | Low; test-only. | Full suite. |
 | `tests/test_d8_1_legacy_fallback_route_lockdown.py` | 79 | D8 test | D8.1 planning test | Not duplicated | keep | Guards planning-only matrix and absence of runtime guard/package. | Low; test-only. | Full suite. |
+| `tests/test_d8_2_legacy_lockdown_preflight.py` | 78 | D8 test | D8.2 preflight test | Not duplicated | keep | Guards preflight-only state and absence of runtime guard/package. | Low; test-only. | Full suite. |
 | `tests/test_d8_2_legacy_lockdown_enforcement.py` | 0 | D8 test | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could duplicate checker subprocess setup. | If reintroduced, share lightweight test helpers only. |
 | `tests/test_d8_3_legacy_archive_move_readiness.py` | 0 | D8 test | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could overconstrain import paths before archive work starts. | If reintroduced, keep as readiness-only. |
 | `tests/test_d8_4_legacy_archive_package.py` | 0 | D8 test | None on current main | No current-main file | needs_manual_review | Requested path is absent. | Could force package layout not present on current main. | If reintroduced, protect both archive owner and shim relationships. |
@@ -66,18 +69,18 @@ No files were deleted in this inventory pass.
 | `wecom_ability_service/http/__init__.py` | 280 | Legacy HTTP fallback registrar | Current legacy HTTP fallback surface | Not a duplicate | keep | Existing fallback route registration surface. | High; deleting would remove protected fallback. | Legacy route/fallback tests and full suite. |
 | `legacy_flask_app.py` | 70 | Legacy fallback runner | Explicit fallback CLI | Not a duplicate | keep | Required legacy fallback runner. | High; deleting would remove explicit fallback command. | `python3 legacy_flask_app.py --help` and import smoke. |
 | `app.py` | 138 | Runtime entry | Default Next runtime plus explicit fallback commands | Not a duplicate | keep | Canonical runtime entry; default is AI-CRM Next. | High; deleting or changing would alter runtime behavior. | `python3 app.py --help`, root full suite. |
-| `openclaw_service/` | 22 | Protected external fallback | Legacy OpenClaw fallback surface | Not a duplicate | keep | Protected external fallback remains blocked. | High; deleting would remove protected fallback. | Full suite and D7/D8 blocker checks. |
+| `openclaw_service/` | 0 | Deleted OpenClaw repo shim | D9.6 physical deletion report | No current-main directory | keep absent | Repo-side shim/archive deletion is recorded by D9.6; D8 must not restore it. | High; reintroducing it would conflict with D9.6. | D9.6 checker and status consistency tests. |
 
 ## Duplicate And Excess Assessment
 
 | Candidate | Current finding | Decision |
 | --- | --- | --- |
-| D8 docs | Only D8.0/D8.1 planning docs are present; D8.2-D8.5 docs remain absent. | Keep minimal docs; do not restore old stacked-branch docs. |
-| D8 checkers | Only D8.0/D8.1 planning checkers are present. | Keep small checker duplication acceptable for two phases; consider a helper only if more D8 checkers return. |
-| D8 tests | Only D8.0/D8.1 planning tests plus this slim inventory guard are present. | Keep tests focused; do not recreate old D8 test stacks. |
+| D8 docs | D8.0/D8.1 planning docs and D8.2 preflight docs are present; D8.3-D8.5 docs remain absent. | Keep minimal docs; do not restore old stacked-branch docs. |
+| D8 checkers | D8.0/D8.1 planning checkers and D8.2 preflight checker are present. | Keep small checker duplication acceptable; consider a helper only if more D8 checkers return. |
+| D8 tests | D8.0/D8.1 planning tests, D8.2 preflight tests, and this slim inventory guard are present. | Keep tests focused; do not recreate old D8 test stacks. |
 | Archive package and shim | `legacy_flask/` and `wecom_ability_service/legacy_lockdown.py` are absent. Existing `wecom_ability_service` remains the current fallback owner. | Do not introduce archive package/shim in this inventory PR. |
 | Route/fallback matrix | D8 route/fallback matrix docs and runtime lockdown implementation are absent. | Future D8 should declare exactly one runtime owner and one docs matrix, with a checker aligning them. |
 
 ## Closeout Decision
 
-No small safe delete is available. The safe action is to keep the minimal D8.0/D8.1 planning package, leave D8.2-D8.5 absent, and guard against accidental restoration of old stacked D8 material without a fresh review.
+No small safe delete is available. The safe action is to keep the minimal D8.0/D8.1 planning package plus D8.2 preflight, leave D8.3-D8.5 absent, and guard against accidental restoration of old stacked D8 material without a fresh review.

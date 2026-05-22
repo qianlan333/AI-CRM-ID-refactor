@@ -59,7 +59,9 @@ def test_aicrm_next_route_owner_header_is_next() -> None:
 def test_legacy_fallback_docs_exist() -> None:
     assert (REPO_ROOT / "docs" / "runtime_switch_to_next.md").exists()
     assert (REPO_ROOT / "wecom_ability_service" / "LEGACY_FROZEN.md").exists()
-    assert (REPO_ROOT / "openclaw_service" / "LEGACY_FROZEN.md").exists()
+    assert not (REPO_ROOT / "openclaw_service").exists()
+    deletion_report = (REPO_ROOT / "docs" / "d9_6_openclaw_physical_deletion_report.md").read_text(encoding="utf-8")
+    assert "Repository `openclaw_service/`: absent." in deletion_report
 
 
 def test_no_legacy_backend_imports_in_aicrm_next() -> None:

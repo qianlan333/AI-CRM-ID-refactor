@@ -42,7 +42,6 @@ PROTECTED_FILES = [
     "wecom_ability_service/__init__.py",
     "wecom_ability_service/routes.py",
     "wecom_ability_service/http/__init__.py",
-    "openclaw_service/LEGACY_FROZEN.md",
     "wecom_ability_service/http/wechat_pay.py",
     "wecom_ability_service/http/alipay_pay.py",
     "wecom_ability_service/http/admin_wechat_pay.py",

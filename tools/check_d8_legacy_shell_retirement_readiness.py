@@ -19,11 +19,11 @@ PROTECTED_PATHS = [
     "wecom_ability_service/__init__.py",
     "wecom_ability_service/routes.py",
     "wecom_ability_service/http/__init__.py",
-    "openclaw_service",
 ]
 ABSENT_RUNTIME_PATHS = [
     "legacy_flask",
     "wecom_ability_service/legacy_lockdown.py",
+    "openclaw_service",
 ]
 FORBIDDEN_MARKERS = ("delete" + "_ready", "production" + "_ready", "production" + "_approved")
 DELETE_GATE_ITEMS = [

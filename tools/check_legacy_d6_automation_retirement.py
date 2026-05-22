@@ -176,7 +176,11 @@ def build_report() -> dict[str, Any]:
     docs_record_d6 = all("D6" in content and "Automation" in content and "retired" in content for content in docs.values())
     d7_to_d9_not_retired = (
         "| D7 | Write/external adapters |" in docs["legacy_route_owner_cutover_matrix"]
-        and "no deletion until replacement evidence" in docs["legacy_route_owner_cutover_matrix"]
+        and "no deletion until real replacement evidence" in docs["legacy_route_owner_cutover_matrix"]
+        and "| D8 | Flask factory/http registrar and maintenance commands |" in docs["legacy_route_owner_cutover_matrix"]
+        and "D8.2 preflight only" in docs["legacy_route_owner_cutover_matrix"]
+        and "| D9 | OpenClaw legacy adapter |" in docs["legacy_route_owner_cutover_matrix"]
+        and "openclaw_shim_physical_deletion_recorded" in docs["legacy_route_owner_cutover_matrix"]
         and "No row is approved for production." in docs["legacy_route_owner_cutover_matrix"]
     )
 
@@ -201,7 +205,7 @@ def build_report() -> dict[str, Any]:
     if not docs_record_d6:
         blockers.append("D6 retirement docs incomplete")
     if not d7_to_d9_not_retired:
-        blockers.append("D7-D9 retirement status not clearly blocked")
+        blockers.append("D7/D8 blocked status or D9.6 deletion status is not clearly documented")
 
     report = {
         "ok": not blockers,

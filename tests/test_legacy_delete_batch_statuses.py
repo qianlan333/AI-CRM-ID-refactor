@@ -40,9 +40,11 @@ def test_future_delete_batches_remain_blocked_or_not_started() -> None:
         assert not status.startswith("status: deleted")
         assert not status.startswith("status: completed")
 
-    assert "Delete only after real write/external replacement evidence" in _section(source, "D7")
-    assert "Delete only after all legacy routes are retired" in _section(source, "D8")
-    assert "Delete only after OpenClaw replacement evidence" in _section(source, "D9")
+    assert "Delete only after real write/external/runtime/sync replacement evidence" in _section(source, "D7")
+    assert "D8.2 legacy fallback route lockdown preflight" in _section(source, "D8")
+    assert "does not register runtime enforcement" in _section(source, "D8")
+    assert "D9.6 physical deletion recorded" in _section(source, "D9")
+    assert "no reintroduction is allowed" in _section(source, "D9")
 
 
 def test_d6_5_physical_deletions_match_dead_code_inventory() -> None:

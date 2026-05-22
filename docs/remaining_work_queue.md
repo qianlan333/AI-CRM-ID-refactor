@@ -14,10 +14,8 @@
 - D7.7 MCP / OpenClaw legacy adapter contract: fake_contract_ready.
 - D8 Legacy Flask shell retirement planning: retirement_planning_ready.
 - D8.1 Legacy fallback route lockdown planning: lockdown_planning_ready.
-- D8.2 Legacy fallback route lockdown enforcement: lockdown_enforcement_implemented.
-- D8.3 Legacy Flask archive package move planning: archive_move_planning_ready.
-- D8.4 Legacy Flask archive package implementation: archive_package_created.
-- D8.5 Legacy DB / maintenance command retirement planning: maintenance_command_retirement_planning_ready.
+- D8.2 Legacy fallback route lockdown preflight: lockdown_preflight_ready.
+- D8.3-D8.5 Legacy Flask archive package and maintenance command work: not restored on current main.
 - D9 OpenClaw legacy adapter physical retirement planning: openclaw_legacy_retirement_planning_ready.
 - D9.1 OpenClaw legacy adapter import freeze: openclaw_import_freeze_ready.
 - D9.2 OpenClaw legacy adapter move planning: openclaw_legacy_move_planning_ready.
@@ -42,21 +40,19 @@
 | P0 | D7.4 Product writes/WeChat Pay/Alipay/notify/return adapter contract | scope_isolated | D7.4 scope isolation accepted; real product writes, payment provider calls, and production notify processing remain blocked |
 | P0 | D7.5 Automation adapter contract | fake_contract_ready | run D7.5 checker, tests, Automation smoke, and Automation parity for acceptance; real Automation writes, activation side effects, OpenClaw, workflow runtime, and agent runtime remain blocked |
 | P0 | D7.6 Archive/Contacts/Identity adapter contract | fake_contract_ready | run D7.6 checker, tests, Customer smoke, and Customer parity for acceptance; real WeCom archive, contacts sync, identity writes, and customer projection writes remain blocked |
-| P0 | D7.7 MCP/OpenClaw legacy adapter contract | fake_contract_ready | run D7.7 checker, tests, Customer smoke/parity, and Automation smoke/parity for acceptance; real MCP external calls, OpenClaw calls, webhooks, and physical OpenClaw legacy deletion remain blocked |
+| P0 | D7.7 MCP/OpenClaw legacy adapter contract | fake_contract_ready | D7.7 fake/staging-disabled boundary remains the canonical Next-side adapter surface; real MCP external calls, OpenClaw calls, and webhooks remain blocked even though D9.6 records repo-side OpenClaw shim deletion |
 | P0 | D8 Legacy Flask shell retirement planning | retirement_planning_ready | D8.0 adds plan, dependency inventory, allowed fallback matrix, checker, and tests only; no legacy shell deletion, production config change, or traffic cutover |
 | P0 | D8.1 Legacy fallback route lockdown planning | lockdown_planning_ready | defines explicit allowed fallback route registry, retired readonly route matrix, checker, and tests without deleting shell core |
-| P0 | D8.2 Legacy fallback route lockdown enforcement | lockdown_enforcement_implemented | legacy-only guard returns 410 for retired D1-D6 readonly routes while preserving documented allowed fallback routes |
-| P0 | D8.3 Legacy Flask archive package planning | archive_move_planning_ready | planning only; `wecom_ability_service/` and `openclaw_service/` remain in place and `legacy_flask/` is not created |
-| P0 | D8.4 Legacy Flask archive package implementation | archive_package_created | entry layer moved to `legacy_flask/`; `wecom_ability_service/` remains compatibility shim and `openclaw_service/` remains retained |
-| P0 | D8.5 Legacy DB / maintenance command retirement planning | maintenance_command_retirement_planning_ready | inventory, retirement plan, replacement matrix, checker, and tests exist; no command deletion or production DB migration execution |
-| P0 | D9 OpenClaw legacy adapter physical retirement planning | openclaw_legacy_retirement_planning_ready | retirement plan, dependency inventory, compatibility matrix, checker, and tests exist; `openclaw_service/` remains retained and frozen |
+| P0 | D8.2 Legacy fallback route lockdown preflight | lockdown_preflight_ready | preflight docs/checker/tests exist; no runtime guard or 410 behavior is registered by this status |
+| P0 | D8.3-D8.5 Legacy Flask archive package / maintenance command work | not_restored | not part of current main status; do not create `legacy_flask/`, move app factory, or delete commands without a separate approved phase |
+| P0 | D9 OpenClaw legacy adapter physical retirement planning | openclaw_legacy_retirement_planning_ready | retirement plan, dependency inventory, compatibility matrix, checker, and tests exist; D9.6 supersedes earlier retention wording with repo-side deletion recorded |
 | P0 | D9.1 Freeze OpenClaw legacy adapter imports | openclaw_import_freeze_ready | import freeze plan, allowlist, checker, and tests exist; new runtime imports of `openclaw_service` are blocked |
 | P0 | D9.2 Move/archive OpenClaw legacy adapter | openclaw_legacy_move_planning_ready | move plan, move map, import rewrite plan, checker, and tests exist; D9.4 now records metadata-only archive with shim |
 | P0 | D9.3 Create OpenClaw archive package skeleton | openclaw_legacy_skeleton_created | skeleton package exists; no move, no shim, no runtime owner |
 | P0 | D9.4 Move OpenClaw files with compatibility shim | openclaw_legacy_files_moved_with_shim | metadata-only marker archived; shim retained; no runtime owner |
-| P0 | D9.5 OpenClaw shim-removal planning | openclaw_shim_removal_planning_ready | plan, final reference scan plan, readiness checklist, checker, and tests exist; shim retained |
+| P0 | D9.5 OpenClaw shim-removal planning | openclaw_shim_removal_planning_ready | historical plan, final reference scan plan, readiness checklist, checker, and tests exist; shim retention wording is superseded by D9.6 |
 | P0 | D9.5.1 OpenClaw final reference scan and observation evidence | reference_scan_completed_pending_observation | repository scan captured zero Next runtime imports and zero deploy/script hits; runtime observation logs, workload evidence, rollback independence, and signoff remain pending |
-| P0 | D9.5.2 OpenClaw shim deletion blocked package | blocked_pending_observation_evidence | deletion candidate is false; shim retained; only production/runtime observation evidence, workload proof, rollback independence, and signoff remain before any deletion PR |
+| P0 | D9.5.2 OpenClaw shim deletion blocked package | blocked_pending_observation_evidence | historical blocked package is superseded by D9.6 owner-approved repo-side deletion record |
 | P0 | D9.6 OpenClaw shim physical deletion | openclaw_shim_physical_deletion_recorded | owner approved deleting repo shim/archive and server OpenClaw-named jobs; server backup recorded at `/home/ubuntu/backups/openclaw-retirement-20260522004443` |
 | P0 | D8.6 Legacy app factory / HTTP registrar removal planning | blocked | future planning only; no removal before production evidence, command replacement, and rollback signoff |
 | P1 | Media upload replacement plan | blocked | cloud storage and WeCom media require staging/provider evidence before real calls |

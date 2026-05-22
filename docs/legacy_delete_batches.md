@@ -207,17 +207,17 @@ Not deleted by D6.5:
 
 D7 remains blocked by `docs/d7_write_external_blocker_matrix.md`.
 
-## D8.5: Legacy DB / Maintenance Command Planning
+## D8.2: Legacy Fallback Route Lockdown Preflight
 
-Status: maintenance command retirement planning ready.
+Status: lockdown preflight ready.
 
-New planning artifacts:
+Preflight artifacts:
 
-- `docs/d8_5_legacy_db_maintenance_command_inventory.md`
-- `docs/d8_5_legacy_db_maintenance_command_retirement_plan.md`
-- `docs/d8_5_maintenance_command_replacement_matrix.md`
+- `docs/d8_2_legacy_fallback_route_lockdown_preflight.md`
+- `tools/check_d8_2_legacy_lockdown_preflight.py`
+- `tests/test_d8_2_legacy_lockdown_preflight.py`
 
-D8.5 does not delete any legacy DB init or maintenance command. It keeps `python3 app.py init-db-legacy`, `python3 app.py init-db`, `python3 legacy_flask_app.py init-db`, legacy cleanup helpers, legacy schema helpers, diagnostic scripts, and rollback commands in place until replacement evidence and rollback signoff exist.
+D8.2 preflight does not register runtime lockdown enforcement, does not create `legacy_flask/`, does not add `wecom_ability_service/legacy_lockdown.py`, does not delete legacy fallback, and does not execute production DB migration, production cleanup, traffic cutover, external calls, or production config changes.
 
 ## D9.0: OpenClaw Legacy Adapter Physical Retirement Planning
 
@@ -229,7 +229,7 @@ New planning artifacts:
 - `docs/d9_openclaw_legacy_dependency_inventory.md`
 - `docs/d9_openclaw_mcp_compatibility_matrix.md`
 
-D9.0 does not move or delete `openclaw_service/`. It keeps `openclaw_service/LEGACY_FROZEN.md` and all OpenClaw/MCP fallback references in place until D7.7 real replacement evidence, import freeze, docs/scripts rewrite, plugin compatibility validation, rollback proof, and human signoff exist.
+D9.0 was planning only. Its original retention wording is superseded by D9.6, which records the repository-side `openclaw_service/` shim and `legacy_flask/openclaw_legacy/` archive paths as physically deleted after explicit owner approval.
 
 No OpenClaw call, MCP external call, webhook delivery, production route cutover, production write, or production configuration change is performed by D9.0.
 
@@ -244,7 +244,7 @@ New planning and enforcement artifacts:
 - `tools/check_d9_1_openclaw_import_freeze.py`
 - `tests/test_d9_1_openclaw_import_freeze.py`
 
-D9.1 blocks new runtime imports of `openclaw_service` and keeps the package retained in place. Static docs/tests/checker references remain documented in the allowlist. D9.1 does not move, archive, remove, or execute the OpenClaw legacy adapter.
+D9.1 blocked new runtime imports of `openclaw_service`. Its original retained-package state is superseded by D9.6; static historical docs/tests/checker references remain documented while the repo path stays absent.
 
 ## D9.2: OpenClaw Legacy Move Planning
 
@@ -258,7 +258,7 @@ New planning artifacts:
 - `tools/check_d9_2_openclaw_legacy_move_readiness.py`
 - `tests/test_d9_2_openclaw_legacy_move_readiness.py`
 
-D9.2 plans a future move from `openclaw_service/` to `legacy_flask/openclaw_legacy/`. It does not create the runtime package, move files, delete the old package, call OpenClaw, call external MCP services, send webhooks, cut traffic, or change production configuration.
+D9.2 planned a future move from `openclaw_service/` to `legacy_flask/openclaw_legacy/`. That move-path plan is superseded by D9.6 physical deletion records. D9.2 did not call OpenClaw, call external MCP services, send webhooks, cut traffic, or change production configuration.
 
 ## D9.3: OpenClaw Legacy Archive Skeleton
 
@@ -274,31 +274,31 @@ New skeleton artifacts:
 - `tools/check_d9_3_openclaw_legacy_skeleton.py`
 - `tests/test_d9_3_openclaw_legacy_skeleton.py`
 
-D9.3 creates only a skeleton package. It does not move `openclaw_service/`, delete `openclaw_service/`, create an `openclaw_service` compatibility shim, call OpenClaw, call external MCP services, send webhooks, cut traffic, or change production configuration.
+D9.3 created only a skeleton package at the time. The skeleton and old repo shim are now superseded by D9.6 physical deletion records. D9.3 did not call OpenClaw, call external MCP services, send webhooks, cut traffic, or change production configuration.
 
 ## D9.4: OpenClaw Legacy Move With Shim
 
 Status: OpenClaw legacy files moved with shim retained.
 
-`openclaw_service/` remains retained as a compatibility shim. Shim removal is not approved in this batch and requires D9.5 planning, operational evidence, rollback proof, and human signoff.
+The compatibility shim state from D9.4 is historical. D9.6 records the repo-side shim path as absent after explicit owner approval.
 
 ## D9.5: OpenClaw Shim Removal Planning
 
 Status: OpenClaw shim-removal planning ready.
 
-D9.5 adds planning and readiness artifacts for a future shim removal. `openclaw_service/` and its shim files remain retained. No deletion batch is authorized by D9.5. D9.5.1 must first capture final reference scan and observation evidence.
+D9.5 added planning and readiness artifacts for a future shim removal. Its retained-shim wording is historical and superseded by D9.6 physical deletion records.
 
 ## D9.5.1: OpenClaw Final Reference Scan Evidence
 
 Status: reference scan completed; observation evidence pending.
 
-D9.5.1 records repository reference-scan evidence, observation-evidence status, and a deletion-readiness evidence matrix. `openclaw_service/` remains retained as a compatibility shim. No deletion batch is authorized by D9.5.1 because runtime observation logs, shim hit counts, workload evidence, rollback independence, and human signoff remain pending.
+D9.5.1 records repository reference-scan evidence, observation-evidence status, and a deletion-readiness evidence matrix. Its retained-shim wording is historical and superseded by D9.6 physical deletion records.
 
 ## D9.5.2: OpenClaw Shim Deletion Blocked Package
 
 Status: blocked pending observation evidence.
 
-D9.5.2 adds the deletion-blocked summary, observation collection runbook, deletion PR preflight checklist, checker, and tests. The local reference scan has no blocker hits, but `openclaw_service/` remains retained because production/runtime observation evidence, workload evidence, rollback independence, and human signoff are still missing. D9.5.2 does not prepare or authorize a deletion PR.
+D9.5.2 adds the deletion-blocked summary, observation collection runbook, deletion PR preflight checklist, checker, and tests. That blocked-retention state is historical and superseded by D9.6 physical deletion records.
 
 ## D9.6: OpenClaw Shim Physical Deletion
 
@@ -343,7 +343,7 @@ D7.5 Automation write/OpenClaw/workflow/agent adapter contract now provides fake
 
 ## D8: Old Flask App Factory And HTTP Registrar
 
-Status: retirement planning gate only. D8.0 adds the legacy Flask shell retirement plan, dependency inventory, allowed fallback matrix, checker, and tests. It does not delete `legacy_flask_app.py`, `wecom_ability_service/`, `openclaw_service/`, the legacy app factory, or the legacy HTTP registrar.
+Status: retirement planning gate only. D8.0 adds the legacy Flask shell retirement plan, dependency inventory, allowed fallback matrix, checker, and tests. It does not delete `legacy_flask_app.py`, `wecom_ability_service/`, the legacy app factory, or the legacy HTTP registrar. OpenClaw repo-shim status is tracked by D9.6 and must not be reintroduced through D8.
 
 D8.0 correct state:
 
@@ -355,15 +355,13 @@ D8.0 correct state:
 Later D8 phases may proceed only after their own evidence and rollback plan:
 
 - D8.1 legacy fallback route lockdown planning: `lockdown_planning_ready`; adds allowed fallback registry, retired readonly route matrix, checker, and tests only
-- D8.2 legacy fallback route lockdown enforcement: `lockdown_enforcement_implemented`; adds a legacy-only 410 guard for retired D1-D6 readonly routes while preserving allowed fallback routes
-- D8.3 legacy Flask archive package planning: `archive_move_planning_ready`; adds archive target structure, move map, import rewrite plan, checker, and tests only
-- D8.4 legacy Flask archive package implementation: `archive_package_created`; creates `legacy_flask/` entry-layer package and compatibility shims
-- D8.5 legacy app factory / HTTP registrar removal plan after production external cutover evidence and all fallback routes retire
+- D8.2 legacy fallback route lockdown preflight: `lockdown_preflight_ready`; adds docs/checker/tests only and does not register runtime enforcement
+- D8.3-D8.5 legacy Flask archive package and maintenance command work: not restored on current main and requires a separate approved phase
 
-D8.4 does not delete the legacy shell, does not move `openclaw_service/`, does not modify production configuration, does not cut traffic, and does not enable real external behavior. Domains/templates/static mostly remain in the old location.
+D8 does not delete the legacy shell, does not modify production configuration, does not cut traffic, and does not enable real external behavior. OpenClaw repo-shim status is governed by D9.6, where the repo path is absent.
 
 ## D9: OpenClaw Legacy Adapter Retirement
 
-Status: blocked/not approved for physical deletion. D7.7 fake compatibility gate is implemented, and `openclaw_service/` remains retained and not delete-ready. Delete only after OpenClaw replacement evidence, MCP compatibility evidence, rollback proof, and approval.
+Status: D9.6 physical deletion recorded. D7.7 fake compatibility gate remains implemented; repo-side `openclaw_service/` is absent and no reintroduction is allowed. Real OpenClaw/MCP behavior remains blocked until replacement evidence, MCP compatibility evidence, rollback proof, and approval exist.
 
 This document authorizes only the explicitly completed delete batches above. It does not physically delete legacy services outside those batches.
