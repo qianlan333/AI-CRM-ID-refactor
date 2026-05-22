@@ -1,7 +1,7 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `194`
+- route_count: `195`
 - production_compat_route_count: `74`
 - production_compat_catch_all_count: `44`
 - blockers: `0`
