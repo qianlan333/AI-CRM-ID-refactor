@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Protocol
 
+from aicrm_next.shared.repository_provider import assert_repository_allowed
+
 from .domain import member_matches_filters
 from .state_machine import POOL_DEFINITIONS, project_member, utc_now_iso
 
@@ -189,8 +191,8 @@ class InMemoryAutomationRepository:
 _fixture_repo = InMemoryAutomationRepository()
 
 
-def build_automation_repository() -> InMemoryAutomationRepository:
-    return _fixture_repo
+def build_automation_repository() -> AutomationRepository:
+    return assert_repository_allowed(_fixture_repo, capability_owner="automation_engine")
 
 
 def reset_automation_fixture_state() -> None:

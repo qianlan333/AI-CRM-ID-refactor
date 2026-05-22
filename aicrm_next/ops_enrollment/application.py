@@ -13,13 +13,14 @@ from aicrm_next.integration_gateway.user_ops_adapters import (
     build_wecom_message_dispatch_adapter,
 )
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.runtime import fixture_mode
 from aicrm_next.shared.typing import JsonDict
 
 from .dto import BatchSendRequest, DoNotDisturbRequest, UserOpsListRequest
 from .repo import UserOpsRepository, build_user_ops_repository
 from .user_ops import apply_filters, build_overview_cards, normalize_filters, resolve_batch_targets
 
-_REPO = build_user_ops_repository()
+_REPO: UserOpsRepository | None = None
 
 
 def _now_iso() -> str:
@@ -37,7 +38,19 @@ def _filter_options(rows: list[JsonDict]) -> JsonDict:
 
 
 def reset_user_ops_fixture_state() -> None:
+    global _REPO
+    if not fixture_mode():
+        return
+    if _REPO is None:
+        _REPO = build_user_ops_repository()
     _REPO.reset()
+
+
+def _default_repo() -> UserOpsRepository:
+    global _REPO
+    if _REPO is None:
+        _REPO = build_user_ops_repository()
+    return _REPO
 
 
 def _media_refs_from_batch_request(request: BatchSendRequest) -> list[JsonDict]:
@@ -64,7 +77,7 @@ def _user_ops_side_effect_safety() -> JsonDict:
 
 class GetUserOpsOverviewQuery:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
 
     def execute(self, request: UserOpsListRequest) -> JsonDict:
         normalized_filters = normalize_filters(request.filters)
@@ -84,7 +97,7 @@ class GetUserOpsOverviewQuery:
 
 class ListLeadPoolQuery:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
 
     def execute(self, request: UserOpsListRequest) -> JsonDict:
         normalized_filters = normalize_filters(request.filters)
@@ -113,7 +126,7 @@ class PreviewUserOpsBatchSendCommand:
         repo: UserOpsRepository | None = None,
         batch_gateway: UserOpsBatchSendGateway | None = None,
     ) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
         self._batch_gateway = batch_gateway or build_user_ops_batch_send_gateway()
 
     def execute(self, request: BatchSendRequest) -> JsonDict:
@@ -152,7 +165,7 @@ class ExecuteUserOpsBatchSendCommand:
         batch_gateway: UserOpsBatchSendGateway | None = None,
         dispatch_adapter: WeComMessageDispatchAdapter | None = None,
     ) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
         self._batch_gateway = batch_gateway or build_user_ops_batch_send_gateway()
         self._dispatch_adapter = dispatch_adapter or build_wecom_message_dispatch_adapter()
 
@@ -264,7 +277,7 @@ class ExecuteUserOpsBatchSendCommand:
 
 class ListUserOpsSendRecordsQuery:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
 
     def execute(self, limit: int = 20, offset: int = 0) -> JsonDict:
         records = self._repo.list_send_records()
@@ -285,7 +298,7 @@ class ListUserOpsSendRecordsQuery:
 
 class GetUserOpsSendRecordQuery:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
 
     def execute(self, record_id: str) -> JsonDict:
         record = self._repo.get_send_record(record_id)
@@ -306,7 +319,7 @@ class GetUserOpsSendRecordQuery:
 
 class RefreshUserOpsSendRecordStatusCommand:
     def __init__(self, repo: UserOpsRepository | None = None) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
 
     def execute(self, record_id: str) -> JsonDict:
         detail = GetUserOpsSendRecordQuery(self._repo)(record_id)
@@ -341,7 +354,7 @@ class SetUserOpsDoNotDisturbCommand:
         repo: UserOpsRepository | None = None,
         dnd_gateway: UserOpsDndWriteGateway | None = None,
     ) -> None:
-        self._repo = repo or _REPO
+        self._repo = repo or _default_repo()
         self._dnd_gateway = dnd_gateway or build_user_ops_dnd_gateway()
 
     def execute(self, request: DoNotDisturbRequest) -> JsonDict:

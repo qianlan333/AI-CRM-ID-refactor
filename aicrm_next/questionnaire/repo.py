@@ -4,6 +4,8 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from aicrm_next.shared.repository_provider import assert_repository_allowed
+
 
 class QuestionnaireRepository(Protocol):
     def list_questionnaires(self, *, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]: ...
@@ -237,7 +239,7 @@ _DEFAULT_REPO = InMemoryQuestionnaireRepository()
 
 
 def build_questionnaire_repository() -> QuestionnaireRepository:
-    return _DEFAULT_REPO
+    return assert_repository_allowed(_DEFAULT_REPO, capability_owner="questionnaire")
 
 
 def reset_questionnaire_fixture_state() -> None:
