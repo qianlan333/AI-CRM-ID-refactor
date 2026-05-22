@@ -427,14 +427,14 @@ def admin_questionnaires(request: Request):
 
 @router.get("/admin/automation-conversion", name="api.admin_automation_conversion")
 def admin_automation_conversion(request: Request):
-    pools = ListAutomationPoolsQuery()()["pools"]
-    records = ListAutomationExecutionRecordsQuery()(limit=5, offset=0)["items"]
     if production_data_ready():
         try:
             program_list_payload = list_automation_programs_from_legacy()
         except LegacyAutomationDataUnavailable:
             program_list_payload = {"items": [], "default_program": {}, "total": 0, "source_status": "production_unavailable"}
     else:
+        pools = ListAutomationPoolsQuery()()["pools"]
+        records = ListAutomationExecutionRecordsQuery()(limit=5, offset=0)["items"]
         program_list_payload = {
             "items": [
                 {
