@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools import check_admin_pages_real_data_binding as real_data_checker
+
 try:
     from fastapi.testclient import TestClient
 except ModuleNotFoundError:
@@ -165,8 +167,13 @@ def run_check() -> dict[str, Any]:
         client = _client()
         shell_context = client.get("/api/admin/dashboard/shell-context").json()
         page_statuses, route_404_blockers, fixture_markers = _admin_pages(client)
+    real_data_result = real_data_checker.run_check()
     nav_groups_ready = _nav_groups_ready(shell_context)
     production_data_ready, data_blockers = _static_production_data_contracts_ready()
+    data_blockers.extend(real_data_result["data_blockers"])
+    data_blockers.extend(real_data_result["empty_data_pages"])
+    fixture_markers.extend(real_data_result["bad_marker_hits"])
+    route_404_blockers.extend(real_data_result["route_404_blockers"])
     admin_pages_ready = not route_404_blockers
     if not nav_groups_ready:
         data_blockers.append("grouped_navigation_mismatch")
@@ -175,7 +182,8 @@ def run_check() -> dict[str, Any]:
         and admin_pages_ready
         and production_data_ready
         and not fixture_markers
-        and not production_config_modified(),
+        and not production_config_modified()
+        and real_data_result["ok"],
         "nav_groups_ready": nav_groups_ready,
         "admin_pages_ready": admin_pages_ready,
         "production_data_ready": production_data_ready,
@@ -183,8 +191,9 @@ def run_check() -> dict[str, Any]:
         "route_404_blockers": route_404_blockers,
         "data_blockers": data_blockers,
         "warnings": ["automation-jobs-run-due and campaign-run-due timers are intentionally not enabled"],
-        "safe_to_continue_automation_job_recovery": nav_groups_ready and admin_pages_ready and production_data_ready and not fixture_markers,
+        "safe_to_continue_automation_job_recovery": nav_groups_ready and admin_pages_ready and production_data_ready and not fixture_markers and real_data_result["ok"],
         "admin_page_statuses": page_statuses,
+        "real_data_binding": real_data_result,
         "target_nav_groups": TARGET_NAV_GROUPS,
         "production_config_modified": production_config_modified(),
     }
