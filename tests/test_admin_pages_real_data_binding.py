@@ -268,6 +268,33 @@ def test_automation_program_scoped_admin_routes_forward_to_legacy(monkeypatch):
     assert "legacy-forwarded:GET:/admin/automation-conversion/programs/7/setup:step=basic" in response.text
 
 
+def test_legacy_admin_login_routes_forward_to_legacy(monkeypatch):
+    import aicrm_next.production_compat.api as production_api
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    async def fake_forward(request):
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(
+            f"legacy-auth-forwarded:{request.method}:{request.url.path}:{request.url.query}",
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
+
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+
+    response = TestClient(create_app(), raise_server_exceptions=False).get(
+        "/login?next=/admin/automation-conversion/programs/7/setup?step=basic"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert "legacy-auth-forwarded:GET:/login:next=/admin/automation-conversion/programs/7/setup?step=basic" in response.text
+
+
 def test_real_data_binding_checker_returns_ok():
     result = checker.run_check()
 
