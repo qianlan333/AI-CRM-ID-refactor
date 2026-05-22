@@ -23,6 +23,7 @@ from .admin_console import register_routes as register_admin_console_routes
 from .admin_dashboard import register_routes as register_admin_dashboard_routes
 from .admin_class_user import register_routes as register_admin_class_user_routes
 from .admin_hxc_dashboard import register_routes as register_admin_hxc_dashboard_routes
+from .image_library_upload import register_routes as register_image_library_upload_routes
 from .admin_questionnaires import register_routes as register_admin_questionnaires_routes
 from .admin_alipay_pay import register_routes as register_admin_alipay_pay_routes
 from .admin_wechat_pay import register_routes as register_admin_wechat_pay_routes
@@ -121,6 +122,7 @@ HTTP_ROUTE_MODULES = {
     "cloud_orchestrator_segments": "wecom_ability_service.http.cloud_orchestrator_segments",
     "public_questionnaire_oauth": "wecom_ability_service.http.public_questionnaire_oauth",
     "public_questionnaire_diagnostics": "wecom_ability_service.http.public_questionnaire_diagnostics",
+    "image_library_upload": "wecom_ability_service.http.image_library_upload",
     "public_questionnaires": "wecom_ability_service.http.public_questionnaires",
     "alipay_pay": "wecom_ability_service.http.alipay_pay",
     "wechat_pay": "wecom_ability_service.http.wechat_pay",
@@ -161,6 +163,7 @@ HTTP_ROUTE_PLACEMENT = {
         "admin_config_login_access.py for /admin/config/login-access* pages and account-management actions",
         "admin_config_marketing_automation.py for /admin/marketing-automation* and signup-conversion config compatibility APIs",
         "admin_hxc_dashboard.py for Huangxiaocan dashboard pages",
+        "image_library_upload.py for multipart /api/admin/image-library/upload used by product slices and image pickers",
         "automation_conversion.py for legacy automation write/external/runtime fallback only; D6 retired core Automation readonly page/API/alias GET ownership",
         "automation_conversion_agent_page_actions.py for agent orchestration page form actions registered by automation_conversion.py",
         "automation_conversion_auto_reply_actions.py for auto-reply monitor page actions registered by automation_conversion.py",
@@ -231,6 +234,7 @@ HTTP_ROUTE_REGISTRARS = (
     ("admin_config_marketing_automation", register_admin_config_marketing_automation_routes),
     ("admin_dashboard", register_admin_dashboard_routes),
     ("admin_hxc_dashboard", register_admin_hxc_dashboard_routes),
+    ("image_library_upload", register_image_library_upload_routes),
     ("admin_class_user", register_admin_class_user_routes),
     ("admin_alipay_pay", register_admin_alipay_pay_routes),
     ("admin_wechat_pay", register_admin_wechat_pay_routes),

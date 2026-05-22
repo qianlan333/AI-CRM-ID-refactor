@@ -446,7 +446,32 @@ def test_product_intro_redirects_to_payment_oauth_before_rendering_in_wechat(app
     assert f"return_url=%2Fp%2F{product['product_code']}" in location
 
 
-def test_legacy_image_library_upload_route_is_retired_after_d1(app, client):
+def test_image_library_upload_route_creates_item_for_product_editor(app, client):
+    token = _login_admin(client)
+    _create_product(client, token)
+    response = client.post(
+        "/api/admin/image-library/upload",
+        data={
+            "image": (BytesIO(PNG_A), "slice.png"),
+            "name": "商品切片",
+            "category": "商品详情",
+            "tags": "商品,切片",
+        },
+        content_type="multipart/form-data",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 201
+    assert payload["ok"] is True
+    assert payload["item"]["id"]
+    assert payload["item"]["name"] == "商品切片"
+    assert payload["item"]["file_name"] == "slice.png"
+    assert payload["item"]["mime_type"] == "image/png"
+    assert payload["item"]["category"] == "商品详情"
+    assert payload["item"]["tags"] == ["商品", "切片"]
+
+
+def test_image_library_upload_route_rejects_invalid_file(app, client):
     token = _login_admin(client)
     _create_product(client, token)
     response = client.post(
@@ -454,7 +479,11 @@ def test_legacy_image_library_upload_route_is_retired_after_d1(app, client):
         data={"image": (BytesIO(b"not-image"), "slice.txt")},
         content_type="multipart/form-data",
     )
-    assert response.status_code in {404, 405}
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert "only JPG/PNG" in payload["error"]
 
 
 def test_checkout_page_mobile_field_depends_on_product(app, client):

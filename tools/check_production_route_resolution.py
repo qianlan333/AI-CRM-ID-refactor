@@ -50,6 +50,7 @@ RESOLUTION_SAMPLES = [
     ("GET", "/pay/prd_20260518095708_9f77db"),
     ("GET", "/api/products/prd_20260518095708_9f77db"),
     ("GET", "/api/admin/image-library"),
+    ("POST", "/api/admin/image-library/upload"),
     ("GET", "/api/admin/image-library/image_masked_001"),
     ("POST", "/api/admin/automation-conversion/jobs/run-due"),
     ("POST", "/wecom/external-contact/callback"),

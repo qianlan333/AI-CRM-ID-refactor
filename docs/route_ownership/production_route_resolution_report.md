@@ -1,8 +1,8 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `191`
-- production_compat_route_count: `73`
+- route_count: `192`
+- production_compat_route_count: `74`
 - production_compat_catch_all_count: `44`
 - blockers: `0`
 
@@ -33,6 +33,7 @@
 - GET /pay/prd_20260518095708_9f77db: `production_compat` -> `aicrm_next.production_compat.api.legacy_public_product_routes` (manifest `/pay/{product_code}` / `legacy_forward`)
 - GET /api/products/prd_20260518095708_9f77db: `production_compat` -> `aicrm_next.production_compat.api.legacy_public_product_routes` (manifest `/api/products*` / `legacy_forward`)
 - GET /api/admin/image-library: `next` -> `aicrm_next.media_library.api.list_images` (manifest `/api/admin/image-library*` / `fake_adapter`)
+- POST /api/admin/image-library/upload: `production_compat` -> `aicrm_next.production_compat.api.legacy_image_library_upload_route` (manifest `/api/admin/image-library/upload` / `legacy_forward`)
 - GET /api/admin/image-library/image_masked_001: `next` -> `aicrm_next.media_library.api.get_image` (manifest `/api/admin/image-library*` / `fake_adapter`)
 - POST /api/admin/automation-conversion/jobs/run-due: `production_compat` -> `aicrm_next.production_compat.api.legacy_production_compat_timer_routes` (manifest `/api/admin/automation-conversion/jobs/run-due*` / `scheduled_safe_mode`)
 - POST /wecom/external-contact/callback: `production_compat` -> `aicrm_next.production_compat.api.wecom_callback_routes` (manifest `/wecom/external-contact/callback` / `legacy_forward`)

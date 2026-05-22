@@ -107,6 +107,8 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     )
     assert _owner_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "POST", "/api/admin/image-library/upload") == "production_compat"
+    assert _endpoint_for(samples, "POST", "/api/admin/image-library/upload") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "POST", "/api/sidebar/bind-mobile") == "production_compat"
     assert _endpoint_for(samples, "POST", "/api/sidebar/bind-mobile") == "aicrm_next.production_compat.api"
 

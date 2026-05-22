@@ -744,6 +744,7 @@ def test_legacy_media_library_routes_are_retired_after_d1():
         "miniprogram_library",
     } & set(HTTP_ROUTE_MODULES)
     assert all(key not in {"image_library", "attachment_library", "miniprogram_library"} for key, _ in HTTP_ROUTE_REGISTRARS)
+    assert HTTP_ROUTE_MODULES["image_library_upload"] == "wecom_ability_service.http.image_library_upload"
 
     app = create_app({"TESTING": True})
     routes = {rule.rule for rule in app.url_map.iter_rules()}
@@ -751,7 +752,6 @@ def test_legacy_media_library_routes_are_retired_after_d1():
     for route in {
         "/admin/image-library",
         "/api/admin/image-library",
-        "/api/admin/image-library/upload",
         "/api/admin/image-library/from-url",
         "/api/admin/image-library/from-base64",
         "/admin/attachment-library",
@@ -760,6 +760,7 @@ def test_legacy_media_library_routes_are_retired_after_d1():
         "/api/admin/miniprogram-library",
     }:
         assert route not in routes
+    assert "/api/admin/image-library/upload" in routes
 
 
 def test_legacy_customer_read_model_routes_are_retired_after_d3():
