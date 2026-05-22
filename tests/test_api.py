@@ -3236,6 +3236,22 @@ def test_questionnaire_sidebar_profile_field_saves_and_admin_reads_while_public_
     assert "sidebar_profile_field" not in public_question
 
 
+def test_questionnaire_update_rejects_empty_questions_when_existing_questions_would_be_deleted(client):
+    from wecom_ability_service.domains.questionnaire import service as questionnaire_service
+
+    create_response = client.post("/api/admin/questionnaires", json=_build_questionnaire_payload())
+    assert create_response.status_code == 200
+    questionnaire = create_response.get_json()["questionnaire"]
+    payload = _build_questionnaire_payload(slug=str(questionnaire["slug"]))
+    payload["questions"] = []
+
+    update_response = client.put(f"/api/admin/questionnaires/{questionnaire['id']}", json=payload)
+
+    assert update_response.status_code == 400
+    assert "questions cannot be empty" in update_response.get_json()["error"]
+    assert len(questionnaire_service.get_questionnaire_detail(int(questionnaire["id"]))["questions"]) == 3
+
+
 def test_questionnaire_rejects_invalid_sidebar_profile_field(client):
     payload = _build_questionnaire_payload()
     payload["questions"][0]["sidebar_profile_field"] = "customer_level"

@@ -63,6 +63,70 @@ def get_questionnaire_detail_from_legacy(questionnaire_id: int) -> dict[str, Any
     return _with_legacy_app_context(_load)
 
 
+def create_questionnaire_in_legacy(payload: dict[str, Any]) -> dict[str, Any]:
+    def _save() -> dict[str, Any]:
+        from wecom_ability_service.domains.questionnaire import service as legacy_service
+
+        item = legacy_service.create_questionnaire(dict(payload or {}))
+        return {
+            "ok": True,
+            **admin_detail_projection(item),
+            "source_status": "production_postgres",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        }
+
+    return _with_legacy_app_context(_save)
+
+
+def update_questionnaire_in_legacy(questionnaire_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    def _save() -> dict[str, Any]:
+        from wecom_ability_service.domains.questionnaire import service as legacy_service
+
+        item = legacy_service.update_questionnaire(int(questionnaire_id), dict(payload or {}))
+        if not item:
+            raise LookupError("questionnaire not found")
+        return {
+            "ok": True,
+            **admin_detail_projection(item),
+            "source_status": "production_postgres",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        }
+
+    return _with_legacy_app_context(_save)
+
+
+def set_questionnaire_enabled_in_legacy(questionnaire_id: int, *, enabled: bool) -> dict[str, Any]:
+    def _save() -> dict[str, Any]:
+        from wecom_ability_service.domains.questionnaire import service as legacy_service
+
+        item = legacy_service.disable_questionnaire(int(questionnaire_id), is_disabled=not bool(enabled))
+        if not item:
+            raise LookupError("questionnaire not found")
+        return {
+            "ok": True,
+            "questionnaire": summary_projection(item),
+            "source_status": "production_postgres",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        }
+
+    return _with_legacy_app_context(_save)
+
+
+def delete_questionnaire_in_legacy(questionnaire_id: int) -> dict[str, Any]:
+    def _delete() -> dict[str, Any]:
+        from wecom_ability_service.domains.questionnaire import service as legacy_service
+
+        return {
+            "ok": True,
+            "deleted": legacy_service.delete_questionnaire(int(questionnaire_id)),
+            "delete_mode": "legacy_postgres",
+            "source_status": "production_postgres",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        }
+
+    return _with_legacy_app_context(_delete)
+
+
 def get_public_questionnaire_from_legacy(slug: str) -> dict[str, Any]:
     def _load() -> dict[str, Any]:
         from wecom_ability_service.domains.questionnaire import service as legacy_service
