@@ -1741,6 +1741,8 @@ def _init_postgres(db) -> None:
         "ADD COLUMN IF NOT EXISTS assessment_config JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE IF EXISTS questionnaire_questions "
         "ADD COLUMN IF NOT EXISTS assessment_dimension_key TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE IF EXISTS questionnaire_questions "
+        "ADD COLUMN IF NOT EXISTS sidebar_profile_field TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS questionnaire_options "
         "ADD COLUMN IF NOT EXISTS assessment_type_key TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE IF EXISTS questionnaire_submissions "
@@ -1897,6 +1899,12 @@ def _init_postgres(db) -> None:
         """
         ALTER TABLE questionnaire_questions
         ADD COLUMN IF NOT EXISTS assessment_dimension_key TEXT NOT NULL DEFAULT ''
+        """
+    )
+    db.execute(
+        """
+        ALTER TABLE questionnaire_questions
+        ADD COLUMN IF NOT EXISTS sidebar_profile_field TEXT NOT NULL DEFAULT ''
         """
     )
     db.execute(

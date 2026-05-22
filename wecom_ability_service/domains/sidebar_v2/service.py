@@ -19,8 +19,6 @@ from ...domains.automation_conversion import private_message_dispatch
 from ...domains.wechat_pay import product_service as wechat_pay_product_service
 from . import repo
 
-SOURCE_OPTIONS = ["小蓝咨询群", "媛子咨询群", "学员转介绍", "流量群", "公域", "其他", "公域直播流量"]
-INDUSTRY_OPTIONS = ["美业", "大健康", "知识IP", "疗愈", "教育培训", "玄学", "服装", "保险", "其他", "餐饮"]
 MODULES = ["profile", "questionnaires", "products", "orders", "materials", "other_staff_messages"]
 MAX_PROFILE_TEXT_LENGTH = 4000
 DEFAULT_MATERIAL_CONTENT = "给你发一份资料，你可以看下。"
@@ -190,7 +188,6 @@ def get_sidebar_workbench(*, external_userid: str, owner_userid: str = "") -> di
         "customer": customer,
         "workflow": {"title": workflow_title},
         "profile": _profile_payload(normalized_external_userid, context, questionnaires),
-        "profile_options": {"source": list(SOURCE_OPTIONS), "industry": list(INDUSTRY_OPTIONS)},
         "modules": list(MODULES),
     }
 

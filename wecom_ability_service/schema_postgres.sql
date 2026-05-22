@@ -1076,6 +1076,7 @@ CREATE TABLE IF NOT EXISTS questionnaire_questions (
     title TEXT NOT NULL,
     placeholder_text TEXT NOT NULL DEFAULT '',
     assessment_dimension_key TEXT NOT NULL DEFAULT '',
+    sidebar_profile_field TEXT NOT NULL DEFAULT '',
     required BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
