@@ -34,6 +34,8 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/h5/questionnaires/hxc-activation-v1"),
     ("GET", "/api/h5/wechat/oauth/start"),
     ("GET", "/api/admin/automation-conversion/overview"),
+    ("POST", "/api/admin/automation-conversion/programs/3/setup/basic"),
+    ("GET", "/api/admin/automation-conversion/profile-segment-templates/options"),
     ("POST", "/api/customer-automation/activation-webhook"),
     ("GET", "/api/admin/wechat-pay/products"),
     ("GET", "/api/admin/wechat-pay/products/prod_001"),
