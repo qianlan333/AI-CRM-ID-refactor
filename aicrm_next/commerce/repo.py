@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any, Protocol
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.repository_provider import assert_repository_allowed
 
 from .domain import normalize_status, now_iso, validate_price_cents
 
@@ -202,7 +203,7 @@ _GLOBAL_REPO = InMemoryCommerceRepository()
 
 
 def build_commerce_repository() -> CommerceRepository:
-    return _GLOBAL_REPO
+    return assert_repository_allowed(_GLOBAL_REPO, capability_owner="commerce")
 
 
 def reset_commerce_fixture_state() -> None:

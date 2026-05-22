@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any, Protocol
 
 from aicrm_next.shared.errors import NotFoundError
+from aicrm_next.shared.repository_provider import assert_repository_allowed
 
 from aicrm_next.commerce.domain import now_iso
 
@@ -128,7 +129,7 @@ _GLOBAL_REPO = InMemoryMediaLibraryRepository()
 
 
 def build_media_library_repository() -> MediaLibraryRepository:
-    return _GLOBAL_REPO
+    return assert_repository_allowed(_GLOBAL_REPO, capability_owner="media_library")
 
 
 def reset_media_library_fixture_state() -> None:

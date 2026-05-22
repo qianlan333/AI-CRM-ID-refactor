@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from aicrm_next.shared.config import Settings, get_settings
+from aicrm_next.shared.repository_provider import assert_repository_allowed
 from aicrm_next.shared.typing import JsonDict
 
 from .models import (
@@ -757,11 +758,17 @@ def build_customer_read_model_repository(
     backend = os.getenv("CUSTOMER_READ_MODEL_REPO_BACKEND", settings.customer_read_model_repo_backend).strip().lower()
     if backend in {"sql", "sqlalchemy", "postgres", "postgresql"}:
         if session is not None:
-            return SqlAlchemyCustomerReadModelRepository(session)
+            return assert_repository_allowed(
+                SqlAlchemyCustomerReadModelRepository(session),
+                capability_owner="customer_read_model",
+            )
         engine = engine or create_engine(settings.database_url, future=True)
         session_factory = sessionmaker(bind=engine, future=True)
-        return SqlAlchemyCustomerReadModelRepository(session_factory())
-    return InMemoryCustomerReadModelRepository()
+        return assert_repository_allowed(
+            SqlAlchemyCustomerReadModelRepository(session_factory()),
+            capability_owner="customer_read_model",
+        )
+    return assert_repository_allowed(InMemoryCustomerReadModelRepository(), capability_owner="customer_read_model")
 
 
 InMemoryCustomerReadModelRepository = FixtureCustomerReadRepository
