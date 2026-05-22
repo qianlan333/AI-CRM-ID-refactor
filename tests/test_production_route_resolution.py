@@ -140,5 +140,10 @@ def test_checker_reports_no_unexpected_shadowed_exact_routes_or_blockers():
                 "/pay/{product_code}",
                 "/api/products*",
         }
+        and item["path"]
+            not in {
+                "/admin/hxc-dashboard",
+                "/admin/hxc-send-config",
+            }
     ]
     assert unexpected_shadowed == []

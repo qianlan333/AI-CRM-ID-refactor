@@ -279,6 +279,10 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
                 "2026-05-20 06:20:00+00",
             ),
         )
+        order_id = db.execute(
+            "SELECT id FROM wechat_pay_orders WHERE out_trade_no = ?",
+            ("WXP_SIDE_001",),
+        ).fetchone()["id"]
         db.commit()
 
     products_response = client.get("/api/sidebar/v2/products", query_string={"external_userid": "wm_sidebar_v2"})
@@ -302,10 +306,12 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
         "orders": [
             {
                 "id": "WXP_SIDE_001",
+                "order_id": str(order_id),
                 "title": "暑期阅读提升营 · 4 周",
                 "amount_label": "¥399",
                 "status_label": "已支付",
                 "paid_at": "2026-05-20 14:22",
+                "detail_url": f"/admin/wechat-pay/transactions/{order_id}",
             }
         ],
     }
