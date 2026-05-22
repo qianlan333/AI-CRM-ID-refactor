@@ -44,14 +44,14 @@ button[disabled] {
 .wrap {
   width: min(100%, 760px);
   margin: 0 auto;
-  padding: 16px 14px 28px;
+  padding: 12px 10px 22px;
 }
 
 .top {
   position: sticky;
   top: 0;
   z-index: 5;
-  padding-top: 8px;
+  padding-top: 6px;
   background: linear-gradient(180deg, #f4f8ff 0, #f4f8ff 82%, rgba(244, 248, 255, 0));
 }
 
@@ -63,27 +63,27 @@ button[disabled] {
 }
 
 .profile-card {
-  border-radius: 28px;
-  padding: 18px;
+  border-radius: 22px;
+  padding: 14px;
 }
 
 .profile-main {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .avatar {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
+  border-radius: 15px;
   background: #dfeafe;
   color: var(--blue-strong);
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 850;
 }
 
@@ -95,12 +95,12 @@ button[disabled] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .name {
   min-width: 0;
-  font-size: 22px;
+  font-size: 19px;
   font-weight: 850;
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -108,11 +108,11 @@ button[disabled] {
 
 .phone-state {
   display: inline-flex;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: #e9fbf1;
   color: #047857;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 850;
   white-space: nowrap;
 }
@@ -123,10 +123,10 @@ button[disabled] {
 }
 
 .meta {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.42;
   overflow-wrap: anywhere;
 }
 
@@ -138,25 +138,25 @@ button[disabled] {
 .workflow {
   display: inline-flex;
   max-width: 100%;
-  margin-top: 12px;
-  padding: 7px 10px;
+  margin-top: 8px;
+  padding: 5px 9px;
   border: 1px solid #e2e8f0;
   border-radius: 999px;
   background: #f8fafc;
   color: #344054;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 750;
   overflow-wrap: anywhere;
 }
 
 .btn {
-  min-height: 42px;
-  padding: 10px 14px;
+  min-height: 36px;
+  padding: 8px 12px;
   border: 0;
-  border-radius: 16px;
+  border-radius: 14px;
   background: #edf4ff;
   color: var(--blue-strong);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 850;
 }
 
@@ -178,19 +178,19 @@ button[disabled] {
 .tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 14px 0;
+  gap: 8px;
+  margin: 10px 0;
 }
 
 .tab {
   min-width: 0;
-  min-height: 50px;
+  min-height: 42px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fff;
   color: #1d2939;
   box-shadow: 0 6px 18px rgba(16, 24, 40, 0.04);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 850;
 }
 
@@ -205,40 +205,40 @@ button[disabled] {
 }
 
 .panel {
-  margin-bottom: 14px;
-  padding: 18px;
-  border-radius: 24px;
+  margin-bottom: 12px;
+  padding: 14px;
+  border-radius: 20px;
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .head h2 {
   margin: 0;
-  font-size: 21px;
+  font-size: 18px;
 }
 
 .editor {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .field {
-  padding: 13px;
+  padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fbfdff;
 }
 
 .field-title {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 750;
 }
 
@@ -248,15 +248,15 @@ button[disabled] {
 
 .select {
   width: 100%;
-  min-height: 48px;
-  padding: 0 42px 0 13px;
+  min-height: 42px;
+  padding: 0 36px 0 11px;
   border: 1px solid #dbe4f5;
-  border-radius: 14px;
+  border-radius: 12px;
   outline: none;
   appearance: none;
   background: #fff;
   color: var(--text);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
 }
 
@@ -264,9 +264,9 @@ button[disabled] {
   content: "";
   position: absolute;
   top: 50%;
-  right: 15px;
-  width: 9px;
-  height: 9px;
+  right: 13px;
+  width: 8px;
+  height: 8px;
   border-right: 2px solid var(--muted);
   border-bottom: 2px solid var(--muted);
   transform: translateY(-65%) rotate(45deg);
@@ -275,23 +275,23 @@ button[disabled] {
 
 .textarea {
   width: 100%;
-  min-height: 92px;
-  padding: 12px;
+  min-height: 78px;
+  padding: 10px;
   border: 1px solid #dbe4f5;
-  border-radius: 14px;
+  border-radius: 12px;
   outline: none;
   resize: vertical;
   background: #fff;
   color: var(--text);
-  font-size: 15px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.52;
 }
 
 .card {
-  margin-top: 10px;
-  padding: 15px;
+  margin-top: 8px;
+  padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 16px;
   background: #fff;
 }
 
@@ -299,27 +299,27 @@ button[disabled] {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .card h3 {
   margin: 0;
-  font-size: 17px;
-  line-height: 1.35;
+  font-size: 15px;
+  line-height: 1.28;
   overflow-wrap: anywhere;
 }
 
 .mini {
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
-  line-height: 1.5;
+  line-height: 1.35;
 }
 
 .price {
   color: var(--blue-strong);
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -327,18 +327,18 @@ button[disabled] {
 .row-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .row-actions .btn {
-  min-width: 104px;
+  min-width: 90px;
 }
 
 .questions {
   display: none;
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: 10px;
+  padding-top: 8px;
   border-top: 1px dashed #d0d5dd;
 }
 
@@ -347,7 +347,7 @@ button[disabled] {
 }
 
 .question {
-  padding: 9px 0;
+  padding: 7px 0;
   border-bottom: 1px solid #eef2f7;
 }
 
@@ -357,24 +357,24 @@ button[disabled] {
 
 .question b {
   display: block;
-  margin-bottom: 4px;
-  font-size: 13px;
+  margin-bottom: 3px;
+  font-size: 12px;
 }
 
 .question em {
   color: #475467;
   font-style: normal;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .kv {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 14px;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
 }
 
 .kv span {
@@ -389,16 +389,17 @@ button[disabled] {
 .seg {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .seg button {
-  min-height: 40px;
+  min-height: 36px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
   color: #475467;
+  font-size: 13px;
   font-weight: 850;
 }
 
@@ -410,22 +411,22 @@ button[disabled] {
 
 .material {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
 }
 
 .thumb {
-  width: 64px;
-  height: 64px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid #dbeafe;
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--soft);
   color: var(--blue-strong);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 900;
 }
 
@@ -444,31 +445,31 @@ button[disabled] {
 .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 7px;
+  gap: 5px;
+  margin-top: 5px;
 }
 
 .tag {
   display: inline-flex;
-  padding: 5px 8px;
+  padding: 4px 7px;
   border-radius: 999px;
   background: var(--soft);
   color: var(--blue-strong);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 850;
 }
 
 .timeline {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .msg {
   display: grid;
-  gap: 7px;
-  padding: 12px;
+  gap: 5px;
+  padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fbfdff;
 }
 
@@ -476,41 +477,41 @@ button[disabled] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .msg-title {
   color: #344054;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
 }
 
 .txt {
-  font-size: 14px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .imgmsg {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border: 1px solid #e4e7ec;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
 }
 
 .imgph {
-  width: 54px;
-  height: 54px;
+  width: 46px;
+  height: 46px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #dbeafe, #bfdbfe);
   color: var(--blue-strong);
   font-weight: 900;
@@ -519,8 +520,8 @@ button[disabled] {
 .status,
 .empty {
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .status.error {
@@ -534,15 +535,15 @@ button[disabled] {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: 12px;
   background: rgba(15, 23, 42, 0.35);
 }
 
 .modal-card {
   width: min(100%, 420px);
-  padding: 18px;
+  padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: 18px;
   background: #fff;
   box-shadow: var(--shadow);
 }
@@ -551,65 +552,65 @@ button[disabled] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .modal-head h2 {
   margin: 0;
-  font-size: 19px;
+  font-size: 17px;
 }
 
 .icon-btn {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: #fff;
   color: #344054;
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
 }
 
 .modal-field {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 750;
 }
 
 .modal-field input {
   width: 100%;
-  min-height: 48px;
-  padding: 0 13px;
+  min-height: 42px;
+  padding: 0 11px;
   border: 1px solid #dbe4f5;
-  border-radius: 14px;
+  border-radius: 12px;
   outline: none;
   color: var(--text);
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .toast {
   position: fixed;
-  bottom: 22px;
+  bottom: 18px;
   left: 50%;
   z-index: 40;
   max-width: min(88vw, 460px);
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-radius: 999px;
   transform: translateX(-50%);
   background: #101828;
   color: #fff;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.4;
   box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
 }
 
@@ -623,22 +624,24 @@ button[disabled] {
 
 @media (max-width: 520px) {
   .wrap {
-    padding: 10px;
+    padding: 8px;
   }
 
   .profile-card {
-    padding: 14px;
-    border-radius: 22px;
+    padding: 12px;
+    border-radius: 18px;
   }
 
   .profile-main {
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 8px;
   }
 
   .avatar {
-    width: 48px;
-    height: 48px;
-    border-radius: 16px;
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    font-size: 19px;
   }
 
   .change {
@@ -647,7 +650,13 @@ button[disabled] {
   }
 
   .tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .tab {
+    min-height: 40px;
+    font-size: 13px;
   }
 
   .material {

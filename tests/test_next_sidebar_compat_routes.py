@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from aicrm_next.main import create_app
+
+
+NEXT_SIDEBAR_WORKBENCH_CSS = Path("aicrm_next/frontend_compat/static/sidebar_workbench/sidebar_workbench.css")
 
 
 def _production_client(monkeypatch) -> TestClient:
@@ -46,6 +51,15 @@ def test_next_sidebar_workbench_static_assets_are_served(monkeypatch):
     assert ".profile-card" in css_response.text
     assert js_response.status_code == 200
     assert "other_staff_messages" in js_response.text
+
+
+def test_next_sidebar_workbench_css_keeps_dense_three_column_tabs():
+    css = NEXT_SIDEBAR_WORKBENCH_CSS.read_text(encoding="utf-8")
+
+    assert css.count("grid-template-columns: repeat(3, minmax(0, 1fr));") >= 2
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" not in css
+    assert "font-size: 22px" not in css
+    assert "min-height: 50px" not in css
 
 
 def test_next_forwards_sidebar_read_apis_without_404(monkeypatch):
