@@ -120,6 +120,51 @@ def test_questionnaire_page_uses_production_facade_when_database_ready(monkeypat
     assert "disabled-demo" not in response.text
 
 
+def test_wechat_pay_transactions_page_uses_legacy_management_when_database_ready(monkeypatch):
+    from fastapi.responses import HTMLResponse
+
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    forwarded_paths: list[str] = []
+
+    async def fake_forward_to_legacy_flask(request):
+        forwarded_paths.append(request.url.path)
+        return HTMLResponse("<h2>筛选</h2><h2>订单列表</h2><button>导出筛选结果</button>")
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fake_forward_to_legacy_flask)
+
+    response = _client(monkeypatch).get("/admin/wechat-pay/transactions")
+
+    assert response.status_code == 200
+    assert forwarded_paths == ["/admin/wechat-pay/transactions"]
+    assert "筛选" in response.text
+    assert "订单列表" in response.text
+    assert "导出筛选结果" in response.text
+
+
+def test_wechat_pay_transaction_detail_uses_legacy_management_when_database_ready(monkeypatch):
+    from fastapi.responses import HTMLResponse
+
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    forwarded_paths: list[str] = []
+
+    async def fake_forward_to_legacy_flask(request):
+        forwarded_paths.append(request.url.path)
+        return HTMLResponse("<h2>订单详情</h2><button>提交退款申请</button>")
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    monkeypatch.setattr(legacy_routes, "forward_to_legacy_flask", fake_forward_to_legacy_flask)
+
+    response = _client(monkeypatch).get("/admin/wechat-pay/transactions/42")
+
+    assert response.status_code == 200
+    assert forwarded_paths == ["/admin/wechat-pay/transactions/42"]
+    assert "订单详情" in response.text
+    assert "提交退款申请" in response.text
+
+
 def test_questionnaire_page_accepts_legacy_items_shape(monkeypatch):
     import aicrm_next.frontend_compat.legacy_routes as legacy_routes
 
