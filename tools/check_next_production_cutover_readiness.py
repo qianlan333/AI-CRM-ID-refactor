@@ -20,9 +20,11 @@ def run_check() -> dict[str, Any]:
     gaps = run_gap_check()
     timers = run_timer_check()
     route_404_blockers = gaps.get("route_404_blockers", [])
+    content_blockers = gaps.get("content_blockers", [])
+    oauth_blockers = gaps.get("oauth_blockers", [])
     callback_ready = not any("callback" in item or "api/wecom/events" in item for item in route_404_blockers)
     payment_routes_ready = not any("wechat-pay" in item or "alipay" in item for item in route_404_blockers)
-    oauth_routes_ready = not any("oauth" in item for item in route_404_blockers)
+    oauth_routes_ready = not any("oauth" in item for item in route_404_blockers) and not oauth_blockers
     timer_routes_ready = timers.get("ok", False)
     legacy_fallbacks_still_required = [
         "5013 callback fallback until Next callback observation window passes",
@@ -33,12 +35,15 @@ def run_check() -> dict[str, Any]:
         "database_mode": gaps.get("database_mode"),
         "fixture_in_production": False,
         "route_404_blockers": route_404_blockers,
+        "content_blockers": content_blockers,
+        "oauth_blockers": oauth_blockers,
         "callback_ready": callback_ready,
         "timer_routes_ready": timer_routes_ready,
         "payment_routes_ready": payment_routes_ready,
         "oauth_routes_ready": oauth_routes_ready,
         "legacy_fallbacks_still_required": legacy_fallbacks_still_required,
-        "safe_to_enable_timers": bool(timers.get("safe_to_enable_timers")),
+        "safe_to_enable_timers": bool(timers.get("safe_to_enable_timers"))
+        and bool(gaps.get("automation_production_data_ready")),
         "safe_to_remove_5013_callback_fallback": False,
         "production_config_modified": gaps.get("production_config_modified", False),
         "runtime_gap_check": gaps,
@@ -57,6 +62,8 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             f"- ok: {result['ok']}",
             f"- database_mode: {result['database_mode']}",
             f"- route_404_blockers: {result['route_404_blockers']}",
+            f"- content_blockers: {result['content_blockers']}",
+            f"- oauth_blockers: {result['oauth_blockers']}",
             f"- callback_ready: {result['callback_ready']}",
             f"- timer_routes_ready: {result['timer_routes_ready']}",
             f"- payment_routes_ready: {result['payment_routes_ready']}",

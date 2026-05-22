@@ -3,6 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from aicrm_next.shared.errors import ContractError, NotFoundError
+from aicrm_next.shared.runtime import production_data_ready
+from aicrm_next.integration_gateway.legacy_automation_facade import (
+    LegacyAutomationDataUnavailable,
+    get_automation_overview_from_legacy,
+    list_automation_pools_from_legacy,
+)
 
 from .application import (
     ApplyActivationWebhookCommand,
@@ -38,11 +44,21 @@ def automation_contract() -> dict:
 
 @router.get("/api/admin/automation-conversion/overview")
 def automation_overview() -> dict:
+    if production_data_ready():
+        try:
+            return get_automation_overview_from_legacy()
+        except LegacyAutomationDataUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f"legacy automation production data unavailable: {exc}") from exc
     return GetAutomationOverviewQuery()()
 
 
 @router.get("/api/admin/automation-conversion/pools")
 def automation_pools() -> dict:
+    if production_data_ready():
+        try:
+            return list_automation_pools_from_legacy()
+        except LegacyAutomationDataUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f"legacy automation production data unavailable: {exc}") from exc
     return ListAutomationPoolsQuery()()
 
 

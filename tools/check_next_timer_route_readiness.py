@@ -80,16 +80,32 @@ def run_check() -> dict[str, Any]:
                 "auth_guard_present": unauth.status_code in {401, 403},
                 "dry_run_or_noop_available": auth.status_code != 404,
             }
+        overview = client.get("/api/admin/automation-conversion/overview", follow_redirects=False)
+        try:
+            overview_payload: Any = overview.json()
+        except Exception:
+            overview_payload = {}
+        automation_production_data_ready = (
+            overview.status_code == 200
+            and str(overview_payload.get("generated_at") or "").strip().lower() != "fixture"
+            and str(overview_payload.get("status") or "").strip().lower() != "partial"
+            and str(overview_payload.get("source_status") or "").strip().lower() == "production_postgres"
+        )
     blockers = [
         route
         for route, payload in results.items()
         if not payload["route_not_404"] or not payload["auth_guard_present"] or not payload["dry_run_or_noop_available"]
     ]
+    if not automation_production_data_ready:
+        blockers.append("automation_production_data_not_ready")
     result = {
         "ok": not blockers,
         "blockers": blockers,
         "timer_routes": results,
-        "safe_to_enable_timers": not blockers,
+        "automation_overview_status": overview.status_code,
+        "automation_overview": overview_payload,
+        "automation_production_data_ready": automation_production_data_ready,
+        "safe_to_enable_timers": not blockers and automation_production_data_ready,
         "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers else "TIMER_ROUTES_NOT_READY",
     }
     return result
@@ -104,6 +120,7 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             "",
             f"- ok: {result['ok']}",
             f"- safe_to_enable_timers: {result['safe_to_enable_timers']}",
+            f"- automation_production_data_ready: {result['automation_production_data_ready']}",
             f"- blockers: {result['blockers']}",
             "",
             "## Timer Routes",
