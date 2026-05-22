@@ -578,7 +578,7 @@ def admin_attachment_library(request: Request):
 
 @router.get("/admin/customers/{external_userid}", name="api.admin_console_customer_detail")
 def admin_customer_detail_redirect(external_userid: str):
-    return RedirectResponse(url=f"/api/customers/{external_userid}", status_code=307)
+    return RedirectResponse(url=f"/api/admin/customers/profile?external_userid={external_userid}", status_code=307)
 
 
 @router.get("/api/admin/dashboard/shell-context", name="api.admin_dashboard_shell_context")

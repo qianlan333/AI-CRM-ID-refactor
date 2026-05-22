@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from aicrm_next.customer_read_model.application import (
-    GetCustomerChatContextQuery,
+    GetCustomerContextQuery,
     GetCustomerDetailQuery,
     ListRecentMessagesQuery,
 )
 from aicrm_next.customer_read_model.dto import (
-    CustomerChatContextRequest,
+    CustomerContextRequest,
     CustomerDetailRequest,
     RecentMessagesRequest,
 )
@@ -123,8 +123,8 @@ class McpToolDispatcher:
             external_userid=external_userid,
             request_id=str(arguments.get("request_id") or ""),
         )
-        result = GetCustomerChatContextQuery()(
-            CustomerChatContextRequest(
+        result = GetCustomerContextQuery()(
+            CustomerContextRequest(
                 external_userid=external_userid,
                 recent_message_limit=int(arguments.get("recent_message_limit") or 20),
                 timeline_limit=int(arguments.get("timeline_limit") or 20),

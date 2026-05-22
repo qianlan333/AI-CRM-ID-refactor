@@ -9,13 +9,7 @@ from aicrm_next.integration_gateway.customer_sync_adapters import (
     customer_sync_side_effect_safety,
 )
 
-from .dto import (
-    CustomerChatContextRequest,
-    CustomerDetailRequest,
-    CustomerTimelineRequest,
-    ListCustomersRequest,
-    RecentMessagesRequest,
-)
+from .dto import CustomerContextRequest, CustomerDetailRequest, CustomerTimelineRequest, ListCustomersRequest, RecentMessagesRequest
 from .projections import detail_projection, list_item_projection
 from .repo import CustomerReadRepository, build_customer_read_model_repository
 
@@ -201,33 +195,182 @@ class ListRecentMessagesQuery:
     __call__ = execute
 
 
-class GetCustomerChatContextQuery:
-    def __init__(self, repo: CustomerReadRepository | None = None) -> None:
-        self._repo = repo or build_customer_read_model_repository()
+def _identity_binding_summary(customer: JsonDict) -> JsonDict:
+    binding = dict(customer.get("binding") or {})
+    identity = dict(customer.get("identity") or {})
+    mobile = binding.get("mobile") or identity.get("mobile") or customer.get("mobile")
+    is_bound = bool(binding.get("is_bound") or mobile)
+    return {
+        "is_bound": is_bound,
+        "binding_status": binding.get("binding_status") or ("bound" if is_bound else "unbound"),
+        "person_id": identity.get("person_id") or binding.get("person_id") or customer.get("person_id"),
+        "external_userid": customer.get("external_userid") or identity.get("external_userid"),
+        "mobile": mobile,
+        "third_party_user_id": binding.get("third_party_user_id") or identity.get("third_party_user_id"),
+        "owner_userid": customer.get("owner_userid") or binding.get("owner_userid"),
+    }
 
-    def execute(self, query: CustomerChatContextRequest) -> JsonDict:
-        detail = GetCustomerDetailQuery(self._repo)(CustomerDetailRequest(external_userid=query.external_userid))
-        timeline = GetCustomerTimelineQuery(self._repo)(
-            CustomerTimelineRequest(external_userid=query.external_userid, limit=query.timeline_limit)
+
+def _customer_context_payload(
+    *,
+    external_userid: str,
+    customer: JsonDict,
+    timeline: JsonDict,
+    recent_messages: list[JsonDict],
+    source_status: str,
+    adapter_contract: JsonDict | None = None,
+    warnings: list[str] | None = None,
+) -> JsonDict:
+    return {
+        "ok": True,
+        "external_userid": external_userid,
+        "customer": customer,
+        "profile": customer,
+        "identity_binding_summary": _identity_binding_summary(customer),
+        "binding": dict(customer.get("binding") or {}),
+        "identity": dict(customer.get("identity") or {}),
+        "recent_messages": recent_messages,
+        "recent_timeline_events": list(timeline.get("items") or []),
+        "timeline": timeline,
+        "source_status": source_status,
+        "degraded": False,
+        "page_error": "",
+        "warnings": warnings or [],
+        "adapter_contract": adapter_contract or {},
+        "side_effect_safety": customer_sync_side_effect_safety(),
+    }
+
+
+def _production_unavailable_payload(external_userid: str, exc: Exception) -> JsonDict:
+    return {
+        "ok": False,
+        "external_userid": external_userid,
+        "customer": {},
+        "profile": {},
+        "identity_binding_summary": {},
+        "binding": {},
+        "identity": {},
+        "recent_messages": [],
+        "recent_timeline_events": [],
+        "timeline": {"external_userid": external_userid, "items": [], "count": 0, "total": 0},
+        "source_status": "production_unavailable",
+        "degraded": True,
+        "page_error": str(exc),
+        "error_code": "customer_context_read_unavailable",
+        "warnings": ["customer_context_read_failed"],
+        "adapter_contract": {},
+        "side_effect_safety": customer_sync_side_effect_safety(),
+    }
+
+
+class GetCustomerContextQuery:
+    def __init__(self, repo: CustomerReadRepository | None = None) -> None:
+        self._repo = repo
+
+    def _resolve_fixture_external_userid(self, query: CustomerContextRequest) -> str:
+        external_userid = str(query.external_userid or query.user_id or "").strip()
+        if external_userid:
+            return external_userid
+        mobile = str(query.mobile or "").strip()
+        if not mobile:
+            raise NotFoundError("external_userid is required")
+        repo = self._repo or build_customer_read_model_repository()
+        matches = repo.list_customers({"mobile": mobile}, limit=1, offset=0)
+        if not matches or not str(matches[0].get("external_userid") or "").strip():
+            raise NotFoundError("customer not found")
+        return str(matches[0]["external_userid"])
+
+    def _resolve_production_external_userid(self, query: CustomerContextRequest) -> str:
+        external_userid = str(query.external_userid or query.user_id or "").strip()
+        if external_userid:
+            return external_userid
+        mobile = str(query.mobile or "").strip()
+        if not mobile:
+            raise NotFoundError("external_userid is required")
+        from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
+
+        payload = list_customers_via_legacy(ListCustomersRequest(mobile=mobile, limit=1, offset=0))
+        rows = list(payload.get("customers") or payload.get("items") or [])
+        if not rows or not str(rows[0].get("external_userid") or "").strip():
+            raise NotFoundError("customer not found")
+        return str(rows[0]["external_userid"])
+
+    def execute(self, query: CustomerContextRequest) -> JsonDict:
+        from aicrm_next.shared.runtime import legacy_production_facade_enabled, production_data_ready
+
+        if production_data_ready():
+            if not legacy_production_facade_enabled():
+                fallback_external_userid = str(query.external_userid or query.user_id or "")
+                return _production_unavailable_payload(fallback_external_userid, RuntimeError("production customer facade disabled"))
+            try:
+                from aicrm_next.integration_gateway.legacy_customer_read_facade import (
+                    get_customer_via_legacy,
+                    get_timeline_via_legacy,
+                    recent_messages_via_legacy,
+                )
+
+                external_userid = self._resolve_production_external_userid(query)
+                customer = get_customer_via_legacy(CustomerDetailRequest(external_userid=external_userid))
+                if not customer:
+                    raise NotFoundError("customer not found")
+                timeline_payload = get_timeline_via_legacy(
+                    CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
+                )
+                timeline = dict(timeline_payload or {})
+                if "items" not in timeline:
+                    timeline = {
+                        "external_userid": external_userid,
+                        "items": list(timeline_payload.get("items") or []) if isinstance(timeline_payload, dict) else [],
+                        "count": int(timeline_payload.get("count") or 0) if isinstance(timeline_payload, dict) else 0,
+                        "limit": query.timeline_limit,
+                        "offset": 0,
+                        "total": int(timeline_payload.get("total") or 0) if isinstance(timeline_payload, dict) else 0,
+                    }
+                messages_payload = recent_messages_via_legacy(
+                    RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
+                )
+                recent_messages = list(messages_payload.get("messages") or messages_payload.get("items") or [])
+                return _customer_context_payload(
+                    external_userid=external_userid,
+                    customer=detail_projection(customer),
+                    timeline=timeline,
+                    recent_messages=recent_messages,
+                    source_status="legacy_production_facade",
+                    adapter_contract={
+                        "detail": {"source_status": "legacy_production_facade"},
+                        "timeline": {"source_status": "legacy_production_facade"},
+                        "recent_messages": {"source_status": "legacy_production_facade"},
+                    },
+                )
+            except NotFoundError:
+                raise
+            except Exception as exc:
+                fallback_external_userid = str(query.external_userid or query.user_id or "")
+                return _production_unavailable_payload(fallback_external_userid, exc)
+
+        external_userid = self._resolve_fixture_external_userid(query)
+        repo = self._repo or build_customer_read_model_repository()
+        detail = GetCustomerDetailQuery(repo)(CustomerDetailRequest(external_userid=external_userid))
+        timeline = GetCustomerTimelineQuery(repo)(
+            CustomerTimelineRequest(external_userid=external_userid, limit=query.timeline_limit)
         )
-        messages = ListRecentMessagesQuery(self._repo)(
-            RecentMessagesRequest(external_userid=query.external_userid, limit=query.recent_message_limit)
+        messages = ListRecentMessagesQuery(repo)(
+            RecentMessagesRequest(external_userid=external_userid, limit=query.recent_message_limit)
         )
-        return {
-            "external_userid": query.external_userid,
-            "customer": detail["customer"],
-            "recent_messages": messages["messages"],
-            "recent_timeline_events": timeline["timeline"]["items"],
-            "timeline": timeline["timeline"],
-            "source_status": "fixture",
-            "degraded": False,
-            "warnings": [],
-            "adapter_contract": {
+        return _customer_context_payload(
+            external_userid=external_userid,
+            customer=detail["customer"],
+            timeline=timeline["timeline"],
+            recent_messages=messages["messages"],
+            source_status="local_contract_probe",
+            adapter_contract={
                 "detail": detail.get("adapter_contract", {}),
                 "timeline": timeline.get("adapter_contract", {}),
                 "recent_messages": messages.get("adapter_contract", {}),
             },
-            "side_effect_safety": customer_sync_side_effect_safety(),
-        }
+        )
 
     __call__ = execute
+
+
+GetCustomerChatContextQuery = GetCustomerContextQuery
