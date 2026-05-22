@@ -67,6 +67,30 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
         == "aicrm_next.production_compat.api"
     )
     assert (
+        _owner_for(samples, "POST", "/api/admin/automation-conversion/settings/default-channel/generate")
+        == "production_compat"
+    )
+    assert (
+        _endpoint_for(samples, "POST", "/api/admin/automation-conversion/settings/default-channel/generate")
+        == "aicrm_next.production_compat.api"
+    )
+    assert (
+        _owner_for(samples, "GET", "/api/admin/automation-conversion/default-channel-settings")
+        == "production_compat"
+    )
+    assert (
+        _endpoint_for(samples, "GET", "/api/admin/automation-conversion/default-channel-settings")
+        == "aicrm_next.production_compat.api"
+    )
+    assert (
+        _owner_for(samples, "POST", "/api/admin/automation-conversion/default-channel-settings/generate-qr")
+        == "production_compat"
+    )
+    assert (
+        _endpoint_for(samples, "POST", "/api/admin/automation-conversion/default-channel-settings/generate-qr")
+        == "aicrm_next.production_compat.api"
+    )
+    assert (
         _owner_for(samples, "GET", "/api/admin/automation-conversion/profile-segment-templates/options")
         == "production_compat"
     )

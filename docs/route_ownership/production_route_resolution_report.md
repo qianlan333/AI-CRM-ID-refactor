@@ -1,9 +1,9 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `185`
-- production_compat_route_count: `67`
-- production_compat_catch_all_count: `40`
+- route_count: `189`
+- production_compat_route_count: `71`
+- production_compat_catch_all_count: `42`
 - blockers: `0`
 
 ## Resolution Samples
@@ -18,6 +18,9 @@
 - GET /api/h5/wechat/oauth/start: `next` -> `aicrm_next.questionnaire.api.wechat_oauth_start` (manifest `/api/h5/wechat/oauth*` / `fake_adapter`)
 - GET /api/admin/automation-conversion/overview: `next` -> `aicrm_next.automation_engine.api.automation_overview` (manifest `/api/admin/automation-conversion*` / `guarded_preview`)
 - POST /api/admin/automation-conversion/programs/3/setup/basic: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/programs*` / `legacy_forward`)
+- POST /api/admin/automation-conversion/settings/default-channel/generate: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/settings*` / `legacy_forward`)
+- GET /api/admin/automation-conversion/default-channel-settings: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/default-channel-settings*` / `legacy_forward`)
+- POST /api/admin/automation-conversion/default-channel-settings/generate-qr: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_channel_settings_routes` (manifest `/api/admin/automation-conversion/default-channel-settings*` / `legacy_forward`)
 - GET /api/admin/automation-conversion/profile-segment-templates/options: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/profile-segment-templates*` / `legacy_forward`)
 - GET /api/admin/automation-conversion/agents/options: `production_compat` -> `aicrm_next.production_compat.api.legacy_automation_workspace_routes` (manifest `/api/admin/automation-conversion/agents*` / `legacy_forward`)
 - POST /api/customer-automation/activation-webhook: `next` -> `aicrm_next.automation_engine.api.activation_webhook` (manifest `/api/customer-automation*` / `guarded_preview`)
