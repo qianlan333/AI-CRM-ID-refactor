@@ -151,6 +151,62 @@ def _timer_token_guard(request: Request) -> Response | None:
     return None
 
 
+def _is_timer_path(path: str) -> bool:
+    return path in {
+        "/api/admin/automation-conversion/reply-monitor/run-due",
+        "/api/admin/automation-conversion/reply-monitor/capture",
+        "/api/admin/automation-conversion/jobs/run-due",
+        "/api/admin/cloud-orchestrator/campaigns/run-due",
+    }
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _json_body_dry_run(body: bytes) -> bool:
+    if not body:
+        return False
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and _truthy(payload.get("dry_run"))
+
+
+def _timer_dry_run_response(request: Request, body: bytes) -> Response | None:
+    if not _is_timer_path(request.url.path):
+        return None
+    requested = (
+        _truthy(request.headers.get("x-aicrm-dry-run"))
+        or _truthy(request.query_params.get("dry_run"))
+        or _json_body_dry_run(body)
+    )
+    if not requested:
+        return None
+    response_body = json.dumps(
+        {
+            "ok": True,
+            "dry_run": True,
+            "side_effect_executed": False,
+            "legacy_forwarded": False,
+            "route_owner": "ai_crm_next",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+            "path": request.url.path,
+        },
+        ensure_ascii=False,
+    )
+    return Response(
+        response_body,
+        status_code=200,
+        media_type="application/json",
+        headers={
+            "X-AICRM-Route-Owner": "ai_crm_next",
+            "X-AICRM-Compatibility-Facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        },
+    )
+
+
 def _probe_dry_run_response(request: Request) -> Response | None:
     enabled = str(os.getenv("AICRM_NEXT_ENABLE_PRODUCTION_PROBE_DRY_RUN", "") or "").strip().lower() in {
         "1",
@@ -188,11 +244,14 @@ async def forward_to_legacy_flask(request: Request) -> Response:
         guard_response.headers.setdefault("X-AICRM-Route-Owner", "ai_crm_next")
         guard_response.headers.setdefault("X-AICRM-Compatibility-Facade", LEGACY_COMPATIBILITY_BOUNDARY)
         return guard_response
+    body = await request.body()
+    timer_dry_run_response = _timer_dry_run_response(request, body)
+    if timer_dry_run_response is not None:
+        return timer_dry_run_response
     dry_run_response = _probe_dry_run_response(request)
     if dry_run_response is not None:
         return dry_run_response
 
-    body = await request.body()
     query_string = request.url.query
     headers = {
         key: value

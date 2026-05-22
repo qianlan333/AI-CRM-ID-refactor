@@ -26,6 +26,7 @@ def run_check() -> dict[str, Any]:
     payment_routes_ready = not any("wechat-pay" in item or "alipay" in item for item in route_404_blockers)
     oauth_routes_ready = not any("oauth" in item for item in route_404_blockers) and not oauth_blockers
     timer_routes_ready = timers.get("ok", False)
+    dry_run_db_sentinel_ok = bool((timers.get("dry_run_db_sentinel") or {}).get("ok"))
     legacy_fallbacks_still_required = [
         "5013 callback fallback until Next callback observation window passes",
         "legacy payment/OAuth/WeCom/automation domain services via Next compatibility facade",
@@ -39,11 +40,13 @@ def run_check() -> dict[str, Any]:
         "oauth_blockers": oauth_blockers,
         "callback_ready": callback_ready,
         "timer_routes_ready": timer_routes_ready,
+        "dry_run_db_sentinel_ok": dry_run_db_sentinel_ok,
         "payment_routes_ready": payment_routes_ready,
         "oauth_routes_ready": oauth_routes_ready,
         "legacy_fallbacks_still_required": legacy_fallbacks_still_required,
         "safe_to_enable_timers": bool(timers.get("safe_to_enable_timers"))
-        and bool(gaps.get("automation_production_data_ready")),
+        and bool(gaps.get("automation_production_data_ready"))
+        and dry_run_db_sentinel_ok,
         "safe_to_remove_5013_callback_fallback": False,
         "production_config_modified": gaps.get("production_config_modified", False),
         "runtime_gap_check": gaps,
@@ -66,6 +69,7 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
             f"- oauth_blockers: {result['oauth_blockers']}",
             f"- callback_ready: {result['callback_ready']}",
             f"- timer_routes_ready: {result['timer_routes_ready']}",
+            f"- dry_run_db_sentinel_ok: {result['dry_run_db_sentinel_ok']}",
             f"- payment_routes_ready: {result['payment_routes_ready']}",
             f"- oauth_routes_ready: {result['oauth_routes_ready']}",
             f"- safe_to_enable_timers: {result['safe_to_enable_timers']}",
