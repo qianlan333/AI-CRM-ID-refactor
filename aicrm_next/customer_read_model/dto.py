@@ -25,10 +25,15 @@ class CustomerTimelineRequest(BaseModel):
     offset: int = Field(default=0, ge=0)
 
 
-class CustomerChatContextRequest(BaseModel):
-    external_userid: str
+class CustomerContextRequest(BaseModel):
+    external_userid: str | None = None
+    mobile: str | None = None
+    user_id: str | None = None
     recent_message_limit: int = Field(default=20, ge=1, le=100)
     timeline_limit: int = Field(default=20, ge=1, le=100)
+
+
+CustomerChatContextRequest = CustomerContextRequest
 
 
 class RecentMessagesRequest(BaseModel):
