@@ -23,10 +23,14 @@ from aicrm_next.admin_read_model.application import (
 )
 from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
-from aicrm_next.questionnaire.application import GetQuestionnairePreflightQuery
+from aicrm_next.questionnaire.application import GetQuestionnaireDetailQuery, GetQuestionnairePreflightQuery
 from aicrm_next.integration_gateway.legacy_customer_read_facade import list_customers_via_legacy
 from aicrm_next.integration_gateway.legacy_automation_facade import LegacyAutomationDataUnavailable, list_automation_programs_from_legacy
-from aicrm_next.integration_gateway.legacy_questionnaire_facade import LegacyQuestionnaireDataUnavailable, list_questionnaires_from_legacy
+from aicrm_next.integration_gateway.legacy_questionnaire_facade import (
+    LegacyQuestionnaireDataUnavailable,
+    get_questionnaire_detail_from_legacy,
+    list_questionnaires_from_legacy,
+)
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -36,6 +40,8 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin",
     "/admin/customers",
     "/admin/questionnaires",
+    "/admin/questionnaires/new",
+    "/admin/questionnaires/{questionnaire_id}",
     "/admin/user-ops/ui",
     "/admin/user-ops",
     "/admin/cloud-orchestrator",
@@ -127,7 +133,7 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_wecom_tags_page": "/admin/wecom-tags",
         "api.admin_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaires": "/admin/questionnaires",
-        "api.admin_console_questionnaire_new": "/admin/questionnaires/ui",
+        "api.admin_console_questionnaire_new": "/admin/questionnaires/new",
         "api.admin_automation_conversion": "/admin/automation-conversion",
         "api.admin_jobs": "/admin/jobs",
         "api.admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
@@ -229,6 +235,85 @@ def _real_data_context(context: dict, *, payload: dict, title: str, summary: str
     if payload.get("page_error"):
         context["page_error"] = payload["page_error"]
     return context
+
+
+def _is_assessment_template_asset(questionnaire: dict | None) -> bool:
+    if not questionnaire or not questionnaire.get("assessment_enabled"):
+        return False
+    config = questionnaire.get("assessment_config") if isinstance(questionnaire.get("assessment_config"), dict) else {}
+    asset_kind = str(config.get("asset_kind") or "").strip()
+    if asset_kind:
+        return asset_kind == "assessment_template"
+    return str(config.get("template_id") or "").strip() == "siyuan_ip_business"
+
+
+def _questionnaire_editor_response(
+    request: Request,
+    *,
+    questionnaire_id: int | None = None,
+):
+    payload: dict | None = None
+    page_error = ""
+    if questionnaire_id is not None:
+        try:
+            payload = (
+                get_questionnaire_detail_from_legacy(questionnaire_id)
+                if production_data_ready()
+                else GetQuestionnaireDetailQuery()(questionnaire_id)
+            )
+        except Exception as exc:
+            context = _shell_context(
+                request=request,
+                page_title="问卷不存在",
+                page_summary="当前没有找到这个问卷。",
+                active_endpoint="api.admin_questionnaires",
+            )
+            context.update(
+                {
+                    "state_title": "问卷不存在",
+                    "state_body": "请确认问卷编号是否正确，或稍后重试。",
+                    "state_items": ["问卷可能已被删除", "当前环境也可能还没有初始化相关数据"],
+                    "actions": [{"label": "返回问卷管理", "href": "/admin/questionnaires", "variant": "secondary"}],
+                    "page_error": f"未找到问卷：{exc}",
+                }
+            )
+            return templates.TemplateResponse(request, "admin_console/placeholder.html", context, status_code=404)
+
+    questionnaire = jsonable_encoder((payload or {}).get("questionnaire")) if payload else None
+    default_assessment = (
+        (questionnaire_id is None and str(request.query_params.get("mode") or "").strip() == "assessment")
+        or _is_assessment_template_asset(questionnaire)
+    )
+    new_heading = "创建测评问卷模板" if default_assessment else "新建问卷"
+    edit_heading = "编辑测评问卷模板" if default_assessment else "编辑问卷"
+    new_subtitle = (
+        "配置测评题目、维度分型和结果页规则，保存后可作为普通问卷的整组引用模板。"
+        if default_assessment
+        else "从空白模板开始搭建题目、标签和分数规则。"
+    )
+    edit_subtitle = (
+        "维护这个测评模板的题目、维度分型和结果页规则。"
+        if default_assessment
+        else "维护当前问卷的题目、分数规则和发布设置。"
+    )
+    return templates.TemplateResponse(
+        request,
+        "admin_questionnaires.html",
+        {
+            "request": request,
+            "editor_mode": "edit" if questionnaire_id is not None else "new",
+            "editor_page_title": (questionnaire or {}).get("title")
+            or (questionnaire or {}).get("name")
+            or (edit_heading if questionnaire_id is not None else new_heading),
+            "editor_heading": edit_heading if questionnaire_id is not None else new_heading,
+            "editor_subtitle": edit_subtitle if questionnaire_id is not None else new_subtitle,
+            "editor_back_href": "/admin/questionnaires",
+            "editor_default_assessment": default_assessment,
+            "initial_questionnaire": questionnaire,
+            "initial_questionnaire_id": questionnaire_id,
+            "page_error": page_error,
+        },
+    )
 
 
 @router.get("/admin", name="api.admin_console_dashboard")
@@ -434,6 +519,16 @@ def admin_questionnaires(request: Request):
         "source_status": list_payload.get("source_status", "local_contract_probe"),
     }
     return templates.TemplateResponse(request, "admin_console/questionnaires.html", context)
+
+
+@router.get("/admin/questionnaires/new", name="api.admin_console_questionnaire_new")
+def admin_questionnaire_new(request: Request):
+    return _questionnaire_editor_response(request)
+
+
+@router.get("/admin/questionnaires/{questionnaire_id:int}", name="api.admin_console_questionnaire_detail")
+def admin_questionnaire_detail(request: Request, questionnaire_id: int):
+    return _questionnaire_editor_response(request, questionnaire_id=questionnaire_id)
 
 
 @router.get("/admin/automation-conversion", name="api.admin_automation_conversion")

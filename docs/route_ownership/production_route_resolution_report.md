@@ -1,7 +1,7 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `192`
+- route_count: `194`
 - production_compat_route_count: `74`
 - production_compat_catch_all_count: `44`
 - blockers: `0`
@@ -14,6 +14,10 @@
 - GET /api/customers/wx_ext_001/timeline: `next` -> `aicrm_next.customer_read_model.api.get_customer_timeline` (manifest `/api/customers/{external_userid}/timeline` / `readonly_facade`)
 - GET /api/messages/wx_ext_001/recent: `next` -> `aicrm_next.customer_read_model.api.get_recent_messages` (manifest `/api/messages/{external_userid}/recent` / `readonly_facade`)
 - GET /api/admin/questionnaires: `next` -> `aicrm_next.questionnaire.api.list_questionnaires` (manifest `/api/admin/questionnaires*` / `guarded_preview`)
+- GET /admin/questionnaires: `next` -> `aicrm_next.frontend_compat.legacy_routes.admin_questionnaires` (manifest `/admin/questionnaires` / `readonly_facade`)
+- GET /admin/questionnaires/new: `next` -> `aicrm_next.frontend_compat.legacy_routes.admin_questionnaire_new` (manifest `/admin/questionnaires/new` / `readonly_facade`)
+- GET /admin/questionnaires/21: `next` -> `aicrm_next.frontend_compat.legacy_routes.admin_questionnaire_detail` (manifest `/admin/questionnaires/{questionnaire_id}` / `readonly_facade`)
+- GET /api/admin/questionnaires/21: `next` -> `aicrm_next.questionnaire.api.get_questionnaire` (manifest `/api/admin/questionnaires*` / `guarded_preview`)
 - GET /api/h5/questionnaires/hxc-activation-v1: `next` -> `aicrm_next.questionnaire.api.public_get_questionnaire` (manifest `/api/h5/questionnaires*` / `guarded_preview`)
 - GET /api/h5/wechat/oauth/start: `next` -> `aicrm_next.questionnaire.api.wechat_oauth_start` (manifest `/api/h5/wechat/oauth*` / `fake_adapter`)
 - GET /api/admin/automation-conversion/overview: `next` -> `aicrm_next.automation_engine.api.automation_overview` (manifest `/api/admin/automation-conversion*` / `guarded_preview`)

@@ -31,6 +31,10 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/customers/wx_ext_001/timeline"),
     ("GET", "/api/messages/wx_ext_001/recent"),
     ("GET", "/api/admin/questionnaires"),
+    ("GET", "/admin/questionnaires"),
+    ("GET", "/admin/questionnaires/new"),
+    ("GET", "/admin/questionnaires/21"),
+    ("GET", "/api/admin/questionnaires/21"),
     ("GET", "/api/h5/questionnaires/hxc-activation-v1"),
     ("GET", "/api/h5/wechat/oauth/start"),
     ("GET", "/api/admin/automation-conversion/overview"),
@@ -146,6 +150,9 @@ def _pattern_to_regex(pattern: str) -> re.Pattern[str]:
 
 
 def manifest_record_for_path(records: list[dict[str, Any]], path: str) -> dict[str, Any] | None:
+    exact = [record for record in records if str(record["route_pattern"]) == path]
+    if exact:
+        return exact[0]
     matches = [record for record in records if _pattern_to_regex(str(record["route_pattern"])).match(path)]
     if not matches:
         return None

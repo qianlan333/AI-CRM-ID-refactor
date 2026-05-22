@@ -194,6 +194,52 @@ def test_questionnaire_page_serializes_datetime_items(monkeypatch):
     assert "Internal Server Error" not in response.text
 
 
+def test_questionnaire_detail_page_uses_production_facade_when_database_ready(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setattr(legacy_routes, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        legacy_routes,
+        "get_questionnaire_detail_from_legacy",
+        lambda questionnaire_id: {
+            "ok": True,
+            "questionnaire": {
+                "id": questionnaire_id,
+                "slug": "q-20260414135818-5d8fba",
+                "name": "黄小璨激活问卷",
+                "title": "填写问卷激活黄小璨AI",
+                "description": "真实生产问卷详情",
+                "redirect_url": "",
+                "is_disabled": False,
+                "enabled": True,
+                "assessment_enabled": False,
+                "assessment_config": {},
+                "questions": [],
+                "score_rules": [],
+                "external_push_enabled": False,
+            },
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = _client(monkeypatch).get("/admin/questionnaires/21")
+
+    assert response.status_code == 200
+    assert "填写问卷激活黄小璨AI" in response.text
+    assert "q-20260414135818-5d8fba" in response.text
+    assert "initialQuestionnaireId: 21" in response.text
+    assert "Not Found" not in response.text
+
+
+def test_questionnaire_new_page_renders_editor_shell(monkeypatch):
+    response = _client(monkeypatch).get("/admin/questionnaires/new")
+
+    assert response.status_code == 200
+    assert "新建问卷" in response.text
+    assert 'mode: "new"' in response.text
+    assert "Not Found" not in response.text
+
+
 def test_automation_conversion_page_uses_production_facade_without_fixture_repo(monkeypatch):
     import aicrm_next.frontend_compat.legacy_routes as legacy_routes
 
