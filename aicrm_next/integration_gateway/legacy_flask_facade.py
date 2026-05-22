@@ -242,6 +242,10 @@ def _active_automation_preview_requested(request: Request, payload: dict[str, An
     return request.url.path in {ACTIVE_AUTOMATION_RUN_DUE_PREVIEW_PATH, CAMPAIGN_RUN_DUE_PREVIEW_PATH} or _truthy(payload.get("preview"))
 
 
+def _scheduled_safe_mode_requested(payload: dict[str, Any]) -> bool:
+    return _truthy(payload.get("scheduled_safe_mode"))
+
+
 def _selected_jobs(payload: dict[str, Any]) -> list[str]:
     raw_jobs = payload.get("jobs")
     if not isinstance(raw_jobs, list) or not raw_jobs:
@@ -271,20 +275,20 @@ def _preview_item(job_code: str) -> dict[str, Any]:
     }
 
 
-def _active_automation_preview_response(request: Request, payload: dict[str, Any]) -> Response | None:
-    if request.url.path not in ACTIVE_AUTOMATION_PATHS or not _active_automation_preview_requested(request, payload):
+def _active_automation_preview_payload(path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    if path not in ACTIVE_AUTOMATION_PATHS:
         return None
-    if request.url.path in {CAMPAIGN_RUN_DUE_PATH, CAMPAIGN_RUN_DUE_PREVIEW_PATH}:
-        batch_size = int(payload.get("batch_size") or request.query_params.get("batch_size") or 1)
-        body = {
+    if path in {CAMPAIGN_RUN_DUE_PATH, CAMPAIGN_RUN_DUE_PREVIEW_PATH}:
+        batch_size = int(payload.get("batch_size") or 1)
+        return {
             "ok": True,
             "preview": True,
             "side_effect_executed": False,
             "legacy_forwarded": False,
             "route_owner": "ai_crm_next",
             "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
-            "path": request.url.path,
-            "batch_size": max(1, min(batch_size, 10)),
+            "path": path,
+            "batch_size": max(1, min(batch_size, 1000)),
             "campaigns": [],
             "due_count": 0,
             "estimated_dispatch_count": 0,
@@ -292,22 +296,52 @@ def _active_automation_preview_response(request: Request, payload: dict[str, Any
             "content_preview": [],
             "risk_flags": ["read_only_preview", "campaign_allowlist_required_before_real_run"],
         }
-        return _response_json(body)
     jobs = _selected_jobs(payload)
     previews = [_preview_item(job_code) for job_code in jobs]
-    body = {
+    return {
         "ok": True,
         "preview": True,
         "side_effect_executed": False,
         "legacy_forwarded": False,
         "route_owner": "ai_crm_next",
         "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
-        "path": request.url.path,
+        "path": path,
         "jobs": previews,
         "total_due_count": sum(int(item["due_count"]) for item in previews),
         "estimated_send_count": sum(int(item["estimated_send_count"]) for item in previews),
     }
-    return _response_json(body)
+
+
+def _active_automation_preview_response(request: Request, payload: dict[str, Any]) -> Response | None:
+    if not _active_automation_preview_requested(request, payload):
+        return None
+    preview = _active_automation_preview_payload(request.url.path, payload)
+    if preview is None:
+        return None
+    return _response_json(preview)
+
+
+def _preview_has_due_candidates(preview: dict[str, Any]) -> bool:
+    numeric_keys = ("total_due_count", "estimated_send_count", "due_count", "estimated_dispatch_count")
+    for key in numeric_keys:
+        try:
+            if int(preview.get(key) or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    for item in preview.get("jobs") or []:
+        if isinstance(item, dict):
+            for key in ("due_count", "estimated_send_count", "estimated_audience_count"):
+                try:
+                    if int(item.get(key) or 0) > 0:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+    for key in ("campaigns", "sample_targets", "content_preview"):
+        value = preview.get(key)
+        if isinstance(value, list) and value:
+            return True
+    return False
 
 
 def _is_production_runtime() -> bool:
@@ -334,6 +368,45 @@ def _active_automation_execution_guard(request: Request, payload: dict[str, Any]
         return None
     if not _is_production_runtime():
         return None
+
+    preview = _active_automation_preview_payload(path, payload) or {}
+    has_due_candidates = _preview_has_due_candidates(preview)
+    if _scheduled_safe_mode_requested(payload):
+        if not has_due_candidates:
+            return _response_json(
+                {
+                    "ok": True,
+                    "status": "idle",
+                    "scheduled_safe_mode": True,
+                    "side_effect_executed": False,
+                    "legacy_forwarded": False,
+                    "route_owner": "ai_crm_next",
+                    "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+                    "path": path,
+                    "preview": preview,
+                }
+            )
+        allowlist_present = (
+            any(_non_empty_list(payload, key) for key in ("allow_task_ids", "allow_workflow_ids", "allow_node_ids"))
+            if path == ACTIVE_AUTOMATION_RUN_DUE_PATH
+            else _non_empty_list(payload, "allow_campaign_ids")
+        )
+        if not allowlist_present:
+            return _response_json(
+                {
+                    "ok": True,
+                    "status": "blocked_not_executed",
+                    "scheduled_safe_mode": True,
+                    "side_effect_executed": False,
+                    "legacy_forwarded": False,
+                    "manual_action_required": True,
+                    "error_code": "active_automation_due_candidates_require_allowlist",
+                    "route_owner": "ai_crm_next",
+                    "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+                    "path": path,
+                    "preview": preview,
+                }
+            )
 
     if path == ACTIVE_AUTOMATION_RUN_DUE_PATH:
         allowlist_present = any(

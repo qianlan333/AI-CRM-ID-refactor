@@ -60,6 +60,31 @@ Campaign jobs require:
 
 Production requests without an allowlist must fail with a 409/400 guardrail response.
 
+### 3a. Scheduled safe mode for systemd timers
+
+Systemd timers should not call raw true execution directly. Future `ExecStart` payloads should use scheduled safe mode so a timer tick exits successfully when there is nothing to do, and stays non-destructive when candidates exist but no allowlist has been approved.
+
+Automation jobs payload:
+
+```bash
+--data '{"operator":"aicrm-automation-jobs-run-due","jobs":["sop","conversion_workflow"],"scheduled_safe_mode":true}'
+```
+
+Campaign payload:
+
+```bash
+--data '{"operator":"aicrm-campaign-run-due","batch_size":200,"scheduled_safe_mode":true}'
+```
+
+Expected behavior:
+
+- no due candidates: HTTP 200 with `status=idle`
+- due candidates but no allowlist: HTTP 200 with `status=blocked_not_executed`
+- `side_effect_executed=false`
+- `legacy_forwarded=false`
+- no WeCom, OpenClaw, agent runtime, webhook, or campaign dispatch call
+- no writes to the DB sentinel tables
+
 ### 4. Observe DB and logs
 
 After any approved bounded execution, compare:
@@ -93,6 +118,10 @@ Run:
 python3 tools/check_active_automation_run_due_guardrails.py \
   --output-md /tmp/active_automation_guardrails.md \
   --output-json /tmp/active_automation_guardrails.json
+
+python3 tools/check_active_automation_scheduled_safe_mode.py \
+  --output-md /tmp/active_automation_scheduled_safe_mode.md \
+  --output-json /tmp/active_automation_scheduled_safe_mode.json
 ```
 
-The checker must pass before moving from dry-run to preview or bounded execution.
+Both checkers must pass before moving from dry-run to preview, scheduled safe mode, or bounded execution.
