@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from .service import (
-    INDUSTRY_OPTIONS,
-    SOURCE_OPTIONS,
     get_image_thumbnail,
     get_orders,
     get_other_staff_messages,
@@ -15,8 +13,6 @@ from .service import (
 )
 
 __all__ = [
-    "INDUSTRY_OPTIONS",
-    "SOURCE_OPTIONS",
     "get_image_thumbnail",
     "get_orders",
     "get_other_staff_messages",

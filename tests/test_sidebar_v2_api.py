@@ -28,14 +28,19 @@ def _seed_contact(external_userid: str = "wm_sidebar_v2") -> None:
     db.commit()
 
 
-def test_sidebar_v2_workbench_returns_fixed_profile_options(client):
+def test_sidebar_v2_workbench_returns_text_profile_fields_without_enum_options(client):
     response = client.get("/api/sidebar/v2/workbench", query_string={"external_userid": "wx_ext_001"})
 
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["ok"] is True
-    assert payload["profile_options"]["source"] == ["小蓝咨询群", "媛子咨询群", "学员转介绍", "流量群", "公域", "其他", "公域直播流量"]
-    assert payload["profile_options"]["industry"] == ["美业", "大健康", "知识IP", "疗愈", "教育培训", "玄学", "服装", "保险", "其他", "餐饮"]
+    assert payload["profile"] == {
+        "source": "",
+        "industry": "",
+        "industry_description": "",
+        "needs_blockers_followup": "",
+    }
+    assert "profile_options" not in payload
     assert payload["modules"] == ["profile", "questionnaires", "products", "orders", "materials", "other_staff_messages"]
     assert "counts" not in payload
 
