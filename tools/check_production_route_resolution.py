@@ -36,6 +36,7 @@ RESOLUTION_SAMPLES = [
     ("GET", "/api/admin/automation-conversion/overview"),
     ("POST", "/api/admin/automation-conversion/programs/3/setup/basic"),
     ("GET", "/api/admin/automation-conversion/profile-segment-templates/options"),
+    ("GET", "/api/admin/automation-conversion/agents/options"),
     ("POST", "/api/customer-automation/activation-webhook"),
     ("GET", "/api/admin/wechat-pay/products"),
     ("GET", "/api/admin/wechat-pay/products/prod_001"),
