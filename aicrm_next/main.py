@@ -20,7 +20,9 @@ from .media_library.repo import reset_media_library_fixture_state
 from .ops_enrollment.application import reset_user_ops_fixture_state
 from .ops_enrollment.api import router as user_ops_router
 from .platform_foundation.api import router as platform_router
+from .production_compat.api import router as production_compat_router
 from .questionnaire.api import router as questionnaire_router
+from .shared.runtime import legacy_production_facade_enabled
 from .questionnaire.repo import reset_questionnaire_fixture_state
 
 _FRONTEND_COMPAT_DIR = Path(__file__).resolve().parent / "frontend_compat"
@@ -48,6 +50,8 @@ def create_app() -> FastAPI:
         name="static",
     )
     app.include_router(platform_router)
+    if legacy_production_facade_enabled():
+        app.include_router(production_compat_router)
     app.include_router(customer_router)
     app.include_router(user_ops_router)
     app.include_router(mcp_router)

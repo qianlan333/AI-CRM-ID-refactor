@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+import os
+
+
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    value = str(os.getenv(name, "") or "").strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "on"}
+
+
+def raw_database_url() -> str:
+    return str(os.getenv("DATABASE_URL", "") or "").strip()
+
+
+def database_mode() -> str:
+    url = raw_database_url()
+    if url.startswith(("postgresql://", "postgres://", "postgresql+psycopg://")):
+        return "postgres"
+    return "fixture"
+
+
+def fixture_mode() -> bool:
+    return database_mode() != "postgres"
+
+
+def production_environment() -> bool:
+    values = {
+        str(os.getenv("AICRM_NEXT_ENV", "") or "").strip().lower(),
+        str(os.getenv("ENVIRONMENT", "") or "").strip().lower(),
+        str(os.getenv("APP_ENV", "") or "").strip().lower(),
+        str(os.getenv("FLASK_ENV", "") or "").strip().lower(),
+    }
+    return bool(values & {"prod", "production"})
+
+
+def legacy_production_facade_enabled() -> bool:
+    if _env_flag("AICRM_NEXT_DISABLE_LEGACY_PRODUCTION_FACADE"):
+        return False
+    if _env_flag("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE"):
+        return True
+    return database_mode() == "postgres" or production_environment()
+
+
+def production_data_ready() -> bool:
+    return database_mode() == "postgres" and legacy_production_facade_enabled()
+
+
+def runtime_health_state() -> dict:
+    mode = database_mode()
+    fixture = fixture_mode()
+    data_ready = production_data_ready()
+    degraded = fixture and production_environment()
+    warning = ""
+    if degraded:
+        warning = "production runtime is using fixture data; production data is not ready"
+    elif fixture:
+        warning = "fixture data mode"
+    return {
+        "ok": not degraded,
+        "status": "degraded" if degraded else "ok",
+        "service": "aicrm-next",
+        "database": mode,
+        "database_mode": mode,
+        "fixture_mode": fixture,
+        "production_data_ready": data_ready,
+        "runtime_owner": "ai_crm_next",
+        "legacy_production_facade_enabled": legacy_production_facade_enabled(),
+        "warning": warning,
+    }
