@@ -202,10 +202,14 @@ def wechat_oauth_callback(
 @router.get("/s/{slug}", response_class=HTMLResponse)
 def public_questionnaire_h5_page(request: Request, slug: str):
     try:
-        payload = GetPublicQuestionnaireQuery()(slug)
+        if production_data_ready():
+            payload = get_public_questionnaire_from_legacy(slug)
+        else:
+            payload = GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
         _raise_http(exc)
     questionnaire = payload["questionnaire"]
+    questions = payload.get("questions") or []
     page_state = {
         "mode": "questionnaire",
         "slug": slug,
@@ -218,7 +222,7 @@ def public_questionnaire_h5_page(request: Request, slug: str):
         "diagnostics_url": "",
         "submitted_url": f"/s/{slug}/submitted",
         "request_hints": {},
-        "initial_questionnaire": {"questions": payload["questions"]},
+        "initial_questionnaire": {**questionnaire, "questions": questions},
         "answer_display_mode": "all",
         "prefill_fields": {},
         "form_error": "",

@@ -140,6 +140,52 @@ def test_aicrm_next_questionnaire_readonly_routes_are_served_by_ai_crm_next() ->
         assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
 
 
+def test_public_h5_page_uses_production_facade_when_database_ready(monkeypatch) -> None:
+    testclient_module = pytest.importorskip("fastapi.testclient")
+    TestClient = testclient_module.TestClient
+    import aicrm_next.questionnaire.api as questionnaire_api
+    from aicrm_next.main import create_app
+
+    monkeypatch.setattr(questionnaire_api, "production_data_ready", lambda: True)
+    monkeypatch.setattr(
+        questionnaire_api,
+        "get_public_questionnaire_from_legacy",
+        lambda slug: {
+            "ok": True,
+            "questionnaire": {
+                "id": 21,
+                "slug": slug,
+                "title": "真实生产公开问卷",
+                "description": "生产 PostgreSQL facade 问卷",
+                "enabled": True,
+                "redirect_url": "",
+                "submit_button_text": "提交",
+                "created_at": "2026-05-22T00:00:00Z",
+                "updated_at": "2026-05-22T00:01:00Z",
+            },
+            "questions": [
+                {
+                    "id": 348,
+                    "type": "mobile",
+                    "title": "请输入手机号",
+                    "required": True,
+                    "options": [],
+                    "placeholder_text": "请输入手机号",
+                }
+            ],
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = TestClient(create_app()).get("/s/q-20260414135818-5d8fba")
+
+    assert response.status_code == 200
+    assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "真实生产公开问卷" in response.text
+    assert "请输入手机号" in response.text
+    assert "InMemoryQuestionnaireRepository" not in response.text
+
+
 def test_questionnaire_readonly_smoke_declares_submit_oauth_and_external_paths_not_executed() -> None:
     from tools import questionnaire_readonly_gray_smoke as gray_smoke
 
