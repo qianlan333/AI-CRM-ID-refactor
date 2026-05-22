@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, asdict
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from itertools import count
 from typing import Any
 
@@ -14,7 +14,7 @@ _EVENTS: list[Json] = []
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)

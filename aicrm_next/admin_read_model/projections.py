@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .repo import AdminReadRepository
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _base_payload(repo: AdminReadRepository, payload: dict[str, Any]) -> dict[str, Any]:
@@ -302,4 +302,3 @@ def api_docs_payload(repo: AdminReadRepository) -> dict[str, Any]:
 
 def page_row_count(payload: dict[str, Any]) -> int:
     return sum(len(section.get("rows") or []) for section in payload.get("sections") or [])
-

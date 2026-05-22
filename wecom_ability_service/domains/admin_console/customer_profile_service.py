@@ -352,6 +352,10 @@ def get_customer_messages_payload(
                 "sender": _normalized_text(row.get("sender")),
                 "receiver": _normalized_text(row.get("receiver")),
                 "msgtype": _normalized_text(formatted.get("msgtype") or row.get("msgtype")),
+                "chat_type": _normalized_text(formatted.get("chat_type") or row.get("chat_type")),
+                "chat_id": _normalized_text(formatted.get("chat_id") or formatted.get("roomid")),
+                "group_name": _normalized_text(formatted.get("group_name")),
+                "owner_userid": _normalized_text(row.get("owner_userid")),
             }
         )
     return {
@@ -363,4 +367,3 @@ def get_customer_messages_payload(
         "count": len(messages),
         "lookup": profile_payload.get("lookup") or {},
     }
-

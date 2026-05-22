@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from aicrm_next.shared.repository_provider import assert_repository_allowed
@@ -21,7 +21,7 @@ class QuestionnaireRepository(Protocol):
 
 
 def _now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _initial_questionnaires() -> list[dict[str, Any]]:

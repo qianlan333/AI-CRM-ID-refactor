@@ -1927,8 +1927,8 @@ def test_import_experience_leads_service_records_sources_and_history(app):
     assert all(row["source_type"] == "experience_import" for row in history)
 
 
-def test_sidebar_bind_mobile_page_uses_single_customer_automation_layout(client):
-    response = client.get("/sidebar/bind-mobile")
+def test_sidebar_bind_mobile_page_legacy_mode_keeps_single_customer_automation_layout(client):
+    response = client.get("/sidebar/bind-mobile?v=legacy")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
@@ -1945,6 +1945,21 @@ def test_sidebar_bind_mobile_page_uses_single_customer_automation_layout(client)
     assert "自动化转化卡片" not in html
     assert "/api/sidebar/signup-tags/status" not in html
     assert "/api/sidebar/signup-tags/mark" not in html
+
+
+def test_sidebar_bind_mobile_page_defaults_to_customer_workbench_v2(client):
+    response = client.get("/sidebar/bind-mobile")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "客户侧边栏 V2 工作台" in html
+    assert "sidebar_workbench/sidebar_workbench.css" in html
+    assert "/api/sidebar/v2/workbench" in html
+    assert "/api/sidebar/v2/materials/send" in html
+    assert "/api/sidebar/bind-mobile" in html
+    assert "自动化转化操作区" not in html
+    assert "一键自动化写话术" not in html
+    assert "实时标签" not in html
 
 
 def test_sidebar_lead_pool_upsert_class_term_creates_external_only_member(client, app):

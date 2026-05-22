@@ -1,0 +1,276 @@
+from __future__ import annotations
+
+import json
+
+from wecom_ability_service.db import get_db
+
+
+def _seed_contact(external_userid: str = "wm_sidebar_v2") -> None:
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO contacts (external_userid, customer_name, owner_userid, remark, description)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (external_userid) DO UPDATE SET
+            customer_name = EXCLUDED.customer_name,
+            owner_userid = EXCLUDED.owner_userid,
+            remark = EXCLUDED.remark,
+            description = EXCLUDED.description
+        """,
+        (external_userid, "月朗", "owner_current", "月朗", ""),
+    )
+    db.commit()
+
+
+def test_sidebar_v2_workbench_returns_fixed_profile_options(client):
+    response = client.get("/api/sidebar/v2/workbench", query_string={"external_userid": "wx_ext_001"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["profile_options"]["source"] == ["小蓝咨询群", "媛子咨询群", "学员转介绍", "流量群", "公域", "其他", "公域直播流量"]
+    assert payload["profile_options"]["industry"] == ["美业", "大健康", "知识IP", "疗愈", "教育培训", "玄学", "服装", "保险", "其他", "餐饮"]
+    assert payload["modules"] == ["profile", "questionnaires", "products", "orders", "materials", "other_staff_messages"]
+    assert "counts" not in payload
+
+
+def test_sidebar_v2_profile_put_rejects_invalid_source_and_industry(client):
+    invalid_source = client.put(
+        "/api/sidebar/v2/profile",
+        json={"external_userid": "wm_sidebar_v2", "source": "朋友圈", "industry": "教育培训"},
+    )
+    invalid_industry = client.put(
+        "/api/sidebar/v2/profile",
+        json={"external_userid": "wm_sidebar_v2", "source": "流量群", "industry": "AI"},
+    )
+
+    assert invalid_source.status_code == 400
+    assert invalid_industry.status_code == 400
+
+
+def test_sidebar_v2_profile_put_persists_fixed_fields(client):
+    response = client.put(
+        "/api/sidebar/v2/profile",
+        json={
+            "external_userid": "wm_sidebar_profile_save",
+            "source": "流量群",
+            "industry": "教育培训",
+            "industry_description": "  K12 阅读训练  ",
+            "needs_blockers_followup": "  预算待确认  ",
+            "updated_by": "sales_01",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["profile"] == {
+        "source": "流量群",
+        "industry": "教育培训",
+        "industry_description": "K12 阅读训练",
+        "needs_blockers_followup": "预算待确认",
+    }
+
+    workbench = client.get(
+        "/api/sidebar/v2/workbench",
+        query_string={"external_userid": "wm_sidebar_profile_save"},
+    ).get_json()
+    assert workbench["profile"] == {
+        "source": "流量群",
+        "industry": "教育培训",
+        "industry_description": "K12 阅读训练",
+        "needs_blockers_followup": "预算待确认",
+    }
+
+
+def test_sidebar_v2_questionnaires_groups_answers(client, app):
+    with app.app_context():
+        _seed_contact()
+        db = get_db()
+        questionnaire_id = db.execute(
+            """
+            INSERT INTO questionnaires (slug, name, title)
+            VALUES (?, ?, ?)
+            RETURNING id
+            """,
+            ("reading-v2", "阅读能力测评问卷", "阅读能力测评问卷"),
+        ).fetchone()["id"]
+        submission_id = db.execute(
+            """
+            INSERT INTO questionnaire_submissions (questionnaire_id, external_userid, submitted_at)
+            VALUES (?, ?, ?)
+            RETURNING id
+            """,
+            (questionnaire_id, "wm_sidebar_v2", "2026-05-18 20:41:00"),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO questionnaire_submission_answers (
+                submission_id, question_id, question_type, question_title_snapshot,
+                selected_option_texts_snapshot, text_value
+            ) VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                submission_id,
+                1,
+                "single_choice",
+                "客户来源",
+                json.dumps(["流量群"], ensure_ascii=False),
+                "",
+                submission_id,
+                2,
+                "textarea",
+                "主要需求",
+                json.dumps([], ensure_ascii=False),
+                "提升阅读兴趣",
+            ),
+        )
+        db.commit()
+
+    response = client.get("/api/sidebar/v2/questionnaires", query_string={"external_userid": "wm_sidebar_v2"})
+
+    assert response.status_code == 200
+    questionnaire = response.get_json()["questionnaires"][0]
+    assert questionnaire["title"] == "阅读能力测评问卷"
+    assert questionnaire["submitted_at"] == "2026-05-18 20:41"
+    assert questionnaire["answer_count"] == 2
+    assert questionnaire["total_count"] == 2
+    assert questionnaire["answers"] == [
+        {"question": "客户来源", "answer": "流量群"},
+        {"question": "主要需求", "answer": "提升阅读兴趣"},
+    ]
+
+
+def test_sidebar_v2_materials_use_unified_schema(client, monkeypatch):
+    from wecom_ability_service.domains.sidebar_v2 import service
+
+    monkeypatch.setattr(
+        service.image_library,
+        "list_images",
+        lambda **kwargs: [{"id": 1, "name": "课程海报", "file_name": "poster.png", "tags": ["课程介绍"], "enabled": True}],
+    )
+    monkeypatch.setattr(
+        service.miniprogram_library,
+        "list_miniprograms",
+        lambda **kwargs: [{"id": 2, "title": "测评入口", "name": "mini", "enabled": True}],
+    )
+    monkeypatch.setattr(
+        service.attachment_library,
+        "list_attachments",
+        lambda **kwargs: [{"id": 3, "name": "", "file_name": "阅读资料.pdf", "tags": ["PDF"], "enabled": True}],
+    )
+
+    image = client.get("/api/sidebar/v2/materials", query_string={"type": "image"}).get_json()["materials"][0]
+    mini = client.get("/api/sidebar/v2/materials", query_string={"type": "mini"}).get_json()["materials"][0]
+    pdf = client.get("/api/sidebar/v2/materials", query_string={"type": "pdf"}).get_json()["materials"][0]
+
+    assert image == {"id": 1, "type": "image", "title": "课程海报", "thumbnail_label": "图", "tags": ["课程介绍"], "enabled": True}
+    assert mini == {"id": 2, "type": "mini", "title": "测评入口", "thumbnail_label": "小", "tags": [], "enabled": True}
+    assert pdf == {"id": 3, "type": "pdf", "title": "阅读资料.pdf", "thumbnail_label": "PDF", "tags": ["PDF"], "enabled": True}
+
+
+def test_sidebar_v2_products_and_orders_keep_empty_adapter_schema(client):
+    products_response = client.get("/api/sidebar/v2/products", query_string={"external_userid": "wm_sidebar_v2"})
+    orders_response = client.get("/api/sidebar/v2/orders", query_string={"external_userid": "wm_sidebar_v2"})
+
+    assert products_response.status_code == 200
+    assert products_response.get_json() == {"ok": True, "products": []}
+    assert orders_response.status_code == 200
+    assert orders_response.get_json() == {"ok": True, "orders": []}
+
+
+def test_sidebar_v2_other_staff_messages_filters_current_user_and_keeps_recent_text_images(client, app):
+    with app.app_context():
+        _seed_contact()
+        db = get_db()
+        db.execute(
+            "INSERT INTO owner_role_map (userid, display_name, role) VALUES (?, ?, ?), (?, ?, ?)",
+            ("staff_other", "张老师", "staff", "owner_current", "当前客服", "staff"),
+        )
+        rows = []
+        for index in range(25):
+            rows.append(
+                (
+                    index + 1,
+                    f"msg_other_{index:02d}",
+                    "group" if index % 2 else "private",
+                    "wm_sidebar_v2",
+                    "owner_current",
+                    "staff_other",
+                    "wm_sidebar_v2",
+                    "image" if index == 24 else "text",
+                    "" if index == 24 else f"消息{index:02d}",
+                    f"2026-05-18 10:{index:02d}:00",
+                    json.dumps({"decrypted_message": {"roomid": "room_1" if index % 2 else "", "tolist": ["wm_sidebar_v2"]}}, ensure_ascii=False),
+                )
+            )
+        rows.extend(
+            [
+                (100, "msg_current", "private", "wm_sidebar_v2", "owner_current", "owner_current", "wm_sidebar_v2", "text", "当前客服消息", "2026-05-18 11:00:00", "{}"),
+                (101, "msg_voice", "private", "wm_sidebar_v2", "owner_current", "staff_other", "wm_sidebar_v2", "voice", "voice", "2026-05-18 11:01:00", "{}"),
+            ]
+        )
+        db.executemany(
+            """
+            INSERT INTO archived_messages (
+                seq, msgid, chat_type, external_userid, owner_userid, sender, receiver,
+                msgtype, content, send_time, raw_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        db.execute(
+            """
+            INSERT INTO group_chats (chat_id, group_name, owner_userid, raw_payload)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (chat_id) DO UPDATE SET group_name = EXCLUDED.group_name
+            """,
+            ("room_1", "三年级阅读训练营咨询群", "owner_current", "{}"),
+        )
+        db.commit()
+
+    response = client.get(
+        "/api/sidebar/v2/other-staff-messages",
+        query_string={"external_userid": "wm_sidebar_v2", "current_userid": "owner_current", "limit": 20},
+    )
+
+    messages = response.get_json()["messages"]
+    assert len(messages) == 20
+    assert messages[0]["content"] == "消息05"
+    assert messages[-1]["type"] == "image"
+    assert messages[-1]["content"] == "发送了图片"
+    assert {item["staff_userid"] for item in messages} == {"staff_other"}
+    assert all(item["type"] in {"text", "image"} for item in messages)
+    assert any(item["scene"] == "group" and item["scene_label"] == "三年级阅读训练营咨询群" for item in messages)
+    assert any(item["scene"] == "private" and item["scene_label"] == "私聊" for item in messages)
+
+
+def test_sidebar_v2_material_send_uses_private_message_dispatch(client, monkeypatch):
+    from wecom_ability_service.domains.sidebar_v2 import service
+
+    captured = {}
+    monkeypatch.setattr(service.image_library, "resolve_image_media_id", lambda image_id: f"media_{image_id}")
+
+    def fake_dispatch(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "status": "sent", "record_id": 77, "task_ids": [88], "sender_userid": kwargs["sender_userid"]}
+
+    monkeypatch.setattr(service.private_message_dispatch, "_dispatch_private_message_batch", fake_dispatch)
+
+    response = client.post(
+        "/api/sidebar/v2/materials/send",
+        json={
+            "external_userid": "wm_sidebar_v2",
+            "owner_userid": "HuangYouCan",
+            "type": "image",
+            "material_id": 123,
+            "operator": "operator_1",
+        },
+    )
+
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["record_id"] == 77
+    assert payload["task_ids"] == [88]
+    assert captured["target_items"] == [{"external_userid": "wm_sidebar_v2"}]
+    assert captured["image_media_ids"] == ["media_123"]
+    assert captured["sender_userid"] == "HuangYouCan"
+    assert captured["operator_id"] == "operator_1"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
 from .legacy_flask_facade import _legacy_app
@@ -36,7 +36,7 @@ def get_automation_overview_from_legacy() -> dict[str, Any]:
             "cards": cards,
             "total": total,
             "filters": {},
-            "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "status": "live",
             "source_status": "production_postgres",
             "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
@@ -68,7 +68,7 @@ def list_automation_pools_from_legacy() -> dict[str, Any]:
             "ok": True,
             "pools": pools,
             "total": len(pools),
-            "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "source_status": "production_postgres",
             "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
         }
