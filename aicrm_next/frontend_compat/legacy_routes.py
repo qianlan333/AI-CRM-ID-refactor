@@ -101,6 +101,23 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
     if name == "api.admin_console_customer_detail":
         external_userid = str(path_params.get("external_userid", ""))
         return f"/admin/customers/{external_userid}"
+    program_id = str(path_params.get("program_id") or "").strip()
+    program_route_map = {
+        "api.admin_automation_program_setup": "setup",
+        "api.admin_automation_program_overview": "overview",
+        "api.admin_automation_program_copy": "copy",
+        "api.admin_automation_program_pause": "pause",
+        "api.admin_automation_program_activate": "activate",
+        "api.admin_automation_program_archive": "archive",
+    }
+    if name in program_route_map and program_id:
+        base = f"/admin/automation-conversion/programs/{program_id}/{program_route_map[name]}"
+        query = {
+            key: value
+            for key, value in path_params.items()
+            if key != "program_id" and value not in (None, "")
+        }
+        return base + (f"?{urlencode(query)}" if query else "")
     path_map = {
         "api.admin_console_dashboard": "/admin",
         "api.admin_console_customers": "/admin/customers",
@@ -112,12 +129,6 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_console_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaire_new": "/admin/questionnaires/ui",
         "api.admin_automation_conversion": "/admin/automation-conversion",
-        "api.admin_automation_program_setup": "/admin/automation-conversion",
-        "api.admin_automation_program_overview": "/admin/automation-conversion",
-        "api.admin_automation_program_copy": "/admin/automation-conversion",
-        "api.admin_automation_program_pause": "/admin/automation-conversion",
-        "api.admin_automation_program_activate": "/admin/automation-conversion",
-        "api.admin_automation_program_archive": "/admin/automation-conversion",
         "api.admin_jobs": "/admin/jobs",
         "api.admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
         "api.admin_wechat_pay_products_page": "/admin/wechat-pay/products",
