@@ -63,18 +63,31 @@ def test_aicrm_next_commerce_package_exists() -> None:
     assert (REPO_ROOT / "aicrm_next" / "commerce" / "repo.py").exists()
 
 
-def test_next_product_readonly_routes_are_served_by_ai_crm_next() -> None:
+def test_product_admin_routes_are_forwarded_to_legacy_admin_runtime() -> None:
+    from tools import check_production_route_resolution as checker
+
+    result = checker.run_check()
+    samples = result["resolution_samples"]
+    product_paths = {
+        "/admin/wechat-pay/products",
+        "/admin/wechat-pay/products/new",
+        "/api/admin/wechat-pay/products",
+        "/api/admin/wechat-pay/products/1",
+        "/api/admin/wechat-pay/products/1/share",
+    }
+    matched = {item["path"]: item for item in samples if item["path"] in product_paths}
+
+    assert set(matched) == product_paths
+    for item in matched.values():
+        assert item["route_owner"] == "production_compat"
+        assert item["endpoint_module"] == "aicrm_next.production_compat.api"
+
+
+def test_public_product_routes_stay_served_by_ai_crm_next() -> None:
     from aicrm_next.main import app
 
     client = TestClient(app)
-    list_response = client.get("/api/admin/wechat-pay/products")
-    assert list_response.status_code == 200
-    assert list_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    product_id = list_response.json()["items"][0]["id"]
-
     for path in [
-        "/admin/wechat-pay/products",
-        f"/api/admin/wechat-pay/products/{product_id}",
         "/p/course-masked-001",
         "/api/products/course-masked-001",
     ]:
