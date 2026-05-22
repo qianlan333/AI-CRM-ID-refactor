@@ -194,6 +194,50 @@ def test_questionnaire_page_serializes_datetime_items(monkeypatch):
     assert "Internal Server Error" not in response.text
 
 
+def test_automation_conversion_page_uses_production_facade_without_fixture_repo(monkeypatch):
+    import aicrm_next.frontend_compat.legacy_routes as legacy_routes
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+    monkeypatch.delenv("AICRM_NEXT_ALLOW_FIXTURE_REPO_IN_PROD", raising=False)
+    monkeypatch.setattr(
+        legacy_routes,
+        "list_automation_programs_from_legacy",
+        lambda: {
+            "ok": True,
+            "items": [
+                {
+                    "program": {
+                        "id": 7,
+                        "program_name": "真实自动化运营方案",
+                        "program_code": "real_program_v1",
+                        "status": "active",
+                        "updated_at": "2026-05-22T00:00:00Z",
+                    },
+                    "summary": {
+                        "channel_count": 3,
+                        "workflow_count": 9,
+                        "latest_execution_at": "2026-05-22T01:00:00Z",
+                    },
+                }
+            ],
+            "default_program": {"id": 7, "program_name": "真实自动化运营方案"},
+            "total": 1,
+            "source_status": "production_postgres",
+        },
+    )
+
+    response = TestClient(create_app(), raise_server_exceptions=False).get("/admin/automation-conversion")
+
+    assert response.status_code == 200
+    assert "真实自动化运营方案" in response.text
+    assert "real_program_v1" in response.text
+    assert "fixture_repository_blocked_in_production" not in response.text
+    assert "next_local_preview" not in response.text
+
+
 def test_real_data_binding_checker_returns_ok():
     result = checker.run_check()
 
