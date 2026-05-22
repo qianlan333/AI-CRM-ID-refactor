@@ -45,6 +45,8 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/questionnaires/{questionnaire_id}",
     "/admin/user-ops/ui",
     "/admin/user-ops",
+    "/admin/hxc-dashboard",
+    "/admin/hxc-send-config",
     "/admin/cloud-orchestrator",
     "/admin/cloud-orchestrator/campaigns",
     "/admin/cloud-orchestrator/observability",
@@ -102,7 +104,8 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_console_dashboard": "/admin",
         "api.admin_console_customers": "/admin/customers",
         "api.admin_user_ops_ui": "/admin/user-ops/ui",
-        "api.admin_hxc_dashboard_workspace": "/admin/user-ops",
+        "api.admin_hxc_dashboard_workspace": "/admin/hxc-dashboard",
+        "api.admin_hxc_send_config_page": "/admin/hxc-send-config",
         "api.admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator/campaigns",
         "api.admin_cloud_orchestrator_campaigns_workspace": "/admin/cloud-orchestrator/campaigns",
         "api.admin_cloud_orchestrator_observability": "/admin/cloud-orchestrator/observability",
@@ -398,21 +401,73 @@ def admin_user_ops_ui(request: Request):
     return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
 
 
-@router.get("/admin/user-ops", name="api.admin_hxc_dashboard_workspace")
+@router.get("/admin/user-ops", name="api.admin_user_ops_legacy_redirect")
 def admin_user_ops_funnel(request: Request):
+    return RedirectResponse(url=_legacy_url_for("api.admin_hxc_dashboard_workspace"), status_code=302)
+
+
+def _empty_hxc_dashboard_summary() -> dict:
+    return {
+        "total": 0,
+        "funnel": {
+            "member_and_user": 0,
+            "only_member": 0,
+            "user_no_member": 0,
+            "inactive": 0,
+        },
+        "latest_refresh": {"started_at": "", "finished_at": "", "status": "local_contract_probe"},
+    }
+
+
+@router.get("/admin/hxc-dashboard", name="api.admin_hxc_dashboard_workspace")
+def admin_hxc_dashboard(request: Request):
     context = _shell_context(
         request=request,
-        page_title="漏斗 / 数据看板",
-        page_summary="查看客户激活、会员状态和运营漏斗数据。",
+        page_title="用户激活漏斗看板",
+        page_summary=(
+            "CRM 三表手机号并集 × 黄小璨用户/会员/订阅/测评/成长目标/路径/任务/复盘/V6 角色评分 "
+            "聚合, 每 30 分钟自动刷新. 列头可筛选, 表格右上角可导出 CSV / Excel."
+        ),
         active_endpoint="api.admin_hxc_dashboard_workspace",
     )
-    _real_data_context(
-        context,
-        payload=GetAdminFunnelPageQuery()(),
-        title="漏斗 / 数据看板",
-        summary="生产客户、问卷提交、订单、自动化成员、运营任务和工作流执行统计。",
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "用户激活漏斗看板"},
+    ]
+    context.update(
+        {
+            "dashboard_rows": [],
+            "dashboard_summary": _empty_hxc_dashboard_summary(),
+            "send_configs": [],
+        }
     )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
+    return templates.TemplateResponse(request, "admin_console/hxc_dashboard.html", context)
+
+
+@router.get("/admin/hxc-send-config", name="api.admin_hxc_send_config_page")
+def admin_hxc_send_config(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="群发发送人管理",
+        page_summary="从企微通讯录选择群发发送人，设置优先级和启用状态。",
+        active_endpoint="api.admin_hxc_dashboard_workspace",
+    )
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "激活漏斗看板", "href": request.url_for("api.admin_hxc_dashboard_workspace")},
+        {"label": "群发发送人管理"},
+    ]
+    context.update(
+        {
+            "directory_count": 0,
+            "sender_count": 0,
+            "active_sender_count": 0,
+            "last_synced_at": "暂无",
+            "members": [],
+            "send_configs": [],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/hxc_send_config.html", context)
 
 
 @router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")
