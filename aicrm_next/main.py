@@ -80,9 +80,9 @@ def create_app() -> FastAPI:
     app.include_router(commerce_router)
     app.include_router(media_library_router)
     app.include_router(ai_assist_router)
+    app.include_router(frontend_compat_router)
     if legacy_production_facade_enabled():
         app.include_router(production_compat_wildcard_router)
-    app.include_router(frontend_compat_router)
     return app
 
 

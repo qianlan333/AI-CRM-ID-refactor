@@ -44,6 +44,12 @@ RESOLUTION_SAMPLES = [
     ("POST", "/api/wecom/events"),
     ("GET", "/api/h5/wechat-pay/legacy-probe"),
     ("GET", "/api/customers/automation/legacy-probe"),
+    ("GET", "/sidebar/bind-mobile"),
+    ("GET", "/api/sidebar/contact-binding-status"),
+    ("GET", "/api/sidebar/customer-context"),
+    ("GET", "/api/admin/customers/profile"),
+    ("GET", "/api/admin/customers/profile/tags"),
+    ("POST", "/api/sidebar/bind-mobile"),
 ]
 
 
