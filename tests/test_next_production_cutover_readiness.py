@@ -155,7 +155,7 @@ def test_cutover_checker_contract(monkeypatch):
     monkeypatch.setattr(
         cutover_checker,
         "run_timer_check",
-        lambda: {"ok": True, "safe_to_enable_timers": True},
+        lambda: {"ok": True, "safe_to_enable_timers": True, "dry_run_db_sentinel": {"ok": True}},
     )
     result = cutover_checker.run_check()
 
@@ -169,6 +169,32 @@ def test_cutover_checker_contract(monkeypatch):
     assert result["oauth_routes_ready"] is True
     assert result["safe_to_enable_timers"] is True
     assert result["safe_to_remove_5013_callback_fallback"] is False
+
+
+def test_cutover_checker_requires_dry_run_db_sentinel(monkeypatch):
+    monkeypatch.setattr(
+        cutover_checker,
+        "run_gap_check",
+        lambda: {
+            "ok": True,
+            "database_mode": "postgres",
+            "route_404_blockers": [],
+            "content_blockers": [],
+            "oauth_blockers": [],
+            "automation_production_data_ready": True,
+            "production_config_modified": False,
+        },
+    )
+    monkeypatch.setattr(
+        cutover_checker,
+        "run_timer_check",
+        lambda: {"ok": True, "safe_to_enable_timers": True, "dry_run_db_sentinel": {"ok": False}},
+    )
+
+    result = cutover_checker.run_check()
+
+    assert result["safe_to_enable_timers"] is False
+    assert result["dry_run_db_sentinel_ok"] is False
 
 
 def test_required_docs_exist_and_avoid_forbidden_status_markers():

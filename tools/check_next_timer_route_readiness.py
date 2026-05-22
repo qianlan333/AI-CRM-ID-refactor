@@ -29,6 +29,17 @@ TIMER_ROUTES = [
     "/api/admin/cloud-orchestrator/campaigns/run-due",
 ]
 
+DB_SENTINEL_QUERIES = {
+    "automation_reply_monitor_config.updated_at": "SELECT MAX(updated_at)::text AS value FROM automation_reply_monitor_config",
+    "automation_sop_batch.max_id": "SELECT MAX(id)::text AS value FROM automation_sop_batch",
+    "automation_sop_batch_item.max_id": "SELECT MAX(id)::text AS value FROM automation_sop_batch_item",
+    "automation_sop_progress.updated_at": "SELECT MAX(updated_at)::text AS value FROM automation_sop_progress",
+    "automation_workflow_execution.max_id": "SELECT MAX(id)::text AS value FROM automation_workflow_execution",
+    "automation_workflow_execution_item.max_id": "SELECT MAX(id)::text AS value FROM automation_workflow_execution_item",
+    "user_ops_send_records.max_id": "SELECT MAX(id)::text AS value FROM user_ops_send_records",
+    "outbound_tasks.max_id": "SELECT MAX(id)::text AS value FROM outbound_tasks",
+}
+
 
 @contextmanager
 def timer_probe_env():
@@ -40,12 +51,11 @@ def timer_probe_env():
         "AUTOMATION_INTERNAL_API_TOKEN": os.environ.get("AUTOMATION_INTERNAL_API_TOKEN"),
         "SECRET_KEY": os.environ.get("SECRET_KEY"),
     }
-    os.environ["AICRM_NEXT_ENV"] = "production"
-    os.environ["AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE"] = "1"
-    os.environ["AICRM_NEXT_ENABLE_PRODUCTION_PROBE_DRY_RUN"] = "1"
-    os.environ["DATABASE_URL"] = "postgresql://probe:probe@127.0.0.1:1/aicrm_probe"
-    os.environ["AUTOMATION_INTERNAL_API_TOKEN"] = "probe-token"
-    os.environ["SECRET_KEY"] = "next-timer-route-readiness"
+    os.environ.setdefault("AICRM_NEXT_ENV", "production")
+    os.environ.setdefault("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    os.environ.setdefault("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    os.environ.setdefault("AUTOMATION_INTERNAL_API_TOKEN", "probe-token")
+    os.environ.setdefault("SECRET_KEY", "next-timer-route-readiness")
     try:
         yield
     finally:
@@ -61,25 +71,108 @@ def _client() -> TestClient:
     return TestClient(module.create_app())
 
 
+def _is_local_probe_database(database_url: str) -> bool:
+    return "127.0.0.1:1/aicrm_probe" in database_url or "localhost:1/aicrm_probe" in database_url
+
+
+def _read_db_sentinel() -> dict[str, Any]:
+    database_url = os.getenv("DATABASE_URL", "")
+    if _is_local_probe_database(database_url):
+        return {"available": False, "reason": "local_probe_database", "values": {}}
+    try:
+        import psycopg
+    except ModuleNotFoundError as exc:
+        return {"available": False, "reason": f"psycopg_missing:{exc}", "values": {}}
+    try:
+        values: dict[str, str] = {}
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            for key, query in DB_SENTINEL_QUERIES.items():
+                with conn.cursor() as cur:
+                    cur.execute(query)
+                    row = cur.fetchone()
+                    values[key] = "" if not row or row[0] is None else str(row[0])
+        return {"available": True, "reason": "", "values": values}
+    except Exception as exc:  # pragma: no cover - depends on live production DB
+        return {"available": False, "reason": str(exc), "values": {}}
+
+
+def _sentinel_comparison(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    if not before.get("available") or not after.get("available"):
+        return {
+            "ok": False,
+            "status": "unavailable",
+            "before": before,
+            "after": after,
+            "changed_keys": [],
+        }
+    before_values = before.get("values") or {}
+    after_values = after.get("values") or {}
+    changed = [key for key in DB_SENTINEL_QUERIES if before_values.get(key) != after_values.get(key)]
+    return {
+        "ok": not changed,
+        "status": "pass" if not changed else "changed",
+        "before": before,
+        "after": after,
+        "changed_keys": changed,
+    }
+
+
 def run_check() -> dict[str, Any]:
     with timer_probe_env():
         client = _client()
         results: dict[str, Any] = {}
+        sentinel_before = _read_db_sentinel()
+        probe_token = os.getenv("AUTOMATION_INTERNAL_API_TOKEN", "probe-token")
         for route in TIMER_ROUTES:
             unauth = client.post(route, json={}, follow_redirects=False)
-            auth = client.post(
+            header_dry_run = client.post(
                 route,
                 json={},
-                headers={"Authorization": "Bearer probe-token", "X-AICRM-Dry-Run": "1"},
+                headers={"Authorization": f"Bearer {probe_token}", "X-AICRM-Dry-Run": "1"},
                 follow_redirects=False,
             )
+            body_dry_run = client.post(
+                route,
+                json={"dry_run": True},
+                headers={"Authorization": f"Bearer {probe_token}"},
+                follow_redirects=False,
+            )
+            query_dry_run = client.post(
+                f"{route}?dry_run=true",
+                json={},
+                headers={"Authorization": f"Bearer {probe_token}"},
+                follow_redirects=False,
+            )
+            dry_run_payloads = []
+            for response in [header_dry_run, body_dry_run, query_dry_run]:
+                try:
+                    dry_run_payloads.append(response.json())
+                except Exception:
+                    dry_run_payloads.append({})
             results[route] = {
                 "unauth_status": unauth.status_code,
-                "auth_status": auth.status_code,
-                "route_not_404": unauth.status_code != 404 and auth.status_code != 404,
+                "header_dry_run_status": header_dry_run.status_code,
+                "body_dry_run_status": body_dry_run.status_code,
+                "query_dry_run_status": query_dry_run.status_code,
+                "route_not_404": unauth.status_code != 404
+                and header_dry_run.status_code != 404
+                and body_dry_run.status_code != 404
+                and query_dry_run.status_code != 404,
                 "auth_guard_present": unauth.status_code in {401, 403},
-                "dry_run_or_noop_available": auth.status_code != 404,
+                "dry_run_or_noop_available": all(response.status_code == 200 for response in [header_dry_run, body_dry_run, query_dry_run]),
+                "dry_run_noop": all(
+                    payload.get("ok") is True
+                    and payload.get("dry_run") is True
+                    and payload.get("side_effect_executed") is False
+                    and payload.get("legacy_forwarded") is False
+                    and payload.get("route_owner") == "ai_crm_next"
+                    and payload.get("compatibility_facade") == "legacy_flask_facade"
+                    for payload in dry_run_payloads
+                ),
+                "dry_run_payloads": dry_run_payloads,
             }
+        sentinel_after = _read_db_sentinel()
+        db_sentinel = _sentinel_comparison(sentinel_before, sentinel_after)
         overview = client.get("/api/admin/automation-conversion/overview", follow_redirects=False)
         try:
             overview_payload: Any = overview.json()
@@ -94,8 +187,13 @@ def run_check() -> dict[str, Any]:
     blockers = [
         route
         for route, payload in results.items()
-        if not payload["route_not_404"] or not payload["auth_guard_present"] or not payload["dry_run_or_noop_available"]
+        if not payload["route_not_404"]
+        or not payload["auth_guard_present"]
+        or not payload["dry_run_or_noop_available"]
+        or not payload["dry_run_noop"]
     ]
+    if not db_sentinel["ok"]:
+        blockers.append("dry_run_db_sentinel_not_passed")
     if not automation_production_data_ready:
         blockers.append("automation_production_data_not_ready")
     result = {
@@ -105,7 +203,8 @@ def run_check() -> dict[str, Any]:
         "automation_overview_status": overview.status_code,
         "automation_overview": overview_payload,
         "automation_production_data_ready": automation_production_data_ready,
-        "safe_to_enable_timers": not blockers and automation_production_data_ready,
+        "dry_run_db_sentinel": db_sentinel,
+        "safe_to_enable_timers": not blockers and automation_production_data_ready and db_sentinel["ok"],
         "recommendation": "READY_TO_ENABLE_TIMERS_AFTER_SERVER_ENV_TOKEN_VERIFICATION" if not blockers else "TIMER_ROUTES_NOT_READY",
     }
     return result
@@ -127,9 +226,13 @@ def write_outputs(result: dict[str, Any], output_md: str | None, output_json: st
         ]
         for route, payload in result["timer_routes"].items():
             lines.append(
-                f"- {route}: unauth={payload['unauth_status']} auth={payload['auth_status']} "
+                f"- {route}: unauth={payload['unauth_status']} "
+                f"header_dry_run={payload['header_dry_run_status']} "
+                f"body_dry_run={payload['body_dry_run_status']} "
+                f"query_dry_run={payload['query_dry_run_status']} "
                 f"guard={payload['auth_guard_present']}"
             )
+        lines.extend(["", "## DB Sentinel", f"- status: {result['dry_run_db_sentinel']['status']}"])
         Path(output_md).write_text("\n".join(lines) + "\n")
 
 
