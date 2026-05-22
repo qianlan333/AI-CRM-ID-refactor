@@ -21,9 +21,10 @@ def test_next_forwards_sidebar_bind_mobile_page_to_legacy_facade(monkeypatch):
 
     assert response.status_code == 200
     assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
-    assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert "X-AICRM-Compatibility-Facade" not in response.headers
     assert "Not Found" not in html
     assert "客户档案绑定" in html
+    assert "/api/sidebar/customer-context" in html
     assert "/api/sidebar/contact-binding-status" in html
     assert "/api/sidebar/bind-mobile" in html
     assert "/api/admin/automation-conversion/member" in html
@@ -36,7 +37,7 @@ def test_next_forwards_sidebar_read_apis_without_404(monkeypatch):
     jssdk_response = client.get("/api/sidebar/jssdk-config")
 
     assert status_response.status_code == 400
-    assert status_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert "X-AICRM-Compatibility-Facade" not in status_response.headers
     assert status_response.json()["error"] == "external_userid is required"
     assert jssdk_response.status_code == 400
     assert jssdk_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
@@ -53,5 +54,21 @@ def test_next_forwards_sidebar_detail_dependencies_without_404(monkeypatch):
     assert member_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_automation_facade"
     assert member_response.json()["error"] == "external_contact_id or phone is required"
     assert tags_response.status_code == 400
-    assert tags_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert "X-AICRM-Compatibility-Facade" not in tags_response.headers
     assert tags_response.json()["error"] == "external_userid is required"
+
+
+def test_next_owns_sidebar_customer_context_and_profile_readonly_routes(monkeypatch):
+    client = _production_client(monkeypatch)
+
+    context_response = client.get("/api/sidebar/customer-context")
+    profile_response = client.get("/api/admin/customers/profile")
+
+    assert context_response.status_code == 400
+    assert context_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in context_response.headers
+    assert context_response.json()["source_status"] == "input_error"
+    assert profile_response.status_code == 400
+    assert profile_response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    assert "X-AICRM-Compatibility-Facade" not in profile_response.headers
+    assert profile_response.json()["source_status"] == "input_error"

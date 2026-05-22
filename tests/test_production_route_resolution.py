@@ -29,6 +29,16 @@ def test_next_exact_routes_are_not_caught_by_production_compat_wildcards():
     assert _endpoint_for(samples, "GET", "/api/admin/wechat-pay/products") == "aicrm_next.commerce.api"
     assert _owner_for(samples, "GET", "/api/admin/image-library") == "next"
     assert _endpoint_for(samples, "GET", "/api/admin/image-library") == "aicrm_next.media_library.api"
+    assert _owner_for(samples, "GET", "/sidebar/bind-mobile") == "next"
+    assert _endpoint_for(samples, "GET", "/sidebar/bind-mobile") == "aicrm_next.frontend_compat.legacy_routes"
+    assert _owner_for(samples, "GET", "/api/sidebar/contact-binding-status") == "next"
+    assert _endpoint_for(samples, "GET", "/api/sidebar/contact-binding-status") == "aicrm_next.identity_contact.api"
+    assert _owner_for(samples, "GET", "/api/sidebar/customer-context") == "next"
+    assert _endpoint_for(samples, "GET", "/api/sidebar/customer-context") == "aicrm_next.customer_read_model.api"
+    assert _owner_for(samples, "GET", "/api/admin/customers/profile") == "next"
+    assert _endpoint_for(samples, "GET", "/api/admin/customers/profile") == "aicrm_next.customer_read_model.api"
+    assert _owner_for(samples, "GET", "/api/admin/customers/profile/tags") == "next"
+    assert _endpoint_for(samples, "GET", "/api/admin/customers/profile/tags") == "aicrm_next.customer_read_model.api"
 
 
 def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
@@ -41,6 +51,8 @@ def test_high_risk_legacy_facade_routes_remain_production_compat_owned():
     assert _endpoint_for(samples, "POST", "/api/admin/automation-conversion/jobs/run-due") == "aicrm_next.production_compat.api"
     assert _owner_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "production_compat"
     assert _endpoint_for(samples, "GET", "/api/h5/wechat-pay/legacy-probe") == "aicrm_next.production_compat.api"
+    assert _owner_for(samples, "POST", "/api/sidebar/bind-mobile") == "production_compat"
+    assert _endpoint_for(samples, "POST", "/api/sidebar/bind-mobile") == "aicrm_next.production_compat.api"
 
 
 def test_checker_reports_no_shadowed_exact_routes_or_blockers():
