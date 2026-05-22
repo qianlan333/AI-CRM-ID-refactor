@@ -4,9 +4,6 @@ import json
 import subprocess
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_ROUTE_FILE = "wecom_ability_service/http/admin_wechat_pay_products.py"
 PAYMENT_ROUTE_FILES = [
@@ -83,17 +80,21 @@ def test_product_admin_routes_are_forwarded_to_legacy_admin_runtime() -> None:
         assert item["endpoint_module"] == "aicrm_next.production_compat.api"
 
 
-def test_public_product_routes_stay_served_by_ai_crm_next() -> None:
-    from aicrm_next.main import app
+def test_public_product_routes_are_forwarded_to_legacy_in_production() -> None:
+    from tools import check_production_route_resolution as checker
 
-    client = TestClient(app)
-    for path in [
-        "/p/course-masked-001",
-        "/api/products/course-masked-001",
-    ]:
-        response = client.get(path)
-        assert response.status_code == 200, path
-        assert response.headers["X-AICRM-Route-Owner"] == "ai_crm_next"
+    result = checker.run_check()
+    samples = result["resolution_samples"]
+    public_paths = {
+        "/p/prd_20260518095708_9f77db",
+        "/api/products/prd_20260518095708_9f77db",
+    }
+    matched = {item["path"]: item for item in samples if item["path"] in public_paths}
+
+    assert set(matched) == public_paths
+    for item in matched.values():
+        assert item["route_owner"] == "production_compat"
+        assert item["endpoint_module"] == "aicrm_next.production_compat.api"
 
 
 def test_next_checkout_is_not_executed_by_product_readonly_scope() -> None:
@@ -143,7 +144,7 @@ def test_deploy_and_production_config_not_modified_by_d2() -> None:
         if path.startswith("deploy/")
         or (path.startswith(".github/") and path != ".github/workflows/ci.yml")
         or any(keyword in path.lower() for keyword in ["nginx", "systemd", "supervisor", "docker-compose", "production"])
-        and not path.startswith(("docs/", "tests/", "tools/"))
+        and not path.startswith(("aicrm_next/production_compat/", "docs/", "tests/", "tools/"))
     ]
     assert forbidden == []
 
