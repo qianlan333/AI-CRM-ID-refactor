@@ -12,7 +12,6 @@ from fastapi.templating import Jinja2Templates
 from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.integration_gateway.legacy_flask_facade import forward_to_legacy_flask
 from aicrm_next.admin_read_model.application import (
-    GetAdminAiAssistantPageQuery,
     GetAdminApiDocsPageQuery,
     GetAdminConfigPageQuery,
     GetAdminFunnelPageQuery,
@@ -47,6 +46,8 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/user-ops/ui",
     "/admin/user-ops",
     "/admin/cloud-orchestrator",
+    "/admin/cloud-orchestrator/campaigns",
+    "/admin/cloud-orchestrator/observability",
     "/admin/wecom-tags",
     "/admin/automation-conversion",
     "/admin/jobs",
@@ -102,7 +103,9 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_console_customers": "/admin/customers",
         "api.admin_user_ops_ui": "/admin/user-ops/ui",
         "api.admin_hxc_dashboard_workspace": "/admin/user-ops",
-        "api.admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator",
+        "api.admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator/campaigns",
+        "api.admin_cloud_orchestrator_campaigns_workspace": "/admin/cloud-orchestrator/campaigns",
+        "api.admin_cloud_orchestrator_observability": "/admin/cloud-orchestrator/observability",
         "api.admin_wecom_tags_page": "/admin/wecom-tags",
         "api.admin_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaires": "/admin/questionnaires",
@@ -414,19 +417,56 @@ def admin_user_ops_funnel(request: Request):
 
 @router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")
 def admin_cloud_orchestrator(request: Request):
+    return RedirectResponse(
+        url=_legacy_url_for("api.admin_cloud_orchestrator_campaigns_workspace"),
+        status_code=302,
+    )
+
+
+@router.get("/admin/cloud-orchestrator/campaigns", name="api.admin_cloud_orchestrator_campaigns_workspace")
+def admin_cloud_orchestrator_campaigns(request: Request):
     context = _shell_context(
         request=request,
-        page_title="AI 助手",
-        page_summary="查看 AI 助手、云编排和自动化辅助能力入口。",
+        page_title="AI 助手 · 运营计划审阅",
+        page_summary="Agent 上架的多分层多步骤运营计划在这里审阅启动。",
         active_endpoint="api.admin_cloud_orchestrator_workspace",
     )
-    _real_data_context(
-        context,
-        payload=GetAdminAiAssistantPageQuery()(),
-        title="AI 助手",
-        summary="只读展示 automation_agent_config、run、output 与 LLM 调用日志；不触发外部调用。",
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "AI 助手", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
+        {"label": "运营计划审阅"},
+    ]
+    context["page_actions"] = [
+        {
+            "label": "可观察性",
+            "href": "/admin/cloud-orchestrator/observability",
+            "variant": "ghost",
+        },
+    ]
+    return templates.TemplateResponse(request, "admin_console/cloud_campaigns_workspace.html", context)
+
+
+@router.get("/admin/cloud-orchestrator/observability", name="api.admin_cloud_orchestrator_observability")
+def admin_cloud_orchestrator_observability(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="Cloud Orchestrator · 可观察性",
+        page_summary="工单、审计、漏斗与 Tool 调用统计按 trace_id 串联排查。",
+        active_endpoint="api.admin_cloud_orchestrator_workspace",
     )
-    return templates.TemplateResponse(request, "admin_console/real_data_page.html", context)
+    context["breadcrumbs"] = [
+        {"label": "客户管理后台", "href": request.url_for("api.admin_console_dashboard")},
+        {"label": "AI 助手", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
+        {"label": "可观察性"},
+    ]
+    context["page_actions"] = [
+        {
+            "label": "返回助手",
+            "href": request.url_for("api.admin_cloud_orchestrator_campaigns_workspace"),
+            "variant": "primary",
+        },
+    ]
+    return templates.TemplateResponse(request, "admin_console/cloud_observability.html", context)
 
 
 @router.get("/admin/wecom-tags", name="api.admin_wecom_tags_page")

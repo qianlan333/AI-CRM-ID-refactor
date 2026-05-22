@@ -45,6 +45,23 @@ def test_key_admin_pages_render_server_side_rows_or_stats(monkeypatch):
         assert has_real_data, (route, row_count)
 
 
+def test_ai_assistant_entry_uses_campaign_review_workspace(monkeypatch):
+    client = _client(monkeypatch)
+
+    redirect = client.get("/admin/cloud-orchestrator", follow_redirects=False)
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == "/admin/cloud-orchestrator/campaigns"
+
+    response = client.get("/admin/cloud-orchestrator/campaigns")
+
+    assert response.status_code == 200
+    assert "AI 助手 · 运营计划审阅" in response.text
+    assert "Agent 上架的多分层多步骤运营计划在这里审阅启动。" in response.text
+    assert "/api/admin/cloud-orchestrator/campaigns?" in response.text
+    assert "只读展示 automation_agent_config" not in response.text
+    assert "production_unavailable" not in response.text
+
+
 def test_customer_page_does_not_render_sample_fixture_names(monkeypatch):
     response = _client(monkeypatch).get("/admin/customers")
 
@@ -414,6 +431,42 @@ def test_admin_wecom_tag_routes_forward_to_legacy(monkeypatch):
     assert response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
     assert response.json()["forwarded"] == "GET:/api/admin/wecom/tags"
     assert response.json()["items"][0]["tag_id"] == "et-tag-001"
+
+
+def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch):
+    import aicrm_next.production_compat.api as production_api
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    async def fake_forward(request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "forwarded": f"{request.method}:{request.url.path}:{request.url.query}",
+                "campaigns": [{"campaign_code": "camp_probe", "review_status": "pending_review"}],
+            },
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
+
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    list_response = client.get("/api/admin/cloud-orchestrator/campaigns?review_status=pending_review")
+    step_response = client.patch(
+        "/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1",
+        json={"content_text": "updated"},
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert list_response.json()["forwarded"] == "GET:/api/admin/cloud-orchestrator/campaigns:review_status=pending_review"
+    assert step_response.status_code == 200
+    assert step_response.json()["forwarded"] == "PATCH:/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1:"
 
 
 def test_real_data_binding_checker_returns_ok():
