@@ -18,26 +18,28 @@ def test_production_deploy_loads_postgres_env_before_init_db():
     assert env_source_index < database_url_guard_index < init_db_index
 
 
-def test_production_deploy_stashes_dirty_worktree_before_pull():
+def test_production_deploy_stashes_dirty_worktree_before_remote_update():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
     stash_index = workflow.index("git stash push --include-untracked")
     before_sha_index = workflow.index('before_sha="$(git rev-parse HEAD)"')
-    pull_index = workflow.index("git pull --ff-only origin main")
+    fetch_index = workflow.index("git fetch origin main:refs/remotes/origin/main")
+    reset_index = workflow.index("git reset --hard refs/remotes/origin/main")
 
-    assert stash_index < before_sha_index < pull_index
+    assert stash_index < before_sha_index < fetch_index < reset_index
 
 
 def test_production_deploy_installs_dependencies_only_when_requirements_change():
     workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 
-    pull_index = workflow.index("git pull --ff-only origin main")
+    fetch_index = workflow.index("git fetch origin main:refs/remotes/origin/main")
+    reset_index = workflow.index("git reset --hard refs/remotes/origin/main")
     after_sha_index = workflow.index('after_sha="$(git rev-parse HEAD)"')
     requirements_guard_index = workflow.index('git diff --quiet "$before_sha" "$after_sha" -- requirements.txt')
     pip_install_index = workflow.index("pip install -r requirements.txt")
     init_db_index = workflow.index("python3 app.py init-db")
 
-    assert pull_index < after_sha_index < requirements_guard_index < pip_install_index < init_db_index
+    assert fetch_index < reset_index < after_sha_index < requirements_guard_index < pip_install_index < init_db_index
     assert "requirements.txt unchanged; skipping pip install" in workflow
 
 
