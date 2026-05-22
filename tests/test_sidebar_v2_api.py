@@ -34,18 +34,25 @@ def test_sidebar_v2_workbench_returns_fixed_profile_options(client):
     assert "counts" not in payload
 
 
-def test_sidebar_v2_profile_put_rejects_invalid_source_and_industry(client):
-    invalid_source = client.put(
+def test_sidebar_v2_profile_put_accepts_free_text_source_and_industry(client):
+    response = client.put(
         "/api/sidebar/v2/profile",
-        json={"external_userid": "wm_sidebar_v2", "source": "朋友圈", "industry": "教育培训"},
-    )
-    invalid_industry = client.put(
-        "/api/sidebar/v2/profile",
-        json={"external_userid": "wm_sidebar_v2", "source": "流量群", "industry": "AI"},
+        json={
+            "external_userid": "wm_sidebar_v2",
+            "source": "  媛子咨询群，朋友介绍  ",
+            "industry": "  大健康，线下门店  ",
+            "industry_description": "  本地连锁健康管理门店  ",
+            "needs_blockers_followup": "  想先看案例  ",
+        },
     )
 
-    assert invalid_source.status_code == 400
-    assert invalid_industry.status_code == 400
+    assert response.status_code == 200
+    assert response.get_json()["profile"] == {
+        "source": "媛子咨询群，朋友介绍",
+        "industry": "大健康，线下门店",
+        "industry_description": "本地连锁健康管理门店",
+        "needs_blockers_followup": "想先看案例",
+    }
 
 
 def test_sidebar_v2_profile_put_persists_fixed_fields(client):
@@ -167,14 +174,84 @@ def test_sidebar_v2_materials_use_unified_schema(client, monkeypatch):
     assert pdf == {"id": 3, "type": "pdf", "title": "阅读资料.pdf", "thumbnail_label": "PDF", "tags": ["PDF"], "enabled": True}
 
 
-def test_sidebar_v2_products_and_orders_keep_empty_adapter_schema(client):
+def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, app):
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO wechat_pay_products (
+                product_code, name, amount_total, currency, status, enabled, cta_text, require_mobile
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "prd_sidebar_active",
+                "暑期阅读提升营 · 4 周",
+                39900,
+                "CNY",
+                "active",
+                True,
+                "立即报名",
+                False,
+                "prd_sidebar_draft",
+                "草稿商品",
+                19900,
+                "CNY",
+                "draft",
+                False,
+                "立即报名",
+                False,
+            ),
+        )
+        db.execute(
+            """
+            INSERT INTO wechat_pay_orders (
+                out_trade_no, product_code, product_name, amount_total, currency,
+                external_userid, mobile_snapshot, status, trade_state, paid_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
+            """,
+            (
+                "WXP_SIDE_001",
+                "prd_sidebar_active",
+                "暑期阅读提升营 · 4 周",
+                39900,
+                "CNY",
+                "wm_sidebar_v2",
+                "13800138000",
+                "paid",
+                "SUCCESS",
+                "2026-05-20 06:22:00+00",
+                "2026-05-20 06:20:00+00",
+            ),
+        )
+        db.commit()
+
     products_response = client.get("/api/sidebar/v2/products", query_string={"external_userid": "wm_sidebar_v2"})
     orders_response = client.get("/api/sidebar/v2/orders", query_string={"external_userid": "wm_sidebar_v2"})
 
     assert products_response.status_code == 200
-    assert products_response.get_json() == {"ok": True, "products": []}
     assert orders_response.status_code == 200
-    assert orders_response.get_json() == {"ok": True, "orders": []}
+    assert products_response.get_json() == {
+        "ok": True,
+        "products": [
+            {
+                "id": "prd_sidebar_active",
+                "title": "暑期阅读提升营 · 4 周",
+                "price_label": "¥399",
+            }
+        ],
+    }
+    assert orders_response.get_json() == {
+        "ok": True,
+        "orders": [
+            {
+                "id": "WXP_SIDE_001",
+                "title": "暑期阅读提升营 · 4 周",
+                "amount_label": "¥399",
+                "status_label": "已支付",
+                "paid_at": "2026-05-20 14:22",
+            }
+        ],
+    }
 
 
 def test_sidebar_v2_other_staff_messages_filters_current_user_and_keeps_recent_text_images(client, app):

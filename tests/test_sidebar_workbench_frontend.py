@@ -16,6 +16,7 @@ def test_sidebar_workbench_v2_default_page_is_not_legacy_long_page(client):
     assert "data-workbench-url=\"/api/sidebar/v2/workbench\"" in html
     assert "data-material-send-url=\"/api/sidebar/v2/materials/send\"" in html
     assert "sidebar_workbench/sidebar_workbench.js" in html
+    assert "加载中..." in html
     assert "自动化转化操作区" not in html
     assert "实时标签" not in html
     assert "一键自动化写话术" not in html
@@ -37,13 +38,19 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert '["other_staff_messages", "其他客服聊天"]' in script
     assert "data-tab" in script
     assert "badge" not in combined.lower()
+    assert "phone-state loading" in template
+    assert "加载中..." in template
 
     assert "用户来源" in script
     assert "行业信息" in script
     assert "行业具体描述" in script
     assert "需求、卡点、跟进状态" in script
-    assert "select" in script
     assert "textarea" in script
+    assert "textAreaField(\"source\", \"用户来源\"" in script
+    assert "textAreaField(\"industry\", \"行业信息\"" in script
+    assert "<select" not in combined
+    assert "selectField" not in combined
+    assert "请选择" not in combined
 
     forbidden = [
         "第 3 天",
