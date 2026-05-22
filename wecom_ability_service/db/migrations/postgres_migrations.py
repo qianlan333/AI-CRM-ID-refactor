@@ -215,6 +215,22 @@ def _ensure_postgres_attachment_library(db) -> None:
     )
 
 
+def _ensure_postgres_sidebar_customer_profile_fields(db) -> None:
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sidebar_customer_profile_fields (
+            external_userid TEXT PRIMARY KEY,
+            source TEXT NOT NULL DEFAULT '',
+            industry TEXT NOT NULL DEFAULT '',
+            industry_description TEXT NOT NULL DEFAULT '',
+            needs_blockers_followup TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
 def _ensure_postgres_automation_agent_config_tables(db) -> None:
     db.execute(
         """
@@ -1767,6 +1783,7 @@ def _init_postgres(db) -> None:
     _ensure_postgres_user_ops_page_tables(db)
     _ensure_postgres_miniprogram_library_thumb_image_id(db)
     _ensure_postgres_attachment_library(db)
+    _ensure_postgres_sidebar_customer_profile_fields(db)
     _ensure_postgres_automation_agent_config_tables(db)
     _ensure_postgres_automation_operation_templates(db)
     db.execute(

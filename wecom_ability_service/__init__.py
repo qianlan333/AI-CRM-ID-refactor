@@ -156,6 +156,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "SIDEBAR_PERSON_DETAIL_URL_TEMPLATE",
             "https://www.youcangogogo.com/person/{person_id}",
         ),
+        SIDEBAR_WORKBENCH_V2_ENABLED=os.getenv("SIDEBAR_WORKBENCH_V2_ENABLED", "true"),
         OPENCLAW_WEBHOOK_URL=openclaw_webhook_url,
         LAOHUANG_CHAT_ENABLED=os.getenv("LAOHUANG_CHAT_ENABLED", "false"),
         LAOHUANG_CHAT_WEBHOOK_URL=os.getenv("LAOHUANG_CHAT_WEBHOOK_URL", DEFAULT_LAOHUANG_CHAT_WEBHOOK_URL),

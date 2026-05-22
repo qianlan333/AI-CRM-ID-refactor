@@ -5766,7 +5766,7 @@ def test_sidebar_jssdk_config_returns_signatures(client, monkeypatch):
 
 
 def test_sidebar_page_contains_jssdk_debug_chain(client):
-    response = client.get("/sidebar/bind-mobile")
+    response = client.get("/sidebar/bind-mobile?v=legacy")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "wx.config success" in body
@@ -5828,7 +5828,7 @@ def test_sidebar_page_hides_debug_and_uses_customer_display_name(client, app):
     assert status_response.get_json()["display_name"] == "周青"
     assert status_response.get_json()["owner_userid"] == "sales_01"
 
-    page_response = client.get("/sidebar/bind-mobile")
+    page_response = client.get("/sidebar/bind-mobile?v=legacy")
     body = page_response.get_data(as_text=True)
     assert "当前未识别到客户信息，请从企微客户侧边栏重新打开。" in body
     assert "客户昵称：识别中" in body

@@ -186,6 +186,13 @@ DOMAIN_LAYOUTS: dict[str, DomainLayoutSpec] = {
         companion_service_modules=("preflight_service.py",),
         notes="Questionnaire definition, submission, export; preflight stays domain-local.",
     ),
+    "sidebar_v2": DomainLayoutSpec(
+        name="sidebar_v2",
+        mode="simple",
+        service_module="service.py",
+        persistence_modules=("repo.py",),
+        notes="WeCom sidebar V2 workbench, profile fields, materials, and lightweight adapters.",
+    ),
     "wechat_pay": DomainLayoutSpec(
         name="wechat_pay",
         mode="simple",
