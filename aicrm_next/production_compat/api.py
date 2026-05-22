@@ -94,8 +94,9 @@ async def legacy_wechat_pay_product_admin_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
 
-@router.api_route("/api/products/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/p/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/pay/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/products/{path:path}", methods=_ALL_METHODS)
 async def legacy_public_product_routes(request: Request) -> Response:
     return await forward_to_legacy_flask(request)
 
@@ -109,6 +110,7 @@ async def legacy_public_product_routes(request: Request) -> Response:
 @wildcard_router.api_route("/api/h5/alipay/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/products/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/p/{path:path}", methods=_ALL_METHODS)
+@wildcard_router.api_route("/pay/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/orders/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/checkout/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/wechat-pay/{path:path}", methods=_ALL_METHODS)

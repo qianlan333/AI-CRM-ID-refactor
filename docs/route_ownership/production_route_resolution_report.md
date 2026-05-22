@@ -1,9 +1,9 @@
 # Production Route Resolution
 
 - ok: `true`
-- route_count: `189`
-- production_compat_route_count: `71`
-- production_compat_catch_all_count: `42`
+- route_count: `191`
+- production_compat_route_count: `73`
+- production_compat_catch_all_count: `44`
 - blockers: `0`
 
 ## Resolution Samples
@@ -30,6 +30,7 @@
 - GET /api/admin/wechat-pay/products/1: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/api/admin/wechat-pay/products*` / `legacy_forward`)
 - GET /api/admin/wechat-pay/products/1/share: `production_compat` -> `aicrm_next.production_compat.api.legacy_wechat_pay_product_admin_routes` (manifest `/api/admin/wechat-pay/products*` / `legacy_forward`)
 - GET /p/prd_20260518095708_9f77db: `production_compat` -> `aicrm_next.production_compat.api.legacy_public_product_routes` (manifest `/p/{page_slug}` / `legacy_forward`)
+- GET /pay/prd_20260518095708_9f77db: `production_compat` -> `aicrm_next.production_compat.api.legacy_public_product_routes` (manifest `/pay/{product_code}` / `legacy_forward`)
 - GET /api/products/prd_20260518095708_9f77db: `production_compat` -> `aicrm_next.production_compat.api.legacy_public_product_routes` (manifest `/api/products*` / `legacy_forward`)
 - GET /api/admin/image-library: `next` -> `aicrm_next.media_library.api.list_images` (manifest `/api/admin/image-library*` / `fake_adapter`)
 - GET /api/admin/image-library/image_masked_001: `next` -> `aicrm_next.media_library.api.get_image` (manifest `/api/admin/image-library*` / `fake_adapter`)
