@@ -57,6 +57,14 @@ async def legacy_questionnaire_public_write_routes(request: Request) -> Response
     return await forward_to_legacy_flask(request)
 
 
+@router.api_route("/api/admin/wecom/tags", methods=_ALL_METHODS)
+@router.api_route("/api/admin/wecom/tags/{path:path}", methods=_ALL_METHODS)
+@router.api_route("/api/admin/wecom/tag-groups", methods=_ALL_METHODS)
+@router.api_route("/api/admin/wecom/tag-groups/{path:path}", methods=_ALL_METHODS)
+async def legacy_admin_wecom_tag_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
 @router.api_route("/api/admin/automation-conversion/settings", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/settings/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/admin/automation-conversion/default-channel-settings", methods=_ALL_METHODS)
