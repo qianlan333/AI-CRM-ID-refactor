@@ -11,6 +11,7 @@ It does not enable timers, change systemd/nginx/deploy config, remove legacy fal
 - Dry-run responses must include `side_effect_executed=false` and `legacy_forwarded=false`.
 - `tools/check_next_timer_route_readiness.py` must pass the dry-run DB sentinel before timers are re-enabled.
 - `tools/check_reply_monitor_run_due_readiness.py` must pass before the reply-monitor run-due timer is re-enabled.
+- Active automation timers are separate from reply-system timers. `aicrm-automation-jobs-run-due.timer` and `aicrm-campaign-run-due.timer` remain disabled until the active automation dry-run, preview, bounded execution, DB sentinel, and log-observation checks pass.
 - A single queue item with invalid phone, missing phone, or unresolvable identity is an item-level failure. It must not make the run-due route return 5xx.
 - `tools/check_next_production_cutover_readiness.py` may report `safe_to_enable_timers=true` only when automation production data is ready and the dry-run DB sentinel passes.
 - 5013 callback fallback remains in place until a separate observation window approves removal.
@@ -96,6 +97,21 @@ Rollback:
 - Disable dispatch/send immediately.
 - Keep capture and queue decisions separate.
 - Preserve audit logs for all real outbound attempts.
+
+## Active Automation Timers
+
+The following timers are not part of the reply-monitor restore path and must stay disabled during reply-system recovery:
+
+- `aicrm-automation-jobs-run-due.timer`
+- `aicrm-campaign-run-due.timer`
+
+Before either timer can be enabled, follow `docs/active_automation_reenable_runbook.md`:
+
+1. dry-run no-op
+2. preview no-op
+3. bounded single execution with allowlist
+4. observe DB and logs
+5. only then enable the timer
 
 ## Current Position
 

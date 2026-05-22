@@ -15,6 +15,17 @@ LOGGER = logging.getLogger("aicrm_next.legacy_flask_facade")
 
 LEGACY_COMPATIBILITY_BOUNDARY = "legacy_flask_facade"
 
+ACTIVE_AUTOMATION_RUN_DUE_PATH = "/api/admin/automation-conversion/jobs/run-due"
+ACTIVE_AUTOMATION_RUN_DUE_PREVIEW_PATH = "/api/admin/automation-conversion/jobs/run-due/preview"
+CAMPAIGN_RUN_DUE_PATH = "/api/admin/cloud-orchestrator/campaigns/run-due"
+CAMPAIGN_RUN_DUE_PREVIEW_PATH = "/api/admin/cloud-orchestrator/campaigns/run-due/preview"
+ACTIVE_AUTOMATION_PATHS = {
+    ACTIVE_AUTOMATION_RUN_DUE_PATH,
+    ACTIVE_AUTOMATION_RUN_DUE_PREVIEW_PATH,
+    CAMPAIGN_RUN_DUE_PATH,
+    CAMPAIGN_RUN_DUE_PREVIEW_PATH,
+}
+
 _HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -127,8 +138,10 @@ def _timer_token_guard(request: Request) -> Response | None:
     timer_paths = {
         "/api/admin/automation-conversion/reply-monitor/run-due",
         "/api/admin/automation-conversion/reply-monitor/capture",
-        "/api/admin/automation-conversion/jobs/run-due",
-        "/api/admin/cloud-orchestrator/campaigns/run-due",
+        ACTIVE_AUTOMATION_RUN_DUE_PATH,
+        ACTIVE_AUTOMATION_RUN_DUE_PREVIEW_PATH,
+        CAMPAIGN_RUN_DUE_PATH,
+        CAMPAIGN_RUN_DUE_PREVIEW_PATH,
     }
     if path not in timer_paths:
         return None
@@ -155,8 +168,10 @@ def _is_timer_path(path: str) -> bool:
     return path in {
         "/api/admin/automation-conversion/reply-monitor/run-due",
         "/api/admin/automation-conversion/reply-monitor/capture",
-        "/api/admin/automation-conversion/jobs/run-due",
-        "/api/admin/cloud-orchestrator/campaigns/run-due",
+        ACTIVE_AUTOMATION_RUN_DUE_PATH,
+        ACTIVE_AUTOMATION_RUN_DUE_PREVIEW_PATH,
+        CAMPAIGN_RUN_DUE_PATH,
+        CAMPAIGN_RUN_DUE_PREVIEW_PATH,
     }
 
 
@@ -164,14 +179,18 @@ def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _json_body_dry_run(body: bytes) -> bool:
+def _json_body_payload(body: bytes) -> dict[str, Any]:
     if not body:
-        return False
+        return {}
     try:
         payload = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return False
-    return isinstance(payload, dict) and _truthy(payload.get("dry_run"))
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _json_body_dry_run(body: bytes) -> bool:
+    return _truthy(_json_body_payload(body).get("dry_run"))
 
 
 def _timer_dry_run_response(request: Request, body: bytes) -> Response | None:
@@ -204,6 +223,198 @@ def _timer_dry_run_response(request: Request, body: bytes) -> Response | None:
             "X-AICRM-Route-Owner": "ai_crm_next",
             "X-AICRM-Compatibility-Facade": LEGACY_COMPATIBILITY_BOUNDARY,
         },
+    )
+
+
+def _response_json(payload: dict[str, Any], *, status_code: int = 200) -> Response:
+    return Response(
+        json.dumps(payload, ensure_ascii=False),
+        status_code=status_code,
+        media_type="application/json",
+        headers={
+            "X-AICRM-Route-Owner": "ai_crm_next",
+            "X-AICRM-Compatibility-Facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        },
+    )
+
+
+def _active_automation_preview_requested(request: Request, payload: dict[str, Any]) -> bool:
+    return request.url.path in {ACTIVE_AUTOMATION_RUN_DUE_PREVIEW_PATH, CAMPAIGN_RUN_DUE_PREVIEW_PATH} or _truthy(payload.get("preview"))
+
+
+def _selected_jobs(payload: dict[str, Any]) -> list[str]:
+    raw_jobs = payload.get("jobs")
+    if not isinstance(raw_jobs, list) or not raw_jobs:
+        return ["sop", "conversion_workflow"]
+    return [str(item).strip() for item in raw_jobs if str(item or "").strip()]
+
+
+def _preview_item(job_code: str) -> dict[str, Any]:
+    risk_flags = ["read_only_preview", "bounded_execution_required_before_real_run"]
+    if job_code == "sop":
+        risk_flags.append("sop_may_create_batches_when_real_run")
+    if job_code == "conversion_workflow":
+        risk_flags.append("workflow_may_create_execution_records_when_real_run")
+    if job_code == "operation_task":
+        risk_flags.append("operation_task_may_enqueue_broadcast_jobs_when_real_run")
+    return {
+        "job_code": job_code,
+        "due_count": 0,
+        "candidate_task_ids": [],
+        "candidate_workflow_ids": [],
+        "candidate_node_ids": [],
+        "estimated_audience_count": 0,
+        "estimated_send_count": 0,
+        "sample_targets": [],
+        "content_preview": [],
+        "risk_flags": risk_flags,
+    }
+
+
+def _active_automation_preview_response(request: Request, payload: dict[str, Any]) -> Response | None:
+    if request.url.path not in ACTIVE_AUTOMATION_PATHS or not _active_automation_preview_requested(request, payload):
+        return None
+    if request.url.path in {CAMPAIGN_RUN_DUE_PATH, CAMPAIGN_RUN_DUE_PREVIEW_PATH}:
+        batch_size = int(payload.get("batch_size") or request.query_params.get("batch_size") or 1)
+        body = {
+            "ok": True,
+            "preview": True,
+            "side_effect_executed": False,
+            "legacy_forwarded": False,
+            "route_owner": "ai_crm_next",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+            "path": request.url.path,
+            "batch_size": max(1, min(batch_size, 10)),
+            "campaigns": [],
+            "due_count": 0,
+            "estimated_dispatch_count": 0,
+            "sample_targets": [],
+            "content_preview": [],
+            "risk_flags": ["read_only_preview", "campaign_allowlist_required_before_real_run"],
+        }
+        return _response_json(body)
+    jobs = _selected_jobs(payload)
+    previews = [_preview_item(job_code) for job_code in jobs]
+    body = {
+        "ok": True,
+        "preview": True,
+        "side_effect_executed": False,
+        "legacy_forwarded": False,
+        "route_owner": "ai_crm_next",
+        "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        "path": request.url.path,
+        "jobs": previews,
+        "total_due_count": sum(int(item["due_count"]) for item in previews),
+        "estimated_send_count": sum(int(item["estimated_send_count"]) for item in previews),
+    }
+    return _response_json(body)
+
+
+def _is_production_runtime() -> bool:
+    env_values = {
+        str(os.getenv("AICRM_NEXT_ENV", "") or "").strip().lower(),
+        str(os.getenv("ENVIRONMENT", "") or "").strip().lower(),
+        str(os.getenv("APP_ENV", "") or "").strip().lower(),
+        str(os.getenv("FLASK_ENV", "") or "").strip().lower(),
+    }
+    if env_values & {"prod", "production"}:
+        return True
+    database_url = str(os.getenv("DATABASE_URL", "") or "").strip().lower()
+    return bool(database_url and "127.0.0.1:1/aicrm_probe" not in database_url and "localhost:1/aicrm_probe" not in database_url)
+
+
+def _non_empty_list(payload: dict[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    return isinstance(value, list) and any(str(item or "").strip() for item in value)
+
+
+def _active_automation_execution_guard(request: Request, payload: dict[str, Any]) -> Response | None:
+    path = request.url.path
+    if path not in {ACTIVE_AUTOMATION_RUN_DUE_PATH, CAMPAIGN_RUN_DUE_PATH}:
+        return None
+    if not _is_production_runtime():
+        return None
+
+    if path == ACTIVE_AUTOMATION_RUN_DUE_PATH:
+        allowlist_present = any(
+            _non_empty_list(payload, key)
+            for key in ("allow_task_ids", "allow_workflow_ids", "allow_node_ids")
+        )
+        if not allowlist_present:
+            return _response_json(
+                {
+                    "ok": False,
+                    "error": "automation_run_due_allowlist_required",
+                    "error_code": "automation_run_due_allowlist_required",
+                    "side_effect_executed": False,
+                    "legacy_forwarded": False,
+                    "route_owner": "ai_crm_next",
+                    "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+                    "path": path,
+                    "required_allowlists": ["allow_task_ids", "allow_workflow_ids", "allow_node_ids"],
+                    "bounded_parameters": {
+                        "max_send_records": payload.get("max_send_records"),
+                        "max_outbound_tasks": payload.get("max_outbound_tasks"),
+                        "operator": payload.get("operator"),
+                    },
+                    "created_ids": {
+                        "automation_sop_batch": [],
+                        "automation_workflow_execution": [],
+                        "user_ops_send_records": [],
+                        "outbound_tasks": [],
+                    },
+                    "preflight_summary": {
+                        "jobs": _selected_jobs(payload),
+                        "allowlist_present": False,
+                        "external_call_allowed": False,
+                    },
+                },
+                status_code=409,
+            )
+    if path == CAMPAIGN_RUN_DUE_PATH:
+        allowlist_present = _non_empty_list(payload, "allow_campaign_ids")
+        if not allowlist_present:
+            return _response_json(
+                {
+                    "ok": False,
+                    "error": "campaign_run_due_allowlist_required",
+                    "error_code": "campaign_run_due_allowlist_required",
+                    "side_effect_executed": False,
+                    "legacy_forwarded": False,
+                    "route_owner": "ai_crm_next",
+                    "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+                    "path": path,
+                    "required_allowlists": ["allow_campaign_ids"],
+                    "bounded_parameters": {
+                        "batch_size": payload.get("batch_size"),
+                        "max_dispatch_count": payload.get("max_dispatch_count"),
+                    },
+                    "created_ids": {"campaign_dispatches": [], "outbound_tasks": []},
+                    "preflight_summary": {
+                        "allowlist_present": False,
+                        "external_call_allowed": False,
+                    },
+                },
+                status_code=409,
+            )
+    return _response_json(
+        {
+            "ok": False,
+            "error": "bounded_execution_requires_manual_implementation",
+            "error_code": "bounded_execution_requires_manual_implementation",
+            "side_effect_executed": False,
+            "legacy_forwarded": False,
+            "route_owner": "ai_crm_next",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+            "path": path,
+            "created_ids": {},
+            "preflight_summary": {
+                "allowlist_present": True,
+                "external_call_allowed": False,
+                "reason": "This guardrail PR blocks unbounded production execution before the bounded executor is wired.",
+            },
+        },
+        status_code=409,
     )
 
 
@@ -245,9 +456,16 @@ async def forward_to_legacy_flask(request: Request) -> Response:
         guard_response.headers.setdefault("X-AICRM-Compatibility-Facade", LEGACY_COMPATIBILITY_BOUNDARY)
         return guard_response
     body = await request.body()
+    payload = _json_body_payload(body)
     timer_dry_run_response = _timer_dry_run_response(request, body)
     if timer_dry_run_response is not None:
         return timer_dry_run_response
+    preview_response = _active_automation_preview_response(request, payload)
+    if preview_response is not None:
+        return preview_response
+    execution_guard_response = _active_automation_execution_guard(request, payload)
+    if execution_guard_response is not None:
+        return execution_guard_response
     dry_run_response = _probe_dry_run_response(request)
     if dry_run_response is not None:
         return dry_run_response

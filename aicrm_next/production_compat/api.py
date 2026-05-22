@@ -39,7 +39,9 @@ async def wecom_callback_routes(request: Request) -> Response:
 @router.api_route("/api/admin/automation-conversion/reply-monitor/run-due", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/automation-conversion/reply-monitor/capture", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/automation-conversion/jobs/run-due", methods=["POST", "OPTIONS"])
+@router.api_route("/api/admin/automation-conversion/jobs/run-due/preview", methods=["POST", "OPTIONS"])
 @router.api_route("/api/admin/cloud-orchestrator/campaigns/run-due", methods=["POST", "OPTIONS"])
+@router.api_route("/api/admin/cloud-orchestrator/campaigns/run-due/preview", methods=["POST", "OPTIONS"])
 @router.api_route("/api/customers/automation/{path:path}", methods=_ALL_METHODS)
 @router.api_route("/api/customer-automation/{path:path}", methods=_ALL_METHODS)
 async def legacy_production_compat_routes(request: Request) -> Response:
