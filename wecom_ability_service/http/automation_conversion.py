@@ -198,13 +198,16 @@ def register_routes(bp):
     bp.route("/admin/automation-conversion/programs/<int:program_id>/activate", methods=["POST"])(admin_automation_program_activate)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/pause", methods=["POST"])(admin_automation_program_pause)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/archive", methods=["POST"])(admin_automation_program_archive)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/overview", methods=["GET"])(admin_automation_program_overview)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/setup", methods=["GET"])(admin_automation_program_setup)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations", methods=["GET"])(admin_automation_program_operations)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows", methods=["GET"])(admin_automation_program_workflows)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows/new", methods=["GET"])(admin_automation_program_workflow_new)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows/<int:workflow_id>/edit", methods=["GET"])(admin_automation_program_workflow_edit)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/operations/workflows/<int:workflow_id>/nodes", methods=["GET"])(admin_automation_program_workflow_nodes)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/executions", methods=["GET"])(admin_automation_program_executions)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/flow-design", methods=["GET"])(admin_automation_program_flow_design)
+    bp.route("/admin/automation-conversion/programs/<int:program_id>/member-ops", methods=["GET"])(admin_automation_program_member_ops)
     bp.route("/admin/automation-conversion/programs/<int:program_id>/member-ops/stage/<stage_key>/send", methods=["POST"])(admin_automation_program_member_ops_stage_send)
     bp.route(
         "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",

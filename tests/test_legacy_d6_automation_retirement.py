@@ -41,9 +41,6 @@ def test_legacy_flask_no_longer_registers_automation_core_readonly_routes() -> N
 def test_legacy_flask_no_longer_registers_known_automation_readonly_aliases() -> None:
     routes = _route_methods()
     for route in [
-        "/admin/automation-conversion/programs/<int:program_id>/overview",
-        "/admin/automation-conversion/programs/<int:program_id>/executions",
-        "/admin/automation-conversion/programs/<int:program_id>/member-ops",
         "/api/admin/automation-conversion/dashboard",
         "/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search",
         "/api/admin/automation-conversion/member",
@@ -54,6 +51,16 @@ def test_legacy_flask_no_longer_registers_known_automation_readonly_aliases() ->
     ]:
         assert "GET" not in routes.get(route, set()), route
     assert "POST" in routes["/api/admin/automation-conversion/programs/<int:program_id>/members/segment-search"]
+
+
+def test_legacy_flask_preserves_program_scoped_workspace_routes() -> None:
+    routes = _route_methods()
+    for route in [
+        "/admin/automation-conversion/programs/<int:program_id>/overview",
+        "/admin/automation-conversion/programs/<int:program_id>/executions",
+        "/admin/automation-conversion/programs/<int:program_id>/member-ops",
+    ]:
+        assert "GET" in routes.get(route, set()), route
 
 
 def test_legacy_flask_preserves_automation_write_external_and_runtime_fallbacks() -> None:
