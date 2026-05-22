@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -160,8 +161,8 @@ def test_public_h5_page_uses_production_facade_when_database_ready(monkeypatch) 
                 "enabled": True,
                 "redirect_url": "",
                 "submit_button_text": "提交",
-                "created_at": "2026-05-22T00:00:00Z",
-                "updated_at": "2026-05-22T00:01:00Z",
+                "created_at": datetime(2026, 5, 22, 0, 0, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 5, 22, 0, 1, tzinfo=timezone.utc),
             },
             "questions": [
                 {

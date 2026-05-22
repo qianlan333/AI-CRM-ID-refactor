@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -208,8 +209,8 @@ def public_questionnaire_h5_page(request: Request, slug: str):
             payload = GetPublicQuestionnaireQuery()(slug)
     except Exception as exc:
         _raise_http(exc)
-    questionnaire = payload["questionnaire"]
-    questions = payload.get("questions") or []
+    questionnaire = jsonable_encoder(payload["questionnaire"])
+    questions = jsonable_encoder(payload.get("questions") or [])
     page_state = {
         "mode": "questionnaire",
         "slug": slug,
