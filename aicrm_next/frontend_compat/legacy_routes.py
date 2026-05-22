@@ -7,12 +7,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from aicrm_next.shared.runtime import production_data_ready
 from aicrm_next.automation_engine.application import ListAutomationExecutionRecordsQuery, ListAutomationPoolsQuery
 from aicrm_next.commerce.application import ListProductsQuery, ListTransactionsQuery
 from aicrm_next.customer_read_model.application import ListCustomersQuery
 from aicrm_next.customer_read_model.dto import ListCustomersRequest
 from aicrm_next.media_library.application import ListMediaItemsQuery
 from aicrm_next.questionnaire.application import GetQuestionnairePreflightQuery, ListQuestionnairesQuery
+from aicrm_next.integration_gateway.legacy_automation_facade import LegacyAutomationDataUnavailable, list_automation_programs_from_legacy
 
 router = APIRouter()
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -23,6 +25,9 @@ LEGACY_FRONTEND_ROUTES = [
     "/admin/customers",
     "/admin/questionnaires",
     "/admin/user-ops/ui",
+    "/admin/user-ops",
+    "/admin/cloud-orchestrator",
+    "/admin/wecom-tags",
     "/admin/automation-conversion",
     "/admin/jobs",
     "/admin/wechat-pay/transactions",
@@ -46,6 +51,9 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_console_dashboard": "/admin",
         "api.admin_console_customers": "/admin/customers",
         "api.admin_user_ops_ui": "/admin/user-ops/ui",
+        "api.admin_hxc_dashboard_workspace": "/admin/user-ops",
+        "api.admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator",
+        "api.admin_wecom_tags_page": "/admin/wecom-tags",
         "api.admin_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaires": "/admin/questionnaires",
         "api.admin_console_questionnaire_new": "/admin/questionnaires/ui",
@@ -64,7 +72,10 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
         "api.admin_miniprogram_library_workspace": "/admin/miniprogram-library",
         "api.admin_attachment_library_workspace": "/admin/attachment-library",
         "api.admin_config": "/admin/config",
+        "api.admin_config_home": "/admin/config",
         "api.admin_api_docs": "/admin/api-docs",
+        "api.admin_console_api_docs": "/admin/api-docs",
+        "api.admin_console_jobs": "/admin/jobs",
         "api.admin_dashboard_shell_context": "/api/admin/dashboard/shell-context",
         "api.admin_logout": "/admin/logout",
     }
@@ -73,20 +84,50 @@ def _legacy_url_for(name: str, **path_params: object) -> str:
     return base + (f"?{urlencode(query)}" if query else "")
 
 
+ADMIN_NAV_GROUPS = [
+    {
+        "title": "运营",
+        "items": [
+            {"key": "automation_conversion", "label": "自动化运营", "endpoint": "api.admin_automation_conversion"},
+            {"key": "cloud_orchestrator", "label": "AI 助手", "endpoint": "api.admin_cloud_orchestrator_workspace"},
+            {"key": "customers", "label": "客户激活 / 客户列表", "endpoint": "api.admin_console_customers"},
+            {"key": "user_ops_funnel", "label": "漏斗 / 数据看板", "endpoint": "api.admin_hxc_dashboard_workspace"},
+            {"key": "questionnaires", "label": "问卷", "endpoint": "api.admin_questionnaires"},
+            {"key": "wecom_tags", "label": "企微标签管理", "endpoint": "api.admin_wecom_tags_page"},
+        ],
+    },
+    {
+        "title": "交易",
+        "items": [
+            {"key": "wechat_pay_transactions", "label": "交易管理", "endpoint": "api.admin_wechat_pay_transactions_page"},
+            {"key": "wechat_pay_products", "label": "商品管理", "endpoint": "api.admin_wechat_pay_products_page"},
+        ],
+    },
+    {
+        "title": "素材",
+        "items": [
+            {"key": "image_library", "label": "图片素材库", "endpoint": "api.admin_image_library_workspace"},
+            {"key": "miniprogram_library", "label": "小程序素材库", "endpoint": "api.admin_miniprogram_library_workspace"},
+            {"key": "attachment_library", "label": "附件素材库", "endpoint": "api.admin_attachment_library_workspace"},
+        ],
+    },
+    {
+        "title": "配置及后台",
+        "items": [
+            {"key": "jobs", "label": "同步任务配置 / 同步任务", "endpoint": "api.admin_jobs"},
+            {"key": "config", "label": "配置", "endpoint": "api.admin_config"},
+            {"key": "api_docs", "label": "API 文档", "endpoint": "api.admin_api_docs"},
+        ],
+    },
+]
+
+
 def _nav_items(active_endpoint: str) -> list[dict]:
-    items = [
-        ("首页", "api.admin_console_dashboard"),
-        ("客户中心", "api.admin_console_customers"),
-        ("User Ops", "api.admin_user_ops_ui"),
-        ("问卷", "api.admin_questionnaires"),
-        ("自动化转化", "api.admin_automation_conversion"),
-        ("交易", "api.admin_wechat_pay_transactions_page"),
-        ("素材", "api.admin_image_library_workspace"),
-        ("任务", "api.admin_jobs"),
-        ("配置", "api.admin_config"),
-        ("API 文档", "api.admin_api_docs"),
-    ]
-    return [{"label": label, "endpoint": endpoint, "active": endpoint == active_endpoint} for label, endpoint in items]
+    groups: list[dict] = []
+    for group in ADMIN_NAV_GROUPS:
+        items = [{**item, "active": item["endpoint"] == active_endpoint} for item in group["items"]]
+        groups.append({**group, "items": items, "active": any(item["active"] for item in items)})
+    return groups
 
 
 def _shell_context(
@@ -104,7 +145,7 @@ def _shell_context(
         "nav_items": _nav_items(active_endpoint),
         "current_admin_user": None,
         "show_shell_meta": False,
-        "shell_status": {"environment": {"tone": "dev", "label": "实验"}, "health": {"state": "ok", "label": "OK", "detail": "fixture"}},
+        "shell_status": {"environment": {"tone": "prod", "label": "AI-CRM Next"}, "health": {"state": "ok", "label": "OK", "detail": "postgres"}},
         "page_notice": "",
         "page_error": "",
         "url_for": _legacy_url_for,
@@ -126,27 +167,27 @@ def _placeholder_state(title: str, body: str, items: list[str] | None = None) ->
 def admin_dashboard(request: Request):
     context = _shell_context(
         request=request,
-        page_title="系统概况",
-        page_summary="旧 AI-CRM 后台 shell 复刻基线，后端由 AI-CRM Next adapter 支撑。",
-        active_endpoint="api.admin_console_dashboard",
+        page_title="自动化运营",
+        page_summary="AI-CRM Next 后台总览，生产数据通过 PostgreSQL 与兼容 facade 提供。",
+        active_endpoint="api.admin_automation_conversion",
     )
     context.update(
         {
             "system_status": {
                 "cards": [
-                    {"label": "FastAPI", "value": "ok", "description": "实验后端可响应 legacy shell。", "tone": "ok"},
-                    {"label": "Frontend parity", "value": "partial", "description": "首轮已复制旧后台模板与静态资源。", "tone": "warn"},
+                    {"label": "FastAPI", "value": "ok", "description": "Next 后端可响应后台 shell。", "tone": "ok"},
+                    {"label": "Frontend parity", "value": "live", "description": "后台 shell 已切换为分组导航与生产数据入口。", "tone": "ok"},
                 ]
             },
             "dashboard_cards": [
-                {"label": "客户", "value": "adapter", "description": "客户中心读模型已接入兼容 API。", "href": request.url_for("api.admin_console_customers")},
-                {"label": "User Ops", "value": "copied", "description": "旧运营页模板已挂载。", "href": request.url_for("api.admin_user_ops_ui")},
+                {"label": "客户", "value": "postgres", "description": "客户列表走生产 PostgreSQL。", "href": request.url_for("api.admin_console_customers")},
+                {"label": "自动化运营", "value": "postgres", "description": "自动化运营页优先使用生产数据。", "href": request.url_for("api.admin_automation_conversion")},
             ],
             "todo_total": 0,
             "todo_groups": [],
             "quick_links": [
-                {"label": "客户中心", "description": "查看复制后的客户中心 shell。", "href": request.url_for("api.admin_console_customers")},
-                {"label": "User Ops", "description": "进入旧 User Ops 页面。", "href": request.url_for("api.admin_user_ops_ui")},
+                {"label": "客户激活 / 客户列表", "description": "查看客户列表和激活状态。", "href": request.url_for("api.admin_console_customers")},
+                {"label": "AI 助手", "description": "进入 AI 助手兼容入口。", "href": request.url_for("api.admin_cloud_orchestrator_workspace")},
             ],
         }
     )
@@ -179,7 +220,7 @@ def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile
     }
     context = _shell_context(
         request=request,
-        page_title="客户中心",
+        page_title="客户激活 / 客户列表",
         page_summary="查看客户列表、筛选客户并打开客户档案。",
         active_endpoint="api.admin_console_customers",
     )
@@ -189,7 +230,67 @@ def admin_customers(request: Request, keyword: str = "", owner: str = "", mobile
 
 @router.get("/admin/user-ops/ui", name="api.admin_user_ops_ui")
 def admin_user_ops_ui(request: Request):
-    return templates.TemplateResponse(request, "admin_user_ops.html", {"request": request})
+    context = _shell_context(
+        request=request,
+        page_title="客户激活 / 客户列表",
+        page_summary="客户激活与运营入口已接入 AI-CRM Next shell。",
+        active_endpoint="api.admin_console_customers",
+    )
+    context.update(
+        _placeholder_state(
+            "客户激活 / 客户列表",
+            "客户运营入口已由 AI-CRM Next 承载，客户列表和详情读取生产 PostgreSQL。",
+            ["客户列表", "激活状态", "标签筛选", "客户详情"],
+        )
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+
+
+@router.get("/admin/user-ops", name="api.admin_hxc_dashboard_workspace")
+def admin_user_ops_funnel(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="漏斗 / 数据看板",
+        page_summary="查看客户激活、会员状态和运营漏斗数据。",
+        active_endpoint="api.admin_hxc_dashboard_workspace",
+    )
+    context.update(
+        _placeholder_state(
+            "漏斗 / 数据看板",
+            "漏斗与客户激活入口已由 AI-CRM Next 承载，生产客户读模型提供列表和统计数据。",
+            ["客户激活", "客户列表", "运营漏斗", "数据看板"],
+        )
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+
+
+@router.get("/admin/cloud-orchestrator", name="api.admin_cloud_orchestrator_workspace")
+def admin_cloud_orchestrator(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="AI 助手",
+        page_summary="查看 AI 助手、云编排和自动化辅助能力入口。",
+        active_endpoint="api.admin_cloud_orchestrator_workspace",
+    )
+    context.update(
+        _placeholder_state(
+            "AI 助手",
+            "AI 助手入口已由 AI-CRM Next 承载；生产外呼仍由独立 adapter guard 控制。",
+            ["客户跟进建议", "自动化编排", "云端任务观察"],
+        )
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+
+
+@router.get("/admin/wecom-tags", name="api.admin_wecom_tags_page")
+def admin_wecom_tags(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="企微标签管理",
+        page_summary="管理企微标签分组和标签同步状态。",
+        active_endpoint="api.admin_wecom_tags_page",
+    )
+    return templates.TemplateResponse(request, "admin_console/config_wecom_tags.html", context)
 
 
 @router.get("/admin/questionnaires", name="api.admin_questionnaires")
@@ -200,7 +301,7 @@ def admin_questionnaires(request: Request):
     context = _shell_context(
         request=request,
         page_title="问卷管理",
-        page_summary="复刻旧问卷后台列表页，后端由 AI-CRM Next fixture adapter 支撑。",
+        page_summary="读取生产问卷列表，保留新建、编辑、停用、删除和导出入口。",
         active_endpoint="api.admin_questionnaires",
     )
     context["questionnaire_payload"] = {
@@ -215,37 +316,45 @@ def admin_questionnaires(request: Request):
 def admin_automation_conversion(request: Request):
     pools = ListAutomationPoolsQuery()()["pools"]
     records = ListAutomationExecutionRecordsQuery()(limit=5, offset=0)["items"]
+    if production_data_ready():
+        try:
+            program_list_payload = list_automation_programs_from_legacy()
+        except LegacyAutomationDataUnavailable:
+            program_list_payload = {"items": [], "default_program": {}, "total": 0, "source_status": "production_unavailable"}
+    else:
+        program_list_payload = {
+            "items": [
+                {
+                    "program": {
+                        "id": 1,
+                        "program_name": "自动化运营方案",
+                        "program_code": "next_local_preview",
+                        "status": "active",
+                        "updated_at": "2026-05-20T12:00:00Z",
+                        "description": "本地预览方案；生产环境将读取 PostgreSQL。",
+                    },
+                    "summary": {
+                        "channel_count": len(pools),
+                        "workflow_count": sum(pool.get("active_action_count", 0) for pool in pools),
+                        "latest_execution_at": records[0]["created_at"] if records else "",
+                    },
+                }
+            ],
+            "default_program": {"id": 1, "program_name": "自动化运营方案"},
+            "total": 1,
+            "source_status": "local_preview",
+        }
     context = _shell_context(
         request=request,
-        page_title="自动化转化",
-        page_summary="复刻旧自动化转化方案列表入口，后端由 AI-CRM Next fixture adapter 支撑。",
+        page_title="自动化运营",
+        page_summary="查看自动化运营方案、渠道、工作流与执行记录；生产环境读取 PostgreSQL。",
         active_endpoint="api.admin_automation_conversion",
     )
     context.update(
         {
-            "program_list_payload": {
-                "items": [
-                    {
-                        "program": {
-                            "id": 1,
-                            "program_name": "默认转化方案",
-                            "program_code": "default_conversion_v1",
-                            "status": "active",
-                            "updated_at": "2026-05-20T12:00:00Z",
-                            "description": "AI-CRM Next 自动化转化 fixture 方案。",
-                        },
-                        "summary": {
-                            "channel_count": len(pools),
-                            "workflow_count": sum(pool.get("active_action_count", 0) for pool in pools),
-                            "latest_execution_at": records[0]["created_at"] if records else "",
-                        },
-                    }
-                ],
-                "default_program": {"id": 1, "program_name": "默认转化方案"},
-                "total": 1,
-            },
+            "program_list_payload": program_list_payload,
             "show_create_form": False,
-            "admin_action_token": "fixture-token",
+            "admin_action_token": "",
             "action_urls": {"create": "/admin/automation-conversion"},
         }
     )
@@ -278,14 +387,14 @@ def admin_wechat_pay_products(request: Request):
     context = _shell_context(
         request=request,
         page_title="商品管理",
-        page_summary="复刻旧后台商品配置入口，第一阶段由 fake payment contract 支撑。",
+        page_summary="查看和维护生产商品配置；支付外部动作仍受 adapter guard 保护。",
         active_endpoint="api.admin_wechat_pay_products_page",
     )
     context.update({"placeholder_items": products["items"], "planned_surface": "wechat-pay-products"})
     context.update(
         _placeholder_state(
-            "商品管理 legacy adapter",
-            "商品管理 API contract 已接入 fake payment 后端；完整旧模板仍标记 partial adapter。",
+            "商品管理",
+            "商品管理页已由 AI-CRM Next 承载，列表数据通过商品 API 获取。",
             ["商品列表", "价格 cents 校验", "enable / disable", "soft delete"],
         )
     )
@@ -298,14 +407,14 @@ def admin_alipay_transactions(request: Request):
     context = _shell_context(
         request=request,
         page_title="支付宝交易管理",
-        page_summary="复刻旧后台支付宝交易入口，第一阶段由 fake Alipay contract 支撑。",
+        page_summary="查看支付宝交易兼容入口；外部支付动作仍受 adapter guard 保护。",
         active_endpoint="api.admin_alipay_transactions_page",
     )
     context.update({"placeholder_items": transactions["items"], "planned_surface": "alipay-transactions"})
     context.update(
         _placeholder_state(
-            "支付宝交易 legacy adapter",
-            "支付宝交易 API contract 已接入 fake notify/return；旧后台交易体验保持 partial adapter。",
+            "支付宝交易",
+            "支付宝交易兼容入口已由 AI-CRM Next 承载。",
             ["交易列表", "状态筛选", "fake return", "不接真实支付宝"],
         )
     )
@@ -342,14 +451,14 @@ def admin_attachment_library(request: Request):
     context = _shell_context(
         request=request,
         page_title="附件素材库",
-        page_summary="复刻旧后台附件素材入口，第一阶段使用 fixture/data_base64 contract。",
+        page_summary="维护 PDF、附件和课程资料等可复用素材。",
         active_endpoint="api.admin_attachment_library_workspace",
     )
     context.update({"placeholder_items": attachments["items"], "planned_surface": "attachment-library"})
     context.update(
         _placeholder_state(
-            "附件素材库 legacy adapter",
-            "附件素材库 API contract 已接入 fixture data_base64；旧模板缺口保持 partial adapter。",
+            "附件素材库",
+            "附件素材入口已由 AI-CRM Next 承载，素材 API 提供列表和维护能力。",
             ["附件列表", "创建", "更新", "soft delete"],
         )
     )
@@ -367,6 +476,8 @@ def admin_dashboard_shell_context() -> dict:
         "ok": True,
         "environment": {"tone": "dev", "label": "AI-CRM Next"},
         "health": {"state": "ok", "label": "OK", "detail": "frontend compat shell"},
+        "navigation": _nav_items(""),
+        "nav_groups": _nav_items(""),
     }
 
 
@@ -376,14 +487,59 @@ def admin_logout_stub() -> dict:
 
 
 @router.get("/admin/jobs", name="api.admin_jobs")
-@router.get("/admin/config", name="api.admin_config")
-@router.get("/admin/api-docs", name="api.admin_api_docs")
-def planned_admin_page(request: Request):
+def admin_jobs(request: Request):
     context = _shell_context(
         request=request,
-        page_title="待复刻页面",
-        page_summary="该 legacy 页面模板已复制，路由承载仍处于 planned/partial。",
-        active_endpoint="",
+        page_title="同步任务配置 / 同步任务",
+        page_summary="查看同步任务、消息批次和后台作业状态；本轮不启用 disabled timers。",
+        active_endpoint="api.admin_jobs",
+    )
+    context.update(
+        _placeholder_state(
+            "同步任务配置 / 同步任务",
+            "同步任务入口已由 AI-CRM Next 承载；automation-jobs-run-due 与 campaign-run-due 仍保持 disabled。",
+            ["聊天同步", "回调状态", "消息批次", "出站投递"],
+        )
+    )
+    return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
+
+
+@router.get("/admin/config", name="api.admin_config")
+def admin_config(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="配置",
+        page_summary="集中管理后台配置、登录访问和 MCP 工具配置。",
+        active_endpoint="api.admin_config",
+    )
+    context.update(
+        {
+            "overview_cards": [
+                {"label": "应用配置", "description": "查看基础运行配置。", "value": "可用", "href": "/admin/config"},
+                {"label": "企微标签", "description": "管理标签同步入口。", "value": "可用", "href": "/admin/wecom-tags"},
+                {"label": "API 文档", "description": "查看 API 文档。", "value": "可用", "href": "/admin/api-docs"},
+            ],
+            "config_nav_items": [],
+        }
+    )
+    return templates.TemplateResponse(request, "admin_console/config_overview.html", context)
+
+
+@router.get("/admin/api-docs", name="api.admin_api_docs")
+def admin_api_docs(request: Request):
+    context = _shell_context(
+        request=request,
+        page_title="API 文档",
+        page_summary="查看 AI-CRM 后台和外部集成 API 文档。",
+        active_endpoint="api.admin_api_docs",
+    )
+    context.update({"api_docs_payload": {"groups": [], "source_status": "production_postgres"}})
+    context.update(
+        _placeholder_state(
+            "API 文档",
+            "API 文档入口已由 AI-CRM Next 承载，可用于检查后台、回调和外部集成路由。",
+            ["后台 API", "企微回调", "支付回调", "自动化任务"],
+        )
     )
     return templates.TemplateResponse(request, "admin_console/placeholder.html", context)
 

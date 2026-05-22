@@ -74,3 +74,18 @@ def list_automation_pools_from_legacy() -> dict[str, Any]:
         }
 
     return _with_legacy_app_context(_load)
+
+
+def list_automation_programs_from_legacy() -> dict[str, Any]:
+    def _load() -> dict[str, Any]:
+        from wecom_ability_service.domains.automation_conversion import list_automation_programs
+
+        payload = list_automation_programs(include_archived=False)
+        return {
+            **payload,
+            "ok": True,
+            "source_status": "production_postgres",
+            "compatibility_facade": LEGACY_COMPATIBILITY_BOUNDARY,
+        }
+
+    return _with_legacy_app_context(_load)

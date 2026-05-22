@@ -12,18 +12,27 @@ def test_admin_navigation_groups_and_marks_active_item(monkeypatch):
 
     groups = admin_dashboard_service.list_admin_navigation("wechat_pay_transactions")
 
-    assert [group["title"] for group in groups] == ["运营", "交易", "配置及后台"]
+    assert [group["title"] for group in groups] == ["运营", "交易", "素材", "配置及后台"]
     operations = groups[0]["items"]
     operations_by_key = {item["key"]: item["label"] for item in operations}
+    assert [item["label"] for item in operations] == [
+        "自动化运营",
+        "AI 助手",
+        "客户激活 / 客户列表",
+        "漏斗 / 数据看板",
+        "问卷",
+        "企微标签管理",
+    ]
     assert operations_by_key["user_ops_funnel"] == "漏斗 / 数据看板"
-    assert {item["key"]: item["label"] for item in groups[2]["items"]}["jobs"] == "同步任务配置 / 同步任务"
+    assert {item["key"]: item["label"] for item in groups[3]["items"]}["jobs"] == "同步任务配置 / 同步任务"
     trade_group = groups[1]
     assert trade_group["active"] is True
-    assert [item["key"] for item in trade_group["items"]] == ["wechat_pay_transactions"]
+    assert [item["key"] for item in trade_group["items"]] == ["wechat_pay_transactions", "wechat_pay_products"]
     assert {item["key"]: item["active"] for item in trade_group["items"]} == {
         "wechat_pay_transactions": True,
+        "wechat_pay_products": False,
     }
-    assert all(group["title"] != "素材" for group in groups)
+    assert [item["label"] for item in groups[2]["items"]] == ["图片素材库", "小程序素材库", "附件素材库"]
 
 
 def test_admin_navigation_filters_empty_groups_by_role(monkeypatch):
@@ -44,18 +53,16 @@ def test_admin_navigation_filters_empty_groups_by_role(monkeypatch):
     assert [item["key"] for item in groups[1]["items"]] == ["api_docs"]
 
 
-def test_automation_admin_navigation_excludes_retired_material_group(monkeypatch):
+def test_automation_admin_navigation_includes_material_and_product_entries(monkeypatch):
     monkeypatch.setattr(admin_dashboard_service, "_current_admin_role_codes", lambda: ["automation_admin"])
 
     groups = admin_dashboard_service.list_admin_navigation("attachment_library")
 
-    assert [group["title"] for group in groups] == ["运营", "配置及后台"]
-    assert all(
-        item["key"] not in {"image_library", "miniprogram_library", "attachment_library"}
-        for group in groups
-        for item in group["items"]
-    )
-    assert all(group["active"] is False for group in groups)
+    assert [group["title"] for group in groups] == ["运营", "素材", "配置及后台"]
+    material_group = groups[1]
+    assert material_group["active"] is True
+    assert [item["key"] for item in material_group["items"]] == ["image_library", "miniprogram_library", "attachment_library"]
+    assert {item["key"]: item["active"] for item in material_group["items"]}["attachment_library"] is True
 
 
 def test_admin_base_template_renders_grouped_navigation():
@@ -69,10 +76,15 @@ def test_admin_base_template_renders_grouped_navigation():
         "admin_dashboard_shell_context": "/api/admin/dashboard/shell-context",
         "admin_automation_conversion": "/admin/automation-conversion",
         "admin_cloud_orchestrator_workspace": "/admin/cloud-orchestrator",
+        "admin_console_customers": "/admin/customers",
         "admin_hxc_dashboard_workspace": "/admin/user-ops",
         "admin_console_questionnaires": "/admin/questionnaires",
         "admin_wecom_tags_page": "/admin/wecom-tags",
         "admin_wechat_pay_transactions_page": "/admin/wechat-pay/transactions",
+        "admin_wechat_pay_products_page": "/admin/wechat-pay/products",
+        "admin_image_library_workspace": "/admin/image-library",
+        "admin_miniprogram_library_workspace": "/admin/miniprogram-library",
+        "admin_attachment_library_workspace": "/admin/attachment-library",
         "admin_console_jobs": "/admin/jobs",
         "admin_config_home": "/admin/config",
         "admin_console_api_docs": "/admin/api-docs",
@@ -100,9 +112,13 @@ def test_admin_base_template_renders_grouped_navigation():
     )
     assert re.search(r'class="admin-nav-link is-active"\s+href="/admin/wechat-pay/transactions"', html)
     assert '<div class="admin-nav-section-title">运营</div>' in html
+    assert "自动化运营" in html
+    assert "AI 助手" in html
+    assert "客户激活 / 客户列表" in html
     assert "漏斗 / 数据看板" in html
+    assert "企微标签管理" in html
     assert "同步任务配置 / 同步任务" in html
-    assert "图片素材库" not in html
-    assert "小程序素材库" not in html
-    assert "附件素材库" not in html
-    assert "商品管理" not in html
+    assert "图片素材库" in html
+    assert "小程序素材库" in html
+    assert "附件素材库" in html
+    assert "商品管理" in html
