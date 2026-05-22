@@ -12,10 +12,10 @@ This matrix lists fallback surfaces that must remain allowed while D8 is only in
 | Payment checkout/notify/admin fallback | `wecom_ability_service/http/wechat_pay.py`, `wecom_ability_service/http/alipay_pay.py`, admin payment modules | yes | Real payment adapter evidence, provider callback proof, rollback proof, and signoff are missing. |
 | Questionnaire submit/OAuth/write/external push fallback | Questionnaire legacy HTTP/domain modules | yes | Real submit/OAuth/external push evidence and production observation are missing. |
 | User Ops write/dispatch/deferred jobs fallback | User Ops legacy services and task/job routes | yes | Real write/dispatch/job evidence and observation are missing. |
-| Automation write/webhook/runtime/agent/OpenClaw fallback | Automation legacy HTTP/domain modules and `openclaw_service/` | yes | Real automation runtime and OpenClaw evidence are missing. |
+| Automation write/webhook/runtime/agent/OpenClaw fallback | Automation legacy HTTP/domain modules plus D7.5/D7.7 fake adapter boundary | yes | Real automation runtime and OpenClaw evidence are missing; repo-side `openclaw_service/` is absent after D9.6. |
 | Archive/contacts/identity fallback | `wecom_ability_service/http/archive.py`, `contacts.py`, `identity.py` | yes | Real sync/mapping evidence and observation are missing. |
 | Media cloud/WeCom upload fallback | Legacy media library and upload helpers | yes | Real provider upload evidence and rollback proof are missing. |
-| MCP/OpenClaw adapter fallback | `wecom_ability_service/mcp_adapter.py`, `openclaw_service/` | yes | Real MCP/OpenClaw evidence and signoff are missing. |
+| MCP/OpenClaw adapter fallback | `wecom_ability_service/mcp_adapter.py` plus D7.7 fake adapter boundary | yes | Real MCP/OpenClaw evidence and signoff are missing; repo-side `openclaw_service/` is absent after D9.6. |
 
 ## Source-Of-Truth Note
 

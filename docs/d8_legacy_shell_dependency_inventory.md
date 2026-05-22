@@ -11,7 +11,7 @@ This inventory records current legacy shell dependencies on `main`. It is not a 
 | Legacy app factory | `wecom_ability_service/__init__.py` | Current Flask app factory and route-owner header setup. | keep | Moving it before D8 approval would break imports and fallback startup. |
 | Legacy routes export | `wecom_ability_service/routes.py` | Compatibility blueprint export. | keep | Removing it can break app factory registration. |
 | Legacy HTTP registrar | `wecom_ability_service/http/__init__.py` | Registers legacy HTTP fallback routes. | keep | Removing it would remove protected fallback surfaces. |
-| External fallback | `openclaw_service/` | Protected OpenClaw fallback marker/package. | keep | Removing it would delete a blocked external fallback. |
+| External fallback | D7.5/D7.7 fake OpenClaw/MCP adapter boundary | Repo-side `openclaw_service/` is absent after D9.6; real OpenClaw/MCP behavior remains blocked. | keep | Do not reintroduce the deleted repo shim; keep the fake adapter boundary until real evidence exists. |
 | Next runtime source | `aicrm_next/` | Production Next source of truth. | keep | Must remain root-only; duplicate experiment source must stay absent. |
 
 ## Current Import Relationship

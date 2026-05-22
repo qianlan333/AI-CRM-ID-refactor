@@ -12,8 +12,7 @@ REQUESTED_D8_PATHS = [
     "docs/d8_legacy_shell_allowed_fallback_matrix.md",
     "docs/d8_1_legacy_fallback_route_lockdown_plan.md",
     "docs/d8_1_legacy_fallback_route_matrix.md",
-    "docs/d8_2_legacy_fallback_route_lockdown_enforcement.md",
-    "docs/d8_2_legacy_fallback_route_lockdown_report.md",
+    "docs/d8_2_legacy_fallback_route_lockdown_preflight.md",
     "docs/d8_3_legacy_flask_shell_archive_package_plan.md",
     "docs/d8_3_legacy_package_move_map.md",
     "docs/d8_3_legacy_import_rewrite_plan.md",
@@ -24,13 +23,13 @@ REQUESTED_D8_PATHS = [
     "docs/d8_5_maintenance_command_replacement_matrix.md",
     "tools/check_d8_legacy_shell_retirement_readiness.py",
     "tools/check_d8_1_legacy_fallback_route_lockdown.py",
-    "tools/check_d8_2_legacy_lockdown_enforcement.py",
+    "tools/check_d8_2_legacy_lockdown_preflight.py",
     "tools/check_d8_3_legacy_archive_move_readiness.py",
     "tools/check_d8_4_legacy_archive_package.py",
     "tools/check_d8_5_legacy_maintenance_command_readiness.py",
     "tests/test_d8_legacy_shell_retirement_readiness.py",
     "tests/test_d8_1_legacy_fallback_route_lockdown.py",
-    "tests/test_d8_2_legacy_lockdown_enforcement.py",
+    "tests/test_d8_2_legacy_lockdown_preflight.py",
     "tests/test_d8_3_legacy_archive_move_readiness.py",
     "tests/test_d8_4_legacy_archive_package.py",
     "tests/test_d8_5_legacy_maintenance_command_readiness.py",
@@ -68,11 +67,15 @@ def test_d8_inventory_keeps_existing_fallback_surfaces_and_does_not_restore_arch
         "wecom_ability_service/__init__.py",
         "wecom_ability_service/routes.py",
         "wecom_ability_service/http/__init__.py",
-        "openclaw_service/",
     ]:
         assert (REPO_ROOT / path).exists(), path
         row = _inventory_row(path)
         assert "| keep |" in row
+
+    assert not (REPO_ROOT / "openclaw_service").exists()
+    openclaw_row = _inventory_row("openclaw_service/")
+    assert "| keep absent |" in openclaw_row
+    assert "D9.6 physical deletion" in openclaw_row
 
     assert not (REPO_ROOT / "legacy_flask").exists()
     legacy_flask_row = _inventory_row("legacy_flask/")
@@ -84,17 +87,20 @@ def test_d8_inventory_keeps_existing_fallback_surfaces_and_does_not_restore_arch
     assert "absent on current main" in shim_row
 
 
-def test_d8_inventory_marks_minimal_d8_0_and_d8_1_planning_as_keep() -> None:
+def test_d8_inventory_marks_minimal_d8_0_d8_1_and_d8_2_preflight_as_keep() -> None:
     for path in [
         "docs/d8_legacy_flask_shell_retirement_plan.md",
         "docs/d8_legacy_shell_dependency_inventory.md",
         "docs/d8_legacy_shell_allowed_fallback_matrix.md",
         "docs/d8_1_legacy_fallback_route_lockdown_plan.md",
         "docs/d8_1_legacy_fallback_route_matrix.md",
+        "docs/d8_2_legacy_fallback_route_lockdown_preflight.md",
         "tools/check_d8_legacy_shell_retirement_readiness.py",
         "tools/check_d8_1_legacy_fallback_route_lockdown.py",
+        "tools/check_d8_2_legacy_lockdown_preflight.py",
         "tests/test_d8_legacy_shell_retirement_readiness.py",
         "tests/test_d8_1_legacy_fallback_route_lockdown.py",
+        "tests/test_d8_2_legacy_lockdown_preflight.py",
     ]:
         assert (REPO_ROOT / path).exists(), path
         assert "| keep |" in _inventory_row(path)
@@ -119,8 +125,8 @@ def test_d8_route_fallback_source_of_truth_status_is_declared() -> None:
 
 def test_d8_checker_and_test_duplicate_candidates_are_inventory_only() -> None:
     text = _inventory_text()
-    assert "Only D8.0/D8.1 planning checkers are present" in text
-    assert "Only D8.0/D8.1 planning tests plus this slim inventory guard are present" in text
+    assert "D8.0/D8.1 planning checkers and D8.2 preflight checker are present" in text
+    assert "D8.0/D8.1 planning tests, D8.2 preflight tests, and this slim inventory guard are present" in text
     assert "consider a helper only if more D8 checkers return" in text
     assert "do not recreate old D8 test stacks" in text
 

@@ -189,8 +189,8 @@ def test_customer_and_automation_smoke_parity_remain_pass() -> None:
     assert automation_parity.run_compare(Namespace(old_fixture_dir=str(PROJECT_ROOT / "tests/fixtures/old_automation_conversion"), old_base_url="", next_testclient=True, next_base_url="", output_md="", output_json=""))["ok"] is True
 
 
-def test_openclaw_service_still_exists_and_docs_are_not_mislabelled() -> None:
-    assert (PROJECT_ROOT / "openclaw_service").exists()
+def test_openclaw_service_repo_path_is_absent_and_docs_are_not_mislabelled() -> None:
+    assert not (PROJECT_ROOT / "openclaw_service").exists()
     docs = [
         "docs/d7_7_mcp_openclaw_legacy_adapter_contract.md",
         "docs/d7_7_mcp_openclaw_legacy_retirement_report.md",
@@ -207,6 +207,9 @@ def test_openclaw_service_still_exists_and_docs_are_not_mislabelled() -> None:
         assert "production_ready" not in text
         assert "production_approved" not in text
         assert "delete_ready" not in text
+    status_text = (PROJECT_ROOT / "docs/module_status_matrix.md").read_text(encoding="utf-8")
+    assert "openclaw_shim_physical_deletion_recorded" in status_text
+    assert "do not reintroduce OpenClaw legacy imports" in status_text
 
 
 def test_no_old_backend_imports_in_aicrm_next() -> None:

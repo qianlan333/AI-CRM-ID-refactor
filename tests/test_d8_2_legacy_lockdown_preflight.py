@@ -32,6 +32,7 @@ def test_d8_2_preflight_checker_reports_not_ready_without_runtime_changes() -> N
     assert report["checks"]["explicit_fallback"] is True
     assert report["checks"]["legacy_help_ok"] is True
     assert report["checks"]["legacy_import_ok"] is True
+    assert report["checks"]["d8_2_runtime_absent"]["openclaw_service"] is True
     assert report["checks"]["d8_2_runtime_absent"]["legacy_flask"] is True
     assert report["checks"]["d8_2_runtime_absent"]["wecom_ability_service/legacy_lockdown.py"] is True
 
@@ -69,7 +70,7 @@ def test_d8_2_preflight_keeps_runtime_guard_and_archive_package_absent() -> None
     assert not (REPO_ROOT / "wecom_ability_service/legacy_lockdown.py").exists()
     assert (REPO_ROOT / "legacy_flask_app.py").exists()
     assert (REPO_ROOT / "wecom_ability_service").exists()
-    assert (REPO_ROOT / "openclaw_service").exists()
+    assert not (REPO_ROOT / "openclaw_service").exists()
 
 
 def test_d8_2_preflight_does_not_modify_production_config_paths() -> None:

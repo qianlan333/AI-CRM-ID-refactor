@@ -12,7 +12,7 @@ This D8.0 plan restarts legacy Flask shell retirement planning from the current 
 | Explicit legacy fallback runner | `legacy_flask_app.py` | Keep. |
 | Legacy Flask app factory | `wecom_ability_service/__init__.py` | Keep in place. |
 | Legacy route registrar | `wecom_ability_service/routes.py`, `wecom_ability_service/http/__init__.py` | Keep in place. |
-| Legacy external fallback | `openclaw_service/`, payment, OAuth, WeCom, archive, contacts, identity, workflow fallback files | Keep blocked and available. |
+| Legacy external fallback | payment, OAuth, WeCom, archive, contacts, identity, workflow fallback files plus fake OpenClaw/MCP adapter boundary | Keep blocked and available; repo-side `openclaw_service/` is absent after D9.6. |
 
 ## Non Goals
 
@@ -44,7 +44,7 @@ D8 shell removal cannot proceed until all of the following are true and reviewed
 | --- | --- |
 | `legacy_flask_app.py` exists | yes |
 | `wecom_ability_service/` exists | yes |
-| `openclaw_service/` exists | yes |
+| `openclaw_service/` repo path | absent after D9.6 physical deletion record |
 | `app.py` default runtime remains Next | yes |
 | Legacy fallback usage remains explicit | yes |
 | D8.1 route/fallback matrix is planning-only | yes |

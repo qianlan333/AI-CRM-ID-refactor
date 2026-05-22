@@ -21,22 +21,21 @@
 
 D6.5 can proceed to acceptance only after checker, fallback smoke, pytest, and six parity checks pass. D7 remains blocked until replacement plans and production evidence exist.
 
-## D8.5 Legacy DB / Maintenance Command Planning
+## D8.2 Legacy Fallback Route Lockdown Preflight
 
 | check | status | evidence |
 | --- | --- | --- |
-| Command inventory exists | PASS | `docs/d8_5_legacy_db_maintenance_command_inventory.md` |
-| Retirement plan exists | PASS | `docs/d8_5_legacy_db_maintenance_command_retirement_plan.md` |
-| Replacement matrix exists | PASS | `docs/d8_5_maintenance_command_replacement_matrix.md` |
-| Readiness checker exists | PASS | `tools/check_d8_5_legacy_maintenance_command_readiness.py` |
-| Targeted tests exist | PASS | `tests/test_d8_5_legacy_maintenance_command_readiness.py` |
-| Legacy commands retained | PASS | `app.py`, `legacy_flask_app.py`, legacy DB helpers, and old maintenance helpers remain in place |
-| Production DB migration executed | NO | planning only |
+| D8.2 preflight doc exists | PASS | `docs/d8_2_legacy_fallback_route_lockdown_preflight.md` |
+| D8.2 preflight checker exists | PASS | `tools/check_d8_2_legacy_lockdown_preflight.py` |
+| Targeted tests exist | PASS | `tests/test_d8_2_legacy_lockdown_preflight.py` |
+| Runtime lockdown guard created | NO | preflight only |
+| `legacy_flask/` package created | NO | current main has no archive package |
+| Legacy fallback retained | PASS | `legacy_flask_app.py` and `wecom_ability_service/` remain in place |
 | Production config modified | NO | no deploy, production, nginx, or systemd change |
-| Real traffic cutover | NO | planning only |
+| Real traffic cutover | NO | preflight only |
 | External service call | NO | no WeCom, OAuth, Payment, OpenClaw, cloud, or MCP external call |
 
-D8.5 can proceed to acceptance after the D8.5 checker, targeted tests, legacy smoke, and D8.4 checker regression pass.
+D8.2 preflight can proceed to acceptance after the D8.2 checker, targeted tests, legacy smoke, and D8.0/D8.1 checker regressions pass. Runtime enforcement requires a later approved phase.
 
 ## D9 OpenClaw Legacy Adapter Physical Retirement Planning
 
@@ -47,7 +46,7 @@ D8.5 can proceed to acceptance after the D8.5 checker, targeted tests, legacy sm
 | D9 compatibility matrix exists | PASS | `docs/d9_openclaw_mcp_compatibility_matrix.md` |
 | Readiness checker exists | PASS | `tools/check_d9_openclaw_legacy_retirement_readiness.py` |
 | Targeted tests exist | PASS | `tests/test_d9_openclaw_legacy_retirement_readiness.py` |
-| OpenClaw service retained | PASS | `openclaw_service/` and `openclaw_service/LEGACY_FROZEN.md` remain in place |
+| OpenClaw repo path status | PASS | D9.0 planning artifacts are historical; D9.6 records `openclaw_service/` as absent from the repo |
 | Default Next import of OpenClaw service | NO | checker scans `aicrm_next` for direct old-package imports |
 | Physical move/removal | NO | D9.0 planning only |
 | Production config modified | NO | no deploy, production, nginx, or systemd change |
@@ -64,7 +63,7 @@ D9 can proceed to acceptance after the D9 checker, targeted tests, legacy/Next s
 | Import allowlist exists | PASS | `docs/d9_1_openclaw_import_allowlist.md` |
 | Import freeze checker exists | PASS | `tools/check_d9_1_openclaw_import_freeze.py` |
 | Targeted tests exist | PASS | `tests/test_d9_1_openclaw_import_freeze.py` |
-| OpenClaw service retained | PASS | `openclaw_service/` and `openclaw_service/LEGACY_FROZEN.md` remain in place |
+| OpenClaw repo path status | PASS | D9.1 import-freeze artifacts are historical; D9.6 records `openclaw_service/` as absent from the repo |
 | AI-CRM Next runtime import | NO | checker blocks `aicrm_next/**` imports of `openclaw_service` |
 | Physical move/removal | NO | D9.1 freeze only |
 | Production config modified | NO | no deploy, production, nginx, or systemd change |
@@ -82,7 +81,7 @@ D9.1 can proceed to acceptance after the D9.1 checker, targeted tests, app/legac
 | Import rewrite plan exists | PASS | `docs/d9_2_openclaw_import_rewrite_plan.md` |
 | Readiness checker exists | PASS | `tools/check_d9_2_openclaw_legacy_move_readiness.py` |
 | Targeted tests exist | PASS | `tests/test_d9_2_openclaw_legacy_move_readiness.py` |
-| OpenClaw service retained | PASS | `openclaw_service/` and `openclaw_service/LEGACY_FROZEN.md` remain in place |
+| OpenClaw repo path status | PASS | D9.2 move-planning artifacts are historical; D9.6 records `openclaw_service/` as absent from the repo |
 | Archive runtime package created | NO | `legacy_flask/openclaw_legacy/` is absent in D9.2 planning |
 | AI-CRM Next runtime import | NO | D9.1/D9.2 checkers block `aicrm_next/**` imports of `openclaw_service` |
 | Physical move/removal | NO | D9.2 planning only |
@@ -102,7 +101,7 @@ D9.2 can proceed to acceptance after the D9.2 checker, targeted tests, app/legac
 | Implementation report exists | PASS | `docs/d9_3_openclaw_legacy_skeleton_implementation_report.md` |
 | Readiness checker exists | PASS | `tools/check_d9_3_openclaw_legacy_skeleton.py` |
 | Targeted tests exist | PASS | `tests/test_d9_3_openclaw_legacy_skeleton.py` |
-| OpenClaw service retained | PASS | `openclaw_service/` and `openclaw_service/LEGACY_FROZEN.md` remain in place |
+| OpenClaw repo path status | PASS | D9.3 skeleton artifacts are historical; D9.6 records `openclaw_service/` and `legacy_flask/openclaw_legacy/` as absent from the repo |
 | Compatibility shim created | NO | no `openclaw_service/__init__.py` shim |
 | Physical move/removal | NO | D9.3 skeleton only |
 | Production config modified | NO | no deploy, production, nginx, or systemd change |
@@ -117,7 +116,7 @@ D9.3 can proceed to acceptance after the D9.3 checker, targeted tests, app/legac
 | --- | --- | --- |
 | Archive package exists | PASS | `legacy_flask/openclaw_legacy/` |
 | Frozen marker archived | PASS | `legacy_flask/openclaw_legacy/LEGACY_FROZEN.md` |
-| Compatibility shim retained | PASS | `openclaw_service/__init__.py`, `openclaw_service/README.md`, `openclaw_service/LEGACY_FROZEN.md` |
+| Compatibility shim status | PASS | D9.4 shim artifacts are historical; D9.6 records the repo-side shim path as absent |
 | AI-CRM Next direct old-package import | NO | D9.4 checker scans `aicrm_next/**` |
 | Runtime owner change | NO | D7.7 adapter boundary remains primary |
 | Production config modified | NO | no deploy/nginx/systemd changes |
@@ -132,8 +131,8 @@ D9.3 can proceed to acceptance after the D9.3 checker, targeted tests, app/legac
 | Shim-removal plan exists | PASS | `docs/d9_5_openclaw_service_shim_removal_plan.md` |
 | Final reference scan plan exists | PASS | `docs/d9_5_openclaw_final_reference_scan_plan.md` |
 | Readiness checklist exists | PASS | `docs/d9_5_openclaw_shim_removal_readiness_checklist.md` |
-| Compatibility shim retained | PASS | `openclaw_service/__init__.py`, `openclaw_service/README.md`, `openclaw_service/LEGACY_FROZEN.md` |
-| Archive package retained | PASS | `legacy_flask/openclaw_legacy/` |
+| Compatibility shim status | PASS | D9.5 shim-removal planning is historical; D9.6 records the repo-side shim path as absent |
+| Archive package status | PASS | D9.6 records `legacy_flask/openclaw_legacy/` as absent |
 | AI-CRM Next direct old-package import | NO | D9.5 checker scans `aicrm_next/**` |
 | Production config modified | NO | no deploy/nginx/systemd changes |
 | Traffic cutover | NO | planning only |
@@ -147,7 +146,7 @@ D9.3 can proceed to acceptance after the D9.3 checker, targeted tests, app/legac
 | Final reference scan evidence exists | PASS | `docs/d9_5_1_openclaw_final_reference_scan_evidence.md` |
 | Observation evidence report exists | PASS | `docs/d9_5_1_openclaw_observation_evidence_report.md` |
 | Deletion readiness evidence matrix exists | PASS | `docs/d9_5_1_openclaw_shim_deletion_readiness_evidence_matrix.md` |
-| Compatibility shim retained | PASS | `openclaw_service/__init__.py`, `openclaw_service/README.md`, `openclaw_service/LEGACY_FROZEN.md` |
+| Compatibility shim status | PASS | D9.5.1 evidence is historical; D9.6 records the repo-side shim path as absent |
 | AI-CRM Next direct old-package import | NO | AST scan reports zero imports |
 | Experiments mirror direct old-package import | NO | AST scan reports zero imports |
 | Deploy/script reference | NO | targeted `deploy/`, `.github/`, and `scripts/` scans report zero hits |
@@ -164,7 +163,7 @@ D9.3 can proceed to acceptance after the D9.3 checker, targeted tests, app/legac
 | Deletion blocked summary exists | PASS | `docs/d9_5_2_openclaw_shim_deletion_blocked_summary.md` |
 | Observation collection runbook exists | PASS | `docs/d9_5_2_openclaw_observation_collection_runbook.md` |
 | Deletion PR preflight checklist exists | PASS | `docs/d9_5_2_openclaw_deletion_pr_preflight_checklist.md` |
-| Compatibility shim retained | PASS | `openclaw_service/__init__.py`, `openclaw_service/README.md`, `openclaw_service/LEGACY_FROZEN.md` |
+| Compatibility shim status | PASS | D9.5.2 blocked package is historical; D9.6 records the repo-side shim path as absent |
 | Deletion candidate | NO | blocked until production observation evidence exists |
 | AI-CRM Next direct old-package import | NO | checker scans `aicrm_next/**` |
 | Observation evidence | PENDING | production/runtime logs are not available in this local environment |
@@ -298,7 +297,7 @@ D9.3 can proceed to acceptance after the D9.3 checker, targeted tests, app/legac
 | OpenClawLegacyBridgeAdapter fake contract | PASS | `aicrm_next/integration_gateway/mcp_openclaw_adapters.py` |
 | McpCompatibilityGateway fake contract | PASS | `aicrm_next/integration_gateway/mcp_openclaw_adapters.py` |
 | MCP / Customer / Automation boundary | PASS | MCP dispatcher routes tool, customer context, recent messages, automation context, and compatibility through D7.7 adapters |
-| OpenClaw legacy bridge gate | PASS | Automation OpenClaw fake push records D7.7 bridge metadata; `openclaw_service/` remains retained |
+| OpenClaw legacy bridge gate | PASS | Automation OpenClaw fake push records D7.7 bridge metadata; D9.6 records `openclaw_service/` as absent and no reintroduction is allowed |
 | Idempotency guard | PASS | `aicrm_next/integration_gateway/idempotency.py` |
 | In-memory audit boundary | PASS | `aicrm_next/integration_gateway/audit.py` |
 | Real MCP external call / OpenClaw call / webhook | NO | production mode fails closed or returns not implemented |
@@ -317,7 +316,7 @@ D9.3 can proceed to acceptance after the D9.3 checker, targeted tests, app/legac
 | `app.py` default runtime | PASS | `python3 app.py run` remains AI-CRM Next |
 | Legacy fallback retained | PASS | `legacy_flask_app.py` remains present |
 | Legacy shell core retained | PASS | `wecom_ability_service/__init__.py`, `wecom_ability_service/routes.py`, and `wecom_ability_service/http/__init__.py` remain present |
-| OpenClaw service retained | PASS | `openclaw_service/` remains present |
+| OpenClaw repo path status | PASS | `openclaw_service/` is absent after D9.6 and is not part of D8 legacy shell fallback |
 | Real external adapters enabled | NO | D8.0 planning only |
 | Production config modified | NO | no deploy/nginx/systemd changes |
 | Real traffic cutover | NO | D8.0 planning only |
@@ -334,61 +333,57 @@ D9.3 can proceed to acceptance after the D9.3 checker, targeted tests, app/legac
 | D1-D6 retired readonly route matrix | PASS | Media, Product, Customer, User Ops, Questionnaire, and Automation readonly owner routes are listed as `retired_readonly_route` |
 | Allowed fallback registry | PASS | legacy CLI fallback, write/external fallback, payment, OAuth, archive/contact sync, OpenClaw, and diagnostics are documented as fallback only |
 | Runtime enforcement | NO | D8.1 planning/checker only; D8.2 is future enforcement implementation |
-| Legacy shell deletion | NO | `legacy_flask_app.py`, `wecom_ability_service/`, and `openclaw_service/` remain retained |
+| Legacy shell deletion | NO | `legacy_flask_app.py` and `wecom_ability_service/` remain retained; `openclaw_service/` is absent after D9.6 |
 | Production config modified | NO | no deploy/nginx/systemd changes |
 | Real traffic cutover | NO | D8.1 planning only |
 | Recommended next gate | PASS | D8.1 acceptance before D8.2 enforcement planning |
 
-## D8.2 Legacy Fallback Route Lockdown Enforcement
+## D8.2 Legacy Fallback Route Lockdown Preflight
 
 | item | status | evidence |
 | --- | --- | --- |
-| D8.2 enforcement design exists | PASS | `docs/d8_2_legacy_fallback_route_lockdown_enforcement.md` |
-| D8.2 implementation report exists | PASS | `docs/d8_2_legacy_fallback_route_lockdown_report.md` |
-| Legacy lockdown module exists | PASS | `wecom_ability_service/legacy_lockdown.py` |
-| Legacy app factory registration | PASS | `register_legacy_lockdown(app)` is wired in `wecom_ability_service/__init__.py` |
-| D8.2 checker exists | PASS | `tools/check_d8_2_legacy_lockdown_enforcement.py` |
-| D8.2 targeted tests exist | PASS | `tests/test_d8_2_legacy_lockdown_enforcement.py` |
-| Retired readonly route behavior | PASS | legacy fallback returns 410 retired response for D1-D6 readonly owner routes |
-| Allowed fallback behavior | PASS | payment, OAuth, archive/contact sync, OpenClaw, questionnaire submit, and diagnostics are not blocked by the lockdown guard |
-| Legacy shell deletion | NO | `legacy_flask_app.py`, `wecom_ability_service/`, and `openclaw_service/` remain retained |
+| D8.2 preflight doc exists | PASS | `docs/d8_2_legacy_fallback_route_lockdown_preflight.md` |
+| D8.2 preflight checker exists | PASS | `tools/check_d8_2_legacy_lockdown_preflight.py` |
+| D8.2 targeted tests exist | PASS | `tests/test_d8_2_legacy_lockdown_preflight.py` |
+| Runtime lockdown module | NO | no `wecom_ability_service/legacy_lockdown.py` runtime guard is introduced by preflight |
+| Retired readonly route behavior | NO | preflight only; no runtime 410 behavior is registered |
+| Allowed fallback behavior | PASS | payment, OAuth, archive/contact sync, OpenClaw/MCP fake adapter boundary, questionnaire submit, and diagnostics remain documented fallback categories |
+| Legacy shell deletion | NO | `legacy_flask_app.py` and `wecom_ability_service/` remain retained; `openclaw_service/` is absent after D9.6 |
 | Production config modified | NO | no deploy/nginx/systemd changes |
-| Real traffic cutover | NO | D8.2 only affects explicit legacy fallback runtime |
+| Real traffic cutover | NO | preflight only |
 | Real external calls | NO | no WeCom, OAuth, Payment, OpenClaw, cloud, or webhook calls are executed |
-| Recommended next gate | PASS | D8.2 acceptance before D8.3 legacy archive package planning |
+| Recommended next gate | PASS | D8.2 preflight acceptance before any separate runtime-enforcement proposal |
 
 ## D8.3 Legacy Flask Archive Package Move Planning
 
 | item | status | evidence |
 | --- | --- | --- |
-| D8.3 archive package plan exists | PASS | `docs/d8_3_legacy_flask_shell_archive_package_plan.md` |
-| D8.3 move map exists | PASS | `docs/d8_3_legacy_package_move_map.md` |
-| D8.3 import rewrite plan exists | PASS | `docs/d8_3_legacy_import_rewrite_plan.md` |
-| D8.3 checker exists | PASS | `tools/check_d8_3_legacy_archive_move_readiness.py` |
-| D8.3 targeted tests exist | PASS | `tests/test_d8_3_legacy_archive_move_readiness.py` |
+| D8.3 archive package plan exists | NO | not restored on current main |
+| D8.3 checker exists | NO | not restored on current main |
+| D8.3 targeted tests exist | NO | not restored on current main |
 | Physical package move | NO | `wecom_ability_service/` remains in place |
-| OpenClaw package move | NO | `openclaw_service/` remains in place |
-| `legacy_flask/` package created | NO | D8.3.0 is planning only |
+| OpenClaw package move | NO | D9.6 records `openclaw_service/` as absent; D8 must not reintroduce it |
+| `legacy_flask/` package created | NO | current main has no archive package |
 | Default runtime | PASS | `python3 app.py run` remains AI-CRM Next |
-| D8.2 lockdown regression | PASS | D8.2 checker remains the move gate baseline |
+| D8.2 preflight regression | PASS | D8.2 preflight checker remains the gate baseline |
 | Production config modified | NO | no deploy/nginx/systemd changes |
 | Real traffic cutover | NO | D8.3 planning only |
 | Real external calls | NO | no WeCom, OAuth, Payment, OpenClaw, cloud, or webhook calls are executed |
-| Recommended next gate | PASS | D8.3 acceptance before D8.3.1 archive package skeleton work |
+| Recommended next gate | PASS | no D8.3 work until separately approved |
 
 ## D8.4 Legacy Flask Archive Package Implementation
 
 | item | status | evidence |
 | --- | --- | --- |
-| `legacy_flask/` package exists | PASS | `legacy_flask/__init__.py`, `legacy_flask/app_factory.py`, `legacy_flask/http/__init__.py`, `legacy_flask/legacy_lockdown.py` |
-| Compatibility shims exist | PASS | `wecom_ability_service/__init__.py`, `routes.py`, `http/__init__.py`, and `legacy_lockdown.py` |
-| `legacy_flask_app.py` imports archive app factory | PASS | explicit fallback uses `legacy_flask.app_factory` |
+| `legacy_flask/` package exists | NO | not present on current main |
+| Compatibility shims exist | PASS | `wecom_ability_service/__init__.py`, `routes.py`, and `http/__init__.py` remain legacy fallback entry points |
+| `legacy_flask_app.py` imports archive app factory | NO | explicit fallback remains on the current legacy app entry |
 | `app.py` default runtime | PASS | default run remains AI-CRM Next |
-| D8.4 checker exists | PASS | `tools/check_d8_4_legacy_archive_package.py` |
-| D8.4 targeted tests exist | PASS | `tests/test_d8_4_legacy_archive_package.py` |
-| D8.2 lockdown regression | PASS | retired readonly route still returns 410 and allowed diagnostic route is not blocked |
-| OpenClaw service retained | PASS | `openclaw_service/` remains in place |
+| D8.4 checker exists | NO | not present on current main |
+| D8.4 targeted tests exist | NO | not present on current main |
+| D8.2 lockdown regression | NO | no runtime lockdown is registered by D8.2 preflight |
+| OpenClaw repo path status | PASS | `openclaw_service/` is absent after D9.6 and must not be restored |
 | Production config modified | NO | no deploy/nginx/systemd changes |
-| Real traffic cutover | NO | explicit legacy fallback only |
+| Real traffic cutover | NO | no D8.4 implementation on current main |
 | Real external calls | NO | no WeCom, OAuth, Payment, OpenClaw, cloud, or webhook calls are executed |
-| Recommended next gate | PASS | D8.4 acceptance before D8.5 removal planning |
+| Recommended next gate | PASS | no D8.4 work until separately approved |

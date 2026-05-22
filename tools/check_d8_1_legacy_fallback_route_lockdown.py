@@ -93,11 +93,11 @@ def build_report() -> dict[str, Any]:
     protected_paths = {
         "legacy_flask_app.py": (REPO_ROOT / "legacy_flask_app.py").exists(),
         "wecom_ability_service": (REPO_ROOT / "wecom_ability_service").exists(),
-        "openclaw_service": (REPO_ROOT / "openclaw_service").exists(),
+        "openclaw_service_absent_after_d9_6": not (REPO_ROOT / "openclaw_service").exists(),
     }
     for path, exists in protected_paths.items():
         if not exists:
-            blockers.append(f"protected fallback path missing: {path}")
+            blockers.append(f"D8/D9 fallback status mismatch: {path}")
 
     return {
         "ok": not blockers,

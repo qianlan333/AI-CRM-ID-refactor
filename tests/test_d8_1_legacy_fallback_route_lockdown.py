@@ -70,5 +70,6 @@ def test_d8_1_checker_passes_without_runtime_guard_package() -> None:
 def test_d8_1_does_not_create_runtime_lockdown_or_archive_package() -> None:
     assert not (REPO_ROOT / "legacy_flask").exists()
     assert not (REPO_ROOT / "wecom_ability_service/legacy_lockdown.py").exists()
-    for protected in ["legacy_flask_app.py", "wecom_ability_service", "openclaw_service"]:
+    for protected in ["legacy_flask_app.py", "wecom_ability_service"]:
         assert (REPO_ROOT / protected).exists()
+    assert not (REPO_ROOT / "openclaw_service").exists()

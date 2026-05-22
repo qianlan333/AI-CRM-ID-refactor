@@ -11,7 +11,6 @@ PROTECTED_FALLBACKS = [
     "wecom_ability_service/__init__.py",
     "wecom_ability_service/routes.py",
     "wecom_ability_service/http/__init__.py",
-    "openclaw_service",
     "wecom_ability_service/http/wechat_pay.py",
     "wecom_ability_service/http/alipay_pay.py",
     "wecom_ability_service/http/admin_wechat_pay.py",
@@ -128,6 +127,7 @@ def test_d7_experiment_parity_smoke_tools_are_thin_wrappers() -> None:
 def test_d7_protected_fallback_files_still_exist() -> None:
     missing = [path for path in PROTECTED_FALLBACKS if not (REPO_ROOT / path).exists()]
     assert missing == []
+    assert not (REPO_ROOT / "openclaw_service").exists()
 
 
 def test_d7_phase2a_late_checkers_use_mechanical_shared_helper() -> None:

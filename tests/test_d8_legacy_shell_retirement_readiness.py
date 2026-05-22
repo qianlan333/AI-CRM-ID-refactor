@@ -24,8 +24,9 @@ def test_d8_0_docs_are_planning_only_and_keep_fallbacks() -> None:
     assert "Default AI-CRM Next entry" in inventory
     assert "explicit legacy fallback commands" in inventory
     assert "not runtime enforcement" in matrix
-    for path in ("legacy_flask_app.py", "wecom_ability_service/__init__.py", "openclaw_service/"):
+    for path in ("legacy_flask_app.py", "wecom_ability_service/__init__.py"):
         assert path in combined
+    assert "repo-side `openclaw_service/` is absent after D9.6" in combined
 
 
 def test_d8_0_deletion_gate_lists_required_evidence_without_claiming_ready() -> None:
@@ -51,6 +52,7 @@ def test_d8_0_checker_passes_and_protects_runtime_shape() -> None:
     assert report["checks"]["explicit_fallback"] is True
     assert report["checks"]["absent_runtime_paths"]["legacy_flask"] is True
     assert report["checks"]["absent_runtime_paths"]["wecom_ability_service/legacy_lockdown.py"] is True
+    assert report["checks"]["absent_runtime_paths"]["openclaw_service"] is True
 
     completed = subprocess.run(
         [
@@ -77,12 +79,12 @@ def test_d8_0_protected_fallback_files_still_exist() -> None:
         "wecom_ability_service/__init__.py",
         "wecom_ability_service/routes.py",
         "wecom_ability_service/http/__init__.py",
-        "openclaw_service",
     ]:
         assert (REPO_ROOT / path).exists(), path
 
     assert not (REPO_ROOT / "legacy_flask").exists()
     assert not (REPO_ROOT / "wecom_ability_service/legacy_lockdown.py").exists()
+    assert not (REPO_ROOT / "openclaw_service").exists()
 
 
 def test_d8_0_docs_do_not_use_forbidden_readiness_markers() -> None:
