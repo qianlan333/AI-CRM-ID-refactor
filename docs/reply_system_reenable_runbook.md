@@ -10,6 +10,8 @@ It does not enable timers, change systemd/nginx/deploy config, remove legacy fal
 - Timer compatibility routes must treat `dry_run=true` in JSON body, query string, or `X-AICRM-Dry-Run=true` header as a Next-owned no-op.
 - Dry-run responses must include `side_effect_executed=false` and `legacy_forwarded=false`.
 - `tools/check_next_timer_route_readiness.py` must pass the dry-run DB sentinel before timers are re-enabled.
+- `tools/check_reply_monitor_run_due_readiness.py` must pass before the reply-monitor run-due timer is re-enabled.
+- A single queue item with invalid phone, missing phone, or unresolvable identity is an item-level failure. It must not make the run-due route return 5xx.
 - `tools/check_next_production_cutover_readiness.py` may report `safe_to_enable_timers=true` only when automation production data is ready and the dry-run DB sentinel passes.
 - 5013 callback fallback remains in place until a separate observation window approves removal.
 
@@ -47,6 +49,9 @@ Allowed behavior:
 - Select due queue items.
 - Validate queue state and update internal no-op/dry-run diagnostics when explicitly requested.
 - In dry-run, do not forward to legacy and do not change sentinel tables.
+- In real run-due, mark invalid phone / missing phone / unresolvable customer identity as `failed` on that queue item, include `failed_items` in the response, and continue to the next due item.
+- Return a systemd-compatible 2xx response for item-level failures so `curl -f` does not fail the whole service due to one bad record.
+- Do not create `user_ops_send_records` or `outbound_tasks` unless a real external task is successfully created.
 
 Required dry-run sentinel:
 
@@ -62,8 +67,10 @@ Required dry-run sentinel:
 Preflight:
 
 - Run `python3 tools/check_next_timer_route_readiness.py --output-md /tmp/next_timer_route_readiness.md --output-json /tmp/next_timer_route_readiness.json`.
+- Run `python3 tools/check_reply_monitor_run_due_readiness.py --output-md /tmp/reply_monitor_run_due_readiness.md --output-json /tmp/reply_monitor_run_due_readiness.json`.
 - Confirm `dry_run_db_sentinel.status=pass`.
 - Confirm `safe_to_enable_timers=true`.
+- Confirm invalid queue items return `partial_failed=true`, `error_code=reply_monitor_item_failed`, and do not change `user_ops_send_records` / `outbound_tasks` sentinels.
 
 Rollback:
 
@@ -92,4 +99,4 @@ Rollback:
 
 ## Current Position
 
-D9/D8 legacy retirement work does not authorize reply-system dispatch. This emergency fix only makes dry-run safe before any timer re-enable decision.
+D9/D8 legacy retirement work does not authorize reply-system dispatch. This emergency fix keeps dry-run safe and makes reply-monitor run-due tolerant of item-level invalid phone failures before any timer re-enable decision.
