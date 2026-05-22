@@ -28,7 +28,7 @@
             {% for item in group["items"] %}
             <a
               class="admin-nav-link{% if item.active %} is-active{% endif %}"
-              href="{{ url_for(item.endpoint) }}"
+              href="{{ item.href if item.href is defined and item.href else url_for(item.endpoint) }}"
             >
               <span class="admin-nav-label">{{ item.label }}</span>
             </a>

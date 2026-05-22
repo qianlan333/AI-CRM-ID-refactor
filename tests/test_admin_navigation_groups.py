@@ -5,6 +5,7 @@ import re
 from flask import Blueprint, Flask, render_template
 
 from wecom_ability_service.domains.admin_dashboard import service as admin_dashboard_service
+from wecom_ability_service.http.admin_console import _navigation_with_hrefs
 
 
 def test_admin_navigation_groups_and_marks_active_item(monkeypatch):
@@ -122,3 +123,20 @@ def test_admin_base_template_renders_grouped_navigation():
     assert "小程序素材库" in html
     assert "附件素材库" in html
     assert "商品管理" in html
+
+
+def test_legacy_admin_navigation_resolves_retired_next_owned_links(monkeypatch):
+    monkeypatch.setattr(admin_dashboard_service, "_current_admin_role_codes", lambda: ["super_admin"])
+    app = Flask(__name__)
+    api = Blueprint("api", __name__)
+    api.add_url_rule("/admin/automation-conversion", "admin_automation_conversion", lambda: "")
+    app.register_blueprint(api)
+
+    with app.test_request_context("/admin/automation-conversion/programs/3/setup"):
+        groups = _navigation_with_hrefs("automation_conversion")
+
+    links = {item["endpoint"]: item["href"] for group in groups for item in group["items"]}
+    assert links["api.admin_automation_conversion"] == "/admin/automation-conversion"
+    assert links["api.admin_console_customers"] == "/admin/customers"
+    assert links["api.admin_console_questionnaires"] == "/admin/questionnaires"
+    assert links["api.admin_console_jobs"] == "/admin/jobs"
