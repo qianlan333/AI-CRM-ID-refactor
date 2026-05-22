@@ -85,27 +85,49 @@ def list_customer_wechat_pay_orders(
 ) -> list[dict[str, Any]]:
     normalized_external_userid = str(external_userid or "").strip()
     normalized_mobile = str(mobile or "").strip()
-    identity_clauses: list[str] = []
-    params: list[Any] = []
-    if normalized_external_userid:
-        identity_clauses.append("external_userid = ?")
-        params.append(normalized_external_userid)
-    if normalized_mobile:
-        identity_clauses.append("mobile_snapshot = ?")
-        params.append(normalized_mobile)
-    if not identity_clauses:
+    if not normalized_external_userid and not normalized_mobile:
         return []
-    params.append(max(1, min(int(limit or 20), 100)))
     return fetchall_dicts(
         get_db(),
-        f"""
+        """
+        WITH target(external_userid, mobile) AS (
+            VALUES (?, ?)
+        ),
+        bound_mobiles AS (
+            SELECT p.mobile
+            FROM external_contact_bindings b
+            JOIN people p ON p.id = b.person_id
+            JOIN target t ON b.external_userid = t.external_userid
+            WHERE COALESCE(p.mobile, '') <> ''
+            UNION
+            SELECT mobile
+            FROM target
+            WHERE COALESCE(mobile, '') <> ''
+        ),
+        identity_openids AS (
+            SELECT m.openid
+            FROM wecom_external_contact_identity_map m
+            JOIN target t ON m.external_userid = t.external_userid
+            WHERE COALESCE(m.openid, '') <> ''
+        ),
+        identity_unionids AS (
+            SELECT m.unionid
+            FROM wecom_external_contact_identity_map m
+            JOIN target t ON m.external_userid = t.external_userid
+            WHERE COALESCE(m.unionid, '') <> ''
+        )
         SELECT
             id,
             out_trade_no,
+            transaction_id,
             product_code,
             COALESCE(NULLIF(product_name, ''), product_code) AS product_name,
             amount_total,
             currency,
+            external_userid AS order_external_userid,
+            mobile_snapshot,
+            payer_openid,
+            unionid,
             status,
             trade_state,
             refunded_amount_total,
@@ -113,9 +135,26 @@ def list_customer_wechat_pay_orders(
             paid_at,
             created_at
         FROM wechat_pay_orders
-        WHERE ({" OR ".join(identity_clauses)})
+        WHERE (
+            (
+                COALESCE(external_userid, '') <> ''
+                AND external_userid = (SELECT external_userid FROM target)
+            )
+            OR (
+                COALESCE(mobile_snapshot, '') <> ''
+                AND mobile_snapshot IN (SELECT mobile FROM bound_mobiles)
+            )
+            OR (
+                COALESCE(payer_openid, '') <> ''
+                AND payer_openid IN (SELECT openid FROM identity_openids)
+            )
+            OR (
+                COALESCE(unionid, '') <> ''
+                AND unionid IN (SELECT unionid FROM identity_unionids)
+            )
+        )
         ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
         LIMIT ?
         """,
-        tuple(params),
+        (normalized_external_userid, normalized_mobile, max(1, min(int(limit or 20), 100))),
     )

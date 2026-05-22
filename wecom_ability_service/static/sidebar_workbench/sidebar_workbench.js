@@ -114,6 +114,32 @@
     return url.toString();
   }
 
+  function absoluteUrl(path) {
+    const text = String(path || "").trim();
+    if (!text) return "";
+    try {
+      return new URL(text, window.location.origin).toString();
+    } catch (_error) {
+      return text;
+    }
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const input = document.createElement("textarea");
+    input.value = text;
+    input.setAttribute("readonly", "readonly");
+    input.style.position = "fixed";
+    input.style.left = "-9999px";
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    document.body.removeChild(input);
+  }
+
   function getQueryValue(key) {
     return new URLSearchParams(window.location.search).get(key) || "";
   }
@@ -248,12 +274,14 @@
     content.innerHTML = panel(
       "商品",
       rows
-        .map((item) => (
-          '<article class="card"><div class="card-title"><h3>' + escapeHtml(item.title || "未命名商品") + "</h3>" +
-          '<div class="price">' + escapeHtml(item.price_label || "") + "</div></div>" +
-          '<div class="row-actions"><button class="btn primary" type="button" data-product-send="' + escapeHtml(item.id || "") + '">发送介绍</button>' +
-          '<button class="btn ghost" type="button" data-product-detail="' + escapeHtml(item.id || "") + '">查看详情</button></div></article>'
-        ))
+        .map((item) => {
+          const link = item.product_url || (item.id ? "/p/" + item.id : "");
+          return (
+            '<article class="card"><div class="card-title"><h3>' + escapeHtml(item.title || "未命名商品") + "</h3>" +
+            '<div class="price">' + escapeHtml(item.price_label || "") + "</div></div>" +
+            '<div class="row-actions"><button class="btn primary" type="button" data-product-copy="' + escapeHtml(link) + '">复制商品链接</button></div></article>'
+          );
+        })
         .join("")
     );
   }
@@ -618,11 +646,22 @@
       }
       return;
     }
-    if (event.target.closest("[data-product-send]")) {
-      showToast("商品介绍发送能力待接入");
+    const productCopyButton = event.target.closest("[data-product-copy]");
+    if (productCopyButton) {
+      const link = absoluteUrl(productCopyButton.dataset.productCopy);
+      if (!link) {
+        showToast("暂无商品链接", "error");
+        return;
+      }
+      try {
+        await copyText(link);
+        showToast("已复制商品链接");
+      } catch (_error) {
+        showToast("复制失败，请手动复制", "error");
+      }
       return;
     }
-    if (event.target.closest("[data-product-detail]") || event.target.closest("[data-order-detail]")) {
+    if (event.target.closest("[data-order-detail]")) {
       showToast("详情能力待接入");
     }
   });

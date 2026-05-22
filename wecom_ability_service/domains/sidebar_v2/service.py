@@ -416,10 +416,12 @@ def get_other_staff_messages(*, external_userid: str, current_userid: str = "", 
 def _product_item(item: dict[str, Any]) -> dict[str, Any]:
     product_code = _text(item.get("product_code"))
     product_id = _text(item.get("id"))
+    public_path = f"/p/{product_code}" if product_code else ""
     return {
         "id": product_code or product_id,
         "title": _text(item.get("name")) or product_code or "未命名商品",
         "price_label": _money_label(item.get("amount_total")),
+        "product_url": public_path,
     }
 
 

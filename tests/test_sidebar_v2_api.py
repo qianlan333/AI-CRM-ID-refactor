@@ -176,7 +176,27 @@ def test_sidebar_v2_materials_use_unified_schema(client, monkeypatch):
 
 def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, app):
     with app.app_context():
+        _seed_contact()
         db = get_db()
+        person_id = db.execute(
+            "INSERT INTO people (mobile) VALUES (?) RETURNING id",
+            ("13800138000",),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT INTO external_contact_bindings (external_userid, person_id, first_owner_userid, last_owner_userid)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("wm_sidebar_v2", person_id, "owner_current", "owner_current"),
+        )
+        db.execute(
+            """
+            INSERT INTO wecom_external_contact_identity_map (
+                corp_id, external_userid, unionid, openid, follow_user_userid, name
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("corp_sidebar", "wm_sidebar_v2", "union_sidebar_v2", "openid_sidebar_v2", "owner_current", "月朗"),
+        )
         db.execute(
             """
             INSERT INTO wechat_pay_products (
@@ -206,8 +226,9 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
             """
             INSERT INTO wechat_pay_orders (
                 out_trade_no, product_code, product_name, amount_total, currency,
-                external_userid, mobile_snapshot, status, trade_state, paid_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
+                payer_openid, unionid, external_userid, mobile_snapshot, status, trade_state,
+                transaction_id, paid_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz)
             """,
             (
                 "WXP_SIDE_001",
@@ -215,10 +236,13 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
                 "暑期阅读提升营 · 4 周",
                 39900,
                 "CNY",
-                "wm_sidebar_v2",
-                "13800138000",
+                "openid_sidebar_v2",
+                "",
+                "",
+                "13800138001",
                 "paid",
                 "SUCCESS",
+                "4200003132202605227627324115",
                 "2026-05-20 06:22:00+00",
                 "2026-05-20 06:20:00+00",
             ),
@@ -237,6 +261,7 @@ def test_sidebar_v2_products_and_orders_use_existing_wechat_pay_records(client, 
                 "id": "prd_sidebar_active",
                 "title": "暑期阅读提升营 · 4 周",
                 "price_label": "¥399",
+                "product_url": "/p/prd_sidebar_active",
             }
         ],
     }
