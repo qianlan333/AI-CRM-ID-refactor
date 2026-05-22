@@ -493,15 +493,18 @@ def _order_status(order: dict[str, Any]) -> str:
 
 
 def _order_item(order: dict[str, Any]) -> dict[str, Any]:
+    order_id = _text(order.get("id"))
     product_code = _text(order.get("product_code"))
     product_name = _text(order.get("product_name")) or product_code or "未命名商品"
     status = _order_status(order)
     return {
-        "id": _text(order.get("out_trade_no")) or _text(order.get("id")),
+        "id": _text(order.get("out_trade_no")) or order_id,
+        "order_id": order_id,
         "title": product_name,
         "amount_label": _money_label(order.get("amount_total")),
         "status_label": ORDER_STATUS_LABELS.get(status, status),
         "paid_at": _format_time(order.get("paid_at") or order.get("created_at")),
+        "detail_url": f"/admin/wechat-pay/transactions/{order_id}" if order_id else "",
     }
 
 

@@ -300,7 +300,7 @@
           '<div class="mini">' + escapeHtml(item.id || "") + '</div></div><div class="price">' + escapeHtml(item.amount_label || "") + "</div></div>" +
           '<div class="kv"><span>状态</span><strong>' + escapeHtml(item.status_label || "") + "</strong>" +
           '<span>时间</span><strong>' + escapeHtml(item.paid_at || "") + "</strong></div>" +
-          '<div class="row-actions"><button class="btn primary" type="button" data-order-detail="' + escapeHtml(item.id || "") + '">查看详情</button></div></article>'
+          '<div class="row-actions"><button class="btn primary" type="button" data-order-detail-url="' + escapeHtml(item.detail_url || "") + '">查看详情</button></div></article>'
         ))
         .join("")
     );
@@ -696,8 +696,17 @@
       }
       return;
     }
-    if (event.target.closest("[data-order-detail]")) {
-      showToast("详情能力待接入");
+    const orderDetailButton = event.target.closest("[data-order-detail-url]");
+    if (orderDetailButton) {
+      const link = absoluteUrl(orderDetailButton.dataset.orderDetailUrl);
+      if (!link) {
+        showToast("暂无订单详情链接", "error");
+        return;
+      }
+      const opened = window.open(link, "_blank", "noopener");
+      if (!opened) {
+        window.location.href = link;
+      }
     }
   });
 

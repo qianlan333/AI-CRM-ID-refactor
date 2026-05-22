@@ -64,6 +64,9 @@ def test_sidebar_workbench_static_contract_has_demo_approved_surface_only():
     assert "delivery_mode" in script
     assert "chat_toolbar" in script
     assert ">发送</button>" in script
+    assert "data-order-detail-url" in script
+    assert "window.open(link, \"_blank\", \"noopener\")" in script
+    assert "详情能力待接入" not in script
 
     forbidden = [
         "第 3 天",
