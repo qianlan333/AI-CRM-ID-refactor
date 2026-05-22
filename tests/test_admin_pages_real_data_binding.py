@@ -30,7 +30,7 @@ def test_key_admin_pages_render_server_side_rows_or_stats(monkeypatch):
 
     for route in [
         "/admin/cloud-orchestrator",
-        "/admin/user-ops",
+        "/admin/hxc-dashboard",
         "/admin/wechat-pay/products",
         "/admin/wechat-pay/transactions",
         "/admin/image-library",
@@ -60,6 +60,26 @@ def test_ai_assistant_entry_uses_campaign_review_workspace(monkeypatch):
     assert "/api/admin/cloud-orchestrator/campaigns?" in response.text
     assert "只读展示 automation_agent_config" not in response.text
     assert "production_unavailable" not in response.text
+
+
+def test_funnel_dashboard_entry_uses_hxc_dashboard_workspace(monkeypatch):
+    client = _client(monkeypatch)
+
+    redirect = client.get("/admin/user-ops", follow_redirects=False)
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == "/admin/hxc-dashboard"
+
+    response = client.get("/admin/hxc-dashboard")
+
+    assert response.status_code == 200
+    assert "用户激活漏斗看板" in response.text
+    assert "漏斗状态汇总" in response.text
+    assert "立即刷新" in response.text
+    assert "发送人管理" in response.text
+    assert "/api/admin/hxc-dashboard/refresh" in response.text
+    assert "/api/admin/hxc-dashboard/broadcast" in response.text
+    assert "production_unavailable" not in response.text
+    assert "生产漏斗数据读取失败" not in response.text
 
 
 def test_customer_page_does_not_render_sample_fixture_names(monkeypatch):
@@ -467,6 +487,41 @@ def test_admin_cloud_orchestrator_campaign_routes_forward_to_legacy(monkeypatch)
     assert list_response.json()["forwarded"] == "GET:/api/admin/cloud-orchestrator/campaigns:review_status=pending_review"
     assert step_response.status_code == 200
     assert step_response.json()["forwarded"] == "PATCH:/api/admin/cloud-orchestrator/campaigns/camp_probe/steps/1:"
+
+
+def test_admin_hxc_dashboard_routes_forward_to_legacy(monkeypatch):
+    import aicrm_next.production_compat.api as production_api
+
+    monkeypatch.setenv("AICRM_NEXT_ENV", "production")
+    monkeypatch.setenv("AICRM_NEXT_ENABLE_LEGACY_PRODUCTION_FACADE", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://probe:probe@127.0.0.1:1/aicrm_probe")
+    monkeypatch.setenv("SECRET_KEY", "admin-pages-real-data-binding-test")
+
+    async def fake_forward(request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "forwarded": f"{request.method}:{request.url.path}:{request.url.query}",
+            },
+            headers={"X-AICRM-Compatibility-Facade": "legacy_flask_facade"},
+        )
+
+    monkeypatch.setattr(production_api, "forward_to_legacy_flask", fake_forward)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    page_response = client.get("/admin/hxc-dashboard")
+    refresh_response = client.post("/api/admin/hxc-dashboard/refresh", json={"trigger_source": "probe"})
+    send_config_response = client.get("/api/admin/hxc-dashboard/send-config")
+
+    assert page_response.status_code == 200
+    assert page_response.headers["X-AICRM-Compatibility-Facade"] == "legacy_flask_facade"
+    assert page_response.json()["forwarded"] == "GET:/admin/hxc-dashboard:"
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["forwarded"] == "POST:/api/admin/hxc-dashboard/refresh:"
+    assert send_config_response.status_code == 200
+    assert send_config_response.json()["forwarded"] == "GET:/api/admin/hxc-dashboard/send-config:"
 
 
 def test_real_data_binding_checker_returns_ok():

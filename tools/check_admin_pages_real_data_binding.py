@@ -29,6 +29,7 @@ ADMIN_PAGES = [
     "/admin/cloud-orchestrator",
     "/admin/cloud-orchestrator/campaigns",
     "/admin/user-ops",
+    "/admin/hxc-dashboard",
     "/admin/user-ops/ui",
     "/admin/customers",
     "/admin/questionnaires",
@@ -114,6 +115,9 @@ def _bad_marker_hits(route: str, html: str) -> list[str]:
 def _has_real_data(route: str, html: str) -> tuple[bool, int]:
     rows = _row_count(html)
     cards = _card_count(html)
+    if route in {"/admin/user-ops", "/admin/hxc-dashboard"} and "hxc-dashboard-data" in html:
+        hxc_stats = html.count('class="hxc-stat')
+        return hxc_stats >= 5 and "/api/admin/hxc-dashboard/refresh" in html, max(rows, hxc_stats)
     if route == "/admin/api-docs":
         return rows >= 10, rows
     if route == "/admin/jobs":
@@ -174,9 +178,13 @@ def run_check() -> dict[str, Any]:
         for route in ADMIN_PAGES:
             response = client.get(route, follow_redirects=False)
             effective_response = response
-            if route == "/admin/cloud-orchestrator" and response.status_code in {301, 302, 303, 307, 308}:
+            if route in {"/admin/cloud-orchestrator", "/admin/user-ops"} and response.status_code in {301, 302, 303, 307, 308}:
                 location = response.headers.get("location", "")
-                if location == "/admin/cloud-orchestrator/campaigns":
+                expected_location = {
+                    "/admin/cloud-orchestrator": "/admin/cloud-orchestrator/campaigns",
+                    "/admin/user-ops": "/admin/hxc-dashboard",
+                }.get(route)
+                if location == expected_location:
                     effective_response = client.get(location, follow_redirects=False)
             html = effective_response.text
             markers = _bad_marker_hits(route, html)

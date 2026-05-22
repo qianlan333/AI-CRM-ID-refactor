@@ -51,6 +51,14 @@ async def legacy_cloud_orchestrator_campaign_routes(request: Request) -> Respons
     return await forward_to_legacy_flask(request)
 
 
+@router.api_route("/admin/hxc-dashboard", methods=_ALL_METHODS)
+@router.api_route("/admin/hxc-send-config", methods=_ALL_METHODS)
+@router.api_route("/api/admin/hxc-dashboard", methods=_ALL_METHODS)
+@router.api_route("/api/admin/hxc-dashboard/{path:path}", methods=_ALL_METHODS)
+async def legacy_hxc_dashboard_routes(request: Request) -> Response:
+    return await forward_to_legacy_flask(request)
+
+
 @router.api_route("/api/h5/wechat/oauth/start", methods=["GET", "OPTIONS", "HEAD"])
 @router.api_route("/api/h5/wechat/oauth/callback", methods=["GET", "OPTIONS", "HEAD"])
 async def legacy_questionnaire_oauth_routes(request: Request) -> Response:
@@ -150,6 +158,8 @@ async def legacy_image_library_upload_route(request: Request) -> Response:
 @wildcard_router.api_route("/api/admin/image-library/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/attachment-library", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/attachment-library/{path:path}", methods=_ALL_METHODS)
+@wildcard_router.api_route("/api/admin/hxc-dashboard", methods=_ALL_METHODS)
+@wildcard_router.api_route("/api/admin/hxc-dashboard/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/miniprogram-library", methods=_ALL_METHODS)
 @wildcard_router.api_route("/api/admin/miniprogram-library/{path:path}", methods=_ALL_METHODS)
 @wildcard_router.api_route("/admin/automation-conversion/{path:path}", methods=_ALL_METHODS)
